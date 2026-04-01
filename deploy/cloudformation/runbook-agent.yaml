@@ -1,0 +1,272 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.8 - Runbook Agent (Documentation Automation)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-12-12'
+  Layer: 6
+  LayerName: Serverless/Observability
+  Purpose: |
+    Automated incident documentation system that detects break/fix resolutions
+    and generates or updates runbooks following project standards.
+
+    Components:
+    - DynamoDB table for runbook indexing and search
+    - EventBridge rule for scheduled incident processing
+    - SNS topic for runbook notifications
+
+  Dependencies:
+    - Layer 1 (Foundation) - VPC for network access
+    - Layer 4 (Application) - Bedrock for LLM enhancement
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email for runbook notifications (optional)
+
+  ProcessingSchedule:
+    Type: String
+    Default: 'rate(6 hours)'
+    Description: EventBridge schedule for automated processing (cost optimized from 1 hour)
+
+  EnableAutomatedProcessing:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable automated incident processing via EventBridge
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  EnableAutomation: !Equals [!Ref EnableAutomatedProcessing, 'true']
+
+Resources:
+  # ============================================
+  # DynamoDB Table for Runbook Index
+  # ============================================
+  RunbookIndexTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-runbooks-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: file_path
+          AttributeType: S
+        - AttributeName: incident_type
+          AttributeType: S
+        - AttributeName: updated_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # GSI for querying by file path
+        - IndexName: file_path-index
+          KeySchema:
+            - AttributeName: file_path
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        # GSI for querying by incident type and update time
+        - IndexName: incident_type-updated_at-index
+          KeySchema:
+            - AttributeName: incident_type
+              KeyType: HASH
+            - AttributeName: updated_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: false  # Runbooks are permanent
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: serverless
+        - Key: Service
+          Value: runbook-agent
+        - Key: DescriptionVersion
+          Value: '6.8'
+
+  # ============================================
+  # SNS Topic for Runbook Notifications
+  # ============================================
+  RunbookNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-runbook-notifications-${Environment}'
+      DisplayName: 'Aura Runbook Agent Notifications'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: runbook-agent
+
+  RunbookNotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref RunbookNotificationTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================
+  # EventBridge Rule for Scheduled Processing
+  # ============================================
+  RunbookProcessingRule:
+    Type: AWS::Events::Rule
+    Condition: EnableAutomation
+    Properties:
+      Name: !Sub '${ProjectName}-runbook-agent-${Environment}'
+      Description: 'Triggers Runbook Agent for automated incident processing'
+      ScheduleExpression: !Ref ProcessingSchedule
+      State: ENABLED
+      Targets:
+        - Id: TriggerCodeBuild
+          Arn: !Sub 'arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectName}-runbook-agent-${Environment}'
+          RoleArn: !GetAtt EventBridgeCodeBuildRole.Arn
+          Input: |
+            {
+              "environmentVariablesOverride": [
+                {
+                  "name": "PROCESSING_HOURS",
+                  "value": "2",
+                  "type": "PLAINTEXT"
+                },
+                {
+                  "name": "DRY_RUN",
+                  "value": "false",
+                  "type": "PLAINTEXT"
+                }
+              ]
+            }
+
+  # IAM Role for EventBridge to trigger CodeBuild
+  EventBridgeCodeBuildRole:
+    Type: AWS::IAM::Role
+    Condition: EnableAutomation
+    Properties:
+      RoleName: !Sub '${ProjectName}-eventbridge-runbook-role-${Environment}'
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TriggerCodeBuild
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectName}-runbook-agent-${Environment}'
+
+  # ============================================
+  # CloudWatch Log Group for Agent Processing
+  # ============================================
+  RunbookAgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/${ProjectName}/runbook-agent/${Environment}'
+      RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: runbook-agent
+
+  # ============================================
+  # CloudWatch Alarms
+  # ============================================
+  RunbookProcessingErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-runbook-agent-errors-${Environment}'
+      AlarmDescription: 'Alert when Runbook Agent has processing errors'
+      MetricName: Errors
+      Namespace: !Sub '${ProjectName}/RunbookAgent'
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref RunbookNotificationTopic
+
+Outputs:
+  RunbookTableName:
+    Description: DynamoDB table name for runbook index
+    Value: !Ref RunbookIndexTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TableName'
+
+  RunbookTableArn:
+    Description: DynamoDB table ARN
+    Value: !GetAtt RunbookIndexTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TableArn'
+
+  NotificationTopicArn:
+    Description: SNS topic ARN for notifications
+    Value: !Ref RunbookNotificationTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-TopicArn'
+
+  LogGroupName:
+    Description: CloudWatch log group for agent processing
+    Value: !Ref RunbookAgentLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroup'
+
+  EventBridgeRuleArn:
+    Condition: EnableAutomation
+    Description: EventBridge rule ARN for scheduled processing
+    Value: !GetAtt RunbookProcessingRule.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-EventRuleArn'

@@ -1,0 +1,431 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.15 - GPU Scheduler Infrastructure (SQS FIFO, DynamoDB, S3)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email for GPU job alerts (optional)
+
+  JobVisibilityTimeout:
+    Type: Number
+    Default: 1800
+    Description: Visibility timeout for GPU job queue (30 min default for long-running jobs)
+
+  CheckpointRetentionDays:
+    Type: Number
+    Default: 90
+    Description: Days to retain checkpoints before Glacier transition
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ==========================================================================
+  # SQS FIFO Queues - Job Queue with Dead Letter Queue
+  # ==========================================================================
+
+  GPUJobsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-gpu-jobs-dlq-${Environment}.fifo'
+      FifoQueue: true
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-gpu-jobs-dlq-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: gpu-scheduler
+
+  GPUJobsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-gpu-jobs-queue-${Environment}.fifo'
+      FifoQueue: true
+      ContentBasedDeduplication: false  # Use explicit MessageDeduplicationId
+      DeduplicationScope: messageGroup
+      FifoThroughputLimit: perMessageGroupId
+      VisibilityTimeout: !Ref JobVisibilityTimeout
+      MessageRetentionPeriod: 1209600  # 14 days (longer for GPU jobs)
+      ReceiveMessageWaitTimeSeconds: 20  # Long polling
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt GPUJobsDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-gpu-jobs-queue-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: gpu-scheduler
+
+  # ==========================================================================
+  # DynamoDB Tables - GPU Jobs and Quotas
+  # ==========================================================================
+
+  GPUJobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-gpu-jobs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: job_id
+          AttributeType: S
+        - AttributeName: org_status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        # Phase 2: Queue Management attributes
+        - AttributeName: priority
+          AttributeType: S
+        - AttributeName: queued_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: organization_id
+          KeyType: HASH
+        - AttributeName: job_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # GSI1: Query jobs by org + status (avoids hot partition on status alone)
+        - IndexName: org-status-index
+          KeySchema:
+            - AttributeName: org_status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # GSI2: Query jobs by user within org
+        - IndexName: user-created-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # GSI3: Phase 2 - Query queued jobs by priority for dispatch ordering
+        - IndexName: priority-queued-index
+          KeySchema:
+            - AttributeName: priority
+              KeyType: HASH
+            - AttributeName: queued_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-gpu-jobs-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: gpu-scheduler
+
+  GPUQuotasTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-gpu-quotas-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: quota_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: organization_id
+          KeyType: HASH
+        - AttributeName: quota_type
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-gpu-quotas-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: gpu-scheduler
+
+  # ==========================================================================
+  # S3 Bucket - Job Checkpoints
+  # ==========================================================================
+
+  CheckpointsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-gpu-checkpoints-${AWS::AccountId}-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: !Ref CheckpointRetentionDays
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+          - Id: AbortIncompleteMultipart
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-gpu-checkpoints-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: gpu-scheduler
+
+  CheckpointsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CheckpointsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnforceTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt CheckpointsBucket.Arn
+              - !Sub '${CheckpointsBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  # ==========================================================================
+  # SNS Topic for Alerts
+  # ==========================================================================
+
+  GPUJobAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: !Sub '${ProjectName}-gpu-job-alerts-${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-gpu-job-alerts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  GPUJobAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref GPUJobAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ==========================================================================
+  # CloudWatch Alarms
+  # ==========================================================================
+
+  GPUJobsDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-jobs-dlq-depth-${Environment}'
+      AlarmDescription: Messages in GPU Jobs DLQ indicate job processing failures
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt GPUJobsDLQ.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref GPUJobAlertTopic
+      TreatMissingData: notBreaching
+
+  GPUJobsQueueBacklogAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-jobs-queue-backlog-${Environment}'
+      AlarmDescription: High backlog in GPU jobs queue indicates processing delays
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt GPUJobsQueue.QueueName
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: !If [IsProduction, 20, 50]
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref GPUJobAlertTopic
+      TreatMissingData: notBreaching
+
+  GPUJobsOldestMessageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-jobs-oldest-message-${Environment}'
+      AlarmDescription: Jobs waiting too long in queue
+      MetricName: ApproximateAgeOfOldestMessage
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt GPUJobsQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3600  # 1 hour
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref GPUJobAlertTopic
+      TreatMissingData: notBreaching
+
+Outputs:
+  # SQS Queue Outputs
+  GPUJobsQueueUrl:
+    Description: GPU jobs FIFO queue URL
+    Value: !Ref GPUJobsQueue
+    Export:
+      Name: !Sub '${ProjectName}-gpu-jobs-queue-url-${Environment}'
+
+  GPUJobsQueueArn:
+    Description: GPU jobs FIFO queue ARN
+    Value: !GetAtt GPUJobsQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-jobs-queue-arn-${Environment}'
+
+  GPUJobsQueueName:
+    Description: GPU jobs FIFO queue name
+    Value: !GetAtt GPUJobsQueue.QueueName
+    Export:
+      Name: !Sub '${ProjectName}-gpu-jobs-queue-name-${Environment}'
+
+  GPUJobsDLQUrl:
+    Description: GPU jobs DLQ URL
+    Value: !Ref GPUJobsDLQ
+    Export:
+      Name: !Sub '${ProjectName}-gpu-jobs-dlq-url-${Environment}'
+
+  GPUJobsDLQArn:
+    Description: GPU jobs DLQ ARN
+    Value: !GetAtt GPUJobsDLQ.Arn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-jobs-dlq-arn-${Environment}'
+
+  # DynamoDB Table Outputs
+  GPUJobsTableName:
+    Description: GPU jobs table name
+    Value: !Ref GPUJobsTable
+    Export:
+      Name: !Sub '${ProjectName}-gpu-jobs-table-name-${Environment}'
+
+  GPUJobsTableArn:
+    Description: GPU jobs table ARN
+    Value: !GetAtt GPUJobsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-jobs-table-arn-${Environment}'
+
+  GPUJobsTableStreamArn:
+    Description: GPU jobs table stream ARN
+    Value: !GetAtt GPUJobsTable.StreamArn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-jobs-table-stream-arn-${Environment}'
+
+  GPUQuotasTableName:
+    Description: GPU quotas table name
+    Value: !Ref GPUQuotasTable
+    Export:
+      Name: !Sub '${ProjectName}-gpu-quotas-table-name-${Environment}'
+
+  GPUQuotasTableArn:
+    Description: GPU quotas table ARN
+    Value: !GetAtt GPUQuotasTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-quotas-table-arn-${Environment}'
+
+  # S3 Bucket Outputs
+  CheckpointsBucketName:
+    Description: GPU checkpoints S3 bucket name
+    Value: !Ref CheckpointsBucket
+    Export:
+      Name: !Sub '${ProjectName}-gpu-checkpoints-bucket-name-${Environment}'
+
+  CheckpointsBucketArn:
+    Description: GPU checkpoints S3 bucket ARN
+    Value: !GetAtt CheckpointsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-checkpoints-bucket-arn-${Environment}'
+
+  # SNS Topic Output (conditional)
+  GPUJobAlertTopicArn:
+    Description: GPU job alerts SNS topic ARN
+    Condition: HasAlertEmail
+    Value: !Ref GPUJobAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-gpu-job-alerts-topic-arn-${Environment}'

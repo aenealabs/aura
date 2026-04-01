@@ -1,0 +1,123 @@
+# Project Aura - Neural Memory Service Configuration (Staging)
+# Configuration for Titan/MIRAS neural memory service in staging environment
+#
+# Staging mirrors production settings with lower resource limits
+# Used for pre-production validation and performance testing
+
+# =============================================================================
+# Service Identity
+# =============================================================================
+service:
+  name: "memory-service"
+  version: "1.0.0"
+  environment: "staging"
+
+# =============================================================================
+# Server Configuration
+# =============================================================================
+server:
+  grpc_port: 50051
+  health_port: 8080
+  metrics_port: 9090
+  log_level: "INFO"
+  worker_threads: 4
+
+# =============================================================================
+# AWS Configuration
+# =============================================================================
+# Note: account_id is resolved at runtime from AWS_ACCOUNT_ID environment variable
+# or retrieved from AWS STS. Do not hardcode account IDs.
+aws:
+  region: "${AWS_REGION:-us-east-1}"
+
+# =============================================================================
+# Neural Memory Architecture (Titans/MIRAS - ADR-024)
+# =============================================================================
+memory:
+  type: "titans"
+
+  architecture:
+    dimension: 1024
+    layers: 3
+    heads: 8
+    max_sequence_length: 8192
+
+  ttt:
+    enabled: true
+    learning_rate: 0.001
+    momentum: 0.9
+    steps_per_update: 1
+
+  surprise:
+    enabled: true
+    threshold: 0.5
+    decay_factor: 0.99
+
+# =============================================================================
+# Model Checkpoint Storage (S3)
+# =============================================================================
+storage:
+  s3:
+    bucket: "${S3_MODELS_BUCKET:-aura-models-${ENVIRONMENT:-staging}}"
+    prefix: "neural-memory/checkpoints"
+    checkpoint_interval_seconds: 1800  # 30 minutes
+
+  local:
+    model_cache_dir: "/var/lib/memory-service/models"
+    state_dir: "/var/lib/memory-service/state"
+
+# =============================================================================
+# State Persistence (DynamoDB)
+# =============================================================================
+persistence:
+  dynamodb:
+    table_name: "${DYNAMODB_MEMORY_TABLE:-aura-neural-memory-${ENVIRONMENT:-staging}}"
+    sync_interval_seconds: 180  # 3 minutes
+    ttl_days: 30
+
+# =============================================================================
+# Performance Configuration
+# =============================================================================
+performance:
+  max_batch_size: 64
+  batch_timeout_ms: 50
+
+  gpu_memory_fraction: 0.9
+  enable_memory_pool: true
+
+  grpc:
+    max_message_size_bytes: 104857600
+    keepalive_time_ms: 30000
+    keepalive_timeout_ms: 10000
+    max_concurrent_streams: 200
+
+# =============================================================================
+# Observability
+# =============================================================================
+observability:
+  metrics:
+    namespace: "Aura/NeuralMemory"
+    publish_interval_seconds: 30
+
+  tracing:
+    enabled: true
+    sample_rate: 0.1  # 10% sampling in staging
+    exporter: "otlp"
+    endpoint: "http://otel-collector:4317"
+
+# =============================================================================
+# Resource Limits (Staging - Medium)
+# =============================================================================
+resources:
+  cpu_limit: "4000m"
+  memory_limit: "16Gi"
+  gpu_count: 1
+
+# =============================================================================
+# Feature Flags
+# =============================================================================
+features:
+  async_memorization: true
+  adaptive_learning_rate: true
+  memory_compression: false
+  distributed_memory: false

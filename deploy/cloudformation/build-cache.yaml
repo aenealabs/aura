@@ -1,0 +1,225 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.8 - Build Cache (CI/CD Optimization)'
+
+# =============================================================================
+# CodeBuild Cache Infrastructure
+# =============================================================================
+# Provides secure S3-based caching for CodeBuild projects to optimize:
+# - Pip package installation (20-40% faster)
+# - Docker layer caching (50-70% faster)
+#
+# Security Controls (CMMC Level 3):
+# - KMS encryption at rest (SC.3.177)
+# - Versioning enabled for integrity (SC.3.180)
+# - 7-day TTL to prevent stale dependencies (supply chain security)
+# - Public access blocked (AC.3.017)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  CacheRetentionDays:
+    Type: Number
+    Default: 7
+    Description: Number of days to retain cache objects (supply chain security)
+
+Resources:
+  # ===========================================================================
+  # KMS Key for Build Cache Encryption
+  # ===========================================================================
+  BuildCacheKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} build cache encryption key'
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Root account - administrative access (required by AWS)
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+
+          # CodeBuild service - encryption operations
+          - Sid: AllowCodeBuildService
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 's3.${AWS::Region}.amazonaws.com'
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # All CodeBuild project roles - cache read/write
+          - Sid: AllowCodeBuildRoles
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-foundation-codebuild-role-${Environment}'
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-data-codebuild-role-${Environment}'
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-compute-codebuild-role-${Environment}'
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-application-codebuild-role-${Environment}'
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-observability-codebuild-role-${Environment}'
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-serverless-codebuild-role-${Environment}'
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-sandbox-codebuild-role-${Environment}'
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-security-codebuild-role-${Environment}'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-build-cache-key-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  BuildCacheKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-build-cache-${Environment}'
+      TargetKeyId: !Ref BuildCacheKMSKey
+
+  # ===========================================================================
+  # S3 Bucket for Build Cache
+  # ===========================================================================
+  BuildCacheBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-build-cache-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt BuildCacheKMSKey.Arn
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          # Expire cache objects after retention period (supply chain security)
+          - Id: ExpireCacheObjects
+            Status: Enabled
+            ExpirationInDays: !Ref CacheRetentionDays
+          # Clean up old versions
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 1
+          # Abort incomplete multipart uploads
+          - Id: AbortIncompleteMultipartUpload
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-build-cache-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: CodeBuild cache for pip and Docker layers
+
+  # Bucket policy to enforce encryption and restrict access
+  BuildCacheBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BuildCacheBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Deny unencrypted uploads
+          - Sid: DenyUnencryptedUploads
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub '${BuildCacheBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: aws:kms
+
+          # Deny non-HTTPS access
+          - Sid: DenyNonHTTPS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt BuildCacheBucket.Arn
+              - !Sub '${BuildCacheBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+          # Allow CodeBuild service access
+          - Sid: AllowCodeBuildAccess
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:GetBucketAcl
+              - s3:GetBucketLocation
+            Resource:
+              - !GetAtt BuildCacheBucket.Arn
+              - !Sub '${BuildCacheBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+Outputs:
+  BuildCacheBucketName:
+    Description: Name of the build cache S3 bucket
+    Value: !Ref BuildCacheBucket
+    Export:
+      Name: !Sub '${ProjectName}-build-cache-bucket-${Environment}'
+
+  BuildCacheBucketArn:
+    Description: ARN of the build cache S3 bucket
+    Value: !GetAtt BuildCacheBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-build-cache-bucket-arn-${Environment}'
+
+  BuildCacheKMSKeyArn:
+    Description: ARN of the build cache KMS key
+    Value: !GetAtt BuildCacheKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-build-cache-kms-key-arn-${Environment}'
+
+  BuildCacheLocation:
+    Description: S3 location for CodeBuild cache configuration
+    Value: !Sub '${ProjectName}-build-cache-${AWS::AccountId}-${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-build-cache-location-${Environment}'

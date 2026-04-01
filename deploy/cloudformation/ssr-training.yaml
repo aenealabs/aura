@@ -1,0 +1,418 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.2 - SSR Training (Self-Play SWE-RL Infrastructure)'
+
+# ADR-050 Phase 1: Bug Artifact Infrastructure
+# Provides S3, DynamoDB, KMS, and IAM resources for the Self-Play SWE-RL
+# training pipeline based on Meta FAIR research (arXiv:2512.18552).
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Description: Email address for cost and operational alerts
+    Default: ''
+
+  ArtifactRetentionDays:
+    Type: Number
+    Default: 90
+    Description: Days to retain training artifacts before expiration
+
+  EnablePointInTimeRecovery:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable DynamoDB Point-in-Time Recovery (recommended for prod)
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  EnablePITR: !Or
+    - !Equals [!Ref EnablePointInTimeRecovery, 'true']
+    - !Condition IsProd
+
+Resources:
+  # ============================================================================
+  # KMS Key for SSR Training Data Encryption
+  # ============================================================================
+
+  SSRTrainingKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} SSR training data encryption key'
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+          # Note: SSRServiceRole gets KMS access via its IAM policy (line ~291)
+          # to avoid circular dependency: KMS -> Role -> DynamoDB -> KMS
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+        - Key: Purpose
+          Value: ssr-training
+
+  SSRTrainingKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-ssr-training-${Environment}'
+      TargetKeyId: !Ref SSRTrainingKMSKey
+
+  # ============================================================================
+  # S3 Bucket for Bug Artifacts
+  # ============================================================================
+
+  SSRTrainingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt SSRTrainingKMSKey.Arn
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            Prefix: artifacts/
+            ExpirationInDays: !Ref ArtifactRetentionDays
+          - Id: DeleteIncompleteMultipart
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: TransitionToInfrequentAccess
+            Status: Enabled
+            Prefix: artifacts/
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+        - Key: Purpose
+          Value: ssr-training
+
+  SSRTrainingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SSRTrainingBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyNonHTTPS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt SSRTrainingBucket.Arn
+              - !Sub '${SSRTrainingBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: DenyNonKMSEncryption
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub '${SSRTrainingBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: aws:kms
+          - Sid: EnforceTLSVersion
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt SSRTrainingBucket.Arn
+              - !Sub '${SSRTrainingBucket.Arn}/*'
+            Condition:
+              NumericLessThan:
+                s3:TlsVersion: '1.2'
+
+  # ============================================================================
+  # DynamoDB Table for Artifact State
+  # ============================================================================
+
+  SSRTrainingStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-ssr-training-state-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: artifact_id
+          AttributeType: S
+        - AttributeName: repository_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: trajectory_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: artifact_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: repository-created-index
+          KeySchema:
+            - AttributeName: repository_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-created-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # GSI for trajectory type queries (injection vs solving)
+        # Required by TrainingDataPipeline.get_by_type()
+        - IndexName: trajectory_type-index
+          KeySchema:
+            - AttributeName: trajectory_type
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref SSRTrainingKMSKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+        - Key: Purpose
+          Value: ssr-training
+
+  # ============================================================================
+  # IAM Role for SSR Service
+  # ============================================================================
+
+  SSRServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ssr-service-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SSRServicePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # S3 permissions
+              - Sid: S3ObjectAccess
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}/*'
+              - Sid: S3BucketAccess
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}'
+              # DynamoDB permissions
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt SSRTrainingStateTable.Arn
+                  - !Sub '${SSRTrainingStateTable.Arn}/index/*'
+              # KMS permissions
+              - Sid: KMSAccess
+                Effect: Allow
+                Action:
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:GenerateDataKey*
+                  - kms:DescribeKey
+                Resource: !GetAtt SSRTrainingKMSKey.Arn
+              # CloudWatch Logs permissions
+              - Sid: CloudWatchLogsAccess
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/ssr-training-${Environment}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-training
+
+  # ============================================================================
+  # CloudWatch Log Group
+  # ============================================================================
+
+  SSRTrainingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/ssr-training-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-training
+
+  # ============================================================================
+  # CloudWatch Alarms (Cost Monitoring)
+  # ============================================================================
+
+  SSRStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-ssr-storage-high-${Environment}'
+      AlarmDescription: SSR training storage exceeds threshold
+      MetricName: BucketSizeBytes
+      Namespace: AWS/S3
+      Statistic: Average
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !If [IsProd, 107374182400, 10737418240]  # 100GB prod, 10GB dev
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: BucketName
+          Value: !Ref SSRTrainingBucket
+        - Name: StorageType
+          Value: StandardStorage
+      AlarmActions:
+        - !If [HasAlertEmail, !Ref SSRAlertTopic, !Ref 'AWS::NoValue']
+      TreatMissingData: notBreaching
+
+  # ============================================================================
+  # SNS Topic for Alerts
+  # ============================================================================
+
+  SSRAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: !Sub '${ProjectName}-ssr-alerts-${Environment}'
+      KmsMasterKeyId: !Ref SSRTrainingKMSKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  SSRAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref SSRAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+Outputs:
+  SSRTrainingBucketName:
+    Description: S3 bucket for SSR training artifacts
+    Value: !Ref SSRTrainingBucket
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-bucket-${Environment}'
+
+  SSRTrainingBucketArn:
+    Description: ARN of SSR training bucket
+    Value: !GetAtt SSRTrainingBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-bucket-arn-${Environment}'
+
+  SSRTrainingStateTableName:
+    Description: DynamoDB table for SSR training state
+    Value: !Ref SSRTrainingStateTable
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-state-table-${Environment}'
+
+  SSRTrainingStateTableArn:
+    Description: ARN of SSR training state table
+    Value: !GetAtt SSRTrainingStateTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-state-table-arn-${Environment}'
+
+  SSRServiceRoleArn:
+    Description: IAM role for SSR service
+    Value: !GetAtt SSRServiceRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-service-role-arn-${Environment}'
+
+  SSRTrainingKMSKeyArn:
+    Description: KMS key ARN for SSR training encryption
+    Value: !GetAtt SSRTrainingKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-kms-key-arn-${Environment}'
+
+  SSRTrainingLogGroupName:
+    Description: CloudWatch log group for SSR training
+    Value: !Ref SSRTrainingLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-log-group-${Environment}'

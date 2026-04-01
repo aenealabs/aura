@@ -1,0 +1,325 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.17 - Runtime Security (ADR-077 K8s Admission & Escape Detection Tables)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # Runtime Events Table - stores correlated runtime security events
+  RuntimeEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-runtime-events-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: event_id
+          AttributeType: S
+        - AttributeName: cluster_name
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: event_type
+          AttributeType: S
+        - AttributeName: severity
+          AttributeType: S
+      KeySchema:
+        - AttributeName: event_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: cluster-timestamp-index
+          KeySchema:
+            - AttributeName: cluster_name
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: event_type-timestamp-index
+          KeySchema:
+            - AttributeName: event_type
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: severity-timestamp-index
+          KeySchema:
+            - AttributeName: severity
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-runtime-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-077
+
+  # Resource Mappings Table - maps cloud resources to code
+  ResourceMappingsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-resource-mappings-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: resource_id
+          AttributeType: S
+        - AttributeName: resource_type
+          AttributeType: S
+        - AttributeName: source_file
+          AttributeType: S
+        - AttributeName: updated_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: resource_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: resource_type-index
+          KeySchema:
+            - AttributeName: resource_type
+              KeyType: HASH
+            - AttributeName: updated_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: source_file-index
+          KeySchema:
+            - AttributeName: source_file
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-resource-mappings-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-077
+
+  # Admission Decisions Table - records K8s admission controller decisions
+  AdmissionDecisionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-admission-decisions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: decision_id
+          AttributeType: S
+        - AttributeName: cluster_name
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: decision
+          AttributeType: S
+        - AttributeName: namespace
+          AttributeType: S
+      KeySchema:
+        - AttributeName: decision_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: cluster-timestamp-index
+          KeySchema:
+            - AttributeName: cluster_name
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: decision-timestamp-index
+          KeySchema:
+            - AttributeName: decision
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: namespace-timestamp-index
+          KeySchema:
+            - AttributeName: namespace
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-admission-decisions-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-077
+
+  # Escape Events Table - records container escape detection events
+  EscapeEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-escape-events-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: event_id
+          AttributeType: S
+        - AttributeName: cluster_name
+          AttributeType: S
+        - AttributeName: detected_at
+          AttributeType: S
+        - AttributeName: severity
+          AttributeType: S
+        - AttributeName: escape_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: event_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: cluster-detected_at-index
+          KeySchema:
+            - AttributeName: cluster_name
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: severity-detected_at-index
+          KeySchema:
+            - AttributeName: severity
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: escape_type-detected_at-index
+          KeySchema:
+            - AttributeName: escape_type
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-escape-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-077
+
+Outputs:
+  RuntimeEventsTableName:
+    Description: Runtime events table name
+    Value: !Ref RuntimeEventsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-RuntimeEventsTableName'
+
+  RuntimeEventsTableArn:
+    Description: Runtime events table ARN
+    Value: !GetAtt RuntimeEventsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RuntimeEventsTableArn'
+
+  RuntimeEventsTableStreamArn:
+    Description: Runtime events table stream ARN
+    Value: !GetAtt RuntimeEventsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-RuntimeEventsTableStreamArn'
+
+  ResourceMappingsTableName:
+    Description: Resource mappings table name
+    Value: !Ref ResourceMappingsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ResourceMappingsTableName'
+
+  ResourceMappingsTableArn:
+    Description: Resource mappings table ARN
+    Value: !GetAtt ResourceMappingsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ResourceMappingsTableArn'
+
+  AdmissionDecisionsTableName:
+    Description: Admission decisions table name
+    Value: !Ref AdmissionDecisionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AdmissionDecisionsTableName'
+
+  AdmissionDecisionsTableArn:
+    Description: Admission decisions table ARN
+    Value: !GetAtt AdmissionDecisionsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AdmissionDecisionsTableArn'
+
+  AdmissionDecisionsTableStreamArn:
+    Description: Admission decisions table stream ARN
+    Value: !GetAtt AdmissionDecisionsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-AdmissionDecisionsTableStreamArn'
+
+  EscapeEventsTableName:
+    Description: Escape events table name
+    Value: !Ref EscapeEventsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-EscapeEventsTableName'
+
+  EscapeEventsTableArn:
+    Description: Escape events table ARN
+    Value: !GetAtt EscapeEventsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-EscapeEventsTableArn'
+
+  EscapeEventsTableStreamArn:
+    Description: Escape events table stream ARN
+    Value: !GetAtt EscapeEventsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-EscapeEventsTableStreamArn'

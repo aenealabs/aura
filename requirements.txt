@@ -1,0 +1,75 @@
+# Project Aura - Full Development Dependencies
+#
+# This file contains ALL dependencies for local development, testing, and CI/CD.
+# For production container images, use specialized requirements files:
+#   - requirements-api.txt    (Slim API image, excludes torch/tree-sitter/testing)
+#   - requirements-agents.txt (Agent images, includes tree-sitter)
+#   - deploy/docker/memory-service/requirements.txt (ML service with torch)
+#
+# Estimated sizes:
+#   - requirements.txt (this file): ~3GB installed (includes torch ~1.8GB)
+#   - requirements-api.txt: ~500MB installed
+#   - requirements-agents.txt: ~550MB installed
+
+# Dependencies for the CKGE Core Agents and Testing
+# networkx is used for graph processing simulation
+networkx>=3.4.0
+python-dotenv>=1.0.1
+
+# AWS and Core Agent Dependencies:
+boto3>=1.42.0
+botocore>=1.42.0
+tree-sitter>=0.24.0
+
+# Graph Database and Vector Store Dependencies
+gremlinpython>=3.7.3  # For Amazon Neptune connectivity
+nest-asyncio>=1.6.0   # Allow nested event loops for gremlin-python in FastAPI
+opensearch-py>=2.8.0  # For OpenSearch vector store
+requests>=2.32.0      # HTTP client for requests-aws4auth
+requests-aws4auth>=1.3.1  # AWS SigV4 signing for OpenSearch FGAC setup
+GitPython>=3.1.43     # For Git metadata extraction in filesystem indexer
+PyGithub>=2.5.0       # For GitHub API integration (PR creation, branch management)
+PyJWT>=2.9.0          # For GitHub App JWT authentication (install with cryptography support)
+python-jose[cryptography]>=3.3.0  # For Cognito JWT validation with JWKS support
+cryptography>=43.0.0  # For RSA key support in PyJWT (GitHub App auth)
+defusedxml>=0.7.1    # For secure XML parsing (prevents XXE attacks) in SAML/Qualys
+
+# API Framework Dependencies
+fastapi>=0.115.0      # For REST API endpoints
+uvicorn>=0.32.0       # ASGI server for FastAPI
+httpx>=0.28.0         # HTTP client for testing
+pydantic>=2.10.0      # Data validation (included with FastAPI)
+python-multipart>=0.0.20  # Required for FastAPI form data (fixes deprecation warning)
+
+# Async HTTP Client (Enterprise Integrations)
+aiohttp>=3.13.0       # For ServiceNow, Splunk, Terraform Cloud, Snyk, CrowdStrike, Qualys, Azure DevOps connectors
+
+# Neural Memory / Titan Integration (ADR-024)
+torch>=2.0.0          # For DeepMLPMemory, MIRAS, neural memory backends
+
+# Structured Logging (Security/DevOps Agents)
+structlog>=24.1.0     # For security agent orchestrator and devops services
+
+# --- TREE-SITTER LANGUAGE BINDINGS (Required for AST Parsing) ---
+# These are included to reflect the CKGE's multi-language analysis capability.
+# Updated to versions compatible with Python 3.12
+tree-sitter-python>=0.23.6
+tree-sitter-javascript>=0.23.1
+
+# Testing Dependencies
+pytest>=8.3.0
+pytest-cov>=6.0.0
+pytest-mock>=3.14.0
+pytest-asyncio>=0.24.0  # For async test support (replaces pytest-anyio)
+pytest-xdist>=3.5.0     # For parallel test execution (pytest -n auto)
+pytest-forked>=1.6.0    # For test isolation (pytest.mark.forked)
+moto[all]>=5.0.0        # AWS service mocking for tests
+
+# CloudFormation validation (for infrastructure deployment)
+cfn-lint>=1.22.0
+PyYAML>=6.0.2
+
+# Code Quality (Optional)
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.5.0

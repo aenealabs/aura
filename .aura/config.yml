@@ -1,0 +1,80 @@
+# Aura Platform Configuration
+# Project Aura - Production Configuration (CMMC Level 3)
+
+compliance:
+  profile: CMMC_LEVEL_3
+  enabled: true
+  custom_overrides: {}
+
+agent:
+  orchestrator:
+    max_retries: 3
+    timeout_seconds: 300
+    enable_parallel_execution: true
+
+  coder:
+    model: claude-3-5-sonnet-20241022
+    temperature: 0.2
+    max_tokens: 4096
+
+  reviewer:
+    model: claude-3-5-sonnet-20241022
+    temperature: 0.0
+    enable_auto_fix: true
+
+  validator:
+    model: claude-3-5-sonnet-20241022
+    timeout_seconds: 600
+    parallel_test_execution: true
+
+sandbox:
+  default_isolation_level: container
+  timeout_minutes: 30
+  auto_cleanup: true
+  resources:
+    cpu_limit: "2000m"
+    memory_limit: "4Gi"
+    storage_limit: "10Gi"
+
+graphrag:
+  neptune:
+    endpoint: neptune.aura.local:8182
+    enable_iam_auth: true
+  opensearch:
+    endpoint: opensearch.aura.local:9200
+    enable_ssl: true
+  context_retrieval:
+    max_results: 20
+    similarity_threshold: 0.7
+    enable_hybrid_search: true
+
+monitoring:
+  cloudwatch:
+    enabled: true
+    namespace: Aura/Platform
+  anomaly_detection:
+    enabled: true
+    sensitivity: high
+    alert_on_critical: true
+
+hitl:
+  approval:
+    timeout_hours: 24
+    auto_reject_on_timeout: true
+    require_approval_for_patches: true
+  notifications:
+    email:
+      enabled: true
+      recipients:
+        - notifications@aenealabs.com
+    sns:
+      enabled: true
+      # Topic ARN constructed at runtime from AWS_ACCOUNT_ID and AWS_REGION env vars
+      # Format: arn:aws:sns:{region}:{account_id}:aura-hitl-approvals-{env}
+      topic_arn: ${HITL_SNS_TOPIC_ARN}
+
+logging:
+  level: INFO
+  format: json
+  audit_logging: true
+  audit_retention_days: 365

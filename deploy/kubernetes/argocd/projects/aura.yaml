@@ -1,0 +1,118 @@
+# Project Aura - ArgoCD Project
+# Defines RBAC boundaries for Aura applications (ADR-022)
+#
+# This project restricts which repos, clusters, and namespaces Aura applications
+# can deploy to, following the principle of least privilege.
+#
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: aura
+  namespace: argocd
+  labels:
+    project: aura
+spec:
+  description: Project Aura - Autonomous AI SaaS Platform
+
+  # Source repositories that applications in this project can pull from
+  sourceRepos:
+    - 'https://github.com/aenealabs/aura'
+    - 'https://github.com/aenealabs/aura.git'
+
+  # Destination clusters and namespaces that applications can deploy to
+  destinations:
+    # Allow deployment to default namespace in local cluster
+    - namespace: default
+      server: https://kubernetes.default.svc
+    # Allow deployment to argocd namespace (for self-management)
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+    # Allow deployment to kube-system for DaemonSets like dnsmasq
+    - namespace: kube-system
+      server: https://kubernetes.default.svc
+
+  # Allowed cluster-scoped resources (limit for security)
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    # Argo Rollouts cluster-scoped resources
+    - group: argoproj.io
+      kind: ClusterAnalysisTemplate
+
+  # Allowed namespace-scoped resources
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: PersistentVolumeClaim
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: DaemonSet
+    - group: apps
+      kind: StatefulSet
+    - group: apps
+      kind: ReplicaSet
+    - group: batch
+      kind: Job
+    - group: batch
+      kind: CronJob
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: networking.k8s.io
+      kind: Ingress
+    # Argo Rollouts resources for progressive delivery (ADR-022 Phase 3)
+    - group: argoproj.io
+      kind: Rollout
+    - group: argoproj.io
+      kind: AnalysisRun
+    - group: argoproj.io
+      kind: AnalysisTemplate
+    - group: argoproj.io
+      kind: Experiment
+
+  # Roles for this project (RBAC)
+  roles:
+    # Read-only role for viewing application status
+    - name: readonly
+      description: Read-only access to Aura applications
+      policies:
+        - p, proj:aura:readonly, applications, get, aura/*, allow
+        - p, proj:aura:readonly, applications, list, aura/*, allow
+      groups:
+        - aura-developers
+
+    # Sync role for deploying applications
+    - name: sync
+      description: Sync access to Aura applications
+      policies:
+        - p, proj:aura:sync, applications, get, aura/*, allow
+        - p, proj:aura:sync, applications, list, aura/*, allow
+        - p, proj:aura:sync, applications, sync, aura/*, allow
+        - p, proj:aura:sync, applications, action/*, aura/*, allow
+      groups:
+        - aura-deployers
+
+  # Sync windows - prevent deployments during certain times (optional)
+  # syncWindows:
+  #   - kind: deny
+  #     schedule: '0 22 * * *'  # No deploys 10PM-6AM
+  #     duration: 8h
+  #     applications:
+  #       - '*'
+  #     manualSync: true
+
+  # Orphaned resources monitoring
+  orphanedResources:
+    warn: true
+    ignore: []

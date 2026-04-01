@@ -1,0 +1,309 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.18 - AI Security (ADR-079 Model Protection & Training Data Tables)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # Model Access Logs Table - tracks access to model weights
+  ModelAccessLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-model-access-logs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: access_id
+          AttributeType: S
+        - AttributeName: model_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: principal_id
+          AttributeType: S
+        - AttributeName: access_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: access_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: model-timestamp-index
+          KeySchema:
+            - AttributeName: model_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: principal-timestamp-index
+          KeySchema:
+            - AttributeName: principal_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: access_type-timestamp-index
+          KeySchema:
+            - AttributeName: access_type
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-model-access-logs-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-079
+
+  # Threat Detections Table - stores detected security threats
+  ThreatDetectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-threat-detections-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: detection_id
+          AttributeType: S
+        - AttributeName: threat_type
+          AttributeType: S
+        - AttributeName: detected_at
+          AttributeType: S
+        - AttributeName: severity
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: detection_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: threat_type-detected_at-index
+          KeySchema:
+            - AttributeName: threat_type
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: severity-detected_at-index
+          KeySchema:
+            - AttributeName: severity
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-detected_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-threat-detections-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-079
+
+  # Sample Analysis Table - stores training data sample analysis results
+  SampleAnalysisTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-sample-analysis-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sample_id
+          AttributeType: S
+        - AttributeName: dataset_id
+          AttributeType: S
+        - AttributeName: analyzed_at
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: content_hash
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sample_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: dataset-analyzed_at-index
+          KeySchema:
+            - AttributeName: dataset_id
+              KeyType: HASH
+            - AttributeName: analyzed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-analyzed_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: analyzed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: content_hash-index
+          KeySchema:
+            - AttributeName: content_hash
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-sample-analysis-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-079
+
+  # Model Integrity Table - stores model weight integrity checksums
+  ModelIntegrityTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-model-integrity-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: model_id
+          AttributeType: S
+        - AttributeName: version
+          AttributeType: S
+        - AttributeName: recorded_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: model_id
+          KeyType: HASH
+        - AttributeName: version
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: recorded_at-index
+          KeySchema:
+            - AttributeName: model_id
+              KeyType: HASH
+            - AttributeName: recorded_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-model-integrity-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-079
+
+Outputs:
+  ModelAccessLogsTableName:
+    Description: Model access logs table name
+    Value: !Ref ModelAccessLogsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ModelAccessLogsTableName'
+
+  ModelAccessLogsTableArn:
+    Description: Model access logs table ARN
+    Value: !GetAtt ModelAccessLogsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ModelAccessLogsTableArn'
+
+  ModelAccessLogsTableStreamArn:
+    Description: Model access logs table stream ARN
+    Value: !GetAtt ModelAccessLogsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-ModelAccessLogsTableStreamArn'
+
+  ThreatDetectionsTableName:
+    Description: Threat detections table name
+    Value: !Ref ThreatDetectionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ThreatDetectionsTableName'
+
+  ThreatDetectionsTableArn:
+    Description: Threat detections table ARN
+    Value: !GetAtt ThreatDetectionsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ThreatDetectionsTableArn'
+
+  ThreatDetectionsTableStreamArn:
+    Description: Threat detections table stream ARN
+    Value: !GetAtt ThreatDetectionsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-ThreatDetectionsTableStreamArn'
+
+  SampleAnalysisTableName:
+    Description: Sample analysis table name
+    Value: !Ref SampleAnalysisTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SampleAnalysisTableName'
+
+  SampleAnalysisTableArn:
+    Description: Sample analysis table ARN
+    Value: !GetAtt SampleAnalysisTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SampleAnalysisTableArn'
+
+  ModelIntegrityTableName:
+    Description: Model integrity table name
+    Value: !Ref ModelIntegrityTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ModelIntegrityTableName'
+
+  ModelIntegrityTableArn:
+    Description: Model integrity table ARN
+    Value: !GetAtt ModelIntegrityTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ModelIntegrityTableArn'

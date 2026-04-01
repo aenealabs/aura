@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Quick Test Environment - Lightweight ECS Fargate task for rapid testing (4 hour TTL)'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Name for this test environment
+    AllowedPattern: '[a-z0-9-]+'
+    ConstraintDescription: Must contain only lowercase letters, numbers, and hyphens
+    MaxLength: 32
+
+  OwnerEmail:
+    Type: String
+    Description: Email of the environment owner (for notifications)
+
+  TTLHours:
+    Type: Number
+    Default: 4
+    MinValue: 1
+    MaxValue: 24
+    Description: Hours until automatic cleanup (1-24)
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the test environment
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets for the ECS tasks
+
+  ContainerImage:
+    Type: String
+    Default: 'public.ecr.aws/docker/library/nginx:alpine'
+    Description: Container image to run
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+    Description: Port the container listens on
+
+  ECSExecutionRoleArn:
+    Type: String
+    Description: ARN of the ECS task execution role
+
+  ECSTaskRoleArn:
+    Type: String
+    Description: ARN of the ECS task role
+
+  ECSClusterArn:
+    Type: String
+    Description: ARN of the ECS cluster for sandboxes
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/test-env/${EnvironmentName}'
+      RetentionInDays: 7
+      Tags:
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+        - Key: Owner
+          Value: !Ref OwnerEmail
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'aura-test-${EnvironmentName}'
+      Cpu: '256'
+      Memory: '512'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSExecutionRoleArn
+      TaskRoleArn: !Ref ECSTaskRoleArn
+      ContainerDefinitions:
+        - Name: main
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: main
+          Environment:
+            - Name: ENVIRONMENT_NAME
+              Value: !Ref EnvironmentName
+      Tags:
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Security group for test environment ${EnvironmentName}'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          CidrIp: '10.0.0.0/8'
+          Description: Allow internal VPC traffic
+      Tags:
+        - Key: Name
+          Value: !Sub 'aura-test-${EnvironmentName}-sg'
+        - Key: Project
+          Value: aura
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'aura-test-${EnvironmentName}'
+      Cluster: !Ref ECSClusterArn
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref SecurityGroup
+          Subnets: !Ref SubnetIds
+      Tags:
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+        - Key: Owner
+          Value: !Ref OwnerEmail
+        - Key: TTLHours
+          Value: !Ref TTLHours
+
+Outputs:
+  EnvironmentName:
+    Description: Name of the test environment
+    Value: !Ref EnvironmentName
+  ServiceArn:
+    Description: ARN of the ECS service
+    Value: !Ref Service
+  LogGroupName:
+    Description: CloudWatch Log Group
+    Value: !Ref LogGroup

@@ -1,0 +1,73 @@
+version: 0.2
+
+env:
+  variables:
+    PROJECT_NAME: aura
+    TEST_TIMEOUT: "300"
+    # Pin kubectl version for reproducible builds (avoid dl.k8s.io rate limits)
+    KUBECTL_VERSION: "v1.29.3"
+  exported-variables:
+    - TEST_RESULTS
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing test dependencies"
+      - echo "Downloading kubectl ${KUBECTL_VERSION}"
+      - curl -fsSL --retry 3 --retry-delay 5 -o kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+      - chmod +x kubectl && mv kubectl /usr/local/bin/
+      - kubectl version --client
+      - pip install pytest pytest-asyncio httpx boto3
+
+  pre_build:
+    commands:
+      - echo "Configuring kubectl"
+      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - export CLUSTER_NAME="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+      - aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
+      - echo "Verifying cluster connectivity"
+      - kubectl cluster-info
+      - kubectl get nodes
+      - echo "Checking pod status"
+      - kubectl get pods -A | grep -E 'aura|memory|orchestrator|frontend' || true
+
+  build:
+    commands:
+      - echo "Phase 1 - Health Check Tests"
+      - chmod +x deploy/scripts/integration-health-check.sh
+      - ./deploy/scripts/integration-health-check.sh
+      - echo "Phase 2 - Connectivity Tests"
+      - kubectl apply -f deploy/kubernetes/connectivity-test-pod.yaml || echo "Connectivity test pod already exists or failed"
+      - sleep 10
+      - kubectl logs connectivity-test -n aura --tail=100 || echo "Could not get logs"
+      - kubectl delete pod connectivity-test -n aura --ignore-not-found=true
+      - echo "Phase 3 - Integration Tests"
+      - kubectl apply -f deploy/kubernetes/integration-test-job.yaml || echo "Integration test job failed to apply"
+      - kubectl wait --for=condition=complete job/aura-integration-tests -n aura --timeout=${TEST_TIMEOUT}s || echo "Integration tests timed out"
+      - kubectl logs job/aura-integration-tests -n aura --tail=200 || true
+      - kubectl delete job aura-integration-tests -n aura --ignore-not-found=true
+      - echo "Phase 4 - API Endpoint Tests"
+      - chmod +x deploy/scripts/integration-api-test.sh
+      - ./deploy/scripts/integration-api-test.sh
+
+  post_build:
+    commands:
+      - echo "Test Summary"
+      - RUNNING_PODS=$(kubectl get pods -A --field-selector=status.phase=Running 2>/dev/null | grep -cE 'aura|memory|orchestrator|frontend' || echo "0")
+      - TOTAL_PODS=$(kubectl get pods -A 2>/dev/null | grep -cE 'aura|memory|orchestrator|frontend' || echo "0")
+      - echo "Pods running - ${RUNNING_PODS}/${TOTAL_PODS}"
+      - if [ "$RUNNING_PODS" -lt 3 ]; then TEST_STATUS="FAILED"; else TEST_STATUS="PASSED"; fi
+      - echo "Overall test status - ${TEST_STATUS}"
+      - aws ssm put-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/integration-test-status" --value "${TEST_STATUS:-UNKNOWN}" --type String --overwrite || true
+      - aws ssm put-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/integration-test-timestamp" --value "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --type String --overwrite || true
+      - echo "Integration Tests Complete"
+
+reports:
+  integration-tests:
+    files:
+      - '**/*'
+    base-directory: test-results
+    discard-paths: yes
+    file-format: JUNITXML

@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.8 - ECR Runtime Incident Agent (Investigation Container Registry)'
+
+# Note: This repository was created outside CloudFormation and imported via resource import.
+# The repository name does not include environment suffix for historical reasons.
+# Repository: aura-runtime-incident-agent (shared across environments in same account)
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  RuntimeIncidentAgentRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      # Note: No environment suffix - this repo predates our naming convention
+      # and is used by aura-incident-investigation-{env} ECS task definitions
+      RepositoryName: !Sub '${ProjectName}-runtime-incident-agent'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 20 tagged images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["v", "latest", "dev", "qa", "prod"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Delete untagged images older than 14 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 14
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: runtime-incident-agent
+        - Key: Layer
+          Value: '4'
+
+Outputs:
+  RepositoryUri:
+    Description: ECR Repository URI for Runtime Incident Agent image
+    Value: !GetAtt RuntimeIncidentAgentRepository.RepositoryUri
+    Export:
+      Name: !Sub '${ProjectName}-ecr-runtime-incident-agent-${Environment}-RepositoryUri'
+
+  RepositoryArn:
+    Description: ECR Repository ARN
+    Value: !GetAtt RuntimeIncidentAgentRepository.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ecr-runtime-incident-agent-${Environment}-RepositoryArn'
+
+  RepositoryName:
+    Description: ECR Repository Name
+    Value: !Ref RuntimeIncidentAgentRepository
+    Export:
+      Name: !Sub '${ProjectName}-ecr-runtime-incident-agent-${Environment}-RepositoryName'

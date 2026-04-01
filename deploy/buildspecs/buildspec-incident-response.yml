@@ -1,0 +1,175 @@
+version: 0.2
+
+# Incident Response Layer (Layer 6.5): Incident Tracking, RCA Workflows
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing build dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint setuptools wheel
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Incident Response Layer Deployment"
+      - echo "=========================================="
+      - echo "Environment $ENVIRONMENT | Project $PROJECT_NAME | Region $AWS_DEFAULT_REGION"
+
+      # Validate templates
+      - echo "Validating incident response templates..."
+      - cfn-lint deploy/cloudformation/incident-response.yaml --ignore-checks W3002,W1020,W2001 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/incident-investigation-workflow.yaml --ignore-checks W3002,W1020,W2001 || echo "cfn-lint warnings (non-blocking)"
+      - echo "Template validation complete"
+
+      # Retrieve dependency outputs from Foundation layer
+      - echo "Retrieving dependency outputs..."
+      - NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          PRIVATE_SUBNET_1=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnet1Id`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          PRIVATE_SUBNET_2=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnet2Id`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          PRIVATE_SUBNET_IDS="${PRIVATE_SUBNET_1},${PRIVATE_SUBNET_2}"
+          echo "VPC ID: $VPC_ID"
+          echo "Private Subnets: $PRIVATE_SUBNET_IDS"
+        else
+          echo "Error: Networking stack not found"
+          exit 1
+        fi
+
+      # Get ECS cluster name from network-services or sandbox layer
+      - NETWORK_SVC_STACK="${PROJECT_NAME}-network-services-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $NETWORK_SVC_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          ECS_CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name $NETWORK_SVC_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`EcsClusterName`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "ECS Cluster: $ECS_CLUSTER_NAME"
+        else
+          ECS_CLUSTER_NAME="${PROJECT_NAME}-network-services-${ENVIRONMENT}"
+          echo "Using default ECS cluster name: $ECS_CLUSTER_NAME"
+        fi
+
+      # Get RuntimeIncidentAgent image from ECR (if exists)
+      - |
+        INCIDENT_AGENT_REPO="${PROJECT_NAME}-runtime-incident-agent-${ENVIRONMENT}"
+        if aws ecr describe-repositories --repository-names $INCIDENT_AGENT_REPO --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          RUNTIME_INCIDENT_AGENT_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${INCIDENT_AGENT_REPO}:latest"
+          echo "RuntimeIncidentAgent Image: $RUNTIME_INCIDENT_AGENT_IMAGE"
+        else
+          RUNTIME_INCIDENT_AGENT_IMAGE=""
+          echo "Note: RuntimeIncidentAgent ECR repository not found, using empty value"
+        fi
+
+  build:
+    commands:
+      # Generate deployment timestamp for forcing stack updates
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # Deploy Incident Response stack (DynamoDB, EventBridge, Lambda)
+      - echo "=========================================="
+      - echo "Deploying Incident Response Stack"
+      - echo "=========================================="
+      - INCIDENT_STACK="${PROJECT_NAME}-incident-response-${ENVIRONMENT}"
+      - |
+        PARAM_OVERRIDES="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME"
+        if [ -n "$ALERT_EMAIL" ]; then
+          PARAM_OVERRIDES="$PARAM_OVERRIDES AlertEmail=$ALERT_EMAIL"
+        fi
+      - |
+        aws cloudformation deploy \
+          --stack-name $INCIDENT_STACK \
+          --template-file deploy/cloudformation/incident-response.yaml \
+          --parameter-overrides $PARAM_OVERRIDES \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=incident-response DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+      - echo "Incident Response stack deployment complete"
+
+      # Deploy Incident Investigation Workflow (Step Functions, ECS)
+      - echo "=========================================="
+      - echo "Deploying Incident Investigation Workflow"
+      - echo "=========================================="
+      - WORKFLOW_STACK="${PROJECT_NAME}-incident-investigation-${ENVIRONMENT}"
+      - |
+        WORKFLOW_OVERRIDES="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME"
+        if [ -n "$VPC_ID" ]; then
+          WORKFLOW_OVERRIDES="$WORKFLOW_OVERRIDES VpcId=$VPC_ID"
+        fi
+        if [ -n "$PRIVATE_SUBNET_IDS" ]; then
+          WORKFLOW_OVERRIDES="$WORKFLOW_OVERRIDES PrivateSubnetIds=$PRIVATE_SUBNET_IDS"
+        fi
+        if [ -n "$ECS_CLUSTER_NAME" ]; then
+          WORKFLOW_OVERRIDES="$WORKFLOW_OVERRIDES ECSClusterName=$ECS_CLUSTER_NAME"
+        fi
+        if [ -n "$RUNTIME_INCIDENT_AGENT_IMAGE" ]; then
+          WORKFLOW_OVERRIDES="$WORKFLOW_OVERRIDES RuntimeIncidentAgentImage=$RUNTIME_INCIDENT_AGENT_IMAGE"
+        fi
+      - |
+        aws cloudformation deploy \
+          --stack-name $WORKFLOW_STACK \
+          --template-file deploy/cloudformation/incident-investigation-workflow.yaml \
+          --parameter-overrides $WORKFLOW_OVERRIDES \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=incident-response DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+      - echo "Incident Investigation Workflow deployment complete"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Incident Response Layer Deployment Complete"
+      - echo "=========================================="
+
+      - echo "=== Incident Response Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $INCIDENT_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Stack not available"
+
+      - echo "=== Incident Investigation Workflow Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $WORKFLOW_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Stack not available"
+
+      - echo "=== DynamoDB Tables ==="
+      - aws dynamodb list-tables --query "TableNames[?contains(@, 'incident') || contains(@, 'deployment')]" --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No tables found"
+
+      - echo "=== Step Functions State Machines ==="
+      - aws stepfunctions list-state-machines --query "stateMachines[?contains(name, '${PROJECT_NAME}-incident')].{Name:name,Status:status}" --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No state machines found"
+
+      # Publish build metrics
+      - echo "Publishing build metrics..."
+      - |
+        aws cloudwatch put-metric-data \
+          --namespace "Aura/CICD/IncidentResponse" \
+          --metric-name "SuccessfulDeployments" \
+          --value 1 \
+          --unit Count \
+          --dimensions Environment=$ENVIRONMENT \
+          --region $AWS_DEFAULT_REGION || echo "Failed to publish metrics"
+
+artifacts:
+  files:
+    - deploy/cloudformation/incident-response.yaml
+    - deploy/cloudformation/incident-investigation-workflow.yaml
+  name: incident-response-layer-artifacts
+  discard-paths: no
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

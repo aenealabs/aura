@@ -1,0 +1,578 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.5 - Test Environment HITL Approval (Extended/Compliance Types)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  StepFunctionsRoleArn:
+    Type: String
+    Description: ARN of the Step Functions execution role (from test-env-iam stack)
+
+  NotificationsTopicArn:
+    Type: String
+    Description: ARN of the SNS notifications topic (from test-environment-catalog stack)
+
+  HITLApprovalsTopicArn:
+    Type: String
+    Description: ARN of the HITL approvals SNS topic
+
+  TestEnvStateTableName:
+    Type: String
+    Description: Name of the test environment state DynamoDB table
+
+  ApprovalTimeoutSeconds:
+    Type: Number
+    Default: 86400
+    MinValue: 3600
+    MaxValue: 604800
+    Description: Approval timeout in seconds (default 24h, max 7d)
+
+Resources:
+  # ==========================================================================
+  # CloudWatch Log Group for Step Functions
+  # ==========================================================================
+  ApprovalLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/${ProjectName}/${Environment}/test-env-approval'
+      RetentionInDays: 90
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Lambda: Request Approval
+  # ==========================================================================
+  RequestApprovalFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-test-env-request-approval-${Environment}'
+      Description: 'Sends HITL approval request for test environment provisioning'
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !Ref StepFunctionsRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref HITLApprovalsTopicArn
+          STATE_TABLE: !Ref TestEnvStateTableName
+          PROJECT_NAME: !Ref ProjectName
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from datetime import datetime
+
+          def handler(event, context):
+              """Send approval request via SNS and update environment state."""
+              sns = boto3.client('sns')
+              dynamodb = boto3.resource('dynamodb')
+
+              env_id = event['environment_id']
+              user_id = event['user_id']
+              env_type = event['environment_type']
+              display_name = event['display_name']
+              template_id = event['template_id']
+              task_token = event['task_token']
+
+              # Build approval URL (would be replaced with actual UI URL)
+              approval_url = f"https://aura.aenealabs.com/environments/{env_id}/approve"
+              reject_url = f"https://aura.aenealabs.com/environments/{env_id}/reject"
+
+              # Send SNS notification
+              message = {
+                  'approval_type': 'test_environment',
+                  'environment_id': env_id,
+                  'user_id': user_id,
+                  'environment_type': env_type,
+                  'template_id': template_id,
+                  'display_name': display_name,
+                  'requested_at': datetime.utcnow().isoformat(),
+                  'approval_url': approval_url,
+                  'reject_url': reject_url,
+                  'task_token': task_token
+              }
+
+              sns.publish(
+                  TopicArn=os.environ['SNS_TOPIC_ARN'],
+                  Subject=f'[Aura] Test Environment Approval Required: {display_name}',
+                  Message=json.dumps(message, indent=2),
+                  MessageAttributes={
+                      'approval_type': {'DataType': 'String', 'StringValue': 'test_environment'},
+                      'environment_type': {'DataType': 'String', 'StringValue': env_type},
+                      'user_id': {'DataType': 'String', 'StringValue': user_id}
+                  }
+              )
+
+              # Update environment state
+              table = dynamodb.Table(os.environ['STATE_TABLE'])
+              table.update_item(
+                  Key={'environment_id': env_id},
+                  UpdateExpression='SET approval_requested_at = :ts, approval_task_token = :token',
+                  ExpressionAttributeValues={
+                      ':ts': datetime.utcnow().isoformat(),
+                      ':token': task_token
+                  }
+              )
+
+              return {
+                  'environment_id': env_id,
+                  'approval_requested': True,
+                  'message': f'Approval request sent for {display_name}'
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Lambda: Process Approval Decision
+  # ==========================================================================
+  ProcessApprovalFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-test-env-process-approval-${Environment}'
+      Description: 'Processes HITL approval decision for test environment'
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !Ref StepFunctionsRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref TestEnvStateTableName
+          NOTIFICATIONS_TOPIC: !Ref NotificationsTopicArn
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from datetime import datetime
+
+          def handler(event, context):
+              """Process approval decision and update environment state."""
+              dynamodb = boto3.resource('dynamodb')
+              sns = boto3.client('sns')
+
+              env_id = event['environment_id']
+              decision = event['decision']  # 'approved' or 'rejected'
+              approver_id = event.get('approver_id', 'system')
+              reason = event.get('reason', '')
+
+              table = dynamodb.Table(os.environ['STATE_TABLE'])
+
+              if decision == 'approved':
+                  new_status = 'provisioning'
+                  message = f'Test environment {env_id} has been approved and is now provisioning.'
+              else:
+                  new_status = 'rejected'
+                  message = f'Test environment {env_id} was rejected. Reason: {reason}'
+
+              # Update state
+              table.update_item(
+                  Key={'environment_id': env_id},
+                  UpdateExpression='SET #status = :status, approval_decision = :decision, '
+                                   'approval_decision_at = :ts, approver_id = :approver, '
+                                   'approval_reason = :reason',
+                  ExpressionAttributeNames={'#status': 'status'},
+                  ExpressionAttributeValues={
+                      ':status': new_status,
+                      ':decision': decision,
+                      ':ts': datetime.utcnow().isoformat(),
+                      ':approver': approver_id,
+                      ':reason': reason
+                  }
+              )
+
+              # Send notification
+              sns.publish(
+                  TopicArn=os.environ['NOTIFICATIONS_TOPIC'],
+                  Subject=f'[Aura] Test Environment {decision.title()}: {env_id}',
+                  Message=message
+              )
+
+              return {
+                  'environment_id': env_id,
+                  'decision': decision,
+                  'new_status': new_status,
+                  'proceed_with_provisioning': decision == 'approved'
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Lambda: Provision Environment (After Approval)
+  # ==========================================================================
+  ProvisionEnvironmentFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-test-env-provision-${Environment}'
+      Description: 'Provisions approved test environment via Service Catalog'
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !Ref StepFunctionsRoleArn
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref TestEnvStateTableName
+          PROJECT_NAME: !Ref ProjectName
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from datetime import datetime
+          import uuid
+
+          def handler(event, context):
+              """Provision test environment via Service Catalog."""
+              sc = boto3.client('servicecatalog')
+              dynamodb = boto3.resource('dynamodb')
+
+              env_id = event['environment_id']
+              template_id = event['template_id']
+              user_id = event['user_id']
+              display_name = event['display_name']
+              provisioning_params = event.get('provisioning_params', {})
+
+              table = dynamodb.Table(os.environ['STATE_TABLE'])
+
+              try:
+                  # Get the product ID for the template
+                  # In production, this would look up the product ID from template_id
+                  # For now, we'll use a placeholder
+
+                  # Generate a unique provisioned product name
+                  provisioned_name = f"{os.environ['PROJECT_NAME']}-testenv-{env_id}"
+
+                  # Update state to provisioning
+                  table.update_item(
+                      Key={'environment_id': env_id},
+                      UpdateExpression='SET #status = :status, provisioning_started_at = :ts',
+                      ExpressionAttributeNames={'#status': 'status'},
+                      ExpressionAttributeValues={
+                          ':status': 'provisioning',
+                          ':ts': datetime.utcnow().isoformat()
+                      }
+                  )
+
+                  # In production, this would call:
+                  # sc.provision_product(
+                  #     ProductId=product_id,
+                  #     ProvisionedProductName=provisioned_name,
+                  #     ProvisioningArtifactId=artifact_id,
+                  #     ProvisioningParameters=[...],
+                  #     Tags=[...]
+                  # )
+
+                  # For now, simulate successful provisioning
+                  provisioned_product_id = f"pp-{uuid.uuid4().hex[:12]}"
+
+                  return {
+                      'environment_id': env_id,
+                      'provisioned_product_id': provisioned_product_id,
+                      'status': 'provisioning',
+                      'message': f'Provisioning started for {display_name}'
+                  }
+
+              except Exception as e:
+                  # Update state to failed
+                  table.update_item(
+                      Key={'environment_id': env_id},
+                      UpdateExpression='SET #status = :status, error_message = :err',
+                      ExpressionAttributeNames={'#status': 'status'},
+                      ExpressionAttributeValues={
+                          ':status': 'failed',
+                          ':err': str(e)
+                      }
+                  )
+                  raise
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Lambda: Handle Timeout
+  # ==========================================================================
+  HandleTimeoutFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-test-env-handle-timeout-${Environment}'
+      Description: 'Handles approval timeout for test environment requests'
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !Ref StepFunctionsRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref TestEnvStateTableName
+          NOTIFICATIONS_TOPIC: !Ref NotificationsTopicArn
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from datetime import datetime
+
+          def handler(event, context):
+              """Handle approval timeout."""
+              dynamodb = boto3.resource('dynamodb')
+              sns = boto3.client('sns')
+
+              env_id = event['environment_id']
+              user_id = event['user_id']
+
+              table = dynamodb.Table(os.environ['STATE_TABLE'])
+
+              # Update state to timed out
+              table.update_item(
+                  Key={'environment_id': env_id},
+                  UpdateExpression='SET #status = :status, timeout_at = :ts',
+                  ExpressionAttributeNames={'#status': 'status'},
+                  ExpressionAttributeValues={
+                      ':status': 'timeout',
+                      ':ts': datetime.utcnow().isoformat()
+                  }
+              )
+
+              # Notify user
+              sns.publish(
+                  TopicArn=os.environ['NOTIFICATIONS_TOPIC'],
+                  Subject=f'[Aura] Test Environment Request Timed Out: {env_id}',
+                  Message=f'Your test environment request {env_id} has timed out waiting for approval. '
+                          f'Please submit a new request if still needed.'
+              )
+
+              return {
+                  'environment_id': env_id,
+                  'status': 'timeout',
+                  'message': 'Approval request timed out'
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Step Functions State Machine - HITL Approval Workflow
+  # ==========================================================================
+  ApprovalStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ProjectName}-test-env-approval-${Environment}'
+      RoleArn: !Ref StepFunctionsRoleArn
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt ApprovalLogGroup.Arn
+        IncludeExecutionData: true
+        Level: ALL
+      Definition:
+        Comment: 'HITL approval workflow for extended/compliance test environments'
+        StartAt: RequestApproval
+        States:
+          RequestApproval:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke.waitForTaskToken
+            Parameters:
+              FunctionName: !Ref RequestApprovalFunction
+              Payload:
+                environment_id.$: $.environment_id
+                user_id.$: $.user_id
+                organization_id.$: $.organization_id
+                environment_type.$: $.environment_type
+                template_id.$: $.template_id
+                display_name.$: $.display_name
+                task_token.$: $$.Task.Token
+            TimeoutSeconds: !Ref ApprovalTimeoutSeconds
+            ResultPath: $.approval_response
+            Catch:
+              - ErrorEquals:
+                  - States.Timeout
+                ResultPath: $.error
+                Next: HandleTimeout
+              - ErrorEquals:
+                  - States.ALL
+                ResultPath: $.error
+                Next: ApprovalFailed
+            Next: ProcessApprovalDecision
+
+          ProcessApprovalDecision:
+            Type: Task
+            Resource: !GetAtt ProcessApprovalFunction.Arn
+            Parameters:
+              environment_id.$: $.environment_id
+              decision.$: $.approval_response.decision
+              approver_id.$: $.approval_response.approver_id
+              reason.$: $.approval_response.reason
+            ResultPath: $.decision_result
+            Next: CheckDecision
+
+          CheckDecision:
+            Type: Choice
+            Choices:
+              - Variable: $.decision_result.proceed_with_provisioning
+                BooleanEquals: true
+                Next: ProvisionEnvironment
+            Default: EnvironmentRejected
+
+          ProvisionEnvironment:
+            Type: Task
+            Resource: !GetAtt ProvisionEnvironmentFunction.Arn
+            Parameters:
+              environment_id.$: $.environment_id
+              template_id.$: $.template_id
+              user_id.$: $.user_id
+              display_name.$: $.display_name
+              provisioning_params.$: $.provisioning_params
+            ResultPath: $.provisioning_result
+            Next: EnvironmentApproved
+            Catch:
+              - ErrorEquals:
+                  - States.ALL
+                ResultPath: $.error
+                Next: ProvisioningFailed
+
+          EnvironmentApproved:
+            Type: Succeed
+
+          EnvironmentRejected:
+            Type: Succeed
+
+          HandleTimeout:
+            Type: Task
+            Resource: !GetAtt HandleTimeoutFunction.Arn
+            Parameters:
+              environment_id.$: $.environment_id
+              user_id.$: $.user_id
+            Next: ApprovalTimedOut
+
+          ApprovalTimedOut:
+            Type: Fail
+            Error: ApprovalTimeout
+            Cause: Approval request timed out
+
+          ApprovalFailed:
+            Type: Fail
+            Error: ApprovalFailed
+            Cause: Approval workflow encountered an error
+
+          ProvisioningFailed:
+            Type: Fail
+            Error: ProvisioningFailed
+            Cause: Environment provisioning failed
+
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # API Gateway for Callback (Approval/Rejection)
+  # ==========================================================================
+  ApprovalCallbackApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${ProjectName}-test-env-approval-callback-${Environment}'
+      Description: 'API for test environment approval callbacks'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  ApprovalResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApprovalCallbackApi
+      ParentId: !GetAtt ApprovalCallbackApi.RootResourceId
+      PathPart: 'approval'
+
+  EnvironmentIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApprovalCallbackApi
+      ParentId: !Ref ApprovalResource
+      PathPart: '{environmentId}'
+
+  DecisionResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApprovalCallbackApi
+      ParentId: !Ref EnvironmentIdResource
+      PathPart: '{decision}'
+
+Outputs:
+  ApprovalStateMachineArn:
+    Description: HITL Approval Step Functions ARN
+    Value: !Ref ApprovalStateMachine
+    Export:
+      Name: !Sub '${AWS::StackName}-ApprovalStateMachineArn'
+
+  ApprovalStateMachineName:
+    Description: HITL Approval Step Functions name
+    Value: !GetAtt ApprovalStateMachine.Name
+    Export:
+      Name: !Sub '${AWS::StackName}-ApprovalStateMachineName'
+
+  RequestApprovalFunctionArn:
+    Description: Request approval Lambda ARN
+    Value: !GetAtt RequestApprovalFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RequestApprovalFunctionArn'
+
+  ProcessApprovalFunctionArn:
+    Description: Process approval Lambda ARN
+    Value: !GetAtt ProcessApprovalFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ProcessApprovalFunctionArn'
+
+  ProvisionEnvironmentFunctionArn:
+    Description: Provision environment Lambda ARN
+    Value: !GetAtt ProvisionEnvironmentFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ProvisionEnvironmentFunctionArn'
+
+  ApprovalCallbackApiId:
+    Description: API Gateway ID for approval callbacks
+    Value: !Ref ApprovalCallbackApi
+    Export:
+      Name: !Sub '${AWS::StackName}-ApprovalCallbackApiId'
+
+  ApprovalLogGroupArn:
+    Description: CloudWatch Log Group ARN for approval workflow
+    Value: !GetAtt ApprovalLogGroup.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ApprovalLogGroupArn'

@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project Aura - Current Design Mockup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              aura: {
+                50: "#EFF6FF",
+                100: "#DBEAFE",
+                200: "#BFDBFE",
+                300: "#93C5FD",
+                400: "#60A5FA",
+                500: "#3B82F6",
+                600: "#2563EB",
+                700: "#1D4ED8",
+                800: "#1E40AF",
+                900: "#1E3A8A",
+              },
+              olive: {
+                50: "#F7F9F3",
+                100: "#EDF2E4",
+                200: "#D9E4C8",
+                300: "#BFD1A3",
+                400: "#9FB87A",
+                500: "#7C9A3E",
+                600: "#6B8E23",
+                700: "#556B2F",
+                800: "#4A5D29",
+                900: "#3F4E23",
+              },
+              surface: {
+                50: "#F9FAFB",
+                100: "#F3F4F6",
+                200: "#E5E7EB",
+                300: "#D1D5DB",
+                400: "#9CA3AF",
+                500: "#6B7280",
+                600: "#4B5563",
+                700: "#374151",
+                800: "#1F2937",
+                900: "#111827",
+              },
+              critical: {
+                100: "#FEE2E2",
+                400: "#F87171",
+                700: "#B91C1C",
+              },
+              warning: {
+                100: "#FEF3C7",
+                400: "#FBBF24",
+                700: "#B45309",
+              },
+            },
+            fontFamily: {
+              sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
+              mono: ["JetBrains Mono", "monospace"],
+            },
+            boxShadow: {
+              card: "0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)",
+              "card-hover":
+                "0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05)",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+    </style>
+  </head>
+  <body class="bg-surface-50 text-surface-900 h-full flex flex-col antialiased">
+    <div
+      class="flex h-screen bg-surface-50 font-sans transition-colors duration-300"
+    >
+      <!-- Sidebar -->
+      <aside
+        class="w-64 bg-white border-r border-surface-200 flex flex-col h-full transform transition-transform duration-300 ease-in-out"
+      >
+        <div
+          class="flex items-center justify-between p-4 border-b border-surface-200"
+        >
+          <span
+            class="text-xl font-bold text-surface-900 flex items-center gap-2"
+          >
+            <div
+              class="w-8 h-8 bg-aura-500 rounded-lg flex items-center justify-center text-white"
+            >
+              A
+            </div>
+            Project Aura
+          </span>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto p-4 space-y-1">
+          <a
+            href="#"
+            class="flex items-center px-4 py-2.5 text-sm font-medium rounded-lg bg-aura-50 text-aura-700"
+          >
+            <svg
+              class="mr-3 h-5 w-5 text-aura-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              />
+            </svg>
+            Dashboard
+          </a>
+          <a
+            href="#"
+            class="flex items-center px-4 py-2.5 text-sm font-medium rounded-lg text-surface-700 hover:bg-surface-100 hover:text-surface-900"
+          >
+            <svg
+              class="mr-3 h-5 w-5 text-surface-400 group-hover:text-surface-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            My Approvals
+            <span
+              class="ml-auto bg-olive-100 text-olive-700 py-0.5 px-2.5 rounded-full text-xs font-medium"
+              >12</span
+            >
+          </a>
+          <a
+            href="#"
+            class="flex items-center px-4 py-2.5 text-sm font-medium rounded-lg text-surface-700 hover:bg-surface-100 hover:text-surface-900"
+          >
+            <svg
+              class="mr-3 h-5 w-5 text-surface-400 group-hover:text-surface-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            Incidents
+          </a>
+        </nav>
+
+        <div class="p-4 border-t border-surface-200">
+          <div class="flex items-center">
+            <div
+              class="h-8 w-8 rounded-full bg-surface-300 flex items-center justify-center text-sm font-medium text-surface-700"
+            >
+              JS
+            </div>
+            <div class="ml-3">
+              <p class="text-sm font-medium text-surface-900">John Smith</p>
+              <p class="text-xs text-surface-500">Security Engineer</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="flex-1 overflow-y-auto bg-surface-50 p-8">
+        <header class="mb-8 flex justify-between items-center">
+          <h1 class="text-2xl font-bold text-surface-900">
+            Security Dashboard
+          </h1>
+          <div class="flex gap-4">
+            <button
+              class="px-4 py-2 bg-white text-surface-700 border border-surface-300 rounded-lg text-sm font-medium hover:bg-surface-50"
+            >
+              Export Report
+            </button>
+            <button
+              class="px-4 py-2 bg-aura-500 text-white rounded-lg text-sm font-medium hover:bg-aura-600 shadow-sm"
+            >
+              Scan Now
+            </button>
+          </div>
+        </header>
+
+        <!-- Metric Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <!-- Metric 1 -->
+          <div
+            class="bg-white p-6 rounded-xl shadow-card hover:shadow-card-hover transition-all duration-200 border border-surface-200"
+          >
+            <div class="flex justify-between items-start mb-4">
+              <div
+                class="w-10 h-10 rounded-full bg-aura-50 flex items-center justify-center"
+              >
+                <svg
+                  class="w-6 h-6 text-aura-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </div>
+              <span
+                class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-olive-100 text-olive-800"
+              >
+                +12%
+              </span>
+            </div>
+            <div class="flex items-baseline">
+              <p class="text-3xl font-bold text-surface-900">98.5%</p>
+            </div>
+            <p class="mt-1 text-sm text-surface-500">System Health</p>
+          </div>
+
+          <!-- Metric 2 -->
+          <div
+            class="bg-white p-6 rounded-xl shadow-card hover:shadow-card-hover transition-all duration-200 border border-surface-200"
+          >
+            <div class="flex justify-between items-start mb-4">
+              <div
+                class="w-10 h-10 rounded-full bg-warning-100 flex items-center justify-center"
+              >
+                <svg
+                  class="w-6 h-6 text-warning-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  />
+                </svg>
+              </div>
+              <span
+                class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-surface-100 text-surface-800"
+              >
+                0%
+              </span>
+            </div>
+            <div class="flex items-baseline">
+              <p class="text-3xl font-bold text-surface-900">3</p>
+            </div>
+            <p class="mt-1 text-sm text-surface-500">Active Incidents</p>
+          </div>
+
+          <!-- Metric 3 -->
+          <div
+            class="bg-white p-6 rounded-xl shadow-card hover:shadow-card-hover transition-all duration-200 border border-surface-200"
+          >
+            <div class="flex justify-between items-start mb-4">
+              <div
+                class="w-10 h-10 rounded-full bg-olive-100 flex items-center justify-center"
+              >
+                <svg
+                  class="w-6 h-6 text-olive-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
+                </svg>
+              </div>
+              <span
+                class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-olive-100 text-olive-800"
+              >
+                +5%
+              </span>
+            </div>
+            <div class="flex items-baseline">
+              <p class="text-3xl font-bold text-surface-900">24</p>
+            </div>
+            <p class="mt-1 text-sm text-surface-500">Agents Active</p>
+          </div>
+
+          <!-- Metric 4 -->
+          <div
+            class="bg-white p-6 rounded-xl shadow-card hover:shadow-card-hover transition-all duration-200 border border-surface-200"
+          >
+            <div class="flex justify-between items-start mb-4">
+              <div
+                class="w-10 h-10 rounded-full bg-aura-50 flex items-center justify-center"
+              >
+                <svg
+                  class="w-6 h-6 text-aura-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div class="flex items-baseline">
+              <p class="text-3xl font-bold text-surface-900">142</p>
+            </div>
+            <p class="mt-1 text-sm text-surface-500">Files Scanned Today</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <!-- Chart Area -->
+          <div
+            class="lg:col-span-2 bg-white rounded-xl shadow-card border border-surface-200 p-6"
+          >
+            <h3 class="text-lg font-semibold text-surface-900 mb-4">
+              Vulnerability Trends
+            </h3>
+            <div class="h-64 flex items-end space-x-2">
+              <!-- Mock Chart Bars -->
+              <div
+                class="bg-aura-100 w-full rounded-t-sm h-[40%] hover:bg-aura-200 transition-colors relative group"
+              >
+                <div
+                  class="absolute bottom-0 w-full bg-aura-500 h-[60%] rounded-t-sm"
+                ></div>
+              </div>
+              <div
+                class="bg-aura-100 w-full rounded-t-sm h-[60%] hover:bg-aura-200 transition-colors relative group"
+              >
+                <div
+                  class="absolute bottom-0 w-full bg-aura-500 h-[40%] rounded-t-sm"
+                ></div>
+              </div>
+              <div
+                class="bg-aura-100 w-full rounded-t-sm h-[50%] hover:bg-aura-200 transition-colors relative group"
+              >
+                <div
+                  class="absolute bottom-0 w-full bg-aura-500 h-[70%] rounded-t-sm"
+                ></div>
+              </div>
+              <div
+                class="bg-aura-100 w-full rounded-t-sm h-[70%] hover:bg-aura-200 transition-colors relative group"
+              >
+                <div
+                  class="absolute bottom-0 w-full bg-aura-500 h-[30%] rounded-t-sm"
+                ></div>
+              </div>
+              <div
+                class="bg-aura-100 w-full rounded-t-sm h-[80%] hover:bg-aura-200 transition-colors relative group"
+              >
+                <div
+                  class="absolute bottom-0 w-full bg-aura-500 h-[50%] rounded-t-sm"
+                ></div>
+              </div>
+              <div
+                class="bg-aura-100 w-full rounded-t-sm h-[45%] hover:bg-aura-200 transition-colors relative group"
+              >
+                <div
+                  class="absolute bottom-0 w-full bg-aura-500 h-[20%] rounded-t-sm"
+                ></div>
+              </div>
+              <div
+                class="bg-aura-100 w-full rounded-t-sm h-[65%] hover:bg-aura-200 transition-colors relative group"
+              >
+                <div
+                  class="absolute bottom-0 w-full bg-aura-500 h-[40%] rounded-t-sm"
+                ></div>
+              </div>
+            </div>
+            <div class="flex justify-between mt-4 text-xs text-surface-500">
+              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span
+              ><span>Fri</span><span>Sat</span><span>Sun</span>
+            </div>
+          </div>
+
+          <!-- Activity Feed -->
+          <div
+            class="bg-white rounded-xl shadow-card border border-surface-200 p-6"
+          >
+            <h3 class="text-lg font-semibold text-surface-900 mb-4">
+              Recent Activity
+            </h3>
+            <div class="space-y-4">
+              <div class="flex items-start gap-3">
+                <div
+                  class="w-8 h-8 rounded-full bg-critical-100 flex items-center justify-center flex-shrink-0"
+                >
+                  <svg
+                    class="w-4 h-4 text-critical-700"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-surface-900">
+                    SQL Injection Detected
+                  </p>
+                  <p class="text-xs text-surface-500">In auth/login.py</p>
+                  <p class="text-xs text-surface-400 mt-1">2 mins ago</p>
+                </div>
+              </div>
+
+              <div class="flex items-start gap-3">
+                <div
+                  class="w-8 h-8 rounded-full bg-olive-100 flex items-center justify-center flex-shrink-0"
+                >
+                  <svg
+                    class="w-4 h-4 text-olive-700"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-surface-900">
+                    Patch Deployed
+                  </p>
+                  <p class="text-xs text-surface-500">XSS Fix in Header</p>
+                  <p class="text-xs text-surface-400 mt-1">15 mins ago</p>
+                </div>
+              </div>
+
+              <div class="flex items-start gap-3">
+                <div
+                  class="w-8 h-8 rounded-full bg-aura-100 flex items-center justify-center flex-shrink-0"
+                >
+                  <svg
+                    class="w-4 h-4 text-aura-700"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-surface-900">
+                    Scan Started
+                  </p>
+                  <p class="text-xs text-surface-500">Daily routine scan</p>
+                  <p class="text-xs text-surface-400 mt-1">1 hour ago</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

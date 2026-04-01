@@ -1,0 +1,216 @@
+# Project Aura - Resource Quotas and Limit Ranges
+#
+# Defines resource boundaries for self-hosted Kubernetes deployments.
+# Prevents resource exhaustion and ensures fair allocation.
+#
+# ADR-049 Phase 0 - Self-Hosted Deployment
+#
+---
+# Main application namespace quota
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: aura-quota
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: resource-quota
+    app.kubernetes.io/component: governance
+    app.kubernetes.io/part-of: aura
+spec:
+  hard:
+    requests.cpu: "50"
+    requests.memory: "100Gi"
+    limits.cpu: "100"
+    limits.memory: "200Gi"
+    pods: "100"
+    persistentvolumeclaims: "20"
+    services: "20"
+    secrets: "50"
+    configmaps: "50"
+
+---
+# Database namespace quota
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: aura-data-quota
+  namespace: aura-data
+  labels:
+    app.kubernetes.io/name: resource-quota
+    app.kubernetes.io/component: governance
+    app.kubernetes.io/part-of: aura
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: "100Gi"
+    limits.cpu: "40"
+    limits.memory: "200Gi"
+    pods: "30"
+    persistentvolumeclaims: "20"
+    requests.storage: "2Ti"
+
+---
+# LLM namespace quota (with GPU limits)
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: aura-llm-quota
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: resource-quota
+    app.kubernetes.io/component: governance
+    app.kubernetes.io/part-of: aura
+spec:
+  hard:
+    requests.cpu: "50"
+    requests.memory: "200Gi"
+    limits.cpu: "100"
+    limits.memory: "400Gi"
+    pods: "20"
+    # GPU limits (uncomment if using NVIDIA GPUs)
+    # requests.nvidia.com/gpu: "8"
+    # limits.nvidia.com/gpu: "8"
+
+---
+# Monitoring namespace quota
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: aura-monitoring-quota
+  namespace: aura-monitoring
+  labels:
+    app.kubernetes.io/name: resource-quota
+    app.kubernetes.io/component: governance
+    app.kubernetes.io/part-of: aura
+spec:
+  hard:
+    requests.cpu: "10"
+    requests.memory: "20Gi"
+    limits.cpu: "20"
+    limits.memory: "40Gi"
+    pods: "30"
+    persistentvolumeclaims: "10"
+    requests.storage: "500Gi"
+
+---
+# Limit Range for aura namespace
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: aura-limits
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: limit-range
+    app.kubernetes.io/component: governance
+    app.kubernetes.io/part-of: aura
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      min:
+        cpu: "10m"
+        memory: "32Mi"
+      max:
+        cpu: "4"
+        memory: "16Gi"
+    - type: PersistentVolumeClaim
+      min:
+        storage: "1Gi"
+      max:
+        storage: "100Gi"
+
+---
+# Limit Range for aura-data namespace (higher limits for databases)
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: aura-data-limits
+  namespace: aura-data
+  labels:
+    app.kubernetes.io/name: limit-range
+    app.kubernetes.io/component: governance
+    app.kubernetes.io/part-of: aura
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "1"
+        memory: "2Gi"
+      defaultRequest:
+        cpu: "500m"
+        memory: "1Gi"
+      min:
+        cpu: "100m"
+        memory: "256Mi"
+      max:
+        cpu: "8"
+        memory: "64Gi"
+    - type: PersistentVolumeClaim
+      min:
+        storage: "10Gi"
+      max:
+        storage: "500Gi"
+
+---
+# Limit Range for aura-llm namespace (high memory for LLM inference)
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: aura-llm-limits
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: limit-range
+    app.kubernetes.io/component: governance
+    app.kubernetes.io/part-of: aura
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "2"
+        memory: "8Gi"
+      defaultRequest:
+        cpu: "1"
+        memory: "4Gi"
+      min:
+        cpu: "100m"
+        memory: "512Mi"
+      max:
+        cpu: "16"
+        memory: "128Gi"
+
+---
+# Limit Range for aura-monitoring namespace
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: aura-monitoring-limits
+  namespace: aura-monitoring
+  labels:
+    app.kubernetes.io/name: limit-range
+    app.kubernetes.io/component: governance
+    app.kubernetes.io/part-of: aura
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "256Mi"
+      min:
+        cpu: "10m"
+        memory: "64Mi"
+      max:
+        cpu: "4"
+        memory: "16Gi"
+    - type: PersistentVolumeClaim
+      min:
+        storage: "1Gi"
+      max:
+        storage: "200Gi"

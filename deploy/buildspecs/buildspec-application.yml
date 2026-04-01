@@ -1,0 +1,1049 @@
+version: 0.2
+
+# Application Layer BuildSpec (Layer 4)
+# Purpose: Deploy application-tier resources (ECR repos, Bedrock, Cognito, K8s deployments)
+# Includes: Agent Orchestrator, Frontend, and Memory Service ECR repos for Docker builds
+# NOT related to: buildspec-coordinator.yml (CI/CD deployment coordinator)
+# Depends on: Layer 3 (Compute) - EKS cluster must exist
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+# Use bash shell for [[ ]] conditionals and other bash-specific features
+run-as: root
+
+env:
+  shell: bash
+  variables:
+    DNSMASQ_IMAGE_TAG: "v1.0.1"
+    KUBECTL_VERSION: "v1.34.0"
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint and kubectl..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint
+      - echo "Installing kubectl ${KUBECTL_VERSION}..."
+      - curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+      - chmod +x kubectl && mv kubectl /usr/local/bin/
+      # Configure ECR credential helper (eliminates password storage warnings)
+      - chmod +x deploy/scripts/configure-ecr-credential-helper.sh
+      - ./deploy/scripts/configure-ecr-credential-helper.sh
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Application Layer Deployment"
+      - echo "=========================================="
+
+      # Validate templates (warnings don't block deployment)
+      - echo "Validating application layer templates..."
+      - cfn-lint deploy/cloudformation/aura-bedrock-infrastructure.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/ecr-dnsmasq.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/ecr-api.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/irsa-aura-api.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/cognito.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/bedrock-guardrails.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/ecr-agent-orchestrator.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/ecr-frontend.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/ecr-memory-service.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/ecr-meta-orchestrator.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/ecr-runtime-incident-agent.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/onboarding.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/gpu-scheduler-irsa.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/env-validator-irsa.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/iam-diagram-service.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/diagram-service-ssm.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+
+      # Get dependency stack outputs
+      - echo "Retrieving dependency stack outputs..."
+      - NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+      - |
+        VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "VPC ID: $VPC_ID"
+
+  build:
+    commands:
+      # Generate deployment timestamp for forcing stack updates
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # ============================================
+      # PHASE 1: Deploy ECR Repository and Build Container
+      # ============================================
+      - |
+        echo "Deploying ECR Repository Stack..."
+        ECR_STACK="${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT}"
+
+        # Check if stack exists to determine create vs update
+        STACK_EXISTS=false
+        if aws cloudformation describe-stacks --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          STACK_EXISTS=true
+          echo "ECR stack exists, checking if update needed..."
+        else
+          echo "ECR stack does not exist, creating..."
+        fi
+
+        # Create or update the ECR stack
+        UPDATE_RESULT=0
+        if [ "$STACK_EXISTS" = "true" ]; then
+          # Try update - capture result to check if update was needed
+          if aws cloudformation update-stack \
+            --stack-name $ECR_STACK \
+            --template-body file://deploy/cloudformation/ecr-dnsmasq.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1; then
+            echo "ECR stack update initiated, waiting..."
+            aws cloudformation wait stack-update-complete --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION
+          else
+            echo "ECR stack already up-to-date (no changes needed)"
+          fi
+        else
+          # Create new stack
+          aws cloudformation create-stack \
+            --stack-name $ECR_STACK \
+            --template-body file://deploy/cloudformation/ecr-dnsmasq.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          echo "ECR stack creation initiated, waiting..."
+          aws cloudformation wait stack-create-complete --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+        # Verify stack is ready and get Repository URI
+        echo "Verifying ECR stack status..."
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $ECR_STACK \
+          --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION)
+        echo "ECR Stack Status: $STACK_STATUS"
+
+        if [[ "$STACK_STATUS" != "CREATE_COMPLETE" && "$STACK_STATUS" != "UPDATE_COMPLETE" ]]; then
+          echo "ERROR: ECR stack is not ready (status: $STACK_STATUS)"
+          exit 1
+        fi
+
+        # Get ECR Repository URI
+        ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $ECR_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "ECR Repository URI: $ECR_REPO_URI"
+
+        if [[ -z "$ECR_REPO_URI" || "$ECR_REPO_URI" == "None" ]]; then
+          echo "ERROR: Failed to get ECR Repository URI"
+          exit 1
+        fi
+
+        # Get base image URI from ECR Base Images stack (with fallback to public ECR)
+        echo "Getting Alpine base image URI..."
+        BASE_IMAGES_STACK="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
+        BASE_IMAGE_URI_RAW=$(aws cloudformation describe-stacks --stack-name $BASE_IMAGES_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`AlpineRepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        # Fallback to public ECR if private base image is not available or has wrong architecture
+        USE_FALLBACK=false
+        if [[ -z "$BASE_IMAGE_URI_RAW" || "$BASE_IMAGE_URI_RAW" == "None" ]]; then
+          echo "Private ECR base image not found, using public ECR fallback..."
+          USE_FALLBACK=true
+        else
+          BASE_IMAGE_URI="${BASE_IMAGE_URI_RAW}:3.19"
+          # Verify architecture of private ECR image (must be amd64 for CodeBuild)
+          echo "Verifying base image architecture..."
+          docker pull --platform linux/amd64 "${BASE_IMAGE_URI}" 2>/dev/null || USE_FALLBACK=true
+          if [ "$USE_FALLBACK" = "false" ]; then
+            ARCH=$(docker inspect "${BASE_IMAGE_URI}" --format '{{.Architecture}}' 2>/dev/null || echo "unknown")
+            echo "Base image architecture: $ARCH"
+            if [[ "$ARCH" != "amd64" && "$ARCH" != "x86_64" ]]; then
+              echo "WARNING: Private ECR base image has wrong architecture ($ARCH), using public ECR fallback..."
+              USE_FALLBACK=true
+            fi
+          fi
+        fi
+
+        if [ "$USE_FALLBACK" = "true" ]; then
+          BASE_IMAGE_URI="public.ecr.aws/docker/library/alpine:3.19"
+          echo "Using fallback base image: $BASE_IMAGE_URI"
+        fi
+        echo "Base Image URI: $BASE_IMAGE_URI"
+
+        # Build dnsmasq container image (explicit --platform to ensure amd64)
+        echo "Building dnsmasq container image..."
+        FULL_IMAGE_URI="${ECR_REPO_URI}:${DNSMASQ_IMAGE_TAG}"
+        echo "Image URI: $FULL_IMAGE_URI"
+
+        docker build \
+          --platform linux/amd64 \
+          --build-arg BASE_IMAGE_URI=${BASE_IMAGE_URI} \
+          -t ${PROJECT_NAME}-dnsmasq:${DNSMASQ_IMAGE_TAG} \
+          -t ${FULL_IMAGE_URI} \
+          -f deploy/docker/dnsmasq/Dockerfile \
+          deploy/docker/dnsmasq/
+
+        # Push to ECR
+        echo "Pushing dnsmasq image to ECR..."
+        docker push ${FULL_IMAGE_URI}
+        echo "Image pushed successfully: ${FULL_IMAGE_URI}"
+
+      # ============================================
+      # PHASE 2: Get or Deploy ECR API Repository
+      # ============================================
+      - |
+        echo "Checking ECR API Repository..."
+        API_ECR_STACK="${PROJECT_NAME}-ecr-api-${ENVIRONMENT}"
+        API_REPO_NAME="${PROJECT_NAME}-api-${ENVIRONMENT}"
+
+        # First check if repository already exists (may have been created outside CloudFormation)
+        API_ECR_REPO_URI=$(aws ecr describe-repositories --repository-names $API_REPO_NAME \
+          --query 'repositories[0].repositoryUri' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        if [[ -n "$API_ECR_REPO_URI" && "$API_ECR_REPO_URI" != "None" ]]; then
+          echo "ECR repository already exists: $API_ECR_REPO_URI"
+          echo "Skipping CloudFormation stack creation to avoid AlreadyExists error"
+
+          # Clean up any failed CloudFormation stack for this repository
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $API_ECR_STACK \
+            --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+          if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "CREATE_FAILED" ]]; then
+            echo "Cleaning up failed CloudFormation stack ($STACK_STATUS)..."
+            aws cloudformation delete-stack --stack-name $API_ECR_STACK --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $API_ECR_STACK --region $AWS_DEFAULT_REGION
+            echo "Failed stack cleaned up"
+          fi
+        else
+          echo "ECR repository not found, deploying via CloudFormation..."
+
+          # Check if stack exists and is in a usable state
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $API_ECR_STACK \
+            --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+          echo "Current stack status: $STACK_STATUS"
+
+          # Handle failed stacks - delete before recreating
+          if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "CREATE_FAILED" || "$STACK_STATUS" == "DELETE_FAILED" ]]; then
+            echo "Stack is in failed state ($STACK_STATUS), deleting before recreating..."
+            aws cloudformation delete-stack --stack-name $API_ECR_STACK --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $API_ECR_STACK --region $AWS_DEFAULT_REGION
+            STACK_STATUS="DOES_NOT_EXIST"
+          fi
+
+          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            if aws cloudformation update-stack \
+              --stack-name $API_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-api.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager 2>&1; then
+              echo "API ECR stack update initiated, waiting..."
+              aws cloudformation wait stack-update-complete --stack-name $API_ECR_STACK --region $AWS_DEFAULT_REGION
+            else
+              echo "API ECR stack already up-to-date (no changes needed)"
+            fi
+          else
+            aws cloudformation create-stack \
+              --stack-name $API_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-api.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager
+            echo "API ECR stack creation initiated, waiting..."
+            aws cloudformation wait stack-create-complete --stack-name $API_ECR_STACK --region $AWS_DEFAULT_REGION
+          fi
+
+          # Get API ECR Repository URI from CloudFormation
+          API_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $API_ECR_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        fi
+        echo "API ECR Repository URI: $API_ECR_REPO_URI"
+
+      # ============================================
+      # PHASE 2.5: Deploy ECR Agent Orchestrator Repository
+      # ============================================
+      # Note: "Agent Orchestrator" is the multi-agent coordinator service (Coder/Reviewer/Validator)
+      # NOT related to buildspec-coordinator.yml which is the CI/CD deployment coordinator
+      - |
+        echo "Checking ECR Agent Orchestrator Repository..."
+        AGENT_ORCH_ECR_STACK="${PROJECT_NAME}-ecr-agent-orchestrator-${ENVIRONMENT}"
+        AGENT_ORCH_REPO_NAME="${PROJECT_NAME}-agent-orchestrator-${ENVIRONMENT}"
+
+        # First check if repository already exists (may have been created outside CloudFormation)
+        AGENT_ORCH_ECR_REPO_URI=$(aws ecr describe-repositories --repository-names $AGENT_ORCH_REPO_NAME \
+          --query 'repositories[0].repositoryUri' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        if [[ -n "$AGENT_ORCH_ECR_REPO_URI" && "$AGENT_ORCH_ECR_REPO_URI" != "None" ]]; then
+          echo "ECR repository already exists: $AGENT_ORCH_ECR_REPO_URI"
+          echo "Skipping CloudFormation stack creation to avoid AlreadyExists error"
+
+          # Clean up any failed CloudFormation stack for this repository
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $AGENT_ORCH_ECR_STACK \
+            --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+          if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "CREATE_FAILED" ]]; then
+            echo "Cleaning up failed CloudFormation stack ($STACK_STATUS)..."
+            aws cloudformation delete-stack --stack-name $AGENT_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $AGENT_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
+            echo "Failed stack cleaned up"
+          fi
+        else
+          echo "ECR repository not found, deploying via CloudFormation..."
+
+          # Check if stack exists and is in a usable state
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $AGENT_ORCH_ECR_STACK \
+            --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+          echo "Current stack status: $STACK_STATUS"
+
+          # Handle failed stacks - delete before recreating
+          if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "CREATE_FAILED" || "$STACK_STATUS" == "DELETE_FAILED" ]]; then
+            echo "Stack is in failed state ($STACK_STATUS), deleting before recreating..."
+            aws cloudformation delete-stack --stack-name $AGENT_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $AGENT_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
+            STACK_STATUS="DOES_NOT_EXIST"
+          fi
+
+          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            if aws cloudformation update-stack \
+              --stack-name $AGENT_ORCH_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-agent-orchestrator.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager 2>&1; then
+              echo "Agent Orchestrator ECR stack update initiated, waiting..."
+              aws cloudformation wait stack-update-complete --stack-name $AGENT_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
+            else
+              echo "Agent Orchestrator ECR stack already up-to-date (no changes needed)"
+            fi
+          else
+            aws cloudformation create-stack \
+              --stack-name $AGENT_ORCH_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-agent-orchestrator.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager
+            echo "Agent Orchestrator ECR stack creation initiated, waiting..."
+            aws cloudformation wait stack-create-complete --stack-name $AGENT_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
+          fi
+
+          # Get Agent Orchestrator ECR Repository URI from CloudFormation
+          AGENT_ORCH_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $AGENT_ORCH_ECR_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        fi
+        echo "Agent Orchestrator ECR Repository URI: $AGENT_ORCH_ECR_REPO_URI"
+
+      # ============================================
+      # PHASE 2.6: Deploy ECR Frontend Repository
+      # ============================================
+      - |
+        echo "Checking ECR Frontend Repository..."
+        FRONTEND_ECR_STACK="${PROJECT_NAME}-ecr-frontend-${ENVIRONMENT}"
+        FRONTEND_REPO_NAME="${PROJECT_NAME}-frontend-${ENVIRONMENT}"
+
+        FRONTEND_ECR_REPO_URI=$(aws ecr describe-repositories --repository-names $FRONTEND_REPO_NAME \
+          --query 'repositories[0].repositoryUri' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        if [[ -n "$FRONTEND_ECR_REPO_URI" && "$FRONTEND_ECR_REPO_URI" != "None" ]]; then
+          echo "ECR repository already exists: $FRONTEND_ECR_REPO_URI"
+        else
+          echo "ECR repository not found, deploying via CloudFormation..."
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $FRONTEND_ECR_STACK \
+            --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+
+          if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "CREATE_FAILED" || "$STACK_STATUS" == "DELETE_FAILED" ]]; then
+            echo "Stack is in failed state ($STACK_STATUS), deleting before recreating..."
+            aws cloudformation delete-stack --stack-name $FRONTEND_ECR_STACK --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $FRONTEND_ECR_STACK --region $AWS_DEFAULT_REGION
+            STACK_STATUS="DOES_NOT_EXIST"
+          fi
+
+          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            aws cloudformation update-stack \
+              --stack-name $FRONTEND_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-frontend.yaml \
+              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
+              --region $AWS_DEFAULT_REGION --no-cli-pager 2>&1 || echo "Frontend ECR stack already up-to-date"
+            aws cloudformation wait stack-update-complete --stack-name $FRONTEND_ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null || true
+          else
+            aws cloudformation create-stack \
+              --stack-name $FRONTEND_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-frontend.yaml \
+              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
+              --region $AWS_DEFAULT_REGION --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $FRONTEND_ECR_STACK --region $AWS_DEFAULT_REGION
+          fi
+          FRONTEND_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $FRONTEND_ECR_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        fi
+        echo "Frontend ECR Repository URI: $FRONTEND_ECR_REPO_URI"
+
+      # ============================================
+      # PHASE 2.7: Deploy ECR Memory Service Repository
+      # ============================================
+      - |
+        echo "Checking ECR Memory Service Repository..."
+        MEMORY_ECR_STACK="${PROJECT_NAME}-ecr-memory-service-${ENVIRONMENT}"
+        MEMORY_REPO_NAME="${PROJECT_NAME}-memory-service-${ENVIRONMENT}"
+
+        MEMORY_ECR_REPO_URI=$(aws ecr describe-repositories --repository-names $MEMORY_REPO_NAME \
+          --query 'repositories[0].repositoryUri' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        if [[ -n "$MEMORY_ECR_REPO_URI" && "$MEMORY_ECR_REPO_URI" != "None" ]]; then
+          echo "ECR repository already exists: $MEMORY_ECR_REPO_URI"
+        else
+          echo "ECR repository not found, deploying via CloudFormation..."
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $MEMORY_ECR_STACK \
+            --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+
+          if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "CREATE_FAILED" || "$STACK_STATUS" == "DELETE_FAILED" ]]; then
+            echo "Stack is in failed state ($STACK_STATUS), deleting before recreating..."
+            aws cloudformation delete-stack --stack-name $MEMORY_ECR_STACK --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $MEMORY_ECR_STACK --region $AWS_DEFAULT_REGION
+            STACK_STATUS="DOES_NOT_EXIST"
+          fi
+
+          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            aws cloudformation update-stack \
+              --stack-name $MEMORY_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-memory-service.yaml \
+              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
+              --region $AWS_DEFAULT_REGION --no-cli-pager 2>&1 || echo "Memory Service ECR stack already up-to-date"
+            aws cloudformation wait stack-update-complete --stack-name $MEMORY_ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null || true
+          else
+            aws cloudformation create-stack \
+              --stack-name $MEMORY_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-memory-service.yaml \
+              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
+              --region $AWS_DEFAULT_REGION --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $MEMORY_ECR_STACK --region $AWS_DEFAULT_REGION
+          fi
+          MEMORY_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $MEMORY_ECR_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        fi
+        echo "Memory Service ECR Repository URI: $MEMORY_ECR_REPO_URI"
+
+      # ============================================
+      # PHASE 2.8: Deploy ECR Meta Orchestrator Repository
+      # ============================================
+      - |
+        echo "Checking ECR Meta Orchestrator Repository..."
+        META_ORCH_ECR_STACK="${PROJECT_NAME}-ecr-meta-orchestrator-${ENVIRONMENT}"
+        META_ORCH_REPO_NAME="${PROJECT_NAME}-meta-orchestrator-${ENVIRONMENT}"
+
+        META_ORCH_ECR_REPO_URI=$(aws ecr describe-repositories --repository-names $META_ORCH_REPO_NAME \
+          --query 'repositories[0].repositoryUri' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        if [[ -n "$META_ORCH_ECR_REPO_URI" && "$META_ORCH_ECR_REPO_URI" != "None" ]]; then
+          echo "ECR repository already exists: $META_ORCH_ECR_REPO_URI"
+        else
+          echo "ECR repository not found, deploying via CloudFormation..."
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $META_ORCH_ECR_STACK \
+            --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+
+          if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "CREATE_FAILED" || "$STACK_STATUS" == "DELETE_FAILED" ]]; then
+            echo "Stack is in failed state ($STACK_STATUS), deleting before recreating..."
+            aws cloudformation delete-stack --stack-name $META_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $META_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
+            STACK_STATUS="DOES_NOT_EXIST"
+          fi
+
+          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            aws cloudformation update-stack \
+              --stack-name $META_ORCH_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-meta-orchestrator.yaml \
+              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
+              --region $AWS_DEFAULT_REGION --no-cli-pager 2>&1 || echo "Meta Orchestrator ECR stack already up-to-date"
+            aws cloudformation wait stack-update-complete --stack-name $META_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null || true
+          else
+            aws cloudformation create-stack \
+              --stack-name $META_ORCH_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-meta-orchestrator.yaml \
+              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
+              --region $AWS_DEFAULT_REGION --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $META_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
+          fi
+          META_ORCH_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $META_ORCH_ECR_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        fi
+        echo "Meta Orchestrator ECR Repository URI: $META_ORCH_ECR_REPO_URI"
+
+      # ============================================
+      # PHASE 2.9: Deploy ECR Runtime Incident Agent Repository
+      # ============================================
+      # Note: This repository does not have environment suffix (historical naming)
+      - |
+        echo "Checking ECR Runtime Incident Agent Repository..."
+        INCIDENT_AGENT_ECR_STACK="${PROJECT_NAME}-ecr-runtime-incident-agent-${ENVIRONMENT}"
+        INCIDENT_AGENT_REPO_NAME="${PROJECT_NAME}-runtime-incident-agent"
+
+        INCIDENT_AGENT_ECR_REPO_URI=$(aws ecr describe-repositories --repository-names $INCIDENT_AGENT_REPO_NAME \
+          --query 'repositories[0].repositoryUri' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        if [[ -n "$INCIDENT_AGENT_ECR_REPO_URI" && "$INCIDENT_AGENT_ECR_REPO_URI" != "None" ]]; then
+          echo "ECR repository already exists: $INCIDENT_AGENT_ECR_REPO_URI"
+        else
+          echo "ECR repository not found, deploying via CloudFormation..."
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $INCIDENT_AGENT_ECR_STACK \
+            --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+
+          if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "CREATE_FAILED" || "$STACK_STATUS" == "DELETE_FAILED" ]]; then
+            echo "Stack is in failed state ($STACK_STATUS), deleting before recreating..."
+            aws cloudformation delete-stack --stack-name $INCIDENT_AGENT_ECR_STACK --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $INCIDENT_AGENT_ECR_STACK --region $AWS_DEFAULT_REGION
+            STACK_STATUS="DOES_NOT_EXIST"
+          fi
+
+          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            aws cloudformation update-stack \
+              --stack-name $INCIDENT_AGENT_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-runtime-incident-agent.yaml \
+              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
+              --region $AWS_DEFAULT_REGION --no-cli-pager 2>&1 || echo "Runtime Incident Agent ECR stack already up-to-date"
+            aws cloudformation wait stack-update-complete --stack-name $INCIDENT_AGENT_ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null || true
+          else
+            aws cloudformation create-stack \
+              --stack-name $INCIDENT_AGENT_ECR_STACK \
+              --template-body file://deploy/cloudformation/ecr-runtime-incident-agent.yaml \
+              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
+              --region $AWS_DEFAULT_REGION --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $INCIDENT_AGENT_ECR_STACK --region $AWS_DEFAULT_REGION
+          fi
+          INCIDENT_AGENT_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $INCIDENT_AGENT_ECR_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        fi
+        echo "Runtime Incident Agent ECR Repository URI: $INCIDENT_AGENT_ECR_REPO_URI"
+
+      # ============================================
+      # PHASE 3: Deploy Bedrock Infrastructure
+      # ============================================
+      - |
+        echo "Deploying Bedrock Infrastructure Stack..."
+        BEDROCK_STACK="${PROJECT_NAME}-bedrock-infrastructure-${ENVIRONMENT}"
+
+        BEDROCK_STACK_EXISTS=false
+        if aws cloudformation describe-stacks --stack-name $BEDROCK_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          BEDROCK_STACK_EXISTS=true
+          echo "Bedrock stack exists, checking if update needed..."
+        else
+          echo "Bedrock stack does not exist, creating..."
+        fi
+
+        if [ "$BEDROCK_STACK_EXISTS" = "true" ]; then
+          if aws cloudformation update-stack \
+            --stack-name $BEDROCK_STACK \
+            --template-body file://deploy/cloudformation/aura-bedrock-infrastructure.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1; then
+            echo "Bedrock stack update initiated, waiting..."
+            aws cloudformation wait stack-update-complete --stack-name $BEDROCK_STACK --region $AWS_DEFAULT_REGION
+          else
+            echo "Bedrock stack already up-to-date (no changes needed)"
+          fi
+        else
+          aws cloudformation create-stack \
+            --stack-name $BEDROCK_STACK \
+            --template-body file://deploy/cloudformation/aura-bedrock-infrastructure.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          echo "Bedrock stack creation initiated, waiting..."
+          aws cloudformation wait stack-create-complete --stack-name $BEDROCK_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+        echo "Bedrock stack ready"
+
+      # ============================================
+      # PHASE 3.1: Deploy Cognito User Authentication
+      # ============================================
+      - |
+        echo "Deploying Cognito User Pool..."
+        COGNITO_STACK="${PROJECT_NAME}-cognito-${ENVIRONMENT}"
+
+        COGNITO_STACK_EXISTS=false
+        if aws cloudformation describe-stacks --stack-name $COGNITO_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          COGNITO_STACK_EXISTS=true
+          echo "Cognito stack exists, checking if update needed..."
+        else
+          echo "Cognito stack does not exist, creating..."
+        fi
+
+        if [ "$COGNITO_STACK_EXISTS" = "true" ]; then
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $COGNITO_STACK \
+            --template-body file://deploy/cloudformation/cognito.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=DomainName,ParameterValue=aenealabs.com \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $COGNITO_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "Cognito stack already up-to-date (no changes needed)"
+          else
+            echo "Cognito stack update output: $OUTPUT"
+          fi
+        else
+          aws cloudformation create-stack \
+            --stack-name $COGNITO_STACK \
+            --template-body file://deploy/cloudformation/cognito.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=DomainName,ParameterValue=aenealabs.com \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          echo "Cognito stack creation initiated, waiting..."
+          aws cloudformation wait stack-create-complete --stack-name $COGNITO_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+        echo "Cognito stack ready"
+
+      # ============================================
+      # PHASE 3.2: Deploy Bedrock Guardrails
+      # ============================================
+      - |
+        echo "Deploying Bedrock Guardrails..."
+        GUARDRAILS_STACK="${PROJECT_NAME}-bedrock-guardrails-${ENVIRONMENT}"
+
+        GUARDRAILS_STACK_EXISTS=false
+        if aws cloudformation describe-stacks --stack-name $GUARDRAILS_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          GUARDRAILS_STACK_EXISTS=true
+          echo "Guardrails stack exists, checking if update needed..."
+        else
+          echo "Guardrails stack does not exist, creating..."
+        fi
+
+        if [ "$GUARDRAILS_STACK_EXISTS" = "true" ]; then
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $GUARDRAILS_STACK \
+            --template-body file://deploy/cloudformation/bedrock-guardrails.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=EnablePIIFiltering,ParameterValue=true \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $GUARDRAILS_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "Guardrails stack already up-to-date (no changes needed)"
+          else
+            echo "Guardrails stack update output: $OUTPUT"
+          fi
+        else
+          aws cloudformation create-stack \
+            --stack-name $GUARDRAILS_STACK \
+            --template-body file://deploy/cloudformation/bedrock-guardrails.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=EnablePIIFiltering,ParameterValue=true \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          echo "Guardrails stack creation initiated, waiting..."
+          aws cloudformation wait stack-create-complete --stack-name $GUARDRAILS_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+        echo "Bedrock Guardrails stack ready"
+
+      # ============================================
+      # PHASE 3.3: Deploy Customer Onboarding (ADR-047)
+      # ============================================
+      - |
+        echo "Deploying Customer Onboarding Infrastructure..."
+        ONBOARDING_STACK="${PROJECT_NAME}-onboarding-${ENVIRONMENT}"
+
+        aws cloudformation deploy \
+          --stack-name $ONBOARDING_STACK \
+          --template-file deploy/cloudformation/onboarding.yaml \
+          --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=4.10 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+
+        echo "Customer Onboarding stack ready"
+
+      # ============================================
+      # PHASE 3.5: Deploy IRSA for aura-api
+      # ============================================
+      - |
+        echo "Deploying IRSA (IAM Roles for Service Accounts)..."
+        IRSA_STACK="${PROJECT_NAME}-irsa-api-${ENVIRONMENT}"
+
+        # Get OIDC provider info from EKS cluster
+        CLUSTER_NAME="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+        OIDC_URL=$(aws eks describe-cluster --name $CLUSTER_NAME \
+          --query "cluster.identity.oidc.issuer" --output text --region $AWS_DEFAULT_REGION)
+        OIDC_PROVIDER_URL=$(echo $OIDC_URL | sed 's|https://||')
+        OIDC_PROVIDER_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER_URL}"
+
+        echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
+        echo "OIDC Provider URL: $OIDC_PROVIDER_URL"
+
+        IRSA_STACK_EXISTS=false
+        if aws cloudformation describe-stacks --stack-name $IRSA_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          IRSA_STACK_EXISTS=true
+          echo "IRSA stack exists, checking if update needed..."
+        else
+          echo "IRSA stack does not exist, creating..."
+        fi
+
+        if [ "$IRSA_STACK_EXISTS" = "true" ]; then
+          if aws cloudformation update-stack \
+            --stack-name $IRSA_STACK \
+            --template-body file://deploy/cloudformation/irsa-aura-api.yaml \
+            --parameters \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=OIDCProviderArn,ParameterValue="$OIDC_PROVIDER_ARN" \
+              ParameterKey=OIDCProviderURL,ParameterValue="$OIDC_PROVIDER_URL" \
+              ParameterKey=ServiceAccountNamespace,ParameterValue=default \
+              ParameterKey=ServiceAccountName,ParameterValue=${PROJECT_NAME}-api \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1; then
+            echo "IRSA stack update initiated, waiting..."
+            aws cloudformation wait stack-update-complete --stack-name $IRSA_STACK --region $AWS_DEFAULT_REGION
+          else
+            echo "IRSA stack already up-to-date (no changes needed)"
+          fi
+        else
+          aws cloudformation create-stack \
+            --stack-name $IRSA_STACK \
+            --template-body file://deploy/cloudformation/irsa-aura-api.yaml \
+            --parameters \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=OIDCProviderArn,ParameterValue="$OIDC_PROVIDER_ARN" \
+              ParameterKey=OIDCProviderURL,ParameterValue="$OIDC_PROVIDER_URL" \
+              ParameterKey=ServiceAccountNamespace,ParameterValue=default \
+              ParameterKey=ServiceAccountName,ParameterValue=${PROJECT_NAME}-api \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          echo "IRSA stack creation initiated, waiting..."
+          aws cloudformation wait stack-create-complete --stack-name $IRSA_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+        # Get the role ARN for Kubernetes annotation
+        IRSA_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $IRSA_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "IRSA Role ARN: $IRSA_ROLE_ARN"
+
+      # ============================================
+      # PHASE 3.6: Deploy IRSA for memory-service
+      # ============================================
+      - |
+        echo "Deploying IRSA for memory-service..."
+        IRSA_MEMORY_STACK="${PROJECT_NAME}-irsa-memory-service-${ENVIRONMENT}"
+
+        # Reuse OIDC values from irsa-api deployment above
+        if [ -z "$OIDC_PROVIDER_ARN" ] || [ -z "$OIDC_PROVIDER_URL" ]; then
+          CLUSTER_NAME="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+          OIDC_URL=$(aws eks describe-cluster --name $CLUSTER_NAME \
+            --query "cluster.identity.oidc.issuer" --output text --region $AWS_DEFAULT_REGION)
+          OIDC_PROVIDER_URL=$(echo $OIDC_URL | sed 's|https://||')
+          OIDC_PROVIDER_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER_URL}"
+        fi
+
+        echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
+        echo "OIDC Provider URL: $OIDC_PROVIDER_URL"
+
+        aws cloudformation deploy \
+          --stack-name $IRSA_MEMORY_STACK \
+          --template-file deploy/cloudformation/irsa-memory-service.yaml \
+          --parameter-overrides \
+            ProjectName=$PROJECT_NAME \
+            Environment=$ENVIRONMENT \
+            OIDCProviderArn="$OIDC_PROVIDER_ARN" \
+            OIDCProviderURL="$OIDC_PROVIDER_URL" \
+            ServiceAccountNamespace=default \
+            ServiceAccountName=memory-service \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+        # Get the role ARN for Kubernetes annotation
+        IRSA_MEMORY_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $IRSA_MEMORY_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "IRSA Memory Service Role ARN: $IRSA_MEMORY_ROLE_ARN"
+
+      # ============================================
+      # PHASE 3.8: Deploy IRSA for GPU Scheduler (Layer 4.7)
+      # ============================================
+      - |
+        echo "Deploying IRSA for GPU Scheduler..."
+        GPU_IRSA_STACK="${PROJECT_NAME}-gpu-scheduler-irsa-${ENVIRONMENT}"
+
+        aws cloudformation deploy \
+          --stack-name $GPU_IRSA_STACK \
+          --template-file deploy/cloudformation/gpu-scheduler-irsa.yaml \
+          --parameter-overrides \
+            ProjectName=$PROJECT_NAME \
+            Environment=$ENVIRONMENT \
+            OIDCProviderArn="$OIDC_PROVIDER_ARN" \
+            OIDCProviderURL="$OIDC_PROVIDER_URL" \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+        GPU_SCHEDULER_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $GPU_IRSA_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "GPU Scheduler IRSA Role ARN: $GPU_SCHEDULER_ROLE_ARN"
+
+      # ============================================
+      # PHASE 3.9: Deploy IRSA for env-validator (ADR-062)
+      # ============================================
+      - |
+        echo "Deploying IRSA for env-validator..."
+        ENV_VALIDATOR_IRSA_STACK="${PROJECT_NAME}-env-validator-irsa-${ENVIRONMENT}"
+
+        aws cloudformation deploy \
+          --stack-name $ENV_VALIDATOR_IRSA_STACK \
+          --template-file deploy/cloudformation/env-validator-irsa.yaml \
+          --parameter-overrides \
+            ProjectName=$PROJECT_NAME \
+            Environment=$ENVIRONMENT \
+            OIDCProviderArn="$OIDC_PROVIDER_ARN" \
+            OIDCProviderURL="$OIDC_PROVIDER_URL" \
+            ServiceAccountNamespace=aura-system \
+            ServiceAccountName=env-validator \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application ADR=ADR-062 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+        ENV_VALIDATOR_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $ENV_VALIDATOR_IRSA_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "Env Validator IRSA Role ARN: $ENV_VALIDATOR_ROLE_ARN"
+
+      # ============================================
+      # PHASE 3.10: Deploy IAM Diagram Service (ADR-060)
+      # ============================================
+      - |
+        echo "Deploying IAM Diagram Service..."
+        DIAGRAM_IAM_STACK="${PROJECT_NAME}-iam-diagram-service-${ENVIRONMENT}"
+
+        aws cloudformation deploy \
+          --stack-name $DIAGRAM_IAM_STACK \
+          --template-file deploy/cloudformation/iam-diagram-service.yaml \
+          --parameter-overrides \
+            ProjectName=$PROJECT_NAME \
+            Environment=$ENVIRONMENT \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=4.3 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+        DIAGRAM_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $DIAGRAM_IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`DiagramServiceRoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "Diagram Service IAM Role ARN: $DIAGRAM_ROLE_ARN"
+
+      # ============================================
+      # PHASE 3.11: Deploy Diagram Service SSM Parameters
+      # ============================================
+      - |
+        echo "Deploying Diagram Service SSM Parameters..."
+        DIAGRAM_SSM_STACK="${PROJECT_NAME}-diagram-service-ssm-${ENVIRONMENT}"
+
+        aws cloudformation deploy \
+          --stack-name $DIAGRAM_SSM_STACK \
+          --template-file deploy/cloudformation/diagram-service-ssm.yaml \
+          --parameter-overrides \
+            ProjectName=$PROJECT_NAME \
+            Environment=$ENVIRONMENT \
+            EnableOpenAI=false \
+            EnableVertexAI=false \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=4.3 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+        echo "Diagram Service SSM Parameters deployed"
+
+  post_build:
+    commands:
+      - echo "Application layer CloudFormation deployment completed!"
+      - echo "Bedrock Infrastructure Stack Outputs:"
+      - aws cloudformation describe-stacks --stack-name $BEDROCK_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table || echo "Bedrock stack not deployed yet"
+
+      # ============================================
+      # PHASE 4: Deploy Kubernetes Manifests
+      # ============================================
+      - echo "=========================================="
+      - echo "Deploying Kubernetes Manifests"
+      - echo "=========================================="
+      - |
+        CLUSTER_NAME="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+        echo "Configuring kubectl for cluster: $CLUSTER_NAME"
+        aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_DEFAULT_REGION
+
+      # Apply base manifests and update with ECR image
+      - kubectl apply -f deploy/kubernetes/dnsmasq-daemonset.yaml
+
+      # Patch DaemonSet to use ECR image
+      - |
+        echo "Updating dnsmasq DaemonSet with ECR image..."
+        ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT} \
+          --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        FULL_IMAGE_URI="${ECR_REPO_URI}:${DNSMASQ_IMAGE_TAG}"
+        echo "Using image: $FULL_IMAGE_URI"
+        kubectl patch daemonset dnsmasq -n aura-network-services --type='json' \
+          -p="[{\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"${FULL_IMAGE_URI}\"}]"
+
+      - kubectl apply -f deploy/kubernetes/dnsmasq-networkpolicy.yaml || echo "NetworkPolicy already exists or failed"
+
+      - echo "Waiting for DaemonSet rollout..."
+      - kubectl rollout status daemonset/dnsmasq -n aura-network-services --timeout=5m || echo "DaemonSet rollout timeout - check pod logs"
+
+      - echo "Verifying dnsmasq pods..."
+      - kubectl get pods -n aura-network-services -l app=dnsmasq -o wide
+
+      # ============================================
+      # PHASE 5: Deploy aura-api with IRSA
+      # ============================================
+      - |
+        echo "Deploying aura-api with IRSA..."
+
+        # Get IRSA role ARN
+        IRSA_STACK="${PROJECT_NAME}-irsa-api-${ENVIRONMENT}"
+        IRSA_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $IRSA_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "IRSA Role ARN: $IRSA_ROLE_ARN"
+
+        # Apply aura-api manifests
+        kubectl apply -k deploy/kubernetes/aura-api/
+
+        # Annotate service account with IRSA role ARN
+        echo "Annotating service account with IRSA role..."
+        kubectl annotate serviceaccount aura-api \
+          eks.amazonaws.com/role-arn=$IRSA_ROLE_ARN \
+          --overwrite
+
+        # Restart deployment to pick up new credentials
+        echo "Restarting deployment to use IRSA..."
+        kubectl rollout restart deployment/aura-api
+
+        # Wait for rollout
+        echo "Waiting for aura-api rollout..."
+        kubectl rollout status deployment/aura-api --timeout=5m || echo "aura-api rollout timeout - check pod logs"
+
+        # Verify pods
+        echo "Verifying aura-api pods..."
+        kubectl get pods -l app=${PROJECT_NAME}-api -o wide
+        kubectl logs -l app=${PROJECT_NAME}-api --tail=20 || echo "Could not get logs"
+
+      # ============================================
+      # PHASE 6: Verify OpenSearch IAM Master User Access (ADR-012)
+      # ============================================
+      # With IAM Master User authentication, the IRSA role is the master user
+      # and automatically has all_access permissions. No password needed.
+      # Authentication uses only SigV4 signing with IRSA credentials.
+      - |
+        echo "Verifying OpenSearch IAM Master User access..."
+
+        # Get OpenSearch endpoint
+        OPENSEARCH_ENDPOINT=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-opensearch-${ENVIRONMENT} \
+          --query 'Stacks[0].Outputs[?OutputKey==`DomainEndpoint`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "OpenSearch Endpoint: $OPENSEARCH_ENDPOINT"
+
+        # Get IRSA role ARN (this is the IAM Master User)
+        IRSA_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-irsa-api-${ENVIRONMENT} \
+          --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "IRSA Role ARN (IAM Master User): $IRSA_ROLE_ARN"
+
+        # Verify connectivity using IRSA credentials with SigV4 signing only
+        echo "Testing OpenSearch connectivity with SigV4 auth..."
+        AURA_API_POD=$(kubectl get pods -l app=${PROJECT_NAME}-api -o jsonpath='{.items[0].metadata.name}')
+        echo "Using pod $AURA_API_POD with IRSA credentials"
+
+        # Base64-encoded Python script to verify OpenSearch connectivity
+        # Decoding and executing avoids YAML parsing issues with Python code
+        VERIFY_SCRIPT_B64="aW1wb3J0IGJvdG8zLCB1cmxsaWIzLCBzeXMsIG9zCmZyb20gb3BlbnNlYXJjaHB5IGltcG9ydCBPcGVuU2VhcmNoLCBSZXF1ZXN0c0h0dHBDb25uZWN0aW9uLCBBV1NWNFNpZ25lckF1dGgKdXJsbGliMy5kaXNhYmxlX3dhcm5pbmdzKCkKc2Vzc2lvbiA9IGJvdG8zLlNlc3Npb24oKQpjcmVkcyA9IHNlc3Npb24uZ2V0X2NyZWRlbnRpYWxzKCkKcmVnaW9uID0gb3MuZW52aXJvbi5nZXQoJ0FXU19SRUdJT04nLCAndXMtZWFzdC0xJykKYXdzYXV0aCA9IEFXU1Y0U2lnbmVyQXV0aChjcmVkcywgcmVnaW9uLCAnZXMnKQplbmRwb2ludCA9IHN5cy5hcmd2WzFdIGlmIGxlbihzeXMuYXJndikgPiAxIGVsc2UgJ2xvY2FsaG9zdCcKY2xpZW50ID0gT3BlblNlYXJjaCgKICAgIGhvc3RzPVt7J2hvc3QnOiBlbmRwb2ludCwgJ3BvcnQnOiA0NDN9XSwKICAgIGh0dHBfYXV0aD1hd3NhdXRoLAogICAgdXNlX3NzbD1UcnVlLAogICAgdmVyaWZ5X2NlcnRzPUZhbHNlLAogICAgY29ubmVjdGlvbl9jbGFzcz1SZXF1ZXN0c0h0dHBDb25uZWN0aW9uCikKdHJ5OgogICAgaGVhbHRoID0gY2xpZW50LmNsdXN0ZXIuaGVhbHRoKCkKICAgIHByaW50KGYiQ2x1c3RlciBIZWFsdGg6IHtoZWFsdGhbJ3N0YXR1cyddfSIpCiAgICBwcmludChmIkNsdXN0ZXIgTmFtZToge2hlYWx0aFsnY2x1c3Rlcl9uYW1lJ119IikKICAgIHByaW50KGYiTm9kZXM6IHtoZWFsdGhbJ251bWJlcl9vZl9ub2RlcyddfSIpCiAgICBwcmludCgiU1VDQ0VTUzogSUFNIE1hc3RlciBVc2VyIGF1dGhlbnRpY2F0aW9uIHdvcmtpbmciKQpleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICBwcmludChmIkVSUk9SOiB7ZX0iKQogICAgc3lzLmV4aXQoMSk="
+
+        echo "$VERIFY_SCRIPT_B64" | base64 -d > /tmp/verify_opensearch.py
+        kubectl cp /tmp/verify_opensearch.py $AURA_API_POD:/tmp/verify_opensearch.py
+        kubectl exec $AURA_API_POD -- python3 /tmp/verify_opensearch.py "$OPENSEARCH_ENDPOINT" || echo "OpenSearch verification failed - check IAM Master User configuration"
+
+        echo "OpenSearch IAM Master User verification complete"
+
+      # Deployment Summary
+      - |
+        echo "=========================================="
+        echo "Deployment Summary"
+        echo "=========================================="
+        ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT} \
+          --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "ECR Image: ${ECR_REPO_URI}:${DNSMASQ_IMAGE_TAG}"
+        echo "Bedrock Stack: ${PROJECT_NAME}-bedrock-infrastructure-${ENVIRONMENT}"
+        echo "Cluster: ${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+
+artifacts:
+  files:
+    - deploy/cloudformation/aura-bedrock-infrastructure.yaml
+    - deploy/cloudformation/ecr-dnsmasq.yaml
+    - deploy/cloudformation/ecr-api.yaml
+    - deploy/cloudformation/ecr-agent-orchestrator.yaml
+    - deploy/cloudformation/ecr-frontend.yaml
+    - deploy/cloudformation/ecr-memory-service.yaml
+    - deploy/cloudformation/ecr-meta-orchestrator.yaml
+    - deploy/cloudformation/ecr-runtime-incident-agent.yaml
+    - deploy/cloudformation/irsa-aura-api.yaml
+    - deploy/cloudformation/cognito.yaml
+    - deploy/cloudformation/bedrock-guardrails.yaml
+    - deploy/cloudformation/onboarding.yaml
+    - deploy/cloudformation/gpu-scheduler-irsa.yaml
+    - deploy/cloudformation/env-validator-irsa.yaml
+    - deploy/cloudformation/iam-diagram-service.yaml
+    - deploy/cloudformation/diagram-service-ssm.yaml
+    - deploy/kubernetes/aura-api/**/*
+  name: application-layer-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

@@ -1,0 +1,152 @@
+# Project Aura - ClusterAnalysisTemplates for Canary Deployments
+# These templates define health checks that Argo Rollouts uses to evaluate
+# the success of canary deployments and trigger automatic rollbacks.
+#
+# ClusterAnalysisTemplates are cluster-scoped and can be referenced from any namespace.
+#
+# Templates:
+# 1. success-rate - HTTP success rate check via Prometheus (when available)
+# 2. pod-health - Basic pod readiness check
+# 3. http-benchmark - Direct HTTP endpoint verification
+#
+---
+# Pod Health Analysis - Checks that pods are ready and not restarting
+# Works without external metrics infrastructure
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: pod-health
+  labels:
+    project: aura
+spec:
+  args:
+    - name: service-name
+    - name: namespace
+      value: default
+  metrics:
+    - name: pod-readiness
+      # Run every 30 seconds for 5 minutes
+      interval: 30s
+      count: 10
+      # Require 80% success rate
+      successCondition: result.ready >= 0.8
+      failureLimit: 2
+      provider:
+        job:
+          spec:
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: check
+                    image: bitnami/kubectl:latest
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        READY=$(kubectl get pods -n {{args.namespace}} -l app={{args.service-name}} \
+                          -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' | \
+                          grep -o "True" | wc -l)
+                        TOTAL=$(kubectl get pods -n {{args.namespace}} -l app={{args.service-name}} --no-headers | wc -l)
+                        if [ "$TOTAL" -eq 0 ]; then
+                          echo '{"ready": 0}'
+                        else
+                          RATIO=$(echo "scale=2; $READY / $TOTAL" | bc)
+                          echo "{\"ready\": $RATIO}"
+                        fi
+---
+# HTTP Benchmark - Direct HTTP health check
+# Verifies the service responds successfully
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: http-benchmark
+  labels:
+    project: aura
+spec:
+  args:
+    - name: service-url
+      # Default to frontend health endpoint
+      value: http://aura-frontend.default.svc.cluster.local:80/health
+  metrics:
+    - name: http-success
+      # Run every 30 seconds, 10 times (5 minutes total)
+      interval: 30s
+      count: 10
+      # All checks must succeed
+      successCondition: result.status == 200
+      failureLimit: 2
+      provider:
+        job:
+          spec:
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: curl
+                    image: curlimages/curl:latest
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        STATUS=$(curl -s -o /dev/null -w "%{http_code}" {{args.service-url}} || echo "000")
+                        echo "{\"status\": $STATUS}"
+---
+# Prometheus Success Rate - For when Prometheus is available
+# Checks HTTP success rate from Prometheus metrics
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: success-rate
+  labels:
+    project: aura
+spec:
+  args:
+    - name: service-name
+    - name: prometheus-url
+      value: http://prometheus-server.monitoring.svc.cluster.local
+  metrics:
+    - name: success-rate
+      interval: 1m
+      count: 5
+      # Require 95% success rate
+      successCondition: result[0] >= 0.95
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: "{{args.prometheus-url}}"
+          query: |
+            sum(rate(http_requests_total{service="{{args.service-name}}",status=~"2.."}[5m]))
+            /
+            sum(rate(http_requests_total{service="{{args.service-name}}"}[5m]))
+---
+# Latency Check - Verify response times are acceptable
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: latency-check
+  labels:
+    project: aura
+spec:
+  args:
+    - name: service-name
+    - name: prometheus-url
+      value: http://prometheus-server.monitoring.svc.cluster.local
+    - name: latency-threshold
+      value: "500"  # milliseconds
+  metrics:
+    - name: p99-latency
+      interval: 1m
+      count: 5
+      # P99 latency must be under threshold
+      successCondition: result[0] < {{args.latency-threshold}}
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: "{{args.prometheus-url}}"
+          query: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{service="{{args.service-name}}"}[5m])) by (le)
+            ) * 1000

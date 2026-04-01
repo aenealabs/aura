@@ -1,0 +1,98 @@
+{{- if and (include "aura.isSelfHosted" .) .Values.llm.tgi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aura.fullname" . }}-tgi
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "tgi" "context" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.llm.tgi.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "tgi" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aura.componentSelectorLabels" (dict "component" "tgi" "context" .) | nindent 8 }}
+    spec:
+      {{- include "aura.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "aura.serviceAccountName" . }}
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: tgi
+          image: {{ .Values.llm.tgi.image.repository }}:{{ .Values.llm.tgi.image.tag }}
+          imagePullPolicy: {{ include "aura.imagePullPolicy" . }}
+          args:
+            - --model-id
+            - {{ .Values.llm.tgi.model }}
+            - --port
+            - "8080"
+            - --hostname
+            - "0.0.0.0"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: HF_HOME
+              value: /models
+            - name: HUGGINGFACE_HUB_CACHE
+              value: /models
+            {{- if include "aura.isAirGapped" . }}
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.llm.tgi.resources | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+      {{- with .Values.llm.tgi.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.llm.tgi.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.llm.tgi.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: models
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.llm.tgi.persistence.storageClass }}
+        storageClassName: {{ .Values.llm.tgi.persistence.storageClass }}
+        {{- else if .Values.global.storageClass }}
+        storageClassName: {{ .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.llm.tgi.persistence.size }}
+  {{- end }}
+{{- end }}

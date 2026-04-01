@@ -1,0 +1,817 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 0.2 - Account Bootstrap (Per-Environment Setup)'
+
+# ============================================================================
+# IMPORTANT: Deploy this template FIRST in each new environment account.
+# It creates the foundational SSM parameters and bootstrap resources needed
+# before deploying any other infrastructure.
+#
+# Deployment:
+#   aws cloudformation deploy \
+#     --template-file deploy/cloudformation/account-bootstrap.yaml \
+#     --stack-name aura-account-bootstrap-qa \
+#     --parameter-overrides \
+#         Environment=qa \
+#         AdminRoleArn=arn:aws:iam::ACCOUNT:role/... \
+#         AlertEmail=alerts-qa@aenealabs.com \
+#         CodeConnectionsArn=arn:aws:codeconnections:... \
+#     --capabilities CAPABILITY_NAMED_IAM
+# ============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used in resource naming
+
+  AdminRoleArn:
+    Type: String
+    Description: SSO Administrator Role ARN for this account
+    AllowedPattern: 'arn:aws:iam::\d{12}:role/.*'
+
+  AlertEmail:
+    Type: String
+    Description: Email address for alert notifications
+    AllowedPattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+
+  CodeConnectionsArn:
+    Type: String
+    Description: GitHub CodeConnections ARN for this account
+    AllowedPattern: 'arn:aws:(codeconnections|codestar-connections):[a-z0-9-]+:\d{12}:connection/[a-f0-9-]+'
+
+  EnableAccountCloudTrail:
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: >-
+      Set to false if org-level CloudTrail already covers this account.
+      Use false for management accounts with existing org trails.
+
+  EnableGuardDuty:
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: >-
+      Set to false if GuardDuty is managed by a delegated admin account
+      or if an org-level detector already exists.
+
+  EnableSecurityAlertsTopic:
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: >-
+      Set to false if another stack already owns the security alerts SNS topic.
+      Use false when realtime-monitoring stack owns the topic.
+
+Conditions:
+  CreateCloudTrail: !Equals [!Ref EnableAccountCloudTrail, 'true']
+  CreateGuardDuty: !Equals [!Ref EnableGuardDuty, 'true']
+  CreateSecurityAlerts: !Equals [!Ref EnableSecurityAlertsTopic, 'true']
+  CreateGuardDutyWithAlerts: !And
+    - !Condition CreateGuardDuty
+    - !Condition CreateSecurityAlerts
+
+Resources:
+  # ============================================================================
+  # SSM Parameters - Account Configuration
+  # ============================================================================
+
+  AccountIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/account-id'
+      Type: String
+      Value: !Ref 'AWS::AccountId'
+      Description: !Sub 'AWS Account ID for ${Environment} environment'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  AdminRoleArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/admin-role-arn'
+      Type: String
+      Value: !Ref AdminRoleArn
+      Description: !Sub 'SSO Administrator Role ARN for ${Environment}'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  AlertEmailParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/alert-email'
+      Type: String
+      Value: !Ref AlertEmail
+      Description: !Sub 'Alert notification email for ${Environment}'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  CodeConnectionsArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/codeconnections-arn'
+      Type: String
+      Value: !Ref CodeConnectionsArn
+      Description: !Sub 'GitHub CodeConnections ARN for ${Environment}'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  RegionParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/region'
+      Type: String
+      Value: !Ref 'AWS::Region'
+      Description: !Sub 'AWS Region for ${Environment}'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # ============================================================================
+  # S3 Bucket - CloudFormation Artifacts
+  # ============================================================================
+
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-cfn-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt EnvironmentKMSKey.Arn
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 90
+            Prefix: cloudformation/
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: CloudFormation deployment artifacts
+
+  ArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnforceTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt ArtifactsBucket.Arn
+              - !Sub '${ArtifactsBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  ArtifactsBucketParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/artifacts-bucket'
+      Type: String
+      Value: !Ref ArtifactsBucket
+      Description: !Sub 'CloudFormation artifacts bucket for ${Environment}'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # ============================================================================
+  # KMS Key - Environment Encryption
+  #
+  # NOTE ON Resource: '*' IN KMS KEY POLICIES (per ADR-041):
+  # In KMS key policies, Resource: '*' is SELF-REFERENTIAL, meaning "this key".
+  # This is by AWS design - key policies can only apply to the key they're
+  # attached to. See: https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html
+  # "The resource element in a key policy statement must be '*'"
+  # ============================================================================
+
+  EnvironmentKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'Master encryption key for ${ProjectName} ${Environment} environment'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # AWS-REQUIRED: Root access prevents key lockout (AWS best practice)
+          # Compensating control: SCP denies root user actions in member accounts
+          - Sid: RootAccountAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+          # Key administration limited to SSO admin role
+          - Sid: AdminRoleAccess
+            Effect: Allow
+            Principal:
+              AWS: !Ref AdminRoleArn
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:TagResource
+              - kms:UntagResource
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
+            Resource: '*'
+          # CloudWatch Logs requires specific encryption context condition
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+          # CloudTrail requires specific permissions for encryption
+          - Sid: AllowCloudTrail
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringLike:
+                kms:EncryptionContext:aws:cloudtrail:arn: !Sub 'arn:${AWS::Partition}:cloudtrail:*:${AWS::AccountId}:trail/*'
+          # Other services scoped by kms:CallerAccount condition
+          - Sid: ServiceUsage
+            Effect: Allow
+            Principal:
+              Service:
+                - s3.amazonaws.com
+                - sns.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref 'AWS::AccountId'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  EnvironmentKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}/${Environment}/master'
+      TargetKeyId: !Ref EnvironmentKMSKey
+
+  KMSKeyArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/kms-key-arn'
+      Type: String
+      Value: !GetAtt EnvironmentKMSKey.Arn
+      Description: !Sub 'Master KMS key ARN for ${Environment}'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # ============================================================================
+  # CloudWatch Log Group - Bootstrap Logs
+  # ============================================================================
+
+  BootstrapLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/${Environment}/bootstrap'
+      RetentionInDays: 90
+      KmsKeyId: !GetAtt EnvironmentKMSKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # CloudTrail - API Audit Logging (CMMC AU Controls)
+  # ============================================================================
+
+  CloudTrailLogsBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateCloudTrail
+    Properties:
+      BucketName: !Sub '${ProjectName}-cloudtrail-logs-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt EnvironmentKMSKey.Arn
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 90
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 365
+          - Id: DeleteOldLogs
+            Status: Enabled
+            ExpirationInDays: 2555  # 7 years for CMMC compliance
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: CloudTrail audit logs
+
+  CloudTrailLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateCloudTrail
+    Properties:
+      Bucket: !Ref CloudTrailLogsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnforceTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt CloudTrailLogsBucket.Arn
+              - !Sub '${CloudTrailLogsBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt CloudTrailLogsBucket.Arn
+            Condition:
+              StringEquals:
+                AWS:SourceAccount: !Ref 'AWS::AccountId'
+          - Sid: AWSCloudTrailWrite
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${CloudTrailLogsBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                AWS:SourceAccount: !Ref 'AWS::AccountId'
+
+  CloudTrailLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CreateCloudTrail
+    Properties:
+      LogGroupName: !Sub '/aura/${Environment}/cloudtrail'
+      RetentionInDays: 365
+      KmsKeyId: !GetAtt EnvironmentKMSKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  CloudTrailRole:
+    Type: AWS::IAM::Role
+    Condition: CreateCloudTrail
+    Properties:
+      RoleName: !Sub '${ProjectName}-cloudtrail-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudTrailToCloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/${Environment}/cloudtrail:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AccountCloudTrail:
+    Type: AWS::CloudTrail::Trail
+    Condition: CreateCloudTrail
+    DependsOn: CloudTrailLogsBucketPolicy
+    Properties:
+      TrailName: !Sub '${ProjectName}-account-trail-${Environment}'
+      S3BucketName: !Ref CloudTrailLogsBucket
+      IsLogging: true
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      KMSKeyId: !GetAtt EnvironmentKMSKey.Arn
+      CloudWatchLogsLogGroupArn: !GetAtt CloudTrailLogGroup.Arn
+      CloudWatchLogsRoleArn: !GetAtt CloudTrailRole.Arn
+      EventSelectors:
+        - ReadWriteType: All
+          IncludeManagementEvents: true
+          DataResources: []
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # GuardDuty - Threat Detection (CMMC SI Controls)
+  # ============================================================================
+
+  GuardDutyDetector:
+    Type: AWS::GuardDuty::Detector
+    Condition: CreateGuardDuty
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: FIFTEEN_MINUTES
+      DataSources:
+        S3Logs:
+          Enable: true
+        Kubernetes:
+          AuditLogs:
+            Enable: true
+        MalwareProtection:
+          ScanEc2InstanceWithFindings:
+            EbsVolumes: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # SNS Topic - Security Alerts
+  # ============================================================================
+
+  SecurityAlertsTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateSecurityAlerts
+    Properties:
+      TopicName: !Sub '${ProjectName}-security-alerts-${Environment}'
+      DisplayName: !Sub 'Aura ${Environment} Security Alerts'
+      KmsMasterKeyId: !Ref EnvironmentKMSKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  SecurityAlertsSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: CreateSecurityAlerts
+    Properties:
+      TopicArn: !Ref SecurityAlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  SecurityAlertsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Condition: CreateSecurityAlerts
+    Properties:
+      Topics:
+        - !Ref SecurityAlertsTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventsToPublish
+            Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+                - guardduty.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref SecurityAlertsTopic
+            Condition:
+              StringEquals:
+                AWS:SourceAccount: !Ref 'AWS::AccountId'
+
+  # ============================================================================
+  # EventBridge Rules - Security Event Routing
+  # ============================================================================
+
+  GuardDutyFindingsRule:
+    Type: AWS::Events::Rule
+    Condition: CreateGuardDutyWithAlerts
+    Properties:
+      Name: !Sub '${ProjectName}-guardduty-findings-${Environment}'
+      Description: Route GuardDuty findings to security alerts
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+        detail:
+          severity:
+            - numeric: ['>=', 4]  # Medium and above
+      State: ENABLED
+      Targets:
+        - Id: SecurityAlertsTopic
+          Arn: !Ref SecurityAlertsTopic
+
+  RootUserActivityRule:
+    Type: AWS::Events::Rule
+    Condition: CreateSecurityAlerts
+    Properties:
+      Name: !Sub '${ProjectName}-root-user-activity-${Environment}'
+      Description: Alert on any root user console login or API activity
+      EventPattern:
+        detail-type:
+          - AWS Console Sign In via CloudTrail
+          - AWS API Call via CloudTrail
+        detail:
+          userIdentity:
+            type:
+              - Root
+      State: ENABLED
+      Targets:
+        - Id: SecurityAlertsTopic
+          Arn: !Ref SecurityAlertsTopic
+
+  IAMPolicyChangesRule:
+    Type: AWS::Events::Rule
+    Condition: CreateSecurityAlerts
+    Properties:
+      Name: !Sub '${ProjectName}-iam-policy-changes-${Environment}'
+      Description: Alert on IAM policy modifications
+      EventPattern:
+        source:
+          - aws.iam
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+          eventName:
+            - CreatePolicy
+            - DeletePolicy
+            - CreatePolicyVersion
+            - DeletePolicyVersion
+            - AttachRolePolicy
+            - DetachRolePolicy
+            - AttachUserPolicy
+            - DetachUserPolicy
+            - AttachGroupPolicy
+            - DetachGroupPolicy
+            - PutRolePolicy
+            - DeleteRolePolicy
+            - PutUserPolicy
+            - DeleteUserPolicy
+            - PutGroupPolicy
+            - DeleteGroupPolicy
+      State: ENABLED
+      Targets:
+        - Id: SecurityAlertsTopic
+          Arn: !Ref SecurityAlertsTopic
+
+  # ============================================================================
+  # Billing Read-Only Role - Account-Level Cost Access
+  #
+  # Purpose: Allows admins to view total account costs without using root.
+  # This role can be assumed by SSO admins and provides read-only access to
+  # Cost Explorer, Budgets, and billing data across all environments.
+  #
+  # Reference: GuardDuty finding Policy:IAMUser/RootCredentialUsage remediation
+  # ============================================================================
+
+  BillingReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-billing-viewer'
+      Description: Read-only access to AWS Cost Explorer and billing. Use this instead of root credentials for cost queries.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # SSO admin role can assume this role
+          - Effect: Allow
+            Principal:
+              AWS: !Ref AdminRoleArn
+            Action: sts:AssumeRole
+          # IAM users with MFA can assume this role
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: sts:AssumeRole
+            Condition:
+              Bool:
+                'aws:MultiFactorAuthPresent': 'true'
+      ManagedPolicyArns:
+        # AWS managed policy for billing console access
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AWSBillingReadOnlyAccess'
+      Policies:
+        - PolicyName: CostExplorerAndBudgets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Cost Explorer full read access
+              - Effect: Allow
+                Action:
+                  - ce:Describe*
+                  - ce:Get*
+                  - ce:List*
+                Resource: '*'
+              # Budgets read access
+              - Effect: Allow
+                Action:
+                  - budgets:Describe*
+                  - budgets:View*
+                Resource: '*'
+              # Cost and Usage Reports
+              - Effect: Allow
+                Action:
+                  - cur:DescribeReportDefinitions
+                  - cur:GetUsageReport
+                Resource: '*'
+              # Pricing information
+              - Effect: Allow
+                Action:
+                  - pricing:DescribeServices
+                  - pricing:GetAttributeValues
+                  - pricing:GetProducts
+                Resource: '*'
+      MaxSessionDuration: 3600
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: account-wide
+        - Key: Purpose
+          Value: BillingReadOnly
+        - Key: SecurityControl
+          Value: RootCredentialMitigation
+
+  BillingRoleArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/aura/global/billing-viewer-role-arn'
+      Type: String
+      Value: !GetAtt BillingReadOnlyRole.Arn
+      Description: 'Billing viewer role ARN - use instead of root for cost queries'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: global
+
+Outputs:
+  AccountId:
+    Description: AWS Account ID
+    Value: !Ref 'AWS::AccountId'
+    Export:
+      Name: !Sub '${AWS::StackName}-AccountId'
+
+  Environment:
+    Description: Environment name
+    Value: !Ref Environment
+    Export:
+      Name: !Sub '${AWS::StackName}-Environment'
+
+  ArtifactsBucketName:
+    Description: S3 bucket for CloudFormation artifacts
+    Value: !Ref ArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
+
+  ArtifactsBucketArn:
+    Description: S3 bucket ARN for CloudFormation artifacts
+    Value: !GetAtt ArtifactsBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucketArn'
+
+  KMSKeyArn:
+    Description: Master KMS key ARN
+    Value: !GetAtt EnvironmentKMSKey.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-KMSKeyArn'
+
+  KMSKeyAlias:
+    Description: Master KMS key alias
+    Value: !Ref EnvironmentKMSKeyAlias
+    Export:
+      Name: !Sub '${AWS::StackName}-KMSKeyAlias'
+
+  SSMParameterPaths:
+    Description: SSM parameter paths created by this stack
+    Value: !Sub |
+      /aura/${Environment}/account-id
+      /aura/${Environment}/admin-role-arn
+      /aura/${Environment}/alert-email
+      /aura/${Environment}/codeconnections-arn
+      /aura/${Environment}/region
+      /aura/${Environment}/artifacts-bucket
+      /aura/${Environment}/kms-key-arn
+
+  CloudTrailArn:
+    Condition: CreateCloudTrail
+    Description: CloudTrail trail ARN
+    Value: !GetAtt AccountCloudTrail.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudTrailArn'
+
+  CloudTrailLogsBucketName:
+    Condition: CreateCloudTrail
+    Description: S3 bucket for CloudTrail logs
+    Value: !Ref CloudTrailLogsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudTrailLogsBucket'
+
+  GuardDutyDetectorId:
+    Condition: CreateGuardDuty
+    Description: GuardDuty detector ID
+    Value: !Ref GuardDutyDetector
+    Export:
+      Name: !Sub '${AWS::StackName}-GuardDutyDetectorId'
+
+  SecurityAlertsTopicArn:
+    Condition: CreateSecurityAlerts
+    Description: SNS topic for security alerts
+    Value: !Ref SecurityAlertsTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityAlertsTopicArn'
+
+  BillingReadOnlyRoleArn:
+    Description: Billing viewer role ARN (use instead of root for cost queries)
+    Value: !GetAtt BillingReadOnlyRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BillingReadOnlyRoleArn'
+
+  BillingRoleConsoleUrl:
+    Description: URL to switch to the billing viewer role in AWS Console
+    Value: !Sub 'https://signin.aws.amazon.com/switchrole?roleName=${ProjectName}-billing-viewer&account=${AWS::AccountId}'

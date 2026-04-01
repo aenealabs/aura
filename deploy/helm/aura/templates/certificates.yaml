@@ -1,0 +1,111 @@
+{{- if and .Values.global.tls.enabled .Values.global.tls.certManager.enabled }}
+# Certificate for API service
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "aura.fullname" . }}-api-tls
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "api" "context" .) | nindent 4 }}
+spec:
+  secretName: {{ include "aura.fullname" . }}-api-tls
+  duration: 2160h  # 90 days
+  renewBefore: 360h  # 15 days
+  subject:
+    organizations:
+      - Aenea Labs
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+    - client auth
+  dnsNames:
+    - {{ include "aura.fullname" . }}-api
+    - {{ include "aura.fullname" . }}-api.{{ .Release.Namespace }}
+    - {{ include "aura.fullname" . }}-api.{{ .Release.Namespace }}.svc
+    - {{ include "aura.fullname" . }}-api.{{ .Release.Namespace }}.svc.cluster.local
+    {{- range .Values.api.ingress.hosts }}
+    - {{ .host }}
+    {{- end }}
+  issuerRef:
+    {{- if .Values.global.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+    {{- else }}
+    kind: Issuer
+    {{- end }}
+    name: {{ .Values.global.tls.certManager.issuer }}
+---
+# Certificate for Frontend service
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "aura.fullname" . }}-frontend-tls
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "frontend" "context" .) | nindent 4 }}
+spec:
+  secretName: {{ include "aura.fullname" . }}-frontend-tls
+  duration: 2160h
+  renewBefore: 360h
+  subject:
+    organizations:
+      - Aenea Labs
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+  dnsNames:
+    - {{ include "aura.fullname" . }}-frontend
+    - {{ include "aura.fullname" . }}-frontend.{{ .Release.Namespace }}
+    - {{ include "aura.fullname" . }}-frontend.{{ .Release.Namespace }}.svc
+    - {{ include "aura.fullname" . }}-frontend.{{ .Release.Namespace }}.svc.cluster.local
+    {{- range .Values.frontend.ingress.hosts }}
+    - {{ .host }}
+    {{- end }}
+  issuerRef:
+    {{- if .Values.global.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+    {{- else }}
+    kind: Issuer
+    {{- end }}
+    name: {{ .Values.global.tls.certManager.issuer }}
+---
+# Certificate for Orchestrator service
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "aura.fullname" . }}-orchestrator-tls
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "orchestrator" "context" .) | nindent 4 }}
+spec:
+  secretName: {{ include "aura.fullname" . }}-orchestrator-tls
+  duration: 2160h
+  renewBefore: 360h
+  subject:
+    organizations:
+      - Aenea Labs
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+    - client auth
+  dnsNames:
+    - {{ include "aura.fullname" . }}-orchestrator
+    - {{ include "aura.fullname" . }}-orchestrator.{{ .Release.Namespace }}
+    - {{ include "aura.fullname" . }}-orchestrator.{{ .Release.Namespace }}.svc
+    - {{ include "aura.fullname" . }}-orchestrator.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    {{- if .Values.global.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+    {{- else }}
+    kind: Issuer
+    {{- end }}
+    name: {{ .Values.global.tls.certManager.issuer }}
+{{- end }}

@@ -1,0 +1,142 @@
+# Project Aura - Self-Hosted Values
+# Use this file for standard self-hosted deployments with cloud LLM APIs
+#
+# Usage:
+#   helm install aura ./deploy/helm/aura -f ./deploy/helm/aura/values-self-hosted.yaml
+
+global:
+  deploymentMode: self_hosted
+  edition: enterprise
+  imageRegistry: docker.io/aenealabs
+  imagePullPolicy: IfNotPresent
+
+  tls:
+    enabled: true
+    certManager:
+      enabled: true
+      issuer: letsencrypt-prod
+      clusterIssuer: true
+
+# License key (required for enterprise features)
+license:
+  key: ""  # Set via --set license.key=AURA-ENT-...
+
+# Core Services
+api:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+
+frontend:
+  replicaCount: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+
+orchestrator:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 4Gi
+    limits:
+      cpu: 8000m
+      memory: 16Gi
+
+# Self-hosted databases
+databases:
+  graph:
+    provider: neo4j
+    neo4j:
+      enabled: true
+      edition: enterprise
+      password: ""  # REQUIRED: Set via --set
+      persistence:
+        size: 100Gi
+      resources:
+        requests:
+          cpu: 2000m
+          memory: 8Gi
+        limits:
+          cpu: 8000m
+          memory: 16Gi
+
+  vector:
+    provider: opensearch
+    opensearch:
+      enabled: true
+      replicas: 3
+      persistence:
+        size: 200Gi
+      resources:
+        requests:
+          cpu: 2000m
+          memory: 8Gi
+        limits:
+          cpu: 8000m
+          memory: 16Gi
+
+  document:
+    provider: postgres
+    postgres:
+      enabled: true
+      persistence:
+        size: 100Gi
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 2Gi
+        limits:
+          cpu: 4000m
+          memory: 8Gi
+
+# Cloud LLM via PrivateLink (recommended for most enterprises)
+llm:
+  provider: bedrock
+  bedrock:
+    enabled: true
+    region: us-east-1
+  vllm:
+    enabled: false
+  tgi:
+    enabled: false
+  ollama:
+    enabled: false
+
+# Supporting services
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+
+storage:
+  minio:
+    enabled: true
+    persistence:
+      size: 500Gi
+
+# Security
+networkPolicy:
+  enabled: true
+  defaultDeny: true
+
+# Monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+
+logging:
+  level: info
+  json: true

@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-autoscaler
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: cluster-autoscaler
+    app.kubernetes.io/component: autoscaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cluster-autoscaler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cluster-autoscaler
+    spec:
+      serviceAccountName: cluster-autoscaler
+      priorityClassName: system-cluster-critical
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cluster-autoscaler
+          # Use specific version for reproducibility (update as needed)
+          image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.31.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - ./cluster-autoscaler
+            - --v=4
+            - --stderrthreshold=info
+            - --cloud-provider=aws
+            # Cluster name injected via envsubst during deployment
+            - --cluster-name=${CLUSTER_NAME}
+            # Auto-discover node groups by tags
+            - --node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/${CLUSTER_NAME}
+            - --skip-nodes-with-local-storage=false
+            - --expander=least-waste
+            # Scale-down settings optimized for cost savings
+            - --scale-down-delay-after-add=5m
+            - --scale-down-delay-after-delete=0s
+            - --scale-down-delay-after-failure=3m
+            - --scale-down-unneeded-time=5m
+            - --scale-down-utilization-threshold=0.5
+            # Balance similar node groups for better distribution
+            - --balance-similar-node-groups=true
+            # Skip nodes with system pods to enable scale-down
+            - --skip-nodes-with-system-pods=false
+          resources:
+            limits:
+              cpu: 100m
+              memory: 600Mi
+            requests:
+              cpu: 50m
+              memory: 300Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: ssl-certs
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              readOnly: true
+      volumes:
+        - name: ssl-certs
+          hostPath:
+            path: /etc/ssl/certs/ca-bundle.crt
+      # Prefer scheduling on general-purpose nodes
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: workload-type
+                    operator: In
+                    values:
+                      - general-purpose
+      # Tolerate all taints to ensure autoscaler can run anywhere
+      tolerations:
+        - operator: Exists

@@ -1,0 +1,146 @@
+version: 0.2
+
+# Application Layer Sub-BuildSpec: Kubernetes Deployments (Layer 4.4)
+# Deploys Kubernetes manifests to EKS cluster.
+# Called by buildspec-application.yml or Step Functions.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+run-as: root
+
+env:
+  shell: bash
+  variables:
+    DNSMASQ_IMAGE_TAG: "v1.0.1"
+    KUBECTL_VERSION: "v1.34.0"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing kubectl ${KUBECTL_VERSION}..."
+      - curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+      - chmod +x kubectl && mv kubectl /usr/local/bin/
+      - kubectl version --client
+      # Install kustomize for manifest generation (ADR-062)
+      - KUSTOMIZE_VERSION="v5.4.3"
+      - curl -sLO "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+      - tar xzf kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz && mv kustomize /usr/local/bin/
+      - kustomize version
+      # Install Python dependencies for environment validator (ADR-062)
+      - pip install pyyaml
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Kubernetes Deployment (Layer 4.4)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - source deploy/scripts/eks-readiness.sh
+      - validate_aws_credentials
+
+      # Configure kubectl
+      - |
+        CLUSTER_NAME="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+        configure_kubectl "$CLUSTER_NAME" "$AWS_DEFAULT_REGION"
+
+  build:
+    commands:
+      # Deploy shared service configuration (PR #387)
+      - |
+        echo "Deploying aura-service-config ConfigMap..."
+        if [ -d "deploy/kubernetes/aura-service-config/overlays/${ENVIRONMENT}" ]; then
+          kubectl apply -k "deploy/kubernetes/aura-service-config/overlays/${ENVIRONMENT}/"
+          echo "OK: Deployed aura-service-config for ${ENVIRONMENT}"
+        else
+          echo "WARN: No overlay for ${ENVIRONMENT}, deploying base config"
+          kubectl apply -k deploy/kubernetes/aura-service-config/base/
+        fi
+
+      # Deploy dnsmasq DaemonSet
+      - |
+        echo "Deploying dnsmasq DaemonSet..."
+        kubectl apply -f deploy/kubernetes/dnsmasq-daemonset.yaml
+
+        # Patch with ECR image
+        ECR_REPO_URI=$(cfn_get_stack_output ${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT} RepositoryUri)
+        FULL_IMAGE_URI="${ECR_REPO_URI}:${DNSMASQ_IMAGE_TAG}"
+        echo "Patching with image: $FULL_IMAGE_URI"
+
+        kubectl patch daemonset dnsmasq -n aura-network-services --type='json' \
+          -p="[{\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/image\", \"value\": \"${FULL_IMAGE_URI}\"}]"
+
+        kubectl apply -f deploy/kubernetes/dnsmasq-networkpolicy.yaml || echo "NetworkPolicy already exists"
+
+      # Wait for dnsmasq rollout
+      - wait_for_rollout "daemonset" "dnsmasq" "aura-network-services" 300 || echo "DaemonSet rollout timeout"
+
+      # Environment Validator (ADR-062) - validate before deployment
+      - |
+        echo "Running Environment Validator (ADR-062)..."
+        if [ -d "deploy/kubernetes/aura-api/overlays/${ENVIRONMENT}" ]; then
+          kustomize build "deploy/kubernetes/aura-api/overlays/${ENVIRONMENT}" > /tmp/aura-api-manifest.yaml
+          if python -m src.services.env_validator.cli /tmp/aura-api-manifest.yaml --env "${ENVIRONMENT}" --strict; then
+            echo "OK: aura-api passed environment validation"
+          else
+            echo "ERROR: aura-api failed environment validation"
+            echo "Fix cross-environment configuration issues and retry"
+            exit 1
+          fi
+        else
+          echo "No environment overlay found, skipping validation"
+        fi
+
+      # Deploy aura-api
+      - |
+        echo "Deploying aura-api..."
+        kubectl apply -k deploy/kubernetes/aura-api/
+
+        # Annotate service account with IRSA role
+        IRSA_ROLE_ARN=$(cfn_get_stack_output ${PROJECT_NAME}-irsa-api-${ENVIRONMENT} RoleArn)
+        echo "Annotating service account with IRSA role: $IRSA_ROLE_ARN"
+        kubectl annotate serviceaccount aura-api \
+          eks.amazonaws.com/role-arn=$IRSA_ROLE_ARN \
+          --overwrite
+
+        kubectl rollout restart deployment/aura-api
+
+      # Wait for aura-api rollout
+      - wait_for_rollout "deployment" "aura-api" "default" 300 || echo "aura-api rollout timeout"
+
+  post_build:
+    commands:
+      - echo "Kubernetes deployment complete"
+
+      # Verify pods
+      - |
+        echo "Pod Status:"
+        kubectl get pods -n aura-network-services -l app=dnsmasq -o wide
+        kubectl get pods -l app=${PROJECT_NAME}-api -o wide
+
+      # Verify OpenSearch connectivity (if available)
+      - |
+        echo "Verifying OpenSearch IAM Master User access..."
+        OPENSEARCH_ENDPOINT=$(cfn_get_stack_output ${PROJECT_NAME}-opensearch-${ENVIRONMENT} DomainEndpoint "")
+        if [[ -n "$OPENSEARCH_ENDPOINT" && "$OPENSEARCH_ENDPOINT" != "None" ]]; then
+          echo "OpenSearch Endpoint: $OPENSEARCH_ENDPOINT"
+          AURA_API_POD=$(kubectl get pods -l app=${PROJECT_NAME}-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [[ -n "$AURA_API_POD" ]]; then
+            echo "Testing from pod: $AURA_API_POD"
+            kubectl exec $AURA_API_POD -- curl -s "https://${OPENSEARCH_ENDPOINT}/_cluster/health" 2>/dev/null || echo "OpenSearch health check skipped"
+          fi
+        else
+          echo "OpenSearch not deployed, skipping verification"
+        fi
+
+      # Deployment summary
+      - |
+        echo "=========================================="
+        echo "Deployment Summary"
+        echo "=========================================="
+        echo "Cluster: ${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+        echo "dnsmasq Image: $(cfn_get_stack_output ${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT} RepositoryUri):${DNSMASQ_IMAGE_TAG}"
+        echo "IRSA Role: $(cfn_get_stack_output ${PROJECT_NAME}-irsa-api-${ENVIRONMENT} RoleArn)"

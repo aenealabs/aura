@@ -1,0 +1,779 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.2 - Security Groups (Network Access Control)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  VpcId:
+    Type: String
+    Description: VPC ID from networking stack
+
+Resources:
+  # EKS Cluster Security Group
+  EKSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-eks-sg-${Environment}'
+      GroupDescription: Security group for EKS cluster
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-eks-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # EKS Node Security Group
+  EKSNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-eks-node-sg-${Environment}'
+      GroupDescription: Security group for EKS worker nodes
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-eks-node-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Allow nodes to communicate with each other
+  EKSNodeIngressFromNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSNodeSecurityGroup
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      IpProtocol: -1
+      Description: Allow nodes to communicate with each other
+
+  # Allow nodes to communicate with control plane
+  EKSNodeIngressFromControlPlane:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSNodeSecurityGroup
+      SourceSecurityGroupId: !Ref EKSSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+      Description: Allow worker Kubelets and pods to receive communication from cluster control plane
+
+  # Allow control plane to communicate with nodes
+  EKSControlPlaneIngressFromNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSSecurityGroup
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      Description: Allow pods to communicate with cluster API Server
+
+  # Neptune Security Group
+  # NOTE: Ingress rules defined as separate resources to enable in-place updates
+  # without triggering security group replacement (which would fail due to ENI dependencies)
+  NeptuneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-neptune-sg-${Environment}'
+      GroupDescription: Security group for Neptune graph database
+      VpcId: !Ref VpcId
+      # SecurityGroupIngress moved to separate NeptuneIngressFromEKSNodes resource
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Neptune <- EKS Nodes (Gremlin WebSocket)
+  NeptuneIngressFromEKSNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref NeptuneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8182
+      ToPort: 8182
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      Description: Allow EKS nodes to access Neptune (Gremlin)
+
+  # OpenSearch Security Group
+  # NOTE: Ingress rules defined as separate resources to enable in-place updates
+  # without triggering security group replacement (which would fail due to ENI dependencies)
+  OpenSearchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-opensearch-sg-${Environment}'
+      GroupDescription: Security group for OpenSearch domain
+      VpcId: !Ref VpcId
+      # SecurityGroupIngress moved to separate OpenSearchIngressFromEKSNodes* resources
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-opensearch-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # OpenSearch <- EKS Nodes (HTTPS)
+  OpenSearchIngressFromEKSNodesHTTPS:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref OpenSearchSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      Description: Allow EKS nodes to access OpenSearch HTTPS
+
+  # OpenSearch <- EKS Nodes (API port 9200)
+  OpenSearchIngressFromEKSNodesAPI:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref OpenSearchSecurityGroup
+      IpProtocol: tcp
+      FromPort: 9200
+      ToPort: 9200
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      Description: Allow EKS nodes to access OpenSearch API
+
+  # Application Load Balancer Security Group
+  # NOTE: Ingress/egress rules defined as separate resources for consistency
+  # and to enable future modifications without replacement
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-alb-sg-${Environment}'
+      GroupDescription: Security group for Application Load Balancer
+      VpcId: !Ref VpcId
+      # Ingress/egress moved to separate resources below
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-alb-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ALB <- Internet (HTTP)
+  ALBIngressHTTP:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+      Description: Allow HTTP from internet
+
+  # ALB <- Internet (HTTPS)
+  ALBIngressHTTPS:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      CidrIp: 0.0.0.0/0
+      Description: Allow HTTPS from internet
+
+  # ALB -> All (outbound)
+  ALBEgressAll:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+      Description: Allow all outbound traffic
+
+  # Allow EKS nodes to receive traffic from ALB
+  EKSNodeIngressFromALB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSNodeSecurityGroup
+      SourceSecurityGroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      FromPort: 30000
+      ToPort: 32767
+      Description: Allow ALB to communicate with NodePort services
+
+  # ==========================================================================
+  # Centralized Workload Security Groups (CMMC Level 3 Compliant)
+  # ==========================================================================
+  # These security groups are defined here (Layer 1) to enable identity-based
+  # access control via SG references. This eliminates circular dependencies
+  # and provides CMMC Level 3 compliant network segmentation.
+  #
+  # ADR Reference: Option C - Source Security Group References
+  # - Strongest CMMC Level 3 compliance (identity-based access)
+  # - Prevents sandbox escape attacks
+  # - Lower operational overhead than per-subnet CIDRs
+  # ==========================================================================
+
+  # ECS/Fargate Workload Security Group
+  # Used by: incident-investigation-workflow, network-services, hitl-workflow
+  # NOT used by: sandbox (intentionally isolated)
+  ECSWorkloadSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-ecs-workload-sg-${Environment}'
+      GroupDescription: Centralized security group for ECS/Fargate tasks requiring VPC endpoint access
+      VpcId: !Ref VpcId
+      # Egress rules defined via separate SecurityGroupEgress resources to avoid circular refs
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-ecs-workload-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ecs-fargate-workloads
+        - Key: CMmcControl
+          Value: SC-7
+
+  # Lambda Security Group (for VPC-attached Lambda functions)
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-lambda-sg-${Environment}'
+      GroupDescription: Security group for Lambda functions requiring VPC access
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-lambda-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: lambda-vpc-access
+        - Key: CMmcControl
+          Value: SC-7
+
+  # VPC Endpoint Security Group (for AWS services)
+  # Updated to use security group references instead of CIDR blocks (CMMC L3)
+  # NOTE: Ingress rules defined as separate resources to avoid CloudFormation
+  # replacement when adding new source security groups. This is a CloudFormation
+  # best practice for evolving security group architectures.
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-vpce-sg-${Environment}'
+      GroupDescription: Security group for VPC endpoints - identity-based access control
+      VpcId: !Ref VpcId
+      # NOTE: SecurityGroupIngress defined as separate resources below to enable
+      # in-place updates without replacement. This prevents "already exists" errors.
+      # See: VPCEndpointIngressFromEKSNodes, VPCEndpointIngressFromECSWorkloads, etc.
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpce-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CMmcControl
+          Value: SC-7
+        - Key: SecurityNote
+          Value: SG-references-only-no-CIDR
+
+  # ==========================================================================
+  # VPC Endpoint Ingress Rules (Separate Resources for In-Place Updates)
+  # ==========================================================================
+  # Defined as separate resources to enable CloudFormation to update rules
+  # without replacing the security group. This is critical for production
+  # environments where VPC endpoints depend on this security group.
+  #
+  # CloudFormation Behavior:
+  # - Inline SecurityGroupIngress: May trigger replacement when modified
+  # - Separate AWS::EC2::SecurityGroupIngress: Updated in-place
+  # ==========================================================================
+
+  # VPC Endpoints <- EKS Nodes (Container Insights, ECR, CloudWatch)
+  VPCEndpointIngressFromEKSNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref VPCEndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      Description: HTTPS from EKS nodes (Container Insights, ECR, CloudWatch)
+
+  # VPC Endpoints <- ECS/Fargate Workloads (ECR, CloudWatch Logs, Secrets Manager)
+  VPCEndpointIngressFromECSWorkloads:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref VPCEndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref ECSWorkloadSecurityGroup
+      Description: HTTPS from ECS/Fargate tasks (ECR, Logs, Secrets Manager)
+
+  # VPC Endpoints <- Lambda Functions (CloudWatch Logs, Secrets Manager)
+  VPCEndpointIngressFromLambda:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref VPCEndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      Description: HTTPS from Lambda functions (Logs, Secrets Manager)
+
+  # NOTE: SandboxSecurityGroup is intentionally NOT included here.
+  # This prevents sandbox escape via VPC endpoints (CMMC SC-7 control).
+
+  # ==========================================================================
+  # Egress Rules for Workload Security Groups
+  # ==========================================================================
+  # Defined as separate resources to avoid circular dependencies and enable
+  # SG-to-SG references for identity-based egress control.
+
+  # ECS Workload -> VPC Endpoints (HTTPS for AWS APIs)
+  ECSWorkloadToVPCEndpoints:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ECSWorkloadSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationSecurityGroupId: !Ref VPCEndpointSecurityGroup
+      Description: HTTPS to VPC endpoints (ECR, Logs, Secrets Manager)
+
+  # ECS Workload -> Neptune (Gremlin WebSocket)
+  ECSWorkloadToNeptune:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ECSWorkloadSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8182
+      ToPort: 8182
+      DestinationSecurityGroupId: !Ref NeptuneSecurityGroup
+      Description: Neptune graph database queries (Gremlin)
+
+  # ECS Workload -> OpenSearch (API port 9200)
+  ECSWorkloadToOpenSearch:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ECSWorkloadSecurityGroup
+      IpProtocol: tcp
+      FromPort: 9200
+      ToPort: 9200
+      DestinationSecurityGroupId: !Ref OpenSearchSecurityGroup
+      Description: OpenSearch API queries
+
+  # ECS Workload -> OpenSearch (HTTPS 443)
+  # NOTE: VPC-based OpenSearch Service uses HTTPS (443) for REST API access,
+  # not the default OpenSearch port 9200. Both rules are included for compatibility.
+  ECSWorkloadToOpenSearchHTTPS:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ECSWorkloadSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationSecurityGroupId: !Ref OpenSearchSecurityGroup
+      Description: OpenSearch HTTPS for VPC endpoint access
+
+  # ECS Workload -> DNS (VPC DNS resolver at base+2)
+  # Note: DNS uses CIDR because VPC DNS is not behind a security group
+  ECSWorkloadToDNS:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ECSWorkloadSecurityGroup
+      IpProtocol: udp
+      FromPort: 53
+      ToPort: 53
+      CidrIp: 10.0.0.0/16
+      Description: DNS queries to VPC DNS resolver
+
+  ECSWorkloadToDNSTCP:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ECSWorkloadSecurityGroup
+      IpProtocol: tcp
+      FromPort: 53
+      ToPort: 53
+      CidrIp: 10.0.0.0/16
+      Description: DNS queries TCP fallback
+
+  # ECS Workload -> S3 Gateway Endpoint (for ECR image layers)
+  # NOTE: S3 Gateway endpoints don't use security groups - they use route table
+  # prefix lists. This rule allows egress to the S3 prefix list (pl-63a5400a
+  # for us-east-1). ECR stores Docker image layers in S3, so this is REQUIRED
+  # for Fargate image pulls in private subnets.
+  #
+  # Unlike Interface Endpoints (ecr.api, ecr.dkr) which use DestinationSecurityGroupId,
+  # Gateway Endpoints require DestinationPrefixListId.
+  #
+  # To find your region's S3 prefix list:
+  #   aws ec2 describe-prefix-lists --filters "Name=prefix-list-name,Values=com.amazonaws.us-east-1.s3"
+  ECSWorkloadToS3:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ECSWorkloadSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationPrefixListId: pl-63a5400a
+      Description: HTTPS to S3 Gateway endpoint for ECR image layers
+
+  # ECS Workload -> DynamoDB Gateway Endpoint (for workflow state, settings, etc.)
+  # NOTE: DynamoDB Gateway endpoints, like S3, use route table prefix lists.
+  # This rule allows egress to the DynamoDB prefix list (pl-02cd2c6b for us-east-1).
+  # Required for any ECS task that needs DynamoDB access in private subnets.
+  #
+  # To find your region's DynamoDB prefix list:
+  #   aws ec2 describe-prefix-lists --filters "Name=prefix-list-name,Values=com.amazonaws.us-east-1.dynamodb"
+  ECSWorkloadToDynamoDB:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ECSWorkloadSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationPrefixListId: pl-02cd2c6b
+      Description: HTTPS to DynamoDB Gateway endpoint for workflow state
+
+  # Lambda -> VPC Endpoints (HTTPS for AWS APIs)
+  LambdaToVPCEndpoints:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LambdaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationSecurityGroupId: !Ref VPCEndpointSecurityGroup
+      Description: HTTPS to VPC endpoints (Logs, Secrets Manager)
+
+  # Lambda -> DNS
+  LambdaToDNS:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LambdaSecurityGroup
+      IpProtocol: udp
+      FromPort: 53
+      ToPort: 53
+      CidrIp: 10.0.0.0/16
+      Description: DNS queries to VPC DNS resolver
+
+  # Lambda -> S3 Gateway Endpoint (for any S3 access from Lambda)
+  LambdaToS3:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LambdaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationPrefixListId: pl-63a5400a
+      Description: HTTPS to S3 Gateway endpoint
+
+  # Lambda -> DynamoDB Gateway Endpoint (for workflow state, audit logs)
+  LambdaToDynamoDB:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LambdaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationPrefixListId: pl-02cd2c6b
+      Description: HTTPS to DynamoDB Gateway endpoint
+
+  # ==========================================================================
+  # Ingress Rules for Data Services (from workload SGs)
+  # ==========================================================================
+
+  # Neptune ingress from ECS Workloads
+  NeptuneIngressFromECSWorkloads:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref NeptuneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8182
+      ToPort: 8182
+      SourceSecurityGroupId: !Ref ECSWorkloadSecurityGroup
+      Description: Neptune access from ECS/Fargate tasks
+
+  # OpenSearch ingress from ECS Workloads (HTTPS)
+  OpenSearchIngressFromECSWorkloadsHTTPS:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref OpenSearchSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref ECSWorkloadSecurityGroup
+      Description: OpenSearch HTTPS from ECS/Fargate tasks
+
+  # OpenSearch ingress from ECS Workloads (API)
+  OpenSearchIngressFromECSWorkloadsAPI:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref OpenSearchSecurityGroup
+      IpProtocol: tcp
+      FromPort: 9200
+      ToPort: 9200
+      SourceSecurityGroupId: !Ref ECSWorkloadSecurityGroup
+      Description: OpenSearch API from ECS/Fargate tasks
+
+  # AWS WAF Web ACL for ALB (GovCloud DoD SRG Compliant)
+  ALBWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub '${ProjectName}-alb-waf-${Environment}'
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}  # Allow by default, block specific threats
+      Description: !Sub 'WAF for ${ProjectName} ALB - DoD SRG compliant'
+      Rules:
+        # Rule 1: Rate Limiting (DDoS Protection)
+        - Name: RateLimitPerIP
+          Priority: 1
+          Statement:
+            RateBasedStatement:
+              Limit: 2000  # 2000 requests per 5 minutes per IP
+              AggregateKeyType: IP
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 429
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${ProjectName}-RateLimit-${Environment}'
+
+        # Rule 2: AWS Managed Rules - Core Rule Set (SQL injection, XSS)
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 2
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+              ExcludedRules: []
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${ProjectName}-CommonRuleSet-${Environment}'
+
+        # Rule 3: AWS Managed Rules - Known Bad Inputs
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 3
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${ProjectName}-KnownBadInputs-${Environment}'
+
+        # Rule 4: AWS Managed Rules - Anonymous IP List (Tor, VPNs)
+        - Name: AWSManagedRulesAnonymousIpList
+          Priority: 4
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAnonymousIpList
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${ProjectName}-AnonymousIP-${Environment}'
+
+        # Rule 5: Block SQL Injection Attacks
+        - Name: SQLInjectionProtection
+          Priority: 5
+          Statement:
+            SqliMatchStatement:
+              FieldToMatch:
+                Body:
+                  OversizeHandling: CONTINUE
+              TextTransformations:
+                - Priority: 0
+                  Type: URL_DECODE
+                - Priority: 1
+                  Type: HTML_ENTITY_DECODE
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 403
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${ProjectName}-SQLi-${Environment}'
+
+        # Rule 6: Block XSS Attacks
+        - Name: XSSProtection
+          Priority: 6
+          Statement:
+            XssMatchStatement:
+              FieldToMatch:
+                Body:
+                  OversizeHandling: CONTINUE
+              TextTransformations:
+                - Priority: 0
+                  Type: URL_DECODE
+                - Priority: 1
+                  Type: HTML_ENTITY_DECODE
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 403
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${ProjectName}-XSS-${Environment}'
+
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${ProjectName}-WAF-${Environment}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-alb-waf-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Log Group for WAF Logs
+  # Note: WAFv2 requires log group names to start with 'aws-waf-logs-'
+  WAFLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub 'aws-waf-logs-${ProjectName}-${Environment}'
+      RetentionInDays: 90
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Logs Resource Policy for WAF
+  # Required: WAFv2 needs explicit permission to write to CloudWatch Logs
+  # This is a resource-based policy on CloudWatch Logs, separate from IAM
+  WAFLogResourcePolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-waf-log-policy-${Environment}'
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowWAFLogging",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "delivery.logs.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws-waf-logs-${ProjectName}-${Environment}:*",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": "${AWS::AccountId}"
+                },
+                "ArnLike": {
+                  "aws:SourceArn": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+                }
+              }
+            }
+          ]
+        }
+
+  # WAF Logging Configuration
+  # Note: WAFv2 requires log group ARN without the :* suffix that GetAtt returns
+  WAFLoggingConfiguration:
+    Type: AWS::WAFv2::LoggingConfiguration
+    DependsOn:
+      - WAFLogGroup
+      - WAFLogResourcePolicy
+    Properties:
+      ResourceArn: !GetAtt ALBWebACL.Arn
+      LogDestinationConfigs:
+        - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws-waf-logs-${ProjectName}-${Environment}'
+
+Outputs:
+  EKSSecurityGroupId:
+    Description: EKS cluster security group ID
+    Value: !Ref EKSSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-EKSSecurityGroupId'
+
+  EKSNodeSecurityGroupId:
+    Description: EKS node security group ID
+    Value: !Ref EKSNodeSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-EKSNodeSecurityGroupId'
+
+  NeptuneSecurityGroupId:
+    Description: Neptune security group ID
+    Value: !Ref NeptuneSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-NeptuneSecurityGroupId'
+
+  OpenSearchSecurityGroupId:
+    Description: OpenSearch security group ID
+    Value: !Ref OpenSearchSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-OpenSearchSecurityGroupId'
+
+  ALBSecurityGroupId:
+    Description: ALB security group ID
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ALBSecurityGroupId'
+
+  VPCEndpointSecurityGroupId:
+    Description: VPC endpoint security group ID
+    Value: !Ref VPCEndpointSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCEndpointSecurityGroupId'
+
+  # Centralized Workload Security Groups (CMMC L3 compliant exports)
+  ECSWorkloadSecurityGroupId:
+    Description: Centralized security group for ECS/Fargate tasks requiring VPC endpoint access
+    Value: !Ref ECSWorkloadSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-ecs-workload-sg-${Environment}'
+
+  LambdaSecurityGroupId:
+    Description: Security group for Lambda functions requiring VPC access
+    Value: !Ref LambdaSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-lambda-sg-${Environment}'
+
+  WAFWebACLId:
+    Description: WAF Web ACL ID
+    Value: !GetAtt ALBWebACL.Id
+    Export:
+      Name: !Sub '${AWS::StackName}-WAFWebACLId'
+
+  WAFWebACLArn:
+    Description: WAF Web ACL ARN
+    Value: !GetAtt ALBWebACL.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WAFWebACLArn'

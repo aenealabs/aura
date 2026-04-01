@@ -1,0 +1,21 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aura.fullname" . }}-api
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "api" "context" .) | nindent 4 }}
+  {{- with .Values.api.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.api.service.type }}
+  ports:
+    - port: {{ .Values.api.service.port }}
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    {{- include "aura.componentSelectorLabels" (dict "component" "api" "context" .) | nindent 4 }}
+{{- end }}

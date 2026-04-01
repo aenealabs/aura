@@ -1,0 +1,248 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.5 - Bedrock Guardrails (Output Safety)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, staging, prod]
+    Description: Deployment environment
+
+  EnablePIIFiltering:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable PII detection and filtering
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+  EnablePII: !Equals [!Ref EnablePIIFiltering, 'true']
+
+Resources:
+  # ==========================================================================
+  # Bedrock Guardrail - Agent Output Safety
+  # ==========================================================================
+  AuraGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: !Sub '${ProjectName}-guardrail-${Environment}'
+      Description: !Sub 'Project Aura agent output guardrails for ${Environment} environment'
+      BlockedInputMessaging: >-
+        Your request was blocked due to a policy violation. Please rephrase
+        your request without potentially harmful content.
+      BlockedOutputsMessaging: >-
+        The response was blocked due to safety concerns. The system detected
+        potentially harmful or inaccurate content.
+
+      # Content Policy - Filter harmful content categories
+      ContentPolicyConfig:
+        FiltersConfig:
+          # Block hate speech with high sensitivity
+          - Type: HATE
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          # Block insults at medium sensitivity (allow technical criticism)
+          - Type: INSULTS
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          # Block sexual content strictly
+          - Type: SEXUAL
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          # Block violence at medium (allow security discussions)
+          - Type: VIOLENCE
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          # Block misconduct strictly
+          - Type: MISCONDUCT
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          # Block prompt injection attempts on input
+          - Type: PROMPT_ATTACK
+            InputStrength: HIGH
+            OutputStrength: NONE
+
+      # Sensitive Information Policy - PII Protection
+      SensitiveInformationPolicyConfig:
+        PiiEntitiesConfig:
+          # Mask email addresses (allow but redact)
+          - Type: EMAIL
+            Action: !If [EnablePII, ANONYMIZE, BLOCK]
+          # Mask phone numbers
+          - Type: PHONE
+            Action: !If [EnablePII, ANONYMIZE, BLOCK]
+          # Block SSN completely
+          - Type: US_SOCIAL_SECURITY_NUMBER
+            Action: BLOCK
+          # Block credit card numbers
+          - Type: CREDIT_DEBIT_CARD_NUMBER
+            Action: BLOCK
+          # Block CVV codes
+          - Type: CREDIT_DEBIT_CARD_CVV
+            Action: BLOCK
+          # Block expiry dates
+          - Type: CREDIT_DEBIT_CARD_EXPIRY
+            Action: BLOCK
+          # Mask IP addresses (useful for security context)
+          - Type: IP_ADDRESS
+            Action: !If [EnablePII, ANONYMIZE, BLOCK]
+          # Block AWS credentials
+          - Type: AWS_ACCESS_KEY
+            Action: BLOCK
+          - Type: AWS_SECRET_KEY
+            Action: BLOCK
+        # Custom regex patterns for additional sensitive data
+        RegexesConfig:
+          # Block potential API keys
+          - Name: api-key-pattern
+            Description: Detect potential API keys
+            Pattern: (?i)(api[_-]?key|apikey|api[_-]?secret)[\s:=]+[a-zA-Z0-9_-]{20,}
+            Action: BLOCK
+          # Block JWT tokens
+          - Name: jwt-token-pattern
+            Description: Detect JWT tokens
+            Pattern: eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+
+            Action: BLOCK
+          # Block private keys
+          - Name: private-key-pattern
+            Description: Detect private key headers
+            Pattern: -----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----
+            Action: BLOCK
+
+      # Topic Policy - Block off-topic or dangerous topics
+      TopicPolicyConfig:
+        TopicsConfig:
+          # Block requests for malicious code
+          - Name: malware-creation
+            Definition: Requests to create malware, viruses, ransomware, or exploit code for malicious purposes
+            Examples:
+              - Write a keylogger in Python
+              - Create a ransomware script
+              - Generate code to exploit CVE vulnerabilities for attacks
+            Type: DENY
+          # Block social engineering assistance
+          - Name: social-engineering
+            Definition: Requests to help with phishing, pretexting, or social engineering attacks
+            Examples:
+              - Write a phishing email template
+              - Help me impersonate a bank representative
+              - Create a fake login page
+            Type: DENY
+          # Block credential theft assistance
+          - Name: credential-theft
+            Definition: Requests to steal, crack, or brute-force passwords and credentials
+            Examples:
+              - Write a password cracker
+              - How to steal AWS credentials
+              - Brute force SSH login script
+            Type: DENY
+
+      # Word Policy - Block specific dangerous terms
+      WordPolicyConfig:
+        ManagedWordListsConfig:
+          - Type: PROFANITY
+        WordsConfig:
+          - Text: 'rm -rf /'
+
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: security
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Guardrail Version (required for use)
+  AuraGuardrailVersion:
+    Type: AWS::Bedrock::GuardrailVersion
+    Properties:
+      GuardrailIdentifier: !Ref AuraGuardrail
+      Description: !Sub 'Initial version for ${Environment}'
+
+  # ==========================================================================
+  # SSM Parameters for Runtime Configuration
+  # ==========================================================================
+  GuardrailIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/guardrails/guardrail-id'
+      Type: String
+      Value: !Ref AuraGuardrail
+      Description: Bedrock Guardrail ID for runtime use
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  GuardrailVersionParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/guardrails/guardrail-version'
+      Type: String
+      Value: !GetAtt AuraGuardrailVersion.Version
+      Description: Bedrock Guardrail Version for runtime use
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  GuardrailArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/guardrails/guardrail-arn'
+      Type: String
+      Value: !GetAtt AuraGuardrail.GuardrailArn
+      Description: Bedrock Guardrail ARN for IAM policies
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # ==========================================================================
+  # CloudWatch Alarms for Guardrail Monitoring
+  # ==========================================================================
+  GuardrailBlockRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-guardrail-high-block-rate-${Environment}'
+      AlarmDescription: Alert when guardrail block rate exceeds threshold (may indicate attack or misconfiguration)
+      MetricName: GuardrailBlocks
+      Namespace: Aura/Guardrails
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !If [IsProd, 50, 100]
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: GuardrailId
+          Value: !Ref AuraGuardrail
+        - Name: Environment
+          Value: !Ref Environment
+
+Outputs:
+  GuardrailId:
+    Description: Bedrock Guardrail ID
+    Value: !Ref AuraGuardrail
+    Export:
+      Name: !Sub '${ProjectName}-guardrail-id-${Environment}'
+
+  GuardrailArn:
+    Description: Bedrock Guardrail ARN
+    Value: !GetAtt AuraGuardrail.GuardrailArn
+    Export:
+      Name: !Sub '${ProjectName}-guardrail-arn-${Environment}'
+
+  GuardrailVersion:
+    Description: Bedrock Guardrail Version
+    Value: !GetAtt AuraGuardrailVersion.Version
+    Export:
+      Name: !Sub '${ProjectName}-guardrail-version-${Environment}'
+
+  GuardrailIdParameterName:
+    Description: SSM Parameter name for Guardrail ID
+    Value: !Sub '/aura/${Environment}/guardrails/guardrail-id'

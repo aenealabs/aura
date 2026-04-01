@@ -1,0 +1,314 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.2 - GuardDuty (Threat Detection)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-12-03'
+  Purpose: |
+    Enables AWS GuardDuty for continuous threat detection across EC2, VPC Flow Logs,
+    S3, and EKS. Integrates with SNS for real-time security alerts.
+    Required for CMMC Level 3 and NIST 800-53 SI-4 (Information System Monitoring).
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Environment name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for security alerts (leave empty to skip subscription)
+
+  EnableS3Protection:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable S3 data event protection (recommended for compliance)
+
+  EnableEKSProtection:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable EKS audit log monitoring
+
+  EnableMalwareProtection:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable malware protection for EBS volumes
+
+  FindingPublishingFrequency:
+    Type: String
+    Default: FIFTEEN_MINUTES
+    AllowedValues:
+      - FIFTEEN_MINUTES
+      - ONE_HOUR
+      - SIX_HOURS
+    Description: How often to publish findings to CloudWatch/S3
+
+  ExistingDetectorId:
+    Type: String
+    Default: ''
+    Description: Existing GuardDuty Detector ID (if one already exists in account). Leave empty to create new detector.
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  EnableS3: !Equals [!Ref EnableS3Protection, 'true']
+  EnableEKS: !Equals [!Ref EnableEKSProtection, 'true']
+  EnableMalware: !Equals [!Ref EnableMalwareProtection, 'true']
+  IsProduction: !Equals [!Ref Environment, prod]
+  CreateDetector: !Equals [!Ref ExistingDetectorId, '']
+
+Resources:
+  # ============================================================================
+  # GuardDuty Detector (only created if ExistingDetectorId not provided)
+  # ============================================================================
+  GuardDutyDetector:
+    Type: AWS::GuardDuty::Detector
+    Condition: CreateDetector
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: !Ref FindingPublishingFrequency
+      DataSources:
+        S3Logs:
+          Enable: !If [EnableS3, true, false]
+        Kubernetes:
+          AuditLogs:
+            Enable: !If [EnableEKS, true, false]
+        MalwareProtection:
+          ScanEc2InstanceWithFindings:
+            EbsVolumes: !If [EnableMalware, true, false]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Compliance
+          Value: CMMC-Level-3
+
+  # ============================================================================
+  # SNS Topic for GuardDuty Alerts
+  # ============================================================================
+  GuardDutyAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-guardduty-alerts-${Environment}'
+      DisplayName: !Sub 'GuardDuty Security Alerts - ${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  GuardDutyAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref GuardDutyAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # Allow EventBridge to publish to SNS
+  GuardDutyAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref GuardDutyAlertTopic
+            Condition:
+              ArnLike:
+                'aws:SourceArn': !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*'
+      Topics:
+        - !Ref GuardDutyAlertTopic
+
+  # ============================================================================
+  # EventBridge Rules for GuardDuty Findings
+  # ============================================================================
+
+  # Critical/High severity findings - immediate alert
+  GuardDutyCriticalFindingsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-guardduty-critical-${Environment}'
+      Description: Alert on HIGH and CRITICAL severity GuardDuty findings
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+        detail:
+          severity:
+            - numeric:
+                - '>='
+                - 7.0
+      State: ENABLED
+      Targets:
+        - Arn: !Ref GuardDutyAlertTopic
+          Id: GuardDutyCriticalTarget
+          InputTransformer:
+            InputPathsMap:
+              severity: $.detail.severity
+              type: $.detail.type
+              title: $.detail.title
+              description: $.detail.description
+              region: $.region
+              accountId: $.account
+              resourceType: $.detail.resource.resourceType
+              time: $.time
+            InputTemplate: |
+              "🚨 CRITICAL/HIGH SEVERITY - GuardDuty Threat Detected"
+              ""
+              "Severity: <severity>"
+              "Finding Type: <type>"
+              "Title: <title>"
+              "Description: <description>"
+              ""
+              "Resource Type: <resourceType>"
+              "Region: <region>"
+              "Account: <accountId>"
+              "Time: <time>"
+              ""
+              "⚠️ IMMEDIATE ACTION REQUIRED - Review and remediate this threat."
+
+  # Medium severity findings - standard alert
+  GuardDutyMediumFindingsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-guardduty-medium-${Environment}'
+      Description: Alert on MEDIUM severity GuardDuty findings
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+        detail:
+          severity:
+            - numeric:
+                - '>='
+                - 4.0
+            - numeric:
+                - '<'
+                - 7.0
+      State: ENABLED
+      Targets:
+        - Arn: !Ref GuardDutyAlertTopic
+          Id: GuardDutyMediumTarget
+          InputTransformer:
+            InputPathsMap:
+              severity: $.detail.severity
+              type: $.detail.type
+              title: $.detail.title
+              description: $.detail.description
+              region: $.region
+              time: $.time
+            InputTemplate: |
+              "⚠️ MEDIUM SEVERITY - GuardDuty Finding"
+              ""
+              "Severity: <severity>"
+              "Finding Type: <type>"
+              "Title: <title>"
+              "Description: <description>"
+              ""
+              "Region: <region>"
+              "Time: <time>"
+              ""
+              "Review this finding and take appropriate action."
+
+  # ============================================================================
+  # CloudWatch Alarms for GuardDuty Health
+  # ============================================================================
+
+  # Alarm if GuardDuty detector is disabled
+  GuardDutyDetectorHealthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-guardduty-detector-health-${Environment}'
+      AlarmDescription: Alert if GuardDuty detector becomes unhealthy or disabled
+      MetricName: DetectorHealth
+      Namespace: AWS/GuardDuty
+      Dimensions:
+        - Name: DetectorId
+          Value: !If [CreateDetector, !Ref GuardDutyDetector, !Ref ExistingDetectorId]
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Ref GuardDutyAlertTopic
+      OKActions:
+        - !Ref GuardDutyAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # CloudWatch Dashboard Widget Data (for monitoring.yaml integration)
+  # ============================================================================
+
+  # Log group for GuardDuty findings (for dashboard queries)
+  GuardDutyLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/guardduty/${ProjectName}-${Environment}'
+      RetentionInDays: !If [IsProduction, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  DetectorId:
+    Description: GuardDuty Detector ID
+    Value: !If [CreateDetector, !Ref GuardDutyDetector, !Ref ExistingDetectorId]
+    Export:
+      Name: !Sub '${ProjectName}-guardduty-detector-id-${Environment}'
+
+  AlertTopicArn:
+    Description: SNS Topic ARN for GuardDuty alerts
+    Value: !Ref GuardDutyAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-guardduty-alert-topic-${Environment}'
+
+  S3ProtectionEnabled:
+    Description: S3 Data Event protection status
+    Value: !If [EnableS3, 'Enabled', 'Disabled']
+
+  EKSProtectionEnabled:
+    Description: EKS Audit Log monitoring status
+    Value: !If [EnableEKS, 'Enabled', 'Disabled']
+
+  MalwareProtectionEnabled:
+    Description: Malware protection status
+    Value: !If [EnableMalware, 'Enabled', 'Disabled']
+
+  ComplianceControls:
+    Description: Compliance controls addressed by this deployment
+    Value: 'CMMC SI-4, NIST 800-53 SI-4, NIST 800-53 AU-6, DoD SRG Threat Detection'

@@ -1,0 +1,466 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.6 - Test Environment Monitoring (CloudWatch Dashboard & Alarms)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email for test environment alerts (leave empty to skip subscription)
+
+  DailyBudgetThreshold:
+    Type: Number
+    Default: 50
+    Description: Daily cost threshold for test environments (USD)
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # SNS Topic for Test Environment Alerts
+  TestEnvAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-test-env-alerts-${Environment}'
+      DisplayName: Test Environment Alerts
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: test-environments
+
+  # Email Subscription (conditional)
+  TestEnvAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref TestEnvAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # CloudWatch Dashboard for Test Environments
+  TestEnvDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-test-environments-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 1,
+              "properties": {
+                "markdown": "# Test Environment Dashboard\nSelf-service test environment monitoring for ADR-039"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 1,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/TestEnvironments", "ActiveEnvironments", "Environment", "${Environment}", {"stat": "Maximum", "label": "Active"}],
+                  [".", "PendingApproval", ".", ".", {"stat": "Maximum", "label": "Pending Approval"}],
+                  [".", "Provisioning", ".", ".", {"stat": "Maximum", "label": "Provisioning"}]
+                ],
+                "period": 300,
+                "stat": "Maximum",
+                "region": "${AWS::Region}",
+                "title": "Environment Count by Status",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Count"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 6,
+              "y": 1,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/TestEnvironments", "EnvironmentsCreated", "Environment", "${Environment}", {"stat": "Sum", "label": "Created"}],
+                  [".", "EnvironmentsTerminated", ".", ".", {"stat": "Sum", "label": "Terminated"}],
+                  [".", "EnvironmentsExpired", ".", ".", {"stat": "Sum", "label": "Auto-Expired"}]
+                ],
+                "period": 3600,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Environment Lifecycle (Hourly)",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Count"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 1,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/TestEnvironments", "EnvironmentsByType", "Type", "quick", "Environment", "${Environment}", {"stat": "Maximum", "label": "Quick (EKS)"}],
+                  ["...", "standard", ".", ".", {"stat": "Maximum", "label": "Standard"}],
+                  ["...", "extended", ".", ".", {"stat": "Maximum", "label": "Extended"}],
+                  ["...", "compliance", ".", ".", {"stat": "Maximum", "label": "Compliance"}]
+                ],
+                "period": 300,
+                "stat": "Maximum",
+                "region": "${AWS::Region}",
+                "title": "Environments by Type",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 18,
+              "y": 1,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/TestEnvironments", "ApprovalRequests", "Environment", "${Environment}", {"stat": "Sum", "label": "Requested"}],
+                  [".", "ApprovalApproved", ".", ".", {"stat": "Sum", "label": "Approved"}],
+                  [".", "ApprovalRejected", ".", ".", {"stat": "Sum", "label": "Rejected"}],
+                  [".", "ApprovalTimeout", ".", ".", {"stat": "Sum", "label": "Timeout"}]
+                ],
+                "period": 3600,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "HITL Approval Flow (Hourly)",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 7,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/TestEnvironments", "EstimatedDailyCost", "Environment", "${Environment}", {"stat": "Maximum", "label": "Daily Cost"}]
+                ],
+                "period": 300,
+                "stat": "Maximum",
+                "region": "${AWS::Region}",
+                "title": "Estimated Daily Cost (USD)",
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Daily Budget",
+                      "value": ${DailyBudgetThreshold},
+                      "color": "#d62728"
+                    }
+                  ]
+                },
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "USD"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 7,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/TestEnvironments", "CostByTemplate", "Template", "python-fastapi", "Environment", "${Environment}", {"stat": "Sum", "label": "Python FastAPI"}],
+                  ["...", "react-frontend", ".", ".", {"stat": "Sum", "label": "React Frontend"}],
+                  ["...", "full-stack", ".", ".", {"stat": "Sum", "label": "Full Stack"}],
+                  ["...", "data-pipeline", ".", ".", {"stat": "Sum", "label": "Data Pipeline"}],
+                  ["...", "quick-test", ".", ".", {"stat": "Sum", "label": "Quick Test"}]
+                ],
+                "period": 86400,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Daily Cost by Template (USD)",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 7,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/TestEnvironments", "QuotaUtilization", "Environment", "${Environment}", {"stat": "Average", "label": "Avg Quota Used %"}],
+                  [".", "QuotaExceededEvents", ".", ".", {"stat": "Sum", "label": "Quota Exceeded", "yAxis": "right"}]
+                ],
+                "period": 3600,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "User Quota Utilization",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "max": 100,
+                    "label": "Percent"
+                  },
+                  "right": {
+                    "min": 0,
+                    "label": "Count"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 13,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/TestEnvironments", "ProvisioningDuration", "Environment", "${Environment}", {"stat": "p50", "label": "p50"}],
+                  ["...", {"stat": "p90", "label": "p90"}],
+                  ["...", {"stat": "p99", "label": "p99"}]
+                ],
+                "period": 300,
+                "region": "${AWS::Region}",
+                "title": "Provisioning Duration (seconds)",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Seconds"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 13,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/TestEnvironments", "ProvisioningErrors", "Environment", "${Environment}", {"stat": "Sum", "label": "Provisioning Errors"}],
+                  [".", "CleanupErrors", ".", ".", {"stat": "Sum", "label": "Cleanup Errors"}],
+                  [".", "ApprovalErrors", ".", ".", {"stat": "Sum", "label": "Approval Errors"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Errors",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 19,
+              "width": 24,
+              "height": 4,
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${ProjectName}-test-env-provision-${Environment}", {"stat": "Sum", "label": "Provision"}],
+                  [".", ".", ".", "${ProjectName}-test-env-request-approval-${Environment}", {"stat": "Sum", "label": "Request Approval"}],
+                  [".", ".", ".", "${ProjectName}-test-env-process-approval-${Environment}", {"stat": "Sum", "label": "Process Approval"}],
+                  [".", ".", ".", "${ProjectName}-test-env-handle-timeout-${Environment}", {"stat": "Sum", "label": "Handle Timeout"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Lambda Invocations",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            }
+          ]
+        }
+
+  # Alarm: Daily cost exceeds threshold
+  DailyCostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-daily-cost-${Environment}'
+      AlarmDescription: Test environment daily cost exceeds threshold (cost optimized from 1-hour period)
+      MetricName: EstimatedDailyCost
+      Namespace: !Sub '${ProjectName}/TestEnvironments'
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Maximum
+      Period: 21600
+      EvaluationPeriods: 1
+      Threshold: !Ref DailyBudgetThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref TestEnvAlertTopic
+      OKActions:
+        - !Ref TestEnvAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Too many provisioning errors
+  ProvisioningErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-provisioning-errors-${Environment}'
+      AlarmDescription: High number of test environment provisioning errors
+      MetricName: ProvisioningErrors
+      Namespace: !Sub '${ProjectName}/TestEnvironments'
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref TestEnvAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Provisioning duration too high
+  ProvisioningLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-provisioning-latency-${Environment}'
+      AlarmDescription: Test environment provisioning taking too long (>5 min p90)
+      MetricName: ProvisioningDuration
+      Namespace: !Sub '${ProjectName}/TestEnvironments'
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      ExtendedStatistic: p90
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref TestEnvAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: High quota exceeded events
+  QuotaExceededAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-quota-exceeded-${Environment}'
+      AlarmDescription: Too many users hitting quota limits (cost optimized from 1-hour period)
+      MetricName: QuotaExceededEvents
+      Namespace: !Sub '${ProjectName}/TestEnvironments'
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref TestEnvAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Cleanup errors (orphaned resources)
+  CleanupErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-cleanup-errors-${Environment}'
+      AlarmDescription: Test environment cleanup failing (potential orphaned resources)
+      MetricName: CleanupErrors
+      Namespace: !Sub '${ProjectName}/TestEnvironments'
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref TestEnvAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  AlertTopicArn:
+    Description: SNS Topic ARN for test environment alerts
+    Value: !Ref TestEnvAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-test-env-alert-topic-${Environment}'
+
+  DashboardURL:
+    Description: CloudWatch Dashboard URL
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-test-environments-${Environment}'
+
+  DailyCostAlarmArn:
+    Description: Daily cost alarm ARN
+    Value: !GetAtt DailyCostAlarm.Arn
+    Export:
+      Name: !Sub '${ProjectName}-test-env-daily-cost-alarm-${Environment}'

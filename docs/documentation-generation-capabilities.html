@@ -1,0 +1,1563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Aura — Documentation Generation Capabilities</title>
+  <style>
+    :root {
+      --blue-600: #3B82F6;
+      --blue-700: #2563EB;
+      --blue-800: #1E40AF;
+      --blue-900: #1E3A8A;
+      --blue-50: #EFF6FF;
+      --slate-50: #F8FAFC;
+      --slate-100: #F1F5F9;
+      --slate-200: #E2E8F0;
+      --slate-300: #CBD5E1;
+      --slate-400: #94A3B8;
+      --slate-500: #64748B;
+      --slate-600: #475569;
+      --slate-700: #334155;
+      --slate-800: #1E293B;
+      --slate-900: #0F172A;
+      --green-50: #F0FDF4;
+      --green-100: #DCFCE7;
+      --green-600: #16A34A;
+      --green-700: #15803D;
+      --red-50: #FEF2F2;
+      --red-600: #DC2626;
+      --amber-50: #FFFBEB;
+      --amber-600: #D97706;
+      --purple-50: #FAF5FF;
+      --purple-600: #9333EA;
+      --purple-700: #7C3AED;
+      --teal-50: #F0FDFA;
+      --teal-600: #0D9488;
+      --rose-50: #FFF1F2;
+      --rose-600: #E11D48;
+      --indigo-50: #EEF2FF;
+      --indigo-600: #4F46E5;
+      --cyan-50: #ECFEFF;
+      --cyan-600: #0891B2;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--slate-50);
+      color: var(--slate-800);
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    /* ── Header ── */
+    .site-header {
+      background: linear-gradient(135deg, var(--blue-900) 0%, var(--blue-700) 100%);
+      color: #fff;
+      padding: 48px 0 40px;
+      border-bottom: 4px solid var(--blue-600);
+    }
+    .site-header .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    .site-header h1 {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+    .site-header .subtitle {
+      font-size: 16px;
+      opacity: 0.85;
+      max-width: 720px;
+      line-height: 1.5;
+    }
+    .header-meta {
+      display: flex;
+      gap: 24px;
+      margin-top: 20px;
+      font-size: 13px;
+      opacity: 0.75;
+    }
+    .header-meta span { display: flex; align-items: center; gap: 6px; }
+
+    /* ── Layout ── */
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    .page-body { padding: 40px 0 80px; }
+
+    /* ── Stats Bar ── */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+    .stat-card {
+      background: #fff;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .stat-card .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--blue-700);
+      line-height: 1.2;
+    }
+    .stat-card .stat-label {
+      font-size: 12px;
+      color: var(--slate-500);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+
+    /* ── Table of Contents ── */
+    .toc {
+      background: #fff;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 24px 28px;
+      margin-bottom: 40px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .toc h2 {
+      font-size: 16px;
+      color: var(--slate-700);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 6px 24px;
+    }
+    .toc a {
+      color: var(--blue-600);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: color 0.15s;
+    }
+    .toc a:hover { color: var(--blue-800); text-decoration: underline; }
+    .toc a .toc-number {
+      color: var(--slate-400);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      min-width: 24px;
+    }
+
+    /* ── Sections ── */
+    .section {
+      margin-bottom: 36px;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--slate-200);
+    }
+    .section-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .section-header h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--slate-900);
+    }
+
+    /* ── Cards ── */
+    .capability-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px;
+    }
+    .capability-card {
+      background: #fff;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      transition: box-shadow 0.2s;
+    }
+    .capability-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .capability-card h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--slate-900);
+      margin-bottom: 6px;
+    }
+    .capability-card .card-path {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--slate-400);
+      margin-bottom: 10px;
+      word-break: break-all;
+    }
+    .capability-card p {
+      font-size: 13px;
+      color: var(--slate-600);
+      margin-bottom: 12px;
+      line-height: 1.55;
+    }
+
+    /* ── Tags ── */
+    .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.2px;
+    }
+    .tag-format { background: var(--blue-50); color: var(--blue-700); }
+    .tag-storage { background: var(--green-50); color: var(--green-700); }
+    .tag-adr     { background: var(--purple-50); color: var(--purple-700); }
+
+    /* ── Method List ── */
+    .method-list {
+      list-style: none;
+      margin-top: 8px;
+    }
+    .method-list li {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--slate-600);
+      padding: 3px 0;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .method-list li::before {
+      content: "\25B8";
+      color: var(--slate-400);
+      font-size: 10px;
+    }
+
+    /* ── Full-Width Tables ── */
+    .table-wrapper {
+      background: #fff;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      margin-bottom: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead { background: var(--slate-100); }
+    th {
+      padding: 10px 16px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--slate-700);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-bottom: 1px solid var(--slate-200);
+    }
+    td {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--slate-100);
+      color: var(--slate-700);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--slate-50); }
+    td code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--slate-100);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--slate-700);
+    }
+
+    /* ── Architecture Diagram ── */
+    .arch-diagram {
+      background: #fff;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 28px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      overflow-x: auto;
+    }
+    .arch-diagram pre {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--slate-700);
+      white-space: pre;
+    }
+
+    /* ── Section Colors ── */
+    .icon-blue   { background: var(--blue-50);   color: var(--blue-600); }
+    .icon-green  { background: var(--green-50);  color: var(--green-600); }
+    .icon-red    { background: var(--red-50);    color: var(--red-600); }
+    .icon-amber  { background: var(--amber-50);  color: var(--amber-600); }
+    .icon-purple { background: var(--purple-50); color: var(--purple-600); }
+    .icon-teal   { background: var(--teal-50);   color: var(--teal-600); }
+    .icon-rose   { background: var(--rose-50);   color: var(--rose-600); }
+    .icon-indigo { background: var(--indigo-50); color: var(--indigo-600); }
+    .icon-cyan   { background: var(--cyan-50);   color: var(--cyan-600); }
+
+    /* ── Footer ── */
+    .site-footer {
+      background: var(--slate-900);
+      color: var(--slate-400);
+      padding: 32px 0;
+      font-size: 13px;
+      text-align: center;
+    }
+    .site-footer strong { color: var(--slate-200); }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .site-header h1 { font-size: 24px; }
+      .capability-grid { grid-template-columns: 1fr; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .toc-grid { grid-template-columns: 1fr; }
+      .header-meta { flex-wrap: wrap; gap: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════ HEADER ════════════════════════════ -->
+<header class="site-header">
+  <div class="container">
+    <h1>Documentation Generation Capabilities</h1>
+    <p class="subtitle">
+      A comprehensive inventory of every service, module, and pipeline in Project Aura
+      that produces documents, reports, diagrams, attestations, or exportable artifacts.
+    </p>
+    <div class="header-meta">
+      <span>Project Aura &mdash; Aenea Labs</span>
+      <span>Version 1.0</span>
+      <span>Last Updated: February 2026</span>
+    </div>
+  </div>
+</header>
+
+<!-- ════════════════════════════ BODY ════════════════════════════ -->
+<main class="page-body">
+  <div class="container">
+
+    <!-- ── Stats Bar ── -->
+    <div class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-value">53+</div>
+        <div class="stat-label">Generation Capabilities</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">16</div>
+        <div class="stat-label">Service Categories</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">9</div>
+        <div class="stat-label">Output Formats</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">4</div>
+        <div class="stat-label">Storage Tiers</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">5</div>
+        <div class="stat-label">Delivery Channels</div>
+      </div>
+    </div>
+
+    <!-- ── Table of Contents ── -->
+    <nav class="toc">
+      <h2>Contents</h2>
+      <div class="toc-grid">
+        <a href="#sec-technical-docs"><span class="toc-number">01</span> Technical Documentation</a>
+        <a href="#sec-diagrams"><span class="toc-number">02</span> Diagram Generation &amp; Export</a>
+        <a href="#sec-data-flow"><span class="toc-number">03</span> Data Flow Analysis</a>
+        <a href="#sec-vuln-security"><span class="toc-number">04</span> Vulnerability &amp; Security Reports</a>
+        <a href="#sec-supply-chain"><span class="toc-number">05</span> Supply Chain &amp; SBOM</a>
+        <a href="#sec-devops"><span class="toc-number">06</span> DevOps &amp; Operational Reports</a>
+        <a href="#sec-scheduled"><span class="toc-number">07</span> Dashboard &amp; Scheduled Reports</a>
+        <a href="#sec-explainability"><span class="toc-number">08</span> Explainability &amp; Audit</a>
+        <a href="#sec-agent-eval"><span class="toc-number">09</span> Agent Evaluation</a>
+        <a href="#sec-policy"><span class="toc-number">10</span> Policy &amp; Guardrail Reporting</a>
+        <a href="#sec-runtime"><span class="toc-number">11</span> Runtime Security</a>
+        <a href="#sec-integration"><span class="toc-number">12</span> Integration &amp; Export Services</a>
+        <a href="#sec-training"><span class="toc-number">13</span> Training Data &amp; GDPR Export</a>
+        <a href="#sec-storage"><span class="toc-number">14</span> Storage Architecture</a>
+        <a href="#sec-api"><span class="toc-number">15</span> API Endpoints</a>
+        <a href="#sec-summary"><span class="toc-number">16</span> Summary Matrix</a>
+      </div>
+    </nav>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  1 · TECHNICAL DOCUMENTATION                                -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-technical-docs">
+      <div class="section-header">
+        <div class="section-icon icon-blue">&#x1F4D8;</div>
+        <h2>1. Technical Documentation</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Report Generator</h3>
+          <div class="card-path">src/services/documentation/report_generator.py</div>
+          <p>
+            Produces full technical reports with executive summaries, service inventories,
+            data-flow analysis, security considerations, and recommendations.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Markdown</span>
+            <span class="tag tag-storage">S3 / Redis / Memory</span>
+          </div>
+          <ul class="method-list">
+            <li>generate()</li>
+            <li>_generate_executive_summary()</li>
+            <li>_generate_service_inventory()</li>
+            <li>_generate_data_flow_analysis()</li>
+            <li>_generate_security_considerations()</li>
+            <li>_generate_recommendations()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Documentation Cache Service</h3>
+          <div class="card-path">src/services/documentation/documentation_cache_service.py</div>
+          <p>
+            Three-tier caching layer (in-memory 5&nbsp;min, Redis 1&nbsp;hr, S3 24&nbsp;hr)
+            that stores and retrieves generated documentation artifacts across instances.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-storage">Memory / Redis / S3</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Service Boundary Detector</h3>
+          <div class="card-path">src/services/documentation/service_boundary_detector.py</div>
+          <p>
+            Identifies service boundaries in the codebase and feeds structured context
+            into the report generator for accurate service-inventory sections.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Structured Objects</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Confidence Calibration</h3>
+          <div class="card-path">src/services/documentation/confidence_calibration.py</div>
+          <p>
+            Scores documentation accuracy and calibrates LLM confidence on generated content
+            before it is surfaced to users.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  2 · DIAGRAM GENERATION & EXPORT                            -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-diagrams">
+      <div class="section-header">
+        <div class="section-icon icon-purple">&#x1F5FA;</div>
+        <h2>2. Diagram Generation &amp; Export</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Mermaid Diagram Generator</h3>
+          <div class="card-path">src/services/documentation/diagram_generator.py</div>
+          <p>
+            Generates Mermaid.js source for five diagram types: architecture, data-flow,
+            dependency, component, and sequence. Uses the Aura design-system palette.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Mermaid</span>
+            <span class="tag tag-storage">S3</span>
+          </div>
+          <ul class="method-list">
+            <li>_generate_architecture()</li>
+            <li>_generate_data_flow()</li>
+            <li>_generate_dependency()</li>
+            <li>_generate_component()</li>
+            <li>_generate_sequence()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>AI Diagram Generator</h3>
+          <div class="card-path">src/services/diagrams/ai_diagram_generator.py</div>
+          <p>
+            Natural-language-to-diagram conversion via multi-provider LLM routing
+            (Bedrock Claude, OpenAI GPT-4, Vertex AI). Includes professional cloud-provider
+            icons and ELK.js layout engine integration.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">SVG / Mermaid</span>
+            <span class="tag tag-adr">ADR-060</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Diagram Export Service</h3>
+          <div class="card-path">src/services/diagrams/diagram_export_service.py</div>
+          <p>
+            Multi-format export pipeline supporting SVG, PNG (via Playwright), PDF,
+            and draw.io XML. Results stored in S3 with pre-signed URL delivery.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">SVG</span>
+            <span class="tag tag-format">PNG</span>
+            <span class="tag tag-format">PDF</span>
+            <span class="tag tag-format">draw.io XML</span>
+            <span class="tag tag-storage">S3</span>
+            <span class="tag tag-adr">ADR-060 Phase 4</span>
+          </div>
+          <ul class="method-list">
+            <li>export_diagram()</li>
+            <li>batch_export()</li>
+            <li>_store_in_s3()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>SVG Renderer &amp; Git Sync</h3>
+          <div class="card-path">src/services/diagrams/svg_renderer.py<br>src/services/diagrams/diagram_git_sync.py</div>
+          <p>
+            Native SVG rendering with style optimization and responsive sizing.
+            Git-sync service commits generated diagrams back into repositories automatically.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">SVG</span>
+            <span class="tag tag-storage">Git</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  3 · DATA FLOW ANALYSIS                                     -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-data-flow">
+      <div class="section-header">
+        <div class="section-icon icon-teal">&#x1F500;</div>
+        <h2>3. Data Flow Analysis</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Data Flow Report Generator</h3>
+          <div class="card-path">src/services/data_flow/report_generator.py</div>
+          <p>
+            Comprehensive data-movement analysis covering database connections, queue / event flows,
+            API call chains, PII inventory with compliance mapping, and embedded Mermaid diagrams.
+            Classifies data as PII, Sensitive, Confidential, Internal, or Public.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Markdown + Mermaid</span>
+            <span class="tag tag-storage">S3 / Memory</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_report()</li>
+            <li>_generate_database_section()</li>
+            <li>_generate_queue_section()</li>
+            <li>_generate_api_section()</li>
+            <li>_generate_pii_section()</li>
+            <li>_generate_compliance_section()</li>
+            <li>_generate_diagrams()</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  4 · VULNERABILITY & SECURITY                               -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-vuln-security">
+      <div class="section-header">
+        <div class="section-icon icon-red">&#x1F6E1;</div>
+        <h2>4. Vulnerability &amp; Security Reports</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Native Vulnerability Scanner</h3>
+          <div class="card-path">src/services/vulnerability_scanner/</div>
+          <p>
+            SARIF 2.1.0 industry-standard reports with CWE / SANS Top 25 mapping and
+            NIST 800-53 alignment. Findings include severity, confidence, verification
+            status, suggested fixes, and dataflow chains.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">SARIF 2.1.0</span>
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-storage">S3 + DynamoDB</span>
+            <span class="tag tag-adr">ADR-084</span>
+          </div>
+          <ul class="method-list">
+            <li>to_sarif()</li>
+            <li>to_sarif_result()</li>
+            <li>to_sarif_region()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>PR Security Scanner</h3>
+          <div class="card-path">src/services/security/pr_security_scanner.py</div>
+          <p>
+            Pull-request-level security scanning with SARIF output for the GitHub Security tab,
+            OWASP Top 10 coverage, and AI-specific threat detection.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">SARIF</span>
+            <span class="tag tag-format">Markdown (PR comment)</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_sarif_report()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Security Orchestrator Reports</h3>
+          <div class="card-path">src/services/security/security_agent_orchestrator.py</div>
+          <p>
+            Executive summaries and detailed technical reports for security assessments.
+            Generated in-memory as Markdown and persisted to S3.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Markdown</span>
+            <span class="tag tag-storage">S3</span>
+          </div>
+          <ul class="method-list">
+            <li>_generate_detailed_report()</li>
+            <li>_generate_assessment_technical_report()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Dynamic Attack Planner</h3>
+          <div class="card-path">src/services/security/dynamic_attack_planner.py</div>
+          <p>
+            Generates executive-level attack-surface reports and technical red-team
+            assessment summaries from dynamic threat analysis.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Markdown</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_executive_report()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Org Standards Validator</h3>
+          <div class="card-path">src/services/security/org_standards_validator.py</div>
+          <p>
+            Compliance-focused reports per framework, PR comments for violations,
+            and JSON machine-readable validation output.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Markdown</span>
+            <span class="tag tag-format">JSON</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_pr_comment()</li>
+            <li>generate_json_report()</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  5 · SUPPLY CHAIN & SBOM                                    -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-supply-chain">
+      <div class="section-header">
+        <div class="section-icon icon-amber">&#x1F4E6;</div>
+        <h2>5. Supply Chain &amp; SBOM</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>SBOM Attestation Service</h3>
+          <div class="card-path">src/services/supply_chain/sbom_attestation.py</div>
+          <p>
+            Generates Software Bills of Materials in CycloneDX&nbsp;1.4/1.5 (JSON&nbsp;&amp;&nbsp;XML)
+            and SPDX&nbsp;2.3 (JSON&nbsp;&amp;&nbsp;RDF). Signs with Sigstore keyless, offline Ed25519,
+            or HSM PKCS#11. Publishes to Rekor transparency log.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">CycloneDX</span>
+            <span class="tag tag-format">SPDX</span>
+            <span class="tag tag-storage">S3 + DynamoDB + Neptune</span>
+            <span class="tag tag-adr">ADR-076</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_sbom()</li>
+            <li>sign_sbom()</li>
+            <li>verify_attestation()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Dependency Confusion Detector</h3>
+          <div class="card-path">src/services/supply_chain/dependency_detector.py</div>
+          <p>
+            Detects typosquatting, namespace hijacking, combosquatting, dependency confusion,
+            maintainer compromise, and version confusion. Outputs structured confusion indicators.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>License Compliance Engine</h3>
+          <div class="card-path">src/services/supply_chain/license_engine.py</div>
+          <p>
+            Categorizes licenses (Permissive, Weak/Strong Copyleft, Proprietary, Public Domain)
+            and generates violation reports with risk-level ratings.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  6 · DEVOPS & OPERATIONAL                                   -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-devops">
+      <div class="section-header">
+        <div class="section-icon icon-green">&#x2699;</div>
+        <h2>6. DevOps &amp; Operational Reports</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Incident Pattern Analyzer</h3>
+          <div class="card-path">src/services/devops/incident_pattern_analyzer.py</div>
+          <p>
+            Automated post-incident reports with timeline reconstruction, root-cause analysis,
+            contributing factors, lessons learned, action items, and prevention measures.
+            Also produces predictive alerts for SLO breach forecasting.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">PostIncidentReport</span>
+            <span class="tag tag-storage">DynamoDB</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_post_incident_report()</li>
+            <li>_generate_executive_summary()</li>
+            <li>_generate_lessons_learned()</li>
+            <li>_generate_prevention_measures()</li>
+            <li>generate_predictive_alerts()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Deployment Health Reports</h3>
+          <div class="card-path">src/services/devops/deployment_history_correlator.py</div>
+          <p>
+            30-day deployment health snapshots tracking frequency, success/failure rates,
+            MTTR, and change failure rate&mdash;aligned with DORA metrics.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">DeploymentHealthReport</span>
+            <span class="tag tag-storage">DynamoDB</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_health_report()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Operational Report</h3>
+          <div class="card-path">src/services/devops/devops_agent_orchestrator.py</div>
+          <p>
+            Seven-day operational insight reports aggregating deployment, incident,
+            and health data across all managed services.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">OperationalReport</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_operational_report()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Resource Topology &amp; Drift</h3>
+          <div class="card-path">src/services/devops/resource_topology_mapper.py</div>
+          <p>
+            Infrastructure topology exported as GraphViz DOT or JSON. Drift reports
+            highlight configuration divergence between environments.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">DOT</span>
+            <span class="tag tag-format">JSON</span>
+          </div>
+          <ul class="method-list">
+            <li>export_to_graphviz()</li>
+            <li>export_to_json()</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  7 · DASHBOARD & SCHEDULED                                  -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-scheduled">
+      <div class="section-header">
+        <div class="section-icon icon-cyan">&#x1F4CA;</div>
+        <h2>7. Dashboard &amp; Scheduled Reports</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Scheduled Report Service</h3>
+          <div class="card-path">src/services/dashboard/scheduled_report_service.py</div>
+          <p>
+            Recurring dashboard snapshots delivered via SES email on daily, weekly,
+            biweekly, or monthly cadences. Supports widget selection, multiple
+            recipients, and customizable subject lines.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">PDF</span>
+            <span class="tag tag-format">HTML</span>
+            <span class="tag tag-format">CSV</span>
+            <span class="tag tag-storage">SES + S3</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>SLA Monitoring Reports</h3>
+          <div class="card-path">src/services/sla_monitoring_service.py</div>
+          <p>
+            SLA / SLO status reports tracking SLI metrics, error-budget consumption,
+            and compliance against defined service-level objectives.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">SLAReport</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_report()</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  8 · EXPLAINABILITY & AUDIT                                 -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-explainability">
+      <div class="section-header">
+        <div class="section-icon icon-indigo">&#x1F50D;</div>
+        <h2>8. Explainability &amp; Audit</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Explainability Framework</h3>
+          <div class="card-path">src/services/explainability/</div>
+          <p>
+            Captures reasoning chains, alternative-options analysis, consistency reports
+            across multi-turn sessions, and confidence-calibrated verification reports.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-storage">DynamoDB</span>
+            <span class="tag tag-adr">ADR-068</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Constitutional AI Audit</h3>
+          <div class="card-path">src/services/constitutional_ai/audit_queue_service.py</div>
+          <p>
+            Critique evaluations, revision records, and principle-adherence scores
+            for all Constitutional AI pipeline outputs.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-storage">DynamoDB</span>
+            <span class="tag tag-adr">ADR-063</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Security &amp; Compliance Audit</h3>
+          <div class="card-path">src/services/security_audit_service.py<br>src/services/compliance_audit_service.py</div>
+          <p>
+            End-to-end audit trails for security events and compliance control assessments
+            with evidence gathering.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-storage">DynamoDB</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Identity Audit Service</h3>
+          <div class="card-path">src/services/identity/audit_service.py</div>
+          <p>
+            Authentication and authorization event logging for identity lifecycle tracking.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-storage">DynamoDB</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  9 · AGENT EVALUATION                                       -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-agent-eval">
+      <div class="section-header">
+        <div class="section-icon icon-purple">&#x1F9EA;</div>
+        <h2>9. Agent Evaluation</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Agent Evaluation Service</h3>
+          <div class="card-path">src/services/agent_evaluation_service.py</div>
+          <p>
+            Evaluation suite results across 13 pre-built evaluators spanning
+            correctness, safety, tool selection, and coherence. Also produces
+            A/B test comparison reports and regression alerts.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">EvaluationSuiteResult</span>
+            <span class="tag tag-format">ABTestResult</span>
+            <span class="tag tag-storage">DynamoDB</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_evaluation_report()</li>
+          </ul>
+
+          <div class="table-wrapper" style="margin-top: 14px;">
+            <table>
+              <thead><tr><th>Category</th><th>Evaluators</th></tr></thead>
+              <tbody>
+                <tr><td>Correctness</td><td>Task Completion, Answer Accuracy, Fact Consistency, Instruction Following</td></tr>
+                <tr><td>Safety</td><td>Harmful Content, PII Detection, Prompt Injection, Policy Compliance</td></tr>
+                <tr><td>Tool Selection</td><td>Tool Selection, Parameter Accuracy, Sequence Optimality</td></tr>
+                <tr><td>Coherence</td><td>Multi-turn Coherence, Context Retention</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  10 · POLICY & GUARDRAILS                                   -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-policy">
+      <div class="section-header">
+        <div class="section-icon icon-amber">&#x1F4DC;</div>
+        <h2>10. Policy &amp; Guardrail Reporting</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Guardrail Configuration Export</h3>
+          <div class="card-path">src/services/guardrail_config/config_service.py</div>
+          <p>
+            Exports active guardrail configurations and pre-defined compliance profiles
+            for external consumption or backup.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-adr">ADR-069</span>
+          </div>
+          <ul class="method-list">
+            <li>export_configuration()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Semantic Guardrails Engine</h3>
+          <div class="card-path">src/services/semantic_guardrails/</div>
+          <p>
+            Six-layer threat detection reporting: token-level, embedding similarity,
+            LLM-as-judge, policy violations, anomaly detection, and aggregate decisions.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-adr">ADR-065</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Policy-as-Code Validation</h3>
+          <div class="card-path">src/services/ (PolicyValidator, PolicySimulator)</div>
+          <p>
+            OPA Rego validation results, policy simulation outputs, and GitOps-driven
+            compliance assessment reports.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-adr">ADR-070</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Capability Governance Audit</h3>
+          <div class="card-path">src/services/capability_governance/audit.py</div>
+          <p>
+            Tracks 4-tier tool capability grants and runtime enforcement decisions
+            for agent governance auditing.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-storage">DynamoDB</span>
+            <span class="tag tag-adr">ADR-066</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  11 · RUNTIME SECURITY                                      -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-runtime">
+      <div class="section-header">
+        <div class="section-icon icon-rose">&#x1F6A8;</div>
+        <h2>11. Runtime Security</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Runtime Security Platform</h3>
+          <div class="card-path">src/services/runtime_security/</div>
+          <p>
+            Traffic interception logs, shadow-agent detection, behavioral baseline reports,
+            and runtime-to-code correlation via GraphRAG. Feeds 7 dashboard widgets.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-storage">EventBridge + DynamoDB</span>
+            <span class="tag tag-adr">ADR-083</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>AURA-ATT&amp;CK Red Team</h3>
+          <div class="card-path">src/services/runtime_security/red_team/</div>
+          <p>
+            Attack simulation results across 75 AURA-ATT&amp;CK techniques with
+            detection-effectiveness scoring and defense-gap analysis.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-storage">S3</span>
+            <span class="tag tag-adr">ADR-083</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>ML Anomaly Detection</h3>
+          <div class="card-path">src/services/ (anomaly_detection)</div>
+          <p>
+            Statistical anomaly reports, honeypot trigger events, and human-readable
+            anomaly explanations generated by the ML detection pipeline.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+            <span class="tag tag-adr">ADR-072</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Context Provenance Reports</h3>
+          <div class="card-path">src/services/context_provenance/</div>
+          <p>
+            Index-time provenance records, trust scores, and anomaly reports that
+            track the integrity of every context fragment fed to agents.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">AnomalyReport</span>
+            <span class="tag tag-adr">ADR-067</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  12 · INTEGRATION & EXPORT                                  -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-integration">
+      <div class="section-header">
+        <div class="section-icon icon-teal">&#x1F517;</div>
+        <h2>12. Integration &amp; Export Services</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Export Authorization</h3>
+          <div class="card-path">src/services/integrations/export_authorization_service.py</div>
+          <p>
+            Role-based data filtering applied to all outbound exports, ensuring users
+            only receive data matching their clearance level.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Filtered JSON</span>
+          </div>
+          <ul class="method-list">
+            <li>filter_export_data()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Palantir AIP Integration</h3>
+          <div class="card-path">src/services/palantir/</div>
+          <p>
+            Ontology-compliant document export for Palantir AIP with 8 synchronized
+            dashboard widgets and Ontology Bridge event publishing.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Palantir Ontology</span>
+            <span class="tag tag-adr">ADR-074 / ADR-075</span>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>Air-Gapped Deployment Export</h3>
+          <div class="card-path">src/services/airgap/air_gap_orchestrator.py</div>
+          <p>
+            Offline model bundles, egress validation reports, and firmware analysis
+            outputs for edge and disconnected environments.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Binary Bundle</span>
+            <span class="tag tag-adr">ADR-078</span>
+          </div>
+          <ul class="method-list">
+            <li>export_for_transfer()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Firmware Analysis</h3>
+          <div class="card-path">src/services/airgap/firmware_analyzer.py</div>
+          <p>
+            Edge-device firmware analysis reports for air-gapped deployment validation.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">Report</span>
+            <span class="tag tag-adr">ADR-078</span>
+          </div>
+          <ul class="method-list">
+            <li>generate_report()</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  13 · TRAINING DATA & GDPR                                  -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-training">
+      <div class="section-header">
+        <div class="section-icon icon-cyan">&#x1F4BE;</div>
+        <h2>13. Training Data &amp; GDPR Export</h2>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>Training Data Pipeline</h3>
+          <div class="card-path">src/services/ssr/training_data_pipeline.py</div>
+          <p>
+            Exports curated training datasets in JSONL and CSV formats for
+            self-play SWE-RL fine-tuning.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSONL</span>
+            <span class="tag tag-format">CSV</span>
+            <span class="tag tag-storage">S3</span>
+            <span class="tag tag-adr">ADR-050</span>
+          </div>
+          <ul class="method-list">
+            <li>export_jsonl()</li>
+            <li>export_all()</li>
+          </ul>
+        </div>
+
+        <div class="capability-card">
+          <h3>Customer Data Export (GDPR)</h3>
+          <div class="card-path">src/services/ssr/consent_service.py</div>
+          <p>
+            GDPR-compliant customer data export for data-subject access requests.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-format">JSON</span>
+          </div>
+          <ul class="method-list">
+            <li>get_customer_data_export()</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  14 · STORAGE ARCHITECTURE                                  -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-storage">
+      <div class="section-header">
+        <div class="section-icon icon-green">&#x1F5C4;</div>
+        <h2>14. Storage Architecture</h2>
+      </div>
+
+      <div class="arch-diagram">
+        <pre>
+                           ┌──────────────────────────────────────────────────┐
+                           │              GENERATION SERVICES                  │
+                           │                                                  │
+                           │  Report Generator   Diagram Export   SBOM Gen    │
+                           │  Vuln Scanner       Incident Reports  Scheduled  │
+                           │  Agent Evaluation   Policy Validator  Red Team   │
+                           └───────┬─────────────────┬────────────────┬───────┘
+                                   │                 │                │
+                    ┌──────────────┼─────────────────┼────────────────┼──────────────┐
+                    │              ▼                 ▼                ▼              │
+                    │  ┌───────────────┐  ┌──────────────┐  ┌────────────────┐      │
+                    │  │  Amazon S3    │  │  DynamoDB    │  │  Neptune       │      │
+                    │  │               │  │              │  │  (Graph)       │      │
+                    │  │  Artifacts    │  │  Metadata    │  │                │      │
+                    │  │  PDFs / SVGs  │  │  Job Status  │  │  SBOM Links    │      │
+                    │  │  SARIF Files  │  │  Audit Logs  │  │  Call Graphs   │      │
+                    │  │  SBOM Docs    │  │  Schedules   │  │  Provenance    │      │
+                    │  │  Bundles      │  │  Evaluations │  │  Dependencies  │      │
+                    │  └───────────────┘  └──────────────┘  └────────────────┘      │
+                    │              │                                                │
+                    │              ▼                                                │
+                    │  ┌──────────────────────────────────────────────────────┐     │
+                    │  │  Caching Tiers                                      │     │
+                    │  │  Memory (5 min) → Redis/ElastiCache (1 hr) → S3    │     │
+                    │  └──────────────────────────────────────────────────────┘     │
+                    │                                                              │
+                    │  ┌──────────────────────────────────────────────────────┐     │
+                    │  │  Delivery Channels                                  │     │
+                    │  │  SES Email │ Pre-signed URLs │ EventBridge │ Git    │     │
+                    │  └──────────────────────────────────────────────────────┘     │
+                    └──────────────────────────────────────────────────────────────┘</pre>
+      </div>
+
+      <div class="capability-grid">
+        <div class="capability-card">
+          <h3>S3 Artifact Buckets</h3>
+          <div class="card-path">deploy/cloudformation/</div>
+          <div class="table-wrapper" style="margin-top: 8px;">
+            <table>
+              <thead><tr><th>Bucket Pattern</th><th>Contents</th></tr></thead>
+              <tbody>
+                <tr><td><code>aura-cfn-artifacts-*</code></td><td>CloudFormation deployment artifacts</td></tr>
+                <tr><td><code>aura-frontend-artifacts-*</code></td><td>Frontend build assets</td></tr>
+                <tr><td><code>aura-vuln-scan-artifacts-*</code></td><td>SARIF findings, scan logs</td></tr>
+                <tr><td><code>aura-vuln-scan-reports-*</code></td><td>Rendered vulnerability reports</td></tr>
+                <tr><td><code>aura-red-team-reports-*</code></td><td>Red-team simulation outputs</td></tr>
+                <tr><td><code>aura-sandbox-artifacts-*</code></td><td>Sandbox test results</td></tr>
+                <tr><td><code>aura-incident-artifacts-*</code></td><td>Incident-response evidence</td></tr>
+                <tr><td><code>aura-runbook-artifacts-*</code></td><td>Runbook execution logs</td></tr>
+                <tr><td><code>aura-observability-artifacts-*</code></td><td>Monitoring snapshots</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="capability-card">
+          <h3>DynamoDB Metadata Tables</h3>
+          <p>
+            Operational records for scheduled report configs, SBOM attestations,
+            vulnerability scan jobs, drift detection records, compliance assessments,
+            and evaluation history.
+          </p>
+          <div class="tag-row">
+            <span class="tag tag-storage">DynamoDB</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  15 · API ENDPOINTS                                         -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-api">
+      <div class="section-header">
+        <div class="section-icon icon-blue">&#x1F310;</div>
+        <h2>15. API Endpoints</h2>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>Endpoint</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>POST</code></td>
+              <td><code>/api/v1/documentation/generate</code></td>
+              <td>Start async documentation generation job</td>
+            </tr>
+            <tr>
+              <td><code>GET</code></td>
+              <td><code>/api/v1/documentation/{job_id}</code></td>
+              <td>Retrieve generated documentation result</td>
+            </tr>
+            <tr>
+              <td><code>GET</code></td>
+              <td><code>/api/v1/documentation/{job_id}/stream</code></td>
+              <td>SSE progress stream for generation jobs</td>
+            </tr>
+            <tr>
+              <td><code>POST</code></td>
+              <td><code>/api/v1/documentation/{job_id}/feedback</code></td>
+              <td>Submit feedback on generated docs</td>
+            </tr>
+            <tr>
+              <td><code>GET</code></td>
+              <td><code>/api/v1/documentation/cache/stats</code></td>
+              <td>Cache hit/miss statistics</td>
+            </tr>
+            <tr>
+              <td><code>GET</code></td>
+              <td><code>/api/v1/explainability/{decision_id}</code></td>
+              <td>Retrieve reasoning chain for a decision</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size: 13px; color: var(--slate-500); margin-top: 4px;">
+        Source: <code>src/api/documentation_endpoints.py</code>, <code>src/api/explainability_endpoints.py</code>
+      </p>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  16 · SUMMARY MATRIX                                        -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-summary">
+      <div class="section-header">
+        <div class="section-icon icon-blue">&#x1F4CB;</div>
+        <h2>16. Summary Matrix</h2>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Service</th>
+              <th>Output Formats</th>
+              <th>Storage</th>
+              <th>ADR</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Technical Docs</td>
+              <td>ReportGenerator</td>
+              <td>Markdown</td>
+              <td>S3 / Redis / Memory</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Diagrams</td>
+              <td>DiagramExportService</td>
+              <td>SVG, PNG, PDF, draw.io</td>
+              <td>S3</td>
+              <td>060</td>
+            </tr>
+            <tr>
+              <td>AI Diagrams</td>
+              <td>AIDiagramGenerator</td>
+              <td>SVG, Mermaid</td>
+              <td>S3</td>
+              <td>060</td>
+            </tr>
+            <tr>
+              <td>Data Flow</td>
+              <td>DataFlowReportGenerator</td>
+              <td>Markdown + Mermaid</td>
+              <td>S3 / Memory</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Vuln Scanning</td>
+              <td>VulnerabilityScanner</td>
+              <td>SARIF 2.1.0, JSON</td>
+              <td>S3 + DynamoDB</td>
+              <td>084</td>
+            </tr>
+            <tr>
+              <td>PR Security</td>
+              <td>PRSecurityScanner</td>
+              <td>SARIF, Markdown</td>
+              <td>&mdash;</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Supply Chain</td>
+              <td>SBOMAttestationService</td>
+              <td>CycloneDX, SPDX</td>
+              <td>S3 + DynamoDB + Neptune</td>
+              <td>076</td>
+            </tr>
+            <tr>
+              <td>Incidents</td>
+              <td>IncidentPatternAnalyzer</td>
+              <td>PostIncidentReport</td>
+              <td>DynamoDB</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Operations</td>
+              <td>DevOpsAgentOrchestrator</td>
+              <td>OperationalReport</td>
+              <td>DynamoDB</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Deployment Health</td>
+              <td>DeploymentHistoryCorrelator</td>
+              <td>DeploymentHealthReport</td>
+              <td>DynamoDB</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Topology</td>
+              <td>ResourceTopologyMapper</td>
+              <td>DOT, JSON</td>
+              <td>&mdash;</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Scheduled</td>
+              <td>ScheduledReportService</td>
+              <td>PDF, HTML, CSV</td>
+              <td>SES + S3</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Explainability</td>
+              <td>ExplainabilityFramework</td>
+              <td>JSON</td>
+              <td>DynamoDB</td>
+              <td>068</td>
+            </tr>
+            <tr>
+              <td>Constitutional AI</td>
+              <td>AuditQueueService</td>
+              <td>JSON</td>
+              <td>DynamoDB</td>
+              <td>063</td>
+            </tr>
+            <tr>
+              <td>Agent Evaluation</td>
+              <td>AgentEvaluationService</td>
+              <td>JSON</td>
+              <td>DynamoDB</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Guardrails</td>
+              <td>GuardrailConfigService</td>
+              <td>JSON</td>
+              <td>&mdash;</td>
+              <td>069</td>
+            </tr>
+            <tr>
+              <td>Policy-as-Code</td>
+              <td>PolicyValidator</td>
+              <td>JSON</td>
+              <td>DynamoDB</td>
+              <td>070</td>
+            </tr>
+            <tr>
+              <td>Runtime Security</td>
+              <td>RuntimeSecurityPlatform</td>
+              <td>JSON</td>
+              <td>EventBridge + DynamoDB</td>
+              <td>083</td>
+            </tr>
+            <tr>
+              <td>Red Team</td>
+              <td>AURA-ATT&amp;CK</td>
+              <td>JSON</td>
+              <td>S3</td>
+              <td>083</td>
+            </tr>
+            <tr>
+              <td>Training Data</td>
+              <td>TrainingDataPipeline</td>
+              <td>JSONL, CSV</td>
+              <td>S3</td>
+              <td>050</td>
+            </tr>
+            <tr>
+              <td>GDPR Export</td>
+              <td>ConsentService</td>
+              <td>JSON</td>
+              <td>&mdash;</td>
+              <td>&mdash;</td>
+            </tr>
+            <tr>
+              <td>Palantir AIP</td>
+              <td>PalantirAdapter</td>
+              <td>Ontology</td>
+              <td>&mdash;</td>
+              <td>074</td>
+            </tr>
+            <tr>
+              <td>Air-Gap Export</td>
+              <td>AirGapOrchestrator</td>
+              <td>Binary Bundle</td>
+              <td>&mdash;</td>
+              <td>078</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div><!-- /.container -->
+</main>
+
+<!-- ════════════════════════════ FOOTER ════════════════════════════ -->
+<footer class="site-footer">
+  <div class="container">
+    <strong>Project Aura</strong> &mdash; Aenea Labs &middot; Documentation Generation Capabilities Reference
+  </div>
+</footer>
+
+</body>
+</html>

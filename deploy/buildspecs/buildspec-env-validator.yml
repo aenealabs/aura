@@ -1,0 +1,71 @@
+version: 0.2
+
+# Environment Validator Layer: Drift Detection Lambda (Layer 6.17 - ADR-062)
+# Packages and deploys env-validator-drift Lambda for scheduled drift detection.
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip3 install cfn-lint --quiet
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Environment Validator Deployment (ADR-062)"
+      - echo "=========================================="
+      - echo "Environment $ENVIRONMENT | Project $PROJECT_NAME"
+      - cfn-lint deploy/cloudformation/env-validator-drift-lambda.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings"
+      - mkdir -p /tmp/lambda-packages
+      - LAMBDA_BUCKET="${PROJECT_NAME}-serverless-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+      - TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+  build:
+    commands:
+      # Package env-validator-drift Lambda
+      - echo "Packaging env-validator-drift..."
+      - ENV_VALIDATOR_DRIFT_PACKAGE="/tmp/lambda-packages/env-validator-drift.zip"
+      - cd src && zip -r $ENV_VALIDATOR_DRIFT_PACKAGE services/env_validator/ -x "*.pyc" -x "__pycache__/*" && cd ..
+      - echo "Package created"
+
+      # Upload to S3
+      - echo "Uploading to S3..."
+      - ENV_VALIDATOR_DRIFT_S3_KEY="lambda/env-validator-drift-${TIMESTAMP}.zip"
+      - aws s3 cp --sse AES256 $ENV_VALIDATOR_DRIFT_PACKAGE s3://$LAMBDA_BUCKET/$ENV_VALIDATOR_DRIFT_S3_KEY
+      - echo "Uploaded to s3://$LAMBDA_BUCKET/$ENV_VALIDATOR_DRIFT_S3_KEY"
+
+      # Deploy Drift Lambda Stack (Layer 6.17)
+      - echo "Deploying Environment Validator Drift Lambda..."
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-env-drift-lambda-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/env-validator-drift-lambda.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            LambdaS3Bucket=$LAMBDA_BUCKET \
+            LambdaS3Key=$ENV_VALIDATOR_DRIFT_S3_KEY \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=serverless ADR=ADR-062 \
+          --no-fail-on-empty-changeset
+      - echo "Drift Lambda deployment complete"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Environment Validator Deployment Complete"
+      - echo "=========================================="
+      - aws lambda get-function --function-name ${PROJECT_NAME}-env-drift-detector-${ENVIRONMENT} --query 'Configuration.{FunctionName:FunctionName,Runtime:Runtime,State:State}' --output table 2>/dev/null || echo "Lambda not found"
+      - aws events describe-rule --name ${PROJECT_NAME}-env-drift-check-${ENVIRONMENT} --query '{Name:Name,State:State,Schedule:ScheduleExpression}' --output table 2>/dev/null || echo "Rule not found"
+
+artifacts:
+  files:
+    - deploy/cloudformation/env-validator-drift-lambda.yaml
+    - src/services/env_validator/lambda_handler.py
+  name: env-validator-artifacts

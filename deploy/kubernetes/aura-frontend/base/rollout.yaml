@@ -1,0 +1,118 @@
+# Project Aura - Frontend Rollout (Canary Strategy)
+# Progressive delivery using Argo Rollouts (ADR-022 Phase 3)
+#
+# Canary Strategy:
+#   Step 1: 10% traffic → manual pause (verify initial health)
+#   Step 2: 25% traffic → pod-health analysis (2 min)
+#   Step 3: 50% traffic → http-benchmark analysis (5 min)
+#   Step 4: 100% traffic (promotion complete)
+#
+# Rollback triggers automatically if any analysis fails.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: aura-frontend
+  namespace: default
+  labels:
+    app: aura-frontend
+    component: frontend
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: aura-frontend
+  template:
+    metadata:
+      labels:
+        app: aura-frontend
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: aura-frontend:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        fsGroup: 1001
+  strategy:
+    canary:
+      # Canary service receives traffic during rollout
+      canaryService: aura-frontend-canary
+      # Stable service continues receiving production traffic
+      stableService: aura-frontend
+      # Traffic routing (requires service mesh or ingress controller)
+      # For now, use replica-based canary (works without service mesh)
+      steps:
+        # Step 1: Deploy canary with 10% of replicas
+        - setWeight: 10
+        # Pause for manual verification (promote via: kubectl argo rollouts promote aura-frontend)
+        - pause: {}
+
+        # Step 2: Scale to 25% with automated health check
+        - setWeight: 25
+        - analysis:
+            templates:
+              - templateName: pod-health
+                clusterScope: true
+            args:
+              - name: service-name
+                value: aura-frontend
+              - name: namespace
+                value: default
+        - pause:
+            duration: 2m
+
+        # Step 3: Scale to 50% with HTTP benchmark
+        - setWeight: 50
+        - analysis:
+            templates:
+              - templateName: http-benchmark
+                clusterScope: true
+            args:
+              - name: service-url
+                value: http://aura-frontend.default.svc.cluster.local:80/health
+        - pause:
+            duration: 3m
+
+        # Step 4: Full promotion
+        - setWeight: 100
+
+      # Automatic rollback configuration
+      abortScaleDownDelaySeconds: 30
+
+      # Anti-affinity for spreading canary pods
+      antiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          weight: 100

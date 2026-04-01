@@ -1,0 +1,555 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.4 - KMS Keys (Encryption Management)'
+
+# =============================================================================
+# Centralized KMS Key Management
+# =============================================================================
+# This stack creates purpose-specific KMS keys for the entire platform.
+# Keys are created in the foundation layer to:
+# - Eliminate kms:CreateKey permissions from application-layer roles
+# - Centralize key lifecycle management
+# - Simplify CMMC compliance auditing
+# - Reduce blast radius through key segmentation
+#
+# Keys Created:
+# - BackupKMSKey: AWS Backup, disaster recovery
+# - DataKMSKey: Neptune, OpenSearch, DynamoDB encryption
+# - SecurityKMSKey: Incident response, red team, GuardDuty findings
+# - ApplicationKMSKey: Secrets Manager, Lambda, SQS, SNS
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # ===========================================================================
+  # Backup Encryption Key
+  # ===========================================================================
+  # Used by: AWS Backup, disaster-recovery.yaml, S3 backup copies
+  BackupKMSKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} backup encryption key'
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Root account - administrative access (required by AWS)
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+
+          # CloudFormation tag management - allows IAM to control tag permissions
+          # Required for CloudFormation stack updates that modify KMS key tags
+          - Sid: AllowCloudFormationTagManagement
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:TagResource, kms:UntagResource, kms:ListResourceTags]
+            Resource: '*'
+
+          # CodeBuild roles - key administration (pattern-based to avoid circular dependency)
+          - Sid: AllowCodeBuildKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Create*, kms:Describe*, kms:Enable*, kms:List*, kms:Put*, kms:Update*, kms:Revoke*, kms:Disable*, kms:Get*, kms:Delete*, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          # AWS Backup service - encryption operations
+          - Sid: AllowBackupService
+            Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # S3 for backup copies and cross-region replication
+          - Sid: AllowS3ForBackupCopies
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # CodeBuild roles - encryption operations (pattern-based to avoid circular dependency)
+          - Sid: AllowCodeBuildEncryption
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Encrypt, kms:Decrypt, kms:GenerateDataKey*, kms:DescribeKey, kms:CreateGrant]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          # Allow any role created by this project to use the key for backup operations
+          # This avoids circular dependency with disaster-recovery.yaml creating backup role
+          - Sid: AllowProjectBackupRoles
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-backup-*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: BackupEncryption
+        - Key: DataClassification
+          Value: Confidential
+
+  BackupKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-backup-${Environment}'
+      TargetKeyId: !Ref BackupKMSKey
+
+  # ===========================================================================
+  # Data Layer Encryption Key
+  # ===========================================================================
+  # Used by: Neptune, OpenSearch, DynamoDB (future migration from AWS-managed)
+  DataKMSKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} data layer encryption key'
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+
+          # CloudFormation tag management - allows IAM to control tag permissions
+          - Sid: AllowCloudFormationTagManagement
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:TagResource, kms:UntagResource, kms:ListResourceTags]
+            Resource: '*'
+
+          # CodeBuild roles - key administration (pattern-based to avoid circular dependency)
+          - Sid: AllowCodeBuildKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Create*, kms:Describe*, kms:Enable*, kms:List*, kms:Put*, kms:Update*, kms:Revoke*, kms:Disable*, kms:Get*, kms:Delete*, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          # Neptune service
+          - Sid: AllowNeptuneService
+            Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # OpenSearch service
+          - Sid: AllowOpenSearchService
+            Effect: Allow
+            Principal:
+              Service: es.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # DynamoDB service
+          - Sid: AllowDynamoDBService
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # CodeBuild roles - encryption operations (pattern-based to avoid circular dependency)
+          - Sid: AllowCodeBuildEncryption
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Encrypt, kms:Decrypt, kms:GenerateDataKey*, kms:DescribeKey, kms:CreateGrant]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: DataLayerEncryption
+        - Key: DataClassification
+          Value: Confidential
+
+  DataKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-data-${Environment}'
+      TargetKeyId: !Ref DataKMSKey
+
+  # ===========================================================================
+  # Security Layer Encryption Key
+  # ===========================================================================
+  # Used by: Incident Response, Red Team, GuardDuty findings, security logs
+  SecurityKMSKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} security layer encryption key'
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+
+          # CloudFormation tag management - allows IAM to control tag permissions
+          - Sid: AllowCloudFormationTagManagement
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:TagResource, kms:UntagResource, kms:ListResourceTags]
+            Resource: '*'
+
+          # CodeBuild roles - key administration (pattern-based to avoid circular dependency)
+          - Sid: AllowCodeBuildKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Create*, kms:Describe*, kms:Enable*, kms:List*, kms:Put*, kms:Update*, kms:Revoke*, kms:Disable*, kms:Get*, kms:Delete*, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          # CodeBuild roles - encryption operations (pattern-based to avoid circular dependency)
+          - Sid: AllowCodeBuildEncryption
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Encrypt, kms:Decrypt, kms:GenerateDataKey*, kms:DescribeKey, kms:CreateGrant]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          # GuardDuty service
+          - Sid: AllowGuardDutyService
+            Effect: Allow
+            Principal:
+              Service: guardduty.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # CloudWatch Logs for security logs
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: SecurityLayerEncryption
+        - Key: DataClassification
+          Value: Restricted
+
+  SecurityKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-security-${Environment}'
+      TargetKeyId: !Ref SecurityKMSKey
+
+  # ===========================================================================
+  # Application Layer Encryption Key
+  # ===========================================================================
+  # Used by: Secrets Manager, Lambda env vars, SQS, SNS
+  ApplicationKMSKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} application layer encryption key'
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+
+          # CloudFormation tag management - allows IAM to control tag permissions
+          - Sid: AllowCloudFormationTagManagement
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:TagResource, kms:UntagResource, kms:ListResourceTags]
+            Resource: '*'
+
+          # CodeBuild roles - key administration (pattern-based to avoid circular dependency)
+          - Sid: AllowCodeBuildKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Create*, kms:Describe*, kms:Enable*, kms:List*, kms:Put*, kms:Update*, kms:Revoke*, kms:Disable*, kms:Get*, kms:Delete*, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          # Secrets Manager service
+          - Sid: AllowSecretsManagerService
+            Effect: Allow
+            Principal:
+              Service: secretsmanager.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # Lambda service
+          - Sid: AllowLambdaService
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # SNS service
+          - Sid: AllowSNSService
+            Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # SQS service
+          - Sid: AllowSQSService
+            Effect: Allow
+            Principal:
+              Service: sqs.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+
+          # CodeBuild roles - encryption operations (pattern-based to avoid circular dependency)
+          - Sid: AllowCodeBuildEncryption
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Encrypt, kms:Decrypt, kms:GenerateDataKey*, kms:DescribeKey, kms:CreateGrant]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ApplicationLayerEncryption
+        - Key: DataClassification
+          Value: Confidential
+
+  ApplicationKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-app-${Environment}'
+      TargetKeyId: !Ref ApplicationKMSKey
+
+# =============================================================================
+# Outputs - Export key ARNs for consumer stacks
+# =============================================================================
+Outputs:
+  BackupKMSKeyArn:
+    Description: KMS key ARN for AWS Backup encryption
+    Value: !GetAtt BackupKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-backup-kms-key-arn-${Environment}'
+
+  BackupKMSKeyId:
+    Description: KMS key ID for AWS Backup encryption
+    Value: !Ref BackupKMSKey
+    Export:
+      Name: !Sub '${ProjectName}-backup-kms-key-id-${Environment}'
+
+  DataKMSKeyArn:
+    Description: KMS key ARN for data layer encryption
+    Value: !GetAtt DataKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-data-kms-key-arn-${Environment}'
+
+  DataKMSKeyId:
+    Description: KMS key ID for data layer encryption
+    Value: !Ref DataKMSKey
+    Export:
+      Name: !Sub '${ProjectName}-data-kms-key-id-${Environment}'
+
+  SecurityKMSKeyArn:
+    Description: KMS key ARN for security layer encryption
+    Value: !GetAtt SecurityKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-security-kms-key-arn-${Environment}'
+
+  SecurityKMSKeyId:
+    Description: KMS key ID for security layer encryption
+    Value: !Ref SecurityKMSKey
+    Export:
+      Name: !Sub '${ProjectName}-security-kms-key-id-${Environment}'
+
+  ApplicationKMSKeyArn:
+    Description: KMS key ARN for application layer encryption
+    Value: !GetAtt ApplicationKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-app-kms-key-arn-${Environment}'
+
+  ApplicationKMSKeyId:
+    Description: KMS key ID for application layer encryption
+    Value: !Ref ApplicationKMSKey
+    Export:
+      Name: !Sub '${ProjectName}-app-kms-key-id-${Environment}'

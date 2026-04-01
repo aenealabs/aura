@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 3.3 - EKS Memory-Optimized Node Group'
+
+# Purpose: Provides high-memory compute for neural network workloads
+# Workloads: memory-service (Titan Neural Memory)
+# Instance: r6i.xlarge (32GB) - optimal memory-to-vCPU ratio
+# Scaling: On-Demand only (stateful workloads), scale-to-zero in dev/qa with Cluster Autoscaler
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  ClusterName:
+    Type: String
+    Description: EKS cluster name
+
+  NodeRoleArn:
+    Type: String
+    Description: IAM role ARN for EKS nodes
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: Private subnet IDs for node placement
+
+  InstanceTypes:
+    Type: CommaDelimitedList
+    Default: 'r6i.xlarge,r5.xlarge,r6a.xlarge'
+    Description: Instance types (with fallbacks for availability)
+
+  MinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum number of nodes
+
+  MaxSize:
+    Type: Number
+    Default: 3
+    Description: Maximum number of nodes
+
+  DesiredSize:
+    Type: Number
+    Default: 1
+    Description: Desired number of nodes
+
+  KubernetesVersion:
+    Type: String
+    Default: '1.34'
+    Description: Kubernetes version
+
+  AmiType:
+    Type: String
+    Default: AL2023_x86_64_STANDARD
+    AllowedValues: [AL2_x86_64, AL2023_x86_64_STANDARD, BOTTLEROCKET_x86_64]
+    Description: AMI type for nodes
+
+  NodeSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group ID for EKS nodes (must have VPC endpoint access)
+
+Conditions:
+  IsDevEnv: !Equals [!Ref Environment, dev]
+  IsQaEnv: !Equals [!Ref Environment, qa]
+  # Scale-to-zero in non-production environments (dev and qa)
+  IsNonProdEnv: !Or [!Condition IsDevEnv, !Condition IsQaEnv]
+
+Resources:
+  # Launch template with correct security group for VPC endpoint access
+  NodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-memory-lt-${Environment}'
+      LaunchTemplateData:
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups:
+              - !Ref NodeSecurityGroupId
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required
+          HttpPutResponseHopLimit: 2
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-memory-${Environment}'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+
+  MemoryOptimizedNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ProjectName}-memory-${Environment}'
+      NodeRole: !Ref NodeRoleArn
+      Subnets: !Ref PrivateSubnetIds
+      LaunchTemplate:
+        Id: !Ref NodeLaunchTemplate
+        Version: !GetAtt NodeLaunchTemplate.LatestVersionNumber
+      InstanceTypes: !Ref InstanceTypes
+      CapacityType: ON_DEMAND  # Always On-Demand for stateful neural network workloads
+      AmiType: !Ref AmiType
+      Version: !Ref KubernetesVersion
+      ScalingConfig:
+        MinSize: !If [IsNonProdEnv, 0, !Ref MinSize]  # Dev/QA scale to 0 with Cluster Autoscaler
+        MaxSize: !Ref MaxSize
+        DesiredSize: !If [IsNonProdEnv, 0, !Ref DesiredSize]
+      Labels:
+        workload-type: memory-optimized
+        environment: !Ref Environment
+        project: !Ref ProjectName
+        neural-memory: 'true'
+      Taints:
+        - Key: workload-type
+          Value: memory-optimized
+          Effect: NO_SCHEDULE
+      UpdateConfig:
+        MaxUnavailable: 1
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Layer: compute
+        NodeGroupType: memory-optimized
+        CostCenter: ml-workloads
+        # Note: Cluster Autoscaler discovery tags (k8s.io/cluster-autoscaler/*) are
+        # automatically added to the underlying ASG by EKS. CloudFormation Tags don't
+        # support forward slashes in tag keys.
+
+Outputs:
+  NodeGroupName:
+    Description: Name of the memory-optimized node group
+    Value: !Ref MemoryOptimizedNodeGroup
+    Export:
+      Name: !Sub '${ProjectName}-memory-nodegroup-${Environment}'
+
+  NodeGroupArn:
+    Description: ARN of the memory-optimized node group
+    Value: !GetAtt MemoryOptimizedNodeGroup.Arn
+    Export:
+      Name: !Sub '${ProjectName}-memory-nodegroup-arn-${Environment}'

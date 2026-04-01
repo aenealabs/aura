@@ -1,0 +1,314 @@
+version: 0.2
+
+# Marketing Site: Build Astro Static Site + Deploy to CloudFront/S3
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    NODE_VERSION: "20"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint..."
+      - pip3 install cfn-lint
+      - echo "Installing npm dependencies..."
+      - cd marketing/site && npm ci && cd ../..
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Marketing Site Deployment"
+      - echo "=========================================="
+      - echo "Environment = $ENVIRONMENT"
+      - echo "Project = $PROJECT_NAME"
+
+      # Validate templates
+      - echo "Validating CloudFormation templates..."
+      - cfn-lint deploy/cloudformation/marketing-site.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/docs-portal.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+
+  build:
+    commands:
+      # Generate deployment timestamp
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # ============================================
+      # PHASE 1: Deploy Marketing Site Infrastructure
+      # ============================================
+      - |
+        echo "Deploying Marketing Site Infrastructure..."
+        MARKETING_STACK="${PROJECT_NAME}-marketing-${ENVIRONMENT}"
+
+        # Get ACM certificate ARN (optional)
+        CERT_ARN=""
+        if [ "$ENVIRONMENT" = "prod" ]; then
+          CERT_ARN=$(aws cloudformation list-exports \
+            --query "Exports[?Name=='${PROJECT_NAME}-acm-cert-arn-us-east-1'].Value" \
+            --output text --region us-east-1 2>/dev/null || echo "")
+        fi
+
+        echo "Certificate ARN: ${CERT_ARN:-None}"
+
+        # Set domain based on environment
+        if [ "$ENVIRONMENT" = "prod" ]; then
+          DOMAIN_NAME="aenealabs.com"
+        else
+          DOMAIN_NAME="${ENVIRONMENT}.aenealabs.com"
+        fi
+
+        aws cloudformation deploy \
+          --stack-name $MARKETING_STACK \
+          --template-file deploy/cloudformation/marketing-site.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            DomainName=$DOMAIN_NAME \
+            CertificateArn="${CERT_ARN}" \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=marketing DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --capabilities CAPABILITY_IAM \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+        echo "Marketing infrastructure deployed"
+
+      # ============================================
+      # PHASE 2: Deploy Docs Portal Infrastructure
+      # ============================================
+      - |
+        echo "Deploying Docs Portal Infrastructure..."
+        DOCS_STACK="${PROJECT_NAME}-docs-portal-${ENVIRONMENT}"
+
+        # Get ACM certificate ARN (optional)
+        CERT_ARN=""
+        if [ "$ENVIRONMENT" = "prod" ]; then
+          CERT_ARN=$(aws cloudformation list-exports \
+            --query "Exports[?Name=='${PROJECT_NAME}-acm-cert-arn-us-east-1'].Value" \
+            --output text --region us-east-1 2>/dev/null || echo "")
+        fi
+
+        # Set domain based on environment
+        if [ "$ENVIRONMENT" = "prod" ]; then
+          DOCS_DOMAIN="docs.aenealabs.com"
+        else
+          DOCS_DOMAIN="docs-${ENVIRONMENT}.aenealabs.com"
+        fi
+
+        aws cloudformation deploy \
+          --stack-name $DOCS_STACK \
+          --template-file deploy/cloudformation/docs-portal.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            DomainName=$DOCS_DOMAIN \
+            CertificateArn="${CERT_ARN}" \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=docs DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --capabilities CAPABILITY_IAM \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+        echo "Docs portal infrastructure deployed"
+
+      # ============================================
+      # PHASE 3: Build Marketing Site
+      # ============================================
+      - |
+        echo "Building Astro marketing site..."
+        cd marketing/site
+
+        # Set environment-specific URLs
+        if [ "$ENVIRONMENT" = "prod" ]; then
+          export PUBLIC_APP_URL="https://app.aenealabs.com"
+          export PUBLIC_DOCS_URL="https://docs.aenealabs.com"
+          export PUBLIC_API_URL="https://api.aenealabs.com"
+          export PUBLIC_SITE_URL="https://aenealabs.com"
+        else
+          export PUBLIC_APP_URL="https://app-${ENVIRONMENT}.aenealabs.com"
+          export PUBLIC_DOCS_URL="https://docs-${ENVIRONMENT}.aenealabs.com"
+          export PUBLIC_API_URL="https://api-${ENVIRONMENT}.aenealabs.com"
+          export PUBLIC_SITE_URL="https://${ENVIRONMENT}.aenealabs.com"
+        fi
+
+        npm run build
+
+        # Verify build output
+        if [ ! -d "dist" ]; then
+          echo "ERROR: Build failed - dist directory not created"
+          exit 1
+        fi
+
+        FILE_COUNT=$(find dist -type f | wc -l)
+        echo "Build complete: $FILE_COUNT files generated"
+        cd ../..
+
+      # ============================================
+      # PHASE 4: Generate API Documentation
+      # ============================================
+      - |
+        echo "Generating API documentation..."
+        chmod +x deploy/scripts/generate-api-docs.sh
+        ./deploy/scripts/generate-api-docs.sh --output docs-portal/build || echo "API docs generation using placeholder"
+
+  post_build:
+    commands:
+      # ============================================
+      # PHASE 5: Deploy Marketing Site to S3
+      # ============================================
+      - |
+        echo "Deploying marketing site to S3..."
+        MARKETING_STACK="${PROJECT_NAME}-marketing-${ENVIRONMENT}"
+
+        # Get bucket name from CloudFormation
+        BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name $MARKETING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`MarketingBucketName`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION)
+
+        if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "None" ]; then
+          BUCKET_NAME="${PROJECT_NAME}-marketing-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+        fi
+
+        echo "Syncing to bucket: $BUCKET_NAME"
+
+        # Sync static assets with long cache
+        # --sse AES256: Required by SCP DenyUnencryptedS3Uploads
+        aws s3 sync marketing/site/dist "s3://${BUCKET_NAME}/" \
+          --sse AES256 \
+          --delete \
+          --cache-control "public, max-age=31536000, immutable" \
+          --exclude "*.html" \
+          --exclude "*.json" \
+          --exclude "*.xml"
+
+        # Sync HTML files with shorter cache
+        aws s3 sync marketing/site/dist "s3://${BUCKET_NAME}/" \
+          --sse AES256 \
+          --exclude "*" \
+          --include "*.html" \
+          --cache-control "public, max-age=0, must-revalidate"
+
+        # Sync other dynamic files
+        aws s3 sync marketing/site/dist "s3://${BUCKET_NAME}/" \
+          --sse AES256 \
+          --exclude "*" \
+          --include "*.json" \
+          --include "*.xml" \
+          --cache-control "public, max-age=3600"
+
+        echo "Marketing site synced to S3"
+
+      # ============================================
+      # PHASE 6: Deploy Docs Portal to S3
+      # ============================================
+      - |
+        echo "Deploying docs portal to S3..."
+        DOCS_STACK="${PROJECT_NAME}-docs-portal-${ENVIRONMENT}"
+
+        # Get bucket name from CloudFormation
+        DOCS_BUCKET=$(aws cloudformation describe-stacks --stack-name $DOCS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`DocsBucketName`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION)
+
+        if [ -z "$DOCS_BUCKET" ] || [ "$DOCS_BUCKET" = "None" ]; then
+          DOCS_BUCKET="${PROJECT_NAME}-docs-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+        fi
+
+        # Check if docs-portal/build exists
+        if [ -d "docs-portal/build" ]; then
+          echo "Syncing docs to bucket: $DOCS_BUCKET"
+
+          # Sync with appropriate cache headers
+          # --sse AES256: Required by SCP DenyUnencryptedS3Uploads
+          aws s3 sync docs-portal/build "s3://${DOCS_BUCKET}/" \
+            --sse AES256 \
+            --delete \
+            --cache-control "max-age=300"
+
+          # OpenAPI specs with no-cache for freshness
+          aws s3 sync docs-portal/build "s3://${DOCS_BUCKET}/" \
+            --sse AES256 \
+            --exclude "*" \
+            --include "openapi.*" \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+          echo "Docs portal synced to S3"
+        else
+          echo "No docs-portal/build directory - skipping docs deployment"
+        fi
+
+      # ============================================
+      # PHASE 7: Invalidate CloudFront Caches
+      # ============================================
+      - |
+        echo "Invalidating CloudFront caches..."
+
+        # Marketing site
+        MARKETING_STACK="${PROJECT_NAME}-marketing-${ENVIRONMENT}"
+        CF_DIST_ID=$(aws cloudformation describe-stacks --stack-name $MARKETING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`MarketingDistributionId`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        if [ -n "$CF_DIST_ID" ] && [ "$CF_DIST_ID" != "None" ]; then
+          echo "Invalidating marketing CloudFront distribution: $CF_DIST_ID"
+          aws cloudfront create-invalidation \
+            --distribution-id "$CF_DIST_ID" \
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text
+        fi
+
+        # Docs portal
+        DOCS_STACK="${PROJECT_NAME}-docs-portal-${ENVIRONMENT}"
+        DOCS_CF_ID=$(aws cloudformation describe-stacks --stack-name $DOCS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`DocsDistributionId`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        if [ -n "$DOCS_CF_ID" ] && [ "$DOCS_CF_ID" != "None" ]; then
+          echo "Invalidating docs CloudFront distribution: $DOCS_CF_ID"
+          aws cloudfront create-invalidation \
+            --distribution-id "$DOCS_CF_ID" \
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text
+        fi
+
+        echo "CloudFront invalidations created"
+
+      # ============================================
+      # Deployment Summary
+      # ============================================
+      - |
+        echo "=========================================="
+        echo "Deployment Summary"
+        echo "=========================================="
+
+        MARKETING_STACK="${PROJECT_NAME}-marketing-${ENVIRONMENT}"
+        MARKETING_URL=$(aws cloudformation describe-stacks --stack-name $MARKETING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`MarketingSiteURL`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "Not available")
+
+        DOCS_STACK="${PROJECT_NAME}-docs-portal-${ENVIRONMENT}"
+        DOCS_URL=$(aws cloudformation describe-stacks --stack-name $DOCS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`DocsPortalURL`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "Not available")
+
+        echo "Environment: $ENVIRONMENT"
+        echo "Marketing Site: $MARKETING_URL"
+        echo "Docs Portal: $DOCS_URL"
+        echo "=========================================="
+
+artifacts:
+  files:
+    - marketing/site/dist/**/*
+    - docs-portal/build/**/*
+    - deploy/cloudformation/marketing-site.yaml
+    - deploy/cloudformation/docs-portal.yaml
+  name: marketing-artifacts
+
+cache:
+  paths:
+    - marketing/site/node_modules/**/*

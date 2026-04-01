@@ -1,0 +1,228 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Python FastAPI Environment - Backend with DynamoDB table and S3 bucket (24 hour TTL)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, staging, prod]
+    Description: Deployment environment
+
+  EnvironmentName:
+    Type: String
+    Description: Name for this test environment
+    AllowedPattern: '[a-z0-9-]+'
+    ConstraintDescription: Must contain only lowercase letters, numbers, and hyphens
+    MaxLength: 32
+
+  OwnerEmail:
+    Type: String
+    Description: Email of the environment owner (for notifications)
+    AllowedPattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+  TTLHours:
+    Type: Number
+    Default: 24
+    MinValue: 1
+    MaxValue: 168
+    Description: Hours until automatic cleanup (1-168)
+
+  ContainerImage:
+    Type: String
+    Default: 'public.ecr.aws/docker/library/python:3.11-slim'
+    Description: Container image for the FastAPI application
+
+Resources:
+  # ==========================================================================
+  # CloudWatch Log Group
+  # ==========================================================================
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/test-env/${EnvironmentName}'
+      RetentionInDays: 7
+      Tags:
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+        - Key: Owner
+          Value: !Ref OwnerEmail
+
+  # ==========================================================================
+  # DynamoDB Table
+  # ==========================================================================
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'aura-test-${EnvironmentName}-data'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+        - Key: Owner
+          Value: !Ref OwnerEmail
+        - Key: TTLHours
+          Value: !Ref TTLHours
+
+  # ==========================================================================
+  # S3 Bucket
+  # ==========================================================================
+  StorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'aura-test-${EnvironmentName}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AutoExpire
+            Status: Enabled
+            ExpirationInDays: 7
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+        - Key: Owner
+          Value: !Ref OwnerEmail
+
+  # ==========================================================================
+  # ECS Task Definition
+  # ==========================================================================
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'aura-test-${EnvironmentName}-api'
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aura-test-env-ecs-execution-role-${Environment}'
+      TaskRoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aura-test-env-ecs-task-role-${Environment}'
+      ContainerDefinitions:
+        - Name: api
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: api
+          Environment:
+            - Name: ENVIRONMENT_NAME
+              Value: !Ref EnvironmentName
+            - Name: DYNAMODB_TABLE
+              Value: !Ref DataTable
+            - Name: S3_BUCKET
+              Value: !Ref StorageBucket
+            - Name: OWNER_EMAIL
+              Value: !Ref OwnerEmail
+      Tags:
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+
+  # ==========================================================================
+  # Security Group
+  # ==========================================================================
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Security group for test environment ${EnvironmentName}'
+      VpcId: '{{resolve:ssm:/aura/networking/vpc-id:1}}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: '10.0.0.0/8'
+          Description: Allow internal VPC traffic to API
+      Tags:
+        - Key: Name
+          Value: !Sub 'aura-test-${EnvironmentName}-sg'
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+
+  # ==========================================================================
+  # ECS Service
+  # ==========================================================================
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'aura-test-${EnvironmentName}-api'
+      Cluster: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/aura-sandboxes-${Environment}'
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref SecurityGroup
+          Subnets:
+            - '{{resolve:ssm:/aura/networking/private-subnet-1:1}}'
+            - '{{resolve:ssm:/aura/networking/private-subnet-2:1}}'
+      Tags:
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+        - Key: Owner
+          Value: !Ref OwnerEmail
+        - Key: TTLHours
+          Value: !Ref TTLHours
+
+Outputs:
+  EnvironmentName:
+    Description: Name of the test environment
+    Value: !Ref EnvironmentName
+
+  ServiceArn:
+    Description: ARN of the ECS service
+    Value: !Ref Service
+
+  DynamoDBTableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref DataTable
+
+  S3BucketName:
+    Description: Name of the S3 bucket
+    Value: !Ref StorageBucket
+
+  LogGroupName:
+    Description: CloudWatch Log Group
+    Value: !Ref LogGroup
+
+  ApiEndpoint:
+    Description: Internal API endpoint (within VPC)
+    Value: !Sub 'http://aura-test-${EnvironmentName}-api.aura.local:8000'

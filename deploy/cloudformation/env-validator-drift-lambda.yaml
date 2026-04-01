@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.17 - Environment Validator Drift Detection Lambda'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  LambdaS3Bucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+
+  LambdaS3Key:
+    Type: String
+    Description: S3 key for Lambda deployment package
+
+Resources:
+  # ==========================================================================
+  # IAM Role for Drift Detection Lambda
+  # ==========================================================================
+
+  DriftLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-env-drift-lambda-role-${Environment}'
+      Description: IAM role for environment validator drift detection Lambda
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DriftDetectionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB - Read/write baselines and drift history
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-env-baseline-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-env-validation-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-env-validation-${Environment}/index/*'
+
+              # S3 - Read manifest state files
+              - Sid: S3ManifestRead
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-application-artifacts-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-application-artifacts-${AWS::AccountId}-${Environment}/manifests/*'
+
+              # CloudWatch - Publish drift metrics (required wildcard per ADR-041)
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/EnvValidator'
+
+              # SNS - Publish drift alerts
+              - Sid: SNSPublish
+                Effect: Allow
+                Action: sns:Publish
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*-${Environment}'
+
+              # SSM - Read environment registry
+              - Sid: SSMRead
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: env-validator
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # Lambda Function - Drift Detection
+  # ==========================================================================
+
+  DriftDetectionLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-env-drift-detector-${Environment}'
+      Description: Scheduled drift detection for environment validator (ADR-062)
+      Runtime: python3.11
+      Handler: src.services.env_validator.lambda_handler.lambda_handler
+      Role: !GetAtt DriftLambdaRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          CLOUDWATCH_NAMESPACE: Aura/EnvValidator
+          EKS_CLUSTER_NAME: !Sub '${ProjectName}-cluster-${Environment}'
+          AWS_ACCOUNT_ID: !Ref AWS::AccountId
+          # SNS topic will be set if monitoring stack exists
+          DRIFT_SNS_TOPIC_ARN: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-monitoring-alerts-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: env-validator
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # EventBridge Permission and Target
+  # ==========================================================================
+
+  # Permission for EventBridge to invoke Lambda
+  DriftLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DriftDetectionLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-env-drift-lambda-${Environment}'
+
+  # EventBridge Rule with Lambda Target
+  DriftDetectionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-env-drift-lambda-${Environment}'
+      Description: Scheduled drift detection for environment validator (cost optimized from 6 hours)
+      ScheduleExpression: 'rate(1 day)'
+      State: ENABLED
+      Targets:
+        - Id: DriftDetectionLambda
+          Arn: !GetAtt DriftDetectionLambda.Arn
+
+  # ==========================================================================
+  # CloudWatch Log Group
+  # ==========================================================================
+
+  DriftLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-env-drift-detector-${Environment}'
+      RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: env-validator
+
+Outputs:
+  DriftLambdaArn:
+    Description: ARN of drift detection Lambda
+    Value: !GetAtt DriftDetectionLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-env-drift-lambda-arn-${Environment}'
+
+  DriftLambdaRoleArn:
+    Description: ARN of drift detection Lambda role
+    Value: !GetAtt DriftLambdaRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-env-drift-lambda-role-arn-${Environment}'
+
+  DriftDetectionRuleArn:
+    Description: ARN of EventBridge drift detection rule with Lambda target
+    Value: !GetAtt DriftDetectionRule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-env-drift-lambda-rule-arn-${Environment}'
+
+  DriftLambdaLogGroup:
+    Description: CloudWatch log group for drift Lambda
+    Value: !Ref DriftLambdaLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-env-drift-log-group-${Environment}'

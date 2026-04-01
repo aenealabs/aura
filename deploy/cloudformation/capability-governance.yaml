@@ -1,0 +1,727 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.6 - Capability Governance'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'aura'
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  AuditRetentionDays:
+    Type: Number
+    Default: 90
+    Description: Days to retain audit records
+
+  EscalationRetentionDays:
+    Type: Number
+    Default: 365
+    Description: Days to retain escalation records
+
+  ViolationRetentionDays:
+    Type: Number
+    Default: 365
+    Description: Days to retain violation records
+
+  GrantRetentionDays:
+    Type: Number
+    Default: 90
+    Description: Days to retain grant records
+
+  EnablePointInTimeRecovery:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable point-in-time recovery for DynamoDB tables
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, 'prod']
+  EnablePITR: !Equals [!Ref EnablePointInTimeRecovery, 'true']
+
+Mappings:
+  PartitionMap:
+    aws:
+      Suffix: ''
+    aws-us-gov:
+      Suffix: '-gov'
+
+Resources:
+  # ===========================================================================
+  # KMS Key for Encryption
+  # ===========================================================================
+
+  CapabilityGovernanceKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub '${ProjectName}-capability-governance-${Environment} encryption key'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowRootAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowServiceAccess
+            Effect: Allow
+            Principal:
+              Service:
+                - dynamodb.amazonaws.com
+                - sqs.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService':
+                  - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+                  - !Sub 'sqs.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  CapabilityGovernanceKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-capability-governance-${Environment}'
+      TargetKeyId: !Ref CapabilityGovernanceKey
+
+  # ===========================================================================
+  # DynamoDB Tables
+  # ===========================================================================
+
+  # Audit Table - Stores capability check audit records
+  CapabilityAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-capability-audit-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+        - AttributeName: GSI2PK
+          AttributeType: S
+        - AttributeName: GSI2SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI2
+          KeySchema:
+            - AttributeName: GSI2PK
+              KeyType: HASH
+            - AttributeName: GSI2SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt CapabilityGovernanceKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+        - Key: DataClassification
+          Value: sensitive
+
+  # Escalation Table - Stores HITL escalation requests
+  CapabilityEscalationTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-capability-escalations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt CapabilityGovernanceKey.Arn
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+        - Key: DataClassification
+          Value: sensitive
+
+  # Violation Table - Stores capability violations
+  CapabilityViolationTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-capability-violations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt CapabilityGovernanceKey.Arn
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+        - Key: DataClassification
+          Value: sensitive
+
+  # Grants Table - Stores dynamic capability grants
+  CapabilityGrantsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-capability-grants-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt CapabilityGovernanceKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+        - Key: DataClassification
+          Value: sensitive
+
+  # ===========================================================================
+  # SQS Queues
+  # ===========================================================================
+
+  # Escalation Queue - For HITL approval notifications
+  EscalationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-capability-escalations-${Environment}'
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: !Ref CapabilityGovernanceKey
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EscalationDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  EscalationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-capability-escalations-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: !Ref CapabilityGovernanceKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  # Violation Queue - For security alerting
+  ViolationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-capability-violations-${Environment}'
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: !Ref CapabilityGovernanceKey
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ViolationDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  ViolationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-capability-violations-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: !Ref CapabilityGovernanceKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  # ===========================================================================
+  # SNS Topics
+  # ===========================================================================
+
+  # Escalation Topic - For HITL notifications
+  EscalationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-capability-escalations-${Environment}'
+      KmsMasterKeyId: !Ref CapabilityGovernanceKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  # Critical Violation Topic - For security alerts
+  CriticalViolationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-capability-critical-violations-${Environment}'
+      KmsMasterKeyId: !Ref CapabilityGovernanceKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  # ===========================================================================
+  # EventBridge Rules
+  # ===========================================================================
+
+  # Rule to process escalation requests from DynamoDB Stream
+  EscalationEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-capability-escalation-events-${Environment}'
+      Description: Process capability escalation events
+      EventBusName: default
+      EventPattern:
+        source:
+          - aws.dynamodb
+        detail-type:
+          - DynamoDB Stream Record
+        detail:
+          eventSourceARN:
+            - !GetAtt CapabilityEscalationTable.StreamArn
+      State: ENABLED
+      Targets:
+        - Id: EscalationQueue
+          Arn: !GetAtt EscalationQueue.Arn
+          InputTransformer:
+            InputPathsMap:
+              eventID: $.detail.eventID
+              eventName: $.detail.eventName
+              newImage: $.detail.dynamodb.NewImage
+            InputTemplate: |
+              {
+                "eventID": "<eventID>",
+                "eventName": "<eventName>",
+                "escalation": <newImage>
+              }
+
+  # Rule to process violation events from DynamoDB Stream
+  ViolationEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-capability-violation-events-${Environment}'
+      Description: Process capability violation events
+      EventBusName: default
+      EventPattern:
+        source:
+          - aws.dynamodb
+        detail-type:
+          - DynamoDB Stream Record
+        detail:
+          eventSourceARN:
+            - !GetAtt CapabilityViolationTable.StreamArn
+      State: ENABLED
+      Targets:
+        - Id: ViolationQueue
+          Arn: !GetAtt ViolationQueue.Arn
+
+  # ===========================================================================
+  # IAM Role for Services
+  # ===========================================================================
+
+  CapabilityGovernanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-capability-governance-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: CapabilityGovernancePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:BatchGetItem
+                Resource:
+                  - !GetAtt CapabilityAuditTable.Arn
+                  - !Sub '${CapabilityAuditTable.Arn}/index/*'
+                  - !GetAtt CapabilityEscalationTable.Arn
+                  - !Sub '${CapabilityEscalationTable.Arn}/index/*'
+                  - !GetAtt CapabilityViolationTable.Arn
+                  - !Sub '${CapabilityViolationTable.Arn}/index/*'
+                  - !GetAtt CapabilityGrantsTable.Arn
+                  - !Sub '${CapabilityGrantsTable.Arn}/index/*'
+              - Sid: SQSAccess
+                Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !GetAtt EscalationQueue.Arn
+                  - !GetAtt ViolationQueue.Arn
+              - Sid: SNSAccess
+                Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Ref EscalationTopic
+                  - !Ref CriticalViolationTopic
+              - Sid: KMSAccess
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource:
+                  - !GetAtt CapabilityGovernanceKey.Arn
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': 'Aura/CapabilityGovernance'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  # ===========================================================================
+  # SSM Parameters
+  # ===========================================================================
+
+  AuditTableParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/capability-governance/audit-table'
+      Type: String
+      Value: !Ref CapabilityAuditTable
+      Description: Capability audit DynamoDB table name
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  EscalationTableParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/capability-governance/escalation-table'
+      Type: String
+      Value: !Ref CapabilityEscalationTable
+      Description: Capability escalation DynamoDB table name
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  ViolationTableParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/capability-governance/violation-table'
+      Type: String
+      Value: !Ref CapabilityViolationTable
+      Description: Capability violation DynamoDB table name
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  GrantsTableParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/capability-governance/grants-table'
+      Type: String
+      Value: !Ref CapabilityGrantsTable
+      Description: Capability grants DynamoDB table name
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  EscalationQueueParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/capability-governance/escalation-queue'
+      Type: String
+      Value: !Ref EscalationQueue
+      Description: Escalation SQS queue URL
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  ViolationQueueParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/capability-governance/violation-queue'
+      Type: String
+      Value: !Ref ViolationQueue
+      Description: Violation SQS queue URL
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+Outputs:
+  CapabilityGovernanceKeyArn:
+    Description: KMS key ARN for capability governance
+    Value: !GetAtt CapabilityGovernanceKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-governance-key-arn-${Environment}'
+
+  CapabilityAuditTableName:
+    Description: Capability audit table name
+    Value: !Ref CapabilityAuditTable
+    Export:
+      Name: !Sub '${ProjectName}-capability-audit-table-${Environment}'
+
+  CapabilityAuditTableArn:
+    Description: Capability audit table ARN
+    Value: !GetAtt CapabilityAuditTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-audit-table-arn-${Environment}'
+
+  CapabilityEscalationTableName:
+    Description: Capability escalation table name
+    Value: !Ref CapabilityEscalationTable
+    Export:
+      Name: !Sub '${ProjectName}-capability-escalation-table-${Environment}'
+
+  CapabilityEscalationTableArn:
+    Description: Capability escalation table ARN
+    Value: !GetAtt CapabilityEscalationTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-escalation-table-arn-${Environment}'
+
+  CapabilityViolationTableName:
+    Description: Capability violation table name
+    Value: !Ref CapabilityViolationTable
+    Export:
+      Name: !Sub '${ProjectName}-capability-violation-table-${Environment}'
+
+  CapabilityViolationTableArn:
+    Description: Capability violation table ARN
+    Value: !GetAtt CapabilityViolationTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-violation-table-arn-${Environment}'
+
+  CapabilityGrantsTableName:
+    Description: Capability grants table name
+    Value: !Ref CapabilityGrantsTable
+    Export:
+      Name: !Sub '${ProjectName}-capability-grants-table-${Environment}'
+
+  CapabilityGrantsTableArn:
+    Description: Capability grants table ARN
+    Value: !GetAtt CapabilityGrantsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-grants-table-arn-${Environment}'
+
+  EscalationQueueUrl:
+    Description: Escalation queue URL
+    Value: !Ref EscalationQueue
+    Export:
+      Name: !Sub '${ProjectName}-capability-escalation-queue-${Environment}'
+
+  EscalationQueueArn:
+    Description: Escalation queue ARN
+    Value: !GetAtt EscalationQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-escalation-queue-arn-${Environment}'
+
+  ViolationQueueUrl:
+    Description: Violation queue URL
+    Value: !Ref ViolationQueue
+    Export:
+      Name: !Sub '${ProjectName}-capability-violation-queue-${Environment}'
+
+  ViolationQueueArn:
+    Description: Violation queue ARN
+    Value: !GetAtt ViolationQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-violation-queue-arn-${Environment}'
+
+  EscalationTopicArn:
+    Description: Escalation SNS topic ARN
+    Value: !Ref EscalationTopic
+    Export:
+      Name: !Sub '${ProjectName}-capability-escalation-topic-${Environment}'
+
+  CriticalViolationTopicArn:
+    Description: Critical violation SNS topic ARN
+    Value: !Ref CriticalViolationTopic
+    Export:
+      Name: !Sub '${ProjectName}-capability-critical-violation-topic-${Environment}'
+
+  CapabilityGovernanceRoleArn:
+    Description: Capability governance IAM role ARN
+    Value: !GetAtt CapabilityGovernanceRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-governance-role-arn-${Environment}'

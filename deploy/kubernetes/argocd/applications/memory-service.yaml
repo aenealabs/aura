@@ -1,0 +1,85 @@
+# Project Aura - ArgoCD Application for Neural Memory Service
+# Deploys the Titan Neural Memory service to EKS via GitOps (ADR-022)
+#
+# This Application watches deploy/kubernetes/memory-service/ in Git and
+# automatically syncs changes to the Kubernetes cluster.
+#
+# Note: prune is set to false for safe adoption of existing resources.
+# After verifying successful adoption, prune can be enabled.
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: memory-service
+  namespace: argocd
+  labels:
+    project: aura
+    tier: backend
+    component: neural-memory
+  # Finalizer to ensure proper cleanup on deletion
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Reference the Aura project for RBAC
+  project: aura
+
+  # Source repository and path
+  source:
+    repoURL: https://github.com/aenealabs/aura
+    targetRevision: main
+    path: deploy/kubernetes/memory-service
+
+  # Destination cluster and namespace
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  # Sync policy configuration
+  syncPolicy:
+    # Automated sync - ArgoCD will automatically apply changes from Git
+    automated:
+      # Prune disabled for safe adoption - enable after verification
+      prune: false
+      # Self-heal - revert manual changes made outside of Git
+      selfHeal: true
+      # Allow empty - sync even if no resources are defined
+      allowEmpty: false
+
+    # Sync options
+    syncOptions:
+      # Create namespace if it doesn't exist
+      - CreateNamespace=true
+      # Validate manifests before applying
+      - Validate=true
+      # Use server-side apply for better handling of large resources
+      - ServerSideApply=false
+      # Replace resources instead of patching (more predictable)
+      - Replace=false
+      # Prune last - delete resources after creating new ones
+      - PruneLast=true
+      # Apply out of sync only - minimize disruption during adoption
+      - ApplyOutOfSyncOnly=true
+
+    # Retry configuration for failed syncs
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Health check configuration
+  ignoreDifferences:
+    # Ignore autoscaler-managed replicas
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    # Ignore Helm template annotations that may differ
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/template/metadata/annotations/checksum~1config
+
+  # Revision history limit (for rollback)
+  revisionHistoryLimit: 10

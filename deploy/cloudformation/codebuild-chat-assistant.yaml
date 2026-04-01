@@ -1,0 +1,366 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Chat Assistant CodeBuild Project (Layer 6.7: WebSocket API, Bedrock Chat)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    AllowedValues:
+      - main
+      - develop
+    Description: GitHub branch to build from
+
+Resources:
+  # S3 Bucket for Chat Lambda Deployment Packages
+  ChatArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-chat-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldLambdaPackages
+            Status: Enabled
+            ExpirationInDays: 60
+            NoncurrentVersionExpirationInDays: 14
+          - Id: TransitionToIntelligentTiering
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 0
+                StorageClass: INTELLIGENT_TIERING
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: chat-assistant
+
+  # CloudWatch Log Group for Chat Builds
+  ChatBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-chat-assistant-deploy-${Environment}'
+      RetentionInDays: 30
+
+  # IAM Role for Chat Assistant CodeBuild
+  ChatCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-chat-codebuild-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+      Policies:
+        - PolicyName: ChatDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs (for build logs)
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - logs:DeleteLogGroup
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-chat-*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-chat-*:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-chat-*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-chat-*:*'
+
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/CICD/ChatAssistant'
+
+              # S3 - Lambda deployment packages
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ChatArtifactsBucket.Arn
+                  - !Sub '${ChatArtifactsBucket.Arn}/*'
+
+              # CloudFormation - Chat Assistant stack only
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:GetTemplateSummary
+                Resource:
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-chat-assistant-${Environment}/*'
+
+              # Lambda - Chat functions
+              - Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:InvokeFunction
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - lambda:PutFunctionConcurrency
+                  - lambda:DeleteFunctionConcurrency
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-chat-*'
+
+              # DynamoDB - Chat tables
+              - Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:UpdateTimeToLive
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                  - dynamodb:DescribeContinuousBackups
+                  - dynamodb:UpdateContinuousBackups
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-chat-*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-research-tasks-*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-research-tasks-*/index/*'
+
+              # API Gateway - REST and WebSocket APIs
+              - Effect: Allow
+                Action:
+                  - apigateway:POST
+                  - apigateway:GET
+                  - apigateway:PUT
+                  - apigateway:DELETE
+                  - apigateway:PATCH
+                  - apigateway:TagResource
+                  - apigateway:UntagResource
+                Resource:
+                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis'
+                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis/*'
+                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis'
+                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis/*'
+                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/tags/*'
+
+              # Cognito - Read only for authorizer
+              - Effect: Allow
+                Action:
+                  - cognito-idp:DescribeUserPool
+                  - cognito-idp:DescribeUserPoolClient
+                Resource:
+                  - !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+
+              # CloudWatch Alarms
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DescribeAlarms
+                Resource:
+                  - !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-chat-*'
+
+              # IAM Role Management (for Lambda execution roles)
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-chat-lambda-role-${Environment}'
+
+              # IAM Pass Role (for Lambda execution)
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-chat-lambda-role-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: lambda.amazonaws.com
+
+              # SSM Parameter Store
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+
+              # CodeConnections (for GitHub source access)
+              - Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codeconnections:GetConnectionToken
+                Resource:
+                  - '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+  # CodeBuild Project for Chat Assistant
+  ChatCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-chat-assistant-deploy-${Environment}'
+      Description: 'Project Aura - Chat Assistant CodeBuild Project (Layer 6.7: WebSocket API, Bedrock Chat)'
+      ServiceRole: !GetAtt ChatCodeBuildRole.Arn
+      Artifacts:
+        Type: S3
+        Location: !Ref ChatArtifactsBucket
+        Name: chat-artifacts
+        Packaging: ZIP
+        EncryptionDisabled: false
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: LAYER
+            Value: chat-assistant
+          - Name: CHAT_ARTIFACTS_BUCKET
+            Value: !Ref ChatArtifactsBucket
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-chat-assistant.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref ChatBuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_SOURCE_CACHE
+          - LOCAL_CUSTOM_CACHE
+      TimeoutInMinutes: 15
+      QueuedTimeoutInMinutes: 480
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: chat-assistant
+
+  # CloudWatch Alarm - Chat Build Failures
+  ChatBuildFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-chat-assistant-build-failures-${Environment}'
+      AlarmDescription: 'Alert when Chat Assistant has 2+ failures in 1 hour'
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref ChatCodeBuildProject
+      TreatMissingData: notBreaching
+
+Outputs:
+  CodeBuildProjectName:
+    Description: CodeBuild Project Name
+    Value: !Ref ChatCodeBuildProject
+    Export:
+      Name: !Sub '${ProjectName}-chat-assistant-codebuild-project-${Environment}'
+
+  CodeBuildProjectArn:
+    Description: CodeBuild Project ARN
+    Value: !GetAtt ChatCodeBuildProject.Arn
+    Export:
+      Name: !Sub '${ProjectName}-chat-assistant-codebuild-arn-${Environment}'
+
+  ArtifactsBucketName:
+    Description: S3 Bucket for Lambda deployment packages
+    Value: !Ref ChatArtifactsBucket
+    Export:
+      Name: !Sub '${ProjectName}-chat-artifacts-bucket-${Environment}'
+
+  CodeBuildRoleArn:
+    Description: IAM Role ARN for CodeBuild
+    Value: !GetAtt ChatCodeBuildRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-chat-codebuild-role-arn-${Environment}'

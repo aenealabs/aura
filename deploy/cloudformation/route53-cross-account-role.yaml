@@ -1,0 +1,177 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.6 - Route 53 Cross-Account Role (DNS Validation)'
+
+# =============================================================================
+# Cross-Account Role for Route 53 DNS Validation
+# =============================================================================
+# This template creates an IAM role in the dev account (which owns the
+# aenealabs.com hosted zone) that can be assumed by CodeBuild roles in
+# other accounts (QA, prod) to create ACM DNS validation records.
+#
+# Deployment: Deploy to dev account ONLY (where Route 53 hosted zone exists)
+# Usage: QA/prod CodeBuild assumes this role for ACM certificate validation
+# =============================================================================
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  HostedZoneId:
+    Type: String
+    Description: Route 53 Hosted Zone ID for aenealabs.com. Retrieved from SSM at deployment.
+
+  QAAccountId:
+    Type: String
+    Description: AWS Account ID for QA environment. Retrieved from SSM at deployment.
+
+  ProdAccountId:
+    Type: String
+    Default: ''
+    Description: AWS Account ID for production environment (optional)
+
+Conditions:
+  HasProdAccount: !Not [!Equals [!Ref ProdAccountId, '']]
+
+Resources:
+  # ===========================================================================
+  # Cross-Account Role for Route 53 Access
+  # ===========================================================================
+  # Security Controls (per the CMMC assessment):
+  # - AC.L2-3.1.5: Least privilege via record type restrictions
+  # - AU.L2-3.3.1: CloudTrail logging of role assumption
+  # - SC.L2-3.13.8: TLS 1.2+ for STS calls
+  # ===========================================================================
+  Route53CrossAccountRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-route53-cross-account-role'
+      Description: 'Allows QA/prod accounts to create DNS records for ACM validation (CMMC compliant)'
+      MaxSessionDuration: 3600  # 1 hour - limits credential exposure window
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow QA account CodeBuild role to assume this role
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:${AWS::Partition}:iam::${QAAccountId}:role/${ProjectName}-compute-codebuild-role-qa'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Sub '${ProjectName}-route53-validation'
+          # Allow prod account CodeBuild role (if configured)
+          - !If
+            - HasProdAccount
+            - Effect: Allow
+              Principal:
+                AWS:
+                  - !Sub 'arn:${AWS::Partition}:iam::${ProdAccountId}:role/${ProjectName}-compute-codebuild-role-prod'
+              Action: sts:AssumeRole
+              Condition:
+                StringEquals:
+                  sts:ExternalId: !Sub '${ProjectName}-route53-validation'
+            - !Ref AWS::NoValue
+      Policies:
+        - PolicyName: Route53DNSValidationMinimal
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Route 53 - ACM DNS validation records ONLY (AC.L2-3.1.5 least privilege)
+              # Restricted to CNAME/TXT record types for _acme-challenge patterns
+              - Sid: ACMDNSValidationRecordsOnly
+                Effect: Allow
+                Action:
+                  - route53:ChangeResourceRecordSets
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:route53:::hostedzone/${HostedZoneId}'
+                Condition:
+                  'ForAllValues:StringEquals':
+                    route53:ChangeResourceRecordSetsRecordTypes:
+                      - CNAME
+                      - TXT
+              # Route 53 - Read-only operations for validation
+              - Sid: Route53ReadOperations
+                Effect: Allow
+                Action:
+                  - route53:GetHostedZone
+                  - route53:ListResourceRecordSets
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:route53:::hostedzone/${HostedZoneId}'
+              # Route 53 - Track change propagation
+              - Sid: Route53GetChange
+                Effect: Allow
+                Action:
+                  - route53:GetChange
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:route53:::change/*'
+              # Route 53 - List hosted zones (required for zone discovery)
+              - Sid: Route53ListZones
+                Effect: Allow
+                Action:
+                  - route53:ListHostedZones
+                  - route53:ListHostedZonesByName
+                Resource: '*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: cross-account-route53-validation
+        - Key: SecurityControl
+          Value: CMMC-AC.L2-3.1.5
+
+  # ===========================================================================
+  # CloudWatch Alarm for Cross-Account DNS Changes (AU.L2-3.3.6)
+  # ===========================================================================
+  Route53CrossAccountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-route53-cross-account-changes'
+      AlarmDescription: 'Alert on Route 53 changes via cross-account role - potential security event'
+      MetricName: Route53ChangesViaCrossAccountRole
+      Namespace: !Sub '${ProjectName}/Security'
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 20  # Alert if > 20 changes per hour (abnormal for ACM validation)
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: RoleName
+          Value: !Sub '${ProjectName}-route53-cross-account-role'
+
+  # ===========================================================================
+  # CAA Record for Certificate Authority Authorization (SC.L2-3.13.1)
+  # Restricts which CAs can issue certificates for this domain
+  # ===========================================================================
+  CAARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: aenealabs.com.
+      Type: CAA
+      TTL: 3600
+      ResourceRecords:
+        - '0 issue "amazon.com"'
+        - '0 issue "amazontrust.com"'
+        - '0 iodef "mailto:aura-security@aenealabs.com"'
+
+Outputs:
+  Route53CrossAccountRoleArn:
+    Description: ARN of the cross-account Route 53 role
+    Value: !GetAtt Route53CrossAccountRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-route53-cross-account-role-arn'
+
+  Route53CrossAccountRoleName:
+    Description: Name of the cross-account Route 53 role
+    Value: !Ref Route53CrossAccountRole
+    Export:
+      Name: !Sub '${ProjectName}-route53-cross-account-role-name'
+
+  ExternalId:
+    Description: External ID required when assuming the role
+    Value: !Sub '${ProjectName}-route53-validation'
+    Export:
+      Name: !Sub '${ProjectName}-route53-external-id'

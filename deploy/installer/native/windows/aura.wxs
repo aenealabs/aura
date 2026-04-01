@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Aura CLI Windows Installer (WiX v4)
+
+    Build Requirements:
+    - WiX Toolset v4.x: https://wixtoolset.org/
+    - .NET SDK 6.0+
+
+    Build Commands:
+    wix build aura.wxs -o aura-cli-$(VERSION)-windows-x64.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Package
+        Name="Aura CLI"
+        Manufacturer="Aenea Labs"
+        Version="!(bind.FileVersion.AuraExe)"
+        UpgradeCode="A8E7B5C3-1234-5678-9ABC-DEF012345678"
+        Scope="perMachine">
+
+        <SummaryInformation
+            Description="Project Aura Command Line Interface"
+            Manufacturer="Aenea Labs" />
+
+        <!-- Upgrade handling -->
+        <MajorUpgrade
+            DowngradeErrorMessage="A newer version of Aura CLI is already installed."
+            Schedule="afterInstallValidate" />
+
+        <!-- Media -->
+        <MediaTemplate EmbedCab="yes" />
+
+        <!-- Feature tree -->
+        <Feature Id="MainFeature" Title="Aura CLI" Level="1">
+            <ComponentGroupRef Id="ProductComponents" />
+            <ComponentGroupRef Id="PathComponents" />
+        </Feature>
+
+        <!-- Standard directories -->
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="Aura">
+                <Directory Id="BinFolder" Name="bin" />
+                <Directory Id="DocsFolder" Name="docs" />
+            </Directory>
+        </StandardDirectory>
+
+        <!-- Components -->
+        <ComponentGroup Id="ProductComponents" Directory="BinFolder">
+            <Component Id="AuraExeComponent" Guid="B1234567-89AB-CDEF-0123-456789ABCDEF">
+                <File Id="AuraExe"
+                      Source="$(var.SourceDir)\aura.exe"
+                      KeyPath="yes">
+                    <Shortcut Id="StartMenuShortcut"
+                              Directory="ProgramMenuFolder"
+                              Name="Aura CLI"
+                              WorkingDirectory="BinFolder"
+                              Advertise="yes" />
+                </File>
+            </Component>
+
+            <Component Id="LicenseComponent" Guid="C2345678-9ABC-DEF0-1234-56789ABCDEF0">
+                <File Id="LicenseFile"
+                      Source="$(var.SourceDir)\LICENSE.txt"
+                      KeyPath="yes" />
+            </Component>
+
+            <Component Id="ReadmeComponent" Guid="D3456789-ABCD-EF01-2345-6789ABCDEF01">
+                <File Id="ReadmeFile"
+                      Source="$(var.SourceDir)\README.md"
+                      KeyPath="yes" />
+            </Component>
+        </ComponentGroup>
+
+        <!-- Add to PATH -->
+        <ComponentGroup Id="PathComponents" Directory="BinFolder">
+            <Component Id="PathComponent" Guid="E4567890-BCDE-F012-3456-789ABCDEF012">
+                <Environment Id="PATH"
+                             Name="PATH"
+                             Value="[BinFolder]"
+                             Permanent="no"
+                             Part="last"
+                             Action="set"
+                             System="yes" />
+                <RegistryValue Root="HKLM"
+                               Key="SOFTWARE\AeneaLabs\Aura"
+                               Name="InstallPath"
+                               Type="string"
+                               Value="[INSTALLFOLDER]"
+                               KeyPath="yes" />
+            </Component>
+        </ComponentGroup>
+
+        <!-- Custom actions for post-install verification -->
+        <CustomAction Id="VerifyInstallation"
+                      Directory="BinFolder"
+                      ExeCommand="[BinFolder]aura.exe --version"
+                      Execute="deferred"
+                      Impersonate="no"
+                      Return="check" />
+
+        <InstallExecuteSequence>
+            <Custom Action="VerifyInstallation" After="InstallFiles">NOT Installed</Custom>
+        </InstallExecuteSequence>
+
+        <!-- UI customization -->
+        <UI>
+            <UIRef Id="WixUI_InstallDir" />
+            <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+        </UI>
+
+        <!-- License agreement -->
+        <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)\license.rtf" />
+
+        <!-- Banner images -->
+        <WixVariable Id="WixUIBannerBmp" Value="$(var.SourceDir)\assets\banner.bmp" />
+        <WixVariable Id="WixUIDialogBmp" Value="$(var.SourceDir)\assets\dialog.bmp" />
+
+    </Package>
+</Wix>

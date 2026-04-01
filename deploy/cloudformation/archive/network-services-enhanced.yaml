@@ -1,0 +1,372 @@
+# Project Aura - Enhanced Network Services with Monitoring & Auto-Scaling
+#
+# This is an enhanced version of network-services.yaml with:
+#   - DNS-specific CloudWatch alarms
+#   - Auto-scaling based on CPU/memory/custom metrics
+#   - Cost optimization with Fargate Spot
+#   - SNS topic for alerts
+#   - Detailed monitoring and logging
+#
+# Use this template for production deployments requiring advanced monitoring
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Project Aura - Enhanced Network Services (dnsmasq) with advanced monitoring and auto-scaling
+
+# Import all parameters from base template
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, qa, prod]
+    Default: dev
+
+  ProjectName:
+    Type: String
+    Default: aura
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+
+  PrivateSubnet1Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnet2Id:
+    Type: AWS::EC2::Subnet::Id
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+
+  AlertEmail:
+    Type: String
+    Description: Email address for CloudWatch alerts
+    Default: ops@example.com
+
+  MinTasks:
+    Type: Number
+    Description: Minimum number of tasks for auto-scaling
+    Default: 1
+    MinValue: 1
+    MaxValue: 10
+
+  MaxTasks:
+    Type: Number
+    Description: Maximum number of tasks for auto-scaling
+    Default: 4
+    MinValue: 1
+    MaxValue: 20
+
+  TargetCpuUtilization:
+    Type: Number
+    Description: Target CPU utilization percentage for auto-scaling
+    Default: 60
+    MinValue: 10
+    MaxValue: 90
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  IsDevelopment: !Equals [!Ref Environment, dev]
+
+Resources:
+  # ============================================================================
+  # SNS TOPIC FOR ALERTS
+  # ============================================================================
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub "${ProjectName} DNS Service Alerts - ${Environment}"
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-dns-alerts-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # ENHANCED CLOUDWATCH ALARMS
+  # ============================================================================
+
+  # High CPU Alarm
+  HighCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-dns-high-cpu-${Environment}"
+      AlarmDescription: Alert when DNS service CPU exceeds target
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt EcsService.Name
+        - Name: ClusterName
+          Value: !Ref EcsCluster
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+
+  # High Memory Alarm
+  HighMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-dns-high-memory-${Environment}"
+      AlarmDescription: Alert when DNS service memory exceeds threshold
+      MetricName: MemoryUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt EcsService.Name
+        - Name: ClusterName
+          Value: !Ref EcsCluster
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+
+  # Service Down Alarm (task count = 0)
+  ServiceDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-dns-service-down-${Environment}"
+      AlarmDescription: CRITICAL - DNS service has no running tasks
+      MetricName: DesiredTaskCount
+      Namespace: ECS/ContainerInsights
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt EcsService.Name
+        - Name: ClusterName
+          Value: !Ref EcsCluster
+      AlarmActions:
+        - !Ref AlertTopic
+      TreatMissingData: breaching
+
+  # Unhealthy Target Count (NLB health checks failing)
+  UnhealthyTargetAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-dns-unhealthy-targets-${Environment}"
+      AlarmDescription: Alert when DNS targets are unhealthy
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/NetworkELB
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt DnsTcpTargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !GetAtt NetworkLoadBalancer.LoadBalancerFullName
+      AlarmActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+
+  # Task Failure Alarm
+  TaskFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-dns-task-failures-${Environment}"
+      AlarmDescription: Alert on DNS task failures
+      MetricName: TaskSetFailed
+      Namespace: ECS/ContainerInsights
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt EcsService.Name
+        - Name: ClusterName
+          Value: !Ref EcsCluster
+      AlarmActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+
+  # Composite Alarm - Critical Service Health
+  CriticalServiceHealthAlarm:
+    Type: AWS::CloudWatch::CompositeAlarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-dns-critical-health-${Environment}"
+      AlarmDescription: Composite alarm for critical DNS service health
+      AlarmActions:
+        - !Ref AlertTopic
+      ActionsEnabled: true
+      AlarmRule: !Sub >
+        ALARM(${ServiceDownAlarm}) OR
+        (ALARM(${HighCpuAlarm}) AND ALARM(${HighMemoryAlarm})) OR
+        ALARM(${UnhealthyTargetAlarm})
+
+  # ============================================================================
+  # AUTO-SCALING CONFIGURATION
+  # ============================================================================
+
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: application-autoscaling.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-dns-autoscaling-role-${Environment}"
+
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: !Ref MaxTasks
+      MinCapacity: !Ref MinTasks
+      ResourceId: !Sub "service/${EcsCluster}/${EcsService.Name}"
+      RoleARN: !GetAtt AutoScalingRole.Arn
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  # CPU-based scaling policy
+  CpuScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "${ProjectName}-dns-cpu-scaling-${Environment}"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: !Ref TargetCpuUtilization
+        ScaleInCooldown: 300   # 5 minutes cooldown before scaling in
+        ScaleOutCooldown: 60   # 1 minute cooldown before scaling out
+
+  # Memory-based scaling policy
+  MemoryScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "${ProjectName}-dns-memory-scaling-${Environment}"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageMemoryUtilization
+        TargetValue: 70  # Target 70% memory utilization
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  # Scheduled scaling for known traffic patterns (optional)
+  ScaleDownAtNight:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: IsProduction
+    Properties:
+      ScheduledActions:
+        - ScheduledActionName: ScaleDownAtNight
+          Schedule: cron(0 2 * * ? *)  # 2 AM UTC
+          ScalableTargetAction:
+            MinCapacity: 1
+            MaxCapacity: 2
+        - ScheduledActionName: ScaleUpInMorning
+          Schedule: cron(0 12 * * ? *)  # 12 PM UTC
+          ScalableTargetAction:
+            MinCapacity: 2
+            MaxCapacity: 4
+
+  # ============================================================================
+  # PLACEHOLDER: Import base resources from network-services.yaml
+  # Note: In production, this would reference the base template or duplicate resources
+  # ============================================================================
+
+  # EcsCluster, SecurityGroup, TaskDefinition, EcsService, NLB, etc.
+  # (Include all resources from base network-services.yaml template here)
+
+  # For brevity, showing structure only:
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${ProjectName}-network-services-${Environment}"
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE_SPOT  # Use Spot for cost savings
+          Weight: 2
+          Base: 0
+        - CapacityProvider: FARGATE
+          Weight: 1
+          Base: 1  # Keep 1 on-demand for stability
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  # ... (other resources from base template)
+
+# ============================================================================
+# OUTPUTS
+# ============================================================================
+
+Outputs:
+  AlertTopicArn:
+    Description: SNS Topic ARN for alerts
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub "${ProjectName}-dns-alert-topic-${Environment}"
+
+  ScalableTargetId:
+    Description: Auto-scaling target ID
+    Value: !Ref ScalableTarget
+    Export:
+      Name: !Sub "${ProjectName}-dns-scaling-target-${Environment}"
+
+  CpuScalingPolicyArn:
+    Description: CPU scaling policy ARN
+    Value: !Ref CpuScalingPolicy
+
+  MemoryScalingPolicyArn:
+    Description: Memory scaling policy ARN
+    Value: !Ref MemoryScalingPolicy
+
+  MinTasks:
+    Description: Minimum number of tasks
+    Value: !Ref MinTasks
+
+  MaxTasks:
+    Description: Maximum number of tasks
+    Value: !Ref MaxTasks
+
+# ============================================================================
+# USAGE
+# ============================================================================
+
+# Deploy with auto-scaling and monitoring:
+#   aws cloudformation create-stack \
+#     --stack-name aura-network-services-enhanced-dev \
+#     --template-body file://network-services-enhanced.yaml \
+#     --parameters \
+#       ParameterKey=Environment,ParameterValue=dev \
+#       ParameterKey=AlertEmail,ParameterValue=ops@example.com \
+#       ParameterKey=MinTasks,ParameterValue=1 \
+#       ParameterKey=MaxTasks,ParameterValue=4 \
+#       ParameterKey=TargetCpuUtilization,ParameterValue=60 \
+#     --capabilities CAPABILITY_NAMED_IAM

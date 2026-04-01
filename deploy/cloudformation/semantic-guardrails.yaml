@@ -1,0 +1,368 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.5 - Semantic Guardrails'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  SessionTTLHours:
+    Type: Number
+    Default: 24
+    Description: TTL for session tracking data in hours
+
+  AuditRetentionDays:
+    Type: Number
+    Default: 90
+    Description: Retention period for audit logs in days
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # =============================================================================
+  # DynamoDB Tables
+  # =============================================================================
+
+  # Session Tracking Table (Layer 5)
+  # Stores multi-turn conversation threat scores with TTL
+  GuardrailsSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-guardrails-sessions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+        - AttributeName: turn_number
+          AttributeType: N
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+        - AttributeName: turn_number
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: CreatedAtIndex
+          KeySchema:
+            - AttributeName: session_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-guardrails-sessions-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: semantic-guardrails
+
+  # Audit Log Table (Layer 6)
+  # Stores threat assessment results for compliance and analysis
+  GuardrailsAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-guardrails-audit-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: assessment_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: threat_level
+          AttributeType: S
+        - AttributeName: session_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: assessment_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: ThreatLevelIndex
+          KeySchema:
+            - AttributeName: threat_level
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: SessionIdIndex
+          KeySchema:
+            - AttributeName: session_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-guardrails-audit-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: semantic-guardrails
+
+  # Threat Corpus Cache Table (Layer 3)
+  # Caches embedding vectors for threat patterns
+  GuardrailsCorpusCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-guardrails-corpus-cache-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: corpus_id
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+      KeySchema:
+        - AttributeName: corpus_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: CategoryIndex
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-guardrails-corpus-cache-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: semantic-guardrails
+
+  # =============================================================================
+  # SQS Queues
+  # =============================================================================
+
+  # Async Audit Queue
+  # Decouples threat assessment from audit logging for performance
+  GuardrailsAuditQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-guardrails-audit-${Environment}'
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt GuardrailsAuditDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: semantic-guardrails
+
+  # Dead Letter Queue for failed audit messages
+  GuardrailsAuditDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-guardrails-audit-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: semantic-guardrails
+
+  # High Priority Threat Queue
+  # For immediate processing of CRITICAL/HIGH threats
+  GuardrailsHighPriorityQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-guardrails-high-priority-${Environment}'
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400  # 1 day
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: semantic-guardrails
+
+  # =============================================================================
+  # SSM Parameters for Configuration
+  # =============================================================================
+
+  # Guardrails Mode Parameter
+  GuardrailsModeParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/semantic-guardrails/mode'
+      Type: String
+      Value: !If [IsProduction, 'enforce', 'monitor']
+      Description: Semantic guardrails operating mode (disabled, monitor, enforce)
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Component: semantic-guardrails
+
+  # HITL Threshold Parameter
+  HITLThresholdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/semantic-guardrails/hitl-threshold'
+      Type: String
+      Value: '2.5'
+      Description: Cumulative threat score threshold for HITL escalation
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Component: semantic-guardrails
+
+  # Decay Factor Parameter
+  DecayFactorParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/semantic-guardrails/decay-factor'
+      Type: String
+      Value: '0.9'
+      Description: Exponential decay factor for multi-turn scoring
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Component: semantic-guardrails
+
+  # Fast Path Only Parameter
+  FastPathOnlyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/semantic-guardrails/fast-path-only'
+      Type: String
+      Value: 'false'
+      Description: Use only L1+L2 layers for faster assessment
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Component: semantic-guardrails
+
+  # Embedding Threshold High Parameter
+  EmbeddingThresholdHighParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/semantic-guardrails/embedding-threshold-high'
+      Type: String
+      Value: '0.85'
+      Description: Similarity threshold for HIGH threat classification
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Component: semantic-guardrails
+
+  # Embedding Threshold Medium Parameter
+  EmbeddingThresholdMediumParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/semantic-guardrails/embedding-threshold-medium'
+      Type: String
+      Value: '0.70'
+      Description: Similarity threshold for MEDIUM threat classification
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Component: semantic-guardrails
+
+Outputs:
+  SessionsTableName:
+    Description: Name of the sessions DynamoDB table
+    Value: !Ref GuardrailsSessionsTable
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-sessions-table'
+
+  SessionsTableArn:
+    Description: ARN of the sessions DynamoDB table
+    Value: !GetAtt GuardrailsSessionsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-sessions-table-arn'
+
+  AuditTableName:
+    Description: Name of the audit DynamoDB table
+    Value: !Ref GuardrailsAuditTable
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-audit-table'
+
+  AuditTableArn:
+    Description: ARN of the audit DynamoDB table
+    Value: !GetAtt GuardrailsAuditTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-audit-table-arn'
+
+  CorpusCacheTableName:
+    Description: Name of the corpus cache DynamoDB table
+    Value: !Ref GuardrailsCorpusCacheTable
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-corpus-cache-table'
+
+  AuditQueueUrl:
+    Description: URL of the audit SQS queue
+    Value: !Ref GuardrailsAuditQueue
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-audit-queue-url'
+
+  AuditQueueArn:
+    Description: ARN of the audit SQS queue
+    Value: !GetAtt GuardrailsAuditQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-audit-queue-arn'
+
+  HighPriorityQueueUrl:
+    Description: URL of the high priority threat queue
+    Value: !Ref GuardrailsHighPriorityQueue
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-high-priority-queue-url'
+
+  GuardrailsModeParameterName:
+    Description: SSM parameter name for guardrails mode
+    Value: !Ref GuardrailsModeParameter
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-mode-parameter'

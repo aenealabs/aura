@@ -1,0 +1,491 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.15 - Cloud Discovery Infrastructure'
+
+# -----------------------------------------------------------------------------
+# Parameters
+# -----------------------------------------------------------------------------
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, qa, staging, prod]
+    Default: dev
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  KMSKeyArn:
+    Type: String
+    Description: KMS key ARN for encryption
+
+# -----------------------------------------------------------------------------
+# Conditions
+# -----------------------------------------------------------------------------
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+# -----------------------------------------------------------------------------
+# Resources
+# -----------------------------------------------------------------------------
+Resources:
+  # ---------------------------------------------------------------------------
+  # DynamoDB Tables for Discovery Cache
+  # ---------------------------------------------------------------------------
+  DiscoveryResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-cloud-discovery-results-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref KMSKeyArn
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-discovery
+
+  # Table for credential configurations (metadata only, secrets in SM)
+  CredentialConfigTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-cloud-credentials-config-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref KMSKeyArn
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: provider
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: provider-index
+          KeySchema:
+            - AttributeName: provider
+              KeyType: HASH
+            - AttributeName: sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-discovery
+
+  # ---------------------------------------------------------------------------
+  # IAM Role for Cloud Discovery Service
+  # ---------------------------------------------------------------------------
+  CloudDiscoveryServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-cloud-discovery-service-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - eks.amazonaws.com
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Sub '${ProjectName}-discovery-${Environment}'
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess'
+      Policies:
+        - PolicyName: DiscoveryServicePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB access for caching
+              - Sid: DynamoDBCacheAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt DiscoveryResultsTable.Arn
+                  - !Sub '${DiscoveryResultsTable.Arn}/index/*'
+                  - !GetAtt CredentialConfigTable.Arn
+                  - !Sub '${CredentialConfigTable.Arn}/index/*'
+              # Secrets Manager for credentials
+              - Sid: SecretsManagerAccess
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:ListSecrets
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/cloud-discovery/*'
+              # STS for cross-account role assumption
+              - Sid: CrossAccountAssumeRole
+                Effect: Allow
+                Action: sts:AssumeRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::*:role/${ProjectName}-discovery-target-*'
+              # CloudWatch metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - cloudwatch:GetMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/CloudDiscovery'
+              # KMS for encryption
+              - Sid: KMSAccess
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !Ref KMSKeyArn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-discovery
+
+  # ---------------------------------------------------------------------------
+  # IAM Role for Cross-Account Discovery (Template for target accounts)
+  # ---------------------------------------------------------------------------
+  DiscoveryTargetRoleTemplate:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-discovery-target-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt CloudDiscoveryServiceRole.Arn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Sub '${ProjectName}-discovery-${Environment}'
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess'
+      Policies:
+        - PolicyName: DiscoveryTargetPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Deny sensitive operations
+              - Sid: DenySensitiveAccess
+                Effect: Deny
+                Action:
+                  - iam:CreateUser
+                  - iam:CreateRole
+                  - iam:CreatePolicy
+                  - iam:DeleteUser
+                  - iam:DeleteRole
+                  - iam:DeletePolicy
+                  - iam:AttachUserPolicy
+                  - iam:AttachRolePolicy
+                  - iam:PutUserPolicy
+                  - iam:PutRolePolicy
+                Resource: '*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-discovery
+
+  # ---------------------------------------------------------------------------
+  # CloudWatch Alarms
+  # ---------------------------------------------------------------------------
+  CircuitBreakerOpenAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-discovery-circuit-open-${Environment}'
+      AlarmDescription: Alert when circuit breaker opens for cloud discovery
+      MetricName: CircuitBreakerOpen
+      Namespace: !Sub '${ProjectName}/CloudDiscovery'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  DiscoveryLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-discovery-latency-${Environment}'
+      AlarmDescription: Alert when discovery latency exceeds threshold
+      MetricName: DiscoveryLatency
+      Namespace: !Sub '${ProjectName}/CloudDiscovery'
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 30000  # 30 seconds
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  CredentialErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-discovery-credential-errors-${Environment}'
+      AlarmDescription: Alert when credential errors occur
+      MetricName: CredentialError
+      Namespace: !Sub '${ProjectName}/CloudDiscovery'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  IaCCorrelationRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-discovery-low-correlation-${Environment}'
+      AlarmDescription: Alert when IaC correlation rate drops below threshold
+      MetricName: CorrelationRate
+      Namespace: !Sub '${ProjectName}/CloudDiscovery'
+      Statistic: Average
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 0.5  # 50% minimum correlation rate
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  # ---------------------------------------------------------------------------
+  # CloudWatch Dashboard
+  # ---------------------------------------------------------------------------
+  DiscoveryDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-cloud-discovery-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Discovery Latency",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["${ProjectName}/CloudDiscovery", "DiscoveryLatency", "Environment", "${Environment}", {"stat": "Average"}],
+                  ["...", {"stat": "p99"}]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Resources Discovered",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["${ProjectName}/CloudDiscovery", "ResourcesDiscovered", "Environment", "${Environment}"]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Circuit Breaker Status",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["${ProjectName}/CloudDiscovery", "CircuitBreakerOpen", "Environment", "${Environment}"],
+                  [".", "CircuitBreakerHalfOpen", ".", "."]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "IaC Correlation Rate",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["${ProjectName}/CloudDiscovery", "CorrelationRate", "Environment", "${Environment}"]
+                ],
+                "period": 3600
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Errors",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["${ProjectName}/CloudDiscovery", "CredentialError", "Environment", "${Environment}"],
+                  [".", "ProviderError", ".", "."],
+                  [".", "RateLimitError", ".", "."]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Cache Hit Rate",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["${ProjectName}/CloudDiscovery", "CacheHit", "Environment", "${Environment}"],
+                  [".", "CacheMiss", ".", "."]
+                ],
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Drift Detection",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["${ProjectName}/CloudDiscovery", "DriftDetected", "Environment", "${Environment}"],
+                  [".", "UndeployedResources", ".", "."]
+                ],
+                "period": 3600
+              }
+            }
+          ]
+        }
+
+# -----------------------------------------------------------------------------
+# Outputs
+# -----------------------------------------------------------------------------
+Outputs:
+  DiscoveryResultsTableName:
+    Description: DynamoDB table name for discovery results
+    Value: !Ref DiscoveryResultsTable
+    Export:
+      Name: !Sub '${ProjectName}-discovery-results-table-${Environment}'
+
+  DiscoveryResultsTableArn:
+    Description: DynamoDB table ARN for discovery results
+    Value: !GetAtt DiscoveryResultsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-discovery-results-table-arn-${Environment}'
+
+  CredentialConfigTableName:
+    Description: DynamoDB table name for credential configurations
+    Value: !Ref CredentialConfigTable
+    Export:
+      Name: !Sub '${ProjectName}-credential-config-table-${Environment}'
+
+  CredentialConfigTableArn:
+    Description: DynamoDB table ARN for credential configurations
+    Value: !GetAtt CredentialConfigTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-credential-config-table-arn-${Environment}'
+
+  CloudDiscoveryServiceRoleArn:
+    Description: IAM role ARN for cloud discovery service
+    Value: !GetAtt CloudDiscoveryServiceRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-discovery-service-role-arn-${Environment}'
+
+  DiscoveryTargetRoleArn:
+    Description: IAM role ARN template for target accounts
+    Value: !GetAtt DiscoveryTargetRoleTemplate.Arn
+    Export:
+      Name: !Sub '${ProjectName}-discovery-target-role-arn-${Environment}'
+
+  DashboardUrl:
+    Description: CloudWatch Dashboard URL
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-cloud-discovery-${Environment}'

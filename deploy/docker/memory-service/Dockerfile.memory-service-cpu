@@ -1,0 +1,89 @@
+# Titan Neural Memory Service - CPU-only container (for testing)
+# Smaller image without CUDA for faster deployment
+# Reference: ADR-024 - Titan Neural Memory Architecture Integration
+#
+# Usage (Podman - primary per ADR-049):
+#   podman build --platform linux/amd64 -f Dockerfile.memory-service-cpu -t aura/memory-service-cpu:latest ../../..
+#
+# Usage (Docker - CI/CD fallback):
+#   docker build -f Dockerfile.memory-service-cpu -t aura/memory-service-cpu:latest ../../..
+
+# ============================================================================
+# Base Image Configuration
+# ============================================================================
+# Default to ECR Public Gallery for local development
+# CI/CD overrides with private ECR via --build-arg for controlled supply chain
+ARG PYTHON_BASE_IMAGE=public.ecr.aws/docker/library/python:3.11-slim
+
+FROM ${PYTHON_BASE_IMAGE} AS builder
+
+# Suppress debconf warnings in non-interactive builds
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Apply security patches and install build dependencies
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python3.11 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Pip security hardening
+ENV PIP_ROOT_USER_ACTION=ignore \
+    PIP_NO_CACHE_DIR=true
+
+# Install PyTorch CPU-only (much smaller)
+RUN pip install --no-cache-dir torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+
+# Copy requirements and install
+COPY deploy/docker/memory-service/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Runtime stage
+FROM ${PYTHON_BASE_IMAGE}
+
+# Suppress debconf warnings in non-interactive builds
+ENV DEBIAN_FRONTEND=noninteractive
+
+LABEL org.opencontainers.image.title="Aura Memory Service (CPU)"
+LABEL org.opencontainers.image.description="Titan Neural Memory Service - CPU testing version"
+LABEL org.opencontainers.image.vendor="Aenea Labs"
+
+# Apply security patches and install runtime dependencies
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Create non-root user
+RUN groupadd -r aura && useradd -r -g aura -d /app aura
+WORKDIR /app
+
+# Copy application code
+COPY src/ /app/src/
+COPY deploy/docker/memory-service/server.py /app/server.py
+COPY deploy/docker/memory-service/health.py /app/health.py
+
+# Environment
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+# Use GRPC_PORT to avoid conflict with Kubernetes auto-generated MEMORY_SERVICE_PORT
+ENV GRPC_PORT=50051
+ENV HEALTH_PORT=8080
+ENV METRICS_PORT=9090
+ENV ENVIRONMENT=dev
+ENV LOG_LEVEL=INFO
+
+EXPOSE 50051 8080 9090
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+USER aura
+CMD ["python3.11", "server.py"]

@@ -1,0 +1,412 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.14 - Agent Messaging Queues (SQS)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email for queue alerts (optional)
+
+  CoderVisibilityTimeout:
+    Type: Number
+    Default: 900
+    Description: Visibility timeout for coder queue (15 min default for code generation)
+
+  ReviewerVisibilityTimeout:
+    Type: Number
+    Default: 600
+    Description: Visibility timeout for reviewer queue (10 min default)
+
+  ValidatorVisibilityTimeout:
+    Type: Number
+    Default: 600
+    Description: Visibility timeout for validator queue (10 min default)
+
+  ResponsesVisibilityTimeout:
+    Type: Number
+    Default: 300
+    Description: Visibility timeout for responses queue (5 min default)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ==========================================================================
+  # Dead Letter Queues (DLQ)
+  # Using AWS-managed SQS key (alias/aws/sqs) for encryption
+  # ==========================================================================
+
+  CoderDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-coder-tasks-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-coder-tasks-dlq-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Agent
+          Value: coder
+
+  ReviewerDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-reviewer-tasks-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-reviewer-tasks-dlq-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Agent
+          Value: reviewer
+
+  ValidatorDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-validator-tasks-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-validator-tasks-dlq-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Agent
+          Value: validator
+
+  ResponsesDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-orchestrator-responses-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-responses-dlq-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Agent
+          Value: orchestrator
+
+  # ==========================================================================
+  # Main Agent Task Queues
+  # ==========================================================================
+
+  CoderTaskQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-coder-tasks-${Environment}'
+      VisibilityTimeout: !Ref CoderVisibilityTimeout
+      MessageRetentionPeriod: 604800  # 7 days
+      ReceiveMessageWaitTimeSeconds: 20  # Long polling
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt CoderDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-coder-tasks-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Agent
+          Value: coder
+
+  ReviewerTaskQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-reviewer-tasks-${Environment}'
+      VisibilityTimeout: !Ref ReviewerVisibilityTimeout
+      MessageRetentionPeriod: 604800
+      ReceiveMessageWaitTimeSeconds: 20
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ReviewerDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-reviewer-tasks-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Agent
+          Value: reviewer
+
+  ValidatorTaskQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-validator-tasks-${Environment}'
+      VisibilityTimeout: !Ref ValidatorVisibilityTimeout
+      MessageRetentionPeriod: 604800
+      ReceiveMessageWaitTimeSeconds: 20
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ValidatorDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-validator-tasks-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Agent
+          Value: validator
+
+  OrchestratorResponsesQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-orchestrator-responses-${Environment}'
+      VisibilityTimeout: !Ref ResponsesVisibilityTimeout
+      MessageRetentionPeriod: 604800
+      ReceiveMessageWaitTimeSeconds: 20
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ResponsesDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-responses-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Agent
+          Value: orchestrator
+
+  # ==========================================================================
+  # SNS Topic for Alerts
+  # ==========================================================================
+
+  AgentQueueAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: !Sub '${ProjectName}-agent-queue-alerts-${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-agent-queue-alerts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AgentQueueAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref AgentQueueAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ==========================================================================
+  # CloudWatch Alarms - DLQ Monitoring
+  # ==========================================================================
+
+  CoderDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: !Sub '${ProjectName}-coder-dlq-depth-${Environment}'
+      AlarmDescription: Messages in Coder DLQ indicate task processing failures
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt CoderDLQ.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AgentQueueAlertTopic
+      TreatMissingData: notBreaching
+
+  ReviewerDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: !Sub '${ProjectName}-reviewer-dlq-depth-${Environment}'
+      AlarmDescription: Messages in Reviewer DLQ indicate task processing failures
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ReviewerDLQ.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AgentQueueAlertTopic
+      TreatMissingData: notBreaching
+
+  ValidatorDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: !Sub '${ProjectName}-validator-dlq-depth-${Environment}'
+      AlarmDescription: Messages in Validator DLQ indicate task processing failures
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ValidatorDLQ.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AgentQueueAlertTopic
+      TreatMissingData: notBreaching
+
+  ResponsesDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: !Sub '${ProjectName}-responses-dlq-depth-${Environment}'
+      AlarmDescription: Messages in Responses DLQ indicate processing failures
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ResponsesDLQ.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AgentQueueAlertTopic
+      TreatMissingData: notBreaching
+
+  # ==========================================================================
+  # CloudWatch Alarms - Queue Depth (Backlog)
+  # ==========================================================================
+
+  CoderQueueBacklogAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: !Sub '${ProjectName}-coder-queue-backlog-${Environment}'
+      AlarmDescription: High backlog in Coder queue
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt CoderTaskQueue.QueueName
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: !If [IsProduction, 50, 100]
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AgentQueueAlertTopic
+      TreatMissingData: notBreaching
+
+Outputs:
+  # Coder Queue
+  CoderTaskQueueUrl:
+    Description: Coder agent task queue URL
+    Value: !Ref CoderTaskQueue
+    Export:
+      Name: !Sub '${ProjectName}-coder-queue-url-${Environment}'
+
+  CoderTaskQueueArn:
+    Description: Coder agent task queue ARN
+    Value: !GetAtt CoderTaskQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-coder-queue-arn-${Environment}'
+
+  CoderDLQUrl:
+    Description: Coder DLQ URL
+    Value: !Ref CoderDLQ
+    Export:
+      Name: !Sub '${ProjectName}-coder-dlq-url-${Environment}'
+
+  # Reviewer Queue
+  ReviewerTaskQueueUrl:
+    Description: Reviewer agent task queue URL
+    Value: !Ref ReviewerTaskQueue
+    Export:
+      Name: !Sub '${ProjectName}-reviewer-queue-url-${Environment}'
+
+  ReviewerTaskQueueArn:
+    Description: Reviewer agent task queue ARN
+    Value: !GetAtt ReviewerTaskQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-reviewer-queue-arn-${Environment}'
+
+  ReviewerDLQUrl:
+    Description: Reviewer DLQ URL
+    Value: !Ref ReviewerDLQ
+    Export:
+      Name: !Sub '${ProjectName}-reviewer-dlq-url-${Environment}'
+
+  # Validator Queue
+  ValidatorTaskQueueUrl:
+    Description: Validator agent task queue URL
+    Value: !Ref ValidatorTaskQueue
+    Export:
+      Name: !Sub '${ProjectName}-validator-queue-url-${Environment}'
+
+  ValidatorTaskQueueArn:
+    Description: Validator agent task queue ARN
+    Value: !GetAtt ValidatorTaskQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-validator-queue-arn-${Environment}'
+
+  ValidatorDLQUrl:
+    Description: Validator DLQ URL
+    Value: !Ref ValidatorDLQ
+    Export:
+      Name: !Sub '${ProjectName}-validator-dlq-url-${Environment}'
+
+  # Orchestrator Responses Queue
+  OrchestratorResponsesQueueUrl:
+    Description: Orchestrator responses queue URL
+    Value: !Ref OrchestratorResponsesQueue
+    Export:
+      Name: !Sub '${ProjectName}-responses-queue-url-${Environment}'
+
+  OrchestratorResponsesQueueArn:
+    Description: Orchestrator responses queue ARN
+    Value: !GetAtt OrchestratorResponsesQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-responses-queue-arn-${Environment}'
+
+  ResponsesDLQUrl:
+    Description: Responses DLQ URL
+    Value: !Ref ResponsesDLQ
+    Export:
+      Name: !Sub '${ProjectName}-responses-dlq-url-${Environment}'

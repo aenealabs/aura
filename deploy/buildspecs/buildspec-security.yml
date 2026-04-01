@@ -1,0 +1,331 @@
+version: 0.2
+
+# Security/Compliance Layer: AWS Config, GuardDuty, Red Team Infrastructure
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Security/Compliance Layer Deployment"
+      - echo "=========================================="
+
+      # Validate templates
+      - echo "Validating security layer templates..."
+      - cfn-lint deploy/cloudformation/config-compliance.yaml || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/guardduty.yaml || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/drift-detection.yaml || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/red-team.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/semantic-guardrails.yaml || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/semantic-guardrails-monitoring.yaml || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/capability-governance.yaml || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/capability-governance-monitoring.yaml || echo "cfn-lint warnings (non-blocking)"
+
+      # Get dependency stack outputs for Red Team
+      - echo "Retrieving dependency stack outputs..."
+      - NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "VPC ID: $VPC_ID"
+        else
+          VPC_ID=""
+          echo "Warning: Networking stack not found, Red Team will skip VPC-dependent resources"
+        fi
+
+  build:
+    commands:
+      # Generate deployment timestamp for forcing stack updates
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # Deploy AWS Config Compliance Stack
+      - echo "Deploying AWS Config Compliance Stack..."
+      - CONFIG_STACK="${PROJECT_NAME}-config-compliance-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $CONFIG_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $CONFIG_STACK \
+            --template-body file://deploy/cloudformation/config-compliance.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $CONFIG_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $CONFIG_STACK"
+          else
+            echo "Update failed: $OUTPUT"
+            exit 1
+          fi
+        else
+          echo "Stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $CONFIG_STACK \
+            --template-body file://deploy/cloudformation/config-compliance.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $CONFIG_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "AWS Config Compliance Stack deployment complete"
+
+      # Deploy GuardDuty Stack
+      - echo "Deploying GuardDuty Stack..."
+      - GUARDDUTY_STACK="${PROJECT_NAME}-guardduty-${ENVIRONMENT}"
+      # Check for existing GuardDuty detector (only one allowed per account/region)
+      - |
+        EXISTING_DETECTOR=$(aws guardduty list-detectors --query 'DetectorIds[0]' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        if [ -n "$EXISTING_DETECTOR" ] && [ "$EXISTING_DETECTOR" != "None" ]; then
+          echo "Found existing GuardDuty detector: $EXISTING_DETECTOR"
+          DETECTOR_PARAM="ParameterKey=ExistingDetectorId,ParameterValue=$EXISTING_DETECTOR"
+        else
+          echo "No existing GuardDuty detector found, will create new one"
+          DETECTOR_PARAM="ParameterKey=ExistingDetectorId,ParameterValue="
+        fi
+      # Clean up ROLLBACK_COMPLETE stack if exists
+      - |
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $GUARDDUTY_STACK --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+        if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ]; then
+          echo "Deleting ROLLBACK_COMPLETE stack..."
+          aws cloudformation delete-stack --stack-name $GUARDDUTY_STACK --region $AWS_DEFAULT_REGION
+          aws cloudformation wait stack-delete-complete --stack-name $GUARDDUTY_STACK --region $AWS_DEFAULT_REGION
+          STACK_STATUS="DOES_NOT_EXIST"
+        fi
+      - |
+        aws cloudformation deploy \
+          --template-file deploy/cloudformation/guardduty.yaml \
+          --stack-name $GUARDDUTY_STACK \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            AlertEmail=$ALERT_EMAIL \
+            EnableS3Protection=true \
+            EnableEKSProtection=true \
+            EnableMalwareProtection=true \
+            ExistingDetectorId="${EXISTING_DETECTOR:-}" \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=security DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+      - echo "GuardDuty Stack deployment complete"
+
+      # Deploy Drift Detection Stack
+      - echo "Deploying Drift Detection Stack..."
+      - DRIFT_STACK="${PROJECT_NAME}-drift-detection-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $DRIFT_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $DRIFT_STACK \
+            --template-body file://deploy/cloudformation/drift-detection.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
+              ParameterKey=DriftDetectionSchedule,ParameterValue="rate(6 hours)" \
+              ParameterKey=EnableAutomaticRemediation,ParameterValue=false \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $DRIFT_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $DRIFT_STACK"
+          else
+            echo "Update failed: $OUTPUT"
+            exit 1
+          fi
+        else
+          echo "Stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $DRIFT_STACK \
+            --template-body file://deploy/cloudformation/drift-detection.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
+              ParameterKey=DriftDetectionSchedule,ParameterValue="rate(6 hours)" \
+              ParameterKey=EnableAutomaticRemediation,ParameterValue=false \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $DRIFT_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Drift Detection Stack deployment complete"
+
+      # Deploy Red Team Infrastructure (adversarial testing - disabled by default)
+      - echo "Deploying Red Team Infrastructure..."
+      - REDTEAM_STACK="${PROJECT_NAME}-red-team-${ENVIRONMENT}"
+      - |
+        REDTEAM_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        REDTEAM_PARAMS="$REDTEAM_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        # Red Team is disabled by default - requires explicit opt-in
+        REDTEAM_PARAMS="$REDTEAM_PARAMS ParameterKey=EnableRedTeam,ParameterValue=false"
+        if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+          REDTEAM_PARAMS="$REDTEAM_PARAMS ParameterKey=VpcId,ParameterValue=$VPC_ID"
+        fi
+        if [ -n "$ALERT_EMAIL" ]; then
+          REDTEAM_PARAMS="$REDTEAM_PARAMS ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL"
+        fi
+      - |
+        if aws cloudformation describe-stacks --stack-name $REDTEAM_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Red Team stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $REDTEAM_STACK \
+            --template-body file://deploy/cloudformation/red-team.yaml \
+            --parameters $REDTEAM_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $REDTEAM_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $REDTEAM_STACK"
+          else
+            echo "Red Team update output: $OUTPUT"
+          fi
+        else
+          echo "Red Team stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $REDTEAM_STACK \
+            --template-body file://deploy/cloudformation/red-team.yaml \
+            --parameters $REDTEAM_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $REDTEAM_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Red Team Infrastructure deployment complete (disabled by default)"
+
+      # Deploy Semantic Guardrails Stack (ADR-065)
+      - echo "Deploying Semantic Guardrails Stack..."
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-semantic-guardrails-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/semantic-guardrails.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=security DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+      - echo "Semantic Guardrails Stack deployment complete"
+
+      # Deploy Semantic Guardrails Monitoring Stack (ADR-065)
+      - echo "Deploying Semantic Guardrails Monitoring Stack..."
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-semantic-guardrails-monitoring-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/semantic-guardrails-monitoring.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=security DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+        # AlertEmail=notifications@aenealabs.com - commented out to reduce email volume
+      - echo "Semantic Guardrails Monitoring Stack deployment complete"
+
+      # Deploy Capability Governance Stack (ADR-066)
+      - echo "Deploying Capability Governance Stack..."
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-capability-governance-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/capability-governance.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=security DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+      - echo "Capability Governance Stack deployment complete"
+
+      # Deploy Capability Governance Monitoring Stack (ADR-066)
+      - echo "Deploying Capability Governance Monitoring Stack..."
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-capability-governance-monitoring-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/capability-governance-monitoring.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=security DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+        # AlertEmail=notifications@aenealabs.com - commented out to reduce email volume
+      - echo "Capability Governance Monitoring Stack deployment complete"
+
+  post_build:
+    commands:
+      - echo "Security/Compliance layer deployment completed!"
+      - echo ""
+      - echo "=== AWS Config Compliance Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $CONFIG_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Config stack not available"
+      - echo ""
+      - echo "=== GuardDuty Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $GUARDDUTY_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "GuardDuty stack not available"
+      - echo ""
+      - echo "=== Drift Detection Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $DRIFT_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Drift Detection stack not available"
+      - echo ""
+      - echo "=== Compliance Summary ==="
+      - echo "AWS Config - 18 CMMC and NIST rules deployed"
+      - echo "GuardDuty - S3, EKS, and Malware protection enabled"
+      - echo "Drift Detection - CloudFormation drift monitoring every 6 hours"
+      - echo ""
+      - echo "=== Semantic Guardrails Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-semantic-guardrails-${ENVIRONMENT} --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Semantic Guardrails stack not available"
+      - echo ""
+      - echo "=== Capability Governance Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-capability-governance-${ENVIRONMENT} --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Capability Governance stack not available"
+
+artifacts:
+  files:
+    - deploy/cloudformation/config-compliance.yaml
+    - deploy/cloudformation/guardduty.yaml
+    - deploy/cloudformation/drift-detection.yaml
+    - deploy/cloudformation/red-team.yaml
+    - deploy/cloudformation/semantic-guardrails.yaml
+    - deploy/cloudformation/semantic-guardrails-monitoring.yaml
+    - deploy/cloudformation/capability-governance.yaml
+    - deploy/cloudformation/capability-governance-monitoring.yaml
+  name: security-layer-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

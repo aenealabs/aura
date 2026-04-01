@@ -1,0 +1,191 @@
+---
+# Project Aura - DNS Blocklist Sync CronJob
+#
+# Automatically syncs blocklist updates from S3 to Kubernetes ConfigMap.
+# Runs daily at 7 AM UTC (after Lambda generates new blocklist at 6 AM).
+#
+# Pipeline:
+# 1. Lambda generates blocklist at 6 AM UTC → uploads to S3
+# 2. This CronJob syncs S3 → ConfigMap at 7 AM UTC
+# 3. dnsmasq pods detect ConfigMap change → reload config
+#
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aura-network-services
+  labels:
+    app.kubernetes.io/part-of: aura
+    app.kubernetes.io/component: network-services
+---
+# ServiceAccount for blocklist sync operations
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: blocklist-sync
+  namespace: aura-network-services
+  labels:
+    app.kubernetes.io/name: blocklist-sync
+    app.kubernetes.io/component: network-services
+  annotations:
+    # IRSA annotation for AWS access
+    # Note: Uses envsubst placeholders - substituted during deployment
+    eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/aura-blocklist-sync-role-${ENVIRONMENT}
+---
+# Role for ConfigMap management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: blocklist-sync
+  namespace: aura-network-services
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: blocklist-sync
+  namespace: aura-network-services
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: blocklist-sync
+subjects:
+  - kind: ServiceAccount
+    name: blocklist-sync
+    namespace: aura-network-services
+---
+# CronJob for daily blocklist sync
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: blocklist-sync
+  namespace: aura-network-services
+  labels:
+    app.kubernetes.io/name: blocklist-sync
+    app.kubernetes.io/component: network-services
+    app.kubernetes.io/part-of: aura
+spec:
+  # Run at 7 AM UTC daily (1 hour after Lambda generates blocklist)
+  schedule: "0 7 * * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 300  # 5 minute timeout
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: blocklist-sync
+        spec:
+          serviceAccountName: blocklist-sync
+          restartPolicy: OnFailure
+          containers:
+            - name: sync
+              image: alpine/k8s:1.28.4
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+
+                  echo "=== DNS Blocklist Sync Job ==="
+                  echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+                  # Configuration
+                  BUCKET="${S3_BUCKET:-aura-config-dev}"
+                  KEY="${S3_KEY:-dnsmasq/blocklist-dev.conf}"
+                  CONFIGMAP_NAME="${CONFIGMAP_NAME:-dnsmasq-blocklist}"
+                  NAMESPACE="${NAMESPACE:-aura-network-services}"
+
+                  echo "Fetching blocklist from s3://${BUCKET}/${KEY}..."
+
+                  # Download blocklist from S3
+                  aws s3 cp "s3://${BUCKET}/${KEY}" /tmp/blocklist.conf
+
+                  if [ ! -s /tmp/blocklist.conf ]; then
+                    echo "ERROR: Downloaded blocklist is empty"
+                    exit 1
+                  fi
+
+                  ENTRY_COUNT=$(grep -c '^address=' /tmp/blocklist.conf || echo 0)
+                  FILE_SIZE=$(wc -c < /tmp/blocklist.conf)
+
+                  echo "Downloaded blocklist: ${FILE_SIZE} bytes, ${ENTRY_COUNT} entries"
+
+                  # Create/update ConfigMap
+                  echo "Updating ConfigMap ${NAMESPACE}/${CONFIGMAP_NAME}..."
+
+                  kubectl create configmap "${CONFIGMAP_NAME}" \
+                    --namespace="${NAMESPACE}" \
+                    --from-file="blocklist.conf=/tmp/blocklist.conf" \
+                    --dry-run=client -o yaml | kubectl apply -f -
+
+                  # Annotate to trigger reload
+                  TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+                  echo "Triggering dnsmasq reload..."
+                  kubectl annotate daemonset dnsmasq \
+                    --namespace="${NAMESPACE}" \
+                    "blocklist.aura.local/last-updated=${TIMESTAMP}" \
+                    --overwrite || echo "DaemonSet not found (may not be deployed yet)"
+
+                  echo ""
+                  echo "=== Sync Complete ==="
+                  echo "ConfigMap: ${NAMESPACE}/${CONFIGMAP_NAME}"
+                  echo "Entries: ${ENTRY_COUNT}"
+                  echo "Timestamp: ${TIMESTAMP}"
+              env:
+                - name: HOME
+                  value: "/tmp"
+                - name: S3_BUCKET
+                  # Must match dns-blocklist-lambda CloudFormation bucket output
+                  value: "aura-blocklist-config-dev"
+                - name: S3_KEY
+                  value: "dnsmasq/blocklist-dev.conf"
+                - name: CONFIGMAP_NAME
+                  value: "dnsmasq-blocklist"
+                - name: NAMESPACE
+                  value: "aura-network-services"
+                - name: AWS_REGION
+                  value: "us-east-1"
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              securityContext:
+                runAsNonRoot: false
+                readOnlyRootFilesystem: false
+                allowPrivilegeEscalation: false
+---
+# ConfigMap for dnsmasq blocklist (initial empty state)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dnsmasq-blocklist
+  namespace: aura-network-services
+  labels:
+    app.kubernetes.io/name: dnsmasq-blocklist
+    app.kubernetes.io/component: network-services
+data:
+  blocklist.conf: |
+    # Project Aura - DNS Blocklist
+    # This file is auto-updated by the blocklist-sync CronJob
+    # Initial empty state - will be populated by first sync
+    #
+    # To manually trigger sync:
+    #   kubectl create job --from=cronjob/blocklist-sync manual-sync -n aura-network-services
+    #
+---
+# Manual trigger Job template (for on-demand updates)
+# Usage: kubectl create job --from=cronjob/blocklist-sync manual-sync -n aura-network-services

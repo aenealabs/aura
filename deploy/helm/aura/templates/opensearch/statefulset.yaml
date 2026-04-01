@@ -1,0 +1,126 @@
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.vector.opensearch.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "aura.fullname" . }}-opensearch
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "opensearch" "context" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "aura.fullname" . }}-opensearch
+  replicas: {{ .Values.databases.vector.opensearch.replicas }}
+  selector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "opensearch" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aura.componentSelectorLabels" (dict "component" "opensearch" "context" .) | nindent 8 }}
+    spec:
+      {{- include "aura.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "aura.serviceAccountName" . }}
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      initContainers:
+        - name: sysctl
+          image: busybox:1.36
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          command:
+            - sh
+            - -c
+            - |
+              sysctl -w vm.max_map_count=262144
+      containers:
+        - name: opensearch
+          image: opensearchproject/opensearch:2.11.0
+          imagePullPolicy: {{ include "aura.imagePullPolicy" . }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: https
+              containerPort: 9200
+              protocol: TCP
+            - name: transport
+              containerPort: 9300
+              protocol: TCP
+          env:
+            - name: cluster.name
+              value: aura-opensearch
+            - name: node.name
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: discovery.type
+              value: single-node
+            - name: bootstrap.memory_lock
+              value: "false"
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms2g -Xmx2g"
+            - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.databases.vector.opensearch.existingPasswordSecret | default (printf "%s-opensearch" (include "aura.fullname" .)) }}
+                  key: admin-password
+            {{- if .Values.databases.vector.opensearch.tls.enabled }}
+            - name: plugins.security.ssl.http.enabled
+              value: "true"
+            - name: plugins.security.ssl.transport.enabled
+              value: "true"
+            {{- end }}
+          livenessProbe:
+            tcpSocket:
+              port: 9200
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+              scheme: {{ if .Values.databases.vector.opensearch.tls.enabled }}HTTPS{{ else }}HTTP{{ end }}
+              httpHeaders:
+                - name: Authorization
+                  value: "Basic YWRtaW46YWRtaW4="  # Default, should be overridden
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.databases.vector.opensearch.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/opensearch/data
+            {{- if .Values.databases.vector.opensearch.tls.enabled }}
+            - name: tls-certs
+              mountPath: /usr/share/opensearch/config/certs
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- if .Values.databases.vector.opensearch.tls.enabled }}
+        - name: tls-certs
+          secret:
+            secretName: {{ .Values.databases.vector.opensearch.tls.existingSecret | default (printf "%s-opensearch-tls" (include "aura.fullname" .)) }}
+        {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.databases.vector.opensearch.persistence.storageClass }}
+        storageClassName: {{ .Values.databases.vector.opensearch.persistence.storageClass }}
+        {{- else if .Values.global.storageClass }}
+        storageClassName: {{ .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.databases.vector.opensearch.persistence.size }}
+{{- end }}

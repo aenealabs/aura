@@ -1,0 +1,723 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.11 - DEV Cost Scheduler (Multi-Nodegroup EKS Scaling)'
+
+# =============================================================================
+# DEV Environment Cost Scheduler
+# =============================================================================
+# Scales all EKS nodegroups to 0 outside business hours (nights + weekends)
+# to reduce DEV environment costs by ~30%.
+#
+# Nodegroups managed:
+#   - general (t3.large SPOT): MinSize 1 -> 0 at night, 0 -> 1 in morning
+#   - memory (r6i.xlarge ON_DEMAND): Already 0, but suspend ASG to prevent CA
+#   - gpu (g5.xlarge SPOT): Already 0, but suspend ASG to prevent CA
+#
+# Schedule (default):
+#   Scale Down: 1:00 UTC daily (off-hours)
+#   Scale Up:   12:00 UTC Mon-Fri (business hours)
+#   Weekends:   Fully off (no scale-up Saturday/Sunday)
+#
+# Estimated savings: estimated monthly (27-37% of DEV compute)
+#
+# Based on proven qa-cost-scheduler.yaml pattern (Layer 5.4)
+# =============================================================================
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev]
+    Description: Deployment environment (dev only - QA uses qa-cost-scheduler)
+
+  ClusterName:
+    Type: String
+    Default: ''
+    Description: EKS cluster name (defaults to aura-cluster-dev if empty)
+
+  GeneralNodegroupName:
+    Type: String
+    Default: ''
+    Description: General nodegroup name (defaults to aura-general-dev if empty)
+
+  MemoryNodegroupName:
+    Type: String
+    Default: ''
+    Description: Memory nodegroup name (defaults to aura-memory-dev if empty)
+
+  GpuNodegroupName:
+    Type: String
+    Default: ''
+    Description: GPU nodegroup name (defaults to aura-gpu-dev if empty)
+
+  ScaleDownHour:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 23
+    Description: Hour (UTC) to scale down daily (default 1 = off-hours)
+
+  ScaleUpHour:
+    Type: Number
+    Default: 12
+    MinValue: 0
+    MaxValue: 23
+    Description: Hour (UTC) to scale up Mon-Fri (default 12 = business hours)
+
+  GeneralMinNodes:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 6
+    Description: Minimum general nodes when scaled up (dev default = 1)
+
+  GeneralMaxNodes:
+    Type: Number
+    Default: 6
+    MinValue: 1
+    MaxValue: 10
+    Description: Maximum general nodes when scaled up
+
+  MemoryMaxNodes:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 6
+    Description: Maximum memory nodes when scaled up (desired stays 0, CA manages)
+
+  GpuMaxNodes:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 4
+    Description: Maximum GPU nodes when scaled up (desired stays 0, CA manages)
+
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: Email for DEV operations notifications (optional)
+
+  PermissionBoundaryArn:
+    Type: String
+    Default: ''
+    Description: Permission boundary ARN for IAM roles
+
+Conditions:
+  UseDefaultClusterName: !Equals [!Ref ClusterName, '']
+  UseDefaultGeneralNodegroup: !Equals [!Ref GeneralNodegroupName, '']
+  UseDefaultMemoryNodegroup: !Equals [!Ref MemoryNodegroupName, '']
+  UseDefaultGpuNodegroup: !Equals [!Ref GpuNodegroupName, '']
+  UsePermissionBoundary: !Not [!Equals [!Ref PermissionBoundaryArn, '']]
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
+
+Resources:
+  # ============================================================================
+  # SNS TOPIC FOR NOTIFICATIONS
+  # ============================================================================
+  DevOperationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-dev-cost-scheduler-${Environment}'
+      DisplayName: 'DEV Cost Scheduler Operations'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dev-cost-scheduler
+
+  DevOperationsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref DevOperationsTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ============================================================================
+  # IAM ROLE FOR LAMBDA (SCOPED TO DEV ONLY, ALL 3 NODEGROUPS)
+  # ============================================================================
+  DevScalerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-dev-cost-scaler-role-${Environment}'
+      PermissionsBoundary: !If
+        - UsePermissionBoundary
+        - !Ref PermissionBoundaryArn
+        - !Ref 'AWS::NoValue'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DevCostScalerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # EKS nodegroup management - scoped to all DEV nodegroups
+              - Sid: EKSNodegroupManagement
+                Effect: Allow
+                Action: [eks:UpdateNodegroupConfig, eks:DescribeNodegroup, eks:ListNodegroups]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:nodegroup/${ProjectName}-cluster-${Environment}/*'
+              # EKS cluster describe (required for nodegroup operations)
+              - Sid: EKSClusterDescribe
+                Effect: Allow
+                Action: [eks:DescribeCluster]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
+              # ASG suspend/resume for all DEV nodegroup ASGs
+              - Sid: ASGScalingControl
+                Effect: Allow
+                Action: [autoscaling:SuspendProcesses, autoscaling:ResumeProcesses, autoscaling:DescribeAutoScalingGroups]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/eks-${ProjectName}-*-${Environment}-*'
+              # SNS publish for notifications
+              - Sid: SNSPublish
+                Effect: Allow
+                Action: [sns:Publish]
+                Resource:
+                  - !Ref DevOperationsTopic
+              # CloudWatch metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action: [cloudwatch:PutMetricData]
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/DevCostScheduler'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ============================================================================
+  # LAMBDA FUNCTION (MULTI-NODEGROUP EKS SCALING)
+  # ============================================================================
+  DevScalerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-dev-cost-scaler-${Environment}'
+      Description: Scales all DEV EKS nodegroups for off-hours cost optimization
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt DevScalerRole.Arn
+      Timeout: 180
+      MemorySize: 256
+      Environment:
+        Variables:
+          CLUSTER_NAME: !If
+            - UseDefaultClusterName
+            - !Sub '${ProjectName}-cluster-${Environment}'
+            - !Ref ClusterName
+          GENERAL_NODEGROUP: !If
+            - UseDefaultGeneralNodegroup
+            - !Sub '${ProjectName}-general-${Environment}'
+            - !Ref GeneralNodegroupName
+          MEMORY_NODEGROUP: !If
+            - UseDefaultMemoryNodegroup
+            - !Sub '${ProjectName}-memory-${Environment}'
+            - !Ref MemoryNodegroupName
+          GPU_NODEGROUP: !If
+            - UseDefaultGpuNodegroup
+            - !Sub '${ProjectName}-gpu-${Environment}'
+            - !Ref GpuNodegroupName
+          SNS_TOPIC_ARN: !Ref DevOperationsTopic
+          PROJECT_NAME: !Ref ProjectName
+          ENVIRONMENT: !Ref Environment
+          GENERAL_MIN_NODES: !Ref GeneralMinNodes
+          GENERAL_MAX_NODES: !Ref GeneralMaxNodes
+          MEMORY_MAX_NODES: !Ref MemoryMaxNodes
+          GPU_MAX_NODES: !Ref GpuMaxNodes
+      Code:
+        ZipFile: |
+          """
+          DEV Cost Scheduler Lambda
+
+          Scales all DEV EKS nodegroups to 0 outside business hours.
+          Manages general, memory, and GPU nodegroups with per-group configs.
+          Uses ASG SuspendProcesses to prevent Cluster Autoscaler conflicts.
+          """
+          import boto3
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          eks = boto3.client('eks')
+          asg = boto3.client('autoscaling')
+          sns = boto3.client('sns')
+          cloudwatch = boto3.client('cloudwatch')
+
+          CLUSTER_NAME = os.environ['CLUSTER_NAME']
+          SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+          PROJECT_NAME = os.environ.get('PROJECT_NAME', 'aura')
+          ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
+
+          # Nodegroup configurations: (env_var, min_when_up, max_when_up, desired_when_up)
+          NODEGROUPS = {
+              'general': {
+                  'name': os.environ['GENERAL_NODEGROUP'],
+                  'min_up': int(os.environ.get('GENERAL_MIN_NODES', '1')),
+                  'max_up': int(os.environ.get('GENERAL_MAX_NODES', '6')),
+                  'desired_up': int(os.environ.get('GENERAL_MIN_NODES', '1')),
+              },
+              'memory': {
+                  'name': os.environ['MEMORY_NODEGROUP'],
+                  'min_up': 0,  # CA manages scale-up from 0
+                  'max_up': int(os.environ.get('MEMORY_MAX_NODES', '3')),
+                  'desired_up': 0,
+              },
+              'gpu': {
+                  'name': os.environ['GPU_NODEGROUP'],
+                  'min_up': 0,  # CA manages scale-up from 0
+                  'max_up': int(os.environ.get('GPU_MAX_NODES', '2')),
+                  'desired_up': 0,
+              },
+          }
+
+          # ASG processes to suspend during off-hours
+          SCALING_PROCESSES = ['Launch', 'AlarmNotification']
+
+
+          def handler(event, context):
+              """Main handler for DEV cost scaler."""
+              action = event.get('action', 'status')
+              trigger = event.get('trigger', 'scheduled')
+              # Allow targeting specific nodegroup(s), default to all
+              targets = event.get('nodegroups', list(NODEGROUPS.keys()))
+
+              audit_entry = {
+                  'timestamp': datetime.now(timezone.utc).isoformat(),
+                  'event_type': 'DEV_COST_SCHEDULER',
+                  'action': action,
+                  'trigger': trigger,
+                  'targets': targets,
+                  'cluster': CLUSTER_NAME,
+                  'request_id': context.aws_request_id,
+                  'function_name': context.function_name,
+              }
+              logger.info(f"AUDIT: {json.dumps(audit_entry)}")
+
+              try:
+                  if action == 'stop':
+                      return scale_down(targets, trigger)
+                  elif action == 'start':
+                      return scale_up(targets, trigger)
+                  else:
+                      return get_status(targets)
+              except Exception as e:
+                  logger.error(f"DEV cost scaler error: {e}")
+                  publish_metric('ScalerErrors', 1)
+                  notify_error(str(e), action, trigger)
+                  raise
+
+
+          def get_asg_name(nodegroup_name: str) -> str:
+              """Get the Auto Scaling Group name for a nodegroup."""
+              response = eks.describe_nodegroup(
+                  clusterName=CLUSTER_NAME,
+                  nodegroupName=nodegroup_name
+              )
+              return response['nodegroup']['resources']['autoScalingGroups'][0]['name']
+
+
+          def suspend_asg(asg_name: str) -> bool:
+              """Suspend ASG scaling processes to prevent CA interference."""
+              try:
+                  asg.suspend_processes(
+                      AutoScalingGroupName=asg_name,
+                      ScalingProcesses=SCALING_PROCESSES
+                  )
+                  logger.info(f"Suspended ASG processes on {asg_name}")
+                  return True
+              except Exception as e:
+                  logger.error(f"Failed to suspend ASG {asg_name}: {e}")
+                  return False
+
+
+          def resume_asg(asg_name: str) -> bool:
+              """Resume ASG scaling processes."""
+              try:
+                  asg.resume_processes(
+                      AutoScalingGroupName=asg_name,
+                      ScalingProcesses=SCALING_PROCESSES
+                  )
+                  logger.info(f"Resumed ASG processes on {asg_name}")
+                  return True
+              except Exception as e:
+                  logger.error(f"Failed to resume ASG {asg_name}: {e}")
+                  return False
+
+
+          def scale_nodegroup(ng_name: str, min_size: int, max_size: int, desired: int) -> bool:
+              """Scale a single EKS nodegroup."""
+              try:
+                  eks.update_nodegroup_config(
+                      clusterName=CLUSTER_NAME,
+                      nodegroupName=ng_name,
+                      scalingConfig={
+                          'minSize': min_size,
+                          'maxSize': max_size,
+                          'desiredSize': desired,
+                      }
+                  )
+                  logger.info(f"Scaled {ng_name}: min={min_size}, max={max_size}, desired={desired}")
+                  return True
+              except Exception as e:
+                  logger.error(f"Failed to scale {ng_name}: {e}")
+                  return False
+
+
+          def scale_down(targets: list, trigger: str) -> dict:
+              """
+              Scale down DEV environment:
+              1. Suspend ASG scaling on each nodegroup (prevents CA from fighting)
+              2. Scale each nodegroup to 0
+              """
+              logger.info("=== SCALING DOWN DEV ENVIRONMENT ===")
+              results = {}
+
+              for ng_key in targets:
+                  if ng_key not in NODEGROUPS:
+                      logger.warning(f"Unknown nodegroup: {ng_key}, skipping")
+                      continue
+
+                  ng = NODEGROUPS[ng_key]
+                  ng_name = ng['name']
+                  logger.info(f"--- Scaling down {ng_key} ({ng_name}) ---")
+
+                  try:
+                      asg_name = get_asg_name(ng_name)
+                      suspend_asg(asg_name)
+                      success = scale_nodegroup(ng_name, 0, 1, 0)
+                      results[ng_key] = {'status': 'stopped' if success else 'failed', 'nodegroup': ng_name}
+                  except Exception as e:
+                      logger.error(f"Error scaling down {ng_key}: {e}")
+                      results[ng_key] = {'status': 'error', 'error': str(e)}
+
+              publish_metric('ScaleDown', 1)
+              notify('stop', trigger, results)
+
+              return {'statusCode': 200, 'body': json.dumps({'action': 'stop', 'results': results})}
+
+
+          def scale_up(targets: list, trigger: str) -> dict:
+              """
+              Scale up DEV environment:
+              1. Scale each nodegroup to operational size
+              2. Resume ASG scaling (CA can now manage)
+              """
+              logger.info("=== SCALING UP DEV ENVIRONMENT ===")
+              results = {}
+
+              for ng_key in targets:
+                  if ng_key not in NODEGROUPS:
+                      logger.warning(f"Unknown nodegroup: {ng_key}, skipping")
+                      continue
+
+                  ng = NODEGROUPS[ng_key]
+                  ng_name = ng['name']
+                  logger.info(f"--- Scaling up {ng_key} ({ng_name}) ---")
+
+                  try:
+                      success = scale_nodegroup(ng_name, ng['min_up'], ng['max_up'], ng['desired_up'])
+                      asg_name = get_asg_name(ng_name)
+                      resume_asg(asg_name)
+                      results[ng_key] = {'status': 'started' if success else 'failed', 'nodegroup': ng_name}
+                  except Exception as e:
+                      logger.error(f"Error scaling up {ng_key}: {e}")
+                      results[ng_key] = {'status': 'error', 'error': str(e)}
+
+              publish_metric('ScaleUp', 1)
+              notify('start', trigger, results)
+
+              return {'statusCode': 200, 'body': json.dumps({'action': 'start', 'results': results})}
+
+
+          def get_status(targets: list) -> dict:
+              """Get current status of all targeted nodegroups."""
+              results = {}
+              for ng_key in targets:
+                  if ng_key not in NODEGROUPS:
+                      continue
+                  ng_name = NODEGROUPS[ng_key]['name']
+                  try:
+                      resp = eks.describe_nodegroup(clusterName=CLUSTER_NAME, nodegroupName=ng_name)
+                      scaling = resp['nodegroup'].get('scalingConfig', {})
+                      results[ng_key] = {
+                          'nodegroup': ng_name,
+                          'status': resp['nodegroup']['status'],
+                          'scalingConfig': scaling,
+                          'available': scaling.get('desiredSize', 0) > 0,
+                      }
+                  except Exception as e:
+                      results[ng_key] = {'nodegroup': ng_name, 'status': 'error', 'error': str(e)}
+              return {'statusCode': 200, 'body': json.dumps(results)}
+
+
+          def notify(action: str, trigger: str, results: dict):
+              """Send SNS notification with per-nodegroup results."""
+              now = datetime.now(timezone.utc)
+              next_event = 'business hours Mon-Fri' if action == 'stop' else 'off-hours'
+
+              message = {
+                  'action': action,
+                  'trigger': trigger,
+                  'cluster': CLUSTER_NAME,
+                  'environment': ENVIRONMENT,
+                  'timestamp': now.isoformat(),
+                  'next_event': next_event,
+                  'nodegroup_results': results,
+              }
+
+              subject = f'[Aura DEV] Cost Scheduler {action.upper()} ({trigger})'
+              sns.publish(TopicArn=SNS_TOPIC_ARN, Subject=subject, Message=json.dumps(message, indent=2))
+              logger.info(f"Notification sent: {subject}")
+
+
+          def notify_error(error: str, action: str, trigger: str):
+              """Send error notification."""
+              subject = f'[Aura DEV] Cost Scheduler ERROR during {action.upper()}'
+              message = {
+                  'error': error,
+                  'action': action,
+                  'trigger': trigger,
+                  'cluster': CLUSTER_NAME,
+                  'timestamp': datetime.now(timezone.utc).isoformat(),
+              }
+              try:
+                  sns.publish(TopicArn=SNS_TOPIC_ARN, Subject=subject, Message=json.dumps(message, indent=2))
+              except Exception:
+                  logger.error("Failed to send error notification")
+
+
+          def publish_metric(metric_name: str, value: float):
+              """Publish CloudWatch metric."""
+              cloudwatch.put_metric_data(
+                  Namespace=f'{PROJECT_NAME}/DevCostScheduler',
+                  MetricData=[{
+                      'MetricName': metric_name,
+                      'Value': value,
+                      'Unit': 'Count',
+                      'Dimensions': [
+                          {'Name': 'Environment', 'Value': ENVIRONMENT},
+                          {'Name': 'Cluster', 'Value': CLUSTER_NAME},
+                      ],
+                  }],
+              )
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dev-cost-scheduler
+
+  # ============================================================================
+  # EVENTBRIDGE SCHEDULER EXECUTION ROLE
+  # ============================================================================
+  SchedulerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-dev-scheduler-exec-${Environment}'
+      PermissionsBoundary: !If
+        - UsePermissionBoundary
+        - !Ref PermissionBoundaryArn
+        - !Ref 'AWS::NoValue'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref 'AWS::AccountId'
+      Policies:
+        - PolicyName: InvokeLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [lambda:InvokeFunction]
+                Resource:
+                  - !GetAtt DevScalerFunction.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # EVENTBRIDGE SCHEDULES
+  # ============================================================================
+
+  # Scale down all nodegroups every night at 1:00 UTC (off-hours)
+  ScaleDownSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub '${ProjectName}-dev-scale-down'
+      Description: !Sub 'Scale DEV EKS nodes to 0 at ${ScaleDownHour}:00 UTC daily'
+      GroupName: default
+      ScheduleExpression: !Sub 'cron(0 ${ScaleDownHour} ? * * *)'
+      ScheduleExpressionTimezone: UTC
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: !GetAtt DevScalerFunction.Arn
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: '{"action": "stop", "trigger": "scheduled", "nodegroups": ["general", "memory", "gpu"]}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 300
+          MaximumRetryAttempts: 2
+
+  # Scale up general nodegroup Mon-Fri at 12:00 UTC (business hours)
+  # Memory and GPU stay at 0 desired - Cluster Autoscaler manages on-demand
+  ScaleUpSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub '${ProjectName}-dev-scale-up'
+      Description: !Sub 'Scale DEV general nodes to ${GeneralMinNodes} at ${ScaleUpHour}:00 UTC Mon-Fri'
+      GroupName: default
+      ScheduleExpression: !Sub 'cron(0 ${ScaleUpHour} ? * MON-FRI *)'
+      ScheduleExpressionTimezone: UTC
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: !GetAtt DevScalerFunction.Arn
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: '{"action": "start", "trigger": "scheduled", "nodegroups": ["general", "memory", "gpu"]}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 300
+          MaximumRetryAttempts: 2
+
+  # ============================================================================
+  # CLOUDWATCH ALARMS
+  # ============================================================================
+  ScalerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-dev-scaler-errors-${Environment}'
+      AlarmDescription: Alert when DEV cost scaler Lambda has errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref DevScalerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref DevOperationsTopic
+
+  ScaleOperationFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-dev-scale-failures-${Environment}'
+      AlarmDescription: Alert when DEV scale operations fail
+      MetricName: ScalerErrors
+      Namespace: !Sub '${ProjectName}/DevCostScheduler'
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Cluster
+          Value: !If
+            - UseDefaultClusterName
+            - !Sub '${ProjectName}-cluster-${Environment}'
+            - !Ref ClusterName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref DevOperationsTopic
+
+  # ============================================================================
+  # CLOUDWATCH LOG GROUP
+  # ============================================================================
+  DevScalerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-dev-cost-scaler-${Environment}'
+      RetentionInDays: 90
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  DevScalerFunctionArn:
+    Description: ARN of the DEV cost scaler Lambda function
+    Value: !GetAtt DevScalerFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dev-cost-scaler-arn-${Environment}'
+
+  DevScalerFunctionName:
+    Description: Name of the DEV cost scaler Lambda function
+    Value: !Ref DevScalerFunction
+    Export:
+      Name: !Sub '${ProjectName}-dev-cost-scaler-name-${Environment}'
+
+  DevOperationsTopicArn:
+    Description: ARN of the DEV operations SNS topic
+    Value: !Ref DevOperationsTopic
+    Export:
+      Name: !Sub '${ProjectName}-dev-operations-topic-arn-${Environment}'
+
+  ScaleDownScheduleArn:
+    Description: ARN of the scale-down schedule
+    Value: !GetAtt ScaleDownSchedule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dev-scale-down-arn-${Environment}'
+
+  ScaleUpScheduleArn:
+    Description: ARN of the scale-up schedule
+    Value: !GetAtt ScaleUpSchedule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dev-scale-up-arn-${Environment}'
+
+  Schedule:
+    Description: Current schedule configuration
+    Value: !Sub |
+      Scale Down: Daily at ${ScaleDownHour}:00 UTC (off-hours)
+      Scale Up: Mon-Fri at ${ScaleUpHour}:00 UTC (business hours)
+      General Nodes: min=${GeneralMinNodes}, max=${GeneralMaxNodes}
+      Memory Nodes: min=0, max=${MemoryMaxNodes} (CA-managed)
+      GPU Nodes: min=0, max=${GpuMaxNodes} (CA-managed)
+      Weekends: Fully off (no scale-up)
+
+  ManualInvocationExample:
+    Description: Manual invocation commands via AWS CLI
+    Value: !Sub |
+      # Check status of all nodegroups:
+      aws lambda invoke --function-name ${ProjectName}-dev-cost-scaler-${Environment} --payload '{"action":"status"}' /dev/stdout
+      # Manual scale-up (e.g., weekend work):
+      aws lambda invoke --function-name ${ProjectName}-dev-cost-scaler-${Environment} --payload '{"action":"start","trigger":"manual"}' /dev/stdout
+      # Scale down general only:
+      aws lambda invoke --function-name ${ProjectName}-dev-cost-scaler-${Environment} --payload '{"action":"stop","trigger":"manual","nodegroups":["general"]}' /dev/stdout

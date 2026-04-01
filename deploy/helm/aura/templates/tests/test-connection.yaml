@@ -1,0 +1,208 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "aura.fullname" . }}-test-connection
+  labels:
+    {{- include "aura.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  {{- include "aura.imagePullSecrets" . | nindent 2 }}
+  serviceAccountName: {{ include "aura.serviceAccountName" . }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+  containers:
+    - name: api-test
+      image: curlimages/curl:8.5.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Testing API health endpoint..."
+          curl -sf{{ if .Values.global.tls.enabled }}k{{ end }} \
+            {{ if .Values.global.tls.enabled }}https{{ else }}http{{ end }}://{{ include "aura.fullname" . }}-api:{{ .Values.api.service.port }}/healthz
+          echo ""
+          echo "API health check passed!"
+
+          echo "Testing API readiness endpoint..."
+          curl -sf{{ if .Values.global.tls.enabled }}k{{ end }} \
+            {{ if .Values.global.tls.enabled }}https{{ else }}http{{ end }}://{{ include "aura.fullname" . }}-api:{{ .Values.api.service.port }}/readyz
+          echo ""
+          echo "API readiness check passed!"
+
+          echo "All connection tests passed!"
+  restartPolicy: Never
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "aura.fullname" . }}-test-frontend
+  labels:
+    {{- include "aura.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  {{- include "aura.imagePullSecrets" . | nindent 2 }}
+  serviceAccountName: {{ include "aura.serviceAccountName" . }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+  containers:
+    - name: frontend-test
+      image: curlimages/curl:8.5.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Testing Frontend health endpoint..."
+          curl -sf{{ if .Values.global.tls.enabled }}k{{ end }} \
+            {{ if .Values.global.tls.enabled }}https{{ else }}http{{ end }}://{{ include "aura.fullname" . }}-frontend:{{ .Values.frontend.service.port }}/health
+          echo ""
+          echo "Frontend health check passed!"
+  restartPolicy: Never
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.graph.neo4j.enabled }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "aura.fullname" . }}-test-neo4j
+  labels:
+    {{- include "aura.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  {{- include "aura.imagePullSecrets" . | nindent 2 }}
+  serviceAccountName: {{ include "aura.serviceAccountName" . }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+  containers:
+    - name: neo4j-test
+      image: curlimages/curl:8.5.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Testing Neo4j HTTP endpoint..."
+          curl -sf{{ if .Values.databases.graph.neo4j.tls.enabled }}k{{ end }} \
+            {{ if .Values.databases.graph.neo4j.tls.enabled }}https{{ else }}http{{ end }}://{{ include "aura.fullname" . }}-neo4j:{{ if .Values.databases.graph.neo4j.tls.enabled }}{{ .Values.databases.graph.neo4j.tls.httpsPort }}{{ else }}7474{{ end }}/
+          echo ""
+          echo "Neo4j connection test passed!"
+  restartPolicy: Never
+{{- end }}
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.vector.opensearch.enabled }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "aura.fullname" . }}-test-opensearch
+  labels:
+    {{- include "aura.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  {{- include "aura.imagePullSecrets" . | nindent 2 }}
+  serviceAccountName: {{ include "aura.serviceAccountName" . }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+  containers:
+    - name: opensearch-test
+      image: curlimages/curl:8.5.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Testing OpenSearch cluster health..."
+          curl -sf{{ if .Values.databases.vector.opensearch.tls.enabled }}k{{ end }} \
+            -u admin:$OPENSEARCH_PASSWORD \
+            {{ if .Values.databases.vector.opensearch.tls.enabled }}https{{ else }}http{{ end }}://{{ include "aura.fullname" . }}-opensearch:9200/_cluster/health
+          echo ""
+          echo "OpenSearch connection test passed!"
+      env:
+        - name: OPENSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.databases.vector.opensearch.existingPasswordSecret | default (printf "%s-opensearch" (include "aura.fullname" .)) }}
+              key: admin-password
+  restartPolicy: Never
+{{- end }}
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.document.postgres.enabled }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "aura.fullname" . }}-test-postgres
+  labels:
+    {{- include "aura.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  {{- include "aura.imagePullSecrets" . | nindent 2 }}
+  serviceAccountName: {{ include "aura.serviceAccountName" . }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+  containers:
+    - name: postgres-test
+      image: postgres:16-alpine
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Testing PostgreSQL connection..."
+          PGPASSWORD=$POSTGRES_PASSWORD pg_isready -h {{ include "aura.fullname" . }}-postgres -p 5432 -U {{ .Values.databases.document.postgres.username }}
+          echo "PostgreSQL connection test passed!"
+      env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.databases.document.postgres.existingPasswordSecret | default (printf "%s-postgres" (include "aura.fullname" .)) }}
+              key: postgres-password
+  restartPolicy: Never
+{{- end }}

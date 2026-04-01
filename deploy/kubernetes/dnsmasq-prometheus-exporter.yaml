@@ -1,0 +1,286 @@
+---
+# Project Aura - dnsmasq Prometheus Metrics Exporter
+#
+# Adds Prometheus metrics collection to dnsmasq DaemonSet
+# This is an OPTIONAL enhancement for advanced monitoring
+#
+# To deploy:
+#   kubectl apply -f dnsmasq-prometheus-exporter.yaml
+#
+# Prerequisites:
+#   - dnsmasq-daemonset.yaml must be deployed first
+#   - Prometheus Operator (optional) for ServiceMonitor
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dnsmasq-with-metrics
+  namespace: aura-network-services
+  labels:
+    app: dnsmasq
+    component: dns-cache
+    version: "1.1.0"
+spec:
+  selector:
+    matchLabels:
+      app: dnsmasq
+      metrics: enabled
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+  template:
+    metadata:
+      labels:
+        app: dnsmasq
+        component: dns-cache
+        metrics: enabled
+        version: "1.1.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9153"
+        prometheus.io/path: "/metrics"
+        description: "DNS caching with Prometheus metrics"
+    spec:
+      hostNetwork: true
+      dnsPolicy: Default
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      priorityClassName: system-node-critical
+
+      containers:
+      # Main dnsmasq container
+      - name: dnsmasq
+        image: andyshinn/dnsmasq:2.85
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        args:
+        - --conf-file=/etc/dnsmasq/dnsmasq.conf
+        - --keep-in-foreground
+        - --no-daemon
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - 'nslookup -port=5353 health.aura.local 127.0.0.1 || exit 1'
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - 'nslookup -port=5353 health.aura.local 127.0.0.1 || exit 1'
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        startupProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - 'nslookup -port=5353 health.aura.local 127.0.0.1 || exit 1'
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 10
+        volumeMounts:
+        - name: dnsmasq-config
+          mountPath: /etc/dnsmasq
+          readOnly: true
+        - name: log-volume
+          mountPath: /var/log
+        ports:
+        - name: dns-tcp
+          containerPort: 5353
+          protocol: TCP
+          hostPort: 5353
+        - name: dns-udp
+          containerPort: 5353
+          protocol: UDP
+          hostPort: 5353
+
+      # Prometheus exporter sidecar
+      - name: prometheus-exporter
+        image: google/dnsmasq-exporter:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 50m
+            memory: 32Mi
+        args:
+        - --dnsmasq.address=127.0.0.1:5353
+        - --web.listen-address=:9153
+        - --web.telemetry-path=/metrics
+        ports:
+        - name: metrics
+          containerPort: 9153
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9153
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 9153
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+      volumes:
+      - name: dnsmasq-config
+        configMap:
+          name: dnsmasq-config
+          items:
+          - key: dnsmasq.conf
+            path: dnsmasq.conf
+          - key: aura.hosts
+            path: aura.hosts
+      - name: log-volume
+        emptyDir: {}
+
+---
+# Service for Prometheus scraping
+apiVersion: v1
+kind: Service
+metadata:
+  name: dnsmasq-metrics
+  namespace: aura-network-services
+  labels:
+    app: dnsmasq
+    component: metrics
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless for DaemonSet
+  selector:
+    app: dnsmasq
+    metrics: enabled
+  ports:
+  - name: metrics
+    port: 9153
+    targetPort: 9153
+    protocol: TCP
+
+---
+# ServiceMonitor for Prometheus Operator (optional)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dnsmasq
+  namespace: aura-network-services
+  labels:
+    app: dnsmasq
+    prometheus: kube-prometheus
+spec:
+  selector:
+    matchLabels:
+      app: dnsmasq
+      component: metrics
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+    scheme: http
+  namespaceSelector:
+    matchNames:
+    - aura-network-services
+
+---
+# PrometheusRule for DNS alerts (optional)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dnsmasq-alerts
+  namespace: aura-network-services
+  labels:
+    app: dnsmasq
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: dnsmasq
+    interval: 30s
+    rules:
+    - alert: DnsmasqHighQueryLatency
+      expr: histogram_quantile(0.95, rate(dnsmasq_query_duration_seconds_bucket[5m])) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+        component: dnsmasq
+      annotations:
+        summary: "dnsmasq high query latency (p95 > 100ms)"
+        description: "DNS queries are taking longer than 100ms at the 95th percentile on {{ $labels.instance }}"
+
+    - alert: DnsmasqHighErrorRate
+      expr: rate(dnsmasq_query_errors_total[5m]) > 10
+      for: 5m
+      labels:
+        severity: warning
+        component: dnsmasq
+      annotations:
+        summary: "dnsmasq high error rate (>10 errors/sec)"
+        description: "DNS error rate is {{ $value }} errors/sec on {{ $labels.instance }}"
+
+    - alert: DnsmasqLowCacheHitRate
+      expr: rate(dnsmasq_cache_hits_total[5m]) / (rate(dnsmasq_cache_hits_total[5m]) + rate(dnsmasq_cache_misses_total[5m])) < 0.5
+      for: 10m
+      labels:
+        severity: info
+        component: dnsmasq
+      annotations:
+        summary: "dnsmasq low cache hit rate (<50%)"
+        description: "DNS cache hit rate is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+
+    - alert: DnsmasqDown
+      expr: up{job="dnsmasq"} == 0
+      for: 2m
+      labels:
+        severity: critical
+        component: dnsmasq
+      annotations:
+        summary: "dnsmasq instance down"
+        description: "dnsmasq instance {{ $labels.instance }} has been down for more than 2 minutes"
+
+    - alert: DnsmasqCacheFull
+      expr: dnsmasq_cache_size / dnsmasq_cache_max_size > 0.9
+      for: 5m
+      labels:
+        severity: warning
+        component: dnsmasq
+      annotations:
+        summary: "dnsmasq cache is nearly full (>90%)"
+        description: "DNS cache is {{ $value | humanizePercentage }} full on {{ $labels.instance }}, consider increasing cache-size"

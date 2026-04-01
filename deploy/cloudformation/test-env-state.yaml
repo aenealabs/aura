@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.3 - Test Environment State (Self-Service Provisioning)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+Resources:
+  # Test Environment State Table - tracks self-service test environments
+  TestEnvironmentStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-test-env-state-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        # Primary key
+        - AttributeName: environment_id
+          AttributeType: S
+        # GSI attributes
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: environment_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: environment_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # GSI 1: Query by user - for "my environments" view and quota checks
+        - IndexName: user-created_at-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # GSI 2: Query by status - for cleanup jobs and admin views
+        - IndexName: status-created_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # GSI 3: Query by type - for analytics and capacity planning
+        - IndexName: environment_type-created_at-index
+          KeySchema:
+            - AttributeName: environment_type
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-state-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '7.3'
+        - Key: Purpose
+          Value: 'Self-service test environment state tracking'
+
+Outputs:
+  TestEnvStateTableName:
+    Description: Test environment state table name
+    Value: !Ref TestEnvironmentStateTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TestEnvStateTableName'
+
+  TestEnvStateTableArn:
+    Description: Test environment state table ARN
+    Value: !GetAtt TestEnvironmentStateTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TestEnvStateTableArn'

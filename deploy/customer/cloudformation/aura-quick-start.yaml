@@ -1,0 +1,808 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Quick Start Full Deployment'
+
+# =============================================================================
+# Project Aura Quick Start Template
+# =============================================================================
+# Single-click deployment of the complete Aura platform including:
+# - VPC with public/private subnets
+# - Security groups and IAM roles
+# - Neptune graph database
+# - OpenSearch vector database
+# - EKS cluster with managed node group
+# - S3 buckets for artifacts and backups
+#
+# Estimated deployment time: 45-60 minutes
+# Estimated monthly cost: $400-$3,000 depending on size
+#
+# For modular deployments, use the individual layer templates:
+# - aura-foundation-only.yaml (VPC, IAM, Security)
+# - aura-data-layer.yaml (Neptune, OpenSearch)
+# - aura-application.yaml (EKS, S3)
+# =============================================================================
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Basic Configuration
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VpcCIDR
+          - AvailabilityZones
+      - Label:
+          default: Sizing Configuration
+        Parameters:
+          - DeploymentSize
+          - NeptuneInstanceType
+          - OpenSearchInstanceType
+          - EKSNodeInstanceType
+          - EKSNodeMinSize
+          - EKSNodeMaxSize
+      - Label:
+          default: Advanced Configuration
+        Parameters:
+          - KubernetesVersion
+          - EnableDeletionProtection
+    ParameterLabels:
+      ProjectName:
+        default: Project Name
+      Environment:
+        default: Deployment Environment
+      VpcCIDR:
+        default: VPC CIDR Block
+      AvailabilityZones:
+        default: Availability Zones
+      DeploymentSize:
+        default: Deployment Size
+      NeptuneInstanceType:
+        default: Neptune Instance Type
+      OpenSearchInstanceType:
+        default: OpenSearch Instance Type
+      EKSNodeInstanceType:
+        default: EKS Node Instance Type
+      EKSNodeMinSize:
+        default: Minimum EKS Nodes
+      EKSNodeMaxSize:
+        default: Maximum EKS Nodes
+      KubernetesVersion:
+        default: Kubernetes Version
+      EnableDeletionProtection:
+        default: Enable Deletion Protection
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    AllowedPattern: ^[a-z][a-z0-9-]*$
+    ConstraintDescription: Must start with a letter and contain only lowercase letters, numbers, and hyphens.
+    Description: Project name used as prefix for all resources
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Deployment environment
+
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: ^(10\.)([0-9]{1,3}\.){2}(0\/16)$
+    Description: VPC CIDR block (must be /16)
+
+  AvailabilityZones:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Description: Select 2-3 Availability Zones
+
+  DeploymentSize:
+    Type: String
+    Default: medium
+    AllowedValues:
+      - small
+      - medium
+      - enterprise
+    Description: Deployment size (affects instance types and scaling)
+
+  NeptuneInstanceType:
+    Type: String
+    Default: db.t3.medium
+    AllowedValues:
+      - db.t3.medium
+      - db.r6g.large
+      - db.r6g.xlarge
+      - db.r6g.2xlarge
+    Description: Neptune DB instance type
+
+  OpenSearchInstanceType:
+    Type: String
+    Default: t3.small.search
+    AllowedValues:
+      - t3.small.search
+      - r6g.large.search
+      - r6g.xlarge.search
+      - r6g.2xlarge.search
+    Description: OpenSearch instance type
+
+  EKSNodeInstanceType:
+    Type: String
+    Default: t3.medium
+    AllowedValues:
+      - t3.medium
+      - r6i.large
+      - r6i.xlarge
+      - r6i.2xlarge
+    Description: EKS worker node instance type
+
+  EKSNodeMinSize:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 10
+    Description: Minimum number of EKS worker nodes
+
+  EKSNodeMaxSize:
+    Type: Number
+    Default: 5
+    MinValue: 2
+    MaxValue: 50
+    Description: Maximum number of EKS worker nodes
+
+  KubernetesVersion:
+    Type: String
+    Default: '1.34'
+    AllowedValues:
+      - '1.29'
+      - '1.30'
+      - '1.31'
+      - '1.32'
+      - '1.33'
+      - '1.34'
+    Description: Kubernetes version for EKS cluster
+
+  EnableDeletionProtection:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable deletion protection on stateful resources
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+  SizeConfig:
+    small:
+      NeptuneInstance: db.t3.medium
+      OpenSearchInstance: t3.small.search
+      OpenSearchVolumeSize: 20
+      EKSInstance: t3.medium
+      MinNodes: 2
+      MaxNodes: 4
+    medium:
+      NeptuneInstance: db.r6g.large
+      OpenSearchInstance: r6g.large.search
+      OpenSearchVolumeSize: 50
+      EKSInstance: r6i.large
+      MinNodes: 3
+      MaxNodes: 8
+    enterprise:
+      NeptuneInstance: db.r6g.xlarge
+      OpenSearchInstance: r6g.xlarge.search
+      OpenSearchVolumeSize: 100
+      EKSInstance: r6i.xlarge
+      MinNodes: 6
+      MaxNodes: 20
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  IsEnterprise: !Equals [!Ref DeploymentSize, enterprise]
+  EnableProtection: !Equals [!Ref EnableDeletionProtection, 'true']
+  UseThreeAZs: !And
+    - !Condition IsProduction
+    - !Condition IsEnterprise
+
+Resources:
+  # ===========================================================================
+  # VPC and Networking
+  # ===========================================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpc-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-igw-${Environment}'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-1-${Environment}'
+        - Key: kubernetes.io/role/elb
+          Value: '1'
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-2-${Environment}'
+        - Key: kubernetes.io/role/elb
+          Value: '1'
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [3, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-1-${Environment}'
+        - Key: kubernetes.io/role/internal-elb
+          Value: '1'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [4, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-2-${Environment}'
+        - Key: kubernetes.io/role/internal-elb
+          Value: '1'
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-rt-${Environment}'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-rt-${Environment}'
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ===========================================================================
+  # VPC Endpoints (for private subnet access to AWS services)
+  # ===========================================================================
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref VPC
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PrivateRouteTable
+
+  DynamoDBEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcId: !Ref VPC
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PrivateRouteTable
+
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-vpce-sg-${Environment}'
+      GroupDescription: Security group for VPC endpoints
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VpcCIDR
+          Description: HTTPS from VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpce-sg-${Environment}'
+
+  ECRAPIEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      PrivateDnsEnabled: true
+
+  ECRDKREndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      PrivateDnsEnabled: true
+
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      PrivateDnsEnabled: true
+
+  # ===========================================================================
+  # Security Groups
+  # ===========================================================================
+  EKSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-eks-sg-${Environment}'
+      GroupDescription: Security group for EKS cluster
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-eks-sg-${Environment}'
+
+  EKSNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-eks-node-sg-${Environment}'
+      GroupDescription: Security group for EKS worker nodes
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-eks-node-sg-${Environment}'
+
+  EKSNodeIngressFromNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSNodeSecurityGroup
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      IpProtocol: -1
+      Description: Allow nodes to communicate with each other
+
+  EKSNodeIngressFromControlPlane:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSNodeSecurityGroup
+      SourceSecurityGroupId: !Ref EKSSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+      Description: Allow control plane to communicate with nodes
+
+  EKSControlPlaneIngressFromNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSSecurityGroup
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      Description: Allow nodes to communicate with control plane
+
+  NeptuneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-neptune-sg-${Environment}'
+      GroupDescription: Security group for Neptune database
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8182
+          ToPort: 8182
+          SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+          Description: Allow EKS nodes to access Neptune
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-sg-${Environment}'
+
+  OpenSearchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-opensearch-sg-${Environment}'
+      GroupDescription: Security group for OpenSearch domain
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+          Description: Allow EKS nodes to access OpenSearch
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-opensearch-sg-${Environment}'
+
+  # ===========================================================================
+  # IAM Roles
+  # ===========================================================================
+  EKSClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-eks-cluster-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKSClusterPolicy'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKSVPCResourceController'
+
+  EKSNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-eks-node-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKS_CNI_Policy'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy'
+
+  # ===========================================================================
+  # Neptune Graph Database
+  # ===========================================================================
+  NeptuneSubnetGroup:
+    Type: AWS::Neptune::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${ProjectName}-neptune-subnet-${Environment}'
+      DBSubnetGroupDescription: Subnet group for Neptune cluster
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  NeptuneCluster:
+    Type: AWS::Neptune::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub '${ProjectName}-neptune-${Environment}'
+      EngineVersion: '1.3.1.0'
+      Port: 8182
+      DBSubnetGroupName: !Ref NeptuneSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref NeptuneSecurityGroup
+      StorageEncrypted: true
+      BackupRetentionPeriod: !If [IsProduction, 7, 1]
+      DeletionProtection: !If [EnableProtection, true, false]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  NeptunePrimaryInstance:
+    Type: AWS::Neptune::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-neptune-primary-${Environment}'
+      DBInstanceClass: !Ref NeptuneInstanceType
+      DBClusterIdentifier: !Ref NeptuneCluster
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-primary-${Environment}'
+
+  # ===========================================================================
+  # OpenSearch Vector Database
+  # ===========================================================================
+  OpenSearchDomain:
+    Type: AWS::OpenSearchService::Domain
+    Properties:
+      DomainName: !Sub '${ProjectName}-${Environment}'
+      EngineVersion: 'OpenSearch_2.11'
+      ClusterConfig:
+        InstanceType: !Ref OpenSearchInstanceType
+        InstanceCount: !If [IsProduction, 3, 1]
+        DedicatedMasterEnabled: !If [IsProduction, true, false]
+        DedicatedMasterType: !If [IsProduction, 't3.small.search', !Ref 'AWS::NoValue']
+        DedicatedMasterCount: !If [IsProduction, 3, !Ref 'AWS::NoValue']
+        ZoneAwarenessEnabled: !If [IsProduction, true, false]
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: gp3
+        VolumeSize: !FindInMap [SizeConfig, !Ref DeploymentSize, OpenSearchVolumeSize]
+      VPCOptions:
+        SubnetIds:
+          - !Ref PrivateSubnet1
+        SecurityGroupIds:
+          - !Ref OpenSearchSecurityGroup
+      EncryptionAtRestOptions:
+        Enabled: true
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      DomainEndpointOptions:
+        EnforceHTTPS: true
+        TLSSecurityPolicy: Policy-Min-TLS-1-2-2019-07
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-opensearch-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # EKS Cluster
+  # ===========================================================================
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Sub '${ProjectName}-cluster-${Environment}'
+      Version: !Ref KubernetesVersion
+      RoleArn: !GetAtt EKSClusterRole.Arn
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref EKSSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+        EndpointPrivateAccess: true
+        EndpointPublicAccess: true
+      Logging:
+        ClusterLogging:
+          EnabledTypes:
+            - Type: api
+            - Type: audit
+            - Type: authenticator
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-cluster-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  EKSNodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-node-lt-${Environment}'
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 50
+              VolumeType: gp3
+              Encrypted: true
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups:
+              - !Ref EKSNodeSecurityGroup
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-node-${Environment}'
+              - Key: Project
+                Value: !Ref ProjectName
+
+  EKSNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodegroupName: !Sub '${ProjectName}-nodegroup-${Environment}'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      AmiType: AL2023_x86_64_STANDARD
+      ScalingConfig:
+        MinSize: !Ref EKSNodeMinSize
+        MaxSize: !Ref EKSNodeMaxSize
+        DesiredSize: !Ref EKSNodeMinSize
+      LaunchTemplate:
+        Id: !Ref EKSNodeLaunchTemplate
+        Version: !GetAtt EKSNodeLaunchTemplate.LatestVersionNumber
+      InstanceTypes:
+        - !Ref EKSNodeInstanceType
+      Labels:
+        project: !Ref ProjectName
+        environment: !Ref Environment
+
+  # ===========================================================================
+  # S3 Buckets
+  # ===========================================================================
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-artifacts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  LogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-logs-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 90
+            ExpirationInDays: 365
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-logs-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VpcId'
+
+  PrivateSubnetIds:
+    Description: Private subnet IDs
+    Value: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnetIds'
+
+  EKSClusterName:
+    Description: EKS cluster name
+    Value: !Ref EKSCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-EKSClusterName'
+
+  EKSClusterEndpoint:
+    Description: EKS cluster endpoint
+    Value: !GetAtt EKSCluster.Endpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-EKSClusterEndpoint'
+
+  NeptuneEndpoint:
+    Description: Neptune cluster endpoint
+    Value: !GetAtt NeptuneCluster.Endpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-NeptuneEndpoint'
+
+  OpenSearchEndpoint:
+    Description: OpenSearch domain endpoint
+    Value: !GetAtt OpenSearchDomain.DomainEndpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-OpenSearchEndpoint'
+
+  ArtifactsBucketName:
+    Description: S3 artifacts bucket name
+    Value: !Ref ArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
+
+  ConfigureKubectl:
+    Description: Command to configure kubectl
+    Value: !Sub 'aws eks update-kubeconfig --name ${EKSCluster} --region ${AWS::Region}'
+
+  NextSteps:
+    Description: Next steps after deployment
+    Value: !Sub |
+      1. Configure kubectl: aws eks update-kubeconfig --name ${EKSCluster} --region ${AWS::Region}
+      2. Deploy Aura applications: kubectl apply -k deploy/kubernetes/overlays/${Environment}/
+      3. Access dashboard: kubectl port-forward svc/aura-frontend 8080:80

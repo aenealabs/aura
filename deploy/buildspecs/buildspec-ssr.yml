@@ -1,0 +1,129 @@
+version: 0.2
+
+# SSR Training Layer: Self-Play SWE-RL Infrastructure (ADR-050)
+# Deploys Layer 7.2 (storage/IAM) and Layer 7.3 (training pipeline)
+# Environment variables provided by CodeBuild: ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "SSR Training Deployment (Layer 7.2-7.3)"
+      - echo "=========================================="
+      - echo "Installing dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install --quiet cfn-lint
+      - echo "Validating CloudFormation templates..."
+      - cfn-lint deploy/cloudformation/ssr-training.yaml --ignore-checks W3002,W1020 || echo "Template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/ssr-training-pipeline.yaml --ignore-checks W3002,W1020 || echo "Template has warnings (non-blocking)"
+      - echo "Template validation complete"
+
+      # Get VPC and subnet info for ECS tasks
+      - echo "Retrieving networking stack outputs..."
+      - NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          PRIVATE_SUBNET_IDS=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnetIds`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "VPC ID: $VPC_ID"
+          echo "Private Subnet IDs: $PRIVATE_SUBNET_IDS"
+        else
+          echo "Warning: Networking stack not found"
+          VPC_ID=""
+          PRIVATE_SUBNET_IDS=""
+        fi
+
+  build:
+    commands:
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # Deploy SSR Training Infrastructure (Layer 7.2)
+      - echo "Deploying SSR Training Infrastructure (Layer 7.2)..."
+      - SSR_TRAINING_STACK="${PROJECT_NAME}-ssr-training-${ENVIRONMENT}"
+      - |
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
+          PARAMS="$PARAMS AlertEmail=$ALERT_EMAIL"
+        fi
+        aws cloudformation deploy \
+          --stack-name $SSR_TRAINING_STACK \
+          --template-file deploy/cloudformation/ssr-training.yaml \
+          --parameter-overrides $PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.2 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset
+      - echo "SSR Training Infrastructure deployment complete"
+
+      # Get outputs from Layer 7.2 for Layer 7.3
+      - echo "Retrieving SSR Training stack outputs..."
+      - |
+        SSR_BUCKET=$(aws cloudformation describe-stacks --stack-name $SSR_TRAINING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`SSRTrainingBucketName`].OutputValue' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        SSR_TABLE=$(aws cloudformation describe-stacks --stack-name $SSR_TRAINING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`SSRTrainingTableName`].OutputValue' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        SSR_KMS_KEY=$(aws cloudformation describe-stacks --stack-name $SSR_TRAINING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`SSRTrainingKMSKeyArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        echo "SSR Bucket: $SSR_BUCKET"
+        echo "SSR Table: $SSR_TABLE"
+        echo "SSR KMS Key: $SSR_KMS_KEY"
+
+      # Deploy SSR Training Pipeline (Layer 7.3)
+      - echo "Deploying SSR Training Pipeline (Layer 7.3)..."
+      - SSR_PIPELINE_STACK="${PROJECT_NAME}-ssr-training-pipeline-${ENVIRONMENT}"
+      - |
+        PIPELINE_PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+          PIPELINE_PARAMS="$PIPELINE_PARAMS VpcId=$VPC_ID"
+        fi
+        if [ -n "$PRIVATE_SUBNET_IDS" ] && [ "$PRIVATE_SUBNET_IDS" != "None" ]; then
+          PIPELINE_PARAMS="$PIPELINE_PARAMS PrivateSubnetIds=$PRIVATE_SUBNET_IDS"
+        fi
+        if [ -n "$SSR_BUCKET" ] && [ "$SSR_BUCKET" != "None" ]; then
+          PIPELINE_PARAMS="$PIPELINE_PARAMS SSRBucketName=$SSR_BUCKET"
+        fi
+        if [ -n "$SSR_TABLE" ] && [ "$SSR_TABLE" != "None" ]; then
+          PIPELINE_PARAMS="$PIPELINE_PARAMS SSRTableName=$SSR_TABLE"
+        fi
+        if [ -n "$SSR_KMS_KEY" ] && [ "$SSR_KMS_KEY" != "None" ]; then
+          PIPELINE_PARAMS="$PIPELINE_PARAMS SSRKMSKeyArn=$SSR_KMS_KEY"
+        fi
+        aws cloudformation deploy \
+          --stack-name $SSR_PIPELINE_STACK \
+          --template-file deploy/cloudformation/ssr-training-pipeline.yaml \
+          --parameter-overrides $PIPELINE_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.3 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset
+      - echo "SSR Training Pipeline deployment complete"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "SSR Training Deployment Complete"
+      - echo "=========================================="
+      - echo ""
+      - echo "=== SSR Training Infrastructure (Layer 7.2) ==="
+      - aws cloudformation describe-stacks --stack-name $SSR_TRAINING_STACK --query 'Stacks[0].Outputs' --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "Stack not available"
+      - echo ""
+      - echo "=== SSR Training Pipeline (Layer 7.3) ==="
+      - aws cloudformation describe-stacks --stack-name $SSR_PIPELINE_STACK --query 'Stacks[0].Outputs' --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "Stack not available"
+
+artifacts:
+  files:
+    - deploy/cloudformation/ssr-training.yaml
+    - deploy/cloudformation/ssr-training-pipeline.yaml
+  name: ssr-training-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

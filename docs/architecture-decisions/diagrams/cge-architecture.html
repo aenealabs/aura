@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Constraint Geometry Engine (CGE) - Architecture Diagrams | Project Aura</title>
+    <style>
+        /* ----------------------------------------------------------------
+           Design tokens derived from Project Aura design system:
+           Primary: #3B82F6, Font: Inter, Spacing: 8px base unit
+           ---------------------------------------------------------------- */
+        :root {
+            --color-bg:        #0F172A;
+            --color-surface:   #1E293B;
+            --color-border:    #334155;
+            --color-text:      #F1F5F9;
+            --color-muted:     #94A3B8;
+            --color-primary:   #3B82F6;
+            --color-purple:    #7C3AED;
+            --color-green:     #10B981;
+            --color-orange:    #EA580C;
+            --color-red:       #DC2626;
+            --font-sans:       'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-mono:       'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+            --radius:          8px;
+            --shadow:          0 4px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* --- Header --- */
+        .header {
+            text-align: center;
+            padding: 48px 24px 32px;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .header__badge {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--color-purple), var(--color-primary));
+            color: #FFFFFF;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            padding: 4px 16px;
+            border-radius: 100px;
+            margin-bottom: 16px;
+        }
+
+        .header__title {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
+        }
+
+        .header__subtitle {
+            font-size: 16px;
+            color: var(--color-muted);
+            max-width: 720px;
+            margin: 0 auto;
+        }
+
+        /* --- Legend --- */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 24px;
+            padding: 24px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .legend__item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .legend__swatch {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 2px solid transparent;
+        }
+
+        .legend__swatch--prob  { background: #DBEAFE; border-color: #2563EB; }
+        .legend__swatch--det   { background: #D1FAE5; border-color: #059669; }
+        .legend__swatch--cge   { background: #EDE9FE; border-color: #7C3AED; }
+        .legend__swatch--aws   { background: #FFF7ED; border-color: #EA580C; }
+        .legend__swatch--prov  { background: #FCE7F3; border-color: #DB2777; }
+
+        /* --- Section --- */
+        .section {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        .section__heading {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .section__number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: var(--color-purple);
+            color: #FFFFFF;
+            font-size: 14px;
+            font-weight: 800;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .section__title {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .section__desc {
+            font-size: 14px;
+            color: var(--color-muted);
+            margin-bottom: 24px;
+            padding-left: 44px;
+        }
+
+        /* --- Diagram card --- */
+        .diagram-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 32px;
+            overflow-x: auto;
+        }
+
+        .diagram-card .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+
+        /* Override Mermaid's default font to match design system */
+        .diagram-card .mermaid svg {
+            font-family: var(--font-sans) !important;
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* --- Metrics bar --- */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 24px 48px;
+        }
+
+        .metric {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius);
+            padding: 20px;
+            text-align: center;
+        }
+
+        .metric__value {
+            font-size: 28px;
+            font-weight: 800;
+            font-family: var(--font-mono);
+        }
+
+        .metric__value--green  { color: var(--color-green); }
+        .metric__value--purple { color: var(--color-purple); }
+        .metric__value--orange { color: var(--color-orange); }
+        .metric__value--blue   { color: var(--color-primary); }
+
+        .metric__label {
+            font-size: 12px;
+            color: var(--color-muted);
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        /* --- Separator --- */
+        .separator {
+            border: none;
+            border-top: 1px solid var(--color-border);
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* --- Footer --- */
+        .footer {
+            text-align: center;
+            padding: 32px 24px;
+            font-size: 12px;
+            color: var(--color-muted);
+            border-top: 1px solid var(--color-border);
+        }
+
+        .footer a {
+            color: var(--color-primary);
+            text-decoration: none;
+        }
+
+        /* --- Responsive --- */
+        @media (max-width: 768px) {
+            .header__title { font-size: 24px; }
+            .section__title { font-size: 20px; }
+            .diagram-card { padding: 16px; }
+            .legend { gap: 12px; }
+        }
+
+        /* Print styles */
+        @media print {
+            body { background: #FFFFFF; color: #000000; }
+            .diagram-card { box-shadow: none; border: 1px solid #CBD5E1; }
+            .header { border-bottom-color: #CBD5E1; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ============================================================ -->
+    <!-- Header                                                        -->
+    <!-- ============================================================ -->
+    <header class="header">
+        <div class="header__badge">Project Aura</div>
+        <h1 class="header__title">Constraint Geometry Engine (CGE)</h1>
+        <p class="header__subtitle">
+            Deterministic cortical discrimination layer providing semantic coherence measurement
+            across a 7-axis constraint space. The only non-probabilistic decision boundary
+            in the agent execution pipeline.
+        </p>
+    </header>
+
+    <!-- ============================================================ -->
+    <!-- Legend                                                         -->
+    <!-- ============================================================ -->
+    <nav class="legend" aria-label="Diagram color legend">
+        <div class="legend__item">
+            <div class="legend__swatch legend__swatch--prob"></div>
+            <span>Probabilistic Layer</span>
+        </div>
+        <div class="legend__item">
+            <div class="legend__swatch legend__swatch--det"></div>
+            <span>Deterministic Layer</span>
+        </div>
+        <div class="legend__item">
+            <div class="legend__swatch legend__swatch--cge"></div>
+            <span>CGE Components</span>
+        </div>
+        <div class="legend__item">
+            <div class="legend__swatch legend__swatch--aws"></div>
+            <span>AWS Infrastructure</span>
+        </div>
+        <div class="legend__item">
+            <div class="legend__swatch legend__swatch--prov"></div>
+            <span>Provenance / Trust</span>
+        </div>
+    </nav>
+
+    <!-- ============================================================ -->
+    <!-- Key Metrics                                                   -->
+    <!-- ============================================================ -->
+    <div class="metrics">
+        <div class="metric">
+            <div class="metric__value metric__value--green">7</div>
+            <div class="metric__label">Constraint Axes</div>
+        </div>
+        <div class="metric">
+            <div class="metric__value metric__value--purple">< 25ms</div>
+            <div class="metric__label">P50 Latency Target</div>
+        </div>
+        <div class="metric">
+            <div class="metric__value metric__value--orange">~13ms</div>
+            <div class="metric__label">Cache Hit Latency</div>
+        </div>
+        <div class="metric">
+            <div class="metric__value metric__value--blue">100%</div>
+            <div class="metric__label">Deterministic</div>
+        </div>
+    </div>
+
+    <hr class="separator">
+
+    <!-- ============================================================ -->
+    <!-- Diagram 1: Pipeline Flow                                      -->
+    <!-- ============================================================ -->
+    <section class="section">
+        <div class="section__heading">
+            <span class="section__number">1</span>
+            <h2 class="section__title">Agent Execution Pipeline</h2>
+        </div>
+        <p class="section__desc">
+            End-to-end flow from user request to action execution. Probabilistic layers (blue)
+            generate and refine outputs; the CGE (purple) provides the sole deterministic
+            decision boundary before action commitment.
+        </p>
+        <div class="diagram-card">
+            <div class="mermaid">
+graph TD
+    classDef userNode fill:#F8FAFC,stroke:#1E293B,stroke-width:2px,color:#1E293B,font-weight:bold
+    classDef prob fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A5F,font-weight:bold
+    classDef det fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#064E3B,font-weight:bold
+    classDef cge fill:#EDE9FE,stroke:#7C3AED,stroke-width:3px,color:#3B0764,font-weight:bold
+    classDef autoExec fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#064E3B,font-weight:bold
+    classDef review fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#78350F,font-weight:bold
+    classDef reject fill:#FEE2E2,stroke:#DC2626,stroke-width:2px,color:#7F1D1D,font-weight:bold
+    classDef infra fill:#FFF7ED,stroke:#EA580C,stroke-width:1px,color:#7C2D12
+
+    REQ["User Request"]:::userNode
+
+    subgraph PROB_IN ["PROBABILISTIC -- Input Filtering"]
+        direction TB
+        SG["ADR-065: Semantic Guardrails\n6-Layer Threat Detection"]:::prob
+    end
+
+    subgraph AGENT_EXEC ["PROBABILISTIC -- Agent Execution"]
+        direction TB
+        BEDROCK["AWS Bedrock\nClaude 3.5 Sonnet"]:::infra
+        AGENTS["Agent Orchestrator\nCoder + Reviewer + Validator"]:::prob
+        BEDROCK --> AGENTS
+    end
+
+    subgraph PROB_OUT ["PROBABILISTIC -- Output Refinement"]
+        direction TB
+        CAI["ADR-063: Constitutional AI\n16 Principles / Critique-Revision"]:::prob
+    end
+
+    subgraph CGE_ZONE ["DETERMINISTIC -- Constraint Geometry Engine"]
+        direction TB
+        STEP_A["Step A: Constraint Resolution\nNeptune Graph Traversal\nRELAXES / TIGHTENS / SUPERSEDES"]:::cge
+        STEP_B["Step B: Coherence Computation\nCosine Similarity vs Frozen Centroids\n7-Axis Constraint Space"]:::cge
+        STEP_C["Step C: Action Determination\nDeterministic Threshold Comparison\nPolicy Profile Selection"]:::cge
+        STEP_A --> STEP_B --> STEP_C
+    end
+
+    AUTO["Auto-Execute\nCCS >= threshold"]:::autoExec
+    HITL["Human Review\nCCS in review band\nHITL via ADR-032"]:::review
+    ESC["Escalate / Reject\nCCS below threshold"]:::reject
+
+    REQ --> PROB_IN
+    SG --> AGENT_EXEC
+    AGENTS --> PROB_OUT
+    CAI --> CGE_ZONE
+    STEP_C -->|"CCS >= T"| AUTO
+    STEP_C -->|"T_low &lt;= CCS &lt; T"| HITL
+    STEP_C -->|"CCS &lt; T_low"| ESC
+            </div>
+        </div>
+    </section>
+
+    <hr class="separator">
+
+    <!-- ============================================================ -->
+    <!-- Diagram 2: CGE Internal Architecture                          -->
+    <!-- ============================================================ -->
+    <section class="section">
+        <div class="section__heading">
+            <span class="section__number">2</span>
+            <h2 class="section__title">CGE Internal Architecture with AWS Services</h2>
+        </div>
+        <p class="section__desc">
+            Internal processing pipeline showing the three computation steps, 7 constraint axes,
+            AWS service integrations, embedding cache flow with hit/miss branching, provenance
+            trust injection, and policy profile selection. Constraint bundles in S3 enable
+            air-gap deployment (ADR-078).
+        </p>
+        <div class="diagram-card">
+            <div class="mermaid">
+graph LR
+    classDef cgeStep fill:#EDE9FE,stroke:#7C3AED,stroke-width:3px,color:#3B0764,font-weight:bold
+    classDef aws fill:#FFF7ED,stroke:#EA580C,stroke-width:2px,color:#7C2D12,font-weight:bold
+    classDef axis fill:#F0F9FF,stroke:#0284C7,stroke-width:1px,color:#0C4A6E
+    classDef cache fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#78350F,font-weight:bold
+    classDef external fill:#F1F5F9,stroke:#475569,stroke-width:1px,color:#1E293B
+    classDef output fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#064E3B,font-weight:bold
+    classDef prov fill:#FCE7F3,stroke:#DB2777,stroke-width:2px,color:#831843,font-weight:bold
+
+    INPUT["Agent Output\nfrom Constitutional AI"]:::external
+
+    subgraph AXES ["7 Constraint Axes"]
+        direction TB
+        C1["C1: Syntactic Validity"]:::axis
+        C2["C2: Semantic Correctness"]:::axis
+        C3["C3: Security Policy\nNIST 800-53"]:::axis
+        C4["C4: Operational Bounds"]:::axis
+        C5["C5: Domain Compliance"]:::axis
+        C6["C6: Provenance Trust"]:::axis
+        C7["C7: Temporal Validity"]:::axis
+    end
+
+    subgraph STEP_A_BOX ["Step A: Constraint Resolution"]
+        RESOLVE["Resolve Applicable\nConstraints and\nEdge Traversal"]:::cgeStep
+    end
+
+    NEPTUNE[("Neptune\nConstraint Graph\nConstraintAxis / ConstraintRule /\nPolicyProfile vertices\nRELAXES / TIGHTENS /\nSUPERSEDES / REQUIRES edges")]:::aws
+
+    PROV["ADR-067\nProvenance Trust Score\nDynamic Weight Adjustment"]:::prov
+
+    POLICY["Policy Profile\nDoD-IL5 / Dev Sandbox /\nSOX-Compliant / Custom"]:::external
+
+    subgraph STEP_B_BOX ["Step B: Coherence Computation"]
+        direction TB
+        HASH["SHA-256 Hash\nInput Fingerprint"]:::cgeStep
+        CACHE_CHECK{"ElastiCache\nRedis Lookup"}:::cache
+        EMBED_HIT["Cache Hit\nRetrieve Embeddings\n~13ms P50"]:::output
+        EMBED_MISS["Cache Miss\nBedrock Titan Embeddings\nCompute and Store"]:::aws
+        COSINE["Cosine Similarity\nvs Frozen Positive /\nNegative Centroids\nNumPy Arithmetic"]:::cgeStep
+        HASH --> CACHE_CHECK
+        CACHE_CHECK -->|"HIT"| EMBED_HIT
+        CACHE_CHECK -->|"MISS"| EMBED_MISS
+        EMBED_HIT --> COSINE
+        EMBED_MISS --> COSINE
+    end
+
+    OPENSEARCH[("OpenSearch\nFrozen Constraint\nEmbeddings\nPositive + Negative\nCentroids per Axis")]:::aws
+
+    REDIS[("ElastiCache Redis\nEmbedding Cache\nSHA-256 Hash Keys")]:::aws
+
+    subgraph STEP_C_BOX ["Step C: Action Determination"]
+        CCS["Constraint Coherence\nScore - CCS\nWeighted 7-Axis Aggregate"]:::cgeStep
+        THRESHOLD["Deterministic\nThreshold Comparison\nPer-Profile Boundaries"]:::cgeStep
+        CCS --> THRESHOLD
+    end
+
+    OUT_AUTO["Auto-Execute"]:::output
+    OUT_HITL["Human Review\nADR-032 HITL"]:::cache
+    OUT_ESC["Escalate / Reject"]:::external
+
+    DYNAMO[("DynamoDB\nCoherence Audit\nRecords")]:::aws
+    SQS["SQS\nAsync Audit\nDispatch"]:::aws
+    CW["CloudWatch\nCCS Metrics /\nLatency / Alarms"]:::aws
+    S3[("S3\nVersioned Constraint\nBundles")]:::aws
+    AIRGAP["Air-Gap Export\nConstraint Bundle\nADR-078"]:::external
+    EKS["EKS Pod\nCGE Service"]:::aws
+
+    INPUT --> RESOLVE
+    AXES --> RESOLVE
+    NEPTUNE --> RESOLVE
+    PROV --> COSINE
+    POLICY --> THRESHOLD
+    RESOLVE --> HASH
+    OPENSEARCH --> COSINE
+    REDIS --- CACHE_CHECK
+    COSINE --> CCS
+    THRESHOLD -->|"CCS >= T"| OUT_AUTO
+    THRESHOLD -->|"T_low &lt;= CCS &lt; T"| OUT_HITL
+    THRESHOLD -->|"CCS &lt; T_low"| OUT_ESC
+    CCS --> SQS --> DYNAMO
+    CCS --> CW
+    S3 --> NEPTUNE
+    S3 --> OPENSEARCH
+    S3 --> AIRGAP
+    EKS -.- RESOLVE
+    EKS -.- COSINE
+    EKS -.- THRESHOLD
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Footer                                                        -->
+    <!-- ============================================================ -->
+    <footer class="footer">
+        <p>
+            Constraint Geometry Engine (CGE) &mdash; Project Aura &mdash; Aenea Labs
+        </p>
+        <p style="margin-top: 8px;">
+            Deterministic semantic coherence measurement across 7 constraint axes.
+            Pre-computed frozen embeddings guarantee reproducible scoring.
+        </p>
+    </footer>
+
+    <!-- ============================================================ -->
+    <!-- Mermaid.js Runtime                                            -->
+    <!-- ============================================================ -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                fontSize: '14px',
+                primaryColor: '#7C3AED',
+                primaryTextColor: '#F1F5F9',
+                lineColor: '#64748B',
+                secondaryColor: '#1E293B',
+                tertiaryColor: '#334155'
+            },
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis',
+                padding: 16,
+                nodeSpacing: 40,
+                rankSpacing: 60
+            },
+            securityLevel: 'loose'
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,256 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.2 - HITL Scheduler (Expiration Processing)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ScheduleExpression:
+    Type: String
+    Default: rate(3 hours)
+    Description: CloudWatch Events schedule expression (cost optimized from 1 hour)
+
+  TimeoutHours:
+    Type: Number
+    Default: 24
+    MinValue: 1
+    MaxValue: 168
+    Description: Hours before approval requests expire
+
+  EscalationTimeoutHours:
+    Type: Number
+    Default: 12
+    MinValue: 1
+    MaxValue: 72
+    Description: Hours before escalated requests expire
+
+  BackupReviewers:
+    Type: String
+    Default: ''
+    Description: Comma-separated list of backup reviewer email addresses
+
+  HITLTableName:
+    Type: String
+    Default: ''
+    Description: DynamoDB table name for HITL approval requests (leave empty for default)
+
+  SNSTopicArn:
+    Type: String
+    Default: ''
+    Description: SNS topic ARN for notifications (leave empty for default)
+
+  LambdaS3Bucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+
+  LambdaS3Key:
+    Type: String
+    Description: S3 key for Lambda deployment package
+
+  LambdaMemorySize:
+    Type: Number
+    Default: 256
+    MinValue: 128
+    MaxValue: 1024
+    Description: Lambda function memory in MB
+
+  LambdaTimeout:
+    Type: Number
+    Default: 300
+    MinValue: 30
+    MaxValue: 900
+    Description: Lambda function timeout in seconds
+
+Conditions:
+  HasCustomTableName: !Not [!Equals [!Ref HITLTableName, '']]
+  HasCustomSNSTopic: !Not [!Equals [!Ref SNSTopicArn, '']]
+  HasBackupReviewers: !Not [!Equals [!Ref BackupReviewers, '']]
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # IAM Role for Lambda execution
+  ExpirationProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-hitl-expiration-processor-role-${Environment}
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-approval-requests-${Environment}
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-approval-requests-${Environment}/index/*
+        - PolicyName: SNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !If
+                    - HasCustomSNSTopic
+                    - !Ref SNSTopicArn
+                    - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-notifications-${Environment}
+        - PolicyName: SESAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: !Sub ${ProjectName}-noreply@${ProjectName}.local
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Lambda Function
+  ExpirationProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-expiration-processor-${Environment}
+      Description: Processes expired HITL approval requests with auto-escalation
+      Runtime: python3.11
+      Handler: src.lambda.expiration_processor.handler
+      Role: !GetAtt ExpirationProcessorRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          TIMEOUT_HOURS: !Ref TimeoutHours
+          ESCALATION_TIMEOUT_HOURS: !Ref EscalationTimeoutHours
+          BACKUP_REVIEWERS: !If [HasBackupReviewers, !Ref BackupReviewers, '']
+          HITL_TABLE_NAME: !If
+            - HasCustomTableName
+            - !Ref HITLTableName
+            - !Sub ${ProjectName}-approval-requests-${Environment}
+          HITL_SNS_TOPIC_ARN: !If
+            - HasCustomSNSTopic
+            - !Ref SNSTopicArn
+            - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-notifications-${Environment}
+          USE_MOCK: 'false'
+      # ReservedConcurrentExecutions: 1  # Disabled - account quota insufficient (10 total)
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # CloudWatch Events Rule (EventBridge)
+  ExpirationScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-expiration-processor-schedule-${Environment}
+      Description: Triggers expiration processor Lambda hourly
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Targets:
+        - Id: ExpirationProcessorTarget
+          Arn: !GetAtt ExpirationProcessorFunction.Arn
+
+  # Permission for EventBridge to invoke Lambda
+  ExpirationSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ExpirationProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ExpirationScheduleRule.Arn
+
+  # CloudWatch Alarm for Lambda errors
+  ExpirationProcessorErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ProjectName}-expiration-processor-errors-${Environment}
+      AlarmDescription: Alert when expiration processor Lambda encounters errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ExpirationProcessorFunction
+      TreatMissingData: notBreaching
+      # AlarmActions configured separately via monitoring stack
+
+  # CloudWatch Log Group with retention
+  ExpirationProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-expiration-processor-${Environment}
+      RetentionInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  FunctionArn:
+    Description: Expiration Processor Lambda ARN
+    Value: !GetAtt ExpirationProcessorFunction.Arn
+    Export:
+      Name: !Sub ${ProjectName}-expiration-processor-arn-${Environment}
+
+  FunctionName:
+    Description: Expiration Processor Lambda function name
+    Value: !Ref ExpirationProcessorFunction
+
+  RoleArn:
+    Description: Lambda execution role ARN
+    Value: !GetAtt ExpirationProcessorRole.Arn
+
+  ScheduleRuleArn:
+    Description: CloudWatch Events Rule ARN
+    Value: !GetAtt ExpirationScheduleRule.Arn
+
+  LogGroupName:
+    Description: CloudWatch Log Group name
+    Value: !Ref ExpirationProcessorLogGroup

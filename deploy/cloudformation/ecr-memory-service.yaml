@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.8 - ECR Memory Service (Neural Memory Container)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  MemoryServiceRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-memory-service-${Environment}'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      # MUTABLE allows :latest tag updates (common for dev/qa)
+      # Consider IMMUTABLE for production with semantic versioning
+      ImageTagMutability: MUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 20 tagged images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["v", "latest", "dev", "qa", "prod"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Delete untagged images older than 14 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 14
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: memory-service
+        - Key: Layer
+          Value: '4'
+
+Outputs:
+  RepositoryUri:
+    Description: ECR Repository URI for Memory Service image
+    Value: !GetAtt MemoryServiceRepository.RepositoryUri
+    Export:
+      Name: !Sub '${ProjectName}-ecr-memory-service-${Environment}-RepositoryUri'
+
+  RepositoryArn:
+    Description: ECR Repository ARN
+    Value: !GetAtt MemoryServiceRepository.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ecr-memory-service-${Environment}-RepositoryArn'
+
+  RepositoryName:
+    Description: ECR Repository Name
+    Value: !Ref MemoryServiceRepository
+    Export:
+      Name: !Sub '${ProjectName}-ecr-memory-service-${Environment}-RepositoryName'

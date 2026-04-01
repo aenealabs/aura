@@ -1,0 +1,215 @@
+version: 0.2
+
+# =============================================================================
+# BOOTSTRAP LAYER: Deploys All 20 CodeBuild Projects
+# =============================================================================
+# This buildspec deploys all CodeBuild project CloudFormation templates.
+# It solves the chicken-and-egg problem for fresh QA/PROD account deployments.
+#
+# DEPLOYMENT ORDER:
+#   Phase 1: Parent Layer CodeBuild Projects (1-8)
+#   Phase 2: Sub-Layer CodeBuild Projects (9-18)
+#
+# IDEMPOTENT: Uses --no-fail-on-empty-changeset for safe re-runs
+# =============================================================================
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Bootstrap Layer - Deploy All CodeBuild Projects"
+      - echo "=========================================="
+      - echo "Environment - $ENVIRONMENT"
+      - echo "Region - $AWS_DEFAULT_REGION"
+      - echo "Account - $AWS_ACCOUNT_ID"
+      - echo ""
+      - echo "This buildspec deploys all 20 CodeBuild project templates."
+      - echo "After completion, all layer CodeBuild projects will exist."
+
+      # Validate all CodeBuild templates (sh-compatible)
+      - echo "Validating CodeBuild templates..."
+      - |
+        for template in codebuild-foundation codebuild-data codebuild-compute codebuild-application codebuild-observability codebuild-serverless codebuild-sandbox codebuild-security codebuild-network-services codebuild-docker codebuild-frontend codebuild-marketing codebuild-chat-assistant codebuild-runbook-agent codebuild-incident-response codebuild-serverless-documentation codebuild-application-identity codebuild-ssr codebuild-k8s-deploy codebuild-integration-test codebuild-env-validator; do
+          if [ -f "deploy/cloudformation/${template}.yaml" ]; then
+            echo "Validating ${template}.yaml..."
+            cfn-lint "deploy/cloudformation/${template}.yaml" --ignore-checks W3002,W1020 || echo "Warning: ${template} validation issues (continuing)"
+          else
+            echo "WARNING: ${template}.yaml not found - skipping"
+          fi
+        done
+
+  build:
+    commands:
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # =======================================================================
+      # PHASE 1: Parent Layer CodeBuild Projects (Layers 1-8)
+      # =======================================================================
+      - |
+        echo ""
+        echo "=========================================="
+        echo "PHASE 1: Parent Layer CodeBuild Projects"
+        echo "=========================================="
+
+        # Deploy parent layer templates (sh-compatible)
+        for entry in "codebuild-foundation:foundation" "codebuild-data:data" "codebuild-compute:compute" "codebuild-application:application" "codebuild-observability:observability" "codebuild-serverless:serverless" "codebuild-sandbox:sandbox" "codebuild-security:security"; do
+          TEMPLATE=$(echo "$entry" | cut -d: -f1)
+          LAYER=$(echo "$entry" | cut -d: -f2)
+          STACK_NAME="${PROJECT_NAME}-${TEMPLATE}-${ENVIRONMENT}"
+
+          echo ""
+          echo "----------------------------------------"
+          echo "Deploying: ${TEMPLATE} (Layer: ${LAYER})"
+          echo "Stack: ${STACK_NAME}"
+          echo "----------------------------------------"
+
+          if [ ! -f "deploy/cloudformation/${TEMPLATE}.yaml" ]; then
+            echo "WARNING: ${TEMPLATE}.yaml not found - skipping"
+            continue
+          fi
+
+          # Check for stuck states
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --region $AWS_DEFAULT_REGION \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+            echo "Stack in $STACK_STATUS state - deleting before recreating..."
+            aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $AWS_DEFAULT_REGION
+          fi
+
+          # Deploy using aws cloudformation deploy (idempotent)
+          aws cloudformation deploy \
+            --stack-name $STACK_NAME \
+            --template-file "deploy/cloudformation/${TEMPLATE}.yaml" \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=$LAYER DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --no-fail-on-empty-changeset \
+            --region $AWS_DEFAULT_REGION
+
+          echo "SUCCESS: ${STACK_NAME} deployed"
+        done
+
+      # =======================================================================
+      # PHASE 2: Sub-Layer CodeBuild Projects
+      # =======================================================================
+      - |
+        echo ""
+        echo "=========================================="
+        echo "PHASE 2: Sub-Layer CodeBuild Projects"
+        echo "=========================================="
+
+        # Deploy sub-layer templates (sh-compatible)
+        for entry in "codebuild-network-services:network-services" "codebuild-docker:docker" "codebuild-frontend:frontend" "codebuild-marketing:marketing" "codebuild-chat-assistant:chat-assistant" "codebuild-runbook-agent:runbook-agent" "codebuild-incident-response:incident-response" "codebuild-serverless-documentation:serverless-documentation" "codebuild-application-identity:application-identity" "codebuild-ssr:ssr" "codebuild-k8s-deploy:k8s-deploy" "codebuild-integration-test:integration-test" "codebuild-env-validator:env-validator"; do
+          TEMPLATE=$(echo "$entry" | cut -d: -f1)
+          LAYER=$(echo "$entry" | cut -d: -f2)
+          STACK_NAME="${PROJECT_NAME}-${TEMPLATE}-${ENVIRONMENT}"
+
+          echo ""
+          echo "----------------------------------------"
+          echo "Deploying: ${TEMPLATE} (Sub-Layer: ${LAYER})"
+          echo "Stack: ${STACK_NAME}"
+          echo "----------------------------------------"
+
+          if [ ! -f "deploy/cloudformation/${TEMPLATE}.yaml" ]; then
+            echo "WARNING: ${TEMPLATE}.yaml not found - skipping"
+            continue
+          fi
+
+          # Check for stuck states
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --region $AWS_DEFAULT_REGION \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+            echo "Stack in $STACK_STATUS state - deleting before recreating..."
+            aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_DEFAULT_REGION
+            aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $AWS_DEFAULT_REGION
+          fi
+
+          # Deploy using aws cloudformation deploy (idempotent)
+          aws cloudformation deploy \
+            --stack-name $STACK_NAME \
+            --template-file "deploy/cloudformation/${TEMPLATE}.yaml" \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=$LAYER DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --no-fail-on-empty-changeset \
+            --region $AWS_DEFAULT_REGION
+
+          echo "SUCCESS: ${STACK_NAME} deployed"
+        done
+
+  post_build:
+    commands:
+      - |
+        echo ""
+        echo "=========================================="
+        echo "Bootstrap Complete - Summary"
+        echo "=========================================="
+
+        echo ""
+        echo "Deployed CodeBuild Stacks:"
+        aws cloudformation list-stacks \
+          --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
+          --query "StackSummaries[?contains(StackName, '${PROJECT_NAME}-codebuild')].{Name:StackName,Status:StackStatus}" \
+          --output table \
+          --region $AWS_DEFAULT_REGION
+
+        echo ""
+        echo "CodeBuild Projects Created:"
+        aws codebuild list-projects \
+          --query "projects[?contains(@, '${PROJECT_NAME}')]" \
+          --output table \
+          --region $AWS_DEFAULT_REGION
+
+        echo ""
+        echo "=========================================="
+        echo "NEXT STEPS"
+        echo "=========================================="
+        echo ""
+        echo "1. Trigger Foundation layer deployment:"
+        echo "   aws codebuild start-build --project-name ${PROJECT_NAME}-foundation-deploy-${ENVIRONMENT} --region $AWS_DEFAULT_REGION"
+        echo ""
+        echo "2. After Foundation completes, deploy remaining layers:"
+        echo "   aws codebuild start-build --project-name ${PROJECT_NAME}-data-deploy-${ENVIRONMENT}"
+        echo "   aws codebuild start-build --project-name ${PROJECT_NAME}-compute-deploy-${ENVIRONMENT}"
+        echo "   aws codebuild start-build --project-name ${PROJECT_NAME}-application-deploy-${ENVIRONMENT}"
+        echo "   aws codebuild start-build --project-name ${PROJECT_NAME}-observability-deploy-${ENVIRONMENT}"
+        echo "   aws codebuild start-build --project-name ${PROJECT_NAME}-serverless-deploy-${ENVIRONMENT}"
+        echo "   aws codebuild start-build --project-name ${PROJECT_NAME}-sandbox-deploy-${ENVIRONMENT}"
+        echo "   aws codebuild start-build --project-name ${PROJECT_NAME}-security-deploy-${ENVIRONMENT}"
+        echo ""
+
+artifacts:
+  files:
+    - deploy/cloudformation/codebuild-*.yaml
+  name: bootstrap-layer-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

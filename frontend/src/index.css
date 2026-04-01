@@ -1,0 +1,1426 @@
+@import 'tailwindcss';
+
+/* ============================================
+   Tailwind v4 Dark Mode Configuration
+   Use class-based dark mode (.dark on html element)
+   ============================================ */
+@variant dark (&:where(.dark, .dark *));
+
+/* ============================================
+   Project Aura Design System - Tailwind v4
+   Theme Configuration (migrated from tailwind.config.js)
+   ============================================ */
+
+@theme {
+  /* Font Families */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
+
+  /* Project Aura Design System Colors */
+  /* Primary Brand Colors - Aura Blue */
+  --color-aura-50: #EFF6FF;
+  --color-aura-100: #DBEAFE;
+  --color-aura-200: #BFDBFE;
+  --color-aura-300: #93C5FD;
+  --color-aura-400: #60A5FA;
+  --color-aura-500: #3B82F6;
+  --color-aura-600: #2563EB;
+  --color-aura-700: #1D4ED8;
+  --color-aura-800: #1E40AF;
+  --color-aura-900: #1E3A8A;
+  --color-aura-950: #172554;
+
+  /* Olive Green - Success/Accent */
+  --color-olive-50: #F7F9F3;
+  --color-olive-100: #EDF2E4;
+  --color-olive-200: #D9E4C8;
+  --color-olive-300: #BFD1A3;
+  --color-olive-400: #9FB87A;
+  --color-olive-500: #7C9A3E;
+  --color-olive-600: #6B8E23;
+  --color-olive-700: #556B2F;
+  --color-olive-800: #4A5D29;
+  --color-olive-900: #3F4E23;
+  --color-olive-950: #212A12;
+
+  /* Critical/Error Red */
+  --color-critical-50: #FEF2F2;
+  --color-critical-100: #FEE2E2;
+  --color-critical-200: #FECACA;
+  --color-critical-300: #FCA5A5;
+  --color-critical-400: #F87171;
+  --color-critical-500: #EF4444;
+  --color-critical-600: #DC2626;
+  --color-critical-700: #B91C1C;
+  --color-critical-800: #991B1B;
+  --color-critical-900: #7F1D1D;
+
+  /* Warning Amber */
+  --color-warning-50: #FFFBEB;
+  --color-warning-100: #FEF3C7;
+  --color-warning-200: #FDE68A;
+  --color-warning-300: #FCD34D;
+  --color-warning-400: #FBBF24;
+  --color-warning-500: #F59E0B;
+  --color-warning-600: #D97706;
+  --color-warning-700: #B45309;
+  --color-warning-800: #92400E;
+  --color-warning-900: #78350F;
+
+  /* Surface/Neutral - Pure Neutral Scale (No warm tint) */
+  --color-surface-50: #FAFAFA;
+  --color-surface-100: #F5F5F5;
+  --color-surface-200: #E5E5E5;
+  --color-surface-300: #D4D4D4;
+  --color-surface-400: #A3A3A3;
+  --color-surface-500: #737373;
+  --color-surface-600: #525252;
+  --color-surface-700: #404040;
+  --color-surface-800: #262626;
+  --color-surface-900: #171717;
+  --color-surface-950: #0A0A0A;
+
+  /* Terracotta Accent - Complements Blue */
+  --color-terracotta-50: #FDF8F6;
+  --color-terracotta-100: #F9EBE5;
+  --color-terracotta-200: #F2D4C8;
+  --color-terracotta-300: #E5B49E;
+  --color-terracotta-400: #D4917A;
+  --color-terracotta-500: #C2785C;
+  --color-terracotta-600: #A8654B;
+  --color-terracotta-700: #8E533C;
+  --color-terracotta-800: #754534;
+  --color-terracotta-900: #5F3A2D;
+
+  /* Custom Box Shadows - Warm tones */
+  --shadow-card: 0 1px 3px 0 rgba(28, 27, 25, 0.04), 0 1px 2px -1px rgba(28, 27, 25, 0.02);
+  --shadow-card-hover: 0 4px 12px rgba(28, 27, 25, 0.06), 0 2px 4px rgba(28, 27, 25, 0.03);
+  --shadow-modal: 0 25px 50px -12px rgba(28, 27, 25, 0.25);
+  --shadow-inner-glow: inset 0 2px 4px 0 rgba(28, 27, 25, 0.03);
+  --shadow-elevated: 0 8px 24px rgba(28, 27, 25, 0.08), 0 4px 8px rgba(28, 27, 25, 0.04);
+
+  /* Custom Border Radius */
+  --radius-sm: 0.25rem;
+  --radius-DEFAULT: 0.5rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+
+  /* Custom Animations */
+  --animate-fade-in: fadeIn 0.3s ease-out;
+  --animate-fade-in-up: fadeInUp 0.4s ease-out;
+  --animate-slide-in-right: slideInRight 0.3s ease-out;
+  --animate-slide-in-left: slideInLeft 0.3s ease-out;
+  --animate-scale-in: scaleIn 0.2s ease-out;
+  --animate-shimmer: shimmer 2s infinite linear;
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-spin-slow: spin 2s linear infinite;
+
+  /* Transition Timing Functions */
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce-in: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* Background Images */
+  --bg-shimmer-gradient: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  --bg-dark-shimmer-gradient: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+
+  /* ============================================
+     macOS Tahoe Glass Morphism Tokens
+     Calm, professional, subtle depth
+     ============================================ */
+
+  /* Glass Morphism - Light Mode Defaults */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-subtle: rgba(255, 255, 255, 0.5);
+  --glass-border: rgba(255, 255, 255, 0.45);
+  --glass-border-subtle: rgba(0, 0, 0, 0.06);
+  --glass-blur: blur(18px) saturate(140%);
+  --glass-blur-strong: blur(24px) saturate(150%);
+
+  /* Glass Shadows - Softer, more diffused */
+  --shadow-glass: 0 6px 24px rgba(0, 0, 0, 0.06);
+  --shadow-glass-hover: 0 12px 32px rgba(0, 0, 0, 0.08);
+  --shadow-glass-elevated: 0 16px 48px rgba(0, 0, 0, 0.1);
+
+  /* Tahoe Motion Tokens */
+  --ease-tahoe: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-micro: 200ms;
+  --duration-overlay: 300ms;
+
+  /* Updated Radius for Tahoe */
+  --radius-card: 1rem;
+  --radius-pill: 9999px;
+  --radius-button: 0.75rem;
+}
+
+/* Keyframes for custom animations */
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  0% { opacity: 0; transform: translateX(20px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInLeft {
+  0% { opacity: 0; transform: translateX(-20px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ============================================
+   Project Aura Design System - Global Styles
+   Anthropic-inspired with Olive Green Accents
+   ============================================ */
+
+/* Base Layer - CSS Custom Properties for Theming */
+@layer base {
+  :root {
+    /* Light Mode Colors - Pure Neutral */
+    --color-bg-primary: #FAFAFA;
+    --color-bg-secondary: #F5F5F5;
+    --color-bg-tertiary: #E5E5E5;
+    --color-bg-elevated: #FFFFFF;
+
+    --color-text-primary: #171717;
+    --color-text-secondary: #525252;
+    --color-text-tertiary: #737373;
+    /* WCAG 2.1 AA: Updated from #A3A3A3 to #6B7280 for 4.5:1 contrast ratio */
+    --color-text-muted: #6B7280;
+
+    --color-border-default: #E5E5E5;
+    --color-border-subtle: #F5F5F5;
+    --color-border-strong: #D4D4D4;
+
+    /* Brand Colors */
+    --color-aura: #3B82F6;
+    --color-terracotta: #C2785C;
+    --color-terracotta-dark: #A8654B;
+
+    /* Semantic Colors */
+    --color-critical: #DC2626;
+    --color-warning: #F59E0B;
+    --color-success: #10B981;
+    --color-info: #3B82F6;
+
+    /* Shadows - Warm tones */
+    --shadow-card-var: 0 1px 3px 0 rgba(28, 27, 25, 0.04), 0 1px 2px -1px rgba(28, 27, 25, 0.02);
+    --shadow-card-hover-var: 0 4px 12px rgba(28, 27, 25, 0.06), 0 2px 4px rgba(28, 27, 25, 0.03);
+    --shadow-modal-var: 0 25px 50px -12px rgba(28, 27, 25, 0.25);
+
+    /* Glass Morphism - Light Mode (Pure Neutral) */
+    --glass-bg-var: rgba(255, 255, 255, 0.95);
+    --glass-bg-subtle-var: rgba(250, 250, 250, 0.9);
+    --glass-border-var: rgba(229, 229, 229, 0.5);
+    --glass-border-subtle-var: rgba(0, 0, 0, 0.06);
+    --glass-shadow-var: 0 6px 24px rgba(0, 0, 0, 0.06);
+    --glass-shadow-hover-var: 0 12px 32px rgba(0, 0, 0, 0.08);
+
+    /* Dot Grid Pattern */
+    --grid-dot-color: rgba(0, 0, 0, 0.1);
+    --grid-dot-size: 24px;
+
+    /* Animation Durations */
+    --duration-fast: 150ms;
+    --duration-normal: 250ms;
+    --duration-slow: 400ms;
+
+    /* Easing Functions */
+    --ease-smooth-var: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-bounce-var: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+
+  .dark {
+    /* Tell browser to use dark theme for native form controls (select, etc.) */
+    color-scheme: dark;
+
+    /* Dark Mode Colors - Pure Neutral (No warm tint) */
+    --color-bg-primary: #171717;
+    --color-bg-secondary: #262626;
+    --color-bg-tertiary: #303030;
+    --color-bg-elevated: #262626;
+
+    /* Text Colors - Pure Neutral */
+    --color-text-primary: #FAFAFA;
+    --color-text-secondary: #A3A3A3;
+    --color-text-tertiary: #737373;
+    /* WCAG 2.1 AA: Updated from #525252 to #9CA3AF for 4.5:1 contrast ratio on dark bg */
+    --color-text-muted: #9CA3AF;
+
+    /* Border Colors - Pure Neutral */
+    --color-border-default: #404040;
+    --color-border-subtle: #303030;
+    --color-border-strong: #525252;
+
+    /* Adjusted Brand Colors for Dark Mode */
+    --color-aura: #60A5FA;
+    --color-terracotta: #D4947A;
+    --color-terracotta-dark: #C2785C;
+
+    /* Adjusted Semantic Colors for Dark Mode (one step lighter) */
+    --color-critical: #EF4444;
+    --color-warning: #FBBF24;
+    --color-success: #34D399;
+    --color-info: #60A5FA;
+
+    /* Dark Mode Shadows - Deeper for warm blacks */
+    --shadow-card-var: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
+    --shadow-card-hover-var: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+
+    /* Glass Morphism - Dark Mode (Pure Neutral) */
+    --glass-bg-var: rgba(38, 38, 38, 0.95);
+    --glass-bg-subtle-var: rgba(38, 38, 38, 0.85);
+    --glass-border-var: rgba(255, 255, 255, 0.08);
+    --glass-border-subtle-var: rgba(255, 255, 255, 0.04);
+    --glass-shadow-var: 0 6px 24px rgba(0, 0, 0, 0.25);
+    --glass-shadow-hover-var: 0 12px 32px rgba(0, 0, 0, 0.35);
+
+    /* Dot Grid Pattern - Dark Mode (Neutral) */
+    --grid-dot-color: rgba(255, 255, 255, 0.05);
+  }
+
+  /* Base HTML/Body Styles */
+  html {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-surface-50 text-surface-900 transition-colors duration-300;
+  }
+
+  .dark body {
+    @apply bg-surface-900 text-surface-50;
+  }
+
+  /* Dot Grid Background - Applied to main content areas */
+  .bg-grid-dot {
+    background-image: radial-gradient(circle, var(--grid-dot-color) 1px, transparent 1px);
+    background-size: var(--grid-dot-size) var(--grid-dot-size);
+  }
+
+  /* Smooth Transitions for Theme Toggle */
+  *, *::before, *::after {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-timing-function: var(--ease-smooth-var);
+    transition-duration: var(--duration-normal);
+  }
+
+  /* Disable transitions during theme toggle to prevent flash */
+  .theme-transitioning * {
+    transition-duration: 0ms !important;
+  }
+}
+
+/* Component Layer - Reusable UI Components */
+@layer components {
+  /* Card Styles - Pure white elevated surfaces */
+  .card {
+    @apply rounded-lg shadow-card;
+    @apply transition-all duration-250;
+    background-color: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+  }
+
+  .card:hover {
+    @apply shadow-card-hover;
+    border-color: var(--color-border-default);
+  }
+
+  .dark .card {
+    @apply bg-surface-800 border-surface-700;
+  }
+
+  /* Button Base */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium;
+    @apply transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium;
+    @apply transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-aura-500 text-white hover:bg-aura-600;
+    @apply focus:ring-aura-500;
+  }
+
+  .dark .btn-primary {
+    @apply bg-aura-600 hover:bg-aura-700 focus:ring-offset-surface-900;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium;
+    @apply transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-surface-100 text-surface-700 hover:bg-surface-200;
+    @apply border border-surface-300;
+    @apply focus:ring-surface-400;
+  }
+
+  .dark .btn-secondary {
+    @apply bg-surface-700 text-surface-100 hover:bg-surface-600;
+    @apply border-surface-600 focus:ring-offset-surface-900;
+  }
+
+  .btn-olive {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium;
+    @apply transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-olive-500 text-white hover:bg-olive-600;
+    @apply focus:ring-olive-500;
+  }
+
+  .btn-terracotta {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium;
+    @apply transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--color-terracotta);
+    color: white;
+  }
+
+  .btn-terracotta:hover {
+    background-color: var(--color-terracotta-dark);
+  }
+
+  .btn-terracotta:focus {
+    --tw-ring-color: var(--color-terracotta);
+  }
+
+  .dark .btn-terracotta {
+    @apply focus:ring-offset-surface-900;
+  }
+
+  /* Input Styles - Warm inset background */
+  .input {
+    @apply w-full px-4 py-2 rounded-lg border;
+    border-color: var(--color-border-default);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    @apply transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-aura-500 focus:border-transparent;
+  }
+
+  .input::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  .dark .input {
+    @apply bg-surface-800 border-surface-600 text-surface-100 placeholder-surface-500;
+  }
+
+  /* Select and Option Styles - Solid backgrounds for dropdown menus */
+  select {
+    @apply bg-white text-surface-900;
+  }
+
+  select option {
+    @apply bg-white text-surface-900 py-2;
+  }
+
+  .dark select {
+    @apply bg-surface-800 text-surface-100;
+  }
+
+  .dark select option {
+    @apply bg-surface-800 text-surface-100;
+  }
+
+  /* Badge Styles */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-critical {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply bg-critical-100 text-critical-700;
+  }
+
+  .dark .badge-critical {
+    @apply bg-critical-900/30 text-critical-400;
+  }
+
+  .badge-warning {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply bg-warning-100 text-warning-700;
+  }
+
+  .dark .badge-warning {
+    @apply bg-warning-900/30 text-warning-400;
+  }
+
+  .badge-olive {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply bg-olive-100 text-olive-700;
+  }
+
+  .dark .badge-olive {
+    @apply bg-olive-900/30 text-olive-400;
+  }
+
+  .badge-info {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply bg-aura-100 text-aura-700;
+  }
+
+  .dark .badge-info {
+    @apply bg-aura-900/30 text-aura-400;
+  }
+
+  .badge-terracotta {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply bg-terracotta-100 text-terracotta-700;
+  }
+
+  .dark .badge-terracotta {
+    @apply bg-terracotta-900/30 text-terracotta-400;
+  }
+
+  /* Skeleton Loading Animation */
+  .skeleton {
+    @apply relative overflow-hidden bg-surface-200 rounded;
+  }
+
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .dark .skeleton {
+    @apply bg-surface-700;
+  }
+
+  .dark .skeleton::after {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    background-size: 200% 100%;
+  }
+
+  /* Metric Card - Pure white elevated */
+  .metric-card {
+    @apply rounded-lg shadow-card;
+    @apply transition-all duration-250;
+    @apply p-6;
+    @apply hover:translate-y-[-2px] hover:shadow-card-hover;
+    background-color: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+  }
+
+  .dark .metric-card {
+    @apply bg-surface-800 border-surface-700;
+  }
+
+  /* Activity Feed Item */
+  .activity-item {
+    @apply flex items-start gap-3 p-4 rounded-lg;
+    @apply hover:bg-surface-50 transition-colors duration-150;
+  }
+
+  .dark .activity-item {
+    @apply hover:bg-surface-800;
+  }
+
+  /* Chart Container - Pure white elevated */
+  .chart-container {
+    @apply rounded-lg shadow-card;
+    @apply transition-all duration-250;
+    @apply p-6;
+    @apply min-h-[280px];
+    background-color: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+  }
+
+  .dark .chart-container {
+    @apply bg-surface-800 border-surface-700;
+  }
+
+  /* Status Indicators */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-dot-success {
+    @apply w-2 h-2 rounded-full bg-olive-500;
+  }
+
+  .status-dot-warning {
+    @apply w-2 h-2 rounded-full bg-warning-500;
+  }
+
+  .status-dot-critical {
+    @apply w-2 h-2 rounded-full bg-critical-500;
+  }
+
+  .status-dot-info {
+    @apply w-2 h-2 rounded-full bg-aura-500;
+  }
+
+  /* Pulse Animation for Live Status */
+  .status-dot-pulse {
+    @apply relative;
+  }
+
+  .status-dot-pulse::after {
+    content: '';
+    @apply absolute inset-0 rounded-full;
+    @apply animate-ping opacity-75;
+    background: inherit;
+  }
+
+  /* ============================================
+     macOS Tahoe Glass Morphism Components
+     Calm, professional glass surfaces
+     ============================================ */
+
+  /* Glass Card - Primary glass surface */
+  .glass-card {
+    background: var(--glass-bg-var);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid var(--glass-border-var);
+    box-shadow: var(--glass-shadow-var);
+    border-radius: var(--radius-card, 1rem);
+    transition: all var(--duration-micro, 200ms) var(--ease-tahoe, cubic-bezier(0.32, 0.72, 0, 1));
+  }
+
+  .glass-card:hover {
+    box-shadow: var(--glass-shadow-hover-var);
+    transform: translateY(-2px);
+  }
+
+  /* Glass Card Subtle - Less prominent glass surface */
+  .glass-card-subtle {
+    background: var(--glass-bg-subtle-var);
+    backdrop-filter: blur(12px) saturate(120%);
+    -webkit-backdrop-filter: blur(12px) saturate(120%);
+    border: 1px solid var(--glass-border-subtle-var);
+    border-radius: var(--radius-card, 1rem);
+    transition: all var(--duration-micro, 200ms) var(--ease-tahoe, cubic-bezier(0.32, 0.72, 0, 1));
+  }
+
+  /* Glass Panel - For sidebars and navigation */
+  .glass-panel {
+    background: var(--glass-bg-var);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid var(--glass-border-var);
+  }
+
+  /* Glass Modal Backdrop */
+  .glass-backdrop {
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  .dark .glass-backdrop {
+    background: rgba(0, 0, 0, 0.6);
+  }
+
+  /* Segmented Control - macOS-style tab/filter control */
+  .segmented-control {
+    display: inline-flex;
+    padding: 4px;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: var(--radius-pill, 9999px);
+    gap: 2px;
+  }
+
+  .dark .segmented-control {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .segmented-control-item {
+    @apply px-3.5 py-1.5 rounded-full text-sm font-medium;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all var(--duration-micro, 200ms) var(--ease-tahoe, cubic-bezier(0.32, 0.72, 0, 1));
+  }
+
+  .segmented-control-item:hover:not(.active) {
+    color: var(--color-text-primary);
+  }
+
+  .segmented-control-item.active {
+    @apply bg-white shadow-sm;
+    color: var(--color-text-primary);
+  }
+
+  .dark .segmented-control-item.active {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  /* Pill Search Input - Rounded search field */
+  .input-search {
+    @apply h-10 pl-10 pr-4 text-sm;
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--glass-border-subtle-var);
+    border-radius: var(--radius-pill, 9999px);
+    color: var(--color-text-primary);
+    transition: all var(--duration-micro, 200ms) var(--ease-tahoe, cubic-bezier(0.32, 0.72, 0, 1));
+  }
+
+  .input-search::placeholder {
+    color: var(--color-text-tertiary);
+  }
+
+  .input-search:focus {
+    @apply outline-none ring-2 ring-aura-500;
+    border-color: transparent;
+    background: var(--glass-bg-var);
+  }
+
+  .dark .input-search {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  /* Pill Button Variant */
+  .btn-pill {
+    border-radius: var(--radius-button, 0.75rem);
+  }
+
+  .btn-pill-full {
+    border-radius: var(--radius-pill, 9999px);
+  }
+
+  /* Status Pill - Inline status indicators */
+  .status-pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium;
+    border-radius: var(--radius-pill, 9999px);
+  }
+
+  .status-pill-success {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium;
+    border-radius: var(--radius-pill, 9999px);
+    background: rgba(124, 154, 62, 0.12);
+    color: #5D7A2E;
+  }
+
+  .dark .status-pill-success {
+    background: rgba(159, 184, 122, 0.15);
+    color: #9FB87A;
+  }
+
+  .status-pill-warning {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium;
+    border-radius: var(--radius-pill, 9999px);
+    background: rgba(245, 158, 11, 0.12);
+    color: #B45309;
+  }
+
+  .dark .status-pill-warning {
+    background: rgba(251, 191, 36, 0.15);
+    color: #FBBF24;
+  }
+
+  .status-pill-critical {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium;
+    border-radius: var(--radius-pill, 9999px);
+    background: rgba(220, 38, 38, 0.12);
+    color: #DC2626;
+  }
+
+  .dark .status-pill-critical {
+    background: rgba(248, 113, 113, 0.15);
+    color: #F87171;
+  }
+
+  .status-pill-info {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium;
+    border-radius: var(--radius-pill, 9999px);
+    background: rgba(59, 130, 246, 0.12);
+    color: #1D4ED8;
+  }
+
+  .dark .status-pill-info {
+    background: rgba(96, 165, 250, 0.15);
+    color: #60A5FA;
+  }
+
+  .status-pill-neutral {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium;
+    border-radius: var(--radius-pill, 9999px);
+    background: rgba(107, 114, 128, 0.12);
+    color: #4B5563;
+  }
+
+  .dark .status-pill-neutral {
+    background: rgba(156, 163, 175, 0.15);
+    color: #9CA3AF;
+  }
+
+  /* Nav Item - Tahoe-style navigation items */
+  .nav-item-tahoe {
+    @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium;
+    color: var(--color-text-secondary);
+    transition: all var(--duration-micro, 200ms) var(--ease-tahoe, cubic-bezier(0.32, 0.72, 0, 1));
+  }
+
+  .nav-item-tahoe:hover {
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--color-text-primary);
+    transform: translateY(-1px);
+  }
+
+  .dark .nav-item-tahoe:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .nav-item-tahoe.active {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--color-aura);
+  }
+
+  /* Table Row - Tahoe-style table rows */
+  .table-row-tahoe {
+    @apply h-12;
+    transition: background-color var(--duration-micro, 200ms) var(--ease-tahoe, cubic-bezier(0.32, 0.72, 0, 1));
+  }
+
+  .table-row-tahoe:hover {
+    background: rgba(0, 0, 0, 0.02);
+  }
+
+  .dark .table-row-tahoe:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  /* Sticky Table Header with blur */
+  .table-header-sticky {
+    @apply sticky top-0 z-10;
+    backdrop-filter: blur(12px) saturate(120%);
+    -webkit-backdrop-filter: blur(12px) saturate(120%);
+    background: rgba(255, 255, 255, 0.9);
+    border-bottom: 1px solid var(--glass-border-subtle-var);
+  }
+
+  .dark .table-header-sticky {
+    background: rgba(31, 41, 55, 0.9);
+  }
+}
+
+/* Utilities Layer - Custom Utilities */
+@layer utilities {
+  /* Text Gradient */
+  .text-gradient-aura {
+    @apply bg-gradient-to-r from-aura-500 to-olive-500 bg-clip-text text-transparent;
+  }
+
+  /* Focus Ring */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2;
+  }
+
+  .dark .focus-ring {
+    @apply focus:ring-offset-surface-900;
+  }
+
+  /* ============================================
+     WCAG 2.1 AA Focus Visible Styles
+     Global keyboard focus indicators
+     ============================================ */
+
+  /* Global focus-visible styles for all interactive elements */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-aura-500 ring-offset-2;
+  }
+
+  .dark *:focus-visible {
+    @apply ring-offset-surface-900;
+  }
+
+  /* Button-specific focus-visible */
+  button:focus-visible,
+  [role="button"]:focus-visible {
+    @apply outline-none ring-2 ring-aura-500 ring-offset-2;
+  }
+
+  .dark button:focus-visible,
+  .dark [role="button"]:focus-visible {
+    @apply ring-offset-surface-900;
+  }
+
+  /* Link focus-visible */
+  a:focus-visible {
+    @apply outline-none ring-2 ring-aura-500 ring-offset-2 rounded-sm;
+  }
+
+  .dark a:focus-visible {
+    @apply ring-offset-surface-900;
+  }
+
+  /* Input focus-visible */
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    @apply outline-none ring-2 ring-aura-500 border-transparent;
+  }
+
+  /* Checkbox and radio focus-visible */
+  input[type="checkbox"]:focus-visible,
+  input[type="radio"]:focus-visible {
+    @apply outline-none ring-2 ring-aura-500 ring-offset-2;
+  }
+
+  /* Remove default focus outline (rely on ring instead) */
+  *:focus {
+    outline: none;
+  }
+
+  /* ============================================
+     Minimum Touch Target Sizes (44x44px)
+     WCAG 2.1 AA Success Criterion 2.5.5
+     ============================================ */
+
+  /* Touch target utility class */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Icon button touch targets */
+  .icon-btn {
+    @apply flex items-center justify-center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Hide Scrollbar */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Show Scrollbar on larger screens (responsive utility) */
+  @media (min-width: 1024px) {
+    .lg\:scrollbar-default {
+      -ms-overflow-style: auto;
+      scrollbar-width: auto;
+    }
+    .lg\:scrollbar-default::-webkit-scrollbar {
+      display: block;
+    }
+  }
+
+  /* Smooth Scroll */
+  .scroll-smooth {
+    scroll-behavior: smooth;
+  }
+
+  /* Line Clamp */
+  .line-clamp-1 {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Animation Delays */
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-300 { animation-delay: 300ms; }
+  .animation-delay-400 { animation-delay: 400ms; }
+  .animation-delay-500 { animation-delay: 500ms; }
+}
+
+/* Scrollbar Styling - Warm tones */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: var(--color-bg-tertiary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-strong);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-muted);
+}
+
+.dark ::-webkit-scrollbar-track {
+  @apply bg-surface-800;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  @apply bg-surface-600 hover:bg-surface-500;
+}
+
+/* Selection Colors */
+::selection {
+  @apply bg-aura-200 text-aura-900;
+}
+
+.dark ::selection {
+  @apply bg-aura-800 text-aura-100;
+}
+
+/* Print Styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Reduced Motion Preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .skeleton::after {
+    animation: none;
+  }
+
+  /* Disable Tahoe hover transforms */
+  .glass-card:hover,
+  .nav-item-tahoe:hover {
+    transform: none !important;
+  }
+}
+
+/* ============================================
+   Backdrop Filter Fallbacks
+   For browsers without backdrop-filter support
+   ============================================ */
+@supports not (backdrop-filter: blur(1px)) {
+  .glass-card,
+  .glass-card-subtle,
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.95);
+  }
+
+  .dark .glass-card,
+  .dark .glass-card-subtle,
+  .dark .glass-panel {
+    background: rgba(17, 17, 22, 0.95);
+  }
+
+  .glass-backdrop {
+    background: rgba(0, 0, 0, 0.6);
+  }
+
+  .dark .glass-backdrop {
+    background: rgba(0, 0, 0, 0.75);
+  }
+
+  .table-header-sticky {
+    background: rgba(255, 255, 255, 0.98);
+  }
+
+  .dark .table-header-sticky {
+    background: rgba(31, 41, 55, 0.98);
+  }
+
+  .input-search:focus {
+    background: rgba(255, 255, 255, 0.95);
+  }
+
+  .dark .input-search:focus {
+    background: rgba(17, 17, 22, 0.95);
+  }
+}
+
+/* ============================================
+   React Grid Layout - Custom Styles
+   Matches Project Aura Design System
+   ============================================ */
+
+/* Grid placeholder during drag */
+.react-grid-layout {
+  position: relative;
+}
+
+.react-grid-placeholder {
+  @apply bg-olive-500/20 dark:bg-olive-400/20 rounded-xl;
+  border: 2px dashed var(--color-olive-500);
+  z-index: 2;
+  transition: all 200ms ease;
+}
+
+/* Widget dragging state */
+.react-grid-item.react-draggable-dragging {
+  z-index: 100;
+  @apply shadow-modal;
+  transition: none;
+  cursor: grabbing !important;
+}
+
+/* Widget resizing state */
+.react-grid-item.resizing {
+  z-index: 100;
+  @apply shadow-modal;
+}
+
+/* Resize handle styling */
+.react-grid-item > .react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+  z-index: 10;
+}
+
+.react-grid-item > .react-resizable-handle::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--color-surface-300);
+  border-bottom: 2px solid var(--color-surface-300);
+  transition: border-color 200ms ease;
+}
+
+.dark .react-grid-item > .react-resizable-handle::after {
+  border-right-color: var(--color-surface-600);
+  border-bottom-color: var(--color-surface-600);
+}
+
+.react-grid-item:hover > .react-resizable-handle::after {
+  border-right-color: var(--color-olive-500);
+  border-bottom-color: var(--color-olive-500);
+}
+
+/* Widget container animation */
+.widget-container {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+.widget-container:hover {
+  z-index: 1;
+}
+
+/* Edit mode specific styles */
+.react-grid-layout.edit-mode .widget-container {
+  cursor: grab;
+}
+
+.react-grid-layout.edit-mode .widget-container:active {
+  cursor: grabbing;
+}
+
+/* Smooth layout transitions */
+.react-grid-item {
+  transition: transform 200ms ease, width 200ms ease, height 200ms ease;
+}
+
+.react-grid-item.cssTransforms {
+  transition-property: transform;
+}
+
+.react-grid-item.resizing {
+  transition: none;
+}
+
+.react-grid-item.react-draggable-dragging {
+  transition: none;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* ============================================
+   Chat Assistant Styles
+   Aura Assistant UI Components
+   ============================================ */
+
+/* Chat panel slide-in animation */
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* Chat message fade-in-up animation */
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+/* Toast notification slide-up animation */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+/* Typing indicator bounce animation */
+@keyframes typingBounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
+
+.chat-typing-dot {
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+
+.chat-typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.chat-typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Chat bubble styles */
+.chat-bubble-user {
+  @apply bg-aura-500 text-white rounded-2xl rounded-tr-md;
+}
+
+.chat-bubble-assistant {
+  @apply bg-surface-100 dark:bg-surface-700 text-surface-900 dark:text-surface-100 rounded-2xl rounded-tl-md;
+}
+
+/* Markdown content in chat messages */
+.markdown-content {
+  @apply text-sm leading-relaxed;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  @apply font-semibold text-surface-900 dark:text-surface-100 mt-4 mb-2;
+}
+
+.markdown-content h1 {
+  @apply text-lg;
+}
+
+.markdown-content h2 {
+  @apply text-base;
+}
+
+.markdown-content h3,
+.markdown-content h4 {
+  @apply text-sm;
+}
+
+.markdown-content p {
+  @apply my-2;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  @apply my-2 ml-4 space-y-1;
+}
+
+.markdown-content ul {
+  @apply list-disc list-inside;
+}
+
+.markdown-content ol {
+  @apply list-decimal list-inside;
+}
+
+.markdown-content code {
+  @apply px-1.5 py-0.5 rounded bg-surface-200 dark:bg-surface-600 text-surface-800 dark:text-surface-200 font-mono text-xs;
+}
+
+.markdown-content pre {
+  @apply my-3 p-4 rounded-lg bg-surface-800 dark:bg-surface-900 text-surface-100 font-mono text-xs overflow-x-auto;
+}
+
+.markdown-content pre code {
+  @apply bg-transparent p-0 text-inherit;
+}
+
+.markdown-content a {
+  @apply text-olive-600 dark:text-olive-400 hover:underline;
+}
+
+.markdown-content table {
+  @apply w-full my-3 text-sm border-collapse;
+}
+
+.markdown-content th {
+  @apply px-3 py-2 text-left font-semibold text-surface-900 dark:text-surface-100 border-b border-surface-200 dark:border-surface-600;
+}
+
+.markdown-content td {
+  @apply px-3 py-2 text-surface-700 dark:text-surface-300 border-b border-surface-100 dark:border-surface-700;
+}
+
+.markdown-content blockquote {
+  @apply my-3 pl-4 border-l-4 border-olive-500 text-surface-600 dark:text-surface-400 italic;
+}
+
+/* Chat scrollbar styling */
+.chat-messages-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages-scroll::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.chat-messages-scroll::-webkit-scrollbar-thumb {
+  @apply bg-surface-200 dark:bg-surface-700 rounded-full;
+}
+
+.chat-messages-scroll::-webkit-scrollbar-thumb:hover {
+  @apply bg-surface-300 dark:bg-surface-600;
+}
+
+/* Chat floating button pulse animation */
+@keyframes chatButtonPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(124, 154, 62, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(124, 154, 62, 0);
+  }
+}
+
+.chat-button-pulse {
+  animation: chatButtonPulse 2s ease-in-out infinite;
+}
+
+/* Focus trap for modal-like chat panel */
+.chat-panel-open {
+  overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+  .chat-panel-open body {
+    overflow: hidden;
+  }
+}
+
+/* Streaming cursor blink animation */
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Code syntax highlighting base colors */
+.syntax-keyword { @apply text-purple-400; }
+.syntax-string { @apply text-green-400; }
+.syntax-number { @apply text-orange-400; }
+.syntax-comment { @apply text-gray-500 italic; }
+.syntax-function { @apply text-blue-400; }
+.syntax-variable { @apply text-red-400; }
+.syntax-operator { @apply text-yellow-400; }
+
+/* Token count badge animation */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-count-up {
+  animation: countUp 0.2s ease-out;
+}
+
+/* Message action buttons - fade in on hover */
+.message-actions {
+  @apply opacity-0 transition-opacity duration-150;
+}
+
+.message-hover:hover .message-actions {
+  @apply opacity-100;
+}
+
+/* Streaming message shimmer effect */
+@keyframes streamShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.stream-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(124, 154, 62, 0.1),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: streamShimmer 2s infinite;
+}

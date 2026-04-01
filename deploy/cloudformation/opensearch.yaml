@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.5 - OpenSearch (Vector Search)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  VpcId:
+    Type: String
+    Description: VPC ID
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: Private subnet IDs
+
+  OpenSearchSecurityGroupId:
+    Type: String
+    Description: OpenSearch security group ID
+
+  InstanceType:
+    Type: String
+    Default: t3.small.search
+    Description: OpenSearch instance type
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # OpenSearch Domain
+  OpenSearchDomain:
+    Type: AWS::OpenSearchService::Domain
+    Properties:
+      DomainName: !Sub '${ProjectName}-${Environment}'
+      EngineVersion: 'OpenSearch_2.11'
+      ClusterConfig:
+        InstanceType: !Ref InstanceType
+        InstanceCount: !If [IsProduction, 3, 1]
+        DedicatedMasterEnabled: !If [IsProduction, true, false]
+        DedicatedMasterType: !If [IsProduction, 't3.small.search', !Ref AWS::NoValue]
+        DedicatedMasterCount: !If [IsProduction, 3, !Ref AWS::NoValue]
+        ZoneAwarenessEnabled: !If [IsProduction, true, false]
+        ZoneAwarenessConfig:
+          !If
+            - IsProduction
+            - AvailabilityZoneCount: 3
+            - !Ref AWS::NoValue
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: gp3
+        VolumeSize: !If [IsProduction, 100, 20]
+        Iops: 3000
+        Throughput: 125
+      VPCOptions:
+        SubnetIds:
+          - !Select [0, !Ref PrivateSubnetIds]
+        SecurityGroupIds:
+          - !Ref OpenSearchSecurityGroupId
+      EncryptionAtRestOptions:
+        Enabled: true
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      DomainEndpointOptions:
+        EnforceHTTPS: true
+        TLSSecurityPolicy: Policy-Min-TLS-1-2-2019-07
+      # Fine-Grained Access Control with IAM Master User (ADR-012)
+      # Uses IRSA role as master user - no passwords required
+      # All authentication via SigV4 signing with IAM credentials
+      AdvancedSecurityOptions:
+        Enabled: true
+        InternalUserDatabaseEnabled: false
+        MasterUserOptions:
+          MasterUserARN: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-api-irsa-role-${Environment}'
+      AdvancedOptions:
+        'rest.action.multi.allow_explicit_index': 'true'
+      LogPublishingOptions:
+        INDEX_SLOW_LOGS:
+          CloudWatchLogsLogGroupArn: !GetAtt OpenSearchIndexSlowLogGroup.Arn
+          Enabled: true
+        SEARCH_SLOW_LOGS:
+          CloudWatchLogsLogGroupArn: !GetAtt OpenSearchSearchSlowLogGroup.Arn
+          Enabled: true
+        ES_APPLICATION_LOGS:
+          CloudWatchLogsLogGroupArn: !GetAtt OpenSearchApplicationLogGroup.Arn
+          Enabled: true
+      # Automated Snapshots (DR Issue #14)
+      # Daily automated snapshots at 2 AM UTC
+      # Retention: OpenSearch manages 14 automated snapshots by default
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: 2
+      # Access policy for VPC-based OpenSearch with FGAC
+      # Allows specific roles only (least privilege):
+      # - IRSA role: For aura-api pods during normal operation
+      # - EKS node role: For kubectl run pods during initial FGAC setup
+      # Actual authorization is handled by OpenSearch internal role mappings.
+      AccessPolicies:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-api-irsa-role-${Environment}'
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-eks-node-role-${Environment}'
+            Action: 'es:*'
+            Resource: !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-${Environment}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-opensearch-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Log Groups for OpenSearch
+  OpenSearchIndexSlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/opensearch/${ProjectName}-${Environment}/index-slow'
+      RetentionInDays: 7
+
+  OpenSearchSearchSlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/opensearch/${ProjectName}-${Environment}/search-slow'
+      RetentionInDays: 7
+
+  OpenSearchApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/opensearch/${ProjectName}-${Environment}/application'
+      RetentionInDays: 7
+
+  # Resource Policy for CloudWatch Logs
+  OpenSearchLogPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-opensearch-log-policy-${Environment}'
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "es.amazonaws.com"
+              },
+              "Action": [
+                "logs:PutLogEvents",
+                "logs:CreateLogStream"
+              ],
+              "Resource": [
+                "${OpenSearchIndexSlowLogGroup.Arn}",
+                "${OpenSearchSearchSlowLogGroup.Arn}",
+                "${OpenSearchApplicationLogGroup.Arn}"
+              ]
+            }
+          ]
+        }
+
+Outputs:
+  DomainEndpoint:
+    Description: OpenSearch domain endpoint
+    Value: !GetAtt OpenSearchDomain.DomainEndpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-DomainEndpoint'
+
+  DomainArn:
+    Description: OpenSearch domain ARN
+    Value: !GetAtt OpenSearchDomain.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DomainArn'
+
+  DomainName:
+    Description: OpenSearch domain name
+    Value: !Ref OpenSearchDomain
+    Export:
+      Name: !Sub '${AWS::StackName}-DomainName'

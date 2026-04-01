@@ -1,0 +1,313 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 0.1 - AWS Organizations (Multi-Account Foundation)'
+
+# ============================================================================
+# IMPORTANT: This template is deployed ONCE in the Management Account only.
+# It creates the organizational structure for multi-environment isolation.
+#
+# Prerequisites:
+#   - AWS Organizations must be enabled (aws organizations create-organization)
+#   - Deployed from the Management Account (formerly DEV account)
+#
+# Deployment:
+#   aws cloudformation deploy \
+#     --template-file deploy/cloudformation/organizations.yaml \
+#     --stack-name aura-organizations \
+#     --capabilities CAPABILITY_NAMED_IAM
+# ============================================================================
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used in resource naming
+
+  OrganizationId:
+    Type: String
+    Description: AWS Organization ID (o-xxxxxxxxxx) - get from aws organizations describe-organization
+    AllowedPattern: 'o-[a-z0-9]{10,32}'
+    ConstraintDescription: Must be a valid AWS Organization ID (o-xxxxxxxxxx)
+
+  RootId:
+    Type: String
+    Description: AWS Organization Root ID (r-xxxx) - get from aws organizations list-roots
+    AllowedPattern: 'r-[a-z0-9]{4,32}'
+    ConstraintDescription: Must be a valid AWS Organization Root ID (r-xxxx)
+
+  QAAccountId:
+    Type: String
+    Description: QA Account ID (12 digits) - leave empty if not yet created
+    Default: ''
+    AllowedPattern: '(\d{12})?'
+    ConstraintDescription: Must be a 12-digit AWS account ID or empty
+
+  QAAccountEmail:
+    Type: String
+    Default: aura-qa@aenealabs.com
+    Description: Email address for QA account
+
+  AlertEmail:
+    Type: String
+    Default: alerts@aenealabs.com
+    Description: Email for organizational alerts
+
+Conditions:
+  HasQAAccount: !Not [!Equals [!Ref QAAccountId, '']]
+
+Resources:
+  # ============================================================================
+  # Organizational Units (OUs)
+  # ============================================================================
+
+  WorkloadsOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Properties:
+      Name: Workloads
+      ParentId: !Ref RootId
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: Application workload accounts
+
+  SecurityOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Properties:
+      Name: Security
+      ParentId: !Ref RootId
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: Security and audit accounts
+
+  # ============================================================================
+  # Service Control Policies (SCPs)
+  #
+  # Resource Scoping Policy (per ADR-041):
+  # - Scope to specific resource ARNs where AWS APIs support it
+  # - Use ${ProjectName}-* patterns for project resources
+  # - Document AWS-required wildcards with justification
+  # - See: docs/architecture-decisions/ADR-041-aws-required-wildcards-defense-in-depth.md
+  # ============================================================================
+
+  BaselineSecuritySCP:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub '${ProjectName}-baseline-security'
+      Description: Baseline security controls for all member accounts
+      Type: SERVICE_CONTROL_POLICY
+      TargetIds:
+        - !Ref WorkloadsOU
+      Content:
+        Version: '2012-10-17'
+        Statement:
+          # ----------------------------------------------------------------
+          # AWS-REQUIRED WILDCARD: organizations:LeaveOrganization
+          # Justification: Organization-level action has no resource scope.
+          # The API operates on the calling account's membership, not a
+          # specific resource ARN. AWS does not support resource-level
+          # permissions for this action.
+          # ----------------------------------------------------------------
+          - Sid: DenyLeaveOrganization
+            Effect: Deny
+            Action:
+              - organizations:LeaveOrganization
+            Resource: '*'
+
+          # ----------------------------------------------------------------
+          # SCOPED RESOURCE: EC2 instances only
+          # Partition-aware ARN for GovCloud compatibility
+          # ----------------------------------------------------------------
+          - Sid: RequireIMDSv2
+            Effect: Deny
+            Action:
+              - ec2:RunInstances
+            Resource:
+              - arn:aws:ec2:*:*:instance/*
+              - arn:aws-us-gov:ec2:*:*:instance/*
+            Condition:
+              StringNotEquals:
+                ec2:MetadataHttpTokens: required
+
+          # ----------------------------------------------------------------
+          # SCOPED RESOURCE: Project CloudTrail trails only
+          # Allows other trails to be managed for compliance tooling
+          # ----------------------------------------------------------------
+          - Sid: DenyCloudTrailDisable
+            Effect: Deny
+            Action:
+              - cloudtrail:DeleteTrail
+              - cloudtrail:StopLogging
+              - cloudtrail:UpdateTrail
+            Resource:
+              - !Sub 'arn:aws:cloudtrail:*:*:trail/${ProjectName}-*'
+              - !Sub 'arn:aws-us-gov:cloudtrail:*:*:trail/${ProjectName}-*'
+
+          # ----------------------------------------------------------------
+          # SCOPED RESOURCE: Project S3 buckets only
+          # Enforces encryption at upload time (replaces invalid DenyPublicS3)
+          # ----------------------------------------------------------------
+          - Sid: DenyUnencryptedS3Uploads
+            Effect: Deny
+            Action:
+              - s3:PutObject
+            Resource:
+              - !Sub 'arn:aws:s3:::${ProjectName}-*/*'
+              - !Sub 'arn:aws-us-gov:s3:::${ProjectName}-*/*'
+            Condition:
+              'Null':
+                s3:x-amz-server-side-encryption: 'true'
+
+          # ----------------------------------------------------------------
+          # SCOPED RESOURCE: Project EBS volumes only
+          # Enforces encryption at rest for all project volumes
+          # ----------------------------------------------------------------
+          - Sid: DenyUnencryptedEBSVolumes
+            Effect: Deny
+            Action:
+              - ec2:CreateVolume
+            Resource:
+              - arn:aws:ec2:*:*:volume/*
+              - arn:aws-us-gov:ec2:*:*:volume/*
+            Condition:
+              Bool:
+                ec2:Encrypted: 'false'
+
+          # ----------------------------------------------------------------
+          # AWS-REQUIRED WILDCARD: Root user actions
+          # Justification: Root user access is account-wide by definition.
+          # SCPs cannot scope root user restrictions to specific resources
+          # because root bypasses resource-level permissions.
+          # Compensating control: CloudTrail alerts on root usage.
+          # ----------------------------------------------------------------
+          - Sid: DenyRootUserActions
+            Effect: Deny
+            Action: '*'
+            Resource: '*'
+            Condition:
+              StringLike:
+                aws:PrincipalArn:
+                  - arn:aws:iam::*:root
+                  - arn:aws-us-gov:iam::*:root
+
+  # ============================================================================
+  # SSM Parameters for Organization Configuration
+  # ============================================================================
+
+  OrganizationIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/global/organization-id
+      Type: String
+      Value: !Ref OrganizationId
+      Description: AWS Organization ID
+      Tags:
+        Project: !Ref ProjectName
+
+  WorkloadsOUParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/global/workloads-ou-id
+      Type: String
+      Value: !Ref WorkloadsOU
+      Description: Workloads Organizational Unit ID
+      Tags:
+        Project: !Ref ProjectName
+
+  QAAccountIdParameter:
+    Type: AWS::SSM::Parameter
+    Condition: HasQAAccount
+    Properties:
+      Name: /aura/qa/account-id
+      Type: String
+      Value: !Ref QAAccountId
+      Description: QA AWS Account ID
+      Tags:
+        Project: !Ref ProjectName
+        Environment: qa
+
+  # ============================================================================
+  # SNS Topic for Organizational Alerts
+  # ============================================================================
+
+  OrganizationAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-organization-alerts'
+      DisplayName: Aura Organization Alerts
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  OrganizationAlertsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref OrganizationAlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================================
+  # CloudWatch Alarms for Organization Events
+  # ============================================================================
+
+  NewAccountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-new-account-created'
+      AlarmDescription: Alert when a new account is created in the organization
+      MetricName: CreateAccountResult
+      Namespace: AWS/Organizations
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref OrganizationAlertsTopic
+      Dimensions:
+        - Name: OrganizationId
+          Value: !Ref OrganizationId
+
+Outputs:
+  OrganizationId:
+    Description: AWS Organization ID
+    Value: !Ref OrganizationId
+    Export:
+      Name: !Sub '${AWS::StackName}-OrganizationId'
+
+  WorkloadsOUId:
+    Description: Workloads Organizational Unit ID
+    Value: !Ref WorkloadsOU
+    Export:
+      Name: !Sub '${AWS::StackName}-WorkloadsOUId'
+
+  SecurityOUId:
+    Description: Security Organizational Unit ID
+    Value: !Ref SecurityOU
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityOUId'
+
+  BaselineSecuritySCPId:
+    Description: Baseline Security SCP ID
+    Value: !Ref BaselineSecuritySCP
+    Export:
+      Name: !Sub '${AWS::StackName}-BaselineSecuritySCPId'
+
+  OrganizationAlertsTopicArn:
+    Description: SNS Topic for organization alerts
+    Value: !Ref OrganizationAlertsTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-AlertsTopicArn'
+
+  QAAccountId:
+    Description: QA Account ID (if provided)
+    Condition: HasQAAccount
+    Value: !Ref QAAccountId
+    Export:
+      Name: !Sub '${AWS::StackName}-QAAccountId'
+
+  QAAccountEmail:
+    Description: QA Account root email (for reference)
+    Value: !Ref QAAccountEmail

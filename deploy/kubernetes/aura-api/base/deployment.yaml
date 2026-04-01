@@ -1,0 +1,124 @@
+# Project Aura - API Deployment (Base)
+# Deploys the FastAPI application to EKS with VPC database access
+#
+# Prerequisites:
+# 1. ECR repository: aura-api-{env}
+# 2. ConfigMap: aura-api-config
+# 3. ServiceAccount with IRSA for DynamoDB/Bedrock access
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aura-api
+  namespace: default
+  labels:
+    app: aura-api
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aura-api
+  template:
+    metadata:
+      labels:
+        app: aura-api
+        component: api
+      annotations:
+        # Force pod restart on ConfigMap changes
+        checksum/config: "{{ include (print $.Template.BasePath \"/configmap.yaml\") . | sha256sum }}"
+    spec:
+      serviceAccountName: aura-api
+
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: aura-api
+          # Image placeholder - override via Kustomize overlay images transformer
+          image: aura-api:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # Environment variables from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: aura-api-config
+
+          # Resource limits (adjust based on load testing)
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          # Probes for Kubernetes health management
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+          # Security context for the container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # Needs write for /tmp/aura-repos
+            capabilities:
+              drop:
+                - ALL
+
+          # Volume mounts
+          volumeMounts:
+            - name: repo-cache
+              mountPath: /tmp/aura-repos
+
+      volumes:
+        - name: repo-cache
+          emptyDir:
+            sizeLimit: 1Gi
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30
+
+      # Node affinity - prefer general-purpose nodes (ADR-058)
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: workload-type
+                    operator: In
+                    values:
+                      - general-purpose

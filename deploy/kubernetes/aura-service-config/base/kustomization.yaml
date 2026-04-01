@@ -1,0 +1,20 @@
+# Project Aura - Service Configuration Kustomization (Base)
+#
+# Usage:
+#   kubectl apply -k deploy/kubernetes/aura-service-config/base/
+#
+# For environment-specific deployments, use the overlays:
+#   kubectl apply -k deploy/kubernetes/aura-service-config/overlays/dev/
+#   kubectl apply -k deploy/kubernetes/aura-service-config/overlays/qa/
+#   kubectl apply -k deploy/kubernetes/aura-service-config/overlays/prod/
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - configmap.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CKGE UI Montage Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-200 p-4 font-sans">
+
+    <div class="text-center mb-8">
+        <h1 class="text-4xl font-extrabold text-gray-800">UI Development Montage</h1>
+        <p class="text-lg text-gray-600">A preview of the platform's user interface in various states.</p>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- 1. Default View: Expanded Sidebar                                      -->
+    <!-- ====================================================================== -->
+    <h2 class="text-center text-2xl font-bold mt-12 mb-4 text-gray-700">1. Default View: Expanded Sidebar</h2>
+    <div class="mb-8 border-4 border-dashed border-gray-400 p-2 rounded-lg bg-white">
+        <div class="flex h-[800px]">
+            <!-- Collapsible Sidebar (Expanded) -->
+            <aside class="h-full flex flex-col bg-white border-r shadow-sm w-64">
+                <div class="p-4 pb-2 flex justify-between items-center">
+                    <img src="../../assets/logo/aura_logo_idea1.png" class="w-32" alt="Project Aura Logo"/>
+                    <button class="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                    </button>
+                </div>
+                <ul class="flex-1 px-3 mt-4">
+                    <li class="relative flex items-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer transition-colors hover:bg-indigo-50 text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h7.5" /></svg>
+                        <span class="w-52 ml-3">Dashboard</span>
+                    </li>
+                    <li class="relative flex items-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer transition-colors bg-gradient-to-tr from-indigo-200 to-indigo-100 text-indigo-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" /></svg>
+                        <span class="w-52 ml-3">Projects</span>
+                    </li>
+                </ul>
+                <div class="px-3 py-2">
+                    <button class="w-full flex items-center justify-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer transition-colors group bg-indigo-600 text-white hover:bg-indigo-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                        <span class="w-auto ml-3">Create Project</span>
+                    </button>
+                </div>
+                <div class="border-t flex p-3">
+                    <img src="https://ui-avatars.com/api/?background=c7d2fe&color=3730a3&bold=true&name=Example+User" alt="User Avatar" class="w-10 h-10 rounded-md"/>
+                    <div class="flex justify-between items-center w-52 ml-3">
+                        <div class="leading-4">
+                            <h4 class="font-semibold">Example User</h4>
+                            <span class="text-xs text-gray-600">user@example.com</span>
+                        </div>
+                    </div>
+                </div>
+                <ul class="px-3 border-t">
+                    <li class="relative flex items-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer transition-colors hover:bg-indigo-50 text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.438.991v.017c0 .378.145.75.438.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.333.183-.582.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.645-.87a6.52 6.52 0 01-.22-.127c-.324-.196-.72-.257-1.075-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.296-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.437-.991v-.017c0-.378-.145-.75-.437-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                        <span class="w-52 ml-3">Settings</span>
+                    </li>
+                </ul>
+            </aside>
+            <!-- Main Content Area -->
+            <main class="flex-1 p-4 sm:p-8">
+                <header class="text-center mb-10">
+                    <h1 class="text-5xl font-extrabold text-indigo-900 mb-2">CKGE Console</h1>
+                    <p class="text-xl text-gray-600">Autonomous System 2 AI Development Platform</p>
+                </header>
+                <div class="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-2xl shadow-xl">
+                    <textarea class="w-full p-4 border-2 border-indigo-200 rounded-xl text-lg resize-none" rows="5" placeholder="Enter your high-level project requirement..."></textarea>
+                    <button type="button" class="w-full mt-4 py-3 px-6 rounded-xl text-white text-lg font-bold bg-indigo-600 hover:bg-indigo-700">Execute Autonomous Development Sprint</button>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- 2. Collapsed View                                                      -->
+    <!-- ====================================================================== -->
+    <h2 class="text-center text-2xl font-bold mt-16 mb-4 text-gray-700">2. Interaction: Collapsed Sidebar</h2>
+    <div class="mb-8 border-4 border-dashed border-gray-400 p-2 rounded-lg bg-white">
+        <div class="flex h-[800px]">
+            <!-- Collapsible Sidebar (Collapsed) -->
+            <aside class="h-full flex flex-col bg-white border-r shadow-sm w-20">
+                <div class="p-4 pb-2 flex justify-between items-center">
+                    <img src="../../assets/logo/aura_logo_idea1.png" class="w-0" alt="Project Aura Logo"/>
+                    <button class="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 rotate-180"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                    </button>
+                </div>
+                <ul class="flex-1 px-3 mt-4">
+                    <li class="relative flex items-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer group hover:bg-indigo-50 text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h7.5" /></svg>
+                    </li>
+                    <li class="relative flex items-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer group bg-gradient-to-tr from-indigo-200 to-indigo-100 text-indigo-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" /></svg>
+                    </li>
+                </ul>
+                <div class="px-3 py-2">
+                    <button class="w-full flex items-center justify-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer group bg-indigo-600 text-white hover:bg-indigo-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    </button>
+                </div>
+                <div class="border-t flex p-3">
+                    <img src="https://ui-avatars.com/api/?background=c7d2fe&color=3730a3&bold=true&name=Example+User" alt="User Avatar" class="w-10 h-10 rounded-md"/>
+                </div>
+                 <ul class="px-3 border-t">
+                    <li class="relative flex items-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer group hover:bg-indigo-50 text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.438.991v.017c0 .378.145.75.438.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.333.183-.582.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.645-.87a6.52 6.52 0 01-.22-.127c-.324-.196-.72-.257-1.075-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.296-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.437-.991v-.017c0-.378-.145-.75-.437-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    </li>
+                </ul>
+            </aside>
+            <!-- Main Content Area -->
+            <main class="flex-1 p-4 sm:p-8">
+                <!-- Content is the same -->
+                <header class="text-center mb-10">
+                    <h1 class="text-5xl font-extrabold text-indigo-900 mb-2">CKGE Console</h1>
+                    <p class="text-xl text-gray-600">Autonomous System 2 AI Development Platform</p>
+                </header>
+                <div class="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-2xl shadow-xl">
+                    <textarea class="w-full p-4 border-2 border-indigo-200 rounded-xl text-lg resize-none" rows="5" placeholder="Enter your high-level project requirement..."></textarea>
+                    <button type="button" class="w-full mt-4 py-3 px-6 rounded-xl text-white text-lg font-bold bg-indigo-600 hover:bg-indigo-700">Execute Autonomous Development Sprint</button>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- 3. Final State: Report View                                            -->
+    <!-- ====================================================================== -->
+    <h2 class="text-center text-2xl font-bold mt-16 mb-4 text-gray-700">3. Final State: Report View</h2>
+    <div class="mb-8 border-4 border-dashed border-gray-400 p-2 rounded-lg bg-white">
+        <div class="flex h-[950px]">
+            <!-- Sidebar is still present -->
+            <aside class="h-full flex flex-col bg-white border-r shadow-sm w-64">
+                <div class="p-4 pb-2 flex justify-between items-center">
+                    <img src="../../assets/logo/aura_logo_idea1.png" class="w-32" alt="Project Aura Logo"/>
+                    <button class="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                    </button>
+                </div>
+                <ul class="flex-1 px-3 mt-4">
+                    <li class="relative flex items-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer transition-colors hover:bg-indigo-50 text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h7.5" /></svg>
+                        <span class="w-52 ml-3">Dashboard</span>
+                    </li>
+                    <li class="relative flex items-center py-2 px-3 my-1 font-medium rounded-md cursor-pointer transition-colors bg-gradient-to-tr from-indigo-200 to-indigo-100 text-indigo-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" /></svg>
+                        <span class="w-52 ml-3">Projects</span>
+                    </li>
+                </ul>
+            </aside>
+            <!-- Main Content Area with Report -->
+            <main class="flex-1 p-4 sm:p-8 overflow-y-auto">
+                <header class="text-center mb-10">
+                    <h1 class="text-5xl font-extrabold text-indigo-900 mb-2">CKGE Console</h1>
+                    <p class="text-xl text-gray-600">Autonomous System 2 AI Development Platform</p>
+                </header>
+                <!-- Executive Metrics Dashboard -->
+                <div class="max-w-6xl mx-auto">
+                    <h2 class="text-3xl font-extrabold text-gray-800 mb-4">Executive Metrics Dashboard</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-white p-4 rounded-xl shadow-lg border-t-4" style="border-color: #4F46E5;"><p class="text-xs font-semibold uppercase text-gray-500">Eng. Hours Saved (Velocity)</p><p class="text-3xl font-bold mt-1 text-gray-900">8.7</p></div>
+                        <div class="bg-white p-4 rounded-xl shadow-lg border-t-4" style="border-color: #10B981;"><p class="text-xs font-semibold uppercase text-gray-500">Vulnerabilities Fixed (Quality)</p><p class="text-3xl font-bold mt-1 text-gray-900">2 Issues</p></div>
+                        <div class="bg-white p-4 rounded-xl shadow-lg border-t-4" style="border-color: #EF4444;"><p class="text-xs font-semibold uppercase text-gray-500">Cost per Feature (Budget)</p><p class="text-3xl font-bold mt-1 text-gray-900">$ 3.45</p></div>
+                    </div>
+                    <!-- Handover Report -->
+                    <div class="bg-white p-6 rounded-xl shadow-2xl mt-8">
+                        <h1 class="text-3xl font-extrabold text-indigo-800 mb-4 border-b pb-2">Autonomous Development Handover</h1>
+                        <h2 class="text-2xl font-bold mt-6 mb-3 text-indigo-700">AI Autonomous Development Handover Report</h2>
+                        <p class="text-gray-700">- **Feature:** Secure Hash Function Implementation</p>
+                        <p class="text-gray-700">- **Status:** READY FOR HUMAN REVIEW AND DEPLOYMENT</p>
+                        <br>
+                        <h3 class="text-xl font-semibold mt-4 mb-2 text-gray-800">Final Code Changes</h3>
+                        <pre class="bg-gray-800 text-green-300 p-4 rounded-lg overflow-x-auto text-sm my-4">import hashlib
+class DataProcessor:
+    def calculate_checksum(self, data):
+        # Security Policy Enforced: Using SHA256
+        return hashlib.sha256(data.encode()).hexdigest()
+</pre>
+                        <h3 class="text-xl font-semibold mt-4 mb-2 text-gray-800">Human Developer Next Steps</h3>
+                        <li class="list-disc ml-6 text-gray-700">**Performance Testing:** Manually benchmark the SHA256 function.</li>
+                        <li class="list-disc ml-6 text-gray-700">**Integration Test:** Verify integration with the downstream ResultStore API.</li>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+</body>
+</html>

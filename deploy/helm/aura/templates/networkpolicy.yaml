@@ -1,0 +1,335 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default deny all ingress and egress
+{{- if .Values.networkPolicy.defaultDeny }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aura.fullname" . }}-default-deny
+  labels:
+    {{- include "aura.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}
+---
+# Allow DNS resolution
+{{- if .Values.networkPolicy.allowDns }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aura.fullname" . }}-allow-dns
+  labels:
+    {{- include "aura.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
+---
+# API service network policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aura.fullname" . }}-api
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "api" "context" .) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "api" "context" .) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.service.port }}
+    # Allow from frontend
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: frontend
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.service.port }}
+    {{- if .Values.networkPolicy.allowMetrics }}
+    # Allow Prometheus scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.metricsNamespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.service.port }}
+    {{- end }}
+  egress:
+    # Allow to databases
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: neo4j
+      ports:
+        - protocol: TCP
+          port: 7687
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: opensearch
+      ports:
+        - protocol: TCP
+          port: 9200
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow to Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow to MinIO
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+    # Allow to orchestrator
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: orchestrator
+      ports:
+        - protocol: TCP
+          port: {{ .Values.orchestrator.service.port }}
+    # Allow to LLM services
+    {{- if .Values.llm.vllm.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: vllm
+      ports:
+        - protocol: TCP
+          port: 8000
+    {{- end }}
+    {{- if .Values.llm.tgi.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: tgi
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+    {{- if .Values.llm.ollama.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ollama
+      ports:
+        - protocol: TCP
+          port: 11434
+    {{- end }}
+    # Allow external API calls (Bedrock, etc.) - only if not air-gapped
+    {{- if not (include "aura.isAirGapped" .) }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+---
+# Frontend network policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aura.fullname" . }}-frontend
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "frontend" "context" .) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "frontend" "context" .) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.frontend.service.port }}
+  egress:
+    # Allow to API
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.service.port }}
+---
+# Orchestrator network policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aura.fullname" . }}-orchestrator
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "orchestrator" "context" .) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "orchestrator" "context" .) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from API
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.orchestrator.service.port }}
+  egress:
+    # Allow to all databases
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: neo4j
+      ports:
+        - protocol: TCP
+          port: 7687
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: opensearch
+      ports:
+        - protocol: TCP
+          port: 9200
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+    # Allow to LLM services
+    {{- if .Values.llm.vllm.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: vllm
+      ports:
+        - protocol: TCP
+          port: 8000
+    {{- end }}
+    {{- if .Values.llm.tgi.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: tgi
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+    {{- if .Values.llm.ollama.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ollama
+      ports:
+        - protocol: TCP
+          port: 11434
+    {{- end }}
+    # Allow external API calls - only if not air-gapped
+    {{- if not (include "aura.isAirGapped" .) }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+---
+# Database network policies (Neo4j, OpenSearch, PostgreSQL)
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.graph.neo4j.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aura.fullname" . }}-neo4j
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "neo4j" "context" .) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "neo4j" "context" .) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: orchestrator
+      ports:
+        - protocol: TCP
+          port: 7687
+        - protocol: TCP
+          port: {{ .Values.databases.graph.neo4j.tls.httpsPort }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,11 @@
+# Gradle build artifacts
+.gradle/
+build/
+bin/
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store

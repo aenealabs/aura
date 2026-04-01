@@ -1,0 +1,446 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.2 - HITL Workflow (Step Functions)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  # Note: ApprovalTimeoutHours is configured in the state machine definition
+  # directly rather than as a parameter to simplify deployment.
+
+Resources:
+  # Note: CloudWatch Log Group is created in sandbox.yaml and imported here
+  # to avoid resource name collision between stacks.
+
+  # Step Functions State Machine
+  HITLWorkflowStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ProjectName}-hitl-patch-workflow-${Environment}'
+      StateMachineType: STANDARD
+      RoleArn: !ImportValue
+        Fn::Sub: '${ProjectName}-sandbox-stepfunctions-role-arn-${Environment}'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !ImportValue
+                Fn::Sub: '${ProjectName}-stepfunctions-log-group-arn-${Environment}'
+        IncludeExecutionData: true
+        Level: ALL
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString: !Sub |
+        {
+          "Comment": "HITL Patch Approval Workflow for Project Aura",
+          "StartAt": "ValidateInput",
+          "States": {
+            "ValidateInput": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "And": [
+                    {"Variable": "$.patch_id", "IsPresent": true},
+                    {"Variable": "$.code_source", "IsPresent": true},
+                    {"Variable": "$.code_bucket", "IsPresent": true},
+                    {"Variable": "$.code_key", "IsPresent": true},
+                    {"Variable": "$.test_suite", "IsPresent": true}
+                  ],
+                  "Next": "ValidateCodeArtifact"
+                }
+              ],
+              "Default": "InputValidationFailed"
+            },
+            "InputValidationFailed": {
+              "Type": "Fail",
+              "Error": "ValidationError",
+              "Cause": "Missing required input fields: patch_id, code_source, code_bucket, code_key, test_suite"
+            },
+            "ValidateCodeArtifact": {
+              "Type": "Task",
+              "Comment": "Verify S3 code artifact exists before running tests",
+              "Resource": "arn:aws:states:::aws-sdk:s3:headObject",
+              "Parameters": {
+                "Bucket.$": "$.code_bucket",
+                "Key.$": "$.code_key"
+              },
+              "ResultPath": "$.code_validation",
+              "Next": "GenerateSandboxId",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "CodeArtifactNotFound",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "CodeArtifactNotFound": {
+              "Type": "Fail",
+              "Error": "CodeArtifactNotFound",
+              "Cause": "The specified S3 code artifact does not exist or is not accessible"
+            },
+            "GenerateSandboxId": {
+              "Type": "Pass",
+              "Parameters": {
+                "sandbox_id.$": "States.Format('sandbox-{}', States.UUID())",
+                "patch_id.$": "$.patch_id",
+                "code_source.$": "$.code_source",
+                "code_bucket.$": "$.code_bucket",
+                "code_key.$": "$.code_key",
+                "branch.$": "$.branch",
+                "test_suite.$": "$.test_suite",
+                "severity.$": "$.severity",
+                "vulnerability_id.$": "$.vulnerability_id",
+                "timeout_minutes.$": "$.timeout_minutes",
+                "created_at.$": "$$.State.EnteredTime"
+              },
+              "Next": "CreateSandboxRecord"
+            },
+            "CreateSandboxRecord": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:putItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-sandbox-state-${Environment}",
+                "Item": {
+                  "sandbox_id": {"S.$": "$.sandbox_id"},
+                  "patch_id": {"S.$": "$.patch_id"},
+                  "status": {"S": "PROVISIONING"},
+                  "test_suite": {"S.$": "$.test_suite"},
+                  "code_source": {"S.$": "$.code_source"},
+                  "branch": {"S.$": "$.branch"},
+                  "created_at": {"S.$": "$.created_at"}
+                }
+              },
+              "ResultPath": "$.dynamodb_result",
+              "Next": "RunSandboxTests",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "SandboxCreationFailed",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "RunSandboxTests": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${ProjectName}-sandboxes-${Environment}",
+                "TaskDefinition": "${ProjectName}-sandbox-test-runner-${Environment}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "AssignPublicIp": "DISABLED",
+                    "SecurityGroups.$": "States.Array($$.Execution.Input.security_group_id)",
+                    "Subnets.$": "$$.Execution.Input.subnet_ids"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "sandbox-test-runner",
+                      "Environment": [
+                        {"Name": "SANDBOX_ID", "Value.$": "$.sandbox_id"},
+                        {"Name": "PATCH_ID", "Value.$": "$.patch_id"},
+                        {"Name": "TEST_SUITE", "Value.$": "$.test_suite"},
+                        {"Name": "CODE_SOURCE", "Value.$": "$.code_source"},
+                        {"Name": "BRANCH", "Value.$": "$.branch"}
+                      ]
+                    }
+                  ]
+                }
+              },
+              "TimeoutSeconds": 1800,
+              "ResultPath": "$.ecs_result",
+              "Next": "CheckTestResult",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.Timeout"],
+                  "Next": "TestTimeout",
+                  "ResultPath": "$.error"
+                },
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "TestExecutionFailed",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "CheckTestResult": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.ecs_result.Containers[0].ExitCode",
+                  "NumericEquals": 0,
+                  "Next": "UpdateSandboxStateSuccess"
+                }
+              ],
+              "Default": "UpdateSandboxStateFailed"
+            },
+            "UpdateSandboxStateSuccess": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-sandbox-state-${Environment}",
+                "Key": {
+                  "sandbox_id": {"S.$": "$.sandbox_id"}
+                },
+                "UpdateExpression": "SET #status = :status, completed_at = :completed",
+                "ExpressionAttributeNames": {"#status": "status"},
+                "ExpressionAttributeValues": {
+                  ":status": {"S": "COMPLETED"},
+                  ":completed": {"S.$": "$$.State.EnteredTime"}
+                }
+              },
+              "ResultPath": "$.update_result",
+              "Next": "GenerateApprovalId"
+            },
+            "UpdateSandboxStateFailed": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-sandbox-state-${Environment}",
+                "Key": {
+                  "sandbox_id": {"S.$": "$.sandbox_id"}
+                },
+                "UpdateExpression": "SET #status = :status, completed_at = :completed",
+                "ExpressionAttributeNames": {"#status": "status"},
+                "ExpressionAttributeValues": {
+                  ":status": {"S": "FAILED"},
+                  ":completed": {"S.$": "$$.State.EnteredTime"}
+                }
+              },
+              "ResultPath": "$.update_result",
+              "Next": "TestsFailed"
+            },
+            "GenerateApprovalId": {
+              "Type": "Pass",
+              "Comment": "Pre-generate approval ID for use in PutItem and subsequent states",
+              "Parameters": {
+                "approval_id.$": "States.Format('approval-{}', States.UUID())",
+                "patch_id.$": "$.patch_id",
+                "sandbox_id.$": "$.sandbox_id",
+                "severity.$": "$.severity",
+                "code_source.$": "$.code_source",
+                "vulnerability_id.$": "$.vulnerability_id",
+                "test_suite.$": "$.test_suite",
+                "branch.$": "$.branch",
+                "timeout_minutes.$": "$.timeout_minutes",
+                "created_at.$": "$.created_at"
+              },
+              "Next": "CreateApprovalRequest"
+            },
+            "CreateApprovalRequest": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:putItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-approval-requests-${Environment}",
+                "Item": {
+                  "approval_id": {"S.$": "$.approval_id"},
+                  "patch_id": {"S.$": "$.patch_id"},
+                  "sandbox_id": {"S.$": "$.sandbox_id"},
+                  "status": {"S": "pending"},
+                  "severity": {"S.$": "$.severity"},
+                  "code_source": {"S.$": "$.code_source"},
+                  "vulnerability_id": {"S.$": "$.vulnerability_id"},
+                  "created_at": {"S.$": "$$.State.EnteredTime"}
+                }
+              },
+              "ResultPath": "$.approval_result",
+              "Next": "SendApprovalNotification"
+            },
+            "SendApprovalNotification": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-notifications-${Environment}",
+                "Subject": "HITL Approval Required",
+                "Message.$": "States.Format('Patch {} requires human approval.\n\nCode Source: {}\nSeverity: {}\nSandbox ID: {}\n\nPlease review and approve/reject within 24 hours.', $.patch_id, $.code_source, $.severity, $.sandbox_id)"
+              },
+              "ResultPath": "$.sns_result",
+              "Next": "WaitForApproval",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "WaitForApproval",
+                  "ResultPath": "$.notification_error"
+                }
+              ]
+            },
+            "WaitForApproval": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:getItem.waitForTaskToken",
+              "Parameters": {
+                "TableName": "${ProjectName}-approval-requests-${Environment}",
+                "Key": {
+                  "approval_id": {"S.$": "$.approval_id"}
+                }
+              },
+              "TimeoutSeconds": 86400,
+              "HeartbeatSeconds": 3600,
+              "ResultPath": "$.approval_decision",
+              "Next": "CheckApprovalDecision",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.Timeout"],
+                  "Next": "ApprovalExpired",
+                  "ResultPath": "$.error"
+                },
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "ApprovalCheckFailed",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "CheckApprovalDecision": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.approval_decision.status",
+                  "StringEquals": "approved",
+                  "Next": "DeployPatch"
+                },
+                {
+                  "Variable": "$.approval_decision.status",
+                  "StringEquals": "rejected",
+                  "Next": "PatchRejected"
+                }
+              ],
+              "Default": "ApprovalCheckFailed"
+            },
+            "DeployPatch": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-approval-requests-${Environment}",
+                "Key": {
+                  "approval_id": {"S.$": "$.approval_id"}
+                },
+                "UpdateExpression": "SET #status = :status, deployed_at = :deployed",
+                "ExpressionAttributeNames": {"#status": "status"},
+                "ExpressionAttributeValues": {
+                  ":status": {"S": "deployed"},
+                  ":deployed": {"S.$": "$$.State.EnteredTime"}
+                }
+              },
+              "ResultPath": "$.deploy_result",
+              "Next": "WorkflowComplete"
+            },
+            "WorkflowComplete": {
+              "Type": "Succeed"
+            },
+            "PatchRejected": {
+              "Type": "Pass",
+              "Parameters": {
+                "message": "Patch was rejected by reviewer",
+                "patch_id.$": "$.patch_id",
+                "sandbox_id.$": "$.sandbox_id",
+                "status": "rejected"
+              },
+              "End": true
+            },
+            "ApprovalExpired": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-approval-requests-${Environment}",
+                "Key": {
+                  "approval_id": {"S.$": "$.approval_id"}
+                },
+                "UpdateExpression": "SET #status = :status",
+                "ExpressionAttributeNames": {"#status": "status"},
+                "ExpressionAttributeValues": {
+                  ":status": {"S": "expired"}
+                }
+              },
+              "ResultPath": "$.expire_result",
+              "Next": "ApprovalExpiredFail"
+            },
+            "ApprovalExpiredFail": {
+              "Type": "Fail",
+              "Error": "ApprovalExpired",
+              "Cause": "Approval request expired without decision"
+            },
+            "SandboxCreationFailed": {
+              "Type": "Fail",
+              "Error": "SandboxCreationFailed",
+              "Cause": "Failed to create sandbox record in DynamoDB"
+            },
+            "TestTimeout": {
+              "Type": "Fail",
+              "Error": "TestTimeout",
+              "Cause": "Test execution exceeded timeout"
+            },
+            "TestExecutionFailed": {
+              "Type": "Fail",
+              "Error": "TestExecutionFailed",
+              "Cause": "Test execution failed"
+            },
+            "TestsFailed": {
+              "Type": "Fail",
+              "Error": "TestsFailed",
+              "Cause": "Tests did not pass"
+            },
+            "ApprovalCheckFailed": {
+              "Type": "Fail",
+              "Error": "ApprovalCheckFailed",
+              "Cause": "Failed to check approval status"
+            }
+          }
+        }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # CloudWatch Alarm for Failed Executions
+  HITLWorkflowFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-hitl-workflow-failures-${Environment}'
+      AlarmDescription: Alert when HITL workflow has multiple failures
+      MetricName: ExecutionsFailed
+      Namespace: AWS/States
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !Ref HITLWorkflowStateMachine
+      TreatMissingData: notBreaching
+
+Outputs:
+  StateMachineArn:
+    Description: HITL Workflow State Machine ARN
+    Value: !Ref HITLWorkflowStateMachine
+    Export:
+      Name: !Sub '${ProjectName}-hitl-workflow-arn-${Environment}'
+
+  StateMachineName:
+    Description: HITL Workflow State Machine Name
+    Value: !GetAtt HITLWorkflowStateMachine.Name
+    Export:
+      Name: !Sub '${ProjectName}-hitl-workflow-name-${Environment}'
+
+  LogGroupArn:
+    Description: CloudWatch Log Group ARN (imported from sandbox stack)
+    Value: !ImportValue
+      Fn::Sub: '${ProjectName}-stepfunctions-log-group-arn-${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-hitl-workflow-log-group-arn-${Environment}'

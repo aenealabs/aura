@@ -1,0 +1,155 @@
+version: 0.2
+
+# Runtime Security Layer (ADR-083): Interceptor, Discovery, Baselines, Correlation
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Runtime Security Layer Deployment (ADR-083)"
+      - echo "=========================================="
+
+      # Initialize deployment tracking
+      - DEPLOY_FAILURES=0
+      - DEPLOY_SUCCESSES=0
+
+      # Validate templates
+      - echo "Validating runtime security templates..."
+      - cfn-lint deploy/cloudformation/runtime-security-interceptor.yaml || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/runtime-security-discovery.yaml || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/runtime-security-baselines.yaml || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/runtime-security-correlation.yaml || echo "cfn-lint warnings (non-blocking)"
+
+  build:
+    commands:
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # Deploy Interceptor Stack (Layer 8.6)
+      - echo "Deploying Runtime Security Interceptor Stack..."
+      - INTERCEPTOR_STACK="${PROJECT_NAME}-runtime-security-interceptor-${ENVIRONMENT}"
+      - |
+        if aws cloudformation deploy \
+          --stack-name $INTERCEPTOR_STACK \
+          --template-file deploy/cloudformation/runtime-security-interceptor.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=runtime-security ADR=ADR-083 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION; then
+          echo "Interceptor stack deployed successfully"
+          DEPLOY_SUCCESSES=$((DEPLOY_SUCCESSES + 1))
+        else
+          echo "ERROR: Interceptor stack deployment failed"
+          DEPLOY_FAILURES=$((DEPLOY_FAILURES + 1))
+        fi
+
+      # Deploy Discovery Stack (Layer 8.7)
+      - echo "Deploying Runtime Security Discovery Stack..."
+      - DISCOVERY_STACK="${PROJECT_NAME}-runtime-security-discovery-${ENVIRONMENT}"
+      - |
+        if aws cloudformation deploy \
+          --stack-name $DISCOVERY_STACK \
+          --template-file deploy/cloudformation/runtime-security-discovery.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=runtime-security ADR=ADR-083 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION; then
+          echo "Discovery stack deployed successfully"
+          DEPLOY_SUCCESSES=$((DEPLOY_SUCCESSES + 1))
+        else
+          echo "ERROR: Discovery stack deployment failed"
+          DEPLOY_FAILURES=$((DEPLOY_FAILURES + 1))
+        fi
+
+      # Deploy Baselines Stack (Layer 8.8)
+      - echo "Deploying Runtime Security Baselines Stack..."
+      - BASELINES_STACK="${PROJECT_NAME}-runtime-security-baselines-${ENVIRONMENT}"
+      - |
+        if aws cloudformation deploy \
+          --stack-name $BASELINES_STACK \
+          --template-file deploy/cloudformation/runtime-security-baselines.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=runtime-security ADR=ADR-083 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION; then
+          echo "Baselines stack deployed successfully"
+          DEPLOY_SUCCESSES=$((DEPLOY_SUCCESSES + 1))
+        else
+          echo "ERROR: Baselines stack deployment failed"
+          DEPLOY_FAILURES=$((DEPLOY_FAILURES + 1))
+        fi
+
+      # Deploy Correlation Stack (Layer 8.9)
+      - echo "Deploying Runtime Security Correlation Stack..."
+      - CORRELATION_STACK="${PROJECT_NAME}-runtime-security-correlation-${ENVIRONMENT}"
+      - |
+        if aws cloudformation deploy \
+          --stack-name $CORRELATION_STACK \
+          --template-file deploy/cloudformation/runtime-security-correlation.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=runtime-security ADR=ADR-083 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION; then
+          echo "Correlation stack deployed successfully"
+          DEPLOY_SUCCESSES=$((DEPLOY_SUCCESSES + 1))
+        else
+          echo "ERROR: Correlation stack deployment failed"
+          DEPLOY_FAILURES=$((DEPLOY_FAILURES + 1))
+        fi
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Runtime Security Layer Deployment Summary"
+      - echo "=========================================="
+      - echo "Successes: $DEPLOY_SUCCESSES / 4"
+      - echo "Failures:  $DEPLOY_FAILURES / 4"
+
+      # Verify all stacks
+      - echo "Verifying stack status..."
+      - |
+        for STACK in \
+          "${PROJECT_NAME}-runtime-security-interceptor-${ENVIRONMENT}" \
+          "${PROJECT_NAME}-runtime-security-discovery-${ENVIRONMENT}" \
+          "${PROJECT_NAME}-runtime-security-baselines-${ENVIRONMENT}" \
+          "${PROJECT_NAME}-runtime-security-correlation-${ENVIRONMENT}"; do
+          STATUS=$(aws cloudformation describe-stacks --stack-name $STACK \
+            --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "NOT_FOUND")
+          echo "  $STACK: $STATUS"
+        done
+
+      - echo "Runtime Security Layer deployment completed at $(date)"
+
+      # Fail the build if any stack failed (triggers non-blocking Catch in Step Functions)
+      - |
+        if [ "$DEPLOY_FAILURES" -gt 0 ]; then
+          echo "ERROR: $DEPLOY_FAILURES stack(s) failed to deploy"
+          exit 1
+        fi

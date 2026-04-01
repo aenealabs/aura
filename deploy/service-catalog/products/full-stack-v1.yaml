@@ -1,0 +1,218 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Full Stack Environment - API + Frontend + DynamoDB + S3 (24 hour TTL)'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Name for this test environment
+    AllowedPattern: '[a-z0-9-]+'
+    MaxLength: 32
+
+  OwnerEmail:
+    Type: String
+    Description: Email of the environment owner
+
+  TTLHours:
+    Type: Number
+    Default: 24
+    MinValue: 1
+    MaxValue: 168
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the test environment
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets for ECS tasks
+
+  ApiContainerImage:
+    Type: String
+    Default: 'public.ecr.aws/docker/library/python:3.11-slim'
+
+  ECSExecutionRoleArn:
+    Type: String
+    Description: ARN of the ECS task execution role
+
+  ECSTaskRoleArn:
+    Type: String
+    Description: ARN of the ECS task role
+
+  ECSClusterArn:
+    Type: String
+    Description: ARN of the ECS cluster for sandboxes
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/test-env/${EnvironmentName}'
+      RetentionInDays: 7
+
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'aura-test-${EnvironmentName}-data'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  StorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'aura-test-${EnvironmentName}-storage-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AutoExpire
+            Status: Enabled
+            ExpirationInDays: 7
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'aura-test-${EnvironmentName}-frontend-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AutoExpire
+            Status: Enabled
+            ExpirationInDays: 7
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub 'aura-test-${EnvironmentName}-oac'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub '${EnvironmentName} frontend'
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !Ref OriginAccessControl
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                'AWS:SourceArn': !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Security group for ${EnvironmentName}'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: '10.0.0.0/8'
+
+  ApiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'aura-test-${EnvironmentName}-api'
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSExecutionRoleArn
+      TaskRoleArn: !Ref ECSTaskRoleArn
+      ContainerDefinitions:
+        - Name: api
+          Image: !Ref ApiContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: api
+          Environment:
+            - Name: DYNAMODB_TABLE
+              Value: !Ref DataTable
+            - Name: S3_BUCKET
+              Value: !Ref StorageBucket
+            - Name: FRONTEND_URL
+              Value: !Sub 'https://${Distribution.DomainName}'
+
+  ApiService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'aura-test-${EnvironmentName}-api'
+      Cluster: !Ref ECSClusterArn
+      TaskDefinition: !Ref ApiTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref SecurityGroup
+          Subnets: !Ref SubnetIds
+
+Outputs:
+  EnvironmentName:
+    Value: !Ref EnvironmentName
+  ApiServiceArn:
+    Value: !Ref ApiService
+  DynamoDBTableName:
+    Value: !Ref DataTable
+  StorageBucketName:
+    Value: !Ref StorageBucket
+  FrontendBucketName:
+    Value: !Ref FrontendBucket
+  CloudFrontURL:
+    Value: !Sub 'https://${Distribution.DomainName}'

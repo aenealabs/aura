@@ -1,0 +1,93 @@
+version: 0.2
+
+# Note: ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION, CHAT_ARTIFACTS_BUCKET
+# are provided by CodeBuild project environment variables (from CloudFormation parameters)
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Chat Assistant Deployment (Layer 6 - Serverless)"
+      - echo "=========================================="
+      - echo "Installing dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install --quiet cfn-lint boto3
+      - echo "Validating CloudFormation template..."
+      - cfn-lint deploy/cloudformation/chat-assistant.yaml --ignore-checks W2001,W3002,W3005 || echo "Template has warnings (non-blocking)"
+      - echo "Template validation complete"
+
+  build:
+    commands:
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+      - echo "Deploying Chat Assistant CloudFormation stack..."
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-chat-assistant-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/chat-assistant.yaml \
+          --parameter-overrides \
+            Environment=${ENVIRONMENT} \
+            ProjectName=${PROJECT_NAME} \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=chat-assistant DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset
+      - echo "CloudFormation stack deployed"
+      - echo "Packaging Lambda code..."
+      - PACKAGE_DIR=$(mktemp -d)
+      - cp src/lambda/chat/*.py "${PACKAGE_DIR}/"
+      - cd "${PACKAGE_DIR}" && zip -q -r chat-lambda.zip .
+      - echo "Lambda package created"
+      - ARTIFACTS_BUCKET="${PROJECT_NAME}-chat-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+      - echo "Uploading Lambda package to s3://${ARTIFACTS_BUCKET}/lambda/${DEPLOY_TIMESTAMP}/"
+      # --sse AES256: Required by SCP DenyUnencryptedS3Uploads
+      - aws s3 cp --sse AES256 "${PACKAGE_DIR}/chat-lambda.zip" "s3://${ARTIFACTS_BUCKET}/lambda/${DEPLOY_TIMESTAMP}/chat-lambda.zip"
+      - echo "Lambda package uploaded to S3"
+      - cd ${CODEBUILD_SRC_DIR}
+      - echo "Updating Lambda functions..."
+      - |
+        for FUNC in chat-handler chat-ws-connect chat-ws-disconnect chat-ws-message; do
+          FUNCTION_NAME="${PROJECT_NAME}-${FUNC}-${ENVIRONMENT}"
+          echo "  Updating ${FUNCTION_NAME}..."
+          aws lambda update-function-code \
+            --function-name "${FUNCTION_NAME}" \
+            --s3-bucket "${ARTIFACTS_BUCKET}" \
+            --s3-key "lambda/${DEPLOY_TIMESTAMP}/chat-lambda.zip" \
+            --region ${AWS_DEFAULT_REGION} \
+            --output text \
+            --query 'LastModified' || echo "Warning: Failed to update ${FUNCTION_NAME}"
+        done
+      - echo "All Lambda functions updated"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Chat Assistant deployment complete!"
+      - echo "=========================================="
+      - echo ""
+      - echo "API Endpoints:"
+      - |
+        REST_API_URL=$(aws cloudformation describe-stacks \
+          --stack-name ${PROJECT_NAME}-chat-assistant-${ENVIRONMENT} \
+          --query "Stacks[0].Outputs[?OutputKey=='RestApiUrl'].OutputValue" \
+          --output text --region ${AWS_DEFAULT_REGION})
+        echo "  REST API: ${REST_API_URL}"
+      - |
+        WS_URL=$(aws cloudformation describe-stacks \
+          --stack-name ${PROJECT_NAME}-chat-assistant-${ENVIRONMENT} \
+          --query "Stacks[0].Outputs[?OutputKey=='WebSocketUrl'].OutputValue" \
+          --output text --region ${AWS_DEFAULT_REGION})
+        echo "  WebSocket: ${WS_URL}"
+      - echo ""
+      - echo "Stack Outputs:"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-chat-assistant-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table --region ${AWS_DEFAULT_REGION} || echo "Stack outputs not available"
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

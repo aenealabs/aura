@@ -1,0 +1,525 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.1 - AWS Config (Compliance Rules)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-11-24'
+  Purpose: |
+    Provides continuous compliance monitoring using AWS Config managed rules.
+    Ensures drift from security baseline is detected immediately, not just during
+    scheduled CloudFormation drift checks.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Environment name
+
+  AlertEmail:
+    Type: String
+    Description: Email address for compliance violation alerts
+    AllowedPattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+  ConfigSnapshotDeliveryFrequency:
+    Type: String
+    Default: Six_Hours
+    AllowedValues:
+      - One_Hour
+      - Three_Hours
+      - Six_Hours
+      - Twelve_Hours
+      - TwentyFour_Hours
+    Description: How often Config delivers configuration snapshots to S3
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ============================================================================
+  # S3 Bucket for AWS Config
+  # ============================================================================
+  ConfigBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-config-${Environment}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldConfigSnapshots
+            Status: Enabled
+            ExpirationInDays: !If [IsProduction, 2555, 90]  # 7 years for prod, 90 days for dev
+            NoncurrentVersionExpirationInDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: AWSConfig
+
+  ConfigBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ConfigBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AWSConfigBucketPermissionsCheck
+            Effect: Allow
+            Principal:
+              Service: config.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt ConfigBucket.Arn
+            Condition:
+              StringEquals:
+                'AWS:SourceAccount': !Ref AWS::AccountId
+          - Sid: AWSConfigBucketExistenceCheck
+            Effect: Allow
+            Principal:
+              Service: config.amazonaws.com
+            Action: s3:ListBucket
+            Resource: !GetAtt ConfigBucket.Arn
+            Condition:
+              StringEquals:
+                'AWS:SourceAccount': !Ref AWS::AccountId
+          - Sid: AWSConfigBucketPutObject
+            Effect: Allow
+            Principal:
+              Service: config.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${ConfigBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                's3:x-amz-acl': bucket-owner-full-control
+                'AWS:SourceAccount': !Ref AWS::AccountId
+
+  # ============================================================================
+  # SNS Topic for Config Alerts
+  # ============================================================================
+  ConfigAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-config-alerts-${Environment}'
+      DisplayName: !Sub 'AWS Config Compliance Alerts - ${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  ConfigAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref ConfigAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================================
+  # IAM Role for AWS Config
+  # ============================================================================
+  ConfigRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-config-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: config.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWS_ConfigRole'
+      Policies:
+        - PolicyName: ConfigS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketVersioning
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - !GetAtt ConfigBucket.Arn
+                  - !Sub '${ConfigBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref ConfigAlertTopic
+
+  # ============================================================================
+  # AWS Config Configuration Recorder
+  # ============================================================================
+  ConfigRecorder:
+    Type: AWS::Config::ConfigurationRecorder
+    Properties:
+      Name: !Sub '${ProjectName}-config-recorder-${Environment}'
+      RoleARN: !GetAtt ConfigRole.Arn
+      RecordingGroup:
+        AllSupported: true
+        IncludeGlobalResourceTypes: true
+
+  # ============================================================================
+  # AWS Config Delivery Channel
+  # ============================================================================
+  ConfigDeliveryChannel:
+    Type: AWS::Config::DeliveryChannel
+    Properties:
+      Name: !Sub '${ProjectName}-config-delivery-${Environment}'
+      S3BucketName: !Ref ConfigBucket
+      SnsTopicARN: !Ref ConfigAlertTopic
+      ConfigSnapshotDeliveryProperties:
+        DeliveryFrequency: !Ref ConfigSnapshotDeliveryFrequency
+
+  # ============================================================================
+  # CMMC Level 3 / NIST 800-53 Compliance Rules
+  # ============================================================================
+
+  # AC.L3-3.1.5: Least Privilege - IAM policies must not have wildcards
+  IAMPolicyNoWildcardRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-iam-no-wildcard-${Environment}'
+      Description: 'CMMC AC.L3-3.1.5: Ensures IAM policies do not use Resource: "*" wildcards'
+      Source:
+        Owner: AWS
+        SourceIdentifier: IAM_POLICY_NO_STATEMENTS_WITH_ADMIN_ACCESS
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::IAM::Policy
+          - AWS::IAM::Role
+          - AWS::IAM::User
+          - AWS::IAM::Group
+
+  # SC.L3-3.13.8: Encryption at Rest - Neptune must use KMS encryption
+  NeptuneEncryptionRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-neptune-encryption-${Environment}'
+      Description: 'CMMC SC.L3-3.13.8: Ensures Neptune uses customer-managed KMS encryption'
+      Source:
+        Owner: AWS
+        SourceIdentifier: NEPTUNE_CLUSTER_ENCRYPTED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Neptune::DBCluster
+
+  # SC.L3-3.13.8: Encryption at Rest - RDS/Neptune snapshot encryption
+  RDSSnapshotEncryptionRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-rds-snapshot-encryption-${Environment}'
+      Description: 'CMMC SC.L3-3.13.8: Ensures RDS/Neptune snapshots are encrypted'
+      Source:
+        Owner: AWS
+        SourceIdentifier: RDS_SNAPSHOT_ENCRYPTED
+
+  # SC.L3-3.13.8: Encryption at Rest - S3 bucket encryption
+  S3BucketEncryptionRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-s3-encryption-${Environment}'
+      Description: 'CMMC SC.L3-3.13.8: Ensures S3 buckets have encryption enabled'
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket
+
+  # AU.L3-3.3.1: Audit Logging - VPC Flow Logs enabled
+  VPCFlowLogsEnabledRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-vpc-flow-logs-${Environment}'
+      Description: 'CMMC AU.L3-3.3.1: Ensures VPC Flow Logs are enabled'
+      Source:
+        Owner: AWS
+        SourceIdentifier: VPC_FLOW_LOGS_ENABLED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::EC2::VPC
+
+  # AU.L3-3.3.1: Audit Logging - CloudWatch log retention
+  CloudWatchLogRetentionRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-cloudwatch-retention-${Environment}'
+      Description: 'CMMC AU.L3-3.3.1: Ensures CloudWatch log groups have proper retention'
+      InputParameters:
+        MinRetentionTime: !If [IsProduction, '365', '90']
+      Source:
+        Owner: AWS
+        SourceIdentifier: CW_LOGGROUP_RETENTION_PERIOD_CHECK
+
+  # SC.L3-3.13.11: Encryption in Transit - ALB must use HTTPS
+  ALBHTTPSOnlyRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-alb-https-only-${Environment}'
+      Description: 'CMMC SC.L3-3.13.11: Ensures ALB uses HTTPS/TLS listeners'
+      Source:
+        Owner: AWS
+        SourceIdentifier: ALB_HTTP_TO_HTTPS_REDIRECTION_CHECK
+
+  # SC.L3-3.13.11: Encryption in Transit - ELB must use secure protocols
+  ELBTLSVersionRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-elb-tls-version-${Environment}'
+      Description: 'CMMC SC.L3-3.13.11: Ensures ELB uses TLS 1.2 or higher'
+      Source:
+        Owner: AWS
+        SourceIdentifier: ELB_TLS_HTTPS_LISTENERS_ONLY
+
+  # AC.L3-3.1.20: External Connections - Security groups must not allow 0.0.0.0/0 on admin ports
+  SecurityGroupNoUnrestrictedSSHRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-sg-no-ssh-${Environment}'
+      Description: 'CMMC AC.L3-3.1.20: Ensures security groups do not allow unrestricted SSH (port 22)'
+      Source:
+        Owner: AWS
+        SourceIdentifier: INCOMING_SSH_DISABLED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::EC2::SecurityGroup
+
+  SecurityGroupNoUnrestrictedRDPRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-sg-no-rdp-${Environment}'
+      Description: 'CMMC AC.L3-3.1.20: Ensures security groups do not allow unrestricted RDP (port 3389)'
+      Source:
+        Owner: AWS
+        SourceIdentifier: RESTRICTED_INCOMING_TRAFFIC
+      InputParameters:
+        blockedPort1: '3389'
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::EC2::SecurityGroup
+
+  # SI.L3-3.14.6: Network Monitoring - AWS WAF enabled on ALB
+  ALBWAFEnabledRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-alb-waf-enabled-${Environment}'
+      Description: 'CMMC SI.L3-3.14.6: Ensures ALB has AWS WAF enabled'
+      Source:
+        Owner: AWS
+        SourceIdentifier: ALB_WAF_ENABLED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::ElasticLoadBalancingV2::LoadBalancer
+
+  # SC-12: Cryptographic Key Management - KMS key rotation enabled
+  KMSKeyRotationRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-kms-key-rotation-${Environment}'
+      Description: 'NIST 800-53 SC-12: Ensures KMS keys have automatic rotation enabled'
+      Source:
+        Owner: AWS
+        SourceIdentifier: CMK_BACKING_KEY_ROTATION_ENABLED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::KMS::Key
+
+  # AC-2: Account Management - Root account MFA enabled
+  RootAccountMFAEnabledRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-root-mfa-enabled-${Environment}'
+      Description: 'NIST 800-53 AC-2: Ensures root account has MFA enabled'
+      Source:
+        Owner: AWS
+        SourceIdentifier: ROOT_ACCOUNT_MFA_ENABLED
+
+  # AC-2: Account Management - IAM users have MFA
+  IAMUserMFAEnabledRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-iam-user-mfa-${Environment}'
+      Description: 'NIST 800-53 AC-2: Ensures IAM users have MFA enabled'
+      Source:
+        Owner: AWS
+        SourceIdentifier: IAM_USER_MFA_ENABLED
+
+  # AC-17: Remote Access - IMDSv2 required for EC2 instances
+  EC2IMDSv2Rule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-ec2-imdsv2-${Environment}'
+      Description: 'DoD SRG: Ensures EC2 instances use IMDSv2 (not IMDSv1)'
+      Source:
+        Owner: AWS
+        SourceIdentifier: EC2_IMDSV2_CHECK
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::EC2::Instance
+
+  # SC-7: Boundary Protection - VPC default security group blocks all traffic
+  VPCDefaultSecurityGroupClosedRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-vpc-default-sg-closed-${Environment}'
+      Description: 'NIST 800-53 SC-7: Ensures VPC default security group blocks all traffic'
+      Source:
+        Owner: AWS
+        SourceIdentifier: VPC_DEFAULT_SECURITY_GROUP_CLOSED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::EC2::SecurityGroup
+
+  # SC-7: Boundary Protection - S3 buckets block public access
+  S3PublicAccessBlockRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn:
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-s3-public-block-${Environment}'
+      Description: 'NIST 800-53 SC-7: Ensures S3 buckets block public access'
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_PUBLIC_READ_PROHIBITED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket
+
+  # ============================================================================
+  # EventBridge Rule: Config Compliance Change Notifications
+  # ============================================================================
+  ConfigComplianceChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-config-compliance-change-${Environment}'
+      Description: Alerts when Config compliance status changes to NON_COMPLIANT
+      EventPattern:
+        source:
+          - aws.config
+        detail-type:
+          - Config Rules Compliance Change
+        detail:
+          newEvaluationResult:
+            complianceType:
+              - NON_COMPLIANT
+      State: ENABLED
+      Targets:
+        - Arn: !Ref ConfigAlertTopic
+          Id: ConfigAlertTarget
+          InputTransformer:
+            InputPathsMap:
+              ruleName: $.detail.configRuleName
+              resourceType: $.detail.resourceType
+              resourceId: $.detail.resourceId
+              complianceType: $.detail.newEvaluationResult.complianceType
+              time: $.time
+            InputTemplate: |
+              "🚨 AWS Config Compliance Violation Detected"
+              ""
+              "Rule: <ruleName>"
+              "Resource Type: <resourceType>"
+              "Resource ID: <resourceId>"
+              "Status: <complianceType>"
+              "Time: <time>"
+              ""
+              "Action Required: Review and remediate this compliance violation immediately."
+
+Outputs:
+  ConfigBucketName:
+    Description: S3 bucket name for AWS Config snapshots
+    Value: !Ref ConfigBucket
+    Export:
+      Name: !Sub '${ProjectName}-config-bucket-${Environment}'
+
+  ConfigRoleArn:
+    Description: IAM role ARN for AWS Config
+    Value: !GetAtt ConfigRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-config-role-${Environment}'
+
+  ConfigAlertTopicArn:
+    Description: SNS topic ARN for compliance alerts
+    Value: !Ref ConfigAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-config-alert-topic-${Environment}'
+
+  ComplianceRulesCount:
+    Description: Total number of AWS Config compliance rules deployed
+    Value: 18
+
+  ConfigRecorderName:
+    Description: AWS Config recorder name
+    Value: !Ref ConfigRecorder

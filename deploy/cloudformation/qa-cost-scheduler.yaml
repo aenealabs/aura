@@ -1,0 +1,626 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.4 - Cost Scheduler (Schedule-Based EKS Scaling)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: qa
+    AllowedValues: [dev, qa]
+    Description: Deployment environment (dev or qa)
+
+  ClusterName:
+    Type: String
+    Default: ''
+    Description: EKS cluster name (defaults to aura-cluster-qa if empty)
+
+  NodegroupName:
+    Type: String
+    Default: ''
+    Description: EKS nodegroup name (defaults to aura-general-qa if empty)
+
+  ScaleDownHour:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 23
+    Description: Hour (UTC) to scale down (default 1 = off-hours)
+
+  ScaleUpHour:
+    Type: Number
+    Default: 12
+    MinValue: 0
+    MaxValue: 23
+    Description: Hour (UTC) to scale up (default 12 = business hours)
+
+  MinNodes:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 10
+    Description: Minimum nodes when scaled up
+
+  MaxNodes:
+    Type: Number
+    Default: 6
+    MinValue: 1
+    MaxValue: 20
+    Description: Maximum nodes when scaled up
+
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: Email for QA operations notifications (optional)
+
+  PermissionBoundaryArn:
+    Type: String
+    Default: ''
+    Description: Permission boundary ARN for IAM roles
+
+Conditions:
+  UseDefaultClusterName: !Equals [!Ref ClusterName, '']
+  UseDefaultNodegroupName: !Equals [!Ref NodegroupName, '']
+  UsePermissionBoundary: !Not [!Equals [!Ref PermissionBoundaryArn, '']]
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
+
+Resources:
+  # ============================================================================
+  # SNS TOPIC FOR NOTIFICATIONS
+  # ============================================================================
+  QAOperationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-qa-operations-${Environment}'
+      DisplayName: 'QA Environment Operations'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: qa-cost-scheduler
+
+  QAOperationsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref QAOperationsTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ============================================================================
+  # IAM ROLE FOR LAMBDA (SCOPED TO QA ONLY)
+  # ============================================================================
+  QAScalerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-qa-scaler-role-${Environment}'
+      PermissionsBoundary: !If
+        - UsePermissionBoundary
+        - !Ref PermissionBoundaryArn
+        - !Ref 'AWS::NoValue'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: QAScalerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # EKS nodegroup management - scoped to target environment
+              - Sid: EKSNodegroupManagement
+                Effect: Allow
+                Action:
+                  - eks:UpdateNodegroupConfig
+                  - eks:DescribeNodegroup
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:nodegroup/${ProjectName}-cluster-${Environment}/*'
+              # EKS cluster describe (required for nodegroup operations)
+              - Sid: EKSClusterDescribe
+                Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
+              # ASG suspend/resume (prevents Cluster Autoscaler from fighting scale-down)
+              - Sid: ASGScalingControl
+                Effect: Allow
+                Action:
+                  - autoscaling:SuspendProcesses
+                  - autoscaling:ResumeProcesses
+                  - autoscaling:DescribeAutoScalingGroups
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/eks-${ProjectName}-general-${Environment}-*'
+              # SNS publish for notifications
+              - Sid: SNSPublish
+                Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Ref QAOperationsTopic
+              # CloudWatch metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/QACostScheduler'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ============================================================================
+  # LAMBDA FUNCTION (EKS API)
+  # ============================================================================
+  QAScalerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-qa-scaler-${Environment}'
+      Description: Scales QA EKS nodegroup for cost optimization
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt QAScalerRole.Arn
+      Timeout: 120
+      MemorySize: 256
+      Environment:
+        Variables:
+          CLUSTER_NAME: !If
+            - UseDefaultClusterName
+            - !Sub '${ProjectName}-cluster-${Environment}'
+            - !Ref ClusterName
+          NODEGROUP_NAME: !If
+            - UseDefaultNodegroupName
+            - !Sub '${ProjectName}-general-${Environment}'
+            - !Ref NodegroupName
+          SNS_TOPIC_ARN: !Ref QAOperationsTopic
+          PROJECT_NAME: !Ref ProjectName
+          ENVIRONMENT: !Ref Environment
+          MIN_NODES: !Ref MinNodes
+          MAX_NODES: !Ref MaxNodes
+      Code:
+        ZipFile: |
+          """
+          QA Cost Scheduler Lambda
+
+          Scales QA EKS nodegroup to 0 outside business hours for cost optimization.
+          Uses EKS UpdateNodegroupConfig API + ASG SuspendProcesses to prevent
+          Cluster Autoscaler from fighting the scheduled scale-down.
+          """
+          import boto3
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          eks = boto3.client('eks')
+          asg = boto3.client('autoscaling')
+          sns = boto3.client('sns')
+          cloudwatch = boto3.client('cloudwatch')
+
+          CLUSTER_NAME = os.environ['CLUSTER_NAME']
+          NODEGROUP_NAME = os.environ['NODEGROUP_NAME']
+          SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+          PROJECT_NAME = os.environ.get('PROJECT_NAME', 'aura')
+          ENVIRONMENT = os.environ.get('ENVIRONMENT', 'qa')
+          MIN_NODES = int(os.environ.get('MIN_NODES', '2'))
+          MAX_NODES = int(os.environ.get('MAX_NODES', '6'))
+
+          # ASG processes to suspend during off-hours (prevents CA from scaling UP)
+          # Note: We do NOT suspend 'Terminate' because we want instances to actually terminate
+          SCALING_PROCESSES = ['Launch', 'AlarmNotification']
+
+
+          def handler(event, context):
+              """Main handler for QA scaler."""
+              action = event.get('action', 'status')
+              trigger_type = event.get('trigger', 'scheduled')
+
+              # AUDIT LOG (required for CMMC/SOX compliance)
+              audit_entry = {
+                  'timestamp': datetime.now(timezone.utc).isoformat(),
+                  'event_type': 'QA_ENVIRONMENT_CONTROL',
+                  'action': action,
+                  'trigger': trigger_type,
+                  'cluster': CLUSTER_NAME,
+                  'nodegroup': NODEGROUP_NAME,
+                  'request_id': context.aws_request_id,
+                  'function_name': context.function_name,
+              }
+              logger.info(f"AUDIT: {json.dumps(audit_entry)}")
+
+              try:
+                  if action == 'stop':
+                      return stop_environment(trigger_type)
+                  elif action == 'start':
+                      return start_environment(trigger_type)
+                  else:
+                      return get_status()
+              except Exception as e:
+                  logger.error(f"QA scaler error: {e}")
+                  publish_metric('ScalerErrors', 1)
+                  raise
+
+
+          def get_asg_name() -> str:
+              """Get the Auto Scaling Group name for the nodegroup."""
+              response = eks.describe_nodegroup(
+                  clusterName=CLUSTER_NAME,
+                  nodegroupName=NODEGROUP_NAME
+              )
+              return response['nodegroup']['resources']['autoScalingGroups'][0]['name']
+
+
+          def suspend_asg_scaling(asg_name: str) -> bool:
+              """Suspend ASG scaling processes to prevent CA interference."""
+              try:
+                  asg.suspend_processes(
+                      AutoScalingGroupName=asg_name,
+                      ScalingProcesses=SCALING_PROCESSES
+                  )
+                  logger.info(f"Suspended ASG processes {SCALING_PROCESSES} on {asg_name}")
+                  return True
+              except Exception as e:
+                  logger.error(f"Failed to suspend ASG processes: {e}")
+                  return False
+
+
+          def resume_asg_scaling(asg_name: str) -> bool:
+              """Resume ASG scaling processes."""
+              try:
+                  asg.resume_processes(
+                      AutoScalingGroupName=asg_name,
+                      ScalingProcesses=SCALING_PROCESSES
+                  )
+                  logger.info(f"Resumed ASG processes {SCALING_PROCESSES} on {asg_name}")
+                  return True
+              except Exception as e:
+                  logger.error(f"Failed to resume ASG processes: {e}")
+                  return False
+
+
+          def stop_environment(trigger: str) -> dict:
+              """
+              Stop QA environment with proper ordering:
+              1. Suspend ASG scaling (prevents CA from fighting)
+              2. Scale nodegroup to 0
+              """
+              logger.info("=== STOPPING QA ENVIRONMENT ===")
+              asg_name = get_asg_name()
+
+              # Step 1: Suspend ASG to prevent CA interference
+              logger.info("Step 1: Suspending ASG scaling processes")
+              suspend_asg_scaling(asg_name)
+
+              # Step 2: Scale nodegroup to 0
+              logger.info("Step 2: Scaling nodegroup to 0")
+              return scale_nodegroup(0, 1, 0, trigger, asg_suspended=True)
+
+
+          def start_environment(trigger: str) -> dict:
+              """
+              Start QA environment with proper ordering:
+              1. Scale nodegroup to operational size
+              2. Resume ASG scaling (CA can now manage)
+              """
+              logger.info("=== STARTING QA ENVIRONMENT ===")
+              asg_name = get_asg_name()
+
+              # Step 1: Scale nodegroup first
+              logger.info("Step 1: Scaling nodegroup to operational size")
+              result = scale_nodegroup(MIN_NODES, MAX_NODES, MIN_NODES, trigger, asg_suspended=False)
+
+              # Step 2: Resume ASG scaling
+              logger.info("Step 2: Resuming ASG scaling processes")
+              resume_asg_scaling(asg_name)
+
+              return result
+
+
+          def scale_nodegroup(min_size: int, max_size: int, desired_size: int, trigger: str, asg_suspended: bool = False) -> dict:
+              """Scale the EKS nodegroup."""
+              action = 'stop' if min_size == 0 else 'start'
+
+              logger.info(f"Scaling nodegroup {NODEGROUP_NAME}: min={min_size}, max={max_size}, desired={desired_size}")
+
+              eks.update_nodegroup_config(
+                  clusterName=CLUSTER_NAME,
+                  nodegroupName=NODEGROUP_NAME,
+                  scalingConfig={
+                      'minSize': min_size,
+                      'maxSize': max_size,
+                      'desiredSize': desired_size,
+                  }
+              )
+
+              # Publish metrics
+              publish_metric('ScaleOperations', 1)
+              publish_metric(f'Scale{"Down" if min_size == 0 else "Up"}', 1)
+
+              # Send notification
+              notify(action, trigger)
+
+              logger.info(f"Nodegroup {NODEGROUP_NAME} scaled successfully")
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'status': 'stopped' if min_size == 0 else 'started',
+                      'cluster': CLUSTER_NAME,
+                      'nodegroup': NODEGROUP_NAME,
+                      'asgScalingSuspended': asg_suspended,
+                      'scalingConfig': {
+                          'minSize': min_size,
+                          'maxSize': max_size,
+                          'desiredSize': desired_size,
+                      }
+                  })
+              }
+
+
+          def get_status() -> dict:
+              """Get current nodegroup status."""
+              response = eks.describe_nodegroup(
+                  clusterName=CLUSTER_NAME,
+                  nodegroupName=NODEGROUP_NAME
+              )
+
+              nodegroup = response['nodegroup']
+              scaling = nodegroup.get('scalingConfig', {})
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'status': nodegroup['status'],
+                      'cluster': CLUSTER_NAME,
+                      'nodegroup': NODEGROUP_NAME,
+                      'scalingConfig': scaling,
+                      'available': scaling.get('desiredSize', 0) > 0,
+                  })
+              }
+
+
+          def notify(action: str, trigger: str):
+              """Send SNS notification."""
+              now = datetime.now(timezone.utc)
+              next_event = 'business hours Mon-Fri' if action == 'stop' else 'off-hours'
+
+              message = {
+                  'action': action,
+                  'trigger': trigger,
+                  'cluster': CLUSTER_NAME,
+                  'nodegroup': NODEGROUP_NAME,
+                  'timestamp': now.isoformat(),
+                  'next_event': next_event,
+                  'environment': ENVIRONMENT,
+              }
+
+              subject = f'[Aura QA] Environment {action.upper()} ({trigger})'
+
+              sns.publish(
+                  TopicArn=SNS_TOPIC_ARN,
+                  Subject=subject,
+                  Message=json.dumps(message, indent=2),
+              )
+
+              logger.info(f"Notification sent: {subject}")
+
+
+          def publish_metric(metric_name: str, value: float):
+              """Publish CloudWatch metric."""
+              cloudwatch.put_metric_data(
+                  Namespace=f'{PROJECT_NAME}/QACostScheduler',
+                  MetricData=[
+                      {
+                          'MetricName': metric_name,
+                          'Value': value,
+                          'Unit': 'Count',
+                          'Dimensions': [
+                              {'Name': 'Environment', 'Value': ENVIRONMENT},
+                              {'Name': 'Cluster', 'Value': CLUSTER_NAME},
+                          ],
+                      },
+                  ],
+              )
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: qa-cost-scheduler
+
+  # ============================================================================
+  # EVENTBRIDGE SCHEDULER EXECUTION ROLE
+  # ============================================================================
+  SchedulerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-qa-scheduler-exec-${Environment}'
+      PermissionsBoundary: !If
+        - UsePermissionBoundary
+        - !Ref PermissionBoundaryArn
+        - !Ref 'AWS::NoValue'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref 'AWS::AccountId'
+      Policies:
+        - PolicyName: InvokeLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt QAScalerFunction.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # EVENTBRIDGE SCHEDULES
+  # ============================================================================
+  ScaleDownSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub '${ProjectName}-qa-scale-down'
+      Description: !Sub 'Scale QA EKS nodes to 0 at ${ScaleDownHour}:00 UTC daily'
+      GroupName: default
+      ScheduleExpression: !Sub 'cron(0 ${ScaleDownHour} ? * * *)'
+      ScheduleExpressionTimezone: UTC
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: !GetAtt QAScalerFunction.Arn
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: '{"action": "stop", "trigger": "scheduled"}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 300
+          MaximumRetryAttempts: 2
+
+  ScaleUpSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub '${ProjectName}-qa-scale-up'
+      Description: !Sub 'Scale QA EKS nodes to ${MinNodes} at ${ScaleUpHour}:00 UTC Mon-Fri'
+      GroupName: default
+      ScheduleExpression: !Sub 'cron(0 ${ScaleUpHour} ? * MON-FRI *)'
+      ScheduleExpressionTimezone: UTC
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: !GetAtt QAScalerFunction.Arn
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: '{"action": "start", "trigger": "scheduled"}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 300
+          MaximumRetryAttempts: 2
+
+  # ============================================================================
+  # CLOUDWATCH ALARMS
+  # ============================================================================
+  ScalerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-qa-scaler-errors-${Environment}'
+      AlarmDescription: Alert when QA scaler Lambda has errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref QAScalerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref QAOperationsTopic
+
+  ScaleOperationFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-qa-scale-operation-failures-${Environment}'
+      AlarmDescription: Alert when scale operations fail
+      MetricName: ScalerErrors
+      Namespace: !Sub '${ProjectName}/QACostScheduler'
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Cluster
+          Value: !If
+            - UseDefaultClusterName
+            - !Sub '${ProjectName}-cluster-${Environment}'
+            - !Ref ClusterName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref QAOperationsTopic
+
+  # ============================================================================
+  # CLOUDWATCH LOG GROUP
+  # ============================================================================
+  QAScalerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-qa-scaler-${Environment}'
+      RetentionInDays: 90
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  QAScalerFunctionArn:
+    Description: ARN of the QA scaler Lambda function
+    Value: !GetAtt QAScalerFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-qa-scaler-arn-${Environment}'
+
+  QAScalerFunctionName:
+    Description: Name of the QA scaler Lambda function
+    Value: !Ref QAScalerFunction
+    Export:
+      Name: !Sub '${ProjectName}-qa-scaler-name-${Environment}'
+
+  QAOperationsTopicArn:
+    Description: ARN of the QA operations SNS topic
+    Value: !Ref QAOperationsTopic
+    Export:
+      Name: !Sub '${ProjectName}-qa-operations-topic-arn-${Environment}'
+
+  ScaleDownScheduleArn:
+    Description: ARN of the scale-down schedule
+    Value: !GetAtt ScaleDownSchedule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-qa-scale-down-schedule-arn-${Environment}'
+
+  ScaleUpScheduleArn:
+    Description: ARN of the scale-up schedule
+    Value: !GetAtt ScaleUpSchedule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-qa-scale-up-schedule-arn-${Environment}'
+
+  Schedule:
+    Description: Current schedule configuration
+    Value: !Sub |
+      Scale Down: Daily at ${ScaleDownHour}:00 UTC (off-hours)
+      Scale Up: Mon-Fri at ${ScaleUpHour}:00 UTC (business hours)
+      Min Nodes: ${MinNodes}
+      Max Nodes: ${MaxNodes}

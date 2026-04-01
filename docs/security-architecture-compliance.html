@@ -1,0 +1,1683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Aura - Security Architecture &amp; Compliance Posture</title>
+<style>
+  :root {
+    --brand: #3B82F6;
+    --brand-dark: #1E40AF;
+    --critical: #DC2626;
+    --high: #EA580C;
+    --medium: #F59E0B;
+    --success: #10B981;
+    --info: #3B82F6;
+    --bg: #F8FAFC;
+    --surface: #FFFFFF;
+    --border: #E2E8F0;
+    --text: #1E293B;
+    --text-secondary: #64748B;
+    --code-bg: #F1F5F9;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .header {
+    background: linear-gradient(135deg, #0F172A 0%, #1E293B 40%, #1E3A5F 100%);
+    color: white;
+    padding: 48px 40px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    bottom: -30%;
+    left: 20%;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(220,38,38,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; position: relative; }
+  .header .subtitle { font-size: 18px; color: #94A3B8; font-weight: 400; position: relative; }
+  .header .shield-icon { font-size: 48px; position: absolute; top: 48px; right: 60px; opacity: 0.3; }
+  .header .meta-row {
+    display: flex;
+    gap: 32px;
+    margin-top: 20px;
+    position: relative;
+  }
+  .header .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #CBD5E1;
+  }
+  .header .meta-value { color: white; font-weight: 600; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 32px 40px 60px; }
+  .nav {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .nav-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 10px; font-weight: 600; }
+  .nav-links { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nav-links a {
+    color: var(--brand);
+    text-decoration: none;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #EFF6FF;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .nav-links a:hover { background: var(--brand); color: white; }
+
+  /* Executive Summary */
+  .exec-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .exec-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .exec-card .number { font-size: 36px; font-weight: 800; color: var(--brand); line-height: 1; }
+  .exec-card .number.red { color: var(--critical); }
+  .exec-card .number.green { color: var(--success); }
+  .exec-card .number.orange { color: var(--high); }
+  .exec-card .label { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+
+  section { margin-bottom: 36px; }
+  section h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--brand);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  section h3 { font-size: 16px; font-weight: 600; margin: 16px 0 10px; color: var(--text); }
+  section h4 { font-size: 14px; font-weight: 600; margin: 12px 0 6px; color: var(--text-secondary); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  .card-title { font-size: 16px; font-weight: 700; }
+  .card-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-deployed { background: #D1FAE5; color: #065F46; }
+  .badge-critical { background: #FEE2E2; color: #991B1B; }
+  .badge-high { background: #FFEDD5; color: #9A3412; }
+  .badge-medium { background: #FEF3C7; color: #92400E; }
+  .badge-info { background: #DBEAFE; color: #1E40AF; }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+  }
+  .metric-item {
+    background: var(--code-bg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .metric-item .value { font-size: 20px; font-weight: 700; color: var(--brand); }
+  .metric-item .label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 10px 0;
+  }
+  th {
+    background: var(--code-bg);
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:hover td { background: #F8FAFC; }
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  /* Layer diagram */
+  .layer-diagram {
+    background: #0F172A;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 16px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #E2E8F0;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .layer-diagram .hl-red { color: #F87171; }
+  .layer-diagram .hl-blue { color: #60A5FA; }
+  .layer-diagram .hl-green { color: #34D399; }
+  .layer-diagram .hl-yellow { color: #FBBF24; }
+  .layer-diagram .hl-purple { color: #A78BFA; }
+  .layer-diagram .hl-cyan { color: #22D3EE; }
+  .layer-diagram .hl-dim { color: #64748B; }
+
+  /* Compliance grid */
+  .compliance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .compliance-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    border-left: 4px solid var(--brand);
+  }
+  .compliance-card.nist { border-left-color: #3B82F6; }
+  .compliance-card.cmmc { border-left-color: #8B5CF6; }
+  .compliance-card.sox { border-left-color: #F59E0B; }
+  .compliance-card.govcloud { border-left-color: #10B981; }
+  .compliance-card .framework-name { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .compliance-card ul { padding-left: 16px; font-size: 12px; color: var(--text-secondary); }
+  .compliance-card li { margin-bottom: 3px; }
+
+  /* Threat matrix */
+  .threat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .threat-cell {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    border-top: 3px solid var(--critical);
+  }
+  .threat-cell .cat-id { font-size: 11px; font-weight: 700; color: var(--critical); text-transform: uppercase; }
+  .threat-cell .cat-name { font-size: 13px; font-weight: 600; margin: 4px 0; }
+  .threat-cell .cat-count { font-size: 11px; color: var(--text-secondary); }
+
+  /* ADR cards */
+  .adr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    gap: 16px;
+  }
+  .adr-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    transition: box-shadow 0.15s;
+  }
+  .adr-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .adr-card .adr-num { font-size: 11px; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: 0.5px; }
+  .adr-card .adr-title { font-size: 14px; font-weight: 700; margin: 4px 0 8px; }
+  .adr-card .adr-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.5; }
+  .adr-card .adr-stats { display: flex; gap: 16px; font-size: 12px; }
+  .adr-card .adr-stat { display: flex; align-items: center; gap: 4px; }
+  .adr-card .adr-stat .stat-val { font-weight: 700; color: var(--text); }
+
+  /* Pipeline visualization */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 16px 0;
+    overflow-x: auto;
+    padding: 8px 0;
+  }
+  .pipeline-step {
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 2px solid var(--brand);
+    border-radius: 10px;
+    padding: 12px 18px;
+    text-align: center;
+    min-width: 130px;
+  }
+  .pipeline-step .step-name { font-size: 12px; font-weight: 700; color: var(--brand); }
+  .pipeline-step .step-detail { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+  .pipeline-arrow {
+    flex-shrink: 0;
+    width: 32px;
+    text-align: center;
+    color: var(--brand);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  /* Guardrail layers */
+  .guardrail-layers {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0;
+  }
+  .gl-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 16px;
+    border-left: 4px solid;
+  }
+  .gl-row.l1 { border-left-color: #10B981; }
+  .gl-row.l2 { border-left-color: #3B82F6; }
+  .gl-row.l3 { border-left-color: #8B5CF6; }
+  .gl-row.l4 { border-left-color: #F59E0B; }
+  .gl-row.l5 { border-left-color: #EA580C; }
+  .gl-row.l6 { border-left-color: #DC2626; }
+  .gl-num { font-size: 20px; font-weight: 800; color: var(--text-secondary); width: 32px; }
+  .gl-info { flex: 1; }
+  .gl-name { font-size: 13px; font-weight: 600; }
+  .gl-tech { font-size: 11px; color: var(--text-secondary); }
+  .gl-latency { font-size: 11px; font-weight: 600; color: var(--brand); white-space: nowrap; }
+
+  /* Interception points */
+  .intercept-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin: 12px 0;
+  }
+  .intercept-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+  .intercept-item .ip-num {
+    width: 28px;
+    height: 28px;
+    background: var(--brand);
+    color: white;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .intercept-item .ip-name { font-size: 12px; font-weight: 600; }
+  .intercept-item .ip-type { font-size: 10px; color: var(--text-secondary); }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+  .progress-bar {
+    height: 8px;
+    background: #E2E8F0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 6px 0;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--success);
+  }
+
+  .callout {
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .callout.info { background: #EFF6FF; border-color: #BFDBFE; }
+  .callout.success { background: #F0FDF4; border-color: #BBF7D0; }
+  .callout-title { font-weight: 700; margin-bottom: 4px; }
+
+  .footer {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  @media (max-width: 1024px) {
+    .exec-summary { grid-template-columns: repeat(2, 1fr); }
+    .threat-grid { grid-template-columns: repeat(2, 1fr); }
+    .adr-grid { grid-template-columns: 1fr; }
+    .intercept-grid { grid-template-columns: repeat(2, 1fr); }
+    .two-col, .three-col { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 768px) {
+    .header { padding: 32px 20px; }
+    .header h1 { font-size: 28px; }
+    .container { padding: 20px; }
+    .exec-summary { grid-template-columns: 1fr 1fr; }
+    .nav-links { gap: 4px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="shield-icon">&#128737;</div>
+  <h1>Security Architecture &amp; Compliance Posture</h1>
+  <div class="subtitle">Project Aura &mdash; Autonomous Code Intelligence Platform</div>
+  <div class="meta-row">
+    <div class="meta-item">Company: <span class="meta-value">Aenea Labs</span></div>
+    <div class="meta-item">Date: <span class="meta-value">February 25, 2026</span></div>
+    <div class="meta-item">Security ADRs: <span class="meta-value">13 Deployed</span></div>
+    <div class="meta-item">Compliance: <span class="meta-value">NIST 800-53 Aligned</span></div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- Navigation -->
+<nav class="nav">
+  <div class="nav-title">Quick Navigation</div>
+  <div class="nav-links">
+    <a href="#overview">Overview</a>
+    <a href="#defense-in-depth">Defense in Depth</a>
+    <a href="#core-services">Core Security Services</a>
+    <a href="#ai-security">AI-Specific Security</a>
+    <a href="#guardrails">6-Layer Guardrails</a>
+    <a href="#runtime">Runtime Security</a>
+    <a href="#aura-attack">AURA-ATT&CK</a>
+    <a href="#scanning">Vulnerability Scanner</a>
+    <a href="#auth">Authentication &amp; Authorization</a>
+    <a href="#supply-chain">Supply Chain</a>
+    <a href="#network">Network Security</a>
+    <a href="#encryption">Encryption</a>
+    <a href="#monitoring">Monitoring &amp; Detection</a>
+    <a href="#compliance">Compliance Frameworks</a>
+    <a href="#govcloud">GovCloud Readiness</a>
+    <a href="#security-adrs">Security ADRs</a>
+    <a href="#testing">Security Testing</a>
+    <a href="#hitl">HITL &amp; Incident Response</a>
+    <a href="#stats">Key Statistics</a>
+  </div>
+</nav>
+
+<!-- Executive Summary -->
+<div class="exec-summary">
+  <div class="exec-card">
+    <div class="number">13</div>
+    <div class="label">Security ADRs Deployed</div>
+  </div>
+  <div class="exec-card">
+    <div class="number green">3,993+</div>
+    <div class="label">Security-Specific Tests</div>
+  </div>
+  <div class="exec-card">
+    <div class="number red">75</div>
+    <div class="label">AURA-ATT&CK Techniques</div>
+  </div>
+  <div class="exec-card">
+    <div class="number orange">6</div>
+    <div class="label">Guardrail Detection Layers</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">71,000+</div>
+    <div class="label">Lines of Security Code</div>
+  </div>
+  <div class="exec-card">
+    <div class="number green">189+</div>
+    <div class="label">CloudWatch Security Alarms</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">27+</div>
+    <div class="label">KMS Encryption Points</div>
+  </div>
+  <div class="exec-card">
+    <div class="number green">100%</div>
+    <div class="label">GovCloud Technical Readiness</div>
+  </div>
+</div>
+
+<!-- Section 1: Defense-in-Depth Overview -->
+<section id="overview">
+<h2 id="defense-in-depth">&#128737; Defense-in-Depth Architecture</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Project Aura implements security at every layer of the stack &mdash; from network perimeter through application logic, AI agent behavior, and supply chain integrity. The architecture addresses both traditional application security (OWASP Top 10) and emerging AI-specific threats (prompt injection, agent confusion, GraphRAG poisoning, model weight exfiltration).</p>
+
+<div class="layer-diagram"><span class="hl-dim">                    ┌──────────────────────────────────────────────────────────────┐</span>
+<span class="hl-dim">                    │</span>              <span class="hl-red">PERIMETER SECURITY</span>                                <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    WAF  ·  Shield  ·  Security Groups  ·  NACLs  ·  VPC       <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    10 VPC Endpoints  ·  Zero-Egress Sandboxes                  <span class="hl-dim">│</span>
+<span class="hl-dim">                    ├──────────────────────────────────────────────────────────────┤</span>
+<span class="hl-dim">                    │</span>              <span class="hl-blue">IDENTITY &amp; ACCESS</span>                                  <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    JWT + OAuth 2.0  ·  Argon2id  ·  MFA  ·  RBAC + ABAC        <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    4-Tier Capability Governance  ·  IRSA for K8s Pods           <span class="hl-dim">│</span>
+<span class="hl-dim">                    ├──────────────────────────────────────────────────────────────┤</span>
+<span class="hl-dim">                    │</span>              <span class="hl-green">AI &amp; AGENT SECURITY</span>                                <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    6-Layer Semantic Guardrails  ·  16 Constitutional Principles <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    Behavioral Baselines  ·  Honeypot Traps  ·  AURA-ATT&amp;CK     <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    8 Traffic Interception Points  ·  Shadow Agent Detection     <span class="hl-dim">│</span>
+<span class="hl-dim">                    ├──────────────────────────────────────────────────────────────┤</span>
+<span class="hl-dim">                    │</span>              <span class="hl-yellow">DATA INTEGRITY</span>                                     <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    Context Provenance  ·  Trust Scoring  ·  Anomaly Detection   <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    KMS Encryption (27+ points)  ·  Automatic Quarantine         <span class="hl-dim">│</span>
+<span class="hl-dim">                    ├──────────────────────────────────────────────────────────────┤</span>
+<span class="hl-dim">                    │</span>              <span class="hl-purple">SUPPLY CHAIN</span>                                       <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    SBOM (CycloneDX + SPDX)  ·  Sigstore Signing  ·  Rekor Log  <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    Dependency Confusion Detection  ·  Private ECR Images Only   <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    K8s Admission Control  ·  Container Escape Detection         <span class="hl-dim">│</span>
+<span class="hl-dim">                    ├──────────────────────────────────────────────────────────────┤</span>
+<span class="hl-dim">                    │</span>              <span class="hl-cyan">MONITORING &amp; RESPONSE</span>                              <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    GuardDuty  ·  AWS Config (20+ rules)  ·  CloudTrail          <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    189+ CloudWatch Alarms  ·  EventBridge  ·  HITL Workflow      <span class="hl-dim">│</span>
+<span class="hl-dim">                    │</span>    P1-P5 Alert Classification  ·  7-Year Audit Retention (SOX)  <span class="hl-dim">│</span>
+<span class="hl-dim">                    └──────────────────────────────────────────────────────────────┘</span></div>
+</section>
+
+<!-- Section 2: Core Security Services -->
+<section id="core-services">
+<h2>&#128272; Core Security Services</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Five foundational security services deployed across all API endpoints, providing input validation, secrets detection, audit logging, alerting, and integration middleware.</p>
+
+<table>
+  <thead>
+    <tr><th>Service</th><th>Lines</th><th>Tests</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Input Validation</strong><br><code>input_validation_service.py</code></td>
+      <td>948</td>
+      <td>35</td>
+      <td>SQL injection, XSS, command injection, path traversal, SSRF, prompt injection detection and sanitization</td>
+    </tr>
+    <tr>
+      <td><strong>Secrets Detection</strong><br><code>secrets_detection_service.py</code></td>
+      <td>797</td>
+      <td>123</td>
+      <td>Scans for 30+ secret types: AWS keys, API tokens, private keys, database credentials, JWTs</td>
+    </tr>
+    <tr>
+      <td><strong>Security Audit</strong><br><code>security_audit_service.py</code></td>
+      <td>518</td>
+      <td>76</td>
+      <td>Structured event logging: auth, authorization, threats, input validation, agent security, GraphRAG, system events</td>
+    </tr>
+    <tr>
+      <td><strong>Security Alerts</strong><br><code>security_alerts_service.py</code></td>
+      <td>597</td>
+      <td>29</td>
+      <td>Actionable alert generation from security events; P1-P5 classification; HITL workflow integration</td>
+    </tr>
+    <tr>
+      <td><strong>API Integration</strong><br><code>security_integration.py</code></td>
+      <td>&mdash;</td>
+      <td>39</td>
+      <td>FastAPI decorator-based integration across all endpoints; request/response security middleware</td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr style="font-weight:700;background:#F8FAFC;">
+      <td>Total</td>
+      <td>2,860</td>
+      <td>286</td>
+      <td></td>
+    </tr>
+  </tfoot>
+</table>
+
+<h3>Alert Priority Classification</h3>
+<table>
+  <thead><tr><th>Priority</th><th>Severity</th><th>Response SLA</th><th>Examples</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-critical">P1</span></td><td>Critical</td><td>Immediate</td><td>Command injection, secrets exposure, active breach indicators</td></tr>
+    <tr><td><span class="badge badge-high">P2</span></td><td>High</td><td>1 hour</td><td>Prompt injection, privilege escalation, unauthorized access</td></tr>
+    <tr><td><span class="badge badge-medium">P3</span></td><td>Medium</td><td>4 hours</td><td>Validation failures, suspicious patterns, unusual access</td></tr>
+    <tr><td><span class="badge" style="background:#E0E7FF;color:#3730A3;">P4</span></td><td>Low</td><td>24 hours</td><td>Configuration drift, minor policy violations</td></tr>
+    <tr><td><span class="badge badge-info">P5</span></td><td>Info</td><td>Next business day</td><td>Audit events, informational findings</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- Section 3: AI-Specific Security -->
+<section id="ai-security">
+<h2>&#129302; AI-Specific Threat Protection</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Beyond traditional application security, Aura addresses threats unique to autonomous AI agent systems: prompt injection, agent confusion, context poisoning, model artifact theft, and training data corruption.</p>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Constitutional AI (ADR-063)</div>
+        <div class="card-subtitle">Critique-revision pipeline for all agent outputs</div>
+      </div>
+      <span class="badge badge-deployed">Deployed</span>
+    </div>
+    <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="metric-item"><div class="value">16</div><div class="label">Principles</div></div>
+      <div class="metric-item"><div class="value">535</div><div class="label">Tests</div></div>
+      <div class="metric-item"><div class="value">&lt;500ms</div><div class="label">P95 Latency</div></div>
+    </div>
+    <h4>Principle Categories</h4>
+    <table>
+      <tbody>
+        <tr><td><strong>Safety (3)</strong></td><td>Security-first code gen, non-destructive defaults, sandbox containment</td></tr>
+        <tr><td><strong>Compliance (2)</strong></td><td>Regulatory compliance, decision audit trail</td></tr>
+        <tr><td><strong>Transparency (3)</strong></td><td>Honest uncertainty, transparent reasoning, genuine assistance</td></tr>
+        <tr><td><strong>Anti-Sycophancy (2)</strong></td><td>Independent judgment, constructive pushback</td></tr>
+        <tr><td><strong>Code Quality (2)</strong></td><td>Long-term maintainability, minimal necessary change</td></tr>
+        <tr><td><strong>Context (2)</strong></td><td>Codebase pattern consistency, context window preservation</td></tr>
+        <tr><td><strong>Meta (1)</strong></td><td>Principle conflict resolution</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Agent Capability Governance (ADR-066)</div>
+        <div class="card-subtitle">4-tier runtime enforcement for agent tool access</div>
+      </div>
+      <span class="badge badge-deployed">Deployed</span>
+    </div>
+    <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="metric-item"><div class="value">4</div><div class="label">Tiers</div></div>
+      <div class="metric-item"><div class="value">322</div><div class="label">Tests</div></div>
+      <div class="metric-item"><div class="value">5.4K</div><div class="label">Lines</div></div>
+    </div>
+    <h4>Authorization Tiers</h4>
+    <table>
+      <tbody>
+        <tr><td><strong>Tier 1</strong></td><td>FULL_AUTONOMOUS &mdash; No approval needed (safe operations)</td></tr>
+        <tr><td><strong>Tier 2</strong></td><td>CRITICAL_HITL &mdash; Human preferred for sensitive ops</td></tr>
+        <tr><td><strong>Tier 3</strong></td><td>AUDIT_ONLY &mdash; Logged, no blocking (observability)</td></tr>
+        <tr><td><strong>Tier 4</strong></td><td>FULL_HITL &mdash; Human required (destructive actions)</td></tr>
+      </tbody>
+    </table>
+    <div class="callout info" style="margin-top:10px;">
+      <div class="callout-title">Deny-by-Default</div>
+      Unregistered tools are automatically blocked. Dynamic capability grants are time-limited and scope-limited.
+    </div>
+  </div>
+</div>
+
+<div class="two-col" style="margin-top:16px;">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Context Provenance &amp; Integrity (ADR-067)</div>
+        <div class="card-subtitle">Prevents GraphRAG context poisoning attacks</div>
+      </div>
+      <span class="badge badge-deployed">Deployed</span>
+    </div>
+    <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="metric-item"><div class="value">8</div><div class="label">Services</div></div>
+      <div class="metric-item"><div class="value">275</div><div class="label">Tests</div></div>
+      <div class="metric-item"><div class="value">&gt;99%</div><div class="label">Detection Rate</div></div>
+    </div>
+    <h4>Threat Model Coverage</h4>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li>T1: Direct Repository Poisoning</li>
+      <li>T2: Supply Chain Contamination</li>
+      <li>T3: Gradual Context Drift</li>
+      <li>T4: Metadata Manipulation</li>
+      <li>T5: Embedding-Space Attack</li>
+      <li>T6: Authorization Bypass</li>
+      <li>T7: Time-Based Attacks</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">ML-Based Anomaly Detection (ADR-072)</div>
+        <div class="card-subtitle">Statistical baselines + honeypot traps</div>
+      </div>
+      <span class="badge badge-deployed">Deployed</span>
+    </div>
+    <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="metric-item"><div class="value">5</div><div class="label">Honeypots</div></div>
+      <div class="metric-item"><div class="value">113</div><div class="label">Tests</div></div>
+      <div class="metric-item"><div class="value">0</div><div class="label">False Positives*</div></div>
+    </div>
+    <h4>Honeypot Capabilities (Zero False Positive by Design)</h4>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li><code>admin_override</code> &mdash; Emergency administrative bypass trap</li>
+      <li><code>export_all_credentials</code> &mdash; Bulk credential export trap</li>
+      <li><code>disable_audit_logging</code> &mdash; Audit trail bypass trap</li>
+      <li><code>bypass_hitl_approval</code> &mdash; Approval bypass trap</li>
+      <li><code>access_all_tenants</code> &mdash; Cross-tenant access trap</li>
+    </ul>
+    <p style="font-size:11px;color:var(--text-secondary);margin-top:8px;">* Only honeypot triggers allow auto-quarantine. ML detections require HITL approval.</p>
+  </div>
+</div>
+
+<div class="two-col" style="margin-top:16px;">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">AI Model Security (ADR-079)</div>
+        <div class="card-subtitle">Protecting model weights and training data</div>
+      </div>
+      <span class="badge badge-deployed">Deployed</span>
+    </div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li><strong>Model Weight Guardian:</strong> Unauthorized access detection, exfiltration pattern monitoring, weight fingerprinting for leak detection</li>
+      <li><strong>Training Data Sentinel:</strong> Poisoning attempt detection, data pipeline integrity monitoring, malicious example identification, backdoor trigger detection</li>
+      <li><strong>Differential Privacy:</strong> Verification of privacy-preserving training techniques</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Universal Explainability (ADR-068)</div>
+        <div class="card-subtitle">Decision transparency for all agent operations</div>
+      </div>
+      <span class="badge badge-deployed">Deployed</span>
+    </div>
+    <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="metric-item"><div class="value">8.2K</div><div class="label">Lines</div></div>
+      <div class="metric-item"><div class="value">227</div><div class="label">Tests</div></div>
+      <div class="metric-item"><div class="value">3</div><div class="label">Coverage Levels</div></div>
+    </div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;margin-top:8px;">
+      <li><strong>CRITICAL (5%):</strong> Full reasoning chain required</li>
+      <li><strong>SIGNIFICANT (15%):</strong> Partial reasoning with alternatives</li>
+      <li><strong>NORMAL (80%):</strong> Summary explanations</li>
+    </ul>
+  </div>
+</div>
+</section>
+
+<!-- Section 4: 6-Layer Semantic Guardrails -->
+<section id="guardrails">
+<h2>&#128170; 6-Layer Semantic Guardrails Engine (ADR-065)</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Goes beyond pattern-based security with embedding similarity and LLM-as-judge for comprehensive semantic analysis. Detects 13+ distinct bypass vectors that evade traditional defenses. 793 tests, 12,000+ lines of code, >95% accuracy on novel jailbreak variants.</p>
+
+<div class="guardrail-layers">
+  <div class="gl-row l1">
+    <div class="gl-num">1</div>
+    <div class="gl-info">
+      <div class="gl-name">Canonical Normalization</div>
+      <div class="gl-tech">Unicode NFKC &middot; Whitespace collapse &middot; Encoding decode &middot; Homograph mapping &middot; Control char removal</div>
+    </div>
+    <div class="gl-latency">~5ms</div>
+  </div>
+  <div class="gl-row l2">
+    <div class="gl-num">2</div>
+    <div class="gl-info">
+      <div class="gl-name">Fast-Path Pattern Detection</div>
+      <div class="gl-tech">45+ regex patterns post-normalization &middot; SHA-256 blocklist cache</div>
+    </div>
+    <div class="gl-latency">~10ms</div>
+  </div>
+  <div class="gl-row l3">
+    <div class="gl-num">3</div>
+    <div class="gl-info">
+      <div class="gl-name">Embedding-Based Threat Detection</div>
+      <div class="gl-tech">OpenSearch k-NN &middot; 4,300+ threat embeddings: 2,500 jailbreaks, 1,500 prompt injections, 800 role confusion, 500 data exfiltration</div>
+    </div>
+    <div class="gl-latency">~50ms</div>
+  </div>
+  <div class="gl-row l4">
+    <div class="gl-num">4</div>
+    <div class="gl-info">
+      <div class="gl-name">LLM-as-Judge Intent Classification</div>
+      <div class="gl-tech">Bedrock Claude intent evaluation &middot; Contextual threat assessment</div>
+    </div>
+    <div class="gl-latency">~150ms</div>
+  </div>
+  <div class="gl-row l5">
+    <div class="gl-num">5</div>
+    <div class="gl-info">
+      <div class="gl-name">Adversarial Robustness</div>
+      <div class="gl-tech">Perturbation detection &middot; Cross-layer signal validation &middot; Evasion-resistant scoring</div>
+    </div>
+    <div class="gl-latency">~20ms</div>
+  </div>
+  <div class="gl-row l6">
+    <div class="gl-num">6</div>
+    <div class="gl-info">
+      <div class="gl-name">Transparent Threat Scoring &amp; Response</div>
+      <div class="gl-tech">Explainable threat assessment &middot; Configurable policies &middot; Context-aware blocking</div>
+    </div>
+    <div class="gl-latency">~5ms</div>
+  </div>
+</div>
+
+<h3>Bypass Vectors Detected (13+)</h3>
+<div class="metric-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">
+  <div class="metric-item"><div class="label">Unicode whitespace</div></div>
+  <div class="metric-item"><div class="label">Homograph attacks</div></div>
+  <div class="metric-item"><div class="label">Zero-width characters</div></div>
+  <div class="metric-item"><div class="label">RTL overrides</div></div>
+  <div class="metric-item"><div class="label">Mixed case tricks</div></div>
+  <div class="metric-item"><div class="label">Comment injection</div></div>
+  <div class="metric-item"><div class="label">String concatenation</div></div>
+  <div class="metric-item"><div class="label">Base64/URL/HTML encoding</div></div>
+  <div class="metric-item"><div class="label">Semantic rephrasing</div></div>
+  <div class="metric-item"><div class="label">Indirect injection</div></div>
+  <div class="metric-item"><div class="label">Role confusion</div></div>
+  <div class="metric-item"><div class="label">Instruction smuggling</div></div>
+  <div class="metric-item"><div class="label">Multi-turn attacks</div></div>
+</div>
+</section>
+
+<!-- Section 5: Runtime Agent Security -->
+<section id="runtime">
+<h2>&#128680; Runtime Agent Security Platform (ADR-083)</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Comprehensive runtime visibility into agent behavior with traffic interception, shadow agent detection, behavioral baselines, and automated red teaming. 10,300+ lines of code, 848 tests.</p>
+
+<h3>8 Traffic Interception Points</h3>
+<div class="intercept-grid">
+  <div class="intercept-item">
+    <div class="ip-num">1</div>
+    <div class="ip-name">FastAPI Middleware</div>
+    <div class="ip-type">HTTP Request/Response</div>
+  </div>
+  <div class="intercept-item">
+    <div class="ip-num">2</div>
+    <div class="ip-name">Capability Governance</div>
+    <div class="ip-type">Tool Invocations</div>
+  </div>
+  <div class="intercept-item">
+    <div class="ip-num">3</div>
+    <div class="ip-name">LLM Prompt Sanitizer</div>
+    <div class="ip-type">Prompts/Completions</div>
+  </div>
+  <div class="intercept-item">
+    <div class="ip-num">4</div>
+    <div class="ip-name">MCP Tool Server</div>
+    <div class="ip-type">MCP Tool Calls</div>
+  </div>
+  <div class="intercept-item">
+    <div class="ip-num">5</div>
+    <div class="ip-name">Execution Checkpoints</div>
+    <div class="ip-type">Agent State Snapshots</div>
+  </div>
+  <div class="intercept-item">
+    <div class="ip-num">6</div>
+    <div class="ip-name">K8s Admission</div>
+    <div class="ip-type">Container Operations</div>
+  </div>
+  <div class="intercept-item">
+    <div class="ip-num">7</div>
+    <div class="ip-name">Container Escape</div>
+    <div class="ip-type">Syscall Monitoring</div>
+  </div>
+  <div class="intercept-item">
+    <div class="ip-num">8</div>
+    <div class="ip-name">Constitutional AI</div>
+    <div class="ip-type">Revised Outputs</div>
+  </div>
+</div>
+
+<h3>Runtime-to-Code Correlation Pipeline</h3>
+<div class="pipeline">
+  <div class="pipeline-step"><div class="step-name">Runtime Event</div><div class="step-detail">CloudTrail / GuardDuty</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">AWS Resource</div><div class="step-detail">ARN Identification</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">IaC Resource</div><div class="step-detail">CFn / Terraform</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">Git File</div><div class="step-detail">Source Location</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">Git Blame</div><div class="step-detail">Author Attribution</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">Code Graph</div><div class="step-detail">Neptune CALL_GRAPH</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step" style="border-color:var(--success);"><div class="step-name" style="color:var(--success);">Remediation</div><div class="step-detail">Patch + HITL</div></div>
+</div>
+</section>
+
+<!-- Section 6: AURA-ATT&CK -->
+<section id="aura-attack">
+<h2>&#9760;&#65039; AURA-ATT&CK Adversarial Taxonomy</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Custom MITRE ATT&CK-style framework specifically designed for autonomous AI agent threats. 75 techniques across 8 categories power automated red teaming against Aura's own agent fleet.</p>
+
+<div class="threat-grid">
+  <div class="threat-cell">
+    <div class="cat-id">ATA-01</div>
+    <div class="cat-name">Prompt Injection</div>
+    <div class="cat-count">12 techniques</div>
+  </div>
+  <div class="threat-cell">
+    <div class="cat-id">ATA-02</div>
+    <div class="cat-name">Tool Abuse</div>
+    <div class="cat-count">10 techniques</div>
+  </div>
+  <div class="threat-cell">
+    <div class="cat-id">ATA-03</div>
+    <div class="cat-name">Agent Confusion</div>
+    <div class="cat-count">9 techniques</div>
+  </div>
+  <div class="threat-cell">
+    <div class="cat-id">ATA-04</div>
+    <div class="cat-name">Data Exfiltration</div>
+    <div class="cat-count">8 techniques</div>
+  </div>
+  <div class="threat-cell">
+    <div class="cat-id">ATA-05</div>
+    <div class="cat-name">Privilege Escalation</div>
+    <div class="cat-count">10 techniques</div>
+  </div>
+  <div class="threat-cell">
+    <div class="cat-id">ATA-06</div>
+    <div class="cat-name">Denial of Service</div>
+    <div class="cat-count">8 techniques</div>
+  </div>
+  <div class="threat-cell">
+    <div class="cat-id">ATA-07</div>
+    <div class="cat-name">Supply Chain</div>
+    <div class="cat-count">9 techniques</div>
+  </div>
+  <div class="threat-cell">
+    <div class="cat-id">ATA-08</div>
+    <div class="cat-name">Evasion</div>
+    <div class="cat-count">9 techniques</div>
+  </div>
+</div>
+</section>
+
+<!-- Section 7: Vulnerability Scanner -->
+<section id="scanning">
+<h2>&#128269; Native Vulnerability Scanning Engine (ADR-084)</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">LLM-powered vulnerability scanning leveraging Hybrid GraphRAG (Neptune + OpenSearch) for structural context that competitors cannot achieve. 3-phase adversarial verification with 4-layer isolation model.</p>
+
+<div class="two-col">
+  <div>
+    <h3>3-Phase LLM Analysis Pipeline</h3>
+    <div class="pipeline" style="flex-direction:column;align-items:stretch;">
+      <div class="card" style="border-left:4px solid var(--success);margin-bottom:8px;">
+        <strong>Phase 1: Discovery</strong> (Claude 3.5 Haiku)
+        <br><span style="font-size:12px;color:var(--text-secondary);">Broad sweep with import graph context &middot; Cost-efficient first pass</span>
+      </div>
+      <div class="card" style="border-left:4px solid var(--brand);margin-bottom:8px;">
+        <strong>Phase 2: Analysis</strong> (Claude 3.5 Sonnet)
+        <br><span style="font-size:12px;color:var(--text-secondary);">Deep dive with cross-file reasoning &middot; 2-hop call graph traversal</span>
+      </div>
+      <div class="card" style="border-left:4px solid var(--critical);margin-bottom:0;">
+        <strong>Phase 3: Verification</strong> (Adversarial)
+        <br><span style="font-size:12px;color:var(--text-secondary);">LLM argues against own findings &middot; Counter-argument survival scoring</span>
+      </div>
+    </div>
+
+    <h3>5-Signal Confidence Calibration</h3>
+    <table>
+      <tbody>
+        <tr><td>LLM Self-Confidence</td><td style="text-align:right;font-weight:700;">0.25</td></tr>
+        <tr><td>Counter-Argument Survival</td><td style="text-align:right;font-weight:700;">0.25</td></tr>
+        <tr><td>Graph Evidence (Neptune)</td><td style="text-align:right;font-weight:700;">0.25</td></tr>
+        <tr><td>CGE Coherence (ADR-081)</td><td style="text-align:right;font-weight:700;">0.15</td></tr>
+        <tr><td>Titan Memory Historical (ADR-024)</td><td style="text-align:right;font-weight:700;">0.10</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    <h3>4-Layer Isolation Model</h3>
+    <table>
+      <thead><tr><th>Layer</th><th>Control</th><th>Implementation</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. Ingestion</strong></td><td>Safe git clone</td><td>Hooks disabled, symlink removal, 500MB limit</td></tr>
+        <tr><td><strong>2. Fargate</strong></td><td>Ephemeral container</td><td>Read-only rootfs, 0 Linux caps, 30-min TTL</td></tr>
+        <tr><td><strong>3. Network</strong></td><td>Zero-egress</td><td>VPC endpoints only, no IGW route</td></tr>
+        <tr><td><strong>4. Prompt</strong></td><td>Code-as-data</td><td>ADR-065 guardrails, schema enforcement</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Cost per Scan (100K LOC repo)</h3>
+    <table>
+      <thead><tr><th>Component</th><th>Raw</th><th>Optimized</th></tr></thead>
+      <tbody>
+        <tr><td>Bedrock tokens</td><td>$81.54</td><td>$18-25</td></tr>
+        <tr><td>Fargate compute</td><td>$0.56</td><td>$0.56</td></tr>
+        <tr><td>Data services</td><td>$0.08</td><td>$0.08</td></tr>
+        <tr style="font-weight:700;"><td>Total per scan</td><td>$82.18</td><td>$18-25</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Infrastructure (Layer 9)</h3>
+    <p style="font-size:12px;color:var(--text-secondary);">9 CloudFormation stacks deployed to dev: DynamoDB, S3, KMS, SNS, IAM, Security Groups, ECS, Step Functions, ECR, CloudWatch, EventBridge, Lambda cleanup</p>
+  </div>
+</div>
+</section>
+
+<!-- Section 8: Authentication & Authorization -->
+<section id="auth">
+<h2>&#128274; Authentication &amp; Authorization</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title" style="margin-bottom:12px;">Authentication</div>
+    <table>
+      <tbody>
+        <tr><td><strong>JWT Validation</strong></td><td>Token validation on all API endpoints with proper expiry and signature checks</td></tr>
+        <tr><td><strong>OAuth 2.0</strong></td><td>GitHub and GitLab OAuth integration (ADR-048) with scoped token delegation</td></tr>
+        <tr><td><strong>Argon2id</strong></td><td>NIST-approved password hashing with configurable cost parameters</td></tr>
+        <tr><td><strong>MFA</strong></td><td>Multi-factor authentication via Cognito/identity provider</td></tr>
+        <tr><td><strong>API Keys</strong></td><td>Service-to-service authentication with automatic key rotation</td></tr>
+        <tr><td><strong>IRSA</strong></td><td>IAM Roles for Service Accounts &mdash; Kubernetes pod-level identity (ADR-003)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="margin-bottom:12px;">Authorization (ABAC &mdash; ADR-073)</div>
+    <table>
+      <thead><tr><th>Attribute Type</th><th>Examples</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Subject</strong></td><td>user_id, tenant_id, roles[], clearance_level, risk_score</td></tr>
+        <tr><td><strong>Resource</strong></td><td>resource_type, tenant_id, sensitivity, classification, tags{}</td></tr>
+        <tr><td><strong>Context</strong></td><td>request_time, source_ip, mfa_verified, device_trust, session_risk</td></tr>
+        <tr><td><strong>Action</strong></td><td>Read vs write, bulk vs single, sync vs async</td></tr>
+      </tbody>
+    </table>
+    <div class="callout info" style="margin-top:10px;">
+      <div class="callout-title">Multi-Tenant Isolation</div>
+      Per-tenant resource scoping enforced at the policy engine level. Cross-tenant access requires explicit clearance elevation + MFA verification. 115 tests, 1,300+ lines.
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- Section 9: Supply Chain Security -->
+<section id="supply-chain">
+<h2>&#128230; Supply Chain Security (ADR-076)</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">End-to-end software supply chain integrity from base container images through dependency analysis, SBOM generation, cryptographic attestation, and license compliance. 4,500+ lines, 168 tests.</p>
+
+<div class="three-col">
+  <div class="card">
+    <div class="card-title" style="margin-bottom:8px;">SBOM &amp; Attestation</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li>CycloneDX 1.5 + SPDX 2.3 formats</li>
+      <li>Sigstore keyless signing (OIDC)</li>
+      <li>Offline HSM/YubiKey support</li>
+      <li>Rekor transparency log recording</li>
+      <li>VEX vulnerability exception docs</li>
+      <li>K8s admission: SBOM required for deploy</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:8px;">Dependency Confusion Detection</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li>Levenshtein distance (&le;2) to top 1000 pkgs</li>
+      <li>Org namespace hijacking detection</li>
+      <li>Combosquatting pattern recognition</li>
+      <li>Package risk scoring</li>
+      <li>Maintainer reputation analysis</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:8px;">License Compliance</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li>SPDX identifier matching (&gt;99% accuracy)</li>
+      <li>Permissive: MIT, Apache-2.0, BSD</li>
+      <li>Weak Copyleft: LGPL, MPL</li>
+      <li>Strong Copyleft: GPL, AGPL</li>
+      <li>Commercial/proprietary detection</li>
+      <li>NOTICE file auto-generation</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Container Security (Mandatory)</h3>
+<div class="callout">
+  <div class="callout-title">All Builds MUST Use Private ECR Base Images</div>
+  <code>aura-base-images/python:3.11-slim</code> &middot;
+  <code>aura-base-images/alpine:3.19</code> &middot;
+  <code>aura-base-images/node:20-slim</code> &middot;
+  <code>aura-base-images/nginx:1.25</code>
+  <br><br>
+  Public registries (Docker Hub, public ECR, GHCR) are prohibited. Private images are scanned, hardened, and tracked with vulnerability scanning. K8s admission controller enforces approved registry images.
+</div>
+
+<h3>Cloud Runtime Security (ADR-077)</h3>
+<div class="metric-grid" style="grid-template-columns:repeat(4,1fr);">
+  <div class="metric-item"><div class="value">3.2K</div><div class="label">Lines of Code</div></div>
+  <div class="metric-item"><div class="value">155</div><div class="label">Tests</div></div>
+  <div class="metric-item"><div class="value">3</div><div class="label">Core Services</div></div>
+  <div class="metric-item"><div class="value">eBPF</div><div class="label">Syscall Monitoring</div></div>
+</div>
+<ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;margin-top:8px;">
+  <li><strong>K8s Admission Controller:</strong> ValidatingWebhook for Pod/Deployment/StatefulSet &mdash; SBOM verification, image signing (Sigstore/cosign), CVE blocking, OPA/Gatekeeper policies</li>
+  <li><strong>Container Escape Detector:</strong> eBPF-based syscall monitoring &mdash; Privilege escalation, namespace escape, kernel exploit, symlink attack detection</li>
+  <li><strong>Runtime-to-Code Correlator:</strong> CloudTrail + GuardDuty + VPC Flow &rarr; IaC &rarr; Git Blame &rarr; Neptune code graph</li>
+</ul>
+</section>
+
+<!-- Section 10: Network Security -->
+<section id="network">
+<h2>&#127760; Network Security</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">VPC Architecture</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li><strong>CIDR:</strong> 10.0.0.0/16 across 3 Availability Zones</li>
+      <li><strong>Private Subnets:</strong> Data layer (Neptune, OpenSearch, DynamoDB)</li>
+      <li><strong>Public Subnets:</strong> ALB only (no direct EC2 exposure)</li>
+      <li><strong>VPC Endpoints:</strong> 10 total (2 gateway + 8 interface) for AWS service access without traversing internet</li>
+      <li><strong>Sandbox Networks:</strong> Zero-egress ephemeral VPCs for patch testing</li>
+      <li><strong>dnsmasq:</strong> 3-tier DNS architecture (EKS DaemonSet + ECS Fargate + Sandbox)</li>
+    </ul>
+    <h4>VPC Endpoints</h4>
+    <table>
+      <tbody>
+        <tr><td>Gateway</td><td>S3, DynamoDB</td></tr>
+        <tr><td>Interface</td><td>Bedrock, Neptune, OpenSearch, CloudWatch, Secrets Manager, SSM, EventBridge, SNS</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">Perimeter Defenses</div>
+    <table>
+      <thead><tr><th>Layer</th><th>Controls</th></tr></thead>
+      <tbody>
+        <tr><td><strong>WAF</strong></td><td>ALB WAF rules, bot protection, rate limiting, IP reputation, geo restrictions</td></tr>
+        <tr><td><strong>Shield</strong></td><td>AWS Shield Standard (automatic DDoS), Shield Advanced (optional)</td></tr>
+        <tr><td><strong>Security Groups</strong></td><td>Default deny, app-specific ingress, restricted egress. Groups: EKS Cluster, EKS Node, Neptune, RDS, Lambda, ALB</td></tr>
+        <tr><td><strong>NACLs</strong></td><td>Restrictive ingress/egress rules per subnet tier</td></tr>
+        <tr><td><strong>TLS</strong></td><td>1.2+ minimum for all service-to-service communication</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</section>
+
+<!-- Section 11: Encryption -->
+<section id="encryption">
+<h2>&#128272; Encryption</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">Encryption at Rest (KMS Customer-Managed Keys)</div>
+    <table>
+      <thead><tr><th>Service</th><th>Encryption</th></tr></thead>
+      <tbody>
+        <tr><td>Neptune</td><td>Customer-managed KMS with automatic key rotation</td></tr>
+        <tr><td>OpenSearch</td><td>Customer-managed KMS</td></tr>
+        <tr><td>DynamoDB</td><td>Customer-managed KMS (89+ tables)</td></tr>
+        <tr><td>S3</td><td>SSE-KMS with bucket policies enforcing encryption</td></tr>
+        <tr><td>ElastiCache</td><td>Customer-managed KMS</td></tr>
+        <tr><td>EBS</td><td>Customer-managed KMS for all node group volumes</td></tr>
+        <tr><td>CloudWatch Logs</td><td>KMS encryption where supported</td></tr>
+        <tr><td>Secrets Manager</td><td>Customer-managed KMS</td></tr>
+      </tbody>
+    </table>
+    <div class="callout success" style="margin-top:10px;">
+      <div class="callout-title">Key Rotation</div>
+      All KMS keys have <code>EnableKeyRotation: true</code>. Key policies scoped to specific services via <code>kms:ViaService</code> condition.
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">Encryption in Transit</div>
+    <table>
+      <thead><tr><th>Channel</th><th>Protocol</th></tr></thead>
+      <tbody>
+        <tr><td>API endpoints</td><td>TLS 1.2+ (ALB termination)</td></tr>
+        <tr><td>Service-to-service</td><td>TLS 1.2+ (mutual TLS for sensitive)</td></tr>
+        <tr><td>Neptune connections</td><td>TLS 1.2 (enforced)</td></tr>
+        <tr><td>OpenSearch queries</td><td>HTTPS only (enforced via policy)</td></tr>
+        <tr><td>VPC Endpoints</td><td>AWS PrivateLink (no internet traversal)</td></tr>
+        <tr><td>SBOM attestation</td><td>Sigstore/cosign signing</td></tr>
+      </tbody>
+    </table>
+    <div class="metric-grid" style="grid-template-columns:repeat(2,1fr);margin-top:12px;">
+      <div class="metric-item"><div class="value">27+</div><div class="label">KMS Encryption Points</div></div>
+      <div class="metric-item"><div class="value">TLS 1.2+</div><div class="label">Minimum Protocol</div></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- Section 12: Monitoring & Detection -->
+<section id="monitoring">
+<h2>&#128200; Monitoring &amp; Detection</h2>
+
+<div class="three-col">
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">GuardDuty (Layer 8.2)</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li>Multi-source threat detection (EC2, VPC, S3, EKS)</li>
+      <li>S3 data event protection enabled</li>
+      <li>EKS audit log monitoring enabled</li>
+      <li>Malware protection for EBS enabled</li>
+      <li>15-minute finding publication frequency</li>
+      <li>Automatic SNS alerting</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">AWS Config (Layer 8.1)</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li>20+ managed compliance rules</li>
+      <li>Continuous drift detection</li>
+      <li>Config snapshots every 6h (1h prod)</li>
+      <li>Non-compliance SNS alerts</li>
+      <li>7-year retention (prod)</li>
+      <li>90-day retention (dev/qa)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">CloudWatch</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li>189+ alarms for security events</li>
+      <li>Custom metrics for agent behavior</li>
+      <li>Log aggregation and analysis</li>
+      <li>Real-time alerting via SNS</li>
+      <li>Security posture dashboards</li>
+      <li>365-day log retention (prod)</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Event Processing Architecture</h3>
+<div class="pipeline">
+  <div class="pipeline-step"><div class="step-name">CloudTrail</div><div class="step-detail">API Activity</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">EventBridge</div><div class="step-detail">Event Routing</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">Lambda</div><div class="step-detail">Processing</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">DynamoDB</div><div class="step-detail">Event Storage</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">SNS</div><div class="step-detail">Alert Delivery</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step" style="border-color:var(--critical);"><div class="step-name" style="color:var(--critical);">HITL Review</div><div class="step-detail">Human Decision</div></div>
+</div>
+
+<h3>Log Retention Policy</h3>
+<table>
+  <thead><tr><th>Log Type</th><th>Production</th><th>Dev/QA</th><th>Encryption</th></tr></thead>
+  <tbody>
+    <tr><td>VPC Flow Logs</td><td>365 days</td><td>90 days</td><td>KMS</td></tr>
+    <tr><td>CloudWatch Application Logs</td><td>365 days</td><td>90 days</td><td>KMS</td></tr>
+    <tr><td>WAF Logs</td><td>90 days</td><td>90 days</td><td>KMS</td></tr>
+    <tr><td>Security Audit Events</td><td>7 years (SOX)</td><td>90 days</td><td>KMS + DynamoDB</td></tr>
+    <tr><td>Config Snapshots</td><td>7 years</td><td>90 days</td><td>S3 SSE-KMS</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- Section 13: Compliance Frameworks -->
+<section id="compliance">
+<h2>&#128220; Compliance Frameworks</h2>
+
+<div class="compliance-grid">
+  <div class="compliance-card nist">
+    <div class="framework-name">NIST 800-53 (111+ Controls Mapped)</div>
+    <ul>
+      <li><strong>AC</strong> (Access Control): RBAC + ABAC, least privilege, capability governance</li>
+      <li><strong>AU</strong> (Audit): Structured event logging, 7-year retention, audit review</li>
+      <li><strong>IA</strong> (Identification/Auth): JWT, OAuth 2.0, Argon2id, MFA</li>
+      <li><strong>IR</strong> (Incident Response): HITL workflow, P1-P5 classification</li>
+      <li><strong>SC</strong> (System/Comms): TLS 1.2+, KMS encryption, VPC boundary protection</li>
+      <li><strong>SI</strong> (System Integrity): Input validation, GuardDuty, Config monitoring</li>
+      <li><strong>CM</strong> (Configuration): Immutable images, drift detection, minimal functionality</li>
+      <li><strong>SR</strong> (Supply Chain): Private ECR, SBOM attestation, dependency scanning</li>
+    </ul>
+  </div>
+
+  <div class="compliance-card cmmc">
+    <div class="framework-name">CMMC Level 3 (Technical Readiness)</div>
+    <ul>
+      <li><strong>AC.1.001:</strong> RBAC + input sanitization</li>
+      <li><strong>AC.2.005:</strong> Principle of least privilege (Capability Governance)</li>
+      <li><strong>AU.2.041:</strong> Event logging (Security Audit Service)</li>
+      <li><strong>AU.2.042:</strong> Structured audit record content</li>
+      <li><strong>IR.2.092:</strong> Event detection (Security Alerts)</li>
+      <li><strong>IR.2.093:</strong> Event triage and classification</li>
+      <li><strong>SC.1.175:</strong> Transmission confidentiality (TLS)</li>
+      <li><strong>SC.3.177:</strong> FIPS-validated cryptography (AWS native)</li>
+    </ul>
+  </div>
+
+  <div class="compliance-card sox">
+    <div class="framework-name">SOX Compliance Controls</div>
+    <ul>
+      <li><strong>CC6.1:</strong> Logical access controls (Auth + ABAC)</li>
+      <li><strong>CC6.6:</strong> System boundary protection (VPC + WAF)</li>
+      <li><strong>CC6.7:</strong> Data classification (Secrets Detection)</li>
+      <li><strong>CC7.2:</strong> Security event monitoring (Audit Service)</li>
+      <li><strong>CC7.3:</strong> Event evaluation (Alerts Service)</li>
+      <li><strong>CC7.4:</strong> Incident response (HITL workflow)</li>
+      <li>7-year audit retention for all compliance data</li>
+    </ul>
+  </div>
+
+  <div class="compliance-card govcloud">
+    <div class="framework-name">SOC 2 Trust Criteria</div>
+    <ul>
+      <li><strong>Security:</strong> Multi-layer access controls, encryption, monitoring</li>
+      <li><strong>Availability:</strong> Multi-AZ, auto-scaling, disaster recovery</li>
+      <li><strong>Confidentiality:</strong> KMS encryption, VPC isolation, data classification</li>
+      <li>Comprehensive audit trail (6-month minimum retention)</li>
+      <li>Incident response procedures documented</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout info" style="margin-top:16px;">
+  <div class="callout-title">Certification Status</div>
+  Technical controls are implemented and aligned with NIST 800-53, CMMC Level 2/3, SOX, and SOC 2 requirements. FedRAMP High and CMMC formal certifications are postponed due to cost. Technical readiness is 100% &mdash; formal certification can be pursued when specific contracts require it.
+</div>
+</section>
+
+<!-- Section 14: GovCloud Readiness -->
+<section id="govcloud">
+<h2>&#127463;&#127480; GovCloud Readiness</h2>
+
+<div class="metric-grid" style="grid-template-columns:repeat(5,1fr);">
+  <div class="metric-item"><div class="value" style="color:var(--success);">19/19</div><div class="label">Services Compatible</div></div>
+  <div class="metric-item"><div class="value" style="color:var(--success);">100%</div><div class="label">Partition Handling</div></div>
+  <div class="metric-item"><div class="value">FIPS 140-2</div><div class="label">Crypto Compliance</div></div>
+  <div class="metric-item"><div class="value" style="color:var(--success);">Yes</div><div class="label">Data Residency</div></div>
+  <div class="metric-item"><div class="value" style="color:var(--success);">Ready</div><div class="label">High-Side Deploy</div></div>
+</div>
+
+<div class="card" style="margin-top:16px;">
+  <h3 style="margin-top:0;">Key GovCloud Requirements</h3>
+  <table>
+    <thead><tr><th>Requirement</th><th>Implementation</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>ARN Partition Handling</td><td><code>${AWS::Partition}</code> used throughout all 155 CloudFormation templates &mdash; never hardcoded <code>arn:aws</code></td><td><span class="badge badge-deployed">Complete</span></td></tr>
+      <tr><td>FIPS 140-2 Cryptography</td><td>AWS-native FIPS endpoints for GovCloud regions</td><td><span class="badge badge-deployed">Complete</span></td></tr>
+      <tr><td>Data Residency</td><td>All data remains in selected region; no cross-region replication</td><td><span class="badge badge-deployed">Complete</span></td></tr>
+      <tr><td>Network Isolation</td><td>Isolated VPC with no internet egress for sensitive workloads</td><td><span class="badge badge-deployed">Complete</span></td></tr>
+      <tr><td>Managed Policy ARNs</td><td>PartitionMap for managed policy ARN differences</td><td><span class="badge badge-deployed">Complete</span></td></tr>
+      <tr><td>Service Availability</td><td>All 19 deployed AWS services available in GovCloud (US)</td><td><span class="badge badge-deployed">Complete</span></td></tr>
+    </tbody>
+  </table>
+</div>
+</section>
+
+<!-- Section 15: All Security ADRs -->
+<section id="security-adrs">
+<h2>&#128203; Security Architecture Decision Records</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">13 security-focused ADRs document the rationale, architecture, and implementation of every security capability. All are deployed or accepted.</p>
+
+<div class="adr-grid">
+  <div class="adr-card">
+    <div class="adr-num">ADR-063</div>
+    <div class="adr-title">Constitutional AI Integration</div>
+    <div class="adr-desc">16-principle critique-revision pipeline applied to all agent outputs. Chain-of-thought reasoning with 4-layer optimized latency pipeline targeting &lt;500ms P95.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">6,914</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">535</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-065</div>
+    <div class="adr-title">Semantic Guardrails Engine</div>
+    <div class="adr-desc">6-layer threat detection using embedding similarity and LLM-as-judge. Detects 13+ bypass vectors with &gt;95% accuracy on novel jailbreak variants.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">12,000+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">793</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-066</div>
+    <div class="adr-title">Agent Capability Governance</div>
+    <div class="adr-desc">4-tier tool classification with runtime enforcement middleware. Deny-by-default for unregistered tools, dynamic time-limited grants, complete audit trail.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">5,400+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">322</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-067</div>
+    <div class="adr-title">Context Provenance &amp; Integrity</div>
+    <div class="adr-desc">Multi-layer verification preventing GraphRAG context poisoning. Index-time provenance, trust scoring, anomaly detection, automatic quarantine with &gt;99% detection rate.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">3,315</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">275</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-068</div>
+    <div class="adr-title">Universal Explainability Framework</div>
+    <div class="adr-desc">Decision transparency across all agent operations. Reasoning chains, alternatives disclosure, confidence calibration, and consistency verification.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">8,200+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">227</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-072</div>
+    <div class="adr-title">ML-Based Anomaly Detection</div>
+    <div class="adr-desc">Statistical baselines, honeypot traps (5 capabilities with zero false positives), cross-agent coordination detection, natural language explanations.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">1,350</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">113</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-073</div>
+    <div class="adr-title">Attribute-Based Access Control</div>
+    <div class="adr-desc">Fine-grained multi-tenant authorization with dynamic context-aware policies. Subject, resource, context, and action attributes with Cedar/Rego policy engine.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">1,300+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">115</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-076</div>
+    <div class="adr-title">SBOM Attestation &amp; Supply Chain</div>
+    <div class="adr-desc">CycloneDX/SPDX SBOM generation, Sigstore signing, Rekor transparency log, dependency confusion detection, license compliance automation.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">4,500+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">168</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-077</div>
+    <div class="adr-title">Cloud Runtime Security</div>
+    <div class="adr-desc">K8s admission control, container escape detection (eBPF), runtime-to-code correlation linking CloudTrail events to source code via Neptune graph.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">3,200+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">155</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-078</div>
+    <div class="adr-title">Air-Gapped &amp; Edge Deployment</div>
+    <div class="adr-desc">Offline operation with firmware analysis, RTOS support (FreeRTOS, VxWorks, QNX), edge runtime (&lt;2GB RAM, ARM), HSM/YubiKey offline signing.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">4,000+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">200</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-079</div>
+    <div class="adr-title">Scale &amp; AI Model Security</div>
+    <div class="adr-desc">Hyperscale operation (1B+ vertices), streaming analysis engine, model weight exfiltration detection, training data poisoning detection.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">2,800+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">86</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-083</div>
+    <div class="adr-title">Runtime Agent Security Platform</div>
+    <div class="adr-desc">8 traffic interception points, shadow agent detection, behavioral baselines, AURA-ATT&CK red team (75 techniques), runtime-to-code correlation via GraphRAG.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">10,300+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">848</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+
+  <div class="adr-card">
+    <div class="adr-num">ADR-084</div>
+    <div class="adr-title">Native Vulnerability Scanning Engine</div>
+    <div class="adr-desc">GraphRAG-enhanced LLM analysis, 3-phase adversarial verification, 4-layer isolation, 5-signal confidence calibration, SARIF output, closed-loop remediation.</div>
+    <div class="adr-stats">
+      <div class="adr-stat"><span class="stat-val">4,900+</span> lines</div>
+      <div class="adr-stat"><span class="stat-val">980</span> tests</div>
+      <div class="adr-stat"><span class="badge badge-deployed">Deployed</span></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- Section 16: Security Testing -->
+<section id="testing">
+<h2>&#9989; Security Testing Coverage</h2>
+
+<table>
+  <thead><tr><th>Component</th><th>ADR</th><th>Tests</th><th>Coverage Area</th></tr></thead>
+  <tbody>
+    <tr><td>Core Security Services</td><td>&mdash;</td><td>286</td><td>Input validation, secrets detection, audit, alerts, API integration</td></tr>
+    <tr><td>Constitutional AI</td><td>063</td><td>535</td><td>16 principles, critique-revision pipeline, agent integration</td></tr>
+    <tr><td>Semantic Guardrails</td><td>065</td><td>793</td><td>6 layers, 13+ bypass vectors, embedding + LLM-as-judge</td></tr>
+    <tr><td>Capability Governance</td><td>066</td><td>322</td><td>4 tiers, runtime enforcement, dynamic grants</td></tr>
+    <tr><td>Context Provenance</td><td>067</td><td>275</td><td>7 threat models, trust scoring, quarantine</td></tr>
+    <tr><td>Universal Explainability</td><td>068</td><td>227</td><td>Reasoning chains, alternatives, confidence calibration</td></tr>
+    <tr><td>Anomaly Detection</td><td>072</td><td>113</td><td>Statistical baselines, honeypots, cross-agent detection</td></tr>
+    <tr><td>ABAC Authorization</td><td>073</td><td>115</td><td>Multi-tenant isolation, policy evaluation, attribute resolution</td></tr>
+    <tr><td>SBOM &amp; Supply Chain</td><td>076</td><td>168</td><td>SBOM generation, attestation, confusion detection, license compliance</td></tr>
+    <tr><td>Cloud Runtime Security</td><td>077</td><td>155</td><td>K8s admission, container escape, runtime-to-code correlation</td></tr>
+    <tr><td>Air-Gapped &amp; Edge</td><td>078</td><td>200</td><td>Offline operation, firmware analysis, edge runtime</td></tr>
+    <tr><td>AI Model Security</td><td>079</td><td>86</td><td>Weight protection, poisoning detection, streaming analysis</td></tr>
+    <tr><td>Constraint Geometry</td><td>081</td><td>358</td><td>7-axis constraint space, coherence scoring, policy profiles</td></tr>
+    <tr><td>Runtime Agent Security</td><td>083</td><td>848</td><td>8 interception points, AURA-ATT&CK, behavioral baselines</td></tr>
+    <tr><td>Vulnerability Scanner</td><td>084</td><td>980</td><td>3-phase LLM analysis, isolation model, confidence calibration</td></tr>
+    <tr><td>Security Framework Tests</td><td>&mdash;</td><td>131</td><td>E2E, load testing, middleware integration</td></tr>
+  </tbody>
+  <tfoot>
+    <tr style="font-weight:700;background:#F0FDF4;">
+      <td colspan="2">Total Security Tests</td>
+      <td>5,592+</td>
+      <td></td>
+    </tr>
+  </tfoot>
+</table>
+</section>
+
+<!-- Section 17: HITL & Incident Response -->
+<section id="hitl">
+<h2>&#128101; HITL &amp; Incident Response</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title" style="margin-bottom:12px;">Autonomy Framework (ADR-032)</div>
+    <table>
+      <thead><tr><th>Level</th><th>Mode</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>FULL_AUTONOMOUS</strong></td><td>No approval needed (safe operations only)</td></tr>
+        <tr><td>2</td><td><strong>AUDIT_ONLY</strong></td><td>Logged but not blocked (observability)</td></tr>
+        <tr><td>3</td><td><strong>CRITICAL_HITL</strong></td><td>Human preferred for sensitive operations</td></tr>
+        <tr><td>4</td><td><strong>FULL_HITL</strong></td><td>Human required for all destructive actions</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="margin-bottom:12px;">7 Industry Policy Presets</div>
+    <table>
+      <tbody>
+        <tr><td><span class="badge badge-critical">Strict</span></td><td><strong>Defense Contractor</strong> &mdash; Maximum oversight</td></tr>
+        <tr><td><span class="badge badge-high">High</span></td><td><strong>Financial Services</strong> &mdash; SOX compliance emphasis</td></tr>
+        <tr><td><span class="badge badge-high">High</span></td><td><strong>Healthcare</strong> &mdash; HIPAA-aligned controls</td></tr>
+        <tr><td><span class="badge badge-medium">Medium</span></td><td><strong>Enterprise</strong> &mdash; Balanced security/velocity</td></tr>
+        <tr><td><span class="badge badge-medium">Medium</span></td><td><strong>Compliance-First</strong> &mdash; Audit trail emphasis</td></tr>
+        <tr><td><span class="badge badge-info">Standard</span></td><td><strong>Startup</strong> &mdash; Higher autonomy for speed</td></tr>
+        <tr><td><span class="badge badge-info">Standard</span></td><td><strong>Performance-First</strong> &mdash; Minimal friction</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h3>Remediation Workflow</h3>
+<div class="pipeline">
+  <div class="pipeline-step" style="border-color:var(--critical);"><div class="step-name" style="color:var(--critical);">Detect</div><div class="step-detail">Guardrails + Monitoring</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">Classify</div><div class="step-detail">P1-P5 Priority</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">Generate Patch</div><div class="step-detail">Coder Agent</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step"><div class="step-name">Sandbox Test</div><div class="step-detail">Ephemeral Environment</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step" style="border-color:var(--high);"><div class="step-name" style="color:var(--high);">HITL Approve</div><div class="step-detail">Human Decision</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step" style="border-color:var(--success);"><div class="step-name" style="color:var(--success);">Deploy</div><div class="step-detail">Step Functions</div></div>
+</div>
+</section>
+
+<!-- Section 18: Key Statistics -->
+<section id="stats">
+<h2>&#128202; Key Security Statistics</h2>
+
+<div class="exec-summary" style="grid-template-columns:repeat(4,1fr);">
+  <div class="exec-card">
+    <div class="number">71,000+</div>
+    <div class="label">Lines of Security Code</div>
+  </div>
+  <div class="exec-card">
+    <div class="number green">5,592+</div>
+    <div class="label">Security-Specific Tests</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">13</div>
+    <div class="label">Security ADRs</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">40+</div>
+    <div class="label">Security CloudFormation Templates</div>
+  </div>
+  <div class="exec-card">
+    <div class="number red">75</div>
+    <div class="label">AURA-ATT&CK Techniques</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">16</div>
+    <div class="label">Constitutional Principles</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">6</div>
+    <div class="label">Guardrail Layers</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">8</div>
+    <div class="label">Interception Points</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">4,300+</div>
+    <div class="label">Threat Embeddings</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">5</div>
+    <div class="label">Honeypot Traps</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">189+</div>
+    <div class="label">CloudWatch Alarms</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">89+</div>
+    <div class="label">Security DynamoDB Tables</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">27+</div>
+    <div class="label">KMS Encryption Points</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">20+</div>
+    <div class="label">Config Compliance Rules</div>
+  </div>
+  <div class="exec-card">
+    <div class="number green">19/19</div>
+    <div class="label">GovCloud Compatible Services</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">111+</div>
+    <div class="label">NIST 800-53 Controls Mapped</div>
+  </div>
+</div>
+
+<div class="callout success">
+  <div class="callout-title">Security Posture Summary</div>
+  Project Aura implements defense-in-depth security across 6 layers: perimeter, identity, AI/agent, data integrity, supply chain, and monitoring. With 13 security-focused ADRs, 71,000+ lines of security code, 5,592+ security tests, and alignment to NIST 800-53, CMMC, SOX, and SOC 2 frameworks, the platform is architected for the most demanding enterprise and government environments.
+</div>
+</section>
+
+</div>
+
+<div class="footer">
+  Aenea Labs &middot; Project Aura &middot; Security Architecture &amp; Compliance Posture &middot; February 2026
+</div>
+
+</body>
+</html>

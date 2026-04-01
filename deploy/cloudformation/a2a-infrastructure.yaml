@@ -1,0 +1,482 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.4 - A2A Infrastructure (Agent Protocol)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  EnableA2A:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable A2A protocol infrastructure (ENTERPRISE mode only)
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email for A2A alerts (optional)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  A2AEnabled: !Equals [!Ref EnableA2A, 'true']
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  CreateAlerts: !And [!Condition A2AEnabled, !Condition HasAlertEmail]
+
+Resources:
+  # ==========================================================================
+  # DynamoDB - Agent Registry
+  # ==========================================================================
+
+  A2AAgentRegistryTable:
+    Type: AWS::DynamoDB::Table
+    Condition: A2AEnabled
+    Properties:
+      TableName: !Sub '${ProjectName}-a2a-agents-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: agentId
+          AttributeType: S
+        - AttributeName: provider
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: registeredAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: agentId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: ProviderIndex
+          KeySchema:
+            - AttributeName: provider
+              KeyType: HASH
+            - AttributeName: registeredAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: registeredAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-a2a-agents-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: a2a
+
+  # A2A Tasks Table
+  A2ATasksTable:
+    Type: AWS::DynamoDB::Table
+    Condition: A2AEnabled
+    Properties:
+      TableName: !Sub '${ProjectName}-a2a-tasks-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: taskId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+        - AttributeName: requesterAgentId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: taskId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: RequesterIndex
+          KeySchema:
+            - AttributeName: requesterAgentId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-a2a-tasks-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: a2a
+
+  # ==========================================================================
+  # SQS - Async Agent Communication
+  # ==========================================================================
+
+  # Dead Letter Queue for failed messages
+  A2ADeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Condition: A2AEnabled
+    Properties:
+      QueueName: !Sub '${ProjectName}-a2a-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-a2a-dlq-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: a2a
+
+  # Main message queue for agent communication
+  A2AMessageQueue:
+    Type: AWS::SQS::Queue
+    Condition: A2AEnabled
+    Properties:
+      QueueName: !Sub '${ProjectName}-a2a-messages-${Environment}'
+      VisibilityTimeout: 300  # 5 minutes
+      MessageRetentionPeriod: 86400  # 1 day
+      ReceiveMessageWaitTimeSeconds: 20  # Long polling
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt A2ADeadLetterQueue.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-a2a-messages-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: a2a
+
+  # Push notification queue for external callbacks
+  A2APushNotificationQueue:
+    Type: AWS::SQS::Queue
+    Condition: A2AEnabled
+    Properties:
+      QueueName: !Sub '${ProjectName}-a2a-notifications-${Environment}'
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt A2ADeadLetterQueue.Arn
+        maxReceiveCount: 5
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-a2a-notifications-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: a2a
+
+  # ==========================================================================
+  # EventBridge - Cross-Agent Event Routing
+  # ==========================================================================
+
+  A2AEventBus:
+    Type: AWS::Events::EventBus
+    Condition: A2AEnabled
+    Properties:
+      Name: !Sub '${ProjectName}-a2a-events-${Environment}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-a2a-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: a2a
+
+  # Rule: Task Completed Events
+  A2ATaskCompletedRule:
+    Type: AWS::Events::Rule
+    Condition: A2AEnabled
+    Properties:
+      Name: !Sub '${ProjectName}-a2a-task-completed-${Environment}'
+      Description: Route task completion events for push notifications
+      EventBusName: !Ref A2AEventBus
+      EventPattern:
+        source:
+          - 'aura.a2a'
+        detail-type:
+          - 'TaskStatusChanged'
+        detail:
+          status:
+            - 'completed'
+            - 'failed'
+      State: ENABLED
+      Targets:
+        - Id: PushNotificationQueue
+          Arn: !GetAtt A2APushNotificationQueue.Arn
+
+  # Rule: Agent Health Events
+  A2AAgentHealthRule:
+    Type: AWS::Events::Rule
+    Condition: A2AEnabled
+    Properties:
+      Name: !Sub '${ProjectName}-a2a-agent-health-${Environment}'
+      Description: Route agent health status changes
+      EventBusName: !Ref A2AEventBus
+      EventPattern:
+        source:
+          - 'aura.a2a'
+        detail-type:
+          - 'AgentStatusChanged'
+        detail:
+          status:
+            - 'inactive'
+            - 'degraded'
+      State: ENABLED
+      Targets:
+        - Id: MessageQueue
+          Arn: !GetAtt A2AMessageQueue.Arn
+
+  # Permission for EventBridge to send to SQS
+  A2AEventBridgeToSQSPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Condition: A2AEnabled
+    Properties:
+      Queues:
+        - !Ref A2AMessageQueue
+        - !Ref A2APushNotificationQueue
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource:
+              - !GetAtt A2AMessageQueue.Arn
+              - !GetAtt A2APushNotificationQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn:
+                  - !GetAtt A2ATaskCompletedRule.Arn
+                  - !GetAtt A2AAgentHealthRule.Arn
+
+  # ==========================================================================
+  # SNS - Alerting
+  # ==========================================================================
+
+  A2AAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateAlerts
+    Properties:
+      TopicName: !Sub '${ProjectName}-a2a-alerts-${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-a2a-alerts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  A2AAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: CreateAlerts
+    Properties:
+      TopicArn: !Ref A2AAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ==========================================================================
+  # CloudWatch - Monitoring
+  # ==========================================================================
+
+  # Alarm: DLQ messages (failed processing)
+  A2ADLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: CreateAlerts
+    Properties:
+      AlarmName: !Sub '${ProjectName}-a2a-dlq-messages-${Environment}'
+      AlarmDescription: Messages in A2A dead letter queue indicate processing failures
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt A2ADeadLetterQueue.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref A2AAlertTopic
+
+  # Alarm: High message queue depth
+  A2AQueueDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: CreateAlerts
+    Properties:
+      AlarmName: !Sub '${ProjectName}-a2a-queue-depth-${Environment}'
+      AlarmDescription: High queue depth indicates processing backlog
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt A2AMessageQueue.QueueName
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref A2AAlertTopic
+
+  # ==========================================================================
+  # SSM Parameters
+  # ==========================================================================
+
+  A2AEnabledParameter:
+    Type: AWS::SSM::Parameter
+    Condition: A2AEnabled
+    Properties:
+      Name: !Sub '/aura/${Environment}/a2a-enabled'
+      Type: String
+      Value: 'true'
+      Description: A2A protocol enabled flag
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  A2AEventBusArnParameter:
+    Type: AWS::SSM::Parameter
+    Condition: A2AEnabled
+    Properties:
+      Name: !Sub '/aura/${Environment}/a2a-event-bus-arn'
+      Type: String
+      Value: !GetAtt A2AEventBus.Arn
+      Description: A2A EventBridge event bus ARN
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  A2AMessageQueueUrlParameter:
+    Type: AWS::SSM::Parameter
+    Condition: A2AEnabled
+    Properties:
+      Name: !Sub '/aura/${Environment}/a2a-message-queue-url'
+      Type: String
+      Value: !Ref A2AMessageQueue
+      Description: A2A message queue URL
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+Outputs:
+  A2AAgentRegistryTableName:
+    Condition: A2AEnabled
+    Description: A2A Agent Registry DynamoDB table name
+    Value: !Ref A2AAgentRegistryTable
+    Export:
+      Name: !Sub '${ProjectName}-a2a-agents-table-${Environment}'
+
+  A2AAgentRegistryTableArn:
+    Condition: A2AEnabled
+    Description: A2A Agent Registry DynamoDB table ARN
+    Value: !GetAtt A2AAgentRegistryTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-a2a-agents-table-arn-${Environment}'
+
+  A2ATasksTableName:
+    Condition: A2AEnabled
+    Description: A2A Tasks DynamoDB table name
+    Value: !Ref A2ATasksTable
+    Export:
+      Name: !Sub '${ProjectName}-a2a-tasks-table-${Environment}'
+
+  A2ATasksTableArn:
+    Condition: A2AEnabled
+    Description: A2A Tasks DynamoDB table ARN
+    Value: !GetAtt A2ATasksTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-a2a-tasks-table-arn-${Environment}'
+
+  A2AMessageQueueUrl:
+    Condition: A2AEnabled
+    Description: A2A Message Queue URL
+    Value: !Ref A2AMessageQueue
+    Export:
+      Name: !Sub '${ProjectName}-a2a-message-queue-url-${Environment}'
+
+  A2AMessageQueueArn:
+    Condition: A2AEnabled
+    Description: A2A Message Queue ARN
+    Value: !GetAtt A2AMessageQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-a2a-message-queue-arn-${Environment}'
+
+  A2APushNotificationQueueUrl:
+    Condition: A2AEnabled
+    Description: A2A Push Notification Queue URL
+    Value: !Ref A2APushNotificationQueue
+    Export:
+      Name: !Sub '${ProjectName}-a2a-notification-queue-url-${Environment}'
+
+  A2AEventBusName:
+    Condition: A2AEnabled
+    Description: A2A EventBridge event bus name
+    Value: !Ref A2AEventBus
+    Export:
+      Name: !Sub '${ProjectName}-a2a-event-bus-${Environment}'
+
+  A2AEventBusArn:
+    Condition: A2AEnabled
+    Description: A2A EventBridge event bus ARN
+    Value: !GetAtt A2AEventBus.Arn
+    Export:
+      Name: !Sub '${ProjectName}-a2a-event-bus-arn-${Environment}'
+
+  A2ADeadLetterQueueUrl:
+    Condition: A2AEnabled
+    Description: A2A Dead Letter Queue URL
+    Value: !Ref A2ADeadLetterQueue
+    Export:
+      Name: !Sub '${ProjectName}-a2a-dlq-url-${Environment}'

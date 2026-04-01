@@ -1,0 +1,289 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.4 - Cognito (User Authentication)'
+
+# =============================================================================
+# Cognito User Pool for Project Aura
+# =============================================================================
+# Implements:
+# - User Pool with email/password authentication
+# - App Client for frontend SPA (no secret, PKCE flow)
+# - Hosted UI domain for OAuth/login flows
+# - Password policy compliant with CMMC Level 2
+# - MFA configuration (optional in dev, required in prod)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  DomainName:
+    Type: String
+    Default: aenealabs.com
+    Description: Domain name for callback URLs
+
+  CallbackURLs:
+    Type: CommaDelimitedList
+    Default: 'https://app.aenealabs.com/auth/callback,http://localhost:5173/auth/callback'
+    Description: OAuth callback URLs
+
+  LogoutURLs:
+    Type: CommaDelimitedList
+    Default: 'https://app.aenealabs.com,http://localhost:5173'
+    Description: Post-logout redirect URLs
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # Cognito User Pool
+  # ===========================================================================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${ProjectName}-users-${Environment}'
+
+      # Username configuration - use email as username
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+
+      # Password policy - CMMC Level 2 compliant
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+
+      # Account recovery
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+
+      # MFA Configuration
+      MfaConfiguration: !If [IsProduction, 'OPTIONAL', 'OFF']
+      EnabledMfas: !If
+        - IsProduction
+        - - SOFTWARE_TOKEN_MFA
+        - !Ref AWS::NoValue
+
+      # Email configuration (use Cognito default for dev)
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+
+      # Schema - custom attributes
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+
+      # User pool add-ons
+      UserPoolAddOns:
+        AdvancedSecurityMode: !If [IsProduction, 'ENFORCED', 'OFF']
+
+      # Deletion protection
+      DeletionProtection: !If [IsProduction, 'ACTIVE', 'INACTIVE']
+
+      UserPoolTags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # ===========================================================================
+  # User Pool Domain (for Hosted UI)
+  # ===========================================================================
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub '${ProjectName}-${Environment}-${AWS::AccountId}'
+      UserPoolId: !Ref UserPool
+
+  # ===========================================================================
+  # User Pool Client (for Frontend SPA)
+  # ===========================================================================
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${ProjectName}-frontend-${Environment}'
+      UserPoolId: !Ref UserPool
+
+      # No client secret for SPA (use PKCE)
+      GenerateSecret: false
+
+      # OAuth flows
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+
+      # Callback and logout URLs
+      CallbackURLs: !Ref CallbackURLs
+      LogoutURLs: !Ref LogoutURLs
+      SupportedIdentityProviders:
+        - COGNITO
+
+      # Token validity
+      AccessTokenValidity: 1  # 1 hour
+      IdTokenValidity: 1      # 1 hour
+      RefreshTokenValidity: 30  # 30 days
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+      # Security settings
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      EnablePropagateAdditionalUserContextData: false
+
+      # Auth flows
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH  # Enable for dev testing scripts
+
+      # Read/write attributes
+      ReadAttributes:
+        - email
+        - email_verified
+        - name
+        - custom:role
+      WriteAttributes:
+        - email
+        - name
+        - custom:role
+
+  # ===========================================================================
+  # User Pool Groups
+  # ===========================================================================
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      Description: Platform administrators with full access
+      UserPoolId: !Ref UserPool
+      Precedence: 1
+
+  SecurityEngineerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: security-engineer
+      Description: Security engineers with HITL approval access
+      UserPoolId: !Ref UserPool
+      Precedence: 10
+
+  DeveloperGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: developer
+      Description: Developers with read access
+      UserPoolId: !Ref UserPool
+      Precedence: 20
+
+  ViewerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: viewer
+      Description: Read-only access
+      UserPoolId: !Ref UserPool
+      Precedence: 30
+
+  # ===========================================================================
+  # SSM Parameters for App Configuration
+  # ===========================================================================
+  UserPoolIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/cognito/user-pool-id'
+      Type: String
+      Value: !Ref UserPool
+      Description: Cognito User Pool ID
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  UserPoolClientIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/cognito/client-id'
+      Type: String
+      Value: !Ref UserPoolClient
+      Description: Cognito User Pool Client ID
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  UserPoolDomainParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/cognito/domain'
+      Type: String
+      Value: !Sub '${ProjectName}-${Environment}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com'
+      Description: Cognito Hosted UI Domain
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+# =============================================================================
+# Outputs
+# =============================================================================
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${ProjectName}-user-pool-id-${Environment}'
+
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !GetAtt UserPool.Arn
+    Export:
+      Name: !Sub '${ProjectName}-user-pool-arn-${Environment}'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID (for frontend)
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${ProjectName}-user-pool-client-id-${Environment}'
+
+  UserPoolDomain:
+    Description: Cognito Hosted UI Domain
+    Value: !Sub '${ProjectName}-${Environment}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com'
+    Export:
+      Name: !Sub '${ProjectName}-cognito-domain-${Environment}'
+
+  HostedUIURL:
+    Description: Cognito Hosted UI Login URL
+    Value: !Sub 'https://${ProjectName}-${Environment}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=code&scope=email+openid+profile&redirect_uri=https://app.aenealabs.com/auth/callback'
+    Export:
+      Name: !Sub '${ProjectName}-hosted-ui-url-${Environment}'
+
+  IssuerURL:
+    Description: Cognito Issuer URL (for JWT validation)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+    Export:
+      Name: !Sub '${ProjectName}-cognito-issuer-${Environment}'

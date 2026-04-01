@@ -1,0 +1,185 @@
+name: Code Quality Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    # Only run on code changes - skip for docs/config-only changes
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'requirements*.txt'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'setup.cfg'
+      - '.github/workflows/code-quality.yml'
+  # Push to main only runs smoke tests (fast validation after merge)
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'tests/**'
+  workflow_dispatch:
+
+# Cancel in-progress runs when new commits are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  # Single consolidated job for push to main (lint only - fast validation)
+  # PRs run the full suite in python-quality job
+  check-trigger:
+    name: Check Trigger Type
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      run_full_tests: ${{ steps.check.outputs.run_full_tests }}
+    steps:
+      - name: Determine test level
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ] || [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "run_full_tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "run_full_tests=false" >> $GITHUB_OUTPUT
+          fi
+
+  # CONSOLIDATED: Lint + Tests in single job (saves 3 runner spin-ups)
+  python-quality:
+    name: Python Quality & Tests
+    runs-on: ubuntu-latest
+    needs: check-trigger
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install black flake8 mypy bandit[toml]
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt || true
+          pip install pytest pytest-cov pytest-asyncio pytest-forked pytest-xdist
+          pip install 'pydantic[email]'  # Required for email validation in tests
+
+      # --- LINTING (always runs) ---
+      - name: Run Black (formatting check)
+        run: black --check src/ tests/
+
+      - name: Run Flake8 (linting)
+        run: flake8 src/ tests/
+
+      - name: Run MyPy (type checking)
+        continue-on-error: true
+        run: mypy src/ --ignore-missing-imports
+
+      - name: Run Bandit (security lint)
+        run: |
+          bandit -r src/ -f json -o bandit-report.json || true
+          bandit -r src/ -ll -ii  # Only MEDIUM+ severity
+
+      # --- TESTS (PRs only) ---
+      - name: Run tests with coverage
+        if: needs.check-trigger.outputs.run_full_tests == 'true'
+        run: |
+          # pytest-cov handles coverage collection automatically
+          # Do NOT set COVERAGE_PROCESS_START - it conflicts with pytest-cov
+          pytest tests/ --lf --ff \
+            --cov=src \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=70 \
+            --maxfail=10 \
+            -v || PYTEST_EXIT=$?
+
+          # Show coverage summary
+          echo ""
+          echo "=== Coverage Summary ==="
+          if [ -f .coverage ]; then
+            coverage report --show-missing || echo "Coverage report failed"
+          elif ls .coverage.* 1>/dev/null 2>&1; then
+            echo "Combining parallel coverage files..."
+            coverage combine
+            coverage report --show-missing || echo "Coverage report failed"
+          else
+            echo "WARNING: No coverage data found"
+          fi
+
+          # Exit with original pytest status
+          exit ${PYTEST_EXIT:-0}
+
+      # --- SEMANTIC GUARDRAILS E2E (Optional: Real AWS Mode) ---
+      # By default, guardrails E2E tests use moto mocking (no AWS credentials needed).
+      # To enable real AWS E2E testing against deployed infrastructure:
+      #
+      # 1. Uncomment the step below
+      # 2. Configure AWS credentials via OIDC or secrets
+      # 3. Ensure the IAM role has permissions for:
+      #    - cloudwatch:PutMetricData (Aura/SemanticGuardrails namespace)
+      #    - cloudwatch:GetMetricStatistics
+      #    - sns:Publish, sns:CreateTopic, sns:ListTopics
+      #    - dynamodb:PutItem, dynamodb:GetItem (guardrails audit table)
+      #
+      # - name: Run Semantic Guardrails E2E (Real AWS)
+      #   if: needs.check-trigger.outputs.run_full_tests == 'true'
+      #   env:
+      #     RUN_AWS_E2E_TESTS: "1"
+      #     AWS_REGION: us-east-1
+      #     ENVIRONMENT: dev
+      #   run: |
+      #     echo "Running Semantic Guardrails E2E tests against real AWS..."
+      #     pytest tests/test_semantic_guardrails_e2e.py -v --no-cov --tb=short
+      #     echo "Semantic Guardrails E2E tests completed"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: |
+            bandit-report.json
+            htmlcov/
+            coverage.xml
+
+  # Security scan runs in parallel (PRs only)
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: check-trigger
+    timeout-minutes: 10
+    if: needs.check-trigger.outputs.run_full_tests == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true  # GitHub Advanced Security may not be enabled
+        with:
+          sarif_file: 'trivy-results.sarif'

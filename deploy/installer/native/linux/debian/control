@@ -1,0 +1,28 @@
+Source: aura-cli
+Section: devel
+Priority: optional
+Maintainer: Aenea Labs <support@aenealabs.com>
+Build-Depends: debhelper (>= 12), python3 (>= 3.11), python3-pip
+Standards-Version: 4.5.1
+Homepage: https://aenealabs.com
+Vcs-Git: https://github.com/aenealabs/project-aura.git
+Vcs-Browser: https://github.com/aenealabs/project-aura
+
+Package: aura-cli
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: kubectl, helm
+Suggests: docker.io | podman
+Description: Project Aura Command Line Interface
+ Aura CLI is a command-line tool for managing Project Aura deployments.
+ .
+ Features:
+  - Deployment status and health monitoring
+  - License management (online and offline)
+  - Configuration management
+  - Service log viewing
+  - Upgrade management
+ .
+ Project Aura is an autonomous code intelligence platform that enables
+ machines to reason across entire enterprise codebases using a hybrid
+ graph-based architecture.

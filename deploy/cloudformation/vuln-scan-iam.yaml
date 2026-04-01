@@ -1,0 +1,350 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 9.2 - Vuln Scan IAM (Roles and Policies)'
+
+# =============================================================================
+# IAM roles for ADR-084 Native Vulnerability Scanning Engine.
+# Follows least-privilege with GovCloud partition awareness.
+#
+# Roles:
+# - ScanWorkerTaskExecutionRole: Fargate task execution (ECR pull, CW logs)
+# - ScanWorkerTaskRole: Fargate task role (S3, DynamoDB, Bedrock, Neptune)
+# - ScanStepFunctionsRole: Step Functions execution (ECS, DynamoDB, SNS)
+# - ScanCleanupLambdaRole: Lambda cleanup (S3, DynamoDB, Neptune, OpenSearch)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Resources:
+  # ===========================================================================
+  # Fargate Task Execution Role (ECR pull, CW logs, secrets)
+  # ===========================================================================
+  ScanWorkerTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-vuln-scan-task-exec-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+      Policies:
+        - PolicyName: ScanKMSDecrypt
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:DescribeKey]
+                Resource: !ImportValue
+                  Fn::Sub: '${ProjectName}-vuln-scan-kms-key-arn-${Environment}'
+        - PolicyName: ScanSecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/vuln-scan/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # Fargate Task Role (Scanner worker application permissions)
+  # ===========================================================================
+  ScanWorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-vuln-scan-task-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ScanS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:ListBucket, s3:DeleteObject]
+                Resource:
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-vuln-scan-artifacts-bucket-arn-${Environment}'
+                  - !Sub
+                    - '${BucketArn}/*'
+                    - BucketArn: !ImportValue
+                        Fn::Sub: '${ProjectName}-vuln-scan-artifacts-bucket-arn-${Environment}'
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-vuln-scan-reports-bucket-arn-${Environment}'
+                  - !Sub
+                    - '${BucketArn}/*'
+                    - BucketArn: !ImportValue
+                        Fn::Sub: '${ProjectName}-vuln-scan-reports-bucket-arn-${Environment}'
+        - PolicyName: ScanDynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query, dynamodb:BatchWriteItem]
+                Resource:
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-vuln-scan-jobs-table-arn-${Environment}'
+                  - !Sub
+                    - '${TableArn}/index/*'
+                    - TableArn: !ImportValue
+                        Fn::Sub: '${ProjectName}-vuln-scan-jobs-table-arn-${Environment}'
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-vuln-scan-findings-table-arn-${Environment}'
+                  - !Sub
+                    - '${TableArn}/index/*'
+                    - TableArn: !ImportValue
+                        Fn::Sub: '${ProjectName}-vuln-scan-findings-table-arn-${Environment}'
+        - PolicyName: ScanBedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-haiku-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2*'
+        - PolicyName: ScanKMSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey*, kms:DescribeKey]
+                Resource: !ImportValue
+                  Fn::Sub: '${ProjectName}-vuln-scan-kms-key-arn-${Environment}'
+        - PolicyName: ScanCloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/VulnerabilityScanner'
+        - PolicyName: ScanSNSPublish
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !ImportValue
+                  Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # Step Functions Execution Role
+  # ===========================================================================
+  ScanStepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-vuln-scan-sfn-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SFNECSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ecs:RunTask, ecs:StopTask, ecs:DescribeTasks]
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${ProjectName}-vuln-scan-*'
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ProjectName}-vuln-scan-*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt ScanWorkerTaskExecutionRole.Arn
+                  - !GetAtt ScanWorkerTaskRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+        - PolicyName: SFNDynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query]
+                Resource:
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-vuln-scan-jobs-table-arn-${Environment}'
+                  - !Sub
+                    - '${TableArn}/index/*'
+                    - TableArn: !ImportValue
+                        Fn::Sub: '${ProjectName}-vuln-scan-jobs-table-arn-${Environment}'
+        - PolicyName: SFNSNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !ImportValue
+                  Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+        - PolicyName: SFNLogging
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogDelivery, logs:GetLogDelivery, logs:UpdateLogDelivery, logs:DeleteLogDelivery, logs:ListLogDeliveries, logs:PutResourcePolicy, logs:DescribeResourcePolicies, logs:DescribeLogGroups]
+                Resource: '*'
+        - PolicyName: SFNEventsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: events:PutEvents
+                Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-*-${Environment}'
+              - Effect: Allow
+                Action: [events:PutTargets, events:PutRule, events:DescribeRule]
+                Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForECSTaskRule'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # Lambda Cleanup Role
+  # ===========================================================================
+  ScanCleanupLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-vuln-scan-cleanup-role-${Environment}'
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+      Policies:
+        - PolicyName: CleanupS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:ListBucket, s3:DeleteObject, s3:GetObject]
+                Resource:
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-vuln-scan-artifacts-bucket-arn-${Environment}'
+                  - !Sub
+                    - '${BucketArn}/*'
+                    - BucketArn: !ImportValue
+                        Fn::Sub: '${ProjectName}-vuln-scan-artifacts-bucket-arn-${Environment}'
+        - PolicyName: CleanupDynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:Query, dynamodb:DeleteItem, dynamodb:Scan]
+                Resource:
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-vuln-scan-jobs-table-arn-${Environment}'
+                  - !Sub
+                    - '${TableArn}/index/*'
+                    - TableArn: !ImportValue
+                        Fn::Sub: '${ProjectName}-vuln-scan-jobs-table-arn-${Environment}'
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-vuln-scan-findings-table-arn-${Environment}'
+        - PolicyName: CleanupKMSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:DescribeKey]
+                Resource: !ImportValue
+                  Fn::Sub: '${ProjectName}-vuln-scan-kms-key-arn-${Environment}'
+        - PolicyName: CleanupCloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/VulnerabilityScanner'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+Outputs:
+  ScanWorkerTaskExecutionRoleArn:
+    Description: Fargate task execution role ARN
+    Value: !GetAtt ScanWorkerTaskExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-task-exec-role-arn-${Environment}'
+
+  ScanWorkerTaskRoleArn:
+    Description: Fargate task role ARN
+    Value: !GetAtt ScanWorkerTaskRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-task-role-arn-${Environment}'
+
+  ScanStepFunctionsRoleArn:
+    Description: Step Functions execution role ARN
+    Value: !GetAtt ScanStepFunctionsRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-sfn-role-arn-${Environment}'
+
+  ScanCleanupLambdaRoleArn:
+    Description: Lambda cleanup role ARN
+    Value: !GetAtt ScanCleanupLambdaRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-cleanup-role-arn-${Environment}'

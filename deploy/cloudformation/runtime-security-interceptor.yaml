@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.6 - Runtime Security Interceptor (ADR-083 Traffic Capture)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # KMS Key for Runtime Security Interceptor encryption
+  InterceptorKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub '${ProjectName} Runtime Security Interceptor encryption key (${Environment})'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootAccountAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowDynamoDBAccess
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action: [kms:Decrypt, kms:GenerateDataKey, kms:ReEncryptTo, kms:ReEncryptFrom, kms:DescribeKey]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  InterceptorKmsAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-interceptor-${Environment}'
+      TargetKeyId: !Ref InterceptorKmsKey
+
+  # DynamoDB Table - Agent Traffic Events metadata
+  TrafficEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-traffic-events-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: event_id
+          AttributeType: S
+        - AttributeName: source_agent_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: interception_point
+          AttributeType: S
+        - AttributeName: event_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: event_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: agent-timestamp-index
+          KeySchema:
+            - AttributeName: source_agent_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: interception-timestamp-index
+          KeySchema:
+            - AttributeName: interception_point
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: type-timestamp-index
+          KeySchema:
+            - AttributeName: event_type
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref InterceptorKmsKey
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-traffic-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # S3 Bucket - Full traffic payloads (90-day retention)
+  TrafficPayloadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-traffic-payloads-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref InterceptorKmsKey
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireTrafficPayloads
+            Status: Enabled
+            ExpirationInDays: 90
+            NoncurrentVersionExpirationInDays: 30
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # IAM Role for Interceptor Service
+  InterceptorServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-interceptor-service-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com, lambda.amazonaws.com]
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InterceptorAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:Query, dynamodb:BatchWriteItem, dynamodb:DeleteItem]
+                Resource:
+                  - !GetAtt TrafficEventsTable.Arn
+                  - !Sub '${TrafficEventsTable.Arn}/index/*'
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
+                Resource: !Sub '${TrafficPayloadsBucket.Arn}/*'
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:GenerateDataKey]
+                Resource: !GetAtt InterceptorKmsKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+Outputs:
+  TrafficEventsTableName:
+    Description: Traffic events table name
+    Value: !Ref TrafficEventsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TrafficEventsTableName'
+
+  TrafficEventsTableArn:
+    Description: Traffic events table ARN
+    Value: !GetAtt TrafficEventsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TrafficEventsTableArn'
+
+  TrafficEventsTableStreamArn:
+    Description: Traffic events table stream ARN
+    Value: !GetAtt TrafficEventsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-TrafficEventsTableStreamArn'
+
+  TrafficPayloadsBucketName:
+    Description: Traffic payloads bucket name
+    Value: !Ref TrafficPayloadsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-TrafficPayloadsBucketName'
+
+  TrafficPayloadsBucketArn:
+    Description: Traffic payloads bucket ARN
+    Value: !GetAtt TrafficPayloadsBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TrafficPayloadsBucketArn'
+
+  InterceptorServiceRoleArn:
+    Description: Interceptor service role ARN
+    Value: !GetAtt InterceptorServiceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-InterceptorServiceRoleArn'
+
+  InterceptorKmsKeyArn:
+    Description: Interceptor KMS key ARN
+    Value: !GetAtt InterceptorKmsKey.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-InterceptorKmsKeyArn'

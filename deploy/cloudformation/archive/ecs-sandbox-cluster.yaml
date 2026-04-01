@@ -1,0 +1,321 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECS Fargate cluster for Project Aura ephemeral sandbox testing'
+
+Parameters:
+  VpcId:
+    Type: String
+    Default: vpc-0123456789abcdef0
+    Description: VPC ID for ECS sandbox cluster
+
+  PrivateSubnet1:
+    Type: String
+    Description: First private subnet for sandbox tasks
+
+  PrivateSubnet2:
+    Type: String
+    Description: Second private subnet for sandbox tasks
+
+  Environment:
+    Type: String
+    Description: Environment name (dev, qa, prod)
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+
+Resources:
+  # ECS Cluster for Sandboxes
+  SandboxECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub aura-sandboxes-${Environment}
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 3
+          Base: 0
+        - CapacityProvider: FARGATE
+          Weight: 1
+          Base: 0
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+        - Key: Purpose
+          Value: EphemeralSandboxTesting
+
+  # CloudWatch Log Group for Sandboxes
+  SandboxLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/sandboxes-${Environment}
+      RetentionInDays: 7  # Short retention for ephemeral sandboxes
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # Service Discovery Namespace for Sandboxes
+  SandboxNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub sandbox.${Environment}.aura.local
+      Vpc: !Ref VpcId
+      Description: !Sub Service discovery for ${Environment} sandbox environments
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # Security Group for Isolated Sandboxes
+  SandboxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub sg-${Environment}-sandbox-isolated
+      GroupDescription: !Sub Isolated security group for ${Environment} sandbox tasks (no external network)
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: []  # No inbound connections allowed
+      SecurityGroupEgress:
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 10.0.0.0/16
+          Description: DNS resolution for internal services only
+        - IpProtocol: tcp
+          FromPort: 8182
+          ToPort: 8182
+          CidrIp: 10.0.0.0/16
+          Description: Neptune mock endpoint (internal only)
+        - IpProtocol: tcp
+          FromPort: 9200
+          ToPort: 9200
+          CidrIp: 10.0.0.0/16
+          Description: OpenSearch mock endpoint (internal only)
+      Tags:
+        - Key: Name
+          Value: !Sub sg-${Environment}-sandbox-isolated
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # Add rule to block AWS metadata service
+  SandboxMetadataBlockRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref SandboxSecurityGroup
+      IpProtocol: -1
+      CidrIp: 169.254.169.254/32
+      Description: BLOCK AWS metadata service (security requirement)
+
+  # ECS Task Execution Role for Sandboxes
+  SandboxTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ecsSandboxTaskExecutionRole-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt SandboxLogGroup.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # ECS Task Role for Sandboxes (VERY RESTRICTED)
+  SandboxTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ecsSandboxTaskRole-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SandboxMinimalAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                Resource: !GetAtt SandboxLogGroup.Arn
+              # NO Neptune, NO OpenSearch, NO Bedrock access
+              # Sandboxes use mock services only
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # Sandbox Task Definition
+  SandboxTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub sandbox-patch-test-${Environment}
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024'  # 1 vCPU
+      Memory: '2048'  # 2 GB
+      ExecutionRoleArn: !GetAtt SandboxTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt SandboxTaskRole.Arn
+      ContainerDefinitions:
+        - Name: sandbox-runtime
+          Image: python:3.11-slim  # Placeholder - will be replaced with actual sandbox image
+          Essential: true
+          Command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Sandbox runtime placeholder"
+              echo "SANDBOX_ID: $SANDBOX_ID"
+              echo "PATCH_ID: $PATCH_ID"
+              echo "Waiting for actual implementation..."
+              sleep 3600
+          Environment:
+            - Name: SANDBOX_ID
+              Value: placeholder
+            - Name: ISOLATION_LEVEL
+              Value: container
+            - Name: PATCH_ID
+              Value: placeholder
+            - Name: TEST_SUITE
+              Value: placeholder
+            - Name: MAX_RUNTIME
+              Value: '3600'
+          LinuxParameters:
+            Capabilities:
+              Drop:
+                - ALL  # Drop all Linux capabilities
+              Add: []  # Add none back (maximum security)
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref SandboxLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: sandbox
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # DynamoDB Table for Sandbox State Tracking
+  SandboxStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub aura-sandbox-state-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sandbox_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: N
+      KeySchema:
+        - AttributeName: sandbox_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: created_at-index
+          KeySchema:
+            - AttributeName: created_at
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+Outputs:
+  SandboxClusterName:
+    Description: ECS cluster name for sandboxes
+    Value: !Ref SandboxECSCluster
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterName
+
+  SandboxClusterArn:
+    Description: ECS cluster ARN for sandboxes
+    Value: !GetAtt SandboxECSCluster.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterArn
+
+  SandboxNamespaceId:
+    Description: Service discovery namespace ID for sandboxes
+    Value: !GetAtt SandboxNamespace.Id
+    Export:
+      Name: !Sub ${AWS::StackName}-NamespaceId
+
+  SandboxNamespaceName:
+    Description: Service discovery namespace name for sandboxes
+    Value: !Sub sandbox.${Environment}.aura.local
+    Export:
+      Name: !Sub ${AWS::StackName}-NamespaceName
+
+  SandboxSecurityGroupId:
+    Description: Security group ID for sandbox tasks
+    Value: !Ref SandboxSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-SecurityGroup
+
+  SandboxTaskDefinitionArn:
+    Description: Task definition ARN for sandboxes
+    Value: !Ref SandboxTaskDefinition
+    Export:
+      Name: !Sub ${AWS::StackName}-TaskDefinitionArn
+
+  SandboxTaskExecutionRoleArn:
+    Description: Task execution role ARN for sandboxes
+    Value: !GetAtt SandboxTaskExecutionRole.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-TaskExecutionRoleArn
+
+  SandboxTaskRoleArn:
+    Description: Task role ARN for sandboxes
+    Value: !GetAtt SandboxTaskRole.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-TaskRoleArn
+
+  SandboxLogGroupName:
+    Description: CloudWatch log group name for sandboxes
+    Value: !Ref SandboxLogGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-LogGroupName
+
+  SandboxStateTableName:
+    Description: DynamoDB table name for sandbox state tracking
+    Value: !Ref SandboxStateTable
+    Export:
+      Name: !Sub ${AWS::StackName}-StateTableName

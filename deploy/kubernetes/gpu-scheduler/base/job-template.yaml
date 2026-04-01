@@ -1,0 +1,130 @@
+# GPU Job Template
+# This is a reference template - actual jobs are created programmatically
+# by the GPU Scheduler service using the k8s_client module.
+#
+# Variables (replaced at runtime):
+#   ${JOB_ID} - Unique job identifier
+#   ${JOB_TYPE} - Type of GPU workload
+#   ${USER_ID} - User who submitted the job
+#   ${ORGANIZATION_ID} - Organization that owns the job
+#   ${PRIORITY} - Job priority (low/normal/high)
+#   ${MEMORY_LIMIT} - Memory limit (e.g., "16Gi")
+#   ${MEMORY_REQUEST} - Memory request (e.g., "8Gi")
+#   ${ACTIVE_DEADLINE_SECONDS} - Maximum runtime in seconds
+#   ${ECR_REPO} - ECR repository URL
+#   ${ENVIRONMENT} - Environment (dev/qa/prod)
+#   ${IMAGE_TAG} - Docker image tag
+#   ${JOB_CONFIG_JSON} - JSON-encoded job configuration
+#   ${CHECKPOINT_S3_PATH} - S3 path for checkpoints
+#   ${AWS_REGION} - AWS region
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gpu-job-${JOB_ID}
+  namespace: aura-gpu-workloads
+  labels:
+    app: gpu-worker
+    aura.io/job-id: "${JOB_ID}"
+    aura.io/job-type: "${JOB_TYPE}"
+    aura.io/user-id: "${USER_ID}"
+    aura.io/organization-id: "${ORGANIZATION_ID}"
+    aura.io/priority: "${PRIORITY}"
+spec:
+  # Cleanup completed jobs after 1 hour
+  ttlSecondsAfterFinished: 3600
+  # Retry failed jobs up to 2 times
+  backoffLimit: 2
+  # Maximum runtime (default 8 hours)
+  activeDeadlineSeconds: ${ACTIVE_DEADLINE_SECONDS}
+  template:
+    metadata:
+      labels:
+        app: gpu-worker
+        aura.io/job-id: "${JOB_ID}"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: gpu-scheduler
+      restartPolicy: Never
+      # Pod security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Tolerations for GPU nodes
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        - key: workload-type
+          operator: Equal
+          value: gpu-compute
+          effect: NoSchedule
+      containers:
+        - name: gpu-worker
+          image: ${ECR_REPO}/aura-gpu-worker-${ENVIRONMENT}:${IMAGE_TAG}
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: "${MEMORY_LIMIT}"
+            requests:
+              nvidia.com/gpu: "1"
+              memory: "${MEMORY_REQUEST}"
+          # Container security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: JOB_ID
+              value: "${JOB_ID}"
+            - name: JOB_TYPE
+              value: "${JOB_TYPE}"
+            - name: JOB_CONFIG
+              value: '${JOB_CONFIG_JSON}'
+            - name: CHECKPOINT_S3_PATH
+              value: "${CHECKPOINT_S3_PATH}"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+            # Downward API for pod info
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          # Volume mounts for writable directories
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /home/aura/.cache
+      # Volumes
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: cache
+          emptyDir:
+            sizeLimit: 5Gi
+      # Node selection
+      nodeSelector:
+        kubernetes.io/os: linux
+        kubernetes.io/arch: amd64
+      # Spread across nodes when possible
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: gpu-worker
+                topologyKey: kubernetes.io/hostname

@@ -1,0 +1,71 @@
+name: Test Failure
+description: Report a failing test
+labels: ["bug", "tests"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to report failing tests. For pre-existing failures, also add to KNOWN_ISSUES.md.
+
+  - type: input
+    id: test-path
+    attributes:
+      label: Failing Test
+      description: Full test path (copy from pytest output)
+      placeholder: "tests/smoke/test_critical_paths.py::TestClassName::test_method_name"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error Message
+      description: Full error output from pytest
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: root-cause
+    attributes:
+      label: Root Cause Analysis
+      description: Why is this test failing? (API change, missing fixture, external dependency, etc.)
+      placeholder: "The test expects method X but the implementation was refactored to use method Y"
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Is this a regression?
+      description: Was this test passing before?
+      options:
+        - "Yes - this is a new failure (regression)"
+        - "No - this is a pre-existing failure"
+        - "Unknown - need to investigate"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P3-low (Pre-existing, doesn't block development)
+        - P2-medium (New failure, workaround exists)
+        - P1-high (Blocks CI/CD pipeline)
+        - P0-critical (Security or compliance test)
+    validations:
+      required: true
+
+  - type: textarea
+    id: fix-approach
+    attributes:
+      label: Suggested Fix
+      description: How should this be fixed?
+      placeholder: "Update test to use new API signature..."
+
+  - type: checkboxes
+    id: known-issues
+    attributes:
+      label: Documentation
+      options:
+        - label: I have added this to KNOWN_ISSUES.md (if pre-existing)

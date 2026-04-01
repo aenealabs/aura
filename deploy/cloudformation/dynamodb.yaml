@@ -1,0 +1,584 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.1 - DynamoDB (NoSQL Tables)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # Cost Tracking Table
+  CostTrackingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-cost-tracking-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+        - AttributeName: date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: DateIndex
+          KeySchema:
+            - AttributeName: date
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
+      # Enables 35-day continuous backups with 1-second granularity
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-cost-tracking-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # User Sessions Table
+  UserSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-user-sessions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sessionId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sessionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
+      # Enables 35-day continuous backups with 1-second granularity
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-user-sessions-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Code Generation Jobs Table
+  CodeGenJobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-codegen-jobs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: jobId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: N
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
+      # Enables 35-day continuous backups with 1-second granularity
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-codegen-jobs-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Git Ingestion Jobs Table
+  IngestionJobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-ingestion-jobs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: jobId
+          AttributeType: S
+        - AttributeName: repositoryId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: N
+        - AttributeName: datePartition
+          AttributeType: S
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: RepositoryIndex
+          KeySchema:
+            - AttributeName: repositoryId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # DatePartitionIndex - Efficient time-range queries for recent jobs
+        # Partition by date (YYYY-MM-DD) to spread load and enable efficient range queries
+        - IndexName: DatePartitionIndex
+          KeySchema:
+            - AttributeName: datePartition
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
+      # Enables 35-day continuous backups with 1-second granularity
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-ingestion-jobs-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Codebase Metadata Table
+  CodebaseMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-codebase-metadata-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: codebaseId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: codebaseId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
+      # Enables 35-day continuous backups with 1-second granularity
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-codebase-metadata-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Platform Settings Table
+  PlatformSettingsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-platform-settings-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: settings_type
+          AttributeType: S
+        - AttributeName: settings_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: settings_type
+          KeyType: HASH
+        - AttributeName: settings_key
+          KeyType: RANGE
+      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
+      # Enables 35-day continuous backups with 1-second granularity
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-platform-settings-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Anomaly Audit Trail Table
+  AnomaliesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-anomalies-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: anomaly_id
+          AttributeType: S
+        - AttributeName: sort_key
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: severity
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: dedup_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: anomaly_id
+          KeyType: HASH
+        - AttributeName: sort_key
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: status-created_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: severity-created_at-index
+          KeySchema:
+            - AttributeName: severity
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: dedup_key-index
+          KeySchema:
+            - AttributeName: dedup_key
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
+      # Enables 35-day continuous backups with 1-second granularity
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-anomalies-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Autonomy Policies Table - stores organization autonomy configurations
+  AutonomyPoliciesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-autonomy-policies-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: policy_id
+          AttributeType: S
+        - AttributeName: organization_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: policy_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: organization-index
+          KeySchema:
+            - AttributeName: organization_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-autonomy-policies-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Autonomy Policy Audit Table - audit trail for policy changes
+  PolicyAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-policy-audit-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: audit_id
+          AttributeType: S
+        - AttributeName: policy_id
+          AttributeType: S
+        - AttributeName: changed_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: audit_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: policy-changed_at-index
+          KeySchema:
+            - AttributeName: policy_id
+              KeyType: HASH
+            - AttributeName: changed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-policy-audit-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Autonomy Decisions Table - records of autonomous decisions made
+  AutonomyDecisionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-autonomy-decisions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: decision_id
+          AttributeType: S
+        - AttributeName: execution_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: organization_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: decision_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: execution-index
+          KeySchema:
+            - AttributeName: execution_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: org-timestamp-index
+          KeySchema:
+            - AttributeName: organization_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-autonomy-decisions-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  CostTableName:
+    Description: Cost tracking table name
+    Value: !Ref CostTrackingTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CostTableName'
+
+  CostTableArn:
+    Description: Cost tracking table ARN
+    Value: !GetAtt CostTrackingTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CostTableArn'
+
+  UserSessionsTableName:
+    Description: User sessions table name
+    Value: !Ref UserSessionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-UserSessionsTableName'
+
+  CodeGenJobsTableName:
+    Description: Code generation jobs table name
+    Value: !Ref CodeGenJobsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CodeGenJobsTableName'
+
+  CodebaseMetadataTableName:
+    Description: Codebase metadata table name
+    Value: !Ref CodebaseMetadataTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CodebaseMetadataTableName'
+
+  IngestionJobsTableName:
+    Description: Git ingestion jobs table name
+    Value: !Ref IngestionJobsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-IngestionJobsTableName'
+
+  IngestionJobsTableArn:
+    Description: Git ingestion jobs table ARN
+    Value: !GetAtt IngestionJobsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-IngestionJobsTableArn'
+
+  PlatformSettingsTableName:
+    Description: Platform settings table name
+    Value: !Ref PlatformSettingsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PlatformSettingsTableName'
+
+  PlatformSettingsTableArn:
+    Description: Platform settings table ARN
+    Value: !GetAtt PlatformSettingsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PlatformSettingsTableArn'
+
+  AnomaliesTableName:
+    Description: Anomalies audit trail table name
+    Value: !Ref AnomaliesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AnomaliesTableName'
+
+  AnomaliesTableArn:
+    Description: Anomalies audit trail table ARN
+    Value: !GetAtt AnomaliesTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AnomaliesTableArn'
+
+  AnomaliesTableStreamArn:
+    Description: Anomalies table DynamoDB Stream ARN
+    Value: !GetAtt AnomaliesTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-AnomaliesTableStreamArn'
+
+  AutonomyPoliciesTableName:
+    Description: Autonomy policies table name
+    Value: !Ref AutonomyPoliciesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AutonomyPoliciesTableName'
+
+  AutonomyPoliciesTableArn:
+    Description: Autonomy policies table ARN
+    Value: !GetAtt AutonomyPoliciesTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AutonomyPoliciesTableArn'
+
+  PolicyAuditTableName:
+    Description: Policy audit trail table name
+    Value: !Ref PolicyAuditTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PolicyAuditTableName'
+
+  PolicyAuditTableArn:
+    Description: Policy audit trail table ARN
+    Value: !GetAtt PolicyAuditTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PolicyAuditTableArn'
+
+  AutonomyDecisionsTableName:
+    Description: Autonomy decisions table name
+    Value: !Ref AutonomyDecisionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AutonomyDecisionsTableName'
+
+  AutonomyDecisionsTableArn:
+    Description: Autonomy decisions table ARN
+    Value: !GetAtt AutonomyDecisionsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AutonomyDecisionsTableArn'

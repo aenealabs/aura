@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.6 - Repository Onboarding DynamoDB Tables'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+Resources:
+  # Repositories Table - Stores connected repository metadata
+  RepositoriesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-repositories-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: repository_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: provider
+          AttributeType: S
+      KeySchema:
+        - AttributeName: repository_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: user-provider-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: provider
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: repository-onboarding
+
+  # OAuth Connections Table - Stores OAuth provider connections
+  OAuthConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-oauth-connections-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: provider
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-provider-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: provider
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: repository-onboarding
+
+  # Repository Ingestion Jobs Table - Tracks repository ingestion job status
+  RepositoryIngestionJobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-repo-ingestion-jobs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: repository_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-status-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: repository-index
+          KeySchema:
+            - AttributeName: repository_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: repository-onboarding
+
+Outputs:
+  RepositoriesTableName:
+    Description: Name of the repositories DynamoDB table
+    Value: !Ref RepositoriesTable
+    Export:
+      Name: !Sub '${ProjectName}-repositories-table-${Environment}'
+
+  RepositoriesTableArn:
+    Description: ARN of the repositories DynamoDB table
+    Value: !GetAtt RepositoriesTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-repositories-table-arn-${Environment}'
+
+  OAuthConnectionsTableName:
+    Description: Name of the OAuth connections DynamoDB table
+    Value: !Ref OAuthConnectionsTable
+    Export:
+      Name: !Sub '${ProjectName}-oauth-connections-table-${Environment}'
+
+  OAuthConnectionsTableArn:
+    Description: ARN of the OAuth connections DynamoDB table
+    Value: !GetAtt OAuthConnectionsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-oauth-connections-table-arn-${Environment}'
+
+  RepoIngestionJobsTableName:
+    Description: Name of the repository ingestion jobs DynamoDB table
+    Value: !Ref RepositoryIngestionJobsTable
+    Export:
+      Name: !Sub '${ProjectName}-repo-ingestion-jobs-table-${Environment}'
+
+  RepoIngestionJobsTableArn:
+    Description: ARN of the repository ingestion jobs DynamoDB table
+    Value: !GetAtt RepositoryIngestionJobsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-repo-ingestion-jobs-table-arn-${Environment}'

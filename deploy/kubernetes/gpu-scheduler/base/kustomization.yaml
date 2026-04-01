@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: aura-gpu-workloads
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - networkpolicy.yaml
+  - resourcequota.yaml
+
+commonLabels:
+  app.kubernetes.io/name: gpu-scheduler
+  app.kubernetes.io/part-of: aura
+  app.kubernetes.io/managed-by: kustomize

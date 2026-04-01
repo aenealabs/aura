@@ -1,0 +1,236 @@
+version: 0.2
+
+# Runbook Agent: Automated Incident Documentation
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+#
+# Optional overrides via environmentVariablesOverride:
+# - PROCESSING_HOURS: Hours to look back for incidents (default: 24)
+# - DRY_RUN: If 'true', don't create/update files (default: false)
+# - USE_LLM: If 'true', use Bedrock for content enhancement (default: true)
+# - CONFIDENCE_THRESHOLD: Minimum confidence for processing (default: 0.6)
+
+env:
+  shell: bash
+  variables:
+    RUNBOOKS_DIR: "docs/runbooks"
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install boto3 botocore
+
+  pre_build:
+    commands:
+      - echo "Runbook Agent starting pre_build phase..."
+      - echo "Environment is $ENVIRONMENT"
+      - echo "Processing Hours is ${PROCESSING_HOURS:-24}"
+      - echo "Dry Run is ${DRY_RUN:-false}"
+      - echo "Use LLM is ${USE_LLM:-true}"
+      - echo "Confidence Threshold is ${CONFIDENCE_THRESHOLD:-0.6}"
+      - echo "Verifying Python module availability..."
+      - python3 -c "from src.services.runbook import RunbookAgent; print('RunbookAgent module loaded successfully')"
+
+  build:
+    commands:
+      - echo "Starting Runbook Agent processing..."
+      - |
+        python3 << 'PYTHON_SCRIPT'
+        import asyncio
+        import json
+        import os
+        import sys
+        import boto3
+
+        # Add project root to path
+        sys.path.insert(0, os.getcwd())
+
+        from src.services.runbook import RunbookAgent
+
+        async def main():
+            # Configuration from environment
+            region = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
+            project_name = os.environ.get('PROJECT_NAME', 'aura')
+            environment = os.environ.get('ENVIRONMENT')
+            if not environment:
+                raise ValueError("ENVIRONMENT variable is required but not set")
+            processing_hours = int(os.environ.get('PROCESSING_HOURS', '24'))
+            dry_run = os.environ.get('DRY_RUN', 'false').lower() == 'true'
+            use_llm = os.environ.get('USE_LLM', 'true').lower() == 'true'
+            confidence_threshold = float(os.environ.get('CONFIDENCE_THRESHOLD', '0.6'))
+
+            print(f"Configuration:")
+            print(f"  Region: {region}")
+            print(f"  Project: {project_name}")
+            print(f"  Environment: {environment}")
+            print(f"  Processing Hours: {processing_hours}")
+            print(f"  Dry Run: {dry_run}")
+            print(f"  Use LLM: {use_llm}")
+            print(f"  Confidence Threshold: {confidence_threshold}")
+            print()
+
+            # Initialize agent
+            agent = RunbookAgent(
+                region=region,
+                project_name=project_name,
+                environment=environment,
+                runbooks_dir='docs/runbooks',
+                use_llm=use_llm,
+                auto_apply=not dry_run,
+                confidence_threshold=confidence_threshold,
+            )
+
+            # Process recent incidents
+            print(f"Processing incidents from the last {processing_hours} hours...")
+            stats = await agent.process_recent_incidents(
+                hours=processing_hours,
+                dry_run=dry_run,
+            )
+
+            # Report results
+            print()
+            print("=" * 50)
+            print("Processing Complete")
+            print("=" * 50)
+            print(f"Incidents Detected: {stats.incidents_detected}")
+            print(f"Runbooks Created: {stats.runbooks_created}")
+            print(f"Runbooks Updated: {stats.runbooks_updated}")
+            print(f"Runbooks Skipped: {stats.runbooks_skipped}")
+            print(f"Errors: {stats.errors}")
+            print(f"Processing Time: {stats.processing_time_seconds:.2f} seconds")
+
+            # Publish metrics to CloudWatch
+            try:
+                cloudwatch = boto3.client('cloudwatch', region_name=region)
+                cloudwatch.put_metric_data(
+                    Namespace=f'{project_name}/RunbookAgent',
+                    MetricData=[
+                        {
+                            'MetricName': 'IncidentsDetected',
+                            'Value': stats.incidents_detected,
+                            'Unit': 'Count',
+                            'Dimensions': [
+                                {'Name': 'Environment', 'Value': environment}
+                            ]
+                        },
+                        {
+                            'MetricName': 'RunbooksCreated',
+                            'Value': stats.runbooks_created,
+                            'Unit': 'Count',
+                            'Dimensions': [
+                                {'Name': 'Environment', 'Value': environment}
+                            ]
+                        },
+                        {
+                            'MetricName': 'RunbooksUpdated',
+                            'Value': stats.runbooks_updated,
+                            'Unit': 'Count',
+                            'Dimensions': [
+                                {'Name': 'Environment', 'Value': environment}
+                            ]
+                        },
+                        {
+                            'MetricName': 'Errors',
+                            'Value': stats.errors,
+                            'Unit': 'Count',
+                            'Dimensions': [
+                                {'Name': 'Environment', 'Value': environment}
+                            ]
+                        },
+                        {
+                            'MetricName': 'ProcessingTime',
+                            'Value': stats.processing_time_seconds,
+                            'Unit': 'Seconds',
+                            'Dimensions': [
+                                {'Name': 'Environment', 'Value': environment}
+                            ]
+                        },
+                    ]
+                )
+                print("Metrics published to CloudWatch")
+            except Exception as e:
+                print(f"Warning: Failed to publish metrics: {e}")
+
+            # Return exit code based on errors
+            if stats.errors > 0 and stats.errors >= stats.incidents_detected:
+                print("ERROR: All incidents failed processing")
+                sys.exit(1)
+
+            return stats
+
+        # Run the async main function
+        asyncio.run(main())
+        PYTHON_SCRIPT
+
+  post_build:
+    commands:
+      - echo "Runbook Agent processing completed!"
+
+      # List any newly created or modified runbooks
+      - |
+        echo ""
+        echo "=== Runbook Files ==="
+        if [ -d "$RUNBOOKS_DIR" ]; then
+          ls -la $RUNBOOKS_DIR/*.md 2>/dev/null | tail -10 || echo "No runbooks found"
+        else
+          echo "Runbooks directory not found"
+        fi
+
+      # Show repository stats if available
+      - |
+        echo ""
+        echo "=== Repository Stats ==="
+        python3 << 'STATS_SCRIPT' || echo "Stats unavailable"
+        import asyncio
+        import os
+        import sys
+        sys.path.insert(0, os.getcwd())
+
+        from src.services.runbook import RunbookAgent
+
+        async def show_stats():
+            environment = os.environ.get('ENVIRONMENT')
+            if not environment:
+                raise ValueError("ENVIRONMENT variable is required but not set")
+            agent = RunbookAgent(
+                region=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'),
+                project_name=os.environ.get('PROJECT_NAME', 'aura'),
+                environment=environment,
+                use_llm=False,
+            )
+            # Use filesystem only (DynamoDB may not be deployed yet)
+            agent.repository.use_dynamodb = False
+            stats = await agent.get_stats()
+            print(f"Total Runbooks: {stats['total_runbooks']}")
+            print(f"Auto-Generated: {stats['auto_generated']}")
+            print(f"Manual: {stats['manually_created']}")
+            if stats['unique_services']:
+                print(f"Services Covered: {', '.join(stats['unique_services'][:10])}")
+
+        asyncio.run(show_stats())
+        STATS_SCRIPT
+
+artifacts:
+  files:
+    - docs/runbooks/**/*
+  name: runbook-agent-output
+  discard-paths: no
+
+reports:
+  runbook-agent-report:
+    files:
+      - '**/*'
+    base-directory: docs/runbooks
+    discard-paths: no
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

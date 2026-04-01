@@ -1,0 +1,336 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Runbook Agent CodeBuild Project (Layer 6.8: Automated Documentation)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-12-11'
+  Layer: 6
+  LayerName: Serverless/Observability
+  Purpose: |
+    CodeBuild project for the Runbook Agent that automatically detects
+    break/fix incidents and generates or updates operational runbooks.
+
+    This is a lightweight agent that:
+    - Monitors CodeBuild and CloudFormation for failure→success patterns
+    - Generates new runbooks for unique incidents
+    - Updates existing runbooks with new resolution knowledge
+    - Can be triggered manually or via EventBridge schedule
+
+  Dependencies:
+    - runbook-agent.yaml - DynamoDB table and EventBridge rule
+    - codebuild-application.yaml - For Bedrock access (LLM enhancement)
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    AllowedValues:
+      - main
+      - develop
+    Description: GitHub branch to build from
+
+Resources:
+  # S3 Bucket for Runbook Agent Artifacts
+  RunbookAgentArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-runbook-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpirationInDays: 7
+          - Id: TransitionToIntelligentTiering
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 0
+                StorageClass: INTELLIGENT_TIERING
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: serverless
+        - Key: Service
+          Value: runbook-agent
+
+  # CloudWatch Log Group for Runbook Agent Builds
+  RunbookAgentBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-runbook-agent-${Environment}'
+      RetentionInDays: 30
+
+  # IAM Role for Runbook Agent CodeBuild
+  RunbookAgentCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-runbook-agent-codebuild-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RunbookAgentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs - Build logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:PutRetentionPolicy
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-runbook-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/runbook-agent/*:*'
+
+              # CloudWatch Logs - Read other build logs for incident detection
+              - Effect: Allow
+                Action:
+                  - logs:GetLogEvents
+                  - logs:FilterLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*:*'
+
+              # CloudWatch Metrics - Publish agent metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/RunbookAgent'
+
+              # S3 - Artifacts bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt RunbookAgentArtifactsBucket.Arn
+                  - !Sub '${RunbookAgentArtifactsBucket.Arn}/*'
+
+              # DynamoDB - Runbook index table
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-runbooks-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-runbooks-${Environment}/index/*'
+
+              # CodeBuild - Read build history for incident detection
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:ListBuilds
+                  - codebuild:ListBuildsForProject
+                  - codebuild:ListProjects
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectName}-*'
+
+              # CodeBuild Reports - Create and update report groups for test results
+              - Effect: Allow
+                Action:
+                  - codebuild:CreateReportGroup
+                  - codebuild:CreateReport
+                  - codebuild:UpdateReport
+                  - codebuild:BatchPutTestCases
+                  - codebuild:BatchPutCodeCoverages
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/${ProjectName}-runbook-*'
+
+              # CloudFormation - Read stack events for incident detection
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:ListStacks
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-*/*'
+
+              # Bedrock - LLM for runbook enhancement
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-*'
+
+              # SNS - Publish notifications
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-runbook-*'
+
+              # CodeConnections - GitHub access
+              # Note: Both 'codeconnections' and legacy 'codestar-connections' namespaces needed
+              # because AWS APIs may use either depending on the operation and SDK version
+              - Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codeconnections:GetConnectionToken
+                  - codeconnections:GetConnection
+                  - codestar-connections:UseConnection
+                  - codestar-connections:GetConnectionToken
+                  - codestar-connections:GetConnection
+                Resource:
+                  - '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+  # CodeBuild Project for Runbook Agent
+  RunbookAgentCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-runbook-agent-${Environment}'
+      Description: 'Project Aura - Runbook Agent (Layer 6: Automated Documentation)'
+      ServiceRole: !GetAtt RunbookAgentCodeBuildRole.Arn
+      Artifacts:
+        Type: S3
+        Location: !Ref RunbookAgentArtifactsBucket
+        Name: runbook-agent-artifacts
+        Packaging: ZIP
+        EncryptionDisabled: false
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL  # 3 GB RAM - sufficient for Python processing
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false  # No Docker needed
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: LAYER
+            Value: serverless
+          - Name: PROCESSING_HOURS
+            Value: '24'
+          - Name: DRY_RUN
+            Value: 'false'
+          - Name: USE_LLM
+            Value: 'true'
+          - Name: CONFIDENCE_THRESHOLD
+            Value: '0.6'
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-runbook-agent.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref RunbookAgentBuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_SOURCE_CACHE
+      TimeoutInMinutes: 15  # Agent runs should be quick
+      QueuedTimeoutInMinutes: 60
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: serverless
+        - Key: Service
+          Value: runbook-agent
+
+  # CloudWatch Alarm - Build Failures
+  RunbookAgentBuildFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-runbook-agent-build-failures-${Environment}'
+      AlarmDescription: 'Alert when Runbook Agent build fails'
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref RunbookAgentCodeBuildProject
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  RunbookAgentProjectName:
+    Description: Runbook Agent CodeBuild project name
+    Value: !Ref RunbookAgentCodeBuildProject
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectName'
+
+  RunbookAgentProjectArn:
+    Description: Runbook Agent CodeBuild project ARN
+    Value: !GetAtt RunbookAgentCodeBuildProject.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectArn'
+
+  RunbookAgentArtifactsBucketName:
+    Description: Runbook Agent artifacts bucket name
+    Value: !Ref RunbookAgentArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
+
+  RunbookAgentRoleArn:
+    Description: Runbook Agent CodeBuild role ARN
+    Value: !GetAtt RunbookAgentCodeBuildRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleArn'

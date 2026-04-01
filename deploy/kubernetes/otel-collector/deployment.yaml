@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: otel-system
+  labels:
+    app.kubernetes.io/name: otel-collector
+  annotations:
+    # Will be updated by deployment script
+    eks.amazonaws.com/role-arn: "${OTEL_COLLECTOR_ROLE_ARN}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: otel-system
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/component: observability
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8888"
+    spec:
+      serviceAccountName: otel-collector
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: otel-collector
+          image: amazon/aws-otel-collector:v0.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/awscollector"
+            - "--config=/conf/otel-collector-config.yaml"
+          env:
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: ENVIRONMENT
+              value: "dev"
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: metrics
+              containerPort: 8888
+              protocol: TCP
+            - name: health
+              containerPort: 13133
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: otel-collector
+                topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: otel-system
+  labels:
+    app.kubernetes.io/name: otel-collector
+spec:
+  type: ClusterIP
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+    - name: metrics
+      port: 8888
+      targetPort: 8888
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: otel-collector

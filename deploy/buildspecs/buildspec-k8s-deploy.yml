@@ -1,0 +1,112 @@
+version: 0.2
+
+env:
+  variables:
+    PROJECT_NAME: aura
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing kubectl, helm, and kustomize"
+      # Use pinned kubectl version for reliability (matches EKS 1.34)
+      - KUBECTL_VERSION="v1.34.0"
+      - curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" || curl -LO "https://dl.k8s.io/release/v1.33.0/bin/linux/amd64/kubectl"
+      - chmod +x kubectl && mv kubectl /usr/local/bin/
+      - curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      # Install kustomize for manifest generation (ADR-062)
+      - KUSTOMIZE_VERSION="v5.4.3"
+      - curl -sLO "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+      - tar xzf kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz && mv kustomize /usr/local/bin/
+      - kubectl version --client
+      - helm version
+      - kustomize version
+      # Install Python dependencies for environment validator (ADR-062)
+      - pip install pyyaml
+
+  pre_build:
+    commands:
+      - echo "Configuring kubectl for EKS"
+      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - echo "AWS Account ID - ${AWS_ACCOUNT_ID}"
+      - chmod +x deploy/scripts/validate-account-id.sh
+      - ./deploy/scripts/validate-account-id.sh "${ENVIRONMENT}" "${AWS_ACCOUNT_ID}"
+      - export CLUSTER_NAME="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+      - export VPC_ID=$(aws ssm get-parameter --name /${PROJECT_NAME}/${ENVIRONMENT}/vpc-id --query 'Parameter.Value' --output text)
+      - export ALB_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}-alb-controller-role-${ENVIRONMENT}"
+      - aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
+      - echo "Verifying cluster connectivity"
+      - kubectl cluster-info
+      - kubectl get nodes
+      - echo "Generating K8s config from CloudFormation outputs"
+      - chmod +x deploy/scripts/generate-k8s-config.sh
+      - ./deploy/scripts/generate-k8s-config.sh ${ENVIRONMENT} ${AWS_REGION}
+      - echo "Validating generated overlay images use correct account ID"
+      - |
+        VALIDATION_FAILED=false
+        for OVERLAY in deploy/kubernetes/*/overlays/${ENVIRONMENT}/kustomization.yaml; do
+          if [ -f "$OVERLAY" ]; then
+            if grep -q "dkr.ecr" "$OVERLAY"; then
+              OVERLAY_ACCOUNT=$(grep "dkr.ecr" "$OVERLAY" | head -1 | grep -oE '[0-9]{12}' | head -1)
+              if [ "$OVERLAY_ACCOUNT" != "$AWS_ACCOUNT_ID" ]; then
+                echo "ERROR: $OVERLAY uses account $OVERLAY_ACCOUNT but expected $AWS_ACCOUNT_ID"
+                VALIDATION_FAILED=true
+              else
+                echo "OK: $OVERLAY uses correct account $AWS_ACCOUNT_ID"
+              fi
+            fi
+          fi
+        done
+        if [ "$VALIDATION_FAILED" = "true" ]; then
+          echo "FATAL: Image account validation failed - aborting deployment"
+          exit 1
+        fi
+      - echo "Running Environment Validator (ADR-062)"
+      - |
+        # Validate all service manifests before deployment
+        SERVICES="aura-api agent-orchestrator memory-service aura-frontend"
+        VALIDATOR_FAILED=false
+        for SERVICE in $SERVICES; do
+          OVERLAY_DIR="deploy/kubernetes/${SERVICE}/overlays/${ENVIRONMENT}"
+          if [ -d "$OVERLAY_DIR" ]; then
+            echo "Validating ${SERVICE} for ${ENVIRONMENT} environment..."
+            kustomize build "$OVERLAY_DIR" > "/tmp/${SERVICE}-manifest.yaml"
+            if python -m src.services.env_validator.cli "/tmp/${SERVICE}-manifest.yaml" --env "${ENVIRONMENT}" --strict; then
+              echo "OK: ${SERVICE} passed environment validation"
+            else
+              echo "ERROR: ${SERVICE} failed environment validation"
+              VALIDATOR_FAILED=true
+            fi
+          fi
+        done
+        if [ "$VALIDATOR_FAILED" = "true" ]; then
+          echo "FATAL: Environment validation failed - aborting deployment"
+          echo "Fix the cross-environment configuration issues and retry"
+          exit 1
+        fi
+        echo "All services passed environment validation"
+
+  build:
+    commands:
+      - echo "Phase 1 - Installing ALB Controller"
+      - helm repo add eks https://aws.github.io/eks-charts
+      - helm repo update
+      - helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system --create-namespace --set clusterName=${CLUSTER_NAME} --set region=${AWS_REGION} --set vpcId=${VPC_ID} --set serviceAccount.create=true --set serviceAccount.name=aws-load-balancer-controller --set "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=${ALB_ROLE_ARN}" --wait --timeout 5m
+      - echo "Phase 2 - Deploying Core Services"
+      - kubectl apply -k deploy/kubernetes/aura-api/overlays/${ENVIRONMENT}/ || true
+      - kubectl apply -k deploy/kubernetes/agent-orchestrator/overlays/${ENVIRONMENT}/ || true
+      - kubectl apply -k deploy/kubernetes/memory-service/overlays/${ENVIRONMENT}/ || true
+      - kubectl apply -k deploy/kubernetes/aura-frontend/overlays/${ENVIRONMENT}/ || true
+      - echo "Phase 3 - Waiting for Rollouts"
+      - kubectl rollout status deployment/aura-api -n default --timeout=5m || echo "aura-api not ready"
+      - kubectl rollout status deployment/agent-orchestrator -n default --timeout=5m || echo "agent-orchestrator not ready"
+      - kubectl rollout status deployment/memory-service -n default --timeout=5m || echo "memory-service not ready"
+      - kubectl rollout status deployment/aura-frontend -n default --timeout=5m || echo "aura-frontend not ready"
+
+  post_build:
+    commands:
+      - echo "Deployment Verification"
+      - kubectl get pods -A || true
+      - kubectl get svc -A || true
+      - echo "Kubernetes Deployment Complete"

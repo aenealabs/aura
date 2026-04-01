@@ -1,0 +1,883 @@
+version: 0.2
+
+# Serverless Layer: Lambda Functions, EventBridge Schedulers, A2A Protocol Infrastructure
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  shell: bash
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing build dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint setuptools wheel
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Serverless Layer Deployment"
+      - echo "=========================================="
+      - echo "Environment $ENVIRONMENT | Project $PROJECT_NAME | Region $AWS_DEFAULT_REGION"
+
+      # Validate templates
+      - echo "Validating serverless layer templates..."
+      - cfn-lint deploy/cloudformation/threat-intel-scheduler.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/hitl-scheduler.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/hitl-callback.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/a2a-infrastructure.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/agent-queues.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/orchestrator-dispatcher.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/codebuild-runbook-agent.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/dns-blocklist-lambda.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/runbook-agent.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/checkpoint-dynamodb.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/checkpoint-websocket.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/serverless-permission-boundary.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      # cloudtrail.yaml removed - Organization CloudTrail deployed to management account (ADR-059)
+      - cfn-lint deploy/cloudformation/iam-security-alerting.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/scheduling-infrastructure.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/gpu-scheduler-infrastructure.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/constitutional-audit-queue.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/constitutional-ai-evaluation.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - echo "Template validation complete"
+
+      # Source CloudFormation deployment helpers
+      - source deploy/scripts/cfn-deploy-helpers.sh
+
+      # Retrieve dependency outputs
+      - echo "Retrieving dependency outputs..."
+      - MONITORING_STACK="${PROJECT_NAME}-monitoring-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $MONITORING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          SNS_TOPIC_ARN=$(aws cloudformation describe-stacks --stack-name $MONITORING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`AlertTopicArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "SNS Topic ARN: $SNS_TOPIC_ARN"
+        else
+          SNS_TOPIC_ARN=""
+          echo "Warning: Monitoring stack not found, SNS notifications disabled"
+        fi
+
+      - echo "Preparing Lambda deployment packages..."
+      - mkdir -p /tmp/lambda-packages
+
+  build:
+    commands:
+      # Generate deployment timestamp for forcing stack updates
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # ============================================================================
+      # CRITICAL: Deploy Permission Boundary FIRST (before any Lambda stacks)
+      # Permission boundary must exist before roles that reference it can be created.
+      # Also allows IAM propagation time before dependent stacks are deployed.
+      # ============================================================================
+      - echo "Deploying Serverless Permission Boundary (prerequisite for Lambda roles)..."
+      - PERMISSION_BOUNDARY_STACK="${PROJECT_NAME}-serverless-permission-boundary-${ENVIRONMENT}"
+      - |
+        PERM_BOUNDARY_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        PERM_BOUNDARY_PARAMS="$PERM_BOUNDARY_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+      - |
+        if aws cloudformation describe-stacks --stack-name $PERMISSION_BOUNDARY_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Permission Boundary stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $PERMISSION_BOUNDARY_STACK \
+            --template-body file://deploy/cloudformation/serverless-permission-boundary.yaml \
+            --parameters $PERM_BOUNDARY_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=SecurityControl,Value=PermissionBoundary Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $PERMISSION_BOUNDARY_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $PERMISSION_BOUNDARY_STACK"
+          else
+            echo "Permission Boundary update output: $OUTPUT"
+          fi
+        else
+          echo "Permission Boundary stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $PERMISSION_BOUNDARY_STACK \
+            --template-body file://deploy/cloudformation/serverless-permission-boundary.yaml \
+            --parameters $PERM_BOUNDARY_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=SecurityControl,Value=PermissionBoundary Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $PERMISSION_BOUNDARY_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Serverless Permission Boundary deployment complete"
+      # Wait for IAM propagation (permission boundaries can take up to 60s to propagate globally)
+      - echo "Waiting 30 seconds for IAM permission boundary propagation..."
+      - sleep 30
+
+      # Package Lambda functions
+      - echo "Packaging Lambda functions..."
+      - echo "Packaging threat-intel-processor..."
+      - THREAT_INTEL_PACKAGE="/tmp/lambda-packages/threat-intel-processor.zip"
+      - |
+        cd src && \
+        zip -r $THREAT_INTEL_PACKAGE lambda/threat_intelligence_processor.py && \
+        zip -r $THREAT_INTEL_PACKAGE agents/ -x "*.pyc" -x "__pycache__/*" && \
+        zip -r $THREAT_INTEL_PACKAGE services/ -x "*.pyc" -x "__pycache__/*" && \
+        cd ..
+      - echo "Threat intel package created"
+
+      - echo "Packaging approval-callback-handler..."
+      - APPROVAL_CALLBACK_PACKAGE="/tmp/lambda-packages/approval-callback-handler.zip"
+      - |
+        cd src && \
+        zip -r $APPROVAL_CALLBACK_PACKAGE lambda/approval_callback_handler.py && \
+        zip -r $APPROVAL_CALLBACK_PACKAGE services/notification_service.py && \
+        zip -r $APPROVAL_CALLBACK_PACKAGE services/hitl_approval_service.py && \
+        cd ..
+      - echo "Approval callback package created"
+
+      - echo "Packaging expiration-processor..."
+      - EXPIRATION_PROCESSOR_PACKAGE="/tmp/lambda-packages/expiration-processor.zip"
+      - |
+        cd src && \
+        zip -r $EXPIRATION_PROCESSOR_PACKAGE lambda/expiration_processor.py && \
+        zip -r $EXPIRATION_PROCESSOR_PACKAGE services/notification_service.py && \
+        zip -r $EXPIRATION_PROCESSOR_PACKAGE services/hitl_approval_service.py && \
+        cd ..
+      - echo "Expiration processor package created"
+
+      - echo "Packaging checkpoint-handlers..."
+      - CHECKPOINT_HANDLERS_PACKAGE="/tmp/lambda-packages/checkpoint-handlers.zip"
+      - |
+        cd src && \
+        zip -r $CHECKPOINT_HANDLERS_PACKAGE lambda/checkpoint/ && \
+        cd ..
+      - echo "Checkpoint handlers package created"
+
+      - echo "Packaging orchestrator-dispatcher..."
+      - ORCHESTRATOR_DISPATCHER_PACKAGE="/tmp/lambda-packages/orchestrator-dispatcher.zip"
+      - |
+        cd src && \
+        zip -r $ORCHESTRATOR_DISPATCHER_PACKAGE lambda/orchestrator_dispatcher.py && \
+        cd ..
+      - echo "Orchestrator dispatcher package created"
+
+      - echo "Packaging constitutional-evaluation..."
+      - CONSTITUTIONAL_EVAL_PACKAGE="/tmp/lambda-packages/constitutional-evaluation.zip"
+      - |
+        cd src && \
+        zip -r $CONSTITUTIONAL_EVAL_PACKAGE lambda/constitutional_evaluation/ && \
+        zip -r $CONSTITUTIONAL_EVAL_PACKAGE services/constitutional_ai/ -x "*.pyc" -x "__pycache__/*" && \
+        cd ..
+      - echo "Constitutional evaluation package created"
+
+      # Upload to S3
+      - echo "Uploading Lambda packages to S3..."
+      - LAMBDA_BUCKET="${PROJECT_NAME}-serverless-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+      - TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - THREAT_INTEL_S3_KEY="lambda/threat-intel-processor-${TIMESTAMP}.zip"
+      - APPROVAL_CALLBACK_S3_KEY="lambda/approval-callback-handler-${TIMESTAMP}.zip"
+      - EXPIRATION_PROCESSOR_S3_KEY="lambda/expiration-processor-${TIMESTAMP}.zip"
+      - CHECKPOINT_HANDLERS_S3_KEY="lambda/checkpoint-handlers-${TIMESTAMP}.zip"
+      - ORCHESTRATOR_DISPATCHER_S3_KEY="lambda/orchestrator-dispatcher-latest.zip"
+      - CONSTITUTIONAL_EVAL_S3_KEY="lambda/constitutional-evaluation-${TIMESTAMP}.zip"
+      # --sse AES256: Required by SCP DenyUnencryptedS3Uploads
+      - |
+        if aws s3 ls s3://$LAMBDA_BUCKET 2>/dev/null; then
+          aws s3 cp --sse AES256 $THREAT_INTEL_PACKAGE s3://$LAMBDA_BUCKET/$THREAT_INTEL_S3_KEY
+          echo "Uploaded to s3://$LAMBDA_BUCKET/$THREAT_INTEL_S3_KEY"
+          aws s3 cp --sse AES256 $APPROVAL_CALLBACK_PACKAGE s3://$LAMBDA_BUCKET/$APPROVAL_CALLBACK_S3_KEY
+          echo "Uploaded to s3://$LAMBDA_BUCKET/$APPROVAL_CALLBACK_S3_KEY"
+          aws s3 cp --sse AES256 $EXPIRATION_PROCESSOR_PACKAGE s3://$LAMBDA_BUCKET/$EXPIRATION_PROCESSOR_S3_KEY
+          echo "Uploaded to s3://$LAMBDA_BUCKET/$EXPIRATION_PROCESSOR_S3_KEY"
+          aws s3 cp --sse AES256 $CHECKPOINT_HANDLERS_PACKAGE s3://$LAMBDA_BUCKET/$CHECKPOINT_HANDLERS_S3_KEY
+          echo "Uploaded to s3://$LAMBDA_BUCKET/$CHECKPOINT_HANDLERS_S3_KEY"
+          aws s3 cp --sse AES256 $ORCHESTRATOR_DISPATCHER_PACKAGE s3://$LAMBDA_BUCKET/$ORCHESTRATOR_DISPATCHER_S3_KEY
+          echo "Uploaded to s3://$LAMBDA_BUCKET/$ORCHESTRATOR_DISPATCHER_S3_KEY"
+          aws s3 cp --sse AES256 $CONSTITUTIONAL_EVAL_PACKAGE s3://$LAMBDA_BUCKET/$CONSTITUTIONAL_EVAL_S3_KEY
+          echo "Uploaded to s3://$LAMBDA_BUCKET/$CONSTITUTIONAL_EVAL_S3_KEY"
+        else
+          echo "Warning: S3 bucket $LAMBDA_BUCKET not found"
+          echo "Bucket will be created by CodeBuild CloudFormation stack"
+          THREAT_INTEL_S3_KEY="inline"
+          APPROVAL_CALLBACK_S3_KEY="inline"
+          EXPIRATION_PROCESSOR_S3_KEY="inline"
+          CHECKPOINT_HANDLERS_S3_KEY="inline"
+          ORCHESTRATOR_DISPATCHER_S3_KEY="inline"
+          CONSTITUTIONAL_EVAL_S3_KEY="inline"
+        fi
+
+      # Deploy Threat Intelligence Scheduler
+      - echo "Deploying Threat Intelligence Scheduler..."
+      - THREAT_INTEL_STACK="${PROJECT_NAME}-threat-intel-scheduler-${ENVIRONMENT}"
+      # Build CloudFormation parameters - use template defaults for ScheduleExpression
+      - |
+        PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        PARAMS="$PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        PARAMS="$PARAMS ParameterKey=SeverityThreshold,ParameterValue=MEDIUM"
+        PARAMS="$PARAMS ParameterKey=MaxCVEAgeDays,ParameterValue=30"
+        PARAMS="$PARAMS ParameterKey=LambdaS3Bucket,ParameterValue=$LAMBDA_BUCKET"
+        PARAMS="$PARAMS ParameterKey=LambdaS3Key,ParameterValue=$THREAT_INTEL_S3_KEY"
+        if [ -n "$SNS_TOPIC_ARN" ]; then
+          PARAMS="$PARAMS ParameterKey=SNSTopicArn,ParameterValue=$SNS_TOPIC_ARN"
+        fi
+      - |
+        if aws cloudformation describe-stacks --stack-name $THREAT_INTEL_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $THREAT_INTEL_STACK \
+            --template-body file://deploy/cloudformation/threat-intel-scheduler.yaml \
+            --parameters $PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $THREAT_INTEL_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $THREAT_INTEL_STACK"
+          else
+            echo "Update failed: $OUTPUT"
+            exit 1
+          fi
+        else
+          echo "Stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $THREAT_INTEL_STACK \
+            --template-body file://deploy/cloudformation/threat-intel-scheduler.yaml \
+            --parameters $PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $THREAT_INTEL_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Threat Intelligence Scheduler deployment complete"
+
+      # Deploy HITL Scheduler (if template exists)
+      - echo "Checking for HITL Scheduler template..."
+      - HITL_STACK="${PROJECT_NAME}-hitl-scheduler-${ENVIRONMENT}"
+      - |
+        if [ -f "deploy/cloudformation/hitl-scheduler.yaml" ]; then
+          echo "Deploying HITL Expiration Scheduler..."
+          if aws cloudformation describe-stacks --stack-name $HITL_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+            echo "Stack exists, attempting update..."
+            OUTPUT=$(aws cloudformation update-stack \
+              --stack-name $HITL_STACK \
+              --template-body file://deploy/cloudformation/hitl-scheduler.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+                ParameterKey=LambdaS3Bucket,ParameterValue=$LAMBDA_BUCKET \
+                ParameterKey=LambdaS3Key,ParameterValue=$EXPIRATION_PROCESSOR_S3_KEY \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager 2>&1) && \
+            aws cloudformation wait stack-update-complete --stack-name $HITL_STACK --region $AWS_DEFAULT_REGION || \
+            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+              echo "No updates needed for $HITL_STACK"
+            else
+              echo "Update failed: $OUTPUT"
+              exit 1
+            fi
+          else
+            echo "Stack does not exist, creating..."
+            aws cloudformation create-stack \
+              --stack-name $HITL_STACK \
+              --template-body file://deploy/cloudformation/hitl-scheduler.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+                ParameterKey=LambdaS3Bucket,ParameterValue=$LAMBDA_BUCKET \
+                ParameterKey=LambdaS3Key,ParameterValue=$EXPIRATION_PROCESSOR_S3_KEY \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $HITL_STACK --region $AWS_DEFAULT_REGION
+          fi
+          echo "HITL Scheduler deployment complete"
+        else
+          echo "HITL scheduler template not found, skipping"
+        fi
+
+      # Deploy HITL Approval Callback Lambda (if template exists)
+      - echo "Checking for HITL Approval Callback template..."
+      - CALLBACK_STACK="${PROJECT_NAME}-hitl-callback-${ENVIRONMENT}"
+      - |
+        if [ -f "deploy/cloudformation/hitl-callback.yaml" ]; then
+          echo "Deploying HITL Approval Callback..."
+          if aws cloudformation describe-stacks --stack-name $CALLBACK_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+            echo "Stack exists, attempting update..."
+            OUTPUT=$(aws cloudformation update-stack \
+              --stack-name $CALLBACK_STACK \
+              --template-body file://deploy/cloudformation/hitl-callback.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+                ParameterKey=LambdaS3Bucket,ParameterValue=$LAMBDA_BUCKET \
+                ParameterKey=LambdaS3Key,ParameterValue=$APPROVAL_CALLBACK_S3_KEY \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager 2>&1) && \
+            aws cloudformation wait stack-update-complete --stack-name $CALLBACK_STACK --region $AWS_DEFAULT_REGION || \
+            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+              echo "No updates needed for $CALLBACK_STACK"
+            else
+              echo "Update failed: $OUTPUT"
+              exit 1
+            fi
+          else
+            echo "Stack does not exist, creating..."
+            aws cloudformation create-stack \
+              --stack-name $CALLBACK_STACK \
+              --template-body file://deploy/cloudformation/hitl-callback.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+                ParameterKey=LambdaS3Bucket,ParameterValue=$LAMBDA_BUCKET \
+                ParameterKey=LambdaS3Key,ParameterValue=$APPROVAL_CALLBACK_S3_KEY \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $CALLBACK_STACK --region $AWS_DEFAULT_REGION
+          fi
+          echo "HITL Approval Callback deployment complete"
+        else
+          echo "HITL callback template not found, skipping"
+        fi
+
+      # NOTE: Runbook Agent CodeBuild is deployed by Foundation layer (requires codeconnections access)
+      # See buildspec-foundation.yml for CI/CD infrastructure management
+
+      # Deploy A2A Protocol Infrastructure (Agent Registry, Message Queue, Event Bus)
+      # NOTE: A2A is an optional/experimental feature - skip gracefully if template not available
+      - echo "Deploying A2A Protocol Infrastructure..."
+      - A2A_STACK="${PROJECT_NAME}-a2a-infrastructure-${ENVIRONMENT}"
+      - |
+        if [ -f "deploy/cloudformation/a2a-infrastructure.yaml" ]; then
+          A2A_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+          A2A_PARAMS="$A2A_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+          # A2A is disabled by default - set to true for ENTERPRISE mode
+          A2A_PARAMS="$A2A_PARAMS ParameterKey=EnableA2A,ParameterValue=false"
+          if [ -n "$SNS_TOPIC_ARN" ]; then
+            A2A_PARAMS="$A2A_PARAMS ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL"
+          fi
+          if aws cloudformation describe-stacks --stack-name $A2A_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+            echo "A2A stack exists, attempting update..."
+            OUTPUT=$(aws cloudformation update-stack \
+              --stack-name $A2A_STACK \
+              --template-body file://deploy/cloudformation/a2a-infrastructure.yaml \
+              --parameters $A2A_PARAMS \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager 2>&1) && \
+            aws cloudformation wait stack-update-complete --stack-name $A2A_STACK --region $AWS_DEFAULT_REGION || \
+            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+              echo "No updates needed for $A2A_STACK"
+            else
+              echo "A2A update output: $OUTPUT"
+            fi
+          else
+            echo "A2A stack does not exist, creating..."
+            aws cloudformation create-stack \
+              --stack-name $A2A_STACK \
+              --template-body file://deploy/cloudformation/a2a-infrastructure.yaml \
+              --parameters $A2A_PARAMS \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $A2A_STACK --region $AWS_DEFAULT_REGION
+          fi
+          echo "A2A Protocol Infrastructure deployment complete"
+        else
+          echo "A2A infrastructure template not found, skipping (experimental feature)"
+        fi
+
+      # Deploy Agent Messaging Queues (Issue #19 - Microservices Messaging)
+      - echo "Deploying Agent Messaging Queues..."
+      - AGENT_QUEUES_STACK="${PROJECT_NAME}-agent-queues-${ENVIRONMENT}"
+      - |
+        AGENT_QUEUES_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        AGENT_QUEUES_PARAMS="$AGENT_QUEUES_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        if [ -n "$ALERT_EMAIL" ]; then
+          AGENT_QUEUES_PARAMS="$AGENT_QUEUES_PARAMS ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL"
+        fi
+      - |
+        if aws cloudformation describe-stacks --stack-name $AGENT_QUEUES_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Agent Queues stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $AGENT_QUEUES_STACK \
+            --template-body file://deploy/cloudformation/agent-queues.yaml \
+            --parameters $AGENT_QUEUES_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=Issue,Value=19 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $AGENT_QUEUES_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $AGENT_QUEUES_STACK"
+          else
+            echo "Agent Queues update output: $OUTPUT"
+          fi
+        else
+          echo "Agent Queues stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $AGENT_QUEUES_STACK \
+            --template-body file://deploy/cloudformation/agent-queues.yaml \
+            --parameters $AGENT_QUEUES_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=Issue,Value=19 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $AGENT_QUEUES_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Agent Messaging Queues deployment complete"
+
+      # Deploy Orchestrator Dispatcher (Lambda + DynamoDB for MetaOrchestrator dispatch)
+      - echo "Deploying Orchestrator Dispatcher..."
+      - DISPATCHER_STACK="${PROJECT_NAME}-orchestrator-dispatcher-${ENVIRONMENT}"
+      # Get EKS OIDC details for IRSA role (optional - IRSA skipped if EKS not deployed)
+      - |
+        EKS_STACK="${PROJECT_NAME}-eks-${ENVIRONMENT}"
+        if aws cloudformation describe-stacks --stack-name $EKS_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          OIDC_PROVIDER_ARN=$(aws cloudformation describe-stacks --stack-name $EKS_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`OIDCProviderArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          OIDC_PROVIDER_URL=$(aws cloudformation describe-stacks --stack-name $EKS_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`OIDCProviderUrl`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
+          echo "OIDC Provider URL: $OIDC_PROVIDER_URL"
+        else
+          echo "Warning: EKS stack not found, IRSA role will not be created"
+          OIDC_PROVIDER_ARN=""
+          OIDC_PROVIDER_URL=""
+        fi
+      # Build parameters for dispatcher stack
+      - |
+        DISPATCHER_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        DISPATCHER_PARAMS="$DISPATCHER_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        if [ -n "$OIDC_PROVIDER_ARN" ] && [ "$OIDC_PROVIDER_ARN" != "None" ]; then
+          DISPATCHER_PARAMS="$DISPATCHER_PARAMS ParameterKey=OIDCProviderArn,ParameterValue=$OIDC_PROVIDER_ARN"
+          DISPATCHER_PARAMS="$DISPATCHER_PARAMS ParameterKey=OIDCProviderURL,ParameterValue=$OIDC_PROVIDER_URL"
+        fi
+      - |
+        if aws cloudformation describe-stacks --stack-name $DISPATCHER_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Dispatcher stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $DISPATCHER_STACK \
+            --template-body file://deploy/cloudformation/orchestrator-dispatcher.yaml \
+            --parameters $DISPATCHER_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $DISPATCHER_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $DISPATCHER_STACK"
+          else
+            echo "Dispatcher update output: $OUTPUT"
+          fi
+        else
+          echo "Dispatcher stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $DISPATCHER_STACK \
+            --template-body file://deploy/cloudformation/orchestrator-dispatcher.yaml \
+            --parameters $DISPATCHER_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $DISPATCHER_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Orchestrator Dispatcher deployment complete"
+
+      # Deploy DNS Blocklist Lambda (Threat Intelligence Feed Processing)
+      - echo "Deploying DNS Blocklist Lambda..."
+      - BLOCKLIST_STACK="${PROJECT_NAME}-dns-blocklist-lambda-${ENVIRONMENT}"
+      # Build parameters - get EKS OIDC details for IRSA (optional)
+      - |
+        BLOCKLIST_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        BLOCKLIST_PARAMS="$BLOCKLIST_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        if [ -n "$ALERT_EMAIL" ]; then
+          BLOCKLIST_PARAMS="$BLOCKLIST_PARAMS ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL"
+        fi
+        if [ -n "$OIDC_PROVIDER_ARN" ] && [ "$OIDC_PROVIDER_ARN" != "None" ]; then
+          BLOCKLIST_PARAMS="$BLOCKLIST_PARAMS ParameterKey=EKSOIDCProviderArn,ParameterValue=$OIDC_PROVIDER_ARN"
+          BLOCKLIST_PARAMS="$BLOCKLIST_PARAMS ParameterKey=EKSOIDCProviderURL,ParameterValue=$OIDC_PROVIDER_URL"
+        fi
+      - |
+        if aws cloudformation describe-stacks --stack-name $BLOCKLIST_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Blocklist stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $BLOCKLIST_STACK \
+            --template-body file://deploy/cloudformation/dns-blocklist-lambda.yaml \
+            --parameters $BLOCKLIST_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $BLOCKLIST_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $BLOCKLIST_STACK"
+          else
+            echo "Blocklist update output: $OUTPUT"
+          fi
+        else
+          echo "Blocklist stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $BLOCKLIST_STACK \
+            --template-body file://deploy/cloudformation/dns-blocklist-lambda.yaml \
+            --parameters $BLOCKLIST_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $BLOCKLIST_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "DNS Blocklist Lambda deployment complete"
+
+      # Deploy Runbook Agent Infrastructure (DynamoDB, EventBridge, SNS)
+      - echo "Deploying Runbook Agent Infrastructure..."
+      - RUNBOOK_STACK="${PROJECT_NAME}-runbook-agent-${ENVIRONMENT}"
+      - |
+        RUNBOOK_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        RUNBOOK_PARAMS="$RUNBOOK_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        if [ -n "$ALERT_EMAIL" ]; then
+          RUNBOOK_PARAMS="$RUNBOOK_PARAMS ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL"
+        fi
+      - |
+        if aws cloudformation describe-stacks --stack-name $RUNBOOK_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Runbook stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $RUNBOOK_STACK \
+            --template-body file://deploy/cloudformation/runbook-agent.yaml \
+            --parameters $RUNBOOK_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $RUNBOOK_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $RUNBOOK_STACK"
+          else
+            echo "Runbook update output: $OUTPUT"
+          fi
+        else
+          echo "Runbook stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $RUNBOOK_STACK \
+            --template-body file://deploy/cloudformation/runbook-agent.yaml \
+            --parameters $RUNBOOK_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $RUNBOOK_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Runbook Agent Infrastructure deployment complete"
+
+      # NOTE: Serverless Permission Boundary is deployed at the START of the build phase
+      # (before Lambda packaging) to ensure IAM propagation before dependent stacks.
+      # See "CRITICAL: Deploy Permission Boundary FIRST" section above.
+
+      # Deploy Checkpoint DynamoDB Tables (ADR-042 Real-Time Intervention)
+      - echo "Deploying Checkpoint DynamoDB Tables..."
+      - CHECKPOINT_DB_STACK="${PROJECT_NAME}-checkpoint-dynamodb-${ENVIRONMENT}"
+      - |
+        CHECKPOINT_DB_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        CHECKPOINT_DB_PARAMS="$CHECKPOINT_DB_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+      - |
+        if aws cloudformation describe-stacks --stack-name $CHECKPOINT_DB_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Checkpoint DynamoDB stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $CHECKPOINT_DB_STACK \
+            --template-body file://deploy/cloudformation/checkpoint-dynamodb.yaml \
+            --parameters $CHECKPOINT_DB_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=ADR,Value=ADR-042 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $CHECKPOINT_DB_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $CHECKPOINT_DB_STACK"
+          else
+            echo "Checkpoint DynamoDB update output: $OUTPUT"
+          fi
+        else
+          echo "Checkpoint DynamoDB stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $CHECKPOINT_DB_STACK \
+            --template-body file://deploy/cloudformation/checkpoint-dynamodb.yaml \
+            --parameters $CHECKPOINT_DB_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=ADR,Value=ADR-042 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $CHECKPOINT_DB_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Checkpoint DynamoDB Tables deployment complete"
+
+      # Deploy Checkpoint WebSocket API (ADR-042 Real-Time Intervention)
+      - echo "Deploying Checkpoint WebSocket API..."
+      - CHECKPOINT_WS_STACK="${PROJECT_NAME}-checkpoint-websocket-${ENVIRONMENT}"
+      - |
+        CHECKPOINT_WS_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        CHECKPOINT_WS_PARAMS="$CHECKPOINT_WS_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        CHECKPOINT_WS_PARAMS="$CHECKPOINT_WS_PARAMS ParameterKey=LambdaCodeBucket,ParameterValue=$LAMBDA_BUCKET"
+        CHECKPOINT_WS_PARAMS="$CHECKPOINT_WS_PARAMS ParameterKey=LambdaCodeKey,ParameterValue=$CHECKPOINT_HANDLERS_S3_KEY"
+      - |
+        if aws cloudformation describe-stacks --stack-name $CHECKPOINT_WS_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Checkpoint WebSocket stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $CHECKPOINT_WS_STACK \
+            --template-body file://deploy/cloudformation/checkpoint-websocket.yaml \
+            --parameters $CHECKPOINT_WS_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=ADR,Value=ADR-042 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $CHECKPOINT_WS_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $CHECKPOINT_WS_STACK"
+          else
+            echo "Checkpoint WebSocket update output: $OUTPUT"
+          fi
+        else
+          echo "Checkpoint WebSocket stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $CHECKPOINT_WS_STACK \
+            --template-body file://deploy/cloudformation/checkpoint-websocket.yaml \
+            --parameters $CHECKPOINT_WS_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=ADR,Value=ADR-042 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $CHECKPOINT_WS_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Checkpoint WebSocket API deployment complete"
+
+      # Display checkpoint WebSocket endpoint
+      - |
+        CHECKPOINT_WS_ENDPOINT=$(aws cloudformation describe-stacks --stack-name $CHECKPOINT_WS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`WebSocketApiEndpoint`].OutputValue' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "Not available")
+        echo "Checkpoint WebSocket Endpoint: $CHECKPOINT_WS_ENDPOINT"
+
+      # CloudTrail: Account-level CloudTrail removed per ADR-059.
+      # Organization CloudTrail (aura-org-trail) deployed to management account provides
+      # centralized audit logging for ALL organization accounts. See org-cloudtrail.yaml.
+
+      # Deploy IAM Security Alerting (Security Assessment - Real-time IAM change detection)
+      # Uses Organization CloudTrail log group for metrics/alerting
+      - echo "Deploying IAM Security Alerting..."
+      - IAM_ALERTING_STACK="${PROJECT_NAME}-iam-security-alerting-${ENVIRONMENT}"
+      - |
+        IAM_ALERTING_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        IAM_ALERTING_PARAMS="$IAM_ALERTING_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        if [ -n "$ALERT_EMAIL" ]; then
+          IAM_ALERTING_PARAMS="$IAM_ALERTING_PARAMS ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL"
+        fi
+      - |
+        if aws cloudformation describe-stacks --stack-name $IAM_ALERTING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "IAM Security Alerting stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $IAM_ALERTING_STACK \
+            --template-body file://deploy/cloudformation/iam-security-alerting.yaml \
+            --parameters $IAM_ALERTING_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=SecurityControl,Value=IAMMonitoring Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $IAM_ALERTING_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $IAM_ALERTING_STACK"
+          else
+            echo "IAM Security Alerting update output: $OUTPUT"
+          fi
+        else
+          echo "IAM Security Alerting stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $IAM_ALERTING_STACK \
+            --template-body file://deploy/cloudformation/iam-security-alerting.yaml \
+            --parameters $IAM_ALERTING_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=SecurityControl,Value=IAMMonitoring Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $IAM_ALERTING_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "IAM Security Alerting deployment complete"
+
+      # Deploy Agent Scheduling Infrastructure (ADR-055)
+      - echo "Deploying Agent Scheduling Infrastructure..."
+      - SCHEDULING_STACK="${PROJECT_NAME}-scheduling-infrastructure-${ENVIRONMENT}"
+      - |
+        SCHEDULING_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        SCHEDULING_PARAMS="$SCHEDULING_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+      - |
+        if aws cloudformation describe-stacks --stack-name $SCHEDULING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Scheduling Infrastructure stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $SCHEDULING_STACK \
+            --template-body file://deploy/cloudformation/scheduling-infrastructure.yaml \
+            --parameters $SCHEDULING_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=ADR,Value=ADR-055 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $SCHEDULING_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $SCHEDULING_STACK"
+          else
+            echo "Scheduling Infrastructure update output: $OUTPUT"
+          fi
+        else
+          echo "Scheduling Infrastructure stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $SCHEDULING_STACK \
+            --template-body file://deploy/cloudformation/scheduling-infrastructure.yaml \
+            --parameters $SCHEDULING_PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=serverless Key=ADR,Value=ADR-055 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $SCHEDULING_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Agent Scheduling Infrastructure deployment complete"
+
+      # Layer 6.11: Deployment Pipeline (Step Functions Orchestrator)
+      # Uses cfn_deploy_stack helper for proper error handling and retry logic
+      # Note: DeployTimestamp tag removed - CloudFormation propagates stack tags to SNS Topics,
+      # and SNS has stricter character validation that can reject certain timestamp formats
+      - |
+        PIPELINE_STACK="${PROJECT_NAME}-deployment-pipeline-${ENVIRONMENT}"
+        if [ -f "deploy/cloudformation/deployment-pipeline.yaml" ]; then
+          echo "Deploying Deployment Pipeline (Layer 6.11)..."
+          cfn_deploy_stack \
+            "$PIPELINE_STACK" \
+            "deploy/cloudformation/deployment-pipeline.yaml" \
+            "Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME" \
+            "Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=serverless"
+          echo "Deployment Pipeline deployment complete"
+        fi
+
+      # Deploy GPU Scheduler Infrastructure (Layer 6.15)
+      # SQS FIFO queue, DynamoDB tables (jobs, quotas), S3 checkpoints (ADR-061)
+      - |
+        GPU_SCHED_INFRA_STACK="${PROJECT_NAME}-gpu-scheduler-infra-${ENVIRONMENT}"
+        echo "Deploying GPU Scheduler Infrastructure (Layer 6.15)..."
+        aws cloudformation deploy \
+          --stack-name $GPU_SCHED_INFRA_STACK \
+          --template-file deploy/cloudformation/gpu-scheduler-infrastructure.yaml \
+          --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=serverless \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+        echo "GPU Scheduler Infrastructure deployment complete"
+
+      # Deploy Constitutional AI Audit Queue (Layer 6.18)
+      # DynamoDB table and SQS queue for async audit logging
+      - |
+        CAI_AUDIT_STACK="${PROJECT_NAME}-constitutional-audit-queue-${ENVIRONMENT}"
+        echo "Deploying Constitutional AI Audit Queue (Layer 6.18)..."
+        aws cloudformation deploy \
+          --stack-name $CAI_AUDIT_STACK \
+          --template-file deploy/cloudformation/constitutional-audit-queue.yaml \
+          --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME LambdaS3Bucket=$LAMBDA_BUCKET LambdaS3Key=$CONSTITUTIONAL_EVAL_S3_KEY \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=serverless \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+        echo "Constitutional AI Audit Queue deployment complete"
+
+      # Deploy Constitutional AI Evaluation (Layer 6.19)
+      # Lambda for nightly evaluation, CloudWatch dashboard, alarms
+      - |
+        CAI_EVAL_STACK="${PROJECT_NAME}-constitutional-ai-evaluation-${ENVIRONMENT}"
+        echo "Deploying Constitutional AI Evaluation (Layer 6.19)..."
+        CAI_EVAL_PARAMS="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME LambdaS3Bucket=$LAMBDA_BUCKET LambdaS3Key=$CONSTITUTIONAL_EVAL_S3_KEY"
+        if [ -n "$ALERT_EMAIL" ]; then
+          CAI_EVAL_PARAMS="$CAI_EVAL_PARAMS AlertEmail=$ALERT_EMAIL"
+        fi
+        aws cloudformation deploy \
+          --stack-name $CAI_EVAL_STACK \
+          --template-file deploy/cloudformation/constitutional-ai-evaluation.yaml \
+          --parameter-overrides $CAI_EVAL_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=serverless \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+        echo "Constitutional AI Evaluation deployment complete"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Serverless Layer Deployment Complete"
+      - echo "=========================================="
+
+      - echo "=== Deployed Lambda Functions ==="
+      - aws lambda list-functions --query "Functions[?starts_with(FunctionName, '${PROJECT_NAME}-')].{Name:FunctionName,Runtime:Runtime,Memory:MemorySize}" --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No Lambda functions found"
+
+      - echo "=== EventBridge Schedule Rules ==="
+      - aws events list-rules --name-prefix "${PROJECT_NAME}-" --query "Rules[].{Name:Name,State:State,Schedule:ScheduleExpression}" --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No EventBridge rules found"
+
+      - echo "=== Threat Intel Scheduler Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $THREAT_INTEL_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Stack not available"
+
+      - echo "=== Checkpoint WebSocket API (ADR-042) ==="
+      - aws cloudformation describe-stacks --stack-name $CHECKPOINT_WS_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Stack not available"
+
+      # Publish build metrics
+      - echo "Publishing build metrics..."
+      - |
+        aws cloudwatch put-metric-data \
+          --namespace "Aura/CICD/Serverless" \
+          --metric-name "SuccessfulDeployments" \
+          --value 1 \
+          --unit Count \
+          --dimensions Environment=$ENVIRONMENT \
+          --region $AWS_DEFAULT_REGION || echo "Failed to publish metrics"
+
+artifacts:
+  files:
+    - deploy/cloudformation/threat-intel-scheduler.yaml
+    - deploy/cloudformation/hitl-scheduler.yaml
+    - deploy/cloudformation/hitl-callback.yaml
+    # Note: a2a-infrastructure.yaml excluded (template not yet created)
+    - deploy/cloudformation/agent-queues.yaml
+    - deploy/cloudformation/orchestrator-dispatcher.yaml
+    - deploy/cloudformation/codebuild-runbook-agent.yaml
+    - deploy/cloudformation/dns-blocklist-lambda.yaml
+    - deploy/cloudformation/runbook-agent.yaml
+    - deploy/cloudformation/checkpoint-dynamodb.yaml
+    - deploy/cloudformation/checkpoint-websocket.yaml
+    - deploy/cloudformation/serverless-permission-boundary.yaml
+    # cloudtrail.yaml removed - Organization CloudTrail in management account (ADR-059)
+    - deploy/cloudformation/iam-security-alerting.yaml
+    - deploy/cloudformation/deployment-pipeline.yaml
+    - deploy/cloudformation/gpu-scheduler-infrastructure.yaml
+    - deploy/cloudformation/constitutional-audit-queue.yaml
+    - deploy/cloudformation/constitutional-ai-evaluation.yaml
+    - src/lambda/threat_intelligence_processor.py
+    - src/lambda/approval_callback_handler.py
+    - src/lambda/orchestrator_dispatcher.py
+    - src/lambda/checkpoint/ws_connect.py
+    - src/lambda/checkpoint/ws_disconnect.py
+    - src/lambda/checkpoint/ws_message.py
+    - src/lambda/constitutional_evaluation/handler.py
+  name: serverless-layer-artifacts
+  discard-paths: no
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

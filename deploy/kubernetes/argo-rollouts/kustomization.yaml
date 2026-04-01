@@ -1,0 +1,56 @@
+# Project Aura - Argo Rollouts Installation via Kustomize
+# Progressive Delivery for Kubernetes (ADR-022 Phase 3)
+#
+# Argo Rollouts enables:
+# - Canary deployments with traffic shifting
+# - Blue/Green deployments
+# - Automated rollback based on metrics
+# - Integration with service meshes and ingress controllers
+#
+# Installation:
+#   kubectl apply -k deploy/kubernetes/argo-rollouts/
+#
+# Verify installation:
+#   kubectl get pods -n argo-rollouts
+#   kubectl argo rollouts version
+#
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argo-rollouts
+
+resources:
+  - namespace.yaml
+  # Official Argo Rollouts installation manifest (v1.8.3)
+  - https://github.com/argoproj/argo-rollouts/releases/download/v1.8.3/install.yaml
+  # Analysis templates for health checks
+  - analysis-templates.yaml
+
+labels:
+  - pairs:
+      project: aura
+      managed-by: kustomize
+    includeSelectors: false
+
+# Resource limits for dev environment
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argo-rollouts
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argo-rollouts
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 128Mi
+                  limits:
+                    cpu: 200m
+                    memory: 256Mi
+    target:
+      kind: Deployment
+      name: argo-rollouts

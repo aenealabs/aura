@@ -1,0 +1,90 @@
+{
+    "name": "aura_code_intelligence",
+    "title": "Aura Code Intelligence",
+    "description": "Sync vulnerability findings, code patterns, and security metrics from Aura to your data warehouse",
+    "version": "2.0.0",
+    "author": "Aenea Labs",
+    "icon": "icon.svg",
+    "category": "Security",
+    "docs_url": "https://docs.aenealabs.com/integrations/fivetran",
+    "support_url": "https://support.aenealabs.com",
+    "requirements": {
+        "python_version": ">=3.11"
+    },
+    "setup_guide": {
+        "steps": [
+            {
+                "title": "Get API Credentials",
+                "description": "Log in to your Aura dashboard and navigate to Settings > API Keys to generate a new API key."
+            },
+            {
+                "title": "Find Organization ID",
+                "description": "Your Organization ID can be found in Settings > Organization. Copy the ID shown there."
+            },
+            {
+                "title": "Configure Connection",
+                "description": "Enter your Aura Server URL (e.g., https://api.aenealabs.com), API Key, and Organization ID in the fields below."
+            }
+        ]
+    },
+    "configuration": {
+        "type": "object",
+        "properties": {
+            "server_url": {
+                "type": "string",
+                "title": "Aura Server URL",
+                "description": "The URL of your Aura API server",
+                "placeholder": "https://api.aenealabs.com",
+                "pattern": "^https?://.*",
+                "order": 1
+            },
+            "api_key": {
+                "type": "string",
+                "title": "API Key",
+                "description": "Your Aura API key for authentication",
+                "format": "password",
+                "order": 2
+            },
+            "organization_id": {
+                "type": "string",
+                "title": "Organization ID",
+                "description": "Your Aura organization identifier",
+                "order": 3
+            }
+        },
+        "required": ["server_url", "api_key", "organization_id"]
+    },
+    "tables": {
+        "findings": {
+            "description": "Security vulnerability findings from code scans",
+            "sync_mode": "incremental",
+            "replication_key": "updated_at"
+        },
+        "code_patterns": {
+            "description": "Code patterns and relationships from GraphRAG analysis",
+            "sync_mode": "incremental",
+            "replication_key": "created_at"
+        },
+        "repositories": {
+            "description": "Connected repositories and their metadata",
+            "sync_mode": "incremental",
+            "replication_key": "created_at"
+        },
+        "scan_history": {
+            "description": "History of security scans performed",
+            "sync_mode": "incremental",
+            "replication_key": "started_at"
+        },
+        "metrics": {
+            "description": "Security and code quality metrics over time",
+            "sync_mode": "incremental",
+            "replication_key": "timestamp"
+        }
+    },
+    "features": {
+        "incremental_sync": true,
+        "full_refresh": true,
+        "schema_discovery": true,
+        "connection_test": true
+    }
+}

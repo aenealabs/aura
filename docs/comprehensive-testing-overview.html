@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Aura — Comprehensive Testing Overview</title>
+<style>
+  :root {
+    --brand: #3B82F6;
+    --brand-dark: #1E40AF;
+    --critical: #DC2626;
+    --high: #EA580C;
+    --medium: #F59E0B;
+    --success: #10B981;
+    --info: #3B82F6;
+    --bg: #F8FAFC;
+    --surface: #FFFFFF;
+    --border: #E2E8F0;
+    --text: #1E293B;
+    --text-secondary: #64748B;
+    --text-muted: #94A3B8;
+    --purple: #7C3AED;
+    --purple-light: #EDE9FE;
+    --teal: #0D9488;
+    --teal-light: #CCFBF1;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #065F46 0%, var(--success) 50%, #34D399 100%);
+    color: #fff;
+    padding: 48px 32px;
+    text-align: center;
+  }
+  .header h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; }
+  .header .subtitle { font-size: 18px; opacity: 0.9; margin-bottom: 24px; }
+  .header .meta { font-size: 13px; opacity: 0.75; }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    flex-wrap: wrap;
+    padding: 24px 32px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .stat { text-align: center; }
+  .stat .number { font-size: 28px; font-weight: 800; color: var(--success); }
+  .stat .number.blue { color: var(--brand); }
+  .stat .number.purple { color: var(--purple); }
+  .stat .number.red { color: var(--critical); }
+  .stat .label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Navigation */
+  .nav-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 32px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .nav-bar a {
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    background: #F1F5F9;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .nav-bar a:hover { background: var(--success); color: #fff; }
+
+  /* Main content */
+  .container { max-width: 1280px; margin: 0 auto; padding: 32px; }
+
+  /* Section */
+  section { margin-bottom: 48px; }
+  section > h2 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #065F46;
+    border-bottom: 3px solid var(--success);
+    padding-bottom: 8px;
+    margin-bottom: 24px;
+  }
+  section > p.section-desc {
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    max-width: 800px;
+  }
+  h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 20px 0 12px;
+  }
+
+  /* Cards */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    transition: box-shadow 0.15s, border-color 0.15s;
+  }
+  .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: var(--success); }
+  .card .card-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+  .card .card-body { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+  .card .card-body strong { color: var(--text); }
+  .card-accent { border-left: 4px solid; }
+
+  /* Tables */
+  .table-wrapper { overflow-x: auto; margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    background: #065F46;
+    color: #fff;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+  }
+  th.blue-header { background: var(--brand-dark); }
+  th.purple-header { background: #5B21B6; }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: #F8FAFC; }
+  td:first-child { font-weight: 600; }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-passed { background: #D1FAE5; color: #065F46; }
+  .badge-skipped { background: #FEF3C7; color: #92400E; }
+  .badge-failed { background: #FEE2E2; color: #991B1B; }
+  .badge-unit { background: #DBEAFE; color: #1E40AF; }
+  .badge-integration { background: #EDE9FE; color: #5B21B6; }
+  .badge-e2e { background: #FCE7F3; color: #831843; }
+  .badge-security { background: #FEE2E2; color: #991B1B; }
+  .badge-load { background: #FFF7ED; color: #9A3412; }
+  .badge-smoke { background: #CCFBF1; color: #134E4A; }
+  .badge-infra { background: #F1F5F9; color: #334155; }
+
+  /* Pyramid diagram */
+  .pyramid {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 32px auto;
+    max-width: 600px;
+  }
+  .pyramid-level {
+    text-align: center;
+    padding: 14px 24px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    position: relative;
+  }
+  .pyramid-level .count { font-size: 20px; display: block; }
+  .pyramid-level .plabel { font-size: 12px; opacity: 0.9; }
+  .pl-e2e { background: #DC2626; width: 30%; border-radius: 8px 8px 0 0; clip-path: polygon(10% 0%, 90% 0%, 100% 100%, 0% 100%); }
+  .pl-load { background: #EA580C; width: 42%; clip-path: polygon(5% 0%, 95% 0%, 100% 100%, 0% 100%); }
+  .pl-security { background: #7C3AED; width: 54%; clip-path: polygon(4% 0%, 96% 0%, 100% 100%, 0% 100%); }
+  .pl-integration { background: #2563EB; width: 70%; clip-path: polygon(3% 0%, 97% 0%, 100% 100%, 0% 100%); }
+  .pl-unit { background: #059669; width: 90%; border-radius: 0 0 8px 8px; clip-path: polygon(2% 0%, 98% 0%, 100% 100%, 0% 100%); }
+
+  /* Code blocks */
+  .code-block {
+    background: #1E293B;
+    color: #E2E8F0;
+    border-radius: 8px;
+    padding: 20px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+    margin-bottom: 20px;
+  }
+  .code-block .comment { color: #64748B; }
+  .code-block .cmd { color: #34D399; }
+  .code-block .flag { color: #93C5FD; }
+
+  /* Progress bars */
+  .progress-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .progress-label { font-size: 13px; font-weight: 600; min-width: 140px; }
+  .progress-bar { flex: 1; height: 24px; background: #F1F5F9; border-radius: 12px; overflow: hidden; position: relative; }
+  .progress-fill { height: 100%; border-radius: 12px; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; font-size: 11px; font-weight: 700; color: #fff; transition: width 0.5s; }
+  .fill-green { background: linear-gradient(90deg, #059669, #34D399); }
+  .fill-blue { background: linear-gradient(90deg, #2563EB, #60A5FA); }
+  .fill-purple { background: linear-gradient(90deg, #7C3AED, #A78BFA); }
+  .fill-amber { background: linear-gradient(90deg, #D97706, #FBBF24); }
+
+  /* Callout */
+  .callout {
+    background: #ECFDF5;
+    border: 1px solid #A7F3D0;
+    border-left: 4px solid var(--success);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+  .callout.info { background: #EFF6FF; border-color: #BFDBFE; border-left-color: var(--brand); }
+  .callout.warn { background: #FFFBEB; border-color: #FDE68A; border-left-color: var(--medium); }
+  .callout strong { font-size: 14px; }
+
+  /* Print */
+  @media print {
+    .nav-bar { display: none; }
+    .header { padding: 24px; }
+    .card { break-inside: avoid; }
+    table { font-size: 11px; }
+  }
+  @media (max-width: 768px) {
+    .header h1 { font-size: 24px; }
+    .stats-bar { gap: 16px; }
+    .card-grid { grid-template-columns: 1fr; }
+    .container { padding: 16px; }
+    .pyramid-level { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<div class="header">
+  <h1>Comprehensive Testing Overview</h1>
+  <div class="subtitle">Project Aura — Test Suite, Coverage &amp; Quality Assurance</div>
+  <div class="meta">Aenea Labs &middot; 23,165+ Tests &middot; 0 Failures &middot; 70% Minimum Coverage &middot; February 2026</div>
+</div>
+
+<!-- ===== STATS BAR ===== -->
+<div class="stats-bar">
+  <div class="stat"><div class="number">23,165+</div><div class="label">Total Tests</div></div>
+  <div class="stat"><div class="number">16,499</div><div class="label">Passed</div></div>
+  <div class="stat"><div class="number purple">6,666</div><div class="label">Skipped</div></div>
+  <div class="stat"><div class="number red">0</div><div class="label">Failed</div></div>
+  <div class="stat"><div class="number blue">626</div><div class="label">Test Files (Python)</div></div>
+  <div class="stat"><div class="number blue">74</div><div class="label">Test Files (Frontend)</div></div>
+  <div class="stat"><div class="number">70%</div><div class="label">Coverage Minimum</div></div>
+  <div class="stat"><div class="number">45,663</div><div class="label">Assertions</div></div>
+</div>
+
+<!-- ===== NAVIGATION ===== -->
+<div class="nav-bar">
+  <a href="#pyramid">Testing Pyramid</a>
+  <a href="#status">Test Status</a>
+  <a href="#unit">Unit Tests</a>
+  <a href="#integration">Integration Tests</a>
+  <a href="#e2e">E2E Tests</a>
+  <a href="#security">Security Tests</a>
+  <a href="#load">Load &amp; Performance</a>
+  <a href="#infra">Infrastructure Tests</a>
+  <a href="#frontend">Frontend Tests</a>
+  <a href="#coverage">Coverage &amp; Config</a>
+  <a href="#mocking">Mock Infrastructure</a>
+  <a href="#cicd">CI/CD Integration</a>
+  <a href="#by-adr">Tests by ADR</a>
+  <a href="#commands">Quick Commands</a>
+  <a href="#summary">Summary</a>
+</div>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<!-- SECTION 1: Testing Pyramid                                    -->
+<!-- ============================================================ -->
+<section id="pyramid">
+  <h2>Testing Pyramid</h2>
+  <p class="section-desc">Aura follows a testing pyramid strategy with the widest base of unit tests, supplemented by integration, security, load, and E2E tests for comprehensive coverage.</p>
+
+  <div class="pyramid">
+    <div class="pyramid-level pl-e2e"><span class="count">500+</span><span class="plabel">E2E Tests</span></div>
+    <div class="pyramid-level pl-load"><span class="count">3 Scenarios</span><span class="plabel">Load &amp; Performance (k6)</span></div>
+    <div class="pyramid-level pl-security"><span class="count">131+</span><span class="plabel">Security Tests</span></div>
+    <div class="pyramid-level pl-integration"><span class="count">3,000+</span><span class="plabel">Integration Tests</span></div>
+    <div class="pyramid-level pl-unit"><span class="count">16,000+</span><span class="plabel">Unit Tests</span></div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color: var(--success);">
+      <div class="card-title">Unit Tests (Base Layer)</div>
+      <div class="card-body">
+        <strong>~16,000+ tests</strong> &middot; &lt; 100ms per test<br>
+        All business logic functions isolated. Dependencies mocked via <code>unittest.mock</code>. Deterministic execution with no real I/O, sleeps, or randomness.
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--brand);">
+      <div class="card-title">Integration Tests (Middle Layer)</div>
+      <div class="card-body">
+        <strong>~3,000+ tests</strong> &middot; &lt; 5s per test<br>
+        Multi-component contracts validated. AWS services mocked via <code>moto</code>. HTTP clients mocked via <code>aiohttp</code>/<code>httpx</code> mocks.
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--critical);">
+      <div class="card-title">E2E &amp; Load Tests (Top Layer)</div>
+      <div class="card-body">
+        <strong>500+ E2E + 3 k6 scenarios</strong> &middot; 30s–5min per test<br>
+        Real AWS services (Neptune, OpenSearch, Bedrock). Requires <code>RUN_E2E_TESTS=1</code>. k6 load profiles: smoke, average, stress, spike, soak.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 2: Test Status Dashboard                              -->
+<!-- ============================================================ -->
+<section id="status">
+  <h2>Test Status Dashboard</h2>
+  <p class="section-desc">Current test suite status as of February 2026. Zero failures across 23,165+ tests.</p>
+
+  <div class="progress-row">
+    <span class="progress-label">Passed (16,499)</span>
+    <div class="progress-bar"><div class="progress-fill fill-green" style="width:71.2%">71.2%</div></div>
+  </div>
+  <div class="progress-row">
+    <span class="progress-label">Skipped (6,666)</span>
+    <div class="progress-bar"><div class="progress-fill fill-amber" style="width:28.8%">28.8%</div></div>
+  </div>
+  <div class="progress-row">
+    <span class="progress-label">Failed (0)</span>
+    <div class="progress-bar"><div class="progress-fill fill-green" style="width:0%"></div></div>
+  </div>
+
+  <div class="callout" style="margin-top: 20px;">
+    <strong>Zero Failures</strong> — The entire test suite runs cleanly. Skipped tests are intentional: optional dependencies not installed (PyTorch, Redis, scikit-learn, cairosvg), external services unavailable (Neptune, OpenSearch), E2E tests gated by environment variable, or GPU hardware not available.
+  </div>
+
+  <h3>Test Function Distribution</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Count</th>
+          <th>Percentage</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Total Test Functions</td><td><strong>22,506</strong></td><td>100%</td></tr>
+        <tr><td>Synchronous Tests (<code>def test_*</code>)</td><td>16,588</td><td>73.7%</td></tr>
+        <tr><td>Asynchronous Tests (<code>async def test_*</code>)</td><td>5,918</td><td>26.3%</td></tr>
+        <tr><td>Test Classes (<code>class Test*</code>)</td><td>5,811</td><td>—</td></tr>
+        <tr><td>Assertion Statements</td><td>45,663</td><td>~2 per test</td></tr>
+        <tr><td>Mock Usages (AsyncMock/MagicMock)</td><td>5,743+</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: Unit Tests                                         -->
+<!-- ============================================================ -->
+<section id="unit">
+  <h2>Unit Tests</h2>
+  <p class="section-desc">The foundation of Aura's testing strategy — isolated, deterministic, and fast. Every business logic function has dedicated unit test coverage.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Service / Component</th>
+          <th>Test Files</th>
+          <th>Tests</th>
+          <th>ADR</th>
+          <th>Focus Area</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Runtime Security</td><td>33</td><td>848</td><td>ADR-083</td><td>Traffic interception, shadow agents, behavioral baselines, AURA-ATT&CK (75 techniques)</td></tr>
+        <tr><td>Semantic Guardrails</td><td>13</td><td>793</td><td>ADR-065</td><td>6-layer threat detection, embedding similarity, LLM-as-judge</td></tr>
+        <tr><td>Constitutional AI</td><td>16</td><td>463</td><td>ADR-063</td><td>16 principles, critique-revision pipeline, tiered critique</td></tr>
+        <tr><td>GPU Scheduler</td><td>14</td><td>391</td><td>ADR-061</td><td>Job submission, queue management, cost controls</td></tr>
+        <tr><td>Constraint Geometry</td><td>9</td><td>358</td><td>ADR-081</td><td>7-axis constraint space, coherence scoring, 4 policy profiles</td></tr>
+        <tr><td>Self-Play SWE-RL</td><td>—</td><td>354</td><td>ADR-050</td><td>Bug artifacts, dual-role self-play, training pipeline</td></tr>
+        <tr><td>Evo-Memory</td><td>14</td><td>336</td><td>ADR-080</td><td>7 ReMem operations, multi-agent sharing</td></tr>
+        <tr><td>Capability Governance</td><td>19</td><td>322</td><td>ADR-066</td><td>4-tier tool classification, runtime enforcement, dynamic grants</td></tr>
+        <tr><td>Context Provenance</td><td>18</td><td>275</td><td>ADR-067</td><td>Trust scoring, anomaly detection, quarantine</td></tr>
+        <tr><td>Titan Neural Memory</td><td>—</td><td>237</td><td>ADR-024</td><td>DeepMLPMemory, MIRAS, surprise-driven consolidation</td></tr>
+        <tr><td>Explainability</td><td>11</td><td>227</td><td>ADR-068</td><td>Reasoning chains, alternatives disclosure, confidence</td></tr>
+        <tr><td>Air-Gapped &amp; Edge</td><td>—</td><td>200</td><td>ADR-078</td><td>Offline bundles, egress validation, edge runtime</td></tr>
+        <tr><td>Palantir AIP</td><td>9</td><td>197</td><td>ADR-074</td><td>Enterprise adapter, ontology sync, circuit breaker</td></tr>
+        <tr><td>Cross-Agent Graph</td><td>—</td><td>179</td><td>ADR-071</td><td>Neptune graph analysis, escalation paths, coverage gaps</td></tr>
+        <tr><td>SBOM &amp; Supply Chain</td><td>—</td><td>168</td><td>ADR-076</td><td>CycloneDX/SPDX, Sigstore signing, license compliance</td></tr>
+        <tr><td>Recursive Context (RLM)</td><td>—</td><td>167</td><td>ADR-051</td><td>100x context scaling, embedding prediction</td></tr>
+        <tr><td>Environment Validator</td><td>—</td><td>165</td><td>ADR-062</td><td>Cross-env validation, drift detection</td></tr>
+        <tr><td>Cloud Runtime Security</td><td>—</td><td>155</td><td>ADR-077</td><td>K8s admission, container escape detection</td></tr>
+        <tr><td>Guardrail Config UI</td><td>—</td><td>128</td><td>ADR-069</td><td>Compliance profiles, validation</td></tr>
+        <tr><td>ABAC</td><td>—</td><td>115</td><td>ADR-073</td><td>Clearance levels, multi-tenant isolation</td></tr>
+        <tr><td>ML Anomaly Detection</td><td>—</td><td>113</td><td>ADR-072</td><td>Statistical detector, honeypot, explainer</td></tr>
+        <tr><td>Palantir AIP UI</td><td>—</td><td>103</td><td>ADR-075</td><td>8 widgets, config wizard, React hooks</td></tr>
+        <tr><td>Policy-as-Code</td><td>—</td><td>98</td><td>ADR-070</td><td>OPA/Rego validation, policy simulation</td></tr>
+        <tr><td>AI Model Security</td><td>—</td><td>86</td><td>ADR-079</td><td>Weight protection, poisoning detection</td></tr>
+        <tr><td>Dashboard Widgets</td><td>9</td><td>83</td><td>ADR-064</td><td>25 widgets, drag-drop, sharing</td></tr>
+        <tr><td>Cloud Abstraction</td><td>—</td><td>46</td><td>ADR-004</td><td>Multi-cloud adapters (AWS/Azure)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: Integration Tests                                  -->
+<!-- ============================================================ -->
+<section id="integration">
+  <h2>Integration Tests</h2>
+  <p class="section-desc">Multi-component workflow tests validating contracts between services using mocked AWS infrastructure.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Agent Orchestration Workflows</div>
+      <div class="card-body">
+        Tests spanning MetaOrchestrator → Agent spawning → Task decomposition → Result aggregation. Validates DAG execution, depth limits (max 4), and autonomy policy enforcement.<br><br>
+        <span class="badge badge-integration">Integration</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Threat Detection → ADR Pipeline</div>
+      <div class="card-body">
+        Full pipeline: ThreatIntelligenceAgent detects CVE → AdaptiveIntelligenceAgent scores risk → ArchitectureReviewAgent triggers ADR → ADRGeneratorAgent hydrates template and creates git PR.<br><br>
+        <span class="badge badge-integration">Integration</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">HITL Approval Workflow</div>
+      <div class="card-body">
+        End-to-end approval flow: patch submission → sandbox provisioning → human review → approval/reject → deployment or re-queue. Auto-escalation at 75% timeout with max 2 escalations.<br><br>
+        <span class="badge badge-integration">Integration</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">GraphRAG Context Retrieval</div>
+      <div class="card-body">
+        Hybrid query flow: Neptune graph traversal (CALL_GRAPH, DEPENDENCIES, INHERITANCE) + OpenSearch vector semantic search → scoring → result fusion → context delivery to agents.<br><br>
+        <span class="badge badge-integration">Integration</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Lambda Function Pipelines</div>
+      <div class="card-body">
+        <strong>8 test files, 155 tests</strong> covering calibration pipeline, chat handlers, incident response, DNS blocklist updates, and environment provisioning Lambda functions.<br><br>
+        <span class="badge badge-integration">Integration</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">API Endpoint Integration</div>
+      <div class="card-body">
+        <strong>4 test files, 142 tests</strong> validating dashboard endpoints, documentation endpoints, environment validator endpoints, and GPU scheduler endpoints with full request/response cycles.<br><br>
+        <span class="badge badge-integration">Integration</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: E2E Tests                                          -->
+<!-- ============================================================ -->
+<section id="e2e">
+  <h2>End-to-End Tests</h2>
+  <p class="section-desc">Full system tests using real AWS services. Gated by environment variable to prevent accidental execution.</p>
+
+  <div class="callout info">
+    <strong>Activation Required:</strong> E2E tests require <code>RUN_E2E_TESTS=1</code> environment variable. Without it, 500+ tests are gracefully skipped. E2E tests connect to real Neptune, OpenSearch, and Bedrock instances.
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Runtime Incident E2E</div>
+      <div class="card-body">
+        <code>tests/integration/test_runtime_incident_e2e.py</code><br><br>
+        Full incident workflow: CloudWatch alarm → Step Functions → agent correlation → Neptune graph traversal → RCA hypothesis → SNS notification. Tests real service connectivity and data flow.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Smoke Tests (Pre-Deployment)</div>
+      <div class="card-body">
+        <strong>2 files, 21 tests</strong><br><br>
+        <code>tests/smoke/test_platform_smoke.py</code> — Core platform functionality<br>
+        <code>tests/smoke/test_critical_paths.py</code> — User workflows (threat → patch → approval)<br><br>
+        <span class="badge badge-smoke">Smoke</span> Run before every deployment
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: Security Tests                                     -->
+<!-- ============================================================ -->
+<section id="security">
+  <h2>Security Tests</h2>
+  <p class="section-desc">Dedicated security testing covering guardrail edge cases, sandbox isolation, container escape scenarios, and inter-agent communication security.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Test File</th>
+          <th>Tests</th>
+          <th>Focus Area</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>test_guardrails_edge_cases.py</code></td><td>40+</td><td>Guardrail boundary conditions, bypass attempts, edge cases in 6-layer detection pipeline</td></tr>
+        <tr><td><code>test_sandbox_isolation_advanced.py</code></td><td>30+</td><td>Container isolation verification, network policy enforcement, resource limit validation</td></tr>
+        <tr><td><code>test_sandbox_escape_scenarios.py</code></td><td>25+</td><td>Privilege escalation attempts, container breakout scenarios, syscall filtering</td></tr>
+        <tr><td><code>test_a2as_framework.py</code></td><td>36+</td><td>A2A Security Protocol: HMAC authentication, sandboxed execution, injection filtering between agents</td></tr>
+        <tr><td>Runtime Security (ADR-083)</td><td>848</td><td>AURA-ATT&CK red team (75 techniques), shadow agent detection, behavioral baselines</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color: var(--critical);">
+      <div class="card-title">AURA-ATT&CK Red Team Framework</div>
+      <div class="card-body">
+        <strong>75 attack techniques</strong> mapped to MITRE ATT&CK framework, adapted for AI agent environments. Tests cover prompt injection, tool abuse, context poisoning, sandbox escape, shadow agent spawning, and data exfiltration scenarios. Part of ADR-083 Runtime Agent Security Platform.
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--purple);">
+      <div class="card-title">Semantic Guardrails Testing (793 Tests)</div>
+      <div class="card-body">
+        Validates all 6 layers of the threat detection pipeline: input normalization, pattern matching, embedding similarity analysis, LLM intent classification, session-level tracking, and final decision engine. Tests adversarial inputs, obfuscation attempts, and multi-turn attack chains.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 7: Load & Performance Tests                           -->
+<!-- ============================================================ -->
+<section id="load">
+  <h2>Load &amp; Performance Tests</h2>
+  <p class="section-desc">k6-based load testing framework with defined SLAs, multiple load profiles, and three scenario categories.</p>
+
+  <h3>Load Profiles</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Profile</th>
+          <th>Virtual Users</th>
+          <th>Duration</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Smoke</strong></td><td>1 VU</td><td>30s</td><td>Verify test scripts work correctly</td></tr>
+        <tr><td><strong>Average</strong></td><td>10 VUs</td><td>9 min</td><td>Normal production traffic simulation</td></tr>
+        <tr><td><strong>Stress</strong></td><td>10 → 150 VUs</td><td>19 min</td><td>Find system breaking point</td></tr>
+        <tr><td><strong>Spike</strong></td><td>10 → 200 → 10 VUs</td><td>4 min</td><td>Sudden traffic surge resilience</td></tr>
+        <tr><td><strong>Soak</strong></td><td>20 VUs</td><td>40 min</td><td>Memory leak &amp; degradation detection</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Test Scenarios</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">API Endpoints (<code>api_endpoints.js</code>)</div>
+      <div class="card-body">
+        Health checks (<code>/health</code>, <code>/health/ready</code>), job management (<code>/jobs</code>, <code>/jobs/{id}/status</code>), patch operations, and settings endpoints.<br><br>
+        <strong>SLA:</strong> Health p95 &lt; 100ms, Jobs p95 &lt; 500ms, Patches p95 &lt; 1000ms
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Database Performance (<code>database_performance.js</code>)</div>
+      <div class="card-body">
+        Context retrieval (hybrid query), vector search (semantic), graph queries (Neptune structural), and hybrid search (combined graph + vector).<br><br>
+        <strong>SLA:</strong> Neptune simple p95 &lt; 100ms, Hybrid p95 &lt; 500ms
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">HITL Workflow (<code>hitl_workflow.js</code>)</div>
+      <div class="card-body">
+        List pending approvals, view approval details, view patch diffs, and submit approval/reject decisions under load.<br><br>
+        <strong>SLA:</strong> List p95 &lt; 500ms, Submit p95 &lt; 1000ms
+      </div>
+    </div>
+  </div>
+
+  <h3>Performance SLA Targets</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Endpoint / Operation</th>
+          <th>p95 Target</th>
+          <th>p99 Target</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Health Check</td><td>100ms</td><td>200ms</td></tr>
+        <tr><td>Job Operations</td><td>500ms</td><td>1,000ms</td></tr>
+        <tr><td>Patch Operations</td><td>1,000ms</td><td>2,000ms</td></tr>
+        <tr><td>Neptune Simple Query</td><td>100ms</td><td>200ms</td></tr>
+        <tr><td>OpenSearch Vector Search</td><td>300ms</td><td>500ms</td></tr>
+        <tr><td>Hybrid Search (Graph + Vector)</td><td>500ms</td><td>1,000ms</td></tr>
+        <tr><td>HITL Approval List</td><td>500ms</td><td>1,000ms</td></tr>
+        <tr><td>HITL Decision Submit</td><td>1,000ms</td><td>2,000ms</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 8: Infrastructure Tests                               -->
+<!-- ============================================================ -->
+<section id="infra">
+  <h2>Infrastructure Validation</h2>
+  <p class="section-desc">CloudFormation template validation, IAM action verification, and nightly automated infrastructure checks.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">CloudFormation Linting (cfn-lint)</div>
+      <div class="card-body">
+        <strong>155 templates</strong> validated continuously.<br><br>
+        <strong>Tools:</strong> <code>cfn-lint</code> + custom wrapper (<code>scripts/cfn-lint-wrapper.sh</code>)<br>
+        <strong>Config:</strong> <code>.cfnlintrc</code> (ignores W3002, W1020)<br>
+        <strong>Exit Codes:</strong> 0 = pass, 4 = warnings (non-blocking), 2/6/8 = errors (blocking)
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">IAM Action Validator</div>
+      <div class="card-body">
+        <strong>Custom Python tool:</strong> <code>scripts/validate_iam_actions.py</code><br><br>
+        Validates all IAM actions across CloudFormation templates against the AWS service API. Detects typos, deprecated actions, and W3037 warnings. Maintains a <code>KNOWN_VALID_ACTIONS</code> set for verified exceptions.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Nightly Automated Validation</div>
+      <div class="card-body">
+        <strong>Schedule:</strong> 2 AM UTC daily via GitHub Actions<br>
+        <code>.github/workflows/nightly-iam-validation.yml</code><br><br>
+        Runs cfn-lint on all templates, validates IAM actions, generates JSON report, and creates GitHub issues for any invalid actions found.
+      </div>
+    </div>
+  </div>
+
+  <h3>CloudFormation Exit Code Handling</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Exit Code</th>
+          <th>Meaning</th>
+          <th>Build Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>0</strong></td><td>No errors or warnings</td><td><span class="badge badge-passed">Pass</span></td></tr>
+        <tr><td><strong>4</strong></td><td>Warnings only</td><td><span class="badge badge-skipped">Non-Blocking</span></td></tr>
+        <tr><td><strong>2</strong></td><td>Parse errors</td><td><span class="badge badge-failed">Fail</span></td></tr>
+        <tr><td><strong>6</strong></td><td>Template errors</td><td><span class="badge badge-failed">Fail</span></td></tr>
+        <tr><td><strong>8</strong></td><td>Errors + warnings</td><td><span class="badge badge-failed">Fail</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 9: Frontend Tests                                     -->
+<!-- ============================================================ -->
+<section id="frontend">
+  <h2>Frontend Tests</h2>
+  <p class="section-desc">React component testing with Vitest, React Testing Library, and happy-dom environment.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Vitest Test Suite</div>
+      <div class="card-body">
+        <strong>1,815 tests</strong> across <strong>74 test files</strong><br><br>
+        <strong>Framework:</strong> Vitest with happy-dom<br>
+        <strong>Coverage:</strong> v8 provider (text, JSON, HTML reporters)<br>
+        <strong>Patterns:</strong> <code>src/**/*.test.ts</code>, <code>src/**/*.spec.ts</code><br>
+        <strong>Setup:</strong> <code>./src/__tests__/setup.ts</code>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">TypeScript SDK Tests</div>
+      <div class="card-body">
+        <strong>Location:</strong> <code>sdk/typescript/</code><br><br>
+        SDK client library tests validating API contracts, type safety, error handling, and response parsing for the TypeScript integration SDK.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Testing Patterns</div>
+      <div class="card-body">
+        <strong>Context Provider Wrappers:</strong> ToastProvider, BrowserRouter, QueryClientProvider<br>
+        <strong>Event Handling:</strong> fireEvent with proper target selection<br>
+        <strong>Async Assertions:</strong> <code>waitFor</code> for focus management and state updates<br>
+        <strong>Component Isolation:</strong> React Testing Library best practices
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 10: Coverage & Configuration                          -->
+<!-- ============================================================ -->
+<section id="coverage">
+  <h2>Coverage &amp; Configuration</h2>
+  <p class="section-desc">Pytest configuration, coverage thresholds, and marker definitions that govern test execution.</p>
+
+  <div class="callout warn">
+    <strong>70% Coverage Minimum — Non-Negotiable</strong><br>
+    The <code>fail_under = 70</code> setting in <code>pyproject.toml</code> is a hard requirement. If coverage drops below 70%, tests must be added to increase coverage — the threshold must never be lowered. Violations require explicit written approval from the project owner.
+  </div>
+
+  <h3>Pytest Configuration (<code>pyproject.toml</code>)</h3>
+  <div class="code-block"><span class="comment"># pytest settings</span>
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+addopts = [
+  "-v",
+  "--strict-markers",
+  "--tb=short",
+  <span class="cmd">"--cov=src"</span>,                      <span class="comment"># Coverage source directory</span>
+  "--cov-report=term-missing",
+  "--cov-report=html",
+]
+
+[tool.coverage.report]
+<span class="cmd">fail_under = 70</span>                      <span class="comment"># HARD MINIMUM — DO NOT LOWER</span>
+show_missing = true
+precision = 2</div>
+
+  <h3>Pytest Markers</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Marker</th>
+          <th>Usage Count</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>@pytest.mark.asyncio</code></td><td>5,745</td><td>Async/await test execution with event loop</td></tr>
+        <tr><td><code>@pytest.mark.anyio</code></td><td>62</td><td>Async framework abstraction (asyncio/trio)</td></tr>
+        <tr><td><code>@pytest.mark.skipif</code></td><td>49</td><td>Conditional skipping (platform, env vars, dependencies)</td></tr>
+        <tr><td><code>@pytest.mark.parametrize</code></td><td>44</td><td>Data-driven test variations</td></tr>
+        <tr><td><code>@pytest.mark.slow</code></td><td>11</td><td>Tests exceeding 1 second (integration/E2E)</td></tr>
+        <tr><td><code>@pytest.mark.forked</code></td><td>5</td><td>Process-isolated tests (prevent module pollution)</td></tr>
+        <tr><td><code>@pytest.mark.e2e</code></td><td>custom</td><td>Full system tests with real services</td></tr>
+        <tr><td><code>@pytest.mark.integration</code></td><td>3</td><td>Multi-component workflow tests</td></tr>
+        <tr><td><code>@pytest.mark.smoke</code></td><td>3</td><td>Pre-deployment validation</td></tr>
+        <tr><td><code>@pytest.mark.performance</code></td><td>2</td><td>Performance &amp; SLA validation</td></tr>
+        <tr><td><code>@pytest.mark.torch_required</code></td><td>implicit</td><td>Tests requiring PyTorch (deferred loading)</td></tr>
+        <tr><td><code>@pytest.mark.gpu_required</code></td><td>implicit</td><td>NVIDIA GPU-dependent tests</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Coverage Exclusions</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Excluded from Coverage Metrics</div>
+      <div class="card-body">
+        <strong>Test files:</strong> <code>*/tests/*</code> (self-referential)<br>
+        <strong>Self-hosted providers:</strong> Require external services<br>
+        <strong>Migration tools:</strong> Require dual-service setup<br>
+        <strong>FIPS compliance module:</strong> Requires FIPS environment<br>
+        <strong>Lambda entry points:</strong> Tested via E2E<br>
+        <strong>CLI module:</strong> Interactive testing only
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 11: Mock Infrastructure                               -->
+<!-- ============================================================ -->
+<section id="mocking">
+  <h2>Mock Infrastructure</h2>
+  <p class="section-desc">Comprehensive mocking framework providing isolated, deterministic test execution across 5,743+ mock instances.</p>
+
+  <h3>Shared Fixtures (<code>tests/conftest.py</code> — 1,162+ lines)</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Fixture</th>
+          <th>Scope</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>mock_aws_services</code></td><td>function</td><td>All AWS services via moto (DynamoDB, S3, Lambda, SNS, SQS, CloudWatch, etc.)</td></tr>
+        <tr><td><code>mock_dynamodb</code></td><td>function</td><td>Isolated DynamoDB mock with client/resource</td></tr>
+        <tr><td><code>mock_anomalies_table</code></td><td>function</td><td>Pre-configured <code>aura-anomalies-dev</code> table</td></tr>
+        <tr><td><code>mock_approvals_table</code></td><td>function</td><td>Pre-configured <code>aura-approvals-dev</code> table</td></tr>
+        <tr><td><code>mock_settings_table</code></td><td>function</td><td>Pre-configured <code>aura-platform-settings-dev</code> table</td></tr>
+        <tr><td><code>aws_credentials</code></td><td>function</td><td>Mock AWS credentials (access key, secret, region)</td></tr>
+        <tr><td><code>reset_rate_limiter_fixture</code></td><td>autouse</td><td>Resets API rate limiter between tests (prevents state bleeding)</td></tr>
+        <tr><td><code>reset_lambda_environment</code></td><td>autouse</td><td>Clears Lambda env vars &amp; AWS client caches</td></tr>
+        <tr><td><code>reimport_lambda_module</code></td><td>function</td><td>Fresh Lambda module import with current env vars</td></tr>
+        <tr><td><code>clean_module_cache</code></td><td>function</td><td>Captures/restores sys.modules state</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>AWS Service Mocking (moto)</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Mocked AWS Services</div>
+      <div class="card-body">
+        <strong>Database:</strong> DynamoDB (tables, GSI, TTL), S3 (buckets, versioning)<br>
+        <strong>Compute:</strong> Lambda, ECS (task definitions, services), EC2<br>
+        <strong>Messaging:</strong> SNS (topics, publishing), SQS (queues), EventBridge<br>
+        <strong>Monitoring:</strong> CloudWatch (metrics, alarms), CloudWatch Logs<br>
+        <strong>Security:</strong> Secrets Manager, SSM Parameter Store, STS<br>
+        <strong>Orchestration:</strong> Step Functions (state machines)
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">HTTP Client Mocking</div>
+      <div class="card-body">
+        <strong>aiohttp:</strong> ClientSession context manager with async request/response<br>
+        <strong>httpx:</strong> AsyncClient mock for async HTTP operations<br><br>
+        <strong>Connector-Specific Mocks:</strong><br>
+        CrowdStrike OAuth &amp; host responses<br>
+        Qualys vulnerability data<br>
+        Terraform Cloud workspace responses<br>
+        Splunk search results
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Mock Factories (<code>tests/fixtures/mock_factories.py</code>)</div>
+      <div class="card-body">
+        <strong>8 factory functions</strong> generating consistent mock objects:<br><br>
+        <code>create_aiohttp_session_mock()</code> — Single-response<br>
+        <code>create_aiohttp_multi_response_mock()</code> — Multi-step API flows<br>
+        <code>create_httpx_client_mock()</code> — httpx async client<br>
+        <code>create_crowdstrike_auth_response()</code> — OAuth tokens<br>
+        <code>create_qualys_vulnerability_response()</code> — Vuln data<br>
+        <code>create_terraform_workspace_response()</code> — Workspaces
+      </div>
+    </div>
+  </div>
+
+  <h3>Test Isolation Patterns</h3>
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color: var(--success);">
+      <div class="card-title">Rate Limiter Isolation</div>
+      <div class="card-body">Autouse fixture (<code>reset_rate_limiter_fixture</code>) prevents state bleeding between tests. API rate limiter reset before/after each test execution.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--brand);">
+      <div class="card-title">Configuration State Isolation</div>
+      <div class="card-body">Uses <code>copy.deepcopy()</code> for config returns. Prevents consumers from mutating shared configuration objects during test execution.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--purple);">
+      <div class="card-title">Module Isolation</div>
+      <div class="card-body"><code>@pytest.mark.forked</code> for process-isolated tests. <code>isolated_modules()</code> context manager for temporary sys.modules mocking with automatic restoration.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--high);">
+      <div class="card-title">macOS / Torch Safety</div>
+      <div class="card-body">Detects PyTorch imports, forces spawn mode for multiprocessing on macOS (Objective-C safety). Schedules torch-dependent tests separately to prevent fork-related crashes.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 12: CI/CD Integration                                 -->
+<!-- ============================================================ -->
+<section id="cicd">
+  <h2>CI/CD Test Integration</h2>
+  <p class="section-desc">How tests execute in GitHub Actions and AWS CodeBuild pipelines.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">GitHub Actions — Code Quality Workflow</div>
+      <div class="card-body">
+        <strong>File:</strong> <code>.github/workflows/code-quality.yml</code><br>
+        <strong>Triggers:</strong> PR to main/develop, push to main, manual dispatch<br><br>
+        <strong>Test Command:</strong>
+        <div class="code-block" style="margin-top: 8px; font-size: 11px;">pytest tests/ <span class="flag">--lf --ff</span> \
+  <span class="flag">--cov=src</span> \
+  <span class="flag">--cov-report=xml:coverage.xml</span> \
+  <span class="flag">--cov-report=term-missing</span> \
+  <span class="flag">--cov-fail-under=70</span> \
+  <span class="flag">--maxfail=10</span> \
+  -v</div>
+        <strong>Flags:</strong> <code>--lf --ff</code> (last-failed first), <code>--maxfail=10</code> (stop early)
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">AWS CodeBuild — Integration Tests</div>
+      <div class="card-body">
+        <strong>Buildspec:</strong> <code>deploy/buildspecs/buildspec-integration-test.yml</code><br><br>
+        <strong>Phases:</strong><br>
+        1. Pre-build: Install k6, kubectl, pytest deps<br>
+        2. Build: Connectivity tests, integration tests, API tests<br>
+        3. Post-build: Log collection, artifact upload<br><br>
+        <strong>Artifacts:</strong> bandit-report.json, htmlcov/, coverage.xml
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Nightly Infrastructure Validation</div>
+      <div class="card-body">
+        <strong>Schedule:</strong> Daily at 2 AM UTC<br>
+        <strong>File:</strong> <code>.github/workflows/nightly-iam-validation.yml</code><br><br>
+        Validates all 155 CloudFormation templates, checks IAM actions, generates JSON report, and creates GitHub issues for any failures discovered.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 13: Tests by ADR                                      -->
+<!-- ============================================================ -->
+<section id="by-adr">
+  <h2>Test Coverage by ADR</h2>
+  <p class="section-desc">Mapping of test counts to Architecture Decision Records, showing the breadth of validation behind each architectural decision.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>ADR</th>
+          <th>Feature</th>
+          <th>Tests</th>
+          <th>Test Files</th>
+          <th>Lines of Code</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>ADR-083</td><td>Runtime Agent Security Platform</td><td><strong>848</strong></td><td>33</td><td>~10.3K</td></tr>
+        <tr><td>ADR-065</td><td>Semantic Guardrails Engine</td><td><strong>793</strong></td><td>13</td><td>~12K</td></tr>
+        <tr><td>ADR-063</td><td>Constitutional AI Integration</td><td><strong>463</strong></td><td>16</td><td>—</td></tr>
+        <tr><td>ADR-061</td><td>GPU Workload Scheduler</td><td><strong>391</strong></td><td>14</td><td>—</td></tr>
+        <tr><td>ADR-081</td><td>Constraint Geometry Engine</td><td><strong>358</strong></td><td>9</td><td>~4.5K</td></tr>
+        <tr><td>ADR-050</td><td>Self-Play SWE-RL</td><td><strong>354</strong></td><td>—</td><td>~15.9K</td></tr>
+        <tr><td>ADR-080</td><td>Evo-Memory Enhancements</td><td><strong>336</strong></td><td>14</td><td>~10K</td></tr>
+        <tr><td>ADR-066</td><td>Agent Capability Governance</td><td><strong>322</strong></td><td>19</td><td>~5.4K</td></tr>
+        <tr><td>ADR-067</td><td>Context Provenance &amp; Integrity</td><td><strong>275</strong></td><td>18</td><td>~3.4K</td></tr>
+        <tr><td>ADR-024</td><td>Titan Neural Memory</td><td><strong>237</strong></td><td>—</td><td>—</td></tr>
+        <tr><td>ADR-068</td><td>Universal Explainability</td><td><strong>227</strong></td><td>11</td><td>~8.2K</td></tr>
+        <tr><td>ADR-078</td><td>Air-Gapped &amp; Edge Deployment</td><td><strong>200</strong></td><td>—</td><td>~4K</td></tr>
+        <tr><td>ADR-074</td><td>Palantir AIP Integration</td><td><strong>197</strong></td><td>9</td><td>~2.5K</td></tr>
+        <tr><td>ADR-071</td><td>Cross-Agent Capability Graph</td><td><strong>179</strong></td><td>—</td><td>~2.4K</td></tr>
+        <tr><td>ADR-076</td><td>SBOM &amp; Supply Chain Security</td><td><strong>168</strong></td><td>—</td><td>~4.5K</td></tr>
+        <tr><td>ADR-051</td><td>Recursive Context &amp; Embedding</td><td><strong>167</strong></td><td>—</td><td>—</td></tr>
+        <tr><td>ADR-062</td><td>Environment Validator Agent</td><td><strong>165</strong></td><td>—</td><td>—</td></tr>
+        <tr><td>ADR-077</td><td>Cloud Runtime Security</td><td><strong>155</strong></td><td>—</td><td>~3.2K</td></tr>
+        <tr><td>ADR-069</td><td>Guardrail Configuration UI</td><td><strong>128</strong></td><td>—</td><td>~1.5K</td></tr>
+        <tr><td>ADR-073</td><td>ABAC Authorization</td><td><strong>115</strong></td><td>—</td><td>~1.3K</td></tr>
+        <tr><td>ADR-072</td><td>ML Anomaly Detection</td><td><strong>113</strong></td><td>—</td><td>~1.4K</td></tr>
+        <tr><td>ADR-075</td><td>Palantir AIP UI</td><td><strong>103</strong></td><td>—</td><td>~8K</td></tr>
+        <tr><td>ADR-070</td><td>Policy-as-Code GitOps</td><td><strong>98</strong></td><td>—</td><td>~1.2K</td></tr>
+        <tr><td>ADR-079</td><td>AI Model Security</td><td><strong>86</strong></td><td>—</td><td>~2.8K</td></tr>
+        <tr><td>ADR-064</td><td>Dashboard Widgets</td><td><strong>83</strong></td><td>9</td><td>~16.3K</td></tr>
+        <tr><td>ADR-004</td><td>Cloud Abstraction Layer</td><td><strong>46</strong></td><td>—</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 14: Quick Commands                                    -->
+<!-- ============================================================ -->
+<section id="commands">
+  <h2>Quick Test Commands</h2>
+  <p class="section-desc">Common commands for running tests locally and in CI/CD environments.</p>
+
+  <h3>Local Development</h3>
+  <div class="code-block"><span class="comment"># Run all tests</span>
+<span class="cmd">pytest</span>
+
+<span class="comment"># Unit tests only (fast feedback)</span>
+<span class="cmd">pytest</span> <span class="flag">-m "not integration"</span>
+
+<span class="comment"># Integration tests only</span>
+<span class="cmd">pytest</span> <span class="flag">-m integration</span>
+
+<span class="comment"># With HTML coverage report</span>
+<span class="cmd">pytest</span> <span class="flag">--cov=src --cov-report=html</span>
+
+<span class="comment"># Parallel execution (auto-detect workers)</span>
+<span class="cmd">pytest</span> <span class="flag">-n auto</span>
+
+<span class="comment"># Last failed tests first (fast feedback loop)</span>
+<span class="cmd">pytest</span> <span class="flag">--lf --ff</span>
+
+<span class="comment"># E2E tests (requires real AWS services)</span>
+<span class="cmd">RUN_E2E_TESTS=1 pytest</span> <span class="flag">-m e2e --no-cov</span>
+
+<span class="comment"># Specific test file</span>
+<span class="cmd">pytest</span> tests/test_agent_orchestrator.py <span class="flag">-v</span></div>
+
+  <h3>Load Testing (k6)</h3>
+  <div class="code-block"><span class="comment"># Smoke test (default)</span>
+<span class="cmd">./tests/load/run-load-tests.sh</span>
+
+<span class="comment"># Stress test on API endpoints</span>
+<span class="cmd">./tests/load/run-load-tests.sh</span> <span class="flag">--profile stress --scenario api</span>
+
+<span class="comment"># Soak test (40 min memory leak detection)</span>
+<span class="cmd">./tests/load/run-load-tests.sh</span> <span class="flag">--profile soak --scenario database</span>
+
+<span class="comment"># Against staging environment</span>
+<span class="cmd">./tests/load/run-load-tests.sh</span> <span class="flag">--url https://api.aura.staging</span></div>
+
+  <h3>Infrastructure Validation</h3>
+  <div class="code-block"><span class="comment"># Validate all CloudFormation templates</span>
+<span class="cmd">./scripts/cfn-lint-wrapper.sh</span> deploy/cloudformation/*.yaml
+
+<span class="comment"># Validate IAM actions (check for typos/deprecated)</span>
+<span class="cmd">python scripts/validate_iam_actions.py</span> <span class="flag">--report</span></div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 15: Technology Stack                                   -->
+<!-- ============================================================ -->
+<section>
+  <h2>Testing Technology Stack</h2>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color: var(--success);">
+      <div class="card-title">Python Testing Stack</div>
+      <div class="card-body">
+        <strong>pytest 8.3+</strong> — Core test framework<br>
+        <strong>pytest-mock 3.14+</strong> — Mocking utilities<br>
+        <strong>pytest-cov 6.0+</strong> — Coverage collection<br>
+        <strong>pytest-asyncio 0.24+</strong> — Async test execution<br>
+        <strong>pytest-forked 1.6+</strong> — Process isolation<br>
+        <strong>pytest-xdist 3.5+</strong> — Parallel execution<br>
+        <strong>moto 5.0+</strong> — AWS service mocking<br>
+        <strong>unittest.mock</strong> — AsyncMock, MagicMock
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--brand);">
+      <div class="card-title">Frontend Testing Stack</div>
+      <div class="card-body">
+        <strong>Vitest</strong> — Unit test framework<br>
+        <strong>React Testing Library</strong> — Component testing<br>
+        <strong>happy-dom</strong> — Lightweight DOM implementation<br>
+        <strong>v8 coverage</strong> — Coverage provider
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--purple);">
+      <div class="card-title">Infrastructure &amp; Load Testing</div>
+      <div class="card-body">
+        <strong>cfn-lint</strong> — CloudFormation validation<br>
+        <strong>k6</strong> — Load testing framework (JavaScript)<br>
+        <strong>boto3</strong> — AWS service API access<br>
+        <strong>bandit</strong> — Python security scanning<br>
+        <strong>InfluxDB + Grafana</strong> — Metrics (optional)
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 16: Summary                                           -->
+<!-- ============================================================ -->
+<section id="summary">
+  <h2>Summary</h2>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color: var(--success);">
+      <div class="card-title">Strengths</div>
+      <div class="card-body">
+        <strong>Zero test failures</strong> — All 23,165+ tests either pass or skip gracefully<br>
+        <strong>70% minimum coverage enforced</strong> — Hard threshold, non-negotiable<br>
+        <strong>5,743+ mock instances</strong> — Comprehensive isolation<br>
+        <strong>Deterministic execution</strong> — No real I/O, sleeps, or randomness<br>
+        <strong>Multi-layer security testing</strong> — Guardrails, sandbox escape, red team (75 ATT&CK techniques)<br>
+        <strong>Performance SLA validation</strong> — k6 load testing with defined p95/p99 targets<br>
+        <strong>Infrastructure-as-code testing</strong> — 155 CloudFormation templates validated nightly<br>
+        <strong>CI/CD integration</strong> — Automated in GitHub Actions + CodeBuild
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--brand);">
+      <div class="card-title">By the Numbers</div>
+      <div class="card-body">
+        <strong>23,165+</strong> total tests (Python + Frontend)<br>
+        <strong>22,506</strong> Python test functions across 626 files<br>
+        <strong>1,815</strong> frontend tests across 74 files<br>
+        <strong>45,663</strong> assertion statements<br>
+        <strong>5,811</strong> test classes<br>
+        <strong>5,918</strong> async tests (26.3%)<br>
+        <strong>155</strong> CloudFormation templates validated<br>
+        <strong>3</strong> k6 load test scenarios<br>
+        <strong>8</strong> mock factory functions<br>
+        <strong>1,162+</strong> lines in shared conftest.py
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color: var(--purple);">
+      <div class="card-title">Test Types at a Glance</div>
+      <div class="card-body">
+        <span class="badge badge-unit">Unit</span> ~16,000+ tests (&lt; 100ms each)<br><br>
+        <span class="badge badge-integration">Integration</span> ~3,000+ tests (&lt; 5s each)<br><br>
+        <span class="badge badge-e2e">E2E</span> 500+ tests (30s–5min, gated)<br><br>
+        <span class="badge badge-security">Security</span> 131+ dedicated + 848 runtime<br><br>
+        <span class="badge badge-load">Load</span> 3 scenarios (smoke → soak)<br><br>
+        <span class="badge badge-smoke">Smoke</span> 21 pre-deployment checks<br><br>
+        <span class="badge badge-infra">Infrastructure</span> 155 templates nightly
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- /container -->
+
+<!-- ===== FOOTER ===== -->
+<div style="text-align:center; padding:32px; color:var(--text-muted); font-size:12px; border-top:1px solid var(--border);">
+  Project Aura &middot; Aenea Labs &middot; Comprehensive Testing Overview &middot; 23,165+ Tests &middot; February 2026
+</div>
+
+</body>
+</html>

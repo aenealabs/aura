@@ -1,0 +1,65 @@
+{
+    "meta": {
+        "label": "Aura Repository Scan",
+        "description": "Trigger a full repository scan and export vulnerability findings",
+        "icon": "icon-scan.png"
+    },
+    "kind": "PYTHON",
+    "selectableFromDataset": "input_config",
+    "inputRoles": [
+        {
+            "name": "input_config",
+            "label": "Configuration",
+            "description": "Dataset with repository paths to scan",
+            "arity": "UNARY",
+            "required": false,
+            "acceptsDataset": true
+        }
+    ],
+    "outputRoles": [
+        {
+            "name": "findings_output",
+            "label": "Findings",
+            "description": "Output dataset for vulnerability findings",
+            "arity": "UNARY",
+            "required": true,
+            "acceptsDataset": true
+        },
+        {
+            "name": "summary_output",
+            "label": "Summary",
+            "description": "Output dataset for scan summary",
+            "arity": "UNARY",
+            "required": false,
+            "acceptsDataset": true
+        }
+    ],
+    "params": [
+        {
+            "name": "server_url",
+            "type": "STRING",
+            "label": "Aura Server URL",
+            "mandatory": true,
+            "defaultValue": "http://localhost:8080"
+        },
+        {
+            "name": "severity_filter",
+            "type": "SELECT",
+            "label": "Minimum Severity",
+            "selectChoices": [
+                {"value": "all", "label": "All Severities"},
+                {"value": "critical", "label": "Critical Only"},
+                {"value": "high", "label": "High and Above"},
+                {"value": "medium", "label": "Medium and Above"},
+                {"value": "low", "label": "Low and Above"}
+            ],
+            "defaultValue": "all"
+        },
+        {
+            "name": "include_info",
+            "type": "BOOLEAN",
+            "label": "Include Info Level",
+            "defaultValue": false
+        }
+    ]
+}

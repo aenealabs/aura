@@ -1,0 +1,371 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.7 - Log Retention Sync Lambda (Compliance)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-12-15'
+  DescriptionSync: 'Layer-5.7'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for log retention notifications (optional)
+
+  DefaultRetentionDays:
+    Type: Number
+    Default: 90
+    AllowedValues: [30, 60, 90, 120, 150, 180, 365, 400, 545, 731]
+    Description: Default log retention in days (CMMC L2 requires 90+)
+
+  LogGroupPrefixes:
+    Type: String
+    Default: '/aws/lambda/aura,/aws/codebuild/aura,/aura,/aws/eks/aura'
+    Description: Comma-separated log group prefixes to manage
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # SNS Topic for notifications
+  LogRetentionNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-log-retention-updates-${Environment}'
+      DisplayName: !Sub 'Aura Log Retention Updates (${Environment})'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SNS Email Subscription (if email provided)
+  LogRetentionEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref LogRetentionNotificationTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # IAM Role for Lambda
+  LogRetentionLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-log-retention-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: LogRetentionLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs permissions - scoped to project log groups
+              - Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+              - Effect: Allow
+                Action:
+                  - logs:PutRetentionPolicy
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/eks/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/ecs/${ProjectName}-*'
+              # SNS permissions
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref LogRetentionNotificationTopic
+              # Lambda own log group
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-log-retention-sync-${Environment}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Lambda Function
+  LogRetentionSyncLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-log-retention-sync-${Environment}'
+      Description: 'Syncs CloudWatch log retention policies based on UI settings'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt LogRetentionLambdaRole.Arn
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          SNS_TOPIC_ARN: !Ref LogRetentionNotificationTopic
+          LOG_GROUP_PREFIXES: !Ref LogGroupPrefixes
+          DEFAULT_RETENTION_DAYS: !Ref DefaultRetentionDays
+          DRY_RUN: 'false'
+      Code:
+        ZipFile: |
+          """
+          Log Retention Sync Lambda - Inline Handler
+
+          Updates CloudWatch log group retention policies when called
+          from the Settings API. Ensures CMMC compliance.
+          """
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          logs_client = boto3.client('logs')
+          sns_client = boto3.client('sns')
+
+          VALID_RETENTION_DAYS = [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653]
+
+          def validate_retention_days(days):
+              """Normalize to CloudWatch-supported value."""
+              if days in VALID_RETENTION_DAYS:
+                  return days
+              for valid_days in VALID_RETENTION_DAYS:
+                  if valid_days >= days:
+                      return valid_days
+              return VALID_RETENTION_DAYS[-1]
+
+          def get_log_groups_by_prefix(prefix):
+              """Get all log groups matching a prefix."""
+              log_groups = []
+              paginator = logs_client.get_paginator('describe_log_groups')
+              try:
+                  for page in paginator.paginate(logGroupNamePrefix=prefix):
+                      log_groups.extend(page.get('logGroups', []))
+              except ClientError as e:
+                  logger.error(f"Failed to list log groups with prefix {prefix}: {e}")
+              return log_groups
+
+          def update_log_group_retention(log_group_name, retention_days, dry_run=False):
+              """Update retention for a single log group."""
+              result = {
+                  'logGroupName': log_group_name,
+                  'requestedRetention': retention_days,
+                  'success': False,
+              }
+              try:
+                  response = logs_client.describe_log_groups(logGroupNamePrefix=log_group_name, limit=1)
+                  log_groups = response.get('logGroups', [])
+
+                  if not log_groups or log_groups[0]['logGroupName'] != log_group_name:
+                      result['message'] = 'Log group not found'
+                      return result
+
+                  current = log_groups[0].get('retentionInDays', 'Never')
+                  result['currentRetention'] = current
+
+                  if current == retention_days:
+                      result['success'] = True
+                      result['message'] = 'Already at target'
+                      result['skipped'] = True
+                      return result
+
+                  if dry_run:
+                      result['success'] = True
+                      result['message'] = f'DRY RUN: {current} -> {retention_days}'
+                      result['dryRun'] = True
+                      return result
+
+                  logs_client.put_retention_policy(
+                      logGroupName=log_group_name,
+                      retentionInDays=retention_days
+                  )
+                  result['success'] = True
+                  result['message'] = f'{current} -> {retention_days} days'
+                  result['previousRetention'] = current
+                  result['newRetention'] = retention_days
+                  logger.info(f"Updated {log_group_name}: {current} -> {retention_days}")
+
+              except ClientError as e:
+                  result['message'] = f'Failed: {e}'
+                  logger.error(f"Failed to update {log_group_name}: {e}")
+
+              return result
+
+          def lambda_handler(event, context):
+              logger.info(f"Log Retention Sync: {json.dumps(event)}")
+
+              env = os.environ.get('ENVIRONMENT', 'dev')
+              sns_topic = os.environ.get('SNS_TOPIC_ARN', '')
+              prefixes_env = os.environ.get('LOG_GROUP_PREFIXES', '')
+
+              retention_days = event.get('retention_days')
+              if retention_days is None:
+                  return {
+                      'statusCode': 400,
+                      'body': json.dumps({'status': 'error', 'error': 'retention_days required'})
+                  }
+
+              retention_days = validate_retention_days(int(retention_days))
+              dry_run = event.get('dry_run', os.environ.get('DRY_RUN', 'false').lower() == 'true')
+
+              if prefixes_env:
+                  default_prefixes = [p.strip() for p in prefixes_env.split(',') if p.strip()]
+              else:
+                  default_prefixes = ['/aws/lambda/aura', '/aws/codebuild/aura', '/aura']
+
+              prefixes = event.get('prefixes', default_prefixes)
+
+              try:
+                  all_groups = []
+                  for prefix in prefixes:
+                      groups = get_log_groups_by_prefix(prefix)
+                      all_groups.extend(groups)
+                      logger.info(f"Found {len(groups)} log groups with prefix '{prefix}'")
+
+                  seen = set()
+                  unique = [g for g in all_groups if g['logGroupName'] not in seen and not seen.add(g['logGroupName'])]
+
+                  results = []
+                  updated = skipped = failed = 0
+
+                  for lg in unique:
+                      r = update_log_group_retention(lg['logGroupName'], retention_days, dry_run)
+                      results.append(r)
+                      if r.get('success'):
+                          if r.get('skipped'):
+                              skipped += 1
+                          else:
+                              updated += 1
+                      else:
+                          failed += 1
+
+                  timestamp = datetime.now(timezone.utc).isoformat()
+                  response = {
+                      'status': 'success' if failed == 0 else 'partial_success',
+                      'environment': env,
+                      'timestamp': timestamp,
+                      'dry_run': dry_run,
+                      'retention_days': retention_days,
+                      'statistics': {
+                          'total': len(unique),
+                          'updated': updated,
+                          'skipped': skipped,
+                          'failed': failed,
+                      },
+                  }
+
+                  if len(results) <= 50:
+                      response['details'] = results
+
+                  if sns_topic and not dry_run and updated > 0:
+                      sns_client.publish(
+                          TopicArn=sns_topic,
+                          Subject=f'[Aura] Log Retention: {retention_days} days ({env})',
+                          Message=f"""Log Retention Sync Complete
+
+          Environment: {env}
+          Retention: {retention_days} days
+          Updated: {updated} | Skipped: {skipped} | Failed: {failed}
+          Timestamp: {timestamp}
+
+          ---
+          Project Aura - Compliance Log Management
+          """
+                      )
+
+                  logger.info(f"Complete: {updated} updated, {skipped} skipped, {failed} failed")
+                  return {'statusCode': 200, 'body': json.dumps(response)}
+
+              except Exception as e:
+                  logger.error(f"Failed: {e}", exc_info=True)
+                  return {'statusCode': 500, 'body': json.dumps({'status': 'error', 'error': str(e)})}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: log-retention-sync
+
+  # CloudWatch Log Group for Lambda
+  LogRetentionLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-log-retention-sync-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Permission for API Gateway / other services to invoke Lambda
+  LogRetentionLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LogRetentionSyncLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*'
+
+  # Permission for Lambda service (for direct invocation from other Lambdas)
+  LogRetentionLambdaServicePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LogRetentionSyncLambda
+      Action: lambda:InvokeFunction
+      Principal: lambda.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the log retention sync Lambda
+    Value: !GetAtt LogRetentionSyncLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-log-retention-sync-arn-${Environment}'
+
+  LambdaFunctionName:
+    Description: Name of the log retention sync Lambda
+    Value: !Ref LogRetentionSyncLambda
+    Export:
+      Name: !Sub '${ProjectName}-log-retention-sync-name-${Environment}'
+
+  SNSTopicArn:
+    Description: SNS topic for log retention notifications
+    Value: !Ref LogRetentionNotificationTopic
+    Export:
+      Name: !Sub '${ProjectName}-log-retention-sns-topic-${Environment}'
+
+  LambdaRoleArn:
+    Description: IAM role ARN for log retention Lambda
+    Value: !GetAtt LogRetentionLambdaRole.Arn

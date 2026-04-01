@@ -1,0 +1,39 @@
+# Project Aura - Service Configuration (QA Environment)
+#
+# Usage:
+#   kubectl apply -k deploy/kubernetes/aura-service-config/overlays/qa/
+#
+# QA environment uses staging URLs for pre-production testing.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+
+labels:
+  - pairs:
+      environment: qa
+      project: aura
+    includeSelectors: false
+
+# Patch ConfigMap with qa-specific values
+patches:
+  - target:
+      kind: ConfigMap
+      name: aura-service-config
+    patch: |-
+      - op: replace
+        path: /data/SUPPORT_EMAIL
+        value: "support-qa@aenealabs.com"
+      - op: replace
+        path: /data/PRICING_PAGE_URL
+        value: "https://qa.aenealabs.com/pricing"
+      - op: replace
+        path: /data/LICENSE_RENEWAL_URL
+        value: "https://qa.aenealabs.com/renew"
+      - op: replace
+        path: /data/GPU_DASHBOARD_BASE_URL
+        value: "https://qa.aenealabs.com"

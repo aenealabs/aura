@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "react-router-dom": "^7.9.4"
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "^0.19.0"
+  }
+}

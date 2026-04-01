@@ -1,0 +1,468 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 0.3 - Migration Bootstrap (Cross-Account Migration Resources)'
+
+# ============================================================================
+# IMPORTANT: Deploy this template in the NEW target account to set up
+# cross-account access for migration from the source account.
+#
+# This template creates:
+#   - Cross-account role for source account access
+#   - S3 bucket for migration artifacts
+#   - KMS key with cross-account grants for data migration
+#   - SNS topic for migration notifications
+#
+# Prerequisites:
+#   - account-bootstrap.yaml deployed first
+#   - Source account ID known
+#
+# Deployment:
+#   aws cloudformation deploy \
+#     --template-file deploy/cloudformation/account-migration-bootstrap.yaml \
+#     --stack-name aura-migration-bootstrap \
+#     --parameter-overrides \
+#         Environment=dev \
+#         SourceAccountId=123456789012 \
+#         AdminRoleArn=arn:aws:iam::NEW_ACCOUNT:role/... \
+#         AlertEmail=migration-alerts@aenealabs.com \
+#     --capabilities CAPABILITY_NAMED_IAM
+# ============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Default: dev
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used in resource naming
+
+  SourceAccountId:
+    Type: String
+    Description: Source AWS Account ID to migrate from
+    AllowedPattern: '\d{12}'
+    ConstraintDescription: Must be a 12-digit AWS account ID
+
+  AdminRoleArn:
+    Type: String
+    Description: SSO Administrator Role ARN for this account
+    AllowedPattern: 'arn:(aws|aws-us-gov):iam::\d{12}:role/.*'
+
+  AlertEmail:
+    Type: String
+    Description: Email address for migration alert notifications
+    AllowedPattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+
+Resources:
+  # ============================================================================
+  # KMS Key for Migration Encryption
+  # ============================================================================
+
+  MigrationKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'KMS key for ${ProjectName} cross-account migration'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Root access prevents lockout
+          - Sid: RootAccountAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+          # Admin role access
+          - Sid: AdminRoleAccess
+            Effect: Allow
+            Principal:
+              AWS: !Ref AdminRoleArn
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:TagResource
+              - kms:UntagResource
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
+            Resource: '*'
+          # Source account cross-account access for migration
+          - Sid: SourceAccountMigrationAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${SourceAccountId}:root'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref SourceAccountId
+          # S3 service access for bucket encryption
+          - Sid: S3ServiceAccess
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref 'AWS::AccountId'
+          # Neptune service access for snapshot restoration
+          - Sid: NeptuneServiceAccess
+            Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref 'AWS::AccountId'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: Cross-account migration encryption
+
+  MigrationKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}/${Environment}/migration'
+      TargetKeyId: !Ref MigrationKMSKey
+
+  # ============================================================================
+  # S3 Bucket for Migration Artifacts
+  # ============================================================================
+
+  MigrationBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-migration-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt MigrationKMSKey.Arn
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldMigrationArtifacts
+            Status: Enabled
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: Migration artifacts and snapshots
+
+  MigrationBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MigrationBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Enforce TLS
+          - Sid: EnforceTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt MigrationBucket.Arn
+              - !Sub '${MigrationBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          # Allow source account to write migration data
+          - Sid: SourceAccountWrite
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${SourceAccountId}:root'
+            Action:
+              - s3:PutObject
+              - s3:PutObjectAcl
+              - s3:GetObject
+              - s3:GetObjectAcl
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource:
+              - !GetAtt MigrationBucket.Arn
+              - !Sub '${MigrationBucket.Arn}/*'
+          # Allow Neptune to read snapshots for restoration
+          - Sid: NeptuneSnapshotRestore
+            Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:ListBucket
+            Resource:
+              - !GetAtt MigrationBucket.Arn
+              - !Sub '${MigrationBucket.Arn}/neptune/*'
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref 'AWS::AccountId'
+
+  # ============================================================================
+  # Cross-Account Migration Role (Assumed by Source Account)
+  # ============================================================================
+
+  CrossAccountMigrationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-cross-account-migration-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${SourceAccountId}:root'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Sub '${ProjectName}-migration-${Environment}'
+      Policies:
+        - PolicyName: MigrationDataAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # S3 access for migration bucket
+              - Sid: S3MigrationAccess
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt MigrationBucket.Arn
+                  - !Sub '${MigrationBucket.Arn}/*'
+              # KMS access for encryption
+              - Sid: KMSMigrationAccess
+                Effect: Allow
+                Action:
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:ReEncrypt*
+                  - kms:GenerateDataKey*
+                  - kms:DescribeKey
+                Resource:
+                  - !GetAtt MigrationKMSKey.Arn
+              # Neptune snapshot access (for copying snapshots)
+              - Sid: NeptuneSnapshotAccess
+                Effect: Allow
+                Action:
+                  - rds:CopyDBClusterSnapshot
+                  - rds:DescribeDBClusterSnapshots
+                  - rds:RestoreDBClusterFromSnapshot
+                  - rds:AddTagsToResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:cluster:${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:${ProjectName}-*'
+              # DynamoDB backup access
+              - Sid: DynamoDBBackupAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:RestoreTableFromBackup
+                  - dynamodb:CreateTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*'
+              # ECR access for image replication
+              - Sid: ECRImageAccess
+                Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetAuthorizationToken
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-*'
+              # ECR authorization is account-wide
+              - Sid: ECRAuthAccess
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              # Secrets Manager access for secrets migration
+              - Sid: SecretsManagerAccess
+                Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:TagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/*'
+              # SSM Parameter Store access
+              - Sid: SSMParameterAccess
+                Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:AddTagsToResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # SNS Topic for Migration Notifications
+  # ============================================================================
+
+  MigrationAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-migration-alerts-${Environment}'
+      DisplayName: !Sub 'Aura ${Environment} Migration Alerts'
+      KmsMasterKeyId: !Ref MigrationKMSKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  MigrationAlertsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref MigrationAlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================================
+  # SSM Parameters for Migration Configuration
+  # ============================================================================
+
+  SourceAccountIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/migration/source-account-id'
+      Type: String
+      Value: !Ref SourceAccountId
+      Description: Source account ID for migration
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  MigrationBucketParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/migration/bucket'
+      Type: String
+      Value: !Ref MigrationBucket
+      Description: S3 bucket for migration artifacts
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  MigrationKMSKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/migration/kms-key-arn'
+      Type: String
+      Value: !GetAtt MigrationKMSKey.Arn
+      Description: KMS key ARN for migration encryption
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  CrossAccountRoleParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/migration/cross-account-role-arn'
+      Type: String
+      Value: !GetAtt CrossAccountMigrationRole.Arn
+      Description: Cross-account role ARN for source account to assume
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+Outputs:
+  MigrationBucketName:
+    Description: S3 bucket for migration artifacts
+    Value: !Ref MigrationBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-MigrationBucket'
+
+  MigrationBucketArn:
+    Description: S3 bucket ARN
+    Value: !GetAtt MigrationBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-MigrationBucketArn'
+
+  MigrationKMSKeyArn:
+    Description: KMS key ARN for migration encryption
+    Value: !GetAtt MigrationKMSKey.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-MigrationKMSKeyArn'
+
+  MigrationKMSKeyAlias:
+    Description: KMS key alias
+    Value: !Ref MigrationKMSKeyAlias
+    Export:
+      Name: !Sub '${AWS::StackName}-MigrationKMSKeyAlias'
+
+  CrossAccountMigrationRoleArn:
+    Description: Cross-account role ARN for source account to assume
+    Value: !GetAtt CrossAccountMigrationRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CrossAccountRoleArn'
+
+  ExternalIdForAssumeRole:
+    Description: External ID required when assuming cross-account role
+    Value: !Sub '${ProjectName}-migration-${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ExternalId'
+
+  MigrationAlertsTopicArn:
+    Description: SNS topic for migration alerts
+    Value: !Ref MigrationAlertsTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-AlertsTopicArn'

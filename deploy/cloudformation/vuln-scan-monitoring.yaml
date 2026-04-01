@@ -1,0 +1,273 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 9.6 - Vuln Scan Monitoring (Dashboard, Alarms)'
+
+# =============================================================================
+# CloudWatch monitoring for ADR-084 vulnerability scanner.
+#
+# Resources:
+# - Dashboard: scan metrics, token costs, findings, pipeline health
+# - Alarms: scan duration, failure rate, token budget, DLQ depth
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # CloudWatch Dashboard
+  # ===========================================================================
+  ScannerDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-vuln-scanner-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/VulnerabilityScanner", "ScansStarted", "Environment", "${Environment}", {"stat": "Sum", "label": "Started"}],
+                  [".", "ScansCompleted", ".", ".", {"stat": "Sum", "label": "Completed"}],
+                  [".", "ScansFailed", ".", ".", {"stat": "Sum", "label": "Failed"}]
+                ],
+                "period": 3600,
+                "region": "${AWS::Region}",
+                "title": "Scan Pipeline Activity (Hourly)",
+                "yAxis": {"left": {"label": "Count"}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/VulnerabilityScanner", "ScanDuration", "Environment", "${Environment}", {"stat": "Average", "label": "Avg Duration"}],
+                  ["...", {"stat": "p99", "label": "p99 Duration"}]
+                ],
+                "period": 3600,
+                "region": "${AWS::Region}",
+                "title": "Scan Duration (seconds)",
+                "yAxis": {"left": {"label": "Seconds"}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/VulnerabilityScanner", "FindingsDetected", "Severity", "CRITICAL", "Environment", "${Environment}", {"stat": "Sum", "label": "Critical", "color": "#DC2626"}],
+                  ["...", "HIGH", ".", ".", {"stat": "Sum", "label": "High", "color": "#EA580C"}],
+                  ["...", "MEDIUM", ".", ".", {"stat": "Sum", "label": "Medium", "color": "#F59E0B"}],
+                  ["...", "LOW", ".", ".", {"stat": "Sum", "label": "Low", "color": "#3B82F6"}]
+                ],
+                "period": 86400,
+                "region": "${AWS::Region}",
+                "title": "Findings by Severity (Daily)",
+                "yAxis": {"left": {"label": "Count"}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/VulnerabilityScanner", "LLMTokensUsed", "Environment", "${Environment}", {"stat": "Sum", "label": "Tokens Used"}],
+                  [".", "LLMInvocations", ".", ".", {"stat": "Sum", "label": "LLM Calls", "yAxis": "right"}]
+                ],
+                "period": 3600,
+                "region": "${AWS::Region}",
+                "title": "LLM Token Usage (Hourly)",
+                "yAxis": {
+                  "left": {"label": "Tokens"},
+                  "right": {"label": "Invocations"}
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/VulnerabilityScanner", "Stage_ingesting", "Environment", "${Environment}", {"stat": "Average", "label": "Ingestion"}],
+                  [".", "Stage_parsing", ".", ".", {"stat": "Average", "label": "Parsing"}],
+                  [".", "Stage_building_graph", ".", ".", {"stat": "Average", "label": "Graph Build"}],
+                  [".", "Stage_embedding", ".", ".", {"stat": "Average", "label": "Embedding"}],
+                  [".", "Stage_analyzing", ".", ".", {"stat": "Average", "label": "Analysis"}],
+                  [".", "Stage_verifying", ".", ".", {"stat": "Average", "label": "Verification"}],
+                  [".", "Stage_reporting", ".", ".", {"stat": "Average", "label": "Reporting"}]
+                ],
+                "period": 3600,
+                "region": "${AWS::Region}",
+                "title": "Stage Duration (seconds)",
+                "yAxis": {"left": {"label": "Seconds"}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 12,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/States", "ExecutionsSucceeded", "StateMachineArn", "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-vuln-scan-pipeline-${Environment}", {"stat": "Sum", "label": "Succeeded"}],
+                  [".", "ExecutionsFailed", ".", ".", {"stat": "Sum", "label": "Failed"}],
+                  [".", "ExecutionsTimedOut", ".", ".", {"stat": "Sum", "label": "Timed Out"}]
+                ],
+                "period": 3600,
+                "region": "${AWS::Region}",
+                "title": "Step Functions Pipeline Health"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 12,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/VulnerabilityScanner", "CleanupArtifactsDeleted", "Environment", "${Environment}", {"stat": "Sum", "label": "Artifacts Deleted"}],
+                  [".", "CleanupJobsCleaned", ".", ".", {"stat": "Sum", "label": "Jobs Cleaned"}]
+                ],
+                "period": 86400,
+                "region": "${AWS::Region}",
+                "title": "Cleanup Activity (Daily)"
+              }
+            }
+          ]
+        }
+
+  # ===========================================================================
+  # Alarm: Scan Pipeline Failure Rate
+  # ===========================================================================
+  ScanFailureRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-vuln-scan-failure-rate-${Environment}'
+      AlarmDescription: Alert when scan pipeline failure rate exceeds threshold
+      MetricName: ExecutionsFailed
+      Namespace: AWS/States
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: !If [IsProduction, 3, 5]
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !ImportValue
+            Fn::Sub: '${ProjectName}-vuln-scan-pipeline-arn-${Environment}'
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+
+  # ===========================================================================
+  # Alarm: Scan Duration Exceeds Threshold
+  # ===========================================================================
+  ScanDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-vuln-scan-duration-high-${Environment}'
+      AlarmDescription: Alert when average scan duration exceeds 90 minutes
+      MetricName: ExecutionTime
+      Namespace: AWS/States
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 2
+      Threshold: 5400000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !ImportValue
+            Fn::Sub: '${ProjectName}-vuln-scan-pipeline-arn-${Environment}'
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+
+  # ===========================================================================
+  # Alarm: Critical Findings Detected
+  # ===========================================================================
+  CriticalFindingsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-vuln-scan-critical-findings-${Environment}'
+      AlarmDescription: Alert when critical severity vulnerabilities are detected
+      MetricName: FindingsDetected
+      Namespace: !Sub '${ProjectName}/VulnerabilityScanner'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: Severity
+          Value: CRITICAL
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+
+  # ===========================================================================
+  # Alarm: High Token Spend (Cost Protection)
+  # ===========================================================================
+  TokenSpendAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-vuln-scan-token-spend-high-${Environment}'
+      AlarmDescription: Alert when daily LLM token usage exceeds budget threshold
+      MetricName: LLMTokensUsed
+      Namespace: !Sub '${ProjectName}/VulnerabilityScanner'
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !If [IsProduction, 50000000, 10000000]
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+
+Outputs:
+  DashboardName:
+    Description: CloudWatch dashboard name for vulnerability scanner
+    Value: !Ref ScannerDashboard
+
+  DashboardUrl:
+    Description: CloudWatch dashboard URL
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-vuln-scanner-${Environment}'

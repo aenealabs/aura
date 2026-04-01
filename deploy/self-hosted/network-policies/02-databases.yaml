@@ -1,0 +1,396 @@
+# Project Aura - Database Services NetworkPolicy
+#
+# Network policies for self-hosted database services:
+#   - Neo4j (Graph database - replaces Neptune)
+#   - PostgreSQL (Relational - replaces DynamoDB)
+#   - OpenSearch (Vector search - self-managed)
+#   - Redis (Session cache)
+#
+# ADR-049 Phase 0 - Self-Hosted Deployment
+#
+---
+# Neo4j Graph Database
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: neo4j-network-policy
+  namespace: aura-data
+  labels:
+    app.kubernetes.io/name: neo4j
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: database
+spec:
+  podSelector:
+    matchLabels:
+      app: neo4j
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow Bolt protocol from aura namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 7687  # Bolt
+
+    # Allow HTTP from aura namespace (Neo4j Browser, if enabled)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+          podSelector:
+            matchLabels:
+              app: aura-api
+      ports:
+        - protocol: TCP
+          port: 7474
+
+    # Allow cluster communication (for HA deployments)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: neo4j
+      ports:
+        - protocol: TCP
+          port: 5000  # Discovery
+        - protocol: TCP
+          port: 6000  # Transaction
+        - protocol: TCP
+          port: 7000  # Raft
+
+    # Allow Prometheus metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 2004  # Metrics
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 7474
+  egress:
+    # Allow cluster communication between Neo4j nodes
+    - to:
+        - podSelector:
+            matchLabels:
+              app: neo4j
+      ports:
+        - protocol: TCP
+          port: 5000
+        - protocol: TCP
+          port: 6000
+        - protocol: TCP
+          port: 7000
+
+---
+# PostgreSQL (DynamoDB replacement)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgresql-network-policy
+  namespace: aura-data
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: database
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresql
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow connections from aura namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow replication between PostgreSQL nodes (for HA)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow Prometheus metrics (via postgres_exporter)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9187  # postgres_exporter
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    # Allow replication to other PostgreSQL nodes
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow connections to S3-compatible storage for backups (MinIO/S3)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+
+---
+# OpenSearch (Vector search)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opensearch-network-policy
+  namespace: aura-data
+  labels:
+    app.kubernetes.io/name: opensearch
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: database
+spec:
+  podSelector:
+    matchLabels:
+      app: opensearch
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow REST API from aura namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 9200
+
+    # Allow cluster transport between OpenSearch nodes
+    - from:
+        - podSelector:
+            matchLabels:
+              app: opensearch
+      ports:
+        - protocol: TCP
+          port: 9300  # Transport
+        - protocol: TCP
+          port: 9600  # Performance Analyzer
+
+    # Allow Prometheus metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9200
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 9200
+  egress:
+    # Allow cluster communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: opensearch
+      ports:
+        - protocol: TCP
+          port: 9300
+        - protocol: TCP
+          port: 9600
+
+    # Allow S3-compatible storage for snapshots
+    - to:
+        - podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+
+---
+# Redis (Session cache)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-network-policy
+  namespace: aura-data
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: database
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow connections from aura namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # Allow Redis Sentinel (for HA)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 26379  # Sentinel
+
+    # Allow Prometheus metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9121  # redis_exporter
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    # Allow replication between Redis nodes
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 26379
+
+---
+# MinIO (S3-compatible object storage for backups)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: minio-network-policy
+  namespace: aura-data
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: database
+spec:
+  podSelector:
+    matchLabels:
+      app: minio
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow S3 API from database pods (backups)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+        - podSelector:
+            matchLabels:
+              app: opensearch
+        - podSelector:
+            matchLabels:
+              app: neo4j
+      ports:
+        - protocol: TCP
+          port: 9000
+
+    # Allow from aura namespace for artifact storage
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 9000
+
+    # Allow console access (admin only)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+          podSelector:
+            matchLabels:
+              app: aura-api
+      ports:
+        - protocol: TCP
+          port: 9001  # Console
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 9000
+  egress:
+    # Allow MinIO distributed mode communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000

@@ -1,0 +1,82 @@
+name: Bug Report
+description: Report a bug in Project Aura
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Brief description of the bug
+      placeholder: "What went wrong?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Run command '...'
+        2. Navigate to '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Paste any relevant log output or error messages
+      render: shell
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How severe is this issue?
+      options:
+        - P3-low (Minor issue, nice-to-have fix)
+        - P2-medium (Feature degraded, workaround exists)
+        - P1-high (Major feature broken, compliance risk)
+        - P0-critical (Production down, security breach)
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Branch, Python version, AWS region, etc.
+      placeholder: "main, Python 3.12, us-east-1"
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have checked KNOWN_ISSUES.md for accepted limitations
+          required: true

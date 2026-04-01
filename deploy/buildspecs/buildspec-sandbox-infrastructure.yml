@@ -1,0 +1,94 @@
+version: 0.2
+
+# Sandbox Layer Sub-BuildSpec: Core Infrastructure (Layer 7.1-7.4)
+# Deploys sandbox core, state table, and IAM roles.
+# Called by buildspec-sandbox.yml or Step Functions.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - pip3 install cfn-lint --quiet
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Sandbox Core Infrastructure (Layer 7.1-7.4)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - validate_aws_credentials
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+      # Validate templates
+      - cfn-lint deploy/cloudformation/sandbox.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-state.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-iam.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+
+      # Get dependency outputs
+      - |
+        NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+        VPC_ID=$(cfn_get_stack_output "$NETWORKING_STACK" "VpcId" "")
+        PRIVATE_SUBNET_IDS=$(cfn_get_stack_output "$NETWORKING_STACK" "PrivateSubnetIds" "")
+        echo "VPC ID: ${VPC_ID:-not found}"
+        echo "Private Subnets: ${PRIVATE_SUBNET_IDS:-not found}"
+
+  build:
+    commands:
+      # Core Sandbox Infrastructure (Layer 7.1)
+      - |
+        echo "Deploying Sandbox Infrastructure..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+          PARAMS="$PARAMS VpcId=${VPC_ID}"
+        fi
+        if [ -n "$PRIVATE_SUBNET_IDS" ] && [ "$PRIVATE_SUBNET_IDS" != "None" ]; then
+          PARAMS="$PARAMS PrivateSubnetIds=\"${PRIVATE_SUBNET_IDS}\""
+        fi
+        if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
+          PARAMS="$PARAMS AlertEmail=${ALERT_EMAIL}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-sandbox-${ENVIRONMENT}" \
+          "deploy/cloudformation/sandbox.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=sandbox DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Test Environment State Table (Layer 7.3)
+      - |
+        echo "Deploying Test Environment State Table..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-test-env-state-${ENVIRONMENT}" \
+          "deploy/cloudformation/test-env-state.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.3 DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          ""
+
+      # Test Environment IAM Roles (Layer 7.4)
+      - |
+        echo "Deploying Test Environment IAM Roles..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-test-env-iam-${ENVIRONMENT}" \
+          "deploy/cloudformation/test-env-iam.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.4 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+  post_build:
+    commands:
+      - echo "Sandbox core infrastructure deployment complete"
+      - |
+        echo "IAM Role ARNs:"
+        cfn_get_stack_output "${PROJECT_NAME}-test-env-iam-${ENVIRONMENT}" "CatalogLaunchRoleArn" || echo "Not available"
+        cfn_get_stack_output "${PROJECT_NAME}-test-env-iam-${ENVIRONMENT}" "StepFunctionsRoleArn" || echo "Not available"

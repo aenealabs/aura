@@ -1,0 +1,422 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.6 - DNS Blocklist Lambda (Threat Intel)'
+
+Metadata:
+  Version: '1.1'
+  LastUpdated: '2025-12-12'
+  DescriptionSync: 'Layer-6.6'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for blocklist update notifications (optional)
+
+  EnableKubernetesUpdate:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable Kubernetes ConfigMap updates via S3 staging
+
+  EKSOIDCProviderArn:
+    Type: String
+    Default: ''
+    Description: EKS OIDC Provider ARN for IRSA (leave empty to skip IRSA role creation)
+
+  EKSOIDCProviderURL:
+    Type: String
+    Default: ''
+    Description: EKS OIDC Provider URL without https:// prefix (e.g., oidc.eks.us-east-1.amazonaws.com/id/XXXXX)
+
+Conditions:
+  HasOIDCProvider: !Not [!Equals [!Ref EKSOIDCProviderArn, '']]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # S3 Bucket for blocklist configuration storage
+  BlocklistConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-blocklist-config-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dns-blocklist
+        - Key: DescriptionVersion
+          Value: '6.6.1'
+
+  # SNS Topic for notifications
+  BlocklistNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-blocklist-updates-${Environment}'
+      DisplayName: !Sub 'Aura DNS Blocklist Updates (${Environment})'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SNS Email Subscription (if email provided)
+  BlocklistEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref BlocklistNotificationTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # IAM Role for Lambda
+  BlocklistLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-blocklist-lambda-role-${Environment}'
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: BlocklistLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # S3 permissions
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt BlocklistConfigBucket.Arn
+                  - !Sub '${BlocklistConfigBucket.Arn}/*'
+              # SNS permissions
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref BlocklistNotificationTopic
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-blocklist-updater-${Environment}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Lambda Function
+  BlocklistUpdaterLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-blocklist-updater-${Environment}'
+      Description: 'Generates DNS blocklists from threat intelligence feeds'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt BlocklistLambdaRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          S3_BUCKET: !Ref BlocklistConfigBucket
+          SNS_TOPIC_ARN: !Ref BlocklistNotificationTopic
+          ENABLE_K8S_UPDATE: !Ref EnableKubernetesUpdate
+      Code:
+        ZipFile: |
+          """
+          DNS Blocklist Updater Lambda - Inline Handler
+
+          This is a simplified version that generates mock blocklists.
+          For full threat intelligence integration, deploy the complete
+          Lambda package from src/lambda/dns_blocklist_updater.py
+          """
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          s3_client = boto3.client('s3')
+          sns_client = boto3.client('sns')
+
+          # Mock threat intelligence data
+          MOCK_BLOCKLIST = '''# Project Aura - DNS Blocklist
+          # Auto-generated by Lambda
+          # Generated: {timestamp}
+          #
+          # Sources: NVD, CISA KEV, URLhaus, Abuse.ch
+          # Total Entries: 15
+
+          # --- MALWARE ---
+          address=/malware-distribution.evil.com/0.0.0.0
+          address=/dropper.malicious.net/0.0.0.0
+          address=/payload-delivery.bad.io/0.0.0.0
+
+          # --- C2 COMMAND AND CONTROL ---
+          address=/c2-botnet.evil.com/0.0.0.0
+          address=/command-server.botnet.io/0.0.0.0
+          address=/control-panel.malware.net/0.0.0.0
+
+          # --- PHISHING ---
+          address=/fake-login.phishing.com/0.0.0.0
+          address=/credential-harvest.evil.net/0.0.0.0
+          address=/account-verify.scam.io/0.0.0.0
+
+          # --- RANSOMWARE ---
+          address=/ransom-payment.evil.com/0.0.0.0
+          address=/decrypt-files.malicious.net/0.0.0.0
+
+          # --- CRYPTOMINER ---
+          address=/coinhive.malicious.com/0.0.0.0
+          address=/miner-pool.crypto.net/0.0.0.0
+          address=/xmr-mining.evil.io/0.0.0.0
+          '''
+
+          def lambda_handler(event, context):
+              logger.info(f"DNS Blocklist Updater triggered: {json.dumps(event)}")
+
+              env = os.environ.get('ENVIRONMENT', 'dev')
+              bucket = os.environ.get('S3_BUCKET', f'aura-blocklist-config-{env}')
+              sns_topic = os.environ.get('SNS_TOPIC_ARN', '')
+
+              timestamp = datetime.now(timezone.utc).isoformat()
+              blocklist = MOCK_BLOCKLIST.format(timestamp=timestamp)
+
+              try:
+                  # Upload to S3
+                  key = f'dnsmasq/blocklist-{env}.conf'
+                  s3_client.put_object(
+                      Bucket=bucket,
+                      Key=key,
+                      Body=blocklist.encode('utf-8'),
+                      ContentType='text/plain',
+                      Metadata={
+                          'generator': 'aura-blocklist-lambda',
+                          'generated-at': timestamp,
+                      }
+                  )
+                  logger.info(f"Uploaded blocklist to s3://{bucket}/{key}")
+
+                  # Also upload for K8s sync
+                  k8s_key = f'kubernetes/dnsmasq-blocklist-configmap-{env}.conf'
+                  s3_client.put_object(
+                      Bucket=bucket,
+                      Key=k8s_key,
+                      Body=blocklist.encode('utf-8'),
+                      ContentType='text/plain',
+                  )
+                  logger.info(f"Uploaded K8s blocklist to s3://{bucket}/{k8s_key}")
+
+                  # Send notification
+                  if sns_topic:
+                      sns_client.publish(
+                          TopicArn=sns_topic,
+                          Subject=f'[Aura] DNS Blocklist Updated - {env}',
+                          Message=f'''DNS Blocklist Update Completed
+
+          Environment: {env}
+          Timestamp: {timestamp}
+          Entries: 15 (mock data)
+          S3 Location: s3://{bucket}/{key}
+
+          This is a mock blocklist. Deploy full Lambda package for real threat intelligence.
+
+          ---
+          Project Aura - Automated DNS Security
+          '''
+                      )
+                      logger.info("Notification sent")
+
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps({
+                          'status': 'success',
+                          'timestamp': timestamp,
+                          'entries': 15,
+                          's3_location': f's3://{bucket}/{key}',
+                          'mock_mode': True,
+                      })
+                  }
+
+              except ClientError as e:
+                  logger.error(f"Error: {e}")
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'status': 'error', 'error': str(e)})
+                  }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dns-blocklist
+
+  # CloudWatch Log Group
+  BlocklistLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-blocklist-updater-${Environment}'
+      RetentionInDays: !If [IsProd, 90, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Events Rule - Daily at 6 AM UTC
+  BlocklistScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-blocklist-daily-update-${Environment}'
+      Description: 'Triggers DNS blocklist update daily at 6 AM UTC'
+      ScheduleExpression: 'cron(0 6 * * ? *)'
+      State: ENABLED
+      Targets:
+        - Id: BlocklistLambdaTarget
+          Arn: !GetAtt BlocklistUpdaterLambda.Arn
+
+  # Permission for CloudWatch Events to invoke Lambda
+  BlocklistLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BlocklistUpdaterLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BlocklistScheduleRule.Arn
+
+  # IRSA Role for Kubernetes blocklist-sync CronJob
+  BlocklistSyncIRSARole:
+    Type: AWS::IAM::Role
+    Condition: HasOIDCProvider
+    Properties:
+      RoleName: !Sub '${ProjectName}-blocklist-sync-role-${Environment}'
+      Description: 'IRSA role for K8s blocklist-sync CronJob to access S3 blocklist'
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCUrl}:aud": "sts.amazonaws.com",
+                      "${OIDCUrl}:sub": "system:serviceaccount:aura-network-services:blocklist-sync"
+                    }
+                  }
+                }
+              ]
+            }
+          - OIDCArn: !Ref EKSOIDCProviderArn
+            OIDCUrl: !Ref EKSOIDCProviderURL
+      Policies:
+        - PolicyName: BlocklistS3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt BlocklistConfigBucket.Arn
+                  - !Sub '${BlocklistConfigBucket.Arn}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Component
+          Value: dns-blocklist
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the blocklist updater Lambda
+    Value: !GetAtt BlocklistUpdaterLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-blocklist-lambda-arn-${Environment}'
+
+  LambdaFunctionName:
+    Description: Name of the blocklist updater Lambda
+    Value: !Ref BlocklistUpdaterLambda
+
+  S3BucketName:
+    Description: S3 bucket for blocklist configuration
+    Value: !Ref BlocklistConfigBucket
+    Export:
+      Name: !Sub '${ProjectName}-blocklist-bucket-${Environment}'
+
+  SNSTopicArn:
+    Description: SNS topic for blocklist notifications
+    Value: !Ref BlocklistNotificationTopic
+    Export:
+      Name: !Sub '${ProjectName}-blocklist-sns-topic-${Environment}'
+
+  ScheduleRuleArn:
+    Description: CloudWatch Events rule ARN
+    Value: !GetAtt BlocklistScheduleRule.Arn
+
+  BlocklistSyncRoleArn:
+    Condition: HasOIDCProvider
+    Description: IRSA role ARN for K8s blocklist-sync ServiceAccount
+    Value: !GetAtt BlocklistSyncIRSARole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-blocklist-sync-role-arn-${Environment}'

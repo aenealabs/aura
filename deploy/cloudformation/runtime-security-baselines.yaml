@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.8 - Runtime Security Baselines (ADR-083 Behavioral Profiling & Drift Detection)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # DynamoDB Table - Behavioral Profiles
+  BehavioralProfilesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-behavioral-profiles-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: agent_id
+          AttributeType: S
+        - AttributeName: computed_at
+          AttributeType: S
+        - AttributeName: metric_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: agent_id
+          KeyType: HASH
+        - AttributeName: computed_at
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: metric-type-index
+          KeySchema:
+            - AttributeName: metric_type
+              KeyType: HASH
+            - AttributeName: computed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-behavioral-profiles-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # DynamoDB Table - Drift Alerts
+  DriftAlertsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-drift-alerts-083-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: alert_id
+          AttributeType: S
+        - AttributeName: agent_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: severity
+          AttributeType: S
+      KeySchema:
+        - AttributeName: alert_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: agent-timestamp-index
+          KeySchema:
+            - AttributeName: agent_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: severity-timestamp-index
+          KeySchema:
+            - AttributeName: severity
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-drift-alerts-083-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # SNS Topic - Behavioral Drift Alerts
+  DriftAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-behavioral-drift-alerts-${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # CloudWatch Alarm - Critical Deviations
+  CriticalDeviationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-critical-behavioral-deviation-${Environment}'
+      AlarmDescription: Alert when 2+ critical behavioral deviations detected in 1 hour
+      MetricName: CriticalDeviations
+      Namespace: !Sub 'Aura/RuntimeSecurity/${Environment}'
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref DriftAlertTopic
+
+  # CloudWatch Alarm - High Drift Rate
+  HighDriftRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-high-drift-rate-${Environment}'
+      AlarmDescription: Alert when drift detection rate exceeds 50% of agents
+      MetricName: DriftDetectionRate
+      Namespace: !Sub 'Aura/RuntimeSecurity/${Environment}'
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 2
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref DriftAlertTopic
+
+Outputs:
+  BehavioralProfilesTableName:
+    Description: Behavioral profiles table name
+    Value: !Ref BehavioralProfilesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-BehavioralProfilesTableName'
+
+  BehavioralProfilesTableArn:
+    Description: Behavioral profiles table ARN
+    Value: !GetAtt BehavioralProfilesTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BehavioralProfilesTableArn'
+
+  DriftAlertsTableName:
+    Description: Drift alerts table name
+    Value: !Ref DriftAlertsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DriftAlertsTableName'
+
+  DriftAlertsTableArn:
+    Description: Drift alerts table ARN
+    Value: !GetAtt DriftAlertsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DriftAlertsTableArn'
+
+  DriftAlertTopicArn:
+    Description: Behavioral drift alert SNS topic ARN
+    Value: !Ref DriftAlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-DriftAlertTopicArn'

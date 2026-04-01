@@ -1,0 +1,81 @@
+# Project Aura - ArgoCD Application for Frontend
+# Deploys the React dashboard to EKS via GitOps (ADR-022)
+#
+# This Application watches deploy/kubernetes/aura-frontend/ in Git and
+# automatically syncs changes to the Kubernetes cluster.
+#
+# Sync Flow:
+#   1. CodeBuild builds image and pushes to ECR
+#   2. CodeBuild updates image tag in kustomization.yaml
+#   3. ArgoCD detects Git change and syncs to cluster
+#   4. ArgoCD verifies deployment health
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aura-frontend
+  namespace: argocd
+  labels:
+    project: aura
+    tier: frontend
+  # Finalizer to ensure proper cleanup on deletion
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Reference the Aura project for RBAC
+  project: aura
+
+  # Source repository and path
+  source:
+    repoURL: https://github.com/aenealabs/aura
+    targetRevision: main
+    path: deploy/kubernetes/aura-frontend
+
+  # Destination cluster and namespace
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  # Sync policy configuration
+  syncPolicy:
+    # Automated sync - ArgoCD will automatically apply changes from Git
+    automated:
+      # Prune resources that are no longer defined in Git
+      prune: true
+      # Self-heal - revert manual changes made outside of Git
+      selfHeal: true
+      # Allow empty - sync even if no resources are defined (useful for initial setup)
+      allowEmpty: false
+
+    # Sync options
+    syncOptions:
+      # Create namespace if it doesn't exist
+      - CreateNamespace=true
+      # Validate manifests before applying
+      - Validate=true
+      # Use server-side apply for better handling of large resources
+      - ServerSideApply=false
+      # Replace resources instead of patching (more predictable)
+      - Replace=false
+      # Prune last - delete resources after creating new ones
+      - PruneLast=true
+
+    # Retry configuration for failed syncs
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Health check configuration
+  # ArgoCD will check these resources to determine application health
+  ignoreDifferences:
+    # Ignore autoscaler-managed replicas
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+
+  # Revision history limit (for rollback)
+  revisionHistoryLimit: 10

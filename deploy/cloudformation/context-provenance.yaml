@@ -1,0 +1,437 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.8 - Context Provenance and Integrity'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+  AuditLogRetentionDays:
+    Type: Number
+    Default: 365
+    Description: Days to retain audit logs
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ==========================================================================
+  # DynamoDB Tables
+  # ==========================================================================
+
+  # Context Quarantine Table - Stores quarantined content pending review
+  QuarantineTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-context-quarantine-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: chunk_id
+          AttributeType: S
+        - AttributeName: quarantined_at
+          AttributeType: S
+        - AttributeName: review_status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: chunk_id
+          KeyType: HASH
+        - AttributeName: quarantined_at
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: review-status-index
+          KeySchema:
+            - AttributeName: review_status
+              KeyType: HASH
+            - AttributeName: quarantined_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: context-provenance
+
+  # Provenance Audit Table - Stores audit trail for all provenance events
+  ProvenanceAuditTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-provenance-audit-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: audit_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: chunk_id
+          AttributeType: S
+        - AttributeName: event_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: audit_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: chunk-id-index
+          KeySchema:
+            - AttributeName: chunk_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: event-type-index
+          KeySchema:
+            - AttributeName: event_type
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: context-provenance
+
+  # Author Trust Table - Tracks author reputation and commit history
+  AuthorTrustTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-author-trust-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: author_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: author_id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: context-provenance
+
+  # ==========================================================================
+  # SNS Topics
+  # ==========================================================================
+
+  # Quarantine Alert Topic - Notifies on content quarantine events
+  QuarantineAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-quarantine-alerts-${Environment}'
+      DisplayName: Context Quarantine Alerts
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: context-provenance
+
+  # SNS Topic Policy for EventBridge integration
+  QuarantineAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref QuarantineAlertTopic
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*'
+      Topics:
+        - !Ref QuarantineAlertTopic
+
+  # ==========================================================================
+  # EventBridge
+  # ==========================================================================
+
+  # Provenance Event Bus - Receives security-critical provenance events
+  ProvenanceEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub '${ProjectName}-provenance-events-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: context-provenance
+
+  # Rule: Route integrity failures to alerts
+  IntegrityFailureRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-integrity-failure-alert-${Environment}'
+      Description: Alert on content integrity verification failures
+      EventBusName: !Ref ProvenanceEventBus
+      EventPattern:
+        source:
+          - aura.context-provenance
+        detail-type:
+          - prefix: 'Context Provenance - INTEGRITY_FAILED'
+      State: ENABLED
+      Targets:
+        - Id: SNSAlert
+          Arn: !Ref QuarantineAlertTopic
+        - Id: CloudWatchLogs
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ProvenanceAuditLogGroup}'
+
+  # Rule: Route anomaly detections to alerts
+  AnomalyDetectedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-anomaly-detected-alert-${Environment}'
+      Description: Alert on context anomaly detections
+      EventBusName: !Ref ProvenanceEventBus
+      EventPattern:
+        source:
+          - aura.context-provenance
+        detail-type:
+          - prefix: 'Context Provenance - ANOMALY_DETECTED'
+      State: ENABLED
+      Targets:
+        - Id: SNSAlert
+          Arn: !Ref QuarantineAlertTopic
+        - Id: CloudWatchLogs
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ProvenanceAuditLogGroup}'
+
+  # Rule: Route quarantine events to alerts
+  ContentQuarantinedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-content-quarantined-alert-${Environment}'
+      Description: Alert on content quarantine events
+      EventBusName: !Ref ProvenanceEventBus
+      EventPattern:
+        source:
+          - aura.context-provenance
+        detail-type:
+          - prefix: 'Context Provenance - CONTENT_QUARANTINED'
+      State: ENABLED
+      Targets:
+        - Id: SNSAlert
+          Arn: !Ref QuarantineAlertTopic
+        - Id: CloudWatchLogs
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ProvenanceAuditLogGroup}'
+
+  # ==========================================================================
+  # CloudWatch Logs
+  # ==========================================================================
+
+  # Provenance Audit Log Group
+  ProvenanceAuditLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/provenance/audit/${Environment}'
+      RetentionInDays: !Ref AuditLogRetentionDays
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: context-provenance
+
+  # Resource policy for EventBridge to write to CloudWatch Logs
+  ProvenanceAuditLogPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-provenance-audit-policy-${Environment}'
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/provenance/audit/${Environment}:*"
+            }
+          ]
+        }
+
+  # ==========================================================================
+  # CloudWatch Alarms
+  # ==========================================================================
+
+  # Alarm: High quarantine rate
+  HighQuarantineRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-high-quarantine-rate-${Environment}'
+      AlarmDescription: High content quarantine rate detected
+      Namespace: Aura/ContextProvenance
+      MetricName: ContentQuarantined
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref QuarantineAlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Integrity verification failures
+  IntegrityFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-integrity-failures-${Environment}'
+      AlarmDescription: Content integrity verification failures detected
+      Namespace: Aura/ContextProvenance
+      MetricName: IntegrityVerificationFailed
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref QuarantineAlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Anomaly detection rate
+  AnomalyDetectionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-anomaly-detection-rate-${Environment}'
+      AlarmDescription: High anomaly detection rate in retrieved context
+      Namespace: Aura/ContextProvenance
+      MetricName: AnomalyDetected
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref QuarantineAlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  QuarantineTableName:
+    Description: Name of the context quarantine DynamoDB table
+    Value: !Ref QuarantineTable
+    Export:
+      Name: !Sub '${ProjectName}-quarantine-table-${Environment}'
+
+  QuarantineTableArn:
+    Description: ARN of the context quarantine DynamoDB table
+    Value: !GetAtt QuarantineTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-quarantine-table-arn-${Environment}'
+
+  ProvenanceAuditTableName:
+    Description: Name of the provenance audit DynamoDB table
+    Value: !Ref ProvenanceAuditTable
+    Export:
+      Name: !Sub '${ProjectName}-provenance-audit-table-${Environment}'
+
+  ProvenanceAuditTableArn:
+    Description: ARN of the provenance audit DynamoDB table
+    Value: !GetAtt ProvenanceAuditTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-provenance-audit-table-arn-${Environment}'
+
+  AuthorTrustTableName:
+    Description: Name of the author trust DynamoDB table
+    Value: !Ref AuthorTrustTable
+    Export:
+      Name: !Sub '${ProjectName}-author-trust-table-${Environment}'
+
+  AuthorTrustTableArn:
+    Description: ARN of the author trust DynamoDB table
+    Value: !GetAtt AuthorTrustTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-author-trust-table-arn-${Environment}'
+
+  QuarantineAlertTopicArn:
+    Description: ARN of the quarantine alert SNS topic
+    Value: !Ref QuarantineAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-quarantine-alerts-topic-arn-${Environment}'
+
+  ProvenanceEventBusName:
+    Description: Name of the provenance EventBridge event bus
+    Value: !Ref ProvenanceEventBus
+    Export:
+      Name: !Sub '${ProjectName}-provenance-eventbus-${Environment}'
+
+  ProvenanceEventBusArn:
+    Description: ARN of the provenance EventBridge event bus
+    Value: !GetAtt ProvenanceEventBus.Arn
+    Export:
+      Name: !Sub '${ProjectName}-provenance-eventbus-arn-${Environment}'
+
+  ProvenanceAuditLogGroupName:
+    Description: Name of the provenance audit log group
+    Value: !Ref ProvenanceAuditLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-provenance-audit-loggroup-${Environment}'

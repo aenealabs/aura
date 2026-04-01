@@ -1,0 +1,40 @@
+# Project Aura - Service Configuration (Dev Environment)
+#
+# Usage:
+#   kubectl apply -k deploy/kubernetes/aura-service-config/overlays/dev/
+#
+# Dev environment uses development URLs for testing.
+# These values point to the dev environment's domain.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+
+labels:
+  - pairs:
+      environment: dev
+      project: aura
+    includeSelectors: false
+
+# Patch ConfigMap with dev-specific values
+patches:
+  - target:
+      kind: ConfigMap
+      name: aura-service-config
+    patch: |-
+      - op: replace
+        path: /data/SUPPORT_EMAIL
+        value: "support-dev@aenealabs.com"
+      - op: replace
+        path: /data/PRICING_PAGE_URL
+        value: "https://dev.aenealabs.com/pricing"
+      - op: replace
+        path: /data/LICENSE_RENEWAL_URL
+        value: "https://dev.aenealabs.com/renew"
+      - op: replace
+        path: /data/GPU_DASHBOARD_BASE_URL
+        value: "https://dev.aenealabs.com"

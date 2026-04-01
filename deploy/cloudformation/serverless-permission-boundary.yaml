@@ -1,0 +1,303 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.13 - Serverless Permission Boundary (Defense in Depth)'
+
+# ============================================================================
+# SECURITY CONTROL: Permission Boundary for Serverless Execution Roles
+#
+# Purpose: Provides a "ceiling" on permissions for all Lambda/EventBridge roles
+# created by the serverless CodeBuild pipeline. Even if a role has overly
+# permissive policies, the boundary restricts effective permissions.
+#
+# Reference: ADR-042 (Real-Time Intervention), Security Assessment
+# ============================================================================
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+Resources:
+  # Permission Boundary for Lambda Execution Roles
+  ServerlessPermissionBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-serverless-permission-boundary-${Environment}'
+      Description: !Sub 'Permission boundary for ${ProjectName} serverless execution roles - enforces least privilege ceiling'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # ============================================================
+          # ALLOWED ACTIONS (within project namespace)
+          # ============================================================
+
+          # CloudWatch Logs - Lambda execution logging
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/*:*'
+
+          # DynamoDB - Project tables only
+          - Sid: AllowDynamoDB
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:DescribeTable
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*/index/*'
+
+          # S3 - Project buckets only
+          - Sid: AllowS3
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${Environment}/*'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}/*'
+
+          # SQS - Project queues only
+          - Sid: AllowSQS
+            Effect: Allow
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:ChangeMessageVisibility
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+          # SNS - Project topics only
+          - Sid: AllowSNS
+            Effect: Allow
+            Action:
+              - sns:Publish
+              - sns:Subscribe
+              - sns:Unsubscribe
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+          # EventBridge - Project event buses only
+          - Sid: AllowEventBridge
+            Effect: Allow
+            Action:
+              - events:PutEvents
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-*'
+
+          # Secrets Manager - Project secrets only
+          - Sid: AllowSecretsManager
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-*-${Environment}*'
+
+          # SSM Parameter Store - Project parameters only
+          - Sid: AllowSSM
+            Effect: Allow
+            Action:
+              - ssm:GetParameter
+              - ssm:GetParameters
+              - ssm:GetParametersByPath
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+              - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/global/*'
+
+          # Bedrock - AI/ML inference
+          - Sid: AllowBedrock
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/*'
+              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*'
+
+          # API Gateway Management - WebSocket connections
+          - Sid: AllowAPIGatewayManagement
+            Effect: Allow
+            Action:
+              - execute-api:ManageConnections
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*/*'
+
+          # Lambda - Invoke other project functions only
+          - Sid: AllowLambdaInvoke
+            Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-*'
+
+          # X-Ray - Tracing
+          - Sid: AllowXRay
+            Effect: Allow
+            Action:
+              - xray:PutTraceSegments
+              - xray:PutTelemetryRecords
+            Resource: '*'
+
+          # CloudWatch Metrics - Custom metrics
+          - Sid: AllowCloudWatchMetrics
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricData
+            Resource: '*'
+            Condition:
+              StringLike:
+                cloudwatch:namespace:
+                  - !Sub '${ProjectName}/*'
+                  - !Sub 'Aura/*'
+
+          # EC2 - VPC networking for Lambda (read-only + ENI management)
+          - Sid: AllowEC2NetworkingReadOnly
+            Effect: Allow
+            Action:
+              - ec2:DescribeNetworkInterfaces
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeSubnets
+              - ec2:DescribeVpcs
+            Resource: '*'
+
+          # Lambda VPC network interface management (ec2:Vpc condition not valid for ENI actions)
+          - Sid: AllowEC2ENIManagement
+            Effect: Allow
+            Action:
+              - ec2:CreateNetworkInterface
+              - ec2:DeleteNetworkInterface
+              - ec2:AssignPrivateIpAddresses
+              - ec2:UnassignPrivateIpAddresses
+            Resource: '*'
+
+          # ============================================================
+          # EXPLICIT DENIES (defense in depth - cannot be overridden)
+          # ============================================================
+
+          # Deny IAM modifications - prevents privilege escalation
+          - Sid: DenyIAMModifications
+            Effect: Deny
+            Action:
+              - iam:CreateUser
+              - iam:DeleteUser
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:AttachUserPolicy
+              - iam:AttachRolePolicy
+              - iam:DetachUserPolicy
+              - iam:DetachRolePolicy
+              - iam:PutUserPolicy
+              - iam:PutRolePolicy
+              - iam:DeleteUserPolicy
+              - iam:DeleteRolePolicy
+              - iam:CreateAccessKey
+              - iam:DeleteAccessKey
+              - iam:UpdateAssumeRolePolicy
+              - iam:CreatePolicyVersion
+              - iam:SetDefaultPolicyVersion
+              - iam:CreateServiceLinkedRole
+              - iam:PassRole
+            Resource: '*'
+
+          # Deny organization-level actions
+          - Sid: DenyOrganizationActions
+            Effect: Deny
+            Action:
+              - organizations:*
+              - account:*
+            Resource: '*'
+
+          # Deny CloudTrail modifications - protect audit trail
+          - Sid: DenyCloudTrailModifications
+            Effect: Deny
+            Action:
+              - cloudtrail:DeleteTrail
+              - cloudtrail:StopLogging
+              - cloudtrail:UpdateTrail
+              - cloudtrail:PutEventSelectors
+            Resource: '*'
+
+          # Deny GuardDuty modifications - protect threat detection
+          - Sid: DenyGuardDutyModifications
+            Effect: Deny
+            Action:
+              - guardduty:DeleteDetector
+              - guardduty:DisassociateFromMasterAccount
+              - guardduty:StopMonitoringMembers
+              - guardduty:UpdateDetector
+            Resource: '*'
+
+          # Deny Config modifications - protect compliance monitoring
+          - Sid: DenyConfigModifications
+            Effect: Deny
+            Action:
+              - config:DeleteConfigRule
+              - config:DeleteConfigurationRecorder
+              - config:DeleteDeliveryChannel
+              - config:StopConfigurationRecorder
+            Resource: '*'
+
+          # Deny KMS key deletion - protect encryption
+          - Sid: DenyKMSKeyDeletion
+            Effect: Deny
+            Action:
+              - kms:ScheduleKeyDeletion
+              - kms:DisableKey
+              - kms:DeleteAlias
+            Resource: '*'
+
+          # Deny cross-account access creation
+          - Sid: DenyCrossAccountTrust
+            Effect: Deny
+            Action:
+              - sts:AssumeRole
+            Resource: '*'
+            Condition:
+              StringNotEquals:
+                aws:PrincipalAccount: !Ref AWS::AccountId
+      # Note: IAM Managed Policies don't support Tags in CloudFormation
+      # Tags are applied via stack-level tags during deployment
+
+Outputs:
+  PermissionBoundaryArn:
+    Description: ARN of the serverless permission boundary
+    Value: !Ref ServerlessPermissionBoundary
+    Export:
+      Name: !Sub '${ProjectName}-serverless-permission-boundary-arn-${Environment}'
+
+  PermissionBoundaryName:
+    Description: Name of the serverless permission boundary
+    Value: !Sub '${ProjectName}-serverless-permission-boundary-${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-serverless-permission-boundary-name-${Environment}'

@@ -1,0 +1,73 @@
+# Project Aura - Agent Orchestrator Kustomization (Production Environment)
+# Applies prod-specific configuration to the agent orchestrator
+#
+# Usage:
+#   kubectl apply -k deploy/kubernetes/agent-orchestrator/overlays/prod/
+#
+# Prerequisites:
+#   - Update AWS_ACCOUNT_ID with Production account (GovCloud)
+#   - Update AWS_REGION with Production region (us-gov-west-1 or us-gov-east-1)
+#   - Update SQS_QUEUE_URL with Production queue endpoint
+#   - Update DYNAMODB_TABLE with Production table name
+#   - Update images.newName with Production ECR repository
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+
+# Environment-specific labels
+labels:
+  - pairs:
+      environment: prod
+      project: aura
+    includeSelectors: false
+
+# Image override for prod environment
+# TODO: Replace with Production AWS Account ID and GovCloud region
+images:
+  - name: agent-orchestrator
+    newName: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/aura-agent-orchestrator-prod
+    newTag: latest
+
+# Patch ConfigMap with prod-specific values
+# TODO: Replace placeholder values with actual Production environment values
+patches:
+  - target:
+      kind: ConfigMap
+      name: agent-orchestrator-config
+    patch: |-
+      - op: add
+        path: /data/ENVIRONMENT
+        value: "prod"
+      - op: add
+        path: /data/AWS_REGION
+        value: "${AWS_REGION}"
+      - op: add
+        path: /data/AWS_ACCOUNT_ID
+        value: "${AWS_ACCOUNT_ID}"
+      - op: add
+        path: /data/SQS_QUEUE_URL
+        value: "https://sqs.${AWS_REGION}.amazonaws.com/${AWS_ACCOUNT_ID}/aura-orchestrator-tasks-prod"
+      - op: add
+        path: /data/DYNAMODB_TABLE
+        value: "aura-orchestrator-jobs-prod"
+      - op: replace
+        path: /data/LOG_LEVEL
+        value: "WARNING"
+  - target:
+      kind: Deployment
+      name: agent-orchestrator
+    patch: |-
+      - op: add
+        path: /metadata/labels/environment
+        value: "prod"
+      - op: add
+        path: /spec/template/metadata/labels/environment
+        value: "prod"
+      - op: replace
+        path: /spec/replicas
+        value: 2

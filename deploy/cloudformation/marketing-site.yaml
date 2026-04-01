@@ -1,0 +1,254 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.5 - Marketing Site (CloudFront + S3 Static Hosting)'
+
+# =============================================================================
+# Marketing Site Infrastructure for aenealabs.com
+# =============================================================================
+# Creates:
+# - S3 bucket for static Astro site
+# - CloudFront distribution with edge caching
+# - Origin Access Control for secure S3 access
+# - Bucket policy for CloudFront-only access
+#
+# Prerequisites:
+# - ACM certificate deployed (acm-certificate.yaml)
+# - Route 53 hosted zone configured (route53-dns.yaml)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  DomainName:
+    Type: String
+    Default: aenealabs.com
+    Description: Root domain name for marketing site
+
+  # ACM certificate ARN (must be in us-east-1 for CloudFront)
+  CertificateArn:
+    Type: String
+    Description: ARN of ACM certificate (must be in us-east-1)
+    Default: ''
+
+  # Logging bucket (optional)
+  LoggingBucketName:
+    Type: String
+    Description: S3 bucket for CloudFront access logs
+    Default: ''
+
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
+  HasLogging: !Not [!Equals [!Ref LoggingBucketName, '']]
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # S3 Bucket for Static Site
+  # ===========================================================================
+  MarketingSiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-marketing-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: !If [IsProd, Enabled, Suspended]
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: !If [IsProd, Enabled, Disabled]
+            NoncurrentVersionExpirationInDays: 30
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: 404.html
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-marketing-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # CloudFront Origin Access Control
+  # ===========================================================================
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${ProjectName}-marketing-oac-${Environment}'
+        Description: !Sub 'OAC for ${ProjectName} marketing site'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ===========================================================================
+  # S3 Bucket Policy for CloudFront Access
+  # ===========================================================================
+  MarketingSiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MarketingSiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${MarketingSiteBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${MarketingDistribution}'
+
+  # ===========================================================================
+  # CloudFront Distribution
+  # ===========================================================================
+  MarketingDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub '${ProjectName} Marketing Site - ${Environment}'
+        Enabled: true
+        HttpVersion: http2and3
+        DefaultRootObject: index.html
+        PriceClass: !If [IsProd, PriceClass_All, PriceClass_100]
+
+        # Custom domain aliases (when certificate is provided)
+        Aliases: !If
+          - HasCertificate
+          - - !Ref DomainName
+            - !Sub 'www.${DomainName}'
+          - !Ref AWS::NoValue
+
+        ViewerCertificate: !If
+          - HasCertificate
+          - AcmCertificateArn: !Ref CertificateArn
+            MinimumProtocolVersion: TLSv1.2_2021
+            SslSupportMethod: sni-only
+          - CloudFrontDefaultCertificate: true
+
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt MarketingSiteBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03  # Managed-SecurityHeadersPolicy
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt URLRewriteFunction.FunctionARN
+
+        CustomErrorResponses:
+          # SPA-style 404 handling
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+
+        Logging: !If
+          - HasLogging
+          - Bucket: !Sub '${LoggingBucketName}.s3.amazonaws.com'
+            Prefix: !Sub 'cloudfront/${ProjectName}-marketing/'
+            IncludeCookies: false
+          - !Ref AWS::NoValue
+
+        # Web Application Firewall (production only)
+        WebACLId: !If [IsProd, !Ref AWS::NoValue, !Ref AWS::NoValue]
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-marketing-cf-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # CloudFront Function for URL Rewriting
+  # ===========================================================================
+  URLRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub '${ProjectName}-url-rewrite-${Environment}'
+      AutoPublish: true
+      FunctionConfig:
+        Comment: URL rewriting for Astro static site
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+
+          // Check if the URI has a file extension
+          if (uri.endsWith('/')) {
+            request.uri += 'index.html';
+          } else if (!uri.includes('.')) {
+            // No extension and not ending with /, add /index.html for clean URLs
+            request.uri += '/index.html';
+          }
+
+          return request;
+        }
+
+Outputs:
+  MarketingSiteBucketName:
+    Description: S3 bucket name for marketing site
+    Value: !Ref MarketingSiteBucket
+    Export:
+      Name: !Sub '${ProjectName}-marketing-bucket-${Environment}'
+
+  MarketingSiteBucketArn:
+    Description: S3 bucket ARN for marketing site
+    Value: !GetAtt MarketingSiteBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-marketing-bucket-arn-${Environment}'
+
+  MarketingDistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref MarketingDistribution
+    Export:
+      Name: !Sub '${ProjectName}-marketing-cf-id-${Environment}'
+
+  MarketingDistributionDomainName:
+    Description: CloudFront distribution domain name
+    Value: !GetAtt MarketingDistribution.DomainName
+    Export:
+      Name: !Sub '${ProjectName}-marketing-cf-domain-${Environment}'
+
+  MarketingSiteURL:
+    Description: Marketing site URL
+    Value: !If
+      - HasCertificate
+      - !Sub 'https://${DomainName}'
+      - !Sub 'https://${MarketingDistribution.DomainName}'
+    Export:
+      Name: !Sub '${ProjectName}-marketing-url-${Environment}'

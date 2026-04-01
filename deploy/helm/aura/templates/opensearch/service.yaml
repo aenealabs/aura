@@ -1,0 +1,39 @@
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.vector.opensearch.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aura.fullname" . }}-opensearch
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "opensearch" "context" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9200
+      targetPort: https
+      protocol: TCP
+      name: https
+    - port: 9300
+      targetPort: transport
+      protocol: TCP
+      name: transport
+  selector:
+    {{- include "aura.componentSelectorLabels" (dict "component" "opensearch" "context" .) | nindent 4 }}
+---
+# Headless service for StatefulSet DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aura.fullname" . }}-opensearch-headless
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "opensearch" "context" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 9200
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    {{- include "aura.componentSelectorLabels" (dict "component" "opensearch" "context" .) | nindent 4 }}
+{{- end }}

@@ -1,0 +1,126 @@
+# Project Aura - Sandbox Test Runner Container
+#
+# Container that executes patch tests in isolated ECS Fargate sandboxes.
+# Called by Step Functions HITL workflow to validate patches before approval.
+#
+# Usage (Podman - primary per ADR-049):
+#   podman build --platform linux/amd64 -f Dockerfile.test-runner -t aura/sandbox-test-runner:latest ../../..
+#
+# Usage (Docker - CI/CD fallback):
+#   docker build -f Dockerfile.test-runner -t aura/sandbox-test-runner:latest ../../..
+#
+# Environment Variables (passed by Step Functions):
+#   SANDBOX_ID      - Unique sandbox identifier
+#   PATCH_ID        - Patch being tested
+#   TEST_SUITE      - Test suite to run (unit, integration, security)
+#   CODE_SOURCE     - S3 URI (s3://...) or Git URL (https://...)
+#   BRANCH          - Git branch (only used for git clone fallback)
+#
+# Exit Codes:
+#   0 - All tests passed
+#   1 - Tests failed
+#   2 - Configuration error
+#   3 - Clone/setup error
+#
+# Author: Project Aura Team
+# Version: 1.0.0
+
+# ============================================================================
+# Base Image Configuration
+# ============================================================================
+# Default to ECR Public Gallery for local development
+# CI/CD overrides with private ECR via --build-arg for controlled supply chain
+ARG PYTHON_BASE_IMAGE=public.ecr.aws/docker/library/python:3.11-slim
+
+# ============================================================================
+# STAGE 1: BUILDER - Install dependencies
+# ============================================================================
+
+FROM ${PYTHON_BASE_IMAGE} AS builder
+
+# Suppress debconf warnings in non-interactive builds
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Pip security hardening and suppress script location warnings
+ENV PIP_ROOT_USER_ACTION=ignore \
+    PIP_NO_CACHE_DIR=true \
+    PATH=/root/.local/bin:$PATH
+
+# Copy requirements and install (suppress script warnings)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user --no-warn-script-location -r requirements.txt
+
+# ============================================================================
+# STAGE 2: RUNTIME - Minimal secure runtime
+# ============================================================================
+
+FROM ${PYTHON_BASE_IMAGE} AS runtime
+
+# Suppress debconf warnings in non-interactive builds
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies including AWS CLI for S3 code staging
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    curl \
+    unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    # Install AWS CLI v2 for S3 access via VPC endpoint
+    && curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws
+
+# Create non-root user
+RUN useradd -m -u 2000 -s /bin/bash testrunner
+
+WORKDIR /app
+
+# Copy Python dependencies from builder
+COPY --from=builder /root/.local /home/testrunner/.local
+
+# Copy test runner entry point
+COPY deploy/docker/sandbox/run-tests.sh /app/run-tests.sh
+RUN chmod +x /app/run-tests.sh
+
+# Create workspace directories
+RUN mkdir -p /app/workspace /app/logs /app/results \
+    && chown -R testrunner:testrunner /app
+
+# Switch to non-root user
+USER testrunner
+
+# Add local bin to PATH
+ENV PATH=/home/testrunner/.local/bin:$PATH
+
+# Environment variables with defaults
+ENV PYTHONUNBUFFERED=1 \
+    SANDBOX_ID=unset \
+    PATCH_ID=unset \
+    TEST_SUITE=unit \
+    CODE_SOURCE="" \
+    BRANCH=main \
+    LOG_LEVEL=INFO \
+    TIMEOUT_SECONDS=1800
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD test -f /app/workspace/.ready || exit 1
+
+# Entry point
+ENTRYPOINT ["/app/run-tests.sh"]
+
+# Metadata
+LABEL maintainer="Project Aura Team" \
+      description="Sandbox test runner for HITL patch validation" \
+      version="1.0.0" \
+      org.opencontainers.image.title="Aura Sandbox Test Runner"

@@ -1,0 +1,145 @@
+# Titan Neural Memory Service - GPU-enabled container
+# For EKS deployment with NVIDIA GPU support
+# Reference: ADR-024 - Titan Neural Memory Architecture Integration
+#
+# Security: Updated to CUDA 12.4.1 + Python 3.11.11 (deadsnakes) to address:
+#   - CVE-2025-13836 (CVSS 9.1 - HTTP Content-Length OOM/DoS in Python 3.11.0~rc1)
+#   - 14 HIGH severity vulnerabilities in base image
+#
+# Usage (Podman - primary per ADR-049):
+#   podman build --platform linux/amd64 -f Dockerfile.memory-service -t aura/memory-service:latest ../../..
+#
+# Usage (Docker - CI/CD fallback):
+#   docker build -f Dockerfile.memory-service -t aura/memory-service:latest ../../..
+
+# ============================================================================
+# Base Image Configuration
+# ============================================================================
+# CUDA 12.4.1 is an LTS release with security support through 2027
+# cuDNN 9 is bundled in -cudnn- tags (replaces -cudnn8- naming)
+# PyTorch 2.1.2 is forward-compatible with CUDA 12.4 (ABI stable within 12.x)
+ARG CUDA_VERSION=12.4.1
+ARG CUDA_BASE_IMAGE=nvcr.io/nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu22.04
+
+# Build stage - compile dependencies
+FROM ${CUDA_BASE_IMAGE} AS builder
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install deadsnakes PPA for latest Python 3.11.x (patched for CVE-2025-13836)
+# Pin to specific minor version for reproducibility in CI/CD
+ARG PYTHON_VERSION=3.11
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+        software-properties-common \
+        gnupg \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python${PYTHON_VERSION} \
+        python${PYTHON_VERSION}-dev \
+        python${PYTHON_VERSION}-venv \
+        python${PYTHON_VERSION}-distutils \
+        build-essential \
+        git \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment with patched Python
+RUN python${PYTHON_VERSION} -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Pip security hardening
+ENV PIP_ROOT_USER_ACTION=ignore \
+    PIP_NO_CACHE_DIR=true \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Upgrade pip to latest for security fixes
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install PyTorch with CUDA 12.4 support
+# Note: cu121 wheels are forward-compatible with CUDA 12.4 runtime
+RUN pip install --no-cache-dir \
+    torch==2.1.2+cu121 \
+    --extra-index-url https://download.pytorch.org/whl/cu121
+
+# Copy requirements and install
+COPY deploy/docker/memory-service/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# ============================================================================
+# Runtime stage - minimal attack surface
+# ============================================================================
+FROM ${CUDA_BASE_IMAGE}
+
+# Labels
+LABEL org.opencontainers.image.title="Aura Memory Service"
+LABEL org.opencontainers.image.description="Titan Neural Memory Service with GPU acceleration"
+LABEL org.opencontainers.image.vendor="Aenea Labs"
+LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04"
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install deadsnakes PPA and patched Python runtime (no dev packages)
+ARG PYTHON_VERSION=3.11
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+        software-properties-common \
+        gnupg \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python${PYTHON_VERSION} \
+        python${PYTHON_VERSION}-venv \
+        curl \
+        ca-certificates \
+    && apt-get purge -y --auto-remove software-properties-common gnupg \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Create non-root user for security
+RUN groupadd -r aura && useradd -r -g aura -d /app aura
+WORKDIR /app
+
+# Copy application code with correct ownership
+COPY --chown=aura:aura src/ /app/src/
+COPY --chown=aura:aura deploy/docker/memory-service/server.py /app/server.py
+COPY --chown=aura:aura deploy/docker/memory-service/health.py /app/health.py
+
+# Set Python path
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Environment variables for runtime
+# Use GRPC_PORT to avoid conflict with Kubernetes auto-generated MEMORY_SERVICE_PORT
+ENV GRPC_PORT=50051
+ENV HEALTH_PORT=8080
+ENV METRICS_PORT=9090
+ENV ENVIRONMENT=dev
+ENV LOG_LEVEL=INFO
+
+# GPU settings
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Expose ports
+# 50051 - gRPC service
+# 8080  - Health checks
+# 9090  - Prometheus metrics
+EXPOSE 50051 8080 9090
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Switch to non-root user
+USER aura
+
+# Run the service using venv Python (inherits from PATH)
+CMD ["python", "server.py"]

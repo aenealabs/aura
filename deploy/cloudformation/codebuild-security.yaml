@@ -1,0 +1,614 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Security Layer CodeBuild Project (Layer 8: AWS Config, GuardDuty)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-12-03'
+  Layer: 8
+  LayerName: Security/Compliance
+  Purpose: |
+    Layer 8 of the modular CI/CD architecture for Project Aura.
+    Deploys AWS Config compliance rules (18 CMMC/NIST rules) and
+    GuardDuty threat detection (S3, EKS, Malware protection).
+    Supports CMMC Level 3, NIST 800-53, and DoD SRG compliance.
+  Dependencies:
+    - Layer 1 (Foundation) - VPC must exist for some Config rules
+  Deploys:
+    - aura-config-compliance-{env} - AWS Config recorder and 18 compliance rules
+    - aura-guardduty-{env} - GuardDuty detector with S3/EKS/Malware protection
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    AllowedValues:
+      - main
+      - develop
+    Description: GitHub branch to build from
+
+Resources:
+  # S3 Bucket for Security Layer Artifacts
+  SecurityArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-security-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldSecurityArtifacts
+            Status: Enabled
+            ExpirationInDays: 90
+            NoncurrentVersionExpirationInDays: 30
+          - Id: TransitionToIntelligentTiering
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 0
+                StorageClass: INTELLIGENT_TIERING
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: security
+        - Key: CostCenter
+          Value: Platform-Team
+
+  # CloudWatch Log Group for Security Builds
+  SecurityBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-security-deploy-${Environment}'
+      RetentionInDays: 90  # Security logs need longer retention for compliance
+
+  # IAM Role for Security Layer CodeBuild
+  SecurityCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-security-codebuild-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess'
+      Policies:
+        - PolicyName: SecurityDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs for CodeBuild
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:PutRetentionPolicy
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-security-*:*'
+
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/CICD/Security'
+
+              # S3 - Security artifacts bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt SecurityArtifactsBucket.Arn
+                  - !Sub '${SecurityArtifactsBucket.Arn}/*'
+
+              # CloudFormation - Security stacks only
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:GetTemplateSummary
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-config-compliance-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-guardduty-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-drift-detection-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-red-team-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-semantic-guardrails-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-semantic-guardrails-monitoring-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-capability-governance-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-capability-governance-monitoring-${Environment}/*'
+
+              # AWS Config - Full management
+              - Effect: Allow
+                Action:
+                  - config:PutConfigurationRecorder
+                  - config:DeleteConfigurationRecorder
+                  - config:DescribeConfigurationRecorders
+                  - config:DescribeConfigurationRecorderStatus
+                  - config:StartConfigurationRecorder
+                  - config:StopConfigurationRecorder
+                  - config:PutDeliveryChannel
+                  - config:DeleteDeliveryChannel
+                  - config:DescribeDeliveryChannels
+                  - config:DescribeDeliveryChannelStatus
+                  - config:PutConfigRule
+                  - config:DeleteConfigRule
+                  - config:DescribeConfigRules
+                  - config:DescribeComplianceByConfigRule
+                  - config:GetComplianceDetailsByConfigRule
+                  - config:PutEvaluations
+                  - config:TagResource
+                  - config:UntagResource
+                Resource: '*'
+
+              # GuardDuty - Full management
+              - Effect: Allow
+                Action:
+                  - guardduty:CreateDetector
+                  - guardduty:DeleteDetector
+                  - guardduty:GetDetector
+                  - guardduty:UpdateDetector
+                  - guardduty:ListDetectors
+                  - guardduty:TagResource
+                  - guardduty:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:guardduty:${AWS::Region}:${AWS::AccountId}:detector/*'
+
+              # GuardDuty detector creation requires account-level permissions
+              - Effect: Allow
+                Action:
+                  - guardduty:CreateDetector
+                  - guardduty:ListDetectors
+                Resource: '*'
+
+              # S3 - Config bucket management
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:PutBucketPolicy
+                  - s3:DeleteBucketPolicy
+                  - s3:GetBucketPolicy
+                  - s3:PutBucketVersioning
+                  - s3:GetBucketVersioning
+                  - s3:PutEncryptionConfiguration
+                  - s3:GetEncryptionConfiguration
+                  - s3:PutLifecycleConfiguration
+                  - s3:GetLifecycleConfiguration
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:PutBucketTagging
+                  - s3:GetBucketTagging
+                  - s3:GetBucketAcl
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-config-${Environment}-${AWS::AccountId}'
+
+              # SNS - Alert topics
+              - Effect: Allow
+                Action:
+                  - sns:CreateTopic
+                  - sns:DeleteTopic
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                  - sns:SetTopicAttributes
+                  - sns:GetTopicAttributes
+                  - sns:ListTopics
+                  - sns:ListSubscriptionsByTopic
+                  - sns:Publish
+                  - sns:TagResource
+                  - sns:UntagResource
+                  - sns:AddPermission
+                  - sns:RemovePermission
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-config-alerts-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-guardduty-alerts-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-drift-alerts-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-guardrails-alerts-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-guardrails-critical-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-capability-governance-alerts-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-capability-escalations-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-capability-critical-violations-${Environment}'
+
+              # EventBridge - Rules for findings/compliance events
+              - Effect: Allow
+                Action:
+                  - events:PutRule
+                  - events:DeleteRule
+                  - events:DescribeRule
+                  - events:EnableRule
+                  - events:DisableRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                  - events:ListTargetsByRule
+                  - events:ListRules
+                  - events:TagResource
+                  - events:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-config-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-guardduty-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-drift-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-guardrails-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-capability-*'
+
+              # CloudWatch Alarms
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:EnableAlarmActions
+                  - cloudwatch:DisableAlarmActions
+                  - cloudwatch:TagResource
+                  - cloudwatch:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-config-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-guardduty-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-drift-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-guardrails-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-capability-*'
+
+              # CloudWatch Dashboards
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutDashboard
+                  - cloudwatch:DeleteDashboards
+                  - cloudwatch:GetDashboard
+                  - cloudwatch:ListDashboards
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch::${AWS::AccountId}:dashboard/${ProjectName}-guardrails-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch::${AWS::AccountId}:dashboard/${ProjectName}-capability-governance-*'
+
+              # CloudWatch Logs - For GuardDuty, Config, Lambda, and security service log groups
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:DescribeLogGroups
+                  - logs:TagLogGroup
+                  - logs:UntagLogGroup
+                  - logs:TagResource
+                  - logs:UntagResource
+                  - logs:PutMetricFilter
+                  - logs:DeleteMetricFilter
+                  - logs:DescribeMetricFilters
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/guardduty/${ProjectName}-${Environment}*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/config/${ProjectName}-${Environment}*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-drift-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/${Environment}/capability-governance*'
+
+              # IAM Role Management - Config, GuardDuty, Drift Detector, and Capability Governance service roles
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:CreateServiceLinkedRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-config-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-guardduty-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-drift-detector-lambda-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-capability-governance-${Environment}'
+
+              # IAM Pass Role - For Config and Lambda services
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-config-role-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: config.amazonaws.com
+
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-drift-detector-lambda-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: lambda.amazonaws.com
+
+              # IAM Pass Role - For Capability Governance Lambda/ECS roles
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-capability-governance-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService:
+                      - lambda.amazonaws.com
+                      - ecs-tasks.amazonaws.com
+
+              # Lambda - Drift detector function management
+              - Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - lambda:GetFunctionConfiguration
+                  - lambda:ListTags
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-drift-detector-${Environment}'
+
+              # SSM Parameter Store - For alert email and config
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/global/*'
+
+              # SSM Parameter Store - Create/Update for guardrails
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                  - ssm:AddTagsToResource
+                  - ssm:RemoveTagsFromResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/semantic-guardrails/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/capability-governance/*'
+
+              # DynamoDB - Guardrails tables
+              - Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:UpdateTimeToLive
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:UpdateContinuousBackups
+                  - dynamodb:DescribeContinuousBackups
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                  - dynamodb:ListTagsOfResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-guardrails-*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-capability-*'
+
+              # SQS - Guardrails queues
+              - Effect: Allow
+                Action:
+                  - sqs:CreateQueue
+                  - sqs:DeleteQueue
+                  - sqs:GetQueueAttributes
+                  - sqs:SetQueueAttributes
+                  - sqs:TagQueue
+                  - sqs:UntagQueue
+                  - sqs:GetQueueUrl
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-guardrails-*'
+                  - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-capability-*'
+
+              # KMS - Create capability governance encryption keys
+              # Note: kms:CreateKey requires Resource: '*' per AWS docs
+              # Scoped by kms:CallerAccount and tag conditions
+              - Effect: Allow
+                Action: kms:CreateKey
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'kms:CallerAccount': !Ref AWS::AccountId
+
+              # KMS - Manage capability governance keys
+              # Note: Tag condition removed - CloudFormation creates key before tags are applied
+              # Scoped to account keys only via CallerAccount condition
+              # Includes CreateGrant for DynamoDB table encryption
+              - Effect: Allow
+                Action:
+                  - kms:DescribeKey
+                  - kms:GetKeyPolicy
+                  - kms:PutKeyPolicy
+                  - kms:EnableKeyRotation
+                  - kms:DisableKeyRotation
+                  - kms:ScheduleKeyDeletion
+                  - kms:CancelKeyDeletion
+                  - kms:TagResource
+                  - kms:UntagResource
+                  - kms:ListResourceTags
+                  - kms:CreateGrant
+                  - kms:ListGrants
+                  - kms:RevokeGrant
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                  - kms:GenerateDataKeyWithoutPlaintext
+                Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  StringEquals:
+                    'kms:CallerAccount': !Ref AWS::AccountId
+
+              # KMS - Alias management for capability governance keys
+              - Effect: Allow
+                Action:
+                  - kms:CreateAlias
+                  - kms:DeleteAlias
+                  - kms:UpdateAlias
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/${ProjectName}-capability-*'
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  StringEquals:
+                    'kms:CallerAccount': !Ref AWS::AccountId
+
+              # CodeConnections (for GitHub source access)
+              - Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codeconnections:GetConnectionToken
+                Resource:
+                  - '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+  # CodeBuild Project for Security Layer
+  SecurityCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-security-deploy-${Environment}'
+      Description: 'Project Aura - Security Layer CodeBuild Project (Layer 8: AWS Config, GuardDuty)'
+      ServiceRole: !GetAtt SecurityCodeBuildRole.Arn
+      Artifacts:
+        Type: S3
+        Location: !Ref SecurityArtifactsBucket
+        Name: security-artifacts
+        Packaging: ZIP
+        EncryptionDisabled: false
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: LAYER
+            Value: security
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-security.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref SecurityBuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_SOURCE_CACHE
+      TimeoutInMinutes: 30  # Config rules take time to deploy
+      QueuedTimeoutInMinutes: 480
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: security
+        - Key: CostCenter
+          Value: Platform-Team
+
+  # CloudWatch Alarm - Security Build Failures
+  SecurityBuildFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-security-build-failures-${Environment}'
+      AlarmDescription: 'Alert when Security Layer has 2+ failures in 1 hour'
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref SecurityCodeBuildProject
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  SecurityCodeBuildProjectName:
+    Description: Security Layer CodeBuild project name
+    Value: !Ref SecurityCodeBuildProject
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectName'
+
+  SecurityCodeBuildProjectArn:
+    Description: Security Layer CodeBuild project ARN
+    Value: !GetAtt SecurityCodeBuildProject.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectArn'
+
+  SecurityArtifactsBucketName:
+    Description: Security Layer artifacts bucket name
+    Value: !Ref SecurityArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
+
+  SecurityBuildLogGroupName:
+    Description: Security Layer build log group name
+    Value: !Ref SecurityBuildLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroup'
+
+  DeployedStacks:
+    Description: Stacks deployed by this CodeBuild project
+    Value: !Sub '${ProjectName}-config-compliance-${Environment}, ${ProjectName}-guardduty-${Environment}, ${ProjectName}-drift-detection-${Environment}, ${ProjectName}-red-team-${Environment}'

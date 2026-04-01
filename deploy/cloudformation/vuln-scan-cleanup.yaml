@@ -1,0 +1,256 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 9.7 - Vuln Scan Cleanup (Scheduled Lambda)'
+
+# =============================================================================
+# Scheduled cleanup Lambda for ADR-084 vulnerability scanner.
+# Runs every 6 hours to:
+# - Delete expired scan artifacts from S3 (completed scans older than TTL)
+# - Remove orphaned DynamoDB items for cancelled/failed scans
+# - Emit cleanup metrics to CloudWatch
+#
+# All serverless — unaffected by DEV cost scheduler.
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  CleanupSchedule:
+    Type: String
+    Default: 'rate(6 hours)'
+    Description: Schedule expression for cleanup runs
+
+  ArtifactTTLHours:
+    Type: Number
+    Default: 24
+    Description: Hours to retain scan artifacts after completion
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # Cleanup Lambda Function
+  # ===========================================================================
+  ScanCleanupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-vuln-scan-cleanup-${Environment}'
+      Description: Scheduled cleanup for expired scan artifacts and orphaned state
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !ImportValue
+        Fn::Sub: '${ProjectName}-vuln-scan-cleanup-role-arn-${Environment}'
+      MemorySize: 256
+      Timeout: 300
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          ARTIFACTS_BUCKET: !ImportValue
+            Fn::Sub: '${ProjectName}-vuln-scan-artifacts-bucket-${Environment}'
+          JOBS_TABLE: !ImportValue
+            Fn::Sub: '${ProjectName}-vuln-scan-jobs-table-${Environment}'
+          FINDINGS_TABLE: !ImportValue
+            Fn::Sub: '${ProjectName}-vuln-scan-findings-table-${Environment}'
+          ARTIFACT_TTL_HOURS: !Ref ArtifactTTLHours
+          METRICS_NAMESPACE: !Sub '${ProjectName}/VulnerabilityScanner'
+      Code:
+        ZipFile: |
+          """Scan artifact cleanup Lambda.
+
+          Removes expired scan artifacts from S3 and cleans up orphaned
+          DynamoDB state for completed/failed/cancelled scans.
+          """
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone, timedelta
+
+          import boto3
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          s3 = boto3.client('s3')
+          dynamodb = boto3.resource('dynamodb')
+          cloudwatch = boto3.client('cloudwatch')
+
+          ARTIFACTS_BUCKET = os.environ['ARTIFACTS_BUCKET']
+          JOBS_TABLE = os.environ['JOBS_TABLE']
+          TTL_HOURS = int(os.environ.get('ARTIFACT_TTL_HOURS', '24'))
+          NAMESPACE = os.environ.get('METRICS_NAMESPACE', 'Aura/VulnerabilityScanner')
+          ENV = os.environ.get('ENVIRONMENT', 'dev')
+
+
+          def lambda_handler(event, context):
+              logger.info('Starting scan cleanup (ttl=%dh)', TTL_HOURS)
+              cutoff = datetime.now(timezone.utc) - timedelta(hours=TTL_HOURS)
+              cutoff_iso = cutoff.isoformat()
+
+              artifacts_deleted = 0
+              jobs_cleaned = 0
+
+              # Find completed/failed/cancelled jobs older than TTL
+              table = dynamodb.Table(JOBS_TABLE)
+              terminal_statuses = ['completed', 'failed', 'cancelled']
+
+              for status in terminal_statuses:
+                  try:
+                      response = table.query(
+                          IndexName='TenantStatusIndex',
+                          KeyConditionExpression='#s = :status',
+                          FilterExpression='updated_at < :cutoff',
+                          ExpressionAttributeNames={'#s': 'status'},
+                          ExpressionAttributeValues={
+                              ':status': status,
+                              ':cutoff': cutoff_iso,
+                          },
+                          Limit=100,
+                      )
+                      for item in response.get('Items', []):
+                          prefix = item.get('s3_artifact_prefix', '')
+                          if prefix:
+                              deleted = _delete_s3_prefix(prefix)
+                              artifacts_deleted += deleted
+                          jobs_cleaned += 1
+                  except Exception:
+                      logger.exception('Error querying jobs with status %s', status)
+
+              # Emit metrics
+              cloudwatch.put_metric_data(
+                  Namespace=NAMESPACE,
+                  MetricData=[
+                      {
+                          'MetricName': 'CleanupArtifactsDeleted',
+                          'Value': artifacts_deleted,
+                          'Unit': 'Count',
+                          'Dimensions': [
+                              {'Name': 'Environment', 'Value': ENV},
+                          ],
+                      },
+                      {
+                          'MetricName': 'CleanupJobsCleaned',
+                          'Value': jobs_cleaned,
+                          'Unit': 'Count',
+                          'Dimensions': [
+                              {'Name': 'Environment', 'Value': ENV},
+                          ],
+                      },
+                  ],
+              )
+
+              logger.info(
+                  'Cleanup complete: %d artifacts deleted, %d jobs cleaned',
+                  artifacts_deleted,
+                  jobs_cleaned,
+              )
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'artifacts_deleted': artifacts_deleted,
+                      'jobs_cleaned': jobs_cleaned,
+                  }),
+              }
+
+
+          def _delete_s3_prefix(prefix):
+              deleted = 0
+              try:
+                  paginator = s3.get_paginator('list_objects_v2')
+                  for page in paginator.paginate(
+                      Bucket=ARTIFACTS_BUCKET, Prefix=prefix
+                  ):
+                      objects = page.get('Contents', [])
+                      if objects:
+                          s3.delete_objects(
+                              Bucket=ARTIFACTS_BUCKET,
+                              Delete={
+                                  'Objects': [{'Key': o['Key']} for o in objects]
+                              },
+                          )
+                          deleted += len(objects)
+              except Exception:
+                  logger.exception('Error deleting S3 prefix: %s', prefix)
+              return deleted
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # CloudWatch Log Group
+  # ===========================================================================
+  CleanupLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-vuln-scan-cleanup-${Environment}'
+      RetentionInDays: !If [IsProduction, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # EventBridge Scheduled Rule
+  # ===========================================================================
+  CleanupScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-vuln-scan-cleanup-schedule-${Environment}'
+      Description: Triggers scan artifact cleanup on schedule
+      ScheduleExpression: !Ref CleanupSchedule
+      State: ENABLED
+      Targets:
+        - Id: cleanup-lambda
+          Arn: !GetAtt ScanCleanupFunction.Arn
+
+  CleanupSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ScanCleanupFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CleanupScheduleRule.Arn
+
+  # ===========================================================================
+  # CloudWatch Alarm - Cleanup Failures
+  # ===========================================================================
+  CleanupErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-vuln-scan-cleanup-errors-${Environment}'
+      AlarmDescription: Alert when scan cleanup Lambda encounters errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ScanCleanupFunction
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+
+Outputs:
+  CleanupFunctionArn:
+    Description: Cleanup Lambda function ARN
+    Value: !GetAtt ScanCleanupFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-cleanup-fn-arn-${Environment}'

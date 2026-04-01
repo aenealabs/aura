@@ -1,0 +1,27 @@
+# Project Aura - Extended Startup Probe for QA Environment
+# Extends startup probe timeout for cold starts after scheduled scaling
+#
+# Context:
+# - QA EKS nodes are scaled to 0 outside business hours (qa-cost-scheduler)
+# - Cold starts require additional time for EC2 join + image pull + initialization
+# - Default 155s timeout is insufficient; extended to 370s for safety margin
+#
+# Note: Only patching Deployment since Rollout is not enabled in base kustomization
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aura-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: aura-api
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 36  # Total: 10 + (36 * 10) = 370 seconds

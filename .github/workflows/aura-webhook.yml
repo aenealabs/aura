@@ -1,0 +1,207 @@
+name: Aura Webhook Integration
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/**'
+      - 'tests/**'
+  pull_request:
+    types: [opened, closed, merged]
+    branches:
+      - main
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      event_type:
+        description: 'Event type to send'
+        required: true
+        default: 'manual_trigger'
+        type: choice
+        options:
+          - manual_trigger
+          - force_ingestion
+          - health_check
+
+# Cancel in-progress runs when new commits are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  AURA_API_URL: ${{ vars.AURA_API_URL || 'https://aura-api.aenealabs.com' }}
+
+jobs:
+  notify-aura:
+    name: Notify Aura Platform
+    runs-on: ubuntu-latest
+    # Only run if AURA_API_URL is configured
+    if: vars.AURA_API_URL != ''
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Get commit info
+        id: commit
+        run: |
+          echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "short_sha=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "author=${{ github.actor }}" >> $GITHUB_OUTPUT
+
+          # Get changed files count
+          if [ "${{ github.event_name }}" == "push" ]; then
+            CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'src/**/*.py' | wc -l)
+          else
+            CHANGED=0
+          fi
+          echo "changed_files=$CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Send push notification to Aura
+        if: github.event_name == 'push'
+        continue-on-error: true
+        run: |
+          curl -X POST "${{ env.AURA_API_URL }}/webhook/github" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: push" \
+            -H "X-GitHub-Delivery: ${{ github.run_id }}" \
+            -d '{
+              "ref": "${{ github.ref }}",
+              "repository": {
+                "full_name": "${{ github.repository }}",
+                "clone_url": "${{ github.event.repository.clone_url }}"
+              },
+              "head_commit": {
+                "id": "${{ github.sha }}",
+                "message": "${{ github.event.head_commit.message }}",
+                "author": {
+                  "name": "${{ github.actor }}"
+                }
+              },
+              "pusher": {
+                "name": "${{ github.actor }}"
+              }
+            }' || echo "Failed to notify Aura API (may not be available)"
+
+      - name: Trigger ingestion for significant changes
+        if: github.event_name == 'push' && steps.commit.outputs.changed_files > 0
+        continue-on-error: true
+        run: |
+          echo "Triggering incremental ingestion for ${{ steps.commit.outputs.changed_files }} changed files"
+
+          curl -X POST "${{ env.AURA_API_URL }}/api/v1/ingest" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "repository_url": "${{ github.event.repository.clone_url }}",
+              "branch": "${{ github.ref_name }}",
+              "force_refresh": false,
+              "shallow_clone": true
+            }' || echo "Ingestion trigger failed (API may not be available)"
+
+      - name: Send PR notification to Aura
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          PR_ACTION="${{ github.event.action }}"
+          PR_MERGED="${{ github.event.pull_request.merged }}"
+
+          if [ "$PR_ACTION" == "closed" ] && [ "$PR_MERGED" == "true" ]; then
+            EVENT_TYPE="pr_merged"
+          else
+            EVENT_TYPE="pr_$PR_ACTION"
+          fi
+
+          curl -X POST "${{ env.AURA_API_URL }}/webhook/github" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: pull_request" \
+            -H "X-GitHub-Delivery: ${{ github.run_id }}" \
+            -d '{
+              "action": "${{ github.event.action }}",
+              "number": ${{ github.event.pull_request.number }},
+              "pull_request": {
+                "title": "${{ github.event.pull_request.title }}",
+                "merged": ${{ github.event.pull_request.merged }},
+                "head": {
+                  "ref": "${{ github.event.pull_request.head.ref }}",
+                  "sha": "${{ github.event.pull_request.head.sha }}"
+                },
+                "base": {
+                  "ref": "${{ github.event.pull_request.base.ref }}"
+                }
+              },
+              "repository": {
+                "full_name": "${{ github.repository }}"
+              }
+            }' || echo "Failed to notify Aura API"
+
+      - name: Send release notification to Aura
+        if: github.event_name == 'release'
+        continue-on-error: true
+        run: |
+          curl -X POST "${{ env.AURA_API_URL }}/webhook/github" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: release" \
+            -H "X-GitHub-Delivery: ${{ github.run_id }}" \
+            -d '{
+              "action": "${{ github.event.action }}",
+              "release": {
+                "tag_name": "${{ github.event.release.tag_name }}",
+                "name": "${{ github.event.release.name }}",
+                "prerelease": ${{ github.event.release.prerelease }}
+              },
+              "repository": {
+                "full_name": "${{ github.repository }}"
+              }
+            }' || echo "Failed to notify Aura API"
+
+      - name: Manual trigger actions
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          EVENT_TYPE="${{ github.event.inputs.event_type }}"
+
+          case $EVENT_TYPE in
+            "health_check")
+              echo "Checking Aura API health..."
+              curl -s "${{ env.AURA_API_URL }}/health" | jq '.' || echo "Health check failed"
+              ;;
+
+            "force_ingestion")
+              echo "Triggering force ingestion..."
+              curl -X POST "${{ env.AURA_API_URL }}/api/v1/ingest" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "repository_url": "${{ github.event.repository.clone_url }}",
+                  "branch": "${{ github.ref_name }}",
+                  "force_refresh": true,
+                  "shallow_clone": false
+                }' | jq '.' || echo "Ingestion trigger failed"
+              ;;
+
+            "manual_trigger")
+              echo "Manual trigger - no action"
+              ;;
+          esac
+
+  log-event:
+    name: Log GitHub Event
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Log event details
+        run: |
+          echo "## GitHub Event Summary"
+          echo "- Event: ${{ github.event_name }}"
+          echo "- Actor: ${{ github.actor }}"
+          echo "- Repository: ${{ github.repository }}"
+          echo "- Ref: ${{ github.ref }}"
+          echo "- SHA: ${{ github.sha }}"
+          echo "- Run ID: ${{ github.run_id }}"

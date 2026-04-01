@@ -1,0 +1,192 @@
+version: 0.2
+
+# Sandbox Layer Sub-BuildSpec: Advanced Features (Layer 7.8-7.10)
+# Deploys Scheduler, Namespace Controller, and Marketplace.
+# Called by buildspec-sandbox.yml or Step Functions.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - pip3 install cfn-lint --quiet
+      - chmod +x deploy/scripts/configure-ecr-credential-helper.sh
+      - ./deploy/scripts/configure-ecr-credential-helper.sh
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Sandbox Advanced Features (Layer 7.8-7.10)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - validate_aws_credentials
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+      # Validate templates
+      - cfn-lint deploy/cloudformation/test-env-scheduler.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-namespace.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-marketplace.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+
+      # Get IAM role ARNs
+      - |
+        IAM_STACK="${PROJECT_NAME}-test-env-iam-${ENVIRONMENT}"
+        SCHEDULER_ROLE_ARN=$(cfn_get_stack_output "$IAM_STACK" "SchedulerRoleArn" "")
+        NAMESPACE_ROLE_ARN=$(cfn_get_stack_output "$IAM_STACK" "NamespaceControllerRoleArn" "")
+        MARKETPLACE_ROLE_ARN=$(cfn_get_stack_output "$IAM_STACK" "MarketplaceRoleArn" "")
+        echo "Scheduler Role: ${SCHEDULER_ROLE_ARN:-not found}"
+        echo "Namespace Role: ${NAMESPACE_ROLE_ARN:-not found}"
+        echo "Marketplace Role: ${MARKETPLACE_ROLE_ARN:-not found}"
+
+      # Get other stack outputs
+      - |
+        STATE_STACK="${PROJECT_NAME}-test-env-state-${ENVIRONMENT}"
+        STATE_TABLE_NAME=$(cfn_get_stack_output "$STATE_STACK" "TestEnvStateTableName" "")
+
+        MONITORING_STACK="${PROJECT_NAME}-test-env-monitoring-${ENVIRONMENT}"
+        NOTIFICATION_TOPIC_ARN=$(cfn_get_stack_output "$MONITORING_STACK" "AlertTopicArn" "")
+
+        CATALOG_STACK="${PROJECT_NAME}-test-env-catalog-${ENVIRONMENT}"
+        PORTFOLIO_ID=$(cfn_get_stack_output "$CATALOG_STACK" "TestEnvPortfolioId" "")
+
+        SANDBOX_STACK="${PROJECT_NAME}-sandbox-${ENVIRONMENT}"
+        HITL_APPROVALS_TOPIC_ARN=$(cfn_get_stack_output "$SANDBOX_STACK" "HITLNotificationTopicArn" "")
+
+        APPROVAL_STACK="${PROJECT_NAME}-test-env-approval-${ENVIRONMENT}"
+        APPROVAL_STATE_MACHINE_ARN=$(cfn_get_stack_output "$APPROVAL_STACK" "ApprovalStateMachineArn" "")
+
+        EKS_STACK="${PROJECT_NAME}-eks-${ENVIRONMENT}"
+        EKS_CLUSTER_NAME=$(cfn_get_stack_output "$EKS_STACK" "ClusterName" "${PROJECT_NAME}-cluster-${ENVIRONMENT}")
+
+      # Get compliance settings (ADR-040)
+      - |
+        KMS_MODE=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/compliance/kms-mode" \
+          --query 'Parameter.Value' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "aws_managed")
+        LOG_RETENTION=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/compliance/log-retention-days" \
+          --query 'Parameter.Value' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "90")
+        USE_CUSTOMER_KMS=$([ "$KMS_MODE" = "customer_managed" ] && echo "true" || echo "false")
+
+        if [ "$USE_CUSTOMER_KMS" = "true" ]; then
+          DATA_KMS_KEY_ARN=$(cfn_get_stack_output "${PROJECT_NAME}-kms-${ENVIRONMENT}" "DataKMSKeyArn" "")
+        fi
+
+  build:
+    commands:
+      # Scheduler (Layer 7.8)
+      - |
+        if [ -n "$SCHEDULER_ROLE_ARN" ] && [ "$SCHEDULER_ROLE_ARN" != "None" ]; then
+          echo "Deploying Test Environment Scheduler..."
+          PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+          PARAMS="$PARAMS SchedulerRoleArn=${SCHEDULER_ROLE_ARN}"
+          PARAMS="$PARAMS UseCustomerManagedKMS=${USE_CUSTOMER_KMS} LogRetentionDays=${LOG_RETENTION}"
+          if [ -n "$NOTIFICATION_TOPIC_ARN" ] && [ "$NOTIFICATION_TOPIC_ARN" != "None" ]; then
+            PARAMS="$PARAMS NotificationTopicArn=${NOTIFICATION_TOPIC_ARN}"
+          fi
+          if [ -n "$DATA_KMS_KEY_ARN" ] && [ "$DATA_KMS_KEY_ARN" != "None" ]; then
+            PARAMS="$PARAMS DataKMSKeyArn=${DATA_KMS_KEY_ARN}"
+          fi
+          cfn_deploy_stack \
+            "${PROJECT_NAME}-test-env-scheduler-${ENVIRONMENT}" \
+            "deploy/cloudformation/test-env-scheduler.yaml" \
+            "$PARAMS" \
+            "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.8 DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+            ""
+        else
+          echo "Skipping Scheduler - role not available"
+        fi
+
+      # Namespace Controller (Layer 7.9)
+      - |
+        if [ -n "$NAMESPACE_ROLE_ARN" ] && [ "$NAMESPACE_ROLE_ARN" != "None" ]; then
+          echo "Deploying EKS Namespace Controller..."
+          PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+          PARAMS="$PARAMS NamespaceControllerRoleArn=${NAMESPACE_ROLE_ARN}"
+          PARAMS="$PARAMS EKSClusterName=${EKS_CLUSTER_NAME}"
+          if [ -n "$STATE_TABLE_NAME" ] && [ "$STATE_TABLE_NAME" != "None" ]; then
+            PARAMS="$PARAMS StateTableName=${STATE_TABLE_NAME}"
+          fi
+          if [ -n "$NOTIFICATION_TOPIC_ARN" ] && [ "$NOTIFICATION_TOPIC_ARN" != "None" ]; then
+            PARAMS="$PARAMS NotificationTopicArn=${NOTIFICATION_TOPIC_ARN}"
+          fi
+          cfn_deploy_stack \
+            "${PROJECT_NAME}-test-env-namespace-${ENVIRONMENT}" \
+            "deploy/cloudformation/test-env-namespace.yaml" \
+            "$PARAMS" \
+            "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.9 DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+            ""
+        else
+          echo "Skipping Namespace Controller - role not available"
+        fi
+
+      # Marketplace (Layer 7.10)
+      - |
+        if [ -n "$MARKETPLACE_ROLE_ARN" ] && [ "$MARKETPLACE_ROLE_ARN" != "None" ]; then
+          echo "Deploying Template Marketplace..."
+          ARTIFACTS_BUCKET="${PROJECT_NAME}-sandbox-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+          PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+          PARAMS="$PARAMS MarketplaceRoleArn=${MARKETPLACE_ROLE_ARN}"
+          PARAMS="$PARAMS ArtifactsBucket=${ARTIFACTS_BUCKET}"
+          if [ -n "$HITL_APPROVALS_TOPIC_ARN" ] && [ "$HITL_APPROVALS_TOPIC_ARN" != "None" ]; then
+            PARAMS="$PARAMS HITLApprovalsTopicArn=${HITL_APPROVALS_TOPIC_ARN}"
+          fi
+          if [ -n "$PORTFOLIO_ID" ] && [ "$PORTFOLIO_ID" != "None" ]; then
+            PARAMS="$PARAMS ServiceCatalogPortfolioId=${PORTFOLIO_ID}"
+          fi
+          if [ -n "$APPROVAL_STATE_MACHINE_ARN" ] && [ "$APPROVAL_STATE_MACHINE_ARN" != "None" ]; then
+            PARAMS="$PARAMS ApprovalStateMachineArn=${APPROVAL_STATE_MACHINE_ARN}"
+          fi
+          cfn_deploy_stack \
+            "${PROJECT_NAME}-test-env-marketplace-${ENVIRONMENT}" \
+            "deploy/cloudformation/test-env-marketplace.yaml" \
+            "$PARAMS" \
+            "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.10 DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+            ""
+        else
+          echo "Skipping Marketplace - role not available"
+        fi
+
+      # Build and push Sandbox Test Runner Docker image
+      - |
+        echo "Building Sandbox Test Runner Docker image..."
+        ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PROJECT_NAME}-sandbox-test-runner"
+
+        # Get Python base image
+        BASE_IMAGES_STACK="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
+        PYTHON_BASE_IMAGE=$(cfn_get_stack_output "$BASE_IMAGES_STACK" "PythonRepositoryUri" "")
+
+        if [ -z "$PYTHON_BASE_IMAGE" ] || [ "$PYTHON_BASE_IMAGE" = "None" ]; then
+          PYTHON_BASE_IMAGE="public.ecr.aws/docker/library/python:3.11-slim"
+        else
+          PYTHON_BASE_IMAGE="${PYTHON_BASE_IMAGE}:3.11-slim"
+        fi
+
+        if aws ecr describe-repositories --repository-names "${PROJECT_NAME}-sandbox-test-runner" --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          docker build --platform linux/amd64 \
+            --build-arg PYTHON_BASE_IMAGE=${PYTHON_BASE_IMAGE} \
+            -t ${ECR_REPO}:latest \
+            -f deploy/docker/sandbox/Dockerfile.test-runner .
+          docker push ${ECR_REPO}:latest
+          echo "Test runner image pushed"
+        else
+          echo "ECR repository not available, skipping"
+        fi
+
+  post_build:
+    commands:
+      - echo "Sandbox advanced features deployment complete"
+      - |
+        echo "=== Step Functions State Machines ==="
+        aws stepfunctions list-state-machines \
+          --query "stateMachines[?contains(name, '${PROJECT_NAME}')]" \
+          --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "None found"

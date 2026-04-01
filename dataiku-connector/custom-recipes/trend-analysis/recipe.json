@@ -1,0 +1,90 @@
+{
+    "meta": {
+        "label": "Aura Vulnerability Trends",
+        "description": "Analyze vulnerability trends over time with risk scoring and pattern detection",
+        "icon": "icon-trend.png"
+    },
+    "kind": "PYTHON",
+    "selectableFromDataset": "findings_input",
+    "inputRoles": [
+        {
+            "name": "findings_input",
+            "label": "Findings Dataset",
+            "description": "Dataset with vulnerability findings (from Aura connector or previous scan)",
+            "arity": "UNARY",
+            "required": true,
+            "acceptsDataset": true
+        },
+        {
+            "name": "historical_input",
+            "label": "Historical Findings",
+            "description": "Previous findings dataset for trend comparison (optional)",
+            "arity": "UNARY",
+            "required": false,
+            "acceptsDataset": true
+        }
+    ],
+    "outputRoles": [
+        {
+            "name": "trends_output",
+            "label": "Trends",
+            "description": "Trend analysis results over time",
+            "arity": "UNARY",
+            "required": true,
+            "acceptsDataset": true
+        },
+        {
+            "name": "risk_scores_output",
+            "label": "Risk Scores",
+            "description": "Risk scores per file/component",
+            "arity": "UNARY",
+            "required": false,
+            "acceptsDataset": true
+        },
+        {
+            "name": "cwe_analysis_output",
+            "label": "CWE Analysis",
+            "description": "CWE distribution and trends",
+            "arity": "UNARY",
+            "required": false,
+            "acceptsDataset": true
+        }
+    ],
+    "params": [
+        {
+            "name": "time_column",
+            "type": "COLUMN",
+            "label": "Time Column",
+            "description": "Column containing finding timestamps",
+            "columnRole": "findings_input",
+            "mandatory": true,
+            "defaultValue": "created_at"
+        },
+        {
+            "name": "aggregation_period",
+            "type": "SELECT",
+            "label": "Aggregation Period",
+            "selectChoices": [
+                {"value": "day", "label": "Daily"},
+                {"value": "week", "label": "Weekly"},
+                {"value": "month", "label": "Monthly"},
+                {"value": "quarter", "label": "Quarterly"}
+            ],
+            "defaultValue": "week"
+        },
+        {
+            "name": "include_predictions",
+            "type": "BOOLEAN",
+            "label": "Include Trend Predictions",
+            "description": "Generate linear trend predictions for next period",
+            "defaultValue": false
+        },
+        {
+            "name": "risk_threshold",
+            "type": "DOUBLE",
+            "label": "High Risk Threshold",
+            "description": "Risk score threshold for high-risk classification",
+            "defaultValue": 50.0
+        }
+    ]
+}

@@ -1,0 +1,71 @@
+# IMPORTANT: This ingress contains environment-specific AWS resource IDs.
+# Before deploying to a new environment, update the following annotations:
+#   - security-groups: Query from CF aura-security-${ENV} (AlbSecurityGroupId output)
+#   - wafv2-acl-arn: Query from CF aura-waf-${ENV} (WebAclArn output)
+#   - certificate-arn: Create ACM cert for env domain, get ARN
+#   - subnets: Query from CF aura-networking-${ENV} (PublicSubnetIds output)
+#   - tags: Update Environment value
+#   - host: Update domain for environment (qa.app.aenealabs.com, etc.)
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aura-frontend-ingress
+  namespace: default
+  labels:
+    app.kubernetes.io/name: aura-frontend
+    app.kubernetes.io/component: ingress
+  annotations:
+    # ALB Controller annotations
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+
+    # Health check configuration
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+
+    # Security settings - REPLACE with env-specific values
+    alb.ingress.kubernetes.io/security-groups: ${ALB_SECURITY_GROUP_ID}
+    alb.ingress.kubernetes.io/wafv2-acl-arn: ${WAF_ACL_ARN}
+
+    # SSL/TLS settings - REPLACE with env-specific ACM certificate
+    alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+
+    # Load balancer attributes
+    alb.ingress.kubernetes.io/load-balancer-attributes: |
+      idle_timeout.timeout_seconds=60,
+      routing.http2.enabled=true,
+      access_logs.s3.enabled=false
+
+    # Tags for cost allocation - UPDATE Environment
+    alb.ingress.kubernetes.io/tags: |
+      Project=aura,
+      Environment=${ENVIRONMENT}
+
+    # Use public subnets - REPLACE with env-specific subnets
+    alb.ingress.kubernetes.io/subnets: ${PUBLIC_SUBNET_IDS}
+
+    # Group both ingresses into a single ALB
+    alb.ingress.kubernetes.io/group.name: aura-ingress-group
+    alb.ingress.kubernetes.io/group.order: "1"
+spec:
+  ingressClassName: alb
+  rules:
+    # Frontend - host-based routing
+    # Note: Uses envsubst placeholder - substituted during deployment
+    - host: ${FRONTEND_HOSTNAME}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aura-frontend
+                port:
+                  number: 80

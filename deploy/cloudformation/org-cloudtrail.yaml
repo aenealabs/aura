@@ -1,0 +1,338 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 0.2 - Organization CloudTrail (Centralized Audit Trail)'
+
+# ============================================================================
+# ORGANIZATION CLOUDTRAIL - MANAGEMENT ACCOUNT ONLY
+#
+# This template deploys an Organization-wide CloudTrail that automatically
+# logs API calls from ALL accounts in the AWS Organization.
+#
+# DEPLOYMENT REQUIREMENTS:
+# - Must be deployed in the MANAGEMENT ACCOUNT ONLY (123456789012)
+# - Do NOT deploy in workload accounts (Dev, QA, Prod)
+# - Requires AWS Organizations with all features enabled
+#
+# Per ADR-059: Organization CloudTrail stays in Management Account while
+# workloads are migrated to dedicated accounts.
+#
+# Reference: NIST 800-53 AU-2/AU-3/AU-6, CMMC AU.2.041/AU.2.042
+# ============================================================================
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  OrganizationId:
+    Type: String
+    Description: AWS Organization ID (e.g., o-xxxxxxxxxx)
+    AllowedPattern: '^o-[a-z0-9]{10,32}$'
+    ConstraintDescription: Must be a valid AWS Organization ID
+
+  LogRetentionDays:
+    Type: Number
+    Default: 365
+    AllowedValues: [90, 180, 365, 730]
+    Description: CloudWatch Logs retention (365 days recommended for compliance)
+
+  EnableDataEvents:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable S3 data events (increases cost significantly)
+
+Conditions:
+  IncludeDataEvents: !Equals [!Ref EnableDataEvents, 'true']
+
+Resources:
+  # ==========================================================================
+  # S3 Bucket for Organization CloudTrail Logs
+  # ==========================================================================
+  OrgCloudTrailBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-org-cloudtrail-logs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      # ObjectLockEnabled: true  # Disabled initially - enable after validation
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+              - StorageClass: GLACIER
+                TransitionInDays: 90
+          - Id: RetainForCompliance
+            Status: Enabled
+            ExpirationInDays: 2555  # 7 years for compliance
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: SecurityControl
+          Value: OrganizationCloudTrail
+        - Key: DataClassification
+          Value: Confidential
+        - Key: Compliance
+          Value: CMMC-L3
+
+  # S3 Bucket Policy - Allows CloudTrail from ALL Organization accounts
+  OrgCloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref OrgCloudTrailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow CloudTrail to check bucket ACL
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt OrgCloudTrailBucket.Arn
+            Condition:
+              StringEquals:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${ProjectName}-org-trail'
+
+          # Allow CloudTrail to write logs from Management Account
+          - Sid: AWSCloudTrailWriteManagement
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${OrgCloudTrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${ProjectName}-org-trail'
+
+          # Allow CloudTrail to write logs from ALL Organization accounts
+          - Sid: AWSCloudTrailWriteOrganization
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${OrgCloudTrailBucket.Arn}/AWSLogs/${OrganizationId}/*'
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${ProjectName}-org-trail'
+
+          # Deny insecure transport
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt OrgCloudTrailBucket.Arn
+              - !Sub '${OrgCloudTrailBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+          # Deny deletion (immutable audit trail)
+          - Sid: DenyDeletion
+            Effect: Deny
+            Principal: '*'
+            Action:
+              - s3:DeleteObject
+              - s3:DeleteObjectVersion
+            Resource: !Sub '${OrgCloudTrailBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                aws:PrincipalAccount: !Ref AWS::AccountId
+
+  # ==========================================================================
+  # CloudWatch Logs Group for Real-Time Alerting
+  # ==========================================================================
+  OrgCloudTrailLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/cloudtrail/${ProjectName}-org-trail'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: SecurityControl
+          Value: OrganizationCloudTrail
+
+  # IAM Role for CloudTrail to write to CloudWatch Logs
+  OrgCloudTrailLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-org-cloudtrail-logs-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchLogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub '${OrgCloudTrailLogGroup.Arn}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # Organization CloudTrail
+  # ==========================================================================
+  OrganizationCloudTrail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn:
+      - OrgCloudTrailBucketPolicy
+    Properties:
+      TrailName: !Sub '${ProjectName}-org-trail'
+      S3BucketName: !Ref OrgCloudTrailBucket
+      IsLogging: true
+      IsMultiRegionTrail: true
+      IsOrganizationTrail: true  # THIS IS THE KEY DIFFERENCE
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      CloudWatchLogsLogGroupArn: !GetAtt OrgCloudTrailLogGroup.Arn
+      CloudWatchLogsRoleArn: !GetAtt OrgCloudTrailLogRole.Arn
+      EventSelectors:
+        - IncludeManagementEvents: true
+          ReadWriteType: All
+          ExcludeManagementEventSources:
+            - kms.amazonaws.com  # Reduce noise from KMS
+            - rdsdata.amazonaws.com  # Reduce noise from RDS Data API
+      # Advanced event selectors for data events (optional)
+      # Uncomment if EnableDataEvents is true
+      # AdvancedEventSelectors:
+      #   - Name: LogS3DataEvents
+      #     FieldSelectors:
+      #       - Field: eventCategory
+      #         Equals: [Data]
+      #       - Field: resources.type
+      #         Equals: [AWS::S3::Object]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: SecurityControl
+          Value: OrganizationAuditTrail
+        - Key: Compliance
+          Value: CMMC-L3
+        - Key: CriticalInfrastructure
+          Value: 'true'
+
+  # ==========================================================================
+  # CloudWatch Alarms for Security Events
+  # ==========================================================================
+
+  # Alarm: Root account usage
+  RootAccountUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-org-root-account-usage'
+      AlarmDescription: Alert when root account is used in any organization account
+      MetricName: RootAccountUsageCount
+      Namespace: CloudTrailMetrics
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Metric filter for root account usage
+  RootAccountUsageFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref OrgCloudTrailLogGroup
+      FilterPattern: '{ $.userIdentity.type = "Root" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != "AwsServiceEvent" }'
+      MetricTransformations:
+        - MetricName: RootAccountUsageCount
+          MetricNamespace: CloudTrailMetrics
+          MetricValue: '1'
+          DefaultValue: 0
+
+  # Alarm: CloudTrail configuration changes
+  CloudTrailChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-org-cloudtrail-changes'
+      AlarmDescription: Alert when CloudTrail configuration is modified
+      MetricName: CloudTrailChangesCount
+      Namespace: CloudTrailMetrics
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Metric filter for CloudTrail changes
+  CloudTrailChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref OrgCloudTrailLogGroup
+      FilterPattern: '{ ($.eventName = CreateTrail) || ($.eventName = UpdateTrail) || ($.eventName = DeleteTrail) || ($.eventName = StartLogging) || ($.eventName = StopLogging) }'
+      MetricTransformations:
+        - MetricName: CloudTrailChangesCount
+          MetricNamespace: CloudTrailMetrics
+          MetricValue: '1'
+          DefaultValue: 0
+
+Outputs:
+  OrganizationTrailArn:
+    Description: ARN of the Organization CloudTrail
+    Value: !GetAtt OrganizationCloudTrail.Arn
+    Export:
+      Name: !Sub '${ProjectName}-org-cloudtrail-arn'
+
+  OrganizationTrailBucketName:
+    Description: S3 bucket for Organization CloudTrail logs
+    Value: !Ref OrgCloudTrailBucket
+    Export:
+      Name: !Sub '${ProjectName}-org-cloudtrail-bucket'
+
+  OrganizationTrailLogGroupName:
+    Description: CloudWatch Logs group for Organization CloudTrail
+    Value: !Ref OrgCloudTrailLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-org-cloudtrail-log-group'
+
+  OrganizationTrailLogGroupArn:
+    Description: ARN of CloudWatch Logs group for Organization CloudTrail
+    Value: !GetAtt OrgCloudTrailLogGroup.Arn
+    Export:
+      Name: !Sub '${ProjectName}-org-cloudtrail-log-group-arn'
+
+  DeploymentNotes:
+    Description: Important deployment information
+    Value: !Sub |
+      MANAGEMENT ACCOUNT ONLY - Do not deploy in workload accounts.
+      Organization ID: ${OrganizationId}
+      This trail automatically logs ALL accounts in the organization.
+      Account-level trails in Dev/QA can be removed after this is deployed.

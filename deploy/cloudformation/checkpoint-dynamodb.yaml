@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.11 - Checkpoint DynamoDB Tables (Real-Time Intervention)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+Resources:
+  # Checkpoints Table - Stores checkpoint state for approval workflow
+  CheckpointsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-checkpoints-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: checkpoint_id
+          AttributeType: S
+        - AttributeName: execution_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: checkpoint_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: execution-status-index
+          KeySchema:
+            - AttributeName: execution_id
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: checkpoint-service
+
+  # WebSocket Connections Table - Tracks active WebSocket connections
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-ws-connections-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+        - AttributeName: execution_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: execution-index
+          KeySchema:
+            - AttributeName: execution_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: checkpoint-service
+
+  # EventBridge Event Bus for Checkpoint Events
+  CheckpointEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub '${ProjectName}-checkpoint-events-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Rule to log checkpoint decisions for audit
+  CheckpointAuditRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-checkpoint-audit-${Environment}'
+      Description: Log all checkpoint decisions for audit trail
+      EventBusName: !Ref CheckpointEventBus
+      EventPattern:
+        source:
+          - aura.checkpoint
+        detail-type:
+          - CheckpointDecision
+      State: ENABLED
+      Targets:
+        - Id: CloudWatchLogs
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${ProjectName}-checkpoint-audit-${Environment}'
+
+  # CloudWatch Log Group for checkpoint audit
+  CheckpointAuditLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/events/${ProjectName}-checkpoint-audit-${Environment}'
+      RetentionInDays: 90
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Resource policy for EventBridge to write to CloudWatch Logs
+  CheckpointAuditLogPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-checkpoint-audit-policy-${Environment}'
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${ProjectName}-checkpoint-audit-${Environment}:*"
+            }
+          ]
+        }
+
+Outputs:
+  CheckpointsTableName:
+    Description: Name of the checkpoints DynamoDB table
+    Value: !Ref CheckpointsTable
+    Export:
+      Name: !Sub '${ProjectName}-checkpoints-table-${Environment}'
+
+  CheckpointsTableArn:
+    Description: ARN of the checkpoints DynamoDB table
+    Value: !GetAtt CheckpointsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-checkpoints-table-arn-${Environment}'
+
+  ConnectionsTableName:
+    Description: Name of the WebSocket connections DynamoDB table
+    Value: !Ref ConnectionsTable
+    Export:
+      Name: !Sub '${ProjectName}-ws-connections-table-${Environment}'
+
+  ConnectionsTableArn:
+    Description: ARN of the WebSocket connections DynamoDB table
+    Value: !GetAtt ConnectionsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ws-connections-table-arn-${Environment}'
+
+  CheckpointEventBusName:
+    Description: Name of the checkpoint EventBridge event bus
+    Value: !Ref CheckpointEventBus
+    Export:
+      Name: !Sub '${ProjectName}-checkpoint-eventbus-${Environment}'
+
+  CheckpointEventBusArn:
+    Description: ARN of the checkpoint EventBridge event bus
+    Value: !GetAtt CheckpointEventBus.Arn
+    Export:
+      Name: !Sub '${ProjectName}-checkpoint-eventbus-arn-${Environment}'

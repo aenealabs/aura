@@ -1,0 +1,492 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECS Fargate services for Project Aura dev environment (dnsmasq, orchestrator, agents)'
+
+Parameters:
+  ClusterStackName:
+    Type: String
+    Default: aura-ecs-dev-cluster
+    Description: Name of the cluster stack to import values from
+
+  PrivateSubnet1:
+    Type: String
+    Description: First private subnet for Fargate tasks
+
+  PrivateSubnet2:
+    Type: String
+    Description: Second private subnet for Fargate tasks
+
+  ECRRepositoryURI:
+    Type: String
+    Description: ECR repository URI for container images (e.g., 123456789012.dkr.ecr.us-east-1.amazonaws.com/aura)
+
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: Docker image tag to deploy
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name
+
+Resources:
+  # ========================================
+  # dnsmasq Service
+  # ========================================
+
+  DnsmasqTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub dnsmasq-${Environment}
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '256'  # 0.25 vCPU
+      Memory: '512'  # 0.5 GB
+      ExecutionRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskExecutionRoleArn
+      TaskRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskRoleArn
+      ContainerDefinitions:
+        - Name: dnsmasq
+          Image: !Sub ${ECRRepositoryURI}/dnsmasq:${ImageTag}
+          Essential: true
+          PortMappings:
+            - ContainerPort: 53
+              Protocol: udp
+            - ContainerPort: 53
+              Protocol: tcp
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: DNS_UPSTREAM
+              Value: 8.8.8.8
+            - Name: CACHE_SIZE
+              Value: '1000'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Fn::ImportValue: !Sub ${ClusterStackName}-LogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: dnsmasq
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  DnsmasqServiceDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: dnsmasq
+      DnsConfig:
+        NamespaceId:
+          Fn::ImportValue: !Sub ${ClusterStackName}-NamespaceId
+        DnsRecords:
+          - Type: A
+            TTL: 10
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  DnsmasqService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub dnsmasq-${Environment}
+      Cluster:
+        Fn::ImportValue: !Sub ${ClusterStackName}-ClusterName
+      TaskDefinition: !Ref DnsmasqTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - Fn::ImportValue: !Sub ${ClusterStackName}-DNSSecurityGroup
+      ServiceRegistries:
+        - RegistryArn: !GetAtt DnsmasqServiceDiscovery.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # ========================================
+  # Orchestrator Service
+  # ========================================
+
+  OrchestratorTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub orchestrator-${Environment}
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024'  # 1 vCPU
+      Memory: '2048'  # 2 GB
+      ExecutionRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskExecutionRoleArn
+      TaskRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskRoleArn
+      ContainerDefinitions:
+        - Name: orchestrator
+          Image: !Sub ${ECRRepositoryURI}/agent-orchestrator:${ImageTag}
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: LOG_LEVEL
+              Value: DEBUG
+            - Name: NEPTUNE_ENDPOINT
+              Value: !Sub neptune.${Environment}.aura.local:8182
+            - Name: OPENSEARCH_ENDPOINT
+              Value: !Sub opensearch.${Environment}.aura.local:9200
+            - Name: LLM_PROVIDER
+              Value: bedrock
+            - Name: LLM_MODEL
+              Value: anthropic.claude-3-5-sonnet-20240620-v1:0
+            - Name: AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Fn::ImportValue: !Sub ${ClusterStackName}-LogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: orchestrator
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  OrchestratorServiceDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: orchestrator
+      DnsConfig:
+        NamespaceId:
+          Fn::ImportValue: !Sub ${ClusterStackName}-NamespaceId
+        DnsRecords:
+          - Type: A
+            TTL: 10
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  OrchestratorService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub orchestrator-${Environment}
+      Cluster:
+        Fn::ImportValue: !Sub ${ClusterStackName}-ClusterName
+      TaskDefinition: !Ref OrchestratorTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - Fn::ImportValue: !Sub ${ClusterStackName}-AgentSecurityGroup
+      ServiceRegistries:
+        - RegistryArn: !GetAtt OrchestratorServiceDiscovery.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # ========================================
+  # Coder Agent Service
+  # ========================================
+
+  CoderAgentTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub coder-agent-${Environment}
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '2048'  # 2 vCPU
+      Memory: '4096'  # 4 GB
+      ExecutionRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskExecutionRoleArn
+      TaskRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskRoleArn
+      ContainerDefinitions:
+        - Name: coder-agent
+          Image: !Sub ${ECRRepositoryURI}/coder-agent:${ImageTag}
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: AGENT_TYPE
+              Value: coder
+            - Name: CONTEXT_SERVICE
+              Value: !Sub context-retrieval.${Environment}.aura.local:8080
+            - Name: MAX_CONTEXT_TOKENS
+              Value: '100000'
+            - Name: LLM_PROVIDER
+              Value: bedrock
+            - Name: LLM_MODEL
+              Value: anthropic.claude-3-5-sonnet-20240620-v1:0
+            - Name: AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Fn::ImportValue: !Sub ${ClusterStackName}-LogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: coder-agent
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  CoderAgentServiceDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: coder-agent
+      DnsConfig:
+        NamespaceId:
+          Fn::ImportValue: !Sub ${ClusterStackName}-NamespaceId
+        DnsRecords:
+          - Type: A
+            TTL: 10
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  CoderAgentService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub coder-agent-${Environment}
+      Cluster:
+        Fn::ImportValue: !Sub ${ClusterStackName}-ClusterName
+      TaskDefinition: !Ref CoderAgentTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - Fn::ImportValue: !Sub ${ClusterStackName}-AgentSecurityGroup
+      ServiceRegistries:
+        - RegistryArn: !GetAtt CoderAgentServiceDiscovery.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # ========================================
+  # Reviewer Agent Service
+  # ========================================
+
+  ReviewerAgentTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub reviewer-agent-${Environment}
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024'  # 1 vCPU
+      Memory: '2048'  # 2 GB
+      ExecutionRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskExecutionRoleArn
+      TaskRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskRoleArn
+      ContainerDefinitions:
+        - Name: reviewer-agent
+          Image: !Sub ${ECRRepositoryURI}/reviewer-agent:${ImageTag}
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: AGENT_TYPE
+              Value: reviewer
+            - Name: CONTEXT_SERVICE
+              Value: !Sub context-retrieval.${Environment}.aura.local:8080
+            - Name: LLM_PROVIDER
+              Value: bedrock
+            - Name: LLM_MODEL
+              Value: anthropic.claude-3-5-sonnet-20240620-v1:0
+            - Name: AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Fn::ImportValue: !Sub ${ClusterStackName}-LogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: reviewer-agent
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  ReviewerAgentServiceDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: reviewer-agent
+      DnsConfig:
+        NamespaceId:
+          Fn::ImportValue: !Sub ${ClusterStackName}-NamespaceId
+        DnsRecords:
+          - Type: A
+            TTL: 10
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  ReviewerAgentService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub reviewer-agent-${Environment}
+      Cluster:
+        Fn::ImportValue: !Sub ${ClusterStackName}-ClusterName
+      TaskDefinition: !Ref ReviewerAgentTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - Fn::ImportValue: !Sub ${ClusterStackName}-AgentSecurityGroup
+      ServiceRegistries:
+        - RegistryArn: !GetAtt ReviewerAgentServiceDiscovery.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # ========================================
+  # Validator Agent Service
+  # ========================================
+
+  ValidatorAgentTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub validator-agent-${Environment}
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024'  # 1 vCPU
+      Memory: '2048'  # 2 GB
+      ExecutionRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskExecutionRoleArn
+      TaskRoleArn:
+        Fn::ImportValue: !Sub ${ClusterStackName}-TaskRoleArn
+      ContainerDefinitions:
+        - Name: validator-agent
+          Image: !Sub ${ECRRepositoryURI}/validator-agent:${ImageTag}
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: AGENT_TYPE
+              Value: validator
+            - Name: CONTEXT_SERVICE
+              Value: !Sub context-retrieval.${Environment}.aura.local:8080
+            - Name: LLM_PROVIDER
+              Value: bedrock
+            - Name: LLM_MODEL
+              Value: anthropic.claude-3-5-sonnet-20240620-v1:0
+            - Name: AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Fn::ImportValue: !Sub ${ClusterStackName}-LogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: validator-agent
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  ValidatorAgentServiceDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: validator-agent
+      DnsConfig:
+        NamespaceId:
+          Fn::ImportValue: !Sub ${ClusterStackName}-NamespaceId
+        DnsRecords:
+          - Type: A
+            TTL: 10
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  ValidatorAgentService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub validator-agent-${Environment}
+      Cluster:
+        Fn::ImportValue: !Sub ${ClusterStackName}-ClusterName
+      TaskDefinition: !Ref ValidatorAgentTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - Fn::ImportValue: !Sub ${ClusterStackName}-AgentSecurityGroup
+      ServiceRegistries:
+        - RegistryArn: !GetAtt ValidatorAgentServiceDiscovery.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+Outputs:
+  DnsmasqServiceName:
+    Description: dnsmasq service name
+    Value: !GetAtt DnsmasqService.Name
+
+  OrchestratorServiceName:
+    Description: Orchestrator service name
+    Value: !GetAtt OrchestratorService.Name
+
+  CoderAgentServiceName:
+    Description: Coder Agent service name
+    Value: !GetAtt CoderAgentService.Name
+
+  ReviewerAgentServiceName:
+    Description: Reviewer Agent service name
+    Value: !GetAtt ReviewerAgentService.Name
+
+  ValidatorAgentServiceName:
+    Description: Validator Agent service name
+    Value: !GetAtt ValidatorAgentService.Name

@@ -1,0 +1,482 @@
+# Project Aura - Grafana Alerting Rules
+#
+# Unified alerting configuration for critical system metrics.
+# Routes to SNS topics for PagerDuty/Slack integration.
+#
+# Issue: #18 - Grafana dashboards for observability
+
+apiVersion: 1
+
+groups:
+  # ==========================================================================
+  # API Health Alerts
+  # ==========================================================================
+  - orgId: 1
+    name: API Health
+    folder: Aura Alerts
+    interval: 1m
+    rules:
+      - uid: api-high-error-rate
+        title: API High Error Rate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) * 100
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [5]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: avg
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: API error rate exceeded 5%
+          description: "Error rate is {{ $values.A }}% over the last 5 minutes"
+        labels:
+          severity: critical
+          team: platform
+
+      - uid: api-high-latency
+        title: API High Latency (P95)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) * 1000
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [2000]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: avg
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: API P95 latency exceeded 2 seconds
+          description: "P95 latency is {{ $values.A }}ms"
+        labels:
+          severity: warning
+          team: platform
+
+      - uid: api-availability-low
+        title: API Availability Below SLA
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: (1 - sum(rate(http_requests_total{status=~"5.."}[1h])) / sum(rate(http_requests_total[1h]))) * 100
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [99.5]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: avg
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: API availability below 99.5% SLA
+          description: "Current availability is {{ $values.A }}%"
+        labels:
+          severity: critical
+          team: platform
+
+  # ==========================================================================
+  # EKS Cluster Alerts
+  # ==========================================================================
+  - orgId: 1
+    name: EKS Cluster
+    folder: Aura Alerts
+    interval: 1m
+    rules:
+      - uid: eks-high-cpu
+        title: EKS Node High CPU Usage
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [85]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: avg
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: EKS node CPU usage above 85%
+          description: "Node {{ $labels.instance }} CPU at {{ $values.A }}%"
+        labels:
+          severity: warning
+          team: infrastructure
+
+      - uid: eks-high-memory
+        title: EKS Node High Memory Usage
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [90]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: avg
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: EKS node memory usage above 90%
+          description: "Node {{ $labels.instance }} memory at {{ $values.A }}%"
+        labels:
+          severity: critical
+          team: infrastructure
+
+      - uid: eks-pod-restarts
+        title: High Pod Restart Rate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total[1h]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [5]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: max
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: Pod restarting frequently
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has restarted {{ $values.A }} times in the last hour"
+        labels:
+          severity: warning
+          team: platform
+
+  # ==========================================================================
+  # Database Alerts
+  # ==========================================================================
+  - orgId: 1
+    name: Database Health
+    folder: Aura Alerts
+    interval: 1m
+    rules:
+      - uid: neptune-high-cpu
+        title: Neptune High CPU Usage
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: cloudwatch
+            model:
+              dimensions:
+                DBClusterIdentifier: aura-neptune-cluster
+              metricName: CPUUtilization
+              namespace: AWS/Neptune
+              period: "60"
+              region: us-east-1
+              statistic: Average
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [80]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: avg
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: Neptune CPU usage above 80%
+          description: "Neptune cluster CPU at {{ $values.A }}%"
+        labels:
+          severity: warning
+          team: data
+
+      - uid: opensearch-jvm-pressure
+        title: OpenSearch High JVM Memory Pressure
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: cloudwatch
+            model:
+              dimensions:
+                DomainName: aura-opensearch
+              metricName: JVMMemoryPressure
+              namespace: AWS/ES
+              period: "60"
+              region: us-east-1
+              statistic: Average
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [85]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: avg
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: OpenSearch JVM memory pressure above 85%
+          description: "OpenSearch JVM pressure at {{ $values.A }}%"
+        labels:
+          severity: critical
+          team: data
+
+  # ==========================================================================
+  # HITL Workflow Alerts
+  # ==========================================================================
+  - orgId: 1
+    name: HITL Workflow
+    folder: Aura Alerts
+    interval: 5m
+    rules:
+      - uid: hitl-queue-buildup
+        title: HITL Approval Queue Buildup
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: aura_hitl_pending_approvals
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [25]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 15m
+        annotations:
+          summary: HITL approval queue has more than 25 pending items
+          description: "Current queue depth: {{ $values.A }} approvals pending"
+        labels:
+          severity: warning
+          team: platform
+
+      - uid: hitl-sla-breach
+        title: HITL SLA Breach Risk
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.90, rate(aura_hitl_approval_duration_seconds_bucket[1h])) / 3600
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [4]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: avg
+              type: threshold
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: B
+              type: reduce
+              reducer: last
+        noDataState: NoData
+        execErrState: Error
+        for: 30m
+        annotations:
+          summary: HITL approval times approaching SLA limit
+          description: "P90 approval time is {{ $values.A }} hours (SLA: 4 hours)"
+        labels:
+          severity: warning
+          team: platform

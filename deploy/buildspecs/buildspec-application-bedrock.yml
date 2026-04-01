@@ -1,0 +1,95 @@
+version: 0.2
+
+# Application Layer Sub-BuildSpec: Bedrock Infrastructure (Layer 4.2)
+# Deploys Bedrock infrastructure, Cognito, and Guardrails.
+# Called by buildspec-application.yml or Step Functions.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+run-as: root
+
+env:
+  shell: bash
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint..."
+      - pip3 install cfn-lint --quiet
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Bedrock Infrastructure Deployment (Layer 4.2)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - validate_aws_credentials
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+      # Validate templates
+      - cfn-lint deploy/cloudformation/aura-bedrock-infrastructure.yaml --ignore-checks W3002 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/cognito.yaml --ignore-checks W3002 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/bedrock-guardrails.yaml --ignore-checks W3002 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/onboarding.yaml --ignore-checks W3002 || echo "warnings (non-blocking)"
+
+  build:
+    commands:
+      # Bedrock Infrastructure
+      - |
+        echo "Deploying Bedrock Infrastructure..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-bedrock-infrastructure-${ENVIRONMENT}" \
+          "deploy/cloudformation/aura-bedrock-infrastructure.yaml" \
+          "Environment=${ENVIRONMENT} AlertEmail=${ALERT_EMAIL}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          "CAPABILITY_NAMED_IAM"
+
+      # Cognito User Pool
+      - |
+        echo "Deploying Cognito User Pool..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-cognito-${ENVIRONMENT}" \
+          "deploy/cloudformation/cognito.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME} DomainName=aenealabs.com" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          ""
+
+      # Bedrock Guardrails
+      - |
+        echo "Deploying Bedrock Guardrails..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-bedrock-guardrails-${ENVIRONMENT}" \
+          "deploy/cloudformation/bedrock-guardrails.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME} EnablePIIFiltering=true" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          ""
+
+      # Customer Onboarding (ADR-047)
+      - |
+        echo "Deploying Customer Onboarding Infrastructure..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-onboarding-${ENVIRONMENT}" \
+          "deploy/cloudformation/onboarding.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=4.10 DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          ""
+
+  post_build:
+    commands:
+      - echo "Bedrock Infrastructure deployment complete"
+      - |
+        echo "Stack Outputs:"
+        aws cloudformation describe-stacks \
+          --stack-name ${PROJECT_NAME}-bedrock-infrastructure-${ENVIRONMENT} \
+          --query 'Stacks[0].Outputs' \
+          --region $AWS_DEFAULT_REGION \
+          --output table || echo "Could not retrieve outputs"

@@ -1,0 +1,237 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.8 - Compliance Settings Sync (SSM Parameter Writer)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: Email address for compliance change notifications (optional)
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
+
+Resources:
+  # ==========================================================================
+  # IAM Role for Lambda
+  # ==========================================================================
+  ComplianceSyncLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-compliance-sync-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: ComplianceSyncPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # SSM Parameter Store write permissions
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:AddTagsToResource
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/compliance/*'
+
+              # SNS publish for notifications
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !If
+                    - HasNotificationEmail
+                    - !Ref ComplianceNotificationTopic
+                    - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-compliance-settings-sync-${Environment}*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-compliance-sync-lambda-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '5.8'
+
+  # ==========================================================================
+  # CloudWatch Log Group
+  # ==========================================================================
+  ComplianceSyncLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-compliance-settings-sync-${Environment}'
+      RetentionInDays: 90
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '5.8'
+
+  # ==========================================================================
+  # Lambda Function
+  # ==========================================================================
+  ComplianceSyncFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ComplianceSyncLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-compliance-settings-sync-${Environment}'
+      Description: 'Syncs compliance settings to SSM Parameter Store for CodeBuild'
+      Runtime: python3.11
+      Handler: compliance_settings_sync.handler
+      Role: !GetAtt ComplianceSyncLambdaRole.Arn
+      MemorySize: 256
+      Timeout: 60
+      Code:
+        ZipFile: |
+          """
+          Placeholder for compliance_settings_sync.py
+          Actual code deployed via CI/CD pipeline from src/lambda/
+          """
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info("Compliance settings sync placeholder")
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({'message': 'Deploy actual code via CI/CD'})
+              }
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          AWS_REGION_NAME: !Ref AWS::Region
+          SNS_TOPIC_ARN: !If
+            - HasNotificationEmail
+            - !Ref ComplianceNotificationTopic
+            - ''
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-compliance-settings-sync-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: compliance
+        - Key: Layer
+          Value: '5.8'
+
+  # ==========================================================================
+  # SNS Topic for Notifications (Optional)
+  # ==========================================================================
+  ComplianceNotificationTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasNotificationEmail
+    Properties:
+      TopicName: !Sub '${ProjectName}-compliance-updates-${Environment}'
+      DisplayName: !Sub 'Aura Compliance Settings Updates (${Environment})'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '5.8'
+
+  ComplianceNotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref ComplianceNotificationTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ==========================================================================
+  # CloudWatch Alarm - Lambda Errors
+  # ==========================================================================
+  ComplianceSyncErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-compliance-sync-errors-${Environment}'
+      AlarmDescription: 'Compliance settings sync Lambda errors detected'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ComplianceSyncFunction
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - HasNotificationEmail
+          - !Ref ComplianceNotificationTopic
+          - !Ref AWS::NoValue
+
+Outputs:
+  ComplianceSyncFunctionArn:
+    Description: ARN of the compliance settings sync Lambda function
+    Value: !GetAtt ComplianceSyncFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-compliance-sync-function-arn-${Environment}'
+
+  ComplianceSyncFunctionName:
+    Description: Name of the compliance settings sync Lambda function
+    Value: !Ref ComplianceSyncFunction
+    Export:
+      Name: !Sub '${ProjectName}-compliance-sync-function-name-${Environment}'
+
+  ComplianceSyncRoleArn:
+    Description: ARN of the Lambda execution role
+    Value: !GetAtt ComplianceSyncLambdaRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-compliance-sync-role-arn-${Environment}'
+
+  SSMParameterPrefix:
+    Description: SSM parameter prefix for compliance settings
+    Value: !Sub '/${ProjectName}/${Environment}/compliance'
+    Export:
+      Name: !Sub '${ProjectName}-compliance-ssm-prefix-${Environment}'
+
+  ComplianceNotificationTopicArn:
+    Condition: HasNotificationEmail
+    Description: ARN of the compliance notifications SNS topic
+    Value: !Ref ComplianceNotificationTopic
+    Export:
+      Name: !Sub '${ProjectName}-compliance-notifications-topic-${Environment}'

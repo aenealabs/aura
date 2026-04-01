@@ -1,0 +1,16 @@
+# Project Aura - Agent Orchestrator Kustomization
+# Manages deployment of the multi-agent orchestrator service
+#
+# This is a convenience wrapper that deploys the dev environment by default.
+# For other environments, use the overlays directly:
+#   kubectl apply -k deploy/kubernetes/agent-orchestrator/overlays/qa/
+#   kubectl apply -k deploy/kubernetes/agent-orchestrator/overlays/prod/
+#
+# Usage (dev):
+#   kubectl apply -k deploy/kubernetes/agent-orchestrator/
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - overlays/dev

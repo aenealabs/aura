@@ -1,0 +1,23 @@
+# cfn-lint configuration for Project Aura
+# See: https://github.com/aws-cloudformation/cfn-lint
+
+# Rules to ignore globally
+ignore_checks:
+  - W3002  # Dynamic references require CFN to resolve at deploy time
+  - W1020  # Fn::Sub used with static string (intentional for consistency)
+
+# INTENTIONALLY NOT IGNORING W3037
+# We want visibility into unrecognized IAM actions so we can:
+# 1. Identify typos in action names
+# 2. Track new AWS actions not yet in cfn-lint's database
+# 3. Validate actions via scripts/validate_iam_actions.py
+
+# Templates to include (relative to repo root)
+templates:
+  - deploy/cloudformation/*.yaml
+
+# Configure specific rules
+configure_rules:
+  # E3012: Property value validation
+  E3012:
+    strict: false  # Allow dynamic values in properties

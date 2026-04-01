@@ -1,0 +1,25 @@
+# Project Aura - Frontend Canary Service
+# Routes traffic to canary pods during progressive rollout
+# Used by Argo Rollouts for traffic splitting (ADR-022 Phase 3)
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: aura-frontend-canary
+  namespace: default
+  labels:
+    app: aura-frontend
+    component: frontend
+    environment: dev
+    role: canary
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  # Selector is managed by Argo Rollouts controller
+  # It automatically injects rollouts-pod-template-hash label
+  selector:
+    app: aura-frontend

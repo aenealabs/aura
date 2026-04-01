@@ -1,0 +1,507 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Project Aura - OpenSearch Filesystem Index Infrastructure
+  Creates OpenSearch domain and filesystem metadata index for agentic search.
+  Compatible with AWS GovCloud (US).
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name (dev/qa/prod)
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for OpenSearch domain
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnet IDs for OpenSearch domain (minimum 2 for multi-AZ)
+
+  OpenSearchInstanceType:
+    Type: String
+    Default: t3.small.search
+    AllowedValues:
+      - t3.small.search   # Dev/QA: 2 vCPU, 2 GB RAM ($35/month)
+      - t3.medium.search  # Prod: 2 vCPU, 4 GB RAM ($71/month)
+      - m5.large.search   # High-performance: 2 vCPU, 8 GB RAM ($144/month)
+    Description: OpenSearch instance type
+
+  OpenSearchInstanceCount:
+    Type: Number
+    Default: 2
+    MinValue: 2
+    MaxValue: 6
+    Description: Number of OpenSearch instances (minimum 2 for HA)
+
+  EBSVolumeSize:
+    Type: Number
+    Default: 20
+    MinValue: 10
+    MaxValue: 100
+    Description: EBS volume size in GB per instance
+
+  MasterUserName:
+    Type: String
+    Default: admin
+    MinLength: 1
+    MaxLength: 16
+    Description: Master user name for OpenSearch dashboard
+
+  MasterUserPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 128
+    Description: Master user password (min 8 chars, must include uppercase, lowercase, number, special char)
+
+  AllowedCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block allowed to access OpenSearch (typically VPC CIDR)
+
+Mappings:
+  EnvironmentConfig:
+    dev:
+      InstanceType: t3.small.search
+      InstanceCount: 2
+      VolumeSize: 20
+      SnapshotHour: 3
+    qa:
+      InstanceType: t3.small.search
+      InstanceCount: 2
+      VolumeSize: 30
+      SnapshotHour: 4
+    prod:
+      InstanceType: t3.medium.search
+      InstanceCount: 3
+      VolumeSize: 50
+      SnapshotHour: 2
+
+Resources:
+  # Security Group for OpenSearch Domain
+  OpenSearchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub aura-opensearch-${Environment}-sg
+      GroupDescription: Security group for OpenSearch domain
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # HTTPS access from VPC
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref AllowedCIDR
+          Description: HTTPS access from VPC
+      SecurityGroupEgress:
+        # Allow all outbound (for updates, snapshots)
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub aura-opensearch-${Environment}-sg
+        - Key: Project
+          Value: Aura
+        - Key: Environment
+          Value: !Ref Environment
+
+  # IAM Service-Linked Role for OpenSearch (if not exists)
+  # Note: This may already exist in the account
+  OpenSearchServiceRole:
+    Type: AWS::IAM::ServiceLinkedRole
+    Properties:
+      AWSServiceName: es.amazonaws.com
+      Description: Service-linked role for Amazon OpenSearch Service
+
+  # OpenSearch Domain
+  OpenSearchDomain:
+    Type: AWS::OpenSearch::Domain
+    Properties:
+      DomainName: !Sub aura-filesystem-${Environment}
+      EngineVersion: OpenSearch_2.11
+
+      # Cluster Configuration
+      ClusterConfig:
+        InstanceType: !FindInMap [EnvironmentConfig, !Ref Environment, InstanceType]
+        InstanceCount: !FindInMap [EnvironmentConfig, !Ref Environment, InstanceCount]
+        DedicatedMasterEnabled: !If
+          - IsProd
+          - true
+          - false
+        DedicatedMasterType: !If
+          - IsProd
+          - t3.small.search
+          - !Ref AWS::NoValue
+        DedicatedMasterCount: !If
+          - IsProd
+          - 3
+          - !Ref AWS::NoValue
+        ZoneAwarenessEnabled: true
+        ZoneAwarenessConfig:
+          AvailabilityZoneCount: 2
+
+      # EBS Storage
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: gp3
+        VolumeSize: !FindInMap [EnvironmentConfig, !Ref Environment, VolumeSize]
+        Iops: 3000
+        Throughput: 125
+
+      # VPC Configuration (GovCloud compatible - no public endpoints)
+      VPCOptions:
+        SubnetIds: !Ref PrivateSubnetIds
+        SecurityGroupIds:
+          - !Ref OpenSearchSecurityGroup
+
+      # Access Policy
+      AccessPolicies:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: 'es:*'
+            Resource: !Sub arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/aura-filesystem-${Environment}/*
+            Condition:
+              IpAddress:
+                aws:SourceIp: !Ref AllowedCIDR
+
+      # Advanced Security Options (required for fine-grained access control)
+      AdvancedSecurityOptions:
+        Enabled: true
+        InternalUserDatabaseEnabled: true
+        MasterUserOptions:
+          MasterUserName: !Ref MasterUserName
+          MasterUserPassword: !Ref MasterUserPassword
+
+      # Node-to-node Encryption
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+
+      # Encryption at Rest
+      EncryptionAtRestOptions:
+        Enabled: true
+        KmsKeyId: !Ref OpenSearchKMSKey
+
+      # Enforce HTTPS
+      DomainEndpointOptions:
+        EnforceHTTPS: true
+        TLSSecurityPolicy: Policy-Min-TLS-1-2-2019-07
+
+      # Advanced Options
+      AdvancedOptions:
+        rest.action.multi.allow_explicit_index: 'true'
+        override_main_response_version: 'false'
+
+      # Automated Snapshots
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: !FindInMap [EnvironmentConfig, !Ref Environment, SnapshotHour]
+
+      # CloudWatch Logs
+      LogPublishingOptions:
+        ES_APPLICATION_LOGS:
+          CloudWatchLogsLogGroup: !Ref OpenSearchApplicationLogs
+          Enabled: true
+        SEARCH_SLOW_LOGS:
+          CloudWatchLogsLogGroup: !Ref OpenSearchSlowSearchLogs
+          Enabled: true
+        INDEX_SLOW_LOGS:
+          CloudWatchLogsLogGroup: !Ref OpenSearchSlowIndexLogs
+          Enabled: true
+        AUDIT_LOGS:
+          CloudWatchLogsLogGroup: !Ref OpenSearchAuditLogs
+          Enabled: !If [IsProd, true, false]
+
+      Tags:
+        - Key: Name
+          Value: !Sub aura-filesystem-${Environment}
+        - Key: Project
+          Value: Aura
+        - Key: Environment
+          Value: !Ref Environment
+
+  # KMS Key for Encryption at Rest
+  OpenSearchKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub KMS key for OpenSearch domain encryption (${Environment})
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+          - Sid: Allow OpenSearch to use the key
+            Effect: Allow
+            Principal:
+              Service: es.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub es.${AWS::Region}.amazonaws.com
+      Tags:
+        - Key: Name
+          Value: !Sub aura-opensearch-${Environment}-key
+        - Key: Project
+          Value: Aura
+        - Key: Environment
+          Value: !Ref Environment
+
+  OpenSearchKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/aura-opensearch-${Environment}
+      TargetKeyId: !Ref OpenSearchKMSKey
+
+  # CloudWatch Log Groups
+  OpenSearchApplicationLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/opensearch/aura-filesystem-${Environment}/application-logs
+      RetentionInDays: !If [IsProd, 90, 30]
+
+  OpenSearchSlowSearchLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/opensearch/aura-filesystem-${Environment}/slow-search-logs
+      RetentionInDays: !If [IsProd, 90, 30]
+
+  OpenSearchSlowIndexLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/opensearch/aura-filesystem-${Environment}/slow-index-logs
+      RetentionInDays: !If [IsProd, 90, 30]
+
+  OpenSearchAuditLogs:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProd
+    Properties:
+      LogGroupName: !Sub /aws/opensearch/aura-filesystem-${Environment}/audit-logs
+      RetentionInDays: 90
+
+  # Lambda Function to Create Filesystem Index
+  CreateIndexLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub aura-opensearch-index-creator-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: OpenSearchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - es:ESHttpPut
+                  - es:ESHttpPost
+                  - es:ESHttpGet
+                Resource: !Sub ${OpenSearchDomain.Arn}/*
+
+  CreateIndexLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub aura-create-filesystem-index-${Environment}
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt CreateIndexLambdaRole.Arn
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref OpenSearchSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+          from opensearchpy import OpenSearch, RequestsHttpConnection
+          from requests_aws4auth import AWS4Auth
+
+          def handler(event, context):
+              """Create filesystem metadata index in OpenSearch."""
+              try:
+                  if event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+
+                  # OpenSearch endpoint
+                  endpoint = event['ResourceProperties']['Endpoint']
+                  region = event['ResourceProperties']['Region']
+
+                  # AWS Auth
+                  credentials = boto3.Session().get_credentials()
+                  awsauth = AWS4Auth(
+                      credentials.access_key,
+                      credentials.secret_key,
+                      region,
+                      'es',
+                      session_token=credentials.token
+                  )
+
+                  # OpenSearch client
+                  client = OpenSearch(
+                      hosts=[{'host': endpoint, 'port': 443}],
+                      http_auth=awsauth,
+                      use_ssl=True,
+                      verify_certs=True,
+                      connection_class=RequestsHttpConnection
+                  )
+
+                  # Index schema (from filesystem-metadata-index.json)
+                  index_body = {
+                      "settings": {
+                          "number_of_shards": 2,
+                          "number_of_replicas": 1,
+                          "index.knn": True,
+                          "analysis": {
+                              "analyzer": {
+                                  "path_hierarchy_analyzer": {
+                                      "tokenizer": "path_hierarchy_tokenizer"
+                                  }
+                              },
+                              "tokenizer": {
+                                  "path_hierarchy_tokenizer": {
+                                      "type": "path_hierarchy",
+                                      "delimiter": "/"
+                                  }
+                              }
+                          }
+                      },
+                      "mappings": {
+                          "properties": {
+                              "file_path": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                              "file_path_hierarchy": {"type": "text", "analyzer": "path_hierarchy_analyzer"},
+                              "file_size": {"type": "long"},
+                              "last_modified": {"type": "date"},
+                              "language": {"type": "keyword"},
+                              "num_lines": {"type": "integer"},
+                              "is_test_file": {"type": "boolean"},
+                              "is_config_file": {"type": "boolean"},
+                              "path_embedding": {
+                                  "type": "knn_vector",
+                                  "dimension": 1536,
+                                  "method": {
+                                      "name": "hnsw",
+                                      "space_type": "cosinesimil",
+                                      "engine": "nmslib",
+                                      "parameters": {"ef_construction": 128, "m": 24}
+                                  }
+                              },
+                              "docstring_embedding": {
+                                  "type": "knn_vector",
+                                  "dimension": 1536,
+                                  "method": {
+                                      "name": "hnsw",
+                                      "space_type": "cosinesimil",
+                                      "engine": "nmslib",
+                                      "parameters": {"ef_construction": 128, "m": 24}
+                                  }
+                              },
+                              "imports": {"type": "keyword"},
+                              "exports": {"type": "keyword"},
+                              "last_author": {"type": "keyword"},
+                              "last_commit_hash": {"type": "keyword"},
+                              "contributor_count": {"type": "integer"}
+                          }
+                      }
+                  }
+
+                  # Create index
+                  index_name = 'aura-filesystem-metadata'
+                  if not client.indices.exists(index=index_name):
+                      client.indices.create(index=index_name, body=index_body)
+                      print(f"Created index: {index_name}")
+                  else:
+                      print(f"Index already exists: {index_name}")
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                      'IndexName': index_name
+                  })
+
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {
+                      'Error': str(e)
+                  })
+
+  # Custom Resource to Trigger Index Creation
+  FilesystemIndexCreator:
+    Type: Custom::CreateFilesystemIndex
+    DependsOn: OpenSearchDomain
+    Properties:
+      ServiceToken: !GetAtt CreateIndexLambda.Arn
+      Endpoint: !GetAtt OpenSearchDomain.DomainEndpoint
+      Region: !Ref AWS::Region
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Outputs:
+  DomainArn:
+    Description: OpenSearch domain ARN
+    Value: !GetAtt OpenSearchDomain.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-DomainArn
+
+  DomainEndpoint:
+    Description: OpenSearch domain endpoint
+    Value: !GetAtt OpenSearchDomain.DomainEndpoint
+    Export:
+      Name: !Sub ${AWS::StackName}-DomainEndpoint
+
+  DomainName:
+    Description: OpenSearch domain name
+    Value: !Ref OpenSearchDomain
+    Export:
+      Name: !Sub ${AWS::StackName}-DomainName
+
+  KibanaEndpoint:
+    Description: OpenSearch Dashboards endpoint
+    Value: !Sub https://${OpenSearchDomain.DomainEndpoint}/_dashboards
+    Export:
+      Name: !Sub ${AWS::StackName}-KibanaEndpoint
+
+  SecurityGroupId:
+    Description: Security group ID for OpenSearch domain
+    Value: !Ref OpenSearchSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-SecurityGroupId
+
+  FilesystemIndexName:
+    Description: Name of the filesystem metadata index
+    Value: aura-filesystem-metadata
+    Export:
+      Name: !Sub ${AWS::StackName}-FilesystemIndexName
+
+  MasterUserName:
+    Description: Master user name for OpenSearch dashboard
+    Value: !Ref MasterUserName
+
+  EstimatedMonthlyCost:
+    Description: Estimated monthly cost (USD)
+    Value: !If
+      - IsProd
+      - "$213 (3x t3.medium.search instances, 50GB storage)"
+      - "$70 (2x t3.small.search instances, 20GB storage)"

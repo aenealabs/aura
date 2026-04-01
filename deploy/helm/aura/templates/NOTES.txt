@@ -1,0 +1,99 @@
+
+================================================================================
+   ___                    ___
+  / _ \   _   _   _ __   / _ \
+ | |_| | | | | | | '__| | |_| |
+ |  _  | | |_| | | |    |  _  |
+ |_| |_|  \__,_| |_|    |_| |_|
+
+  Project Aura - Autonomous AI Code Intelligence Platform
+  Edition: {{ include "aura.edition" . | title }}
+  Deployment Mode: {{ .Values.global.deploymentMode }}
+================================================================================
+
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named: {{ .Release.Name }}
+
+== GETTING STARTED ==
+
+{{- if .Values.frontend.ingress.enabled }}
+1. Access the Aura UI:
+   {{- range .Values.frontend.ingress.hosts }}
+   https://{{ .host }}
+   {{- end }}
+{{- else }}
+1. Access the Aura UI via port-forward:
+   kubectl port-forward svc/{{ include "aura.fullname" . }}-frontend {{ .Values.frontend.service.port }}:{{ .Values.frontend.service.port }} -n {{ .Release.Namespace }}
+   Then open: https://localhost:{{ .Values.frontend.service.port }}
+{{- end }}
+
+{{- if .Values.api.ingress.enabled }}
+2. API Endpoint:
+   {{- range .Values.api.ingress.hosts }}
+   https://{{ .host }}
+   {{- end }}
+{{- else }}
+2. API Endpoint via port-forward:
+   kubectl port-forward svc/{{ include "aura.fullname" . }}-api {{ .Values.api.service.port }}:{{ .Values.api.service.port }} -n {{ .Release.Namespace }}
+{{- end }}
+
+== CONFIGURATION ==
+
+{{- if eq (include "aura.edition" .) "community" }}
+You are running the Community Edition. To unlock Enterprise features:
+- Advanced GraphRAG
+- SSO/SAML Integration
+- Audit Logging
+- Multi-tenancy
+
+Contact sales@aenealabs.com for licensing information.
+{{- end }}
+
+== DATABASE STATUS ==
+
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.graph.neo4j.enabled }}
+- Neo4j (Graph): {{ include "aura.fullname" . }}-neo4j:{{ .Values.databases.graph.neo4j.tls.boltPort }}
+{{- end }}
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.vector.opensearch.enabled }}
+- OpenSearch (Vector): {{ include "aura.fullname" . }}-opensearch:9200
+{{- end }}
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.document.postgres.enabled }}
+- PostgreSQL (Document): {{ include "aura.fullname" . }}-postgres:5432
+{{- end }}
+
+== LLM PROVIDER ==
+
+{{- $provider := include "aura.llmProvider" . }}
+{{- if eq $provider "bedrock" }}
+Using AWS Bedrock for LLM inference.
+Ensure AWS credentials are configured.
+{{- else if eq $provider "vllm" }}
+Using vLLM for local LLM inference.
+Model: {{ .Values.llm.vllm.model }}
+{{- else if eq $provider "tgi" }}
+Using Text Generation Inference for local LLM.
+Model: {{ .Values.llm.tgi.model }}
+{{- else if eq $provider "ollama" }}
+Using Ollama for local LLM inference.
+Models: {{ .Values.llm.ollama.models | join ", " }}
+{{- end }}
+
+== USEFUL COMMANDS ==
+
+# Check pod status
+kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+# View logs
+kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=api -f
+
+# Check service health
+kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "aura.fullname" . }}-api -- curl -k https://localhost:{{ .Values.api.service.port }}/healthz
+
+== SUPPORT ==
+
+Documentation: https://docs.aenealabs.com
+Support: support@aenealabs.com
+GitHub: https://github.com/aenealabs/aura
+
+================================================================================

@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Aura - CI/CD Pipeline &amp; Deployment Automation</title>
+<style>
+  :root {
+    --brand: #3B82F6;
+    --brand-dark: #1E40AF;
+    --critical: #DC2626;
+    --high: #EA580C;
+    --medium: #F59E0B;
+    --success: #10B981;
+    --info: #3B82F6;
+    --purple: #8B5CF6;
+    --bg: #F8FAFC;
+    --surface: #FFFFFF;
+    --border: #E2E8F0;
+    --text: #1E293B;
+    --text-secondary: #64748B;
+    --code-bg: #F1F5F9;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; font-size: 14px; }
+  .header {
+    background: linear-gradient(135deg, #0F172A 0%, #1E293B 40%, #1a2744 100%);
+    color: white; padding: 48px 40px 40px; position: relative; overflow: hidden;
+  }
+  .header::before { content: ''; position: absolute; top: -50%; right: -10%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%); pointer-events: none; }
+  .header h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; position: relative; }
+  .header .subtitle { font-size: 18px; color: #94A3B8; font-weight: 400; position: relative; }
+  .header .meta-row { display: flex; gap: 32px; margin-top: 20px; position: relative; flex-wrap: wrap; }
+  .header .meta-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #CBD5E1; }
+  .header .meta-value { color: white; font-weight: 600; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 32px 40px 60px; }
+  .nav { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 32px; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .nav-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 10px; font-weight: 600; }
+  .nav-links { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nav-links a { color: var(--brand); text-decoration: none; font-size: 12px; padding: 4px 10px; border-radius: 6px; background: #EFF6FF; transition: all 0.15s; white-space: nowrap; }
+  .nav-links a:hover { background: var(--brand); color: white; }
+  .exec-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+  .exec-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; text-align: center; }
+  .exec-card .number { font-size: 36px; font-weight: 800; color: var(--brand); line-height: 1; }
+  .exec-card .number.green { color: var(--success); }
+  .exec-card .number.orange { color: var(--high); }
+  .exec-card .number.purple { color: var(--purple); }
+  .exec-card .label { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+  section { margin-bottom: 36px; }
+  section h2 { font-size: 22px; font-weight: 700; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid var(--brand); }
+  section h3 { font-size: 16px; font-weight: 600; margin: 16px 0 10px; }
+  section h4 { font-size: 14px; font-weight: 600; margin: 12px 0 6px; color: var(--text-secondary); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 16px; }
+  .card-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0; }
+  th { background: var(--code-bg); padding: 10px 12px; text-align: left; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); border-bottom: 2px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: #F8FAFC; }
+  code { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; background: var(--code-bg); padding: 2px 6px; border-radius: 4px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .badge-deployed { background: #D1FAE5; color: #065F46; }
+  .badge-blocking { background: #FEE2E2; color: #991B1B; }
+  .badge-warning { background: #FEF3C7; color: #92400E; }
+  .badge-info { background: #DBEAFE; color: #1E40AF; }
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 12px 0; }
+  .metric-item { background: var(--code-bg); border-radius: 8px; padding: 10px 12px; text-align: center; }
+  .metric-item .value { font-size: 20px; font-weight: 700; color: var(--brand); }
+  .metric-item .label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .ascii-diagram { background: #0F172A; border-radius: 12px; padding: 20px 24px; margin: 16px 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #E2E8F0; line-height: 1.5; overflow-x: auto; white-space: pre; }
+  .ascii-diagram .hl-blue { color: #60A5FA; }
+  .ascii-diagram .hl-green { color: #34D399; }
+  .ascii-diagram .hl-yellow { color: #FBBF24; }
+  .ascii-diagram .hl-red { color: #F87171; }
+  .ascii-diagram .hl-purple { color: #A78BFA; }
+  .ascii-diagram .hl-cyan { color: #22D3EE; }
+  .ascii-diagram .hl-dim { color: #64748B; }
+  .pipeline { display: flex; align-items: center; gap: 0; margin: 16px 0; overflow-x: auto; padding: 8px 0; }
+  .pipeline-step { flex-shrink: 0; background: var(--surface); border: 2px solid var(--brand); border-radius: 10px; padding: 12px 18px; text-align: center; min-width: 130px; }
+  .pipeline-step .step-name { font-size: 12px; font-weight: 700; color: var(--brand); }
+  .pipeline-step .step-detail { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+  .pipeline-arrow { flex-shrink: 0; width: 32px; text-align: center; color: var(--brand); font-size: 18px; font-weight: 700; }
+  .gate-row { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; border-left: 4px solid; }
+  .gate-row.blocking { border-left-color: var(--critical); }
+  .gate-row.warning { border-left-color: var(--medium); }
+  .gate-num { font-size: 20px; font-weight: 800; color: var(--text-secondary); width: 32px; }
+  .gate-info { flex: 1; }
+  .gate-name { font-size: 13px; font-weight: 600; }
+  .gate-tech { font-size: 11px; color: var(--text-secondary); }
+  .gate-status { font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .layer-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; border-left: 4px solid var(--brand); margin-bottom: 10px; }
+  .layer-card.l1 { border-left-color: #3B82F6; }
+  .layer-card.l2 { border-left-color: #8B5CF6; }
+  .layer-card.l3 { border-left-color: #10B981; }
+  .layer-card.l4 { border-left-color: #F59E0B; }
+  .layer-card.l5 { border-left-color: #EA580C; }
+  .layer-card.l6 { border-left-color: #06B6D4; }
+  .layer-card.l7 { border-left-color: #EC4899; }
+  .layer-card.l8 { border-left-color: #DC2626; }
+  .layer-card.l9 { border-left-color: #6366F1; }
+  .layer-header { display: flex; justify-content: space-between; align-items: center; }
+  .layer-title { font-size: 14px; font-weight: 700; }
+  .layer-meta { font-size: 11px; color: var(--text-secondary); }
+  .layer-stacks { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+  .callout { background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 8px; padding: 14px 18px; margin: 12px 0; font-size: 13px; }
+  .callout.warning { background: #FEF2F2; border-color: #FECACA; }
+  .callout.success { background: #F0FDF4; border-color: #BBF7D0; }
+  .callout-title { font-weight: 700; margin-bottom: 4px; }
+  .workflow-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .workflow-card .wf-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .workflow-card .wf-trigger { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; }
+  .workflow-card .wf-desc { font-size: 12px; color: var(--text-secondary); }
+  .hook-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  .hook-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .hook-item .hook-name { font-size: 12px; font-weight: 600; }
+  .hook-item .hook-desc { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .footer { text-align: center; padding: 32px; color: var(--text-secondary); font-size: 12px; border-top: 1px solid var(--border); margin-top: 40px; }
+  @media (max-width: 1024px) { .exec-summary { grid-template-columns: repeat(2, 1fr); } .two-col, .three-col { grid-template-columns: 1fr; } }
+  @media (max-width: 768px) { .header { padding: 32px 20px; } .header h1 { font-size: 28px; } .container { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>CI/CD Pipeline &amp; Deployment Automation</h1>
+  <div class="subtitle">Project Aura &mdash; Autonomous Code Intelligence Platform</div>
+  <div class="meta-row">
+    <div class="meta-item">Company: <span class="meta-value">Aenea Labs</span></div>
+    <div class="meta-item">Date: <span class="meta-value">February 25, 2026</span></div>
+    <div class="meta-item">Version: <span class="meta-value">v1.6.1</span></div>
+    <div class="meta-item">Deployment: <span class="meta-value">AWS CodeBuild + CloudFormation</span></div>
+  </div>
+</div>
+
+<div class="container">
+
+<nav class="nav">
+  <div class="nav-title">Quick Navigation</div>
+  <div class="nav-links">
+    <a href="#overview">Overview</a>
+    <a href="#execution-flow">Execution Flow</a>
+    <a href="#3-gate">3-Gate Validation</a>
+    <a href="#layers">9-Layer Cascade</a>
+    <a href="#codebuild">CodeBuild Projects</a>
+    <a href="#buildspecs">Buildspecs</a>
+    <a href="#github-actions">GitHub Actions</a>
+    <a href="#pre-commit">Pre-Commit Hooks</a>
+    <a href="#release-please">Release Please</a>
+    <a href="#cfn-lint">cfn-lint Validation</a>
+    <a href="#scripts">Deployment Scripts</a>
+    <a href="#environments">Environment Management</a>
+    <a href="#containers">Container Pipeline</a>
+    <a href="#patterns">Key Patterns</a>
+    <a href="#rules">Critical Rules</a>
+    <a href="#stats">Statistics</a>
+  </div>
+</nav>
+
+<!-- Executive Summary -->
+<div class="exec-summary">
+  <div class="exec-card"><div class="number">24</div><div class="label">CodeBuild Projects</div></div>
+  <div class="exec-card"><div class="number purple">38</div><div class="label">Buildspec Files (9,284 lines)</div></div>
+  <div class="exec-card"><div class="number green">168</div><div class="label">CloudFormation Templates</div></div>
+  <div class="exec-card"><div class="number orange">137</div><div class="label">Stacks Deployed (DEV)</div></div>
+  <div class="exec-card"><div class="number">66</div><div class="label">Deployment Scripts</div></div>
+  <div class="exec-card"><div class="number green">6</div><div class="label">GitHub Actions Workflows</div></div>
+  <div class="exec-card"><div class="number">18</div><div class="label">Pre-Commit Hooks</div></div>
+  <div class="exec-card"><div class="number green">3</div><div class="label">Validation Gates</div></div>
+</div>
+
+<!-- Section 1: Overview -->
+<section id="overview">
+<h2>Pipeline Architecture Overview</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Project Aura uses an enterprise-grade, modular CI/CD architecture powered by AWS CodeBuild and CloudFormation. The system manages 24 CodeBuild projects across a 9-layer deployment cascade with 3-gate validation, automated versioning via Release Please, and comprehensive security controls at every stage.</p>
+
+<div class="callout">
+  <div class="callout-title">Single Source of Truth</div>
+  CodeBuild is the <strong>ONLY</strong> authoritative deployment method. All manual deployments are prohibited to maintain audit trail consistency and IAM integrity. If a manual deployment occurs, the stack must be deleted and redeployed via CodeBuild.
+</div>
+</section>
+
+<!-- Section 2: End-to-End Execution Flow -->
+<section id="execution-flow">
+<h2>End-to-End Deployment Flow</h2>
+
+<div class="ascii-diagram"><span class="hl-dim">┌─────────────────────────────────────────────────────────────────────────┐</span>
+<span class="hl-dim">│</span>  <span class="hl-blue">1. Developer:</span> Create PR with conventional commit message                <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     Example: <span class="hl-green">feat(cicd): implement Release Please automation</span>            <span class="hl-dim">│</span>
+<span class="hl-dim">└───────────────────────────────┬─────────────────────────────────────────┘</span>
+                                <span class="hl-dim">▼</span>
+<span class="hl-dim">┌─────────────────────────────────────────────────────────────────────────┐</span>
+<span class="hl-dim">│</span>  <span class="hl-yellow">2. GitHub Actions:</span> Code Quality Checks (PR only)                       <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     ├─ Python linting (black, flake8, mypy, bandit)                     <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     ├─ Test execution (<span class="hl-green">pytest --cov-fail-under=70</span>)                      <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     └─ Security scanning (Trivy vulnerability scan → SARIF)             <span class="hl-dim">│</span>
+<span class="hl-dim">└───────────────────────────────┬─────────────────────────────────────────┘</span>
+                                <span class="hl-dim">▼</span>
+<span class="hl-dim">┌─────────────────────────────────────────────────────────────────────────┐</span>
+<span class="hl-dim">│</span>  <span class="hl-purple">3. GitHub Actions:</span> Aura Security Review (Agent-based LLM review)       <span class="hl-dim">│</span>
+<span class="hl-dim">└───────────────────────────────┬─────────────────────────────────────────┘</span>
+                                <span class="hl-dim">▼</span>
+<span class="hl-dim">┌─────────────────────────────────────────────────────────────────────────┐</span>
+<span class="hl-dim">│</span>  <span class="hl-cyan">4. Human:</span> Code Review &amp; Approval → Merge to main                      <span class="hl-dim">│</span>
+<span class="hl-dim">└───────────────────────────────┬─────────────────────────────────────────┘</span>
+                                <span class="hl-dim">▼</span>
+<span class="hl-dim">┌─────────────────────────────────────────────────────────────────────────┐</span>
+<span class="hl-dim">│</span>  <span class="hl-green">5. Release Please:</span> Analyze commits → Version bump → CHANGELOG.md      <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     └─ When Release PR merged: git tag (v1.6.1) + GitHub Release        <span class="hl-dim">│</span>
+<span class="hl-dim">└───────────────────────────────┬─────────────────────────────────────────┘</span>
+                                <span class="hl-dim">▼</span>
+<span class="hl-dim">┌─────────────────────────────────────────────────────────────────────────┐</span>
+<span class="hl-dim">│</span>  <span class="hl-red">6. CodeBuild Deployment</span> (triggered per-layer)                         <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     ┌─ <span class="hl-yellow">GATE 1:</span> Smoke tests (BLOCKING)                                  <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     ├─ <span class="hl-yellow">GATE 2:</span> cfn-lint template validation (BLOCKING)                 <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     ├─ <span class="hl-blue">BUILD:</span>  CloudFormation deploy (per-template)                    <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     └─ <span class="hl-green">GATE 3:</span> Post-deploy health checks (WARNING)                     <span class="hl-dim">│</span>
+<span class="hl-dim">└───────────────────────────────┬─────────────────────────────────────────┘</span>
+                                <span class="hl-dim">▼</span>
+<span class="hl-dim">┌─────────────────────────────────────────────────────────────────────────┐</span>
+<span class="hl-dim">│</span>  <span class="hl-green">7. Artifacts &amp; Monitoring</span>                                              <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     ├─ S3: Layer artifact buckets                                       <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     ├─ CloudWatch: Layer-specific log groups                            <span class="hl-dim">│</span>
+<span class="hl-dim">│</span>     └─ SNS: Success/failure notifications                               <span class="hl-dim">│</span>
+<span class="hl-dim">└─────────────────────────────────────────────────────────────────────────┘</span></div>
+</section>
+
+<!-- Section 3: 3-Gate Validation -->
+<section id="3-gate">
+<h2>3-Gate Validation System</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Every CodeBuild project implements a consistent 3-gate validation pipeline ensuring templates are valid, tests pass, and deployments are healthy.</p>
+
+<div class="gate-row blocking">
+  <div class="gate-num">1</div>
+  <div class="gate-info">
+    <div class="gate-name">Pre-Deployment Smoke Tests</div>
+    <div class="gate-tech">Phase: pre_build &middot; pytest tests/smoke/ &middot; Critical functionality checks &middot; Integration prerequisites</div>
+  </div>
+  <div class="gate-status"><span class="badge badge-blocking">Blocking</span></div>
+</div>
+<div class="gate-row blocking">
+  <div class="gate-num">2</div>
+  <div class="gate-info">
+    <div class="gate-name">CloudFormation Template Validation</div>
+    <div class="gate-tech">Phase: pre_build &middot; cfn-lint with wrapper script &middot; YAML syntax &middot; Schema compliance &middot; IAM action validation (W3037)</div>
+  </div>
+  <div class="gate-status"><span class="badge badge-blocking">Blocking</span></div>
+</div>
+<div class="gate-row warning">
+  <div class="gate-num">3</div>
+  <div class="gate-info">
+    <div class="gate-name">Post-Deployment Health Checks</div>
+    <div class="gate-tech">Phase: post_build &middot; Service endpoint availability &middot; EKS cluster readiness &middot; Database connectivity</div>
+  </div>
+  <div class="gate-status"><span class="badge badge-warning">Warning</span></div>
+</div>
+</section>
+
+<!-- Section 4: 9-Layer Cascade -->
+<section id="layers">
+<h2>9-Layer Deployment Cascade</h2>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Layers deploy sequentially with automatic dependency resolution. Total deployment time: ~90-150 minutes depending on environment size.</p>
+
+<div class="layer-card l1">
+  <div class="layer-header">
+    <div class="layer-title">Layer 1: Foundation</div>
+    <div class="layer-meta">8-10 min &middot; BUILD_GENERAL1_SMALL &middot; 30 min timeout</div>
+  </div>
+  <div class="layer-stacks">VPC &middot; Subnets &middot; Security Groups &middot; IAM Roles &middot; KMS &middot; VPC Endpoints &middot; WAF &middot; Network Services (dnsmasq) &middot; ECR Base Images</div>
+</div>
+<div class="layer-card l2">
+  <div class="layer-header">
+    <div class="layer-title">Layer 2: Data</div>
+    <div class="layer-meta">15-20 min &middot; BUILD_GENERAL1_MEDIUM &middot; 60 min timeout</div>
+  </div>
+  <div class="layer-stacks">Neptune (15-20 min) &middot; OpenSearch (15 min) &middot; DynamoDB (89+ tables) &middot; S3 &middot; ElastiCache &middot; Context Provenance &middot; Supply Chain &middot; AI Security</div>
+</div>
+<div class="layer-card l3">
+  <div class="layer-header">
+    <div class="layer-title">Layer 3: Compute</div>
+    <div class="layer-meta">20-30 min &middot; BUILD_GENERAL1_MEDIUM &middot; 60 min timeout</div>
+  </div>
+  <div class="layer-stacks">EKS Cluster &middot; Node Groups (general SPOT, memory ON_DEMAND, GPU SPOT) &middot; ECR Repositories &middot; IRSA Roles &middot; ACM Certificate &middot; ALB Controller &middot; Cluster Autoscaler</div>
+</div>
+<div class="layer-card l4">
+  <div class="layer-header">
+    <div class="layer-title">Layer 4: Application</div>
+    <div class="layer-meta">15-20 min &middot; BUILD_GENERAL1_SMALL &middot; 20 min timeout</div>
+  </div>
+  <div class="layer-stacks">Bedrock Integration &middot; Cognito &middot; Bedrock Guardrails &middot; IRSA (API, Memory, GPU, Env-Validator) &middot; Onboarding &middot; Identity &middot; React Frontend &middot; Marketing Site</div>
+</div>
+<div class="layer-card l5">
+  <div class="layer-header">
+    <div class="layer-title">Layer 5: Observability</div>
+    <div class="layer-meta">5-10 min &middot; BUILD_GENERAL1_SMALL &middot; 20 min timeout</div>
+  </div>
+  <div class="layer-stacks">Secrets Manager &middot; CloudWatch Monitoring &middot; Cost Alerts &middot; Disaster Recovery &middot; OTel Collector &middot; Log Retention &middot; GPU Monitoring &middot; DEV/QA Cost Schedulers</div>
+</div>
+<div class="layer-card l6">
+  <div class="layer-header">
+    <div class="layer-title">Layer 6: Serverless</div>
+    <div class="layer-meta">10-15 min &middot; BUILD_GENERAL1_SMALL &middot; 30 min timeout</div>
+  </div>
+  <div class="layer-stacks">Lambda Functions &middot; Step Functions &middot; EventBridge &middot; Chat Assistant &middot; Runbook Agent &middot; Incident Response &middot; Documentation Agent &middot; Environment Validator</div>
+</div>
+<div class="layer-card l7">
+  <div class="layer-header">
+    <div class="layer-title">Layer 7: Sandbox</div>
+    <div class="layer-meta">5-10 min &middot; HITL Testing &middot; Ephemeral Environments</div>
+  </div>
+  <div class="layer-stacks">HITL Approval Workflow &middot; Step Functions State Machine &middot; DynamoDB State &middot; ECS Sandbox Cluster &middot; Self-Play SWE-RL &middot; Service Catalog</div>
+</div>
+<div class="layer-card l8">
+  <div class="layer-header">
+    <div class="layer-title">Layer 8: Security</div>
+    <div class="layer-meta">5-10 min &middot; Compliance &middot; Runtime Security (8.6-8.9)</div>
+  </div>
+  <div class="layer-stacks">AWS Config (18 compliance rules) &middot; GuardDuty (S3, EKS, Malware) &middot; Drift Detection &middot; Runtime Security Interceptor &middot; Agent Discovery &middot; Behavioral Baselines &middot; Correlation</div>
+</div>
+<div class="layer-card l9">
+  <div class="layer-header">
+    <div class="layer-title">Layer 9: Scanning Engine</div>
+    <div class="layer-meta">5-10 min &middot; ADR-084 &middot; 9 stacks deployed to dev</div>
+  </div>
+  <div class="layer-stacks">DynamoDB &middot; S3 &middot; KMS &middot; SNS &middot; IAM &middot; Security Groups &middot; ECS Fargate &middot; Step Functions Pipeline &middot; ECR &middot; CloudWatch &middot; Lambda Cleanup &middot; EventBridge</div>
+</div>
+</section>
+
+<!-- Section 5: CodeBuild Projects -->
+<section id="codebuild">
+<h2>CodeBuild Projects (24 Total)</h2>
+
+<h3>Parent Layer Projects (9)</h3>
+<table>
+  <thead><tr><th>Layer</th><th>Project Name</th><th>Buildspec</th><th>Compute</th><th>Timeout</th></tr></thead>
+  <tbody>
+    <tr><td><strong>1</strong></td><td><code>aura-foundation-deploy-{env}</code></td><td>buildspec-foundation.yml</td><td>SMALL (3 GB)</td><td>30 min</td></tr>
+    <tr><td><strong>2</strong></td><td><code>aura-data-deploy-{env}</code></td><td>buildspec-data.yml</td><td>MEDIUM (7 GB)</td><td>60 min</td></tr>
+    <tr><td><strong>3</strong></td><td><code>aura-compute-deploy-{env}</code></td><td>buildspec-compute.yml</td><td>MEDIUM (7 GB)</td><td>60 min</td></tr>
+    <tr><td><strong>4</strong></td><td><code>aura-application-deploy-{env}</code></td><td>buildspec-application.yml</td><td>SMALL (3 GB)</td><td>20 min</td></tr>
+    <tr><td><strong>5</strong></td><td><code>aura-observability-deploy-{env}</code></td><td>buildspec-observability.yml</td><td>SMALL (3 GB)</td><td>20 min</td></tr>
+    <tr><td><strong>6</strong></td><td><code>aura-serverless-deploy-{env}</code></td><td>buildspec-serverless.yml</td><td>SMALL (3 GB)</td><td>30 min</td></tr>
+    <tr><td><strong>7</strong></td><td><code>aura-sandbox-deploy-{env}</code></td><td>buildspec-sandbox.yml</td><td>SMALL (3 GB)</td><td>30 min</td></tr>
+    <tr><td><strong>8</strong></td><td><code>aura-security-deploy-{env}</code></td><td>buildspec-security.yml</td><td>SMALL (3 GB)</td><td>30 min</td></tr>
+    <tr><td><strong>9</strong></td><td><code>aura-vuln-scan-deploy-{env}</code></td><td>buildspec-vuln-scan.yml</td><td>SMALL (3 GB)</td><td>30 min</td></tr>
+  </tbody>
+</table>
+
+<h3>Sub-Layer &amp; Specialized Projects (15)</h3>
+<table>
+  <thead><tr><th>Sub-Layer</th><th>Project Name</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td><code>aura-bootstrap-deploy-{env}</code></td><td>One-time: deploys all 24 CodeBuild projects</td></tr>
+    <tr><td>1.7</td><td><code>aura-network-services-deploy-{env}</code></td><td>dnsmasq ECS Fargate VPC-wide DNS</td></tr>
+    <tr><td>1.9</td><td><code>aura-docker-deploy-{env}</code></td><td>Container image builds for ECR</td></tr>
+    <tr><td>3.5</td><td><code>aura-k8s-deploy-{env}</code></td><td>Kubernetes manifest deployment</td></tr>
+    <tr><td>3.6</td><td><code>aura-integration-test-{env}</code></td><td>E2E integration testing</td></tr>
+    <tr><td>4.7</td><td><code>aura-frontend-deploy-{env}</code></td><td>React dashboard deployment</td></tr>
+    <tr><td>4.8</td><td><code>aura-marketing-deploy-{env}</code></td><td>Marketing site + docs portal</td></tr>
+    <tr><td>4.12</td><td><code>aura-application-identity-deploy-{env}</code></td><td>Multi-IdP authentication</td></tr>
+    <tr><td>6.7</td><td><code>aura-chat-assistant-deploy-{env}</code></td><td>WebSocket API, Bedrock chat</td></tr>
+    <tr><td>6.8</td><td><code>aura-runbook-agent-deploy-{env}</code></td><td>Automated documentation</td></tr>
+    <tr><td>6.9</td><td><code>aura-incident-response-deploy-{env}</code></td><td>Incident tracking, RCA workflows</td></tr>
+    <tr><td>6.12</td><td><code>aura-serverless-documentation-deploy-{env}</code></td><td>Cloud discovery, calibration pipeline</td></tr>
+    <tr><td>6.17</td><td><code>aura-env-validator-deploy-{env}</code></td><td>Drift detection Lambda</td></tr>
+    <tr><td>7.2-7.3</td><td><code>aura-ssr-deploy-{env}</code></td><td>Self-Play SWE-RL infrastructure</td></tr>
+    <tr><td>8.6-8.9</td><td><code>aura-runtime-security-deploy-{env}</code></td><td>ADR-083 interceptor, discovery, baselines, correlation</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- Section 6: Buildspecs -->
+<section id="buildspecs">
+<h2>Buildspec Files (38 Files, 9,284 Lines)</h2>
+
+<h3>Core Layer Buildspecs</h3>
+<table>
+  <thead><tr><th>File</th><th>Lines</th><th>Layer</th><th>Key Deployments</th></tr></thead>
+  <tbody>
+    <tr><td><code>buildspec-foundation.yml</code></td><td>587</td><td>1</td><td>SSM, Networking, Security Groups, IAM, KMS, VPC Endpoints, ECR, WAF</td></tr>
+    <tr><td><code>buildspec-data.yml</code></td><td>502</td><td>2</td><td>Neptune, OpenSearch, DynamoDB, S3, ElastiCache, context/supply-chain tables</td></tr>
+    <tr><td><code>buildspec-compute.yml</code></td><td>893</td><td>3</td><td>EKS, Node Groups (3), ACM, ALB Controller, IRSA, Cluster Autoscaler</td></tr>
+    <tr><td><code>buildspec-application.yml</code></td><td>1,820</td><td>4</td><td>Bedrock, ECR repos, Cognito, Guardrails, IRSA roles, Onboarding, Identity</td></tr>
+    <tr><td><code>buildspec-observability.yml</code></td><td>598</td><td>5</td><td>Secrets Manager, Monitoring, Cost Alerts, DR, OTel, Log Retention, Schedulers</td></tr>
+    <tr><td><code>buildspec-serverless.yml</code></td><td>416</td><td>6</td><td>Lambda, Step Functions, EventBridge</td></tr>
+    <tr><td><code>buildspec-sandbox.yml</code></td><td>441</td><td>7</td><td>HITL Workflow, Self-Play, ECS Sandbox, Service Catalog</td></tr>
+    <tr><td><code>buildspec-security.yml</code></td><td>364</td><td>8</td><td>AWS Config (18 rules), GuardDuty, Drift Detection</td></tr>
+    <tr><td><code>buildspec-bootstrap.yml</code></td><td>287</td><td>0</td><td>All 24 CodeBuild project stacks</td></tr>
+    <tr><td><code>buildspec-vuln-scan.yml</code></td><td>238</td><td>9</td><td>Scanning engine infrastructure (9 stacks)</td></tr>
+  </tbody>
+</table>
+
+<h3>Sub-Layer &amp; Service Buildspecs (28 additional)</h3>
+<div class="two-col">
+  <div>
+    <h4>Application Sub-layers</h4>
+    <table>
+      <tbody>
+        <tr><td><code>buildspec-application-bedrock.yml</code></td><td>106</td></tr>
+        <tr><td><code>buildspec-application-ecr.yml</code></td><td>179</td></tr>
+        <tr><td><code>buildspec-application-irsa.yml</code></td><td>209</td></tr>
+        <tr><td><code>buildspec-application-k8s.yml</code></td><td>224</td></tr>
+        <tr><td><code>buildspec-application-identity.yml</code></td><td>98</td></tr>
+        <tr><td><code>buildspec-coordinator.yml</code></td><td>313</td></tr>
+        <tr><td><code>buildspec-frontend.yml</code></td><td>89</td></tr>
+        <tr><td><code>buildspec-marketing.yml</code></td><td>142</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <h4>Serverless Sub-layers</h4>
+    <table>
+      <tbody>
+        <tr><td><code>buildspec-serverless-lambdas.yml</code></td><td>298</td></tr>
+        <tr><td><code>buildspec-serverless-stacks.yml</code></td><td>276</td></tr>
+        <tr><td><code>buildspec-serverless-scheduling.yml</code></td><td>42</td></tr>
+        <tr><td><code>buildspec-serverless-security.yml</code></td><td>289</td></tr>
+        <tr><td><code>buildspec-serverless-documentation.yml</code></td><td>187</td></tr>
+        <tr><td><code>buildspec-chat-assistant.yml</code></td><td>123</td></tr>
+        <tr><td><code>buildspec-runbook-agent.yml</code></td><td>298</td></tr>
+        <tr><td><code>buildspec-incident-response.yml</code></td><td>312</td></tr>
+        <tr><td><code>buildspec-env-validator.yml</code></td><td>89</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="callout">
+  <div class="callout-title">Buildspec Size Limit: 600 Lines Maximum</div>
+  Prevents hitting AWS CodeBuild service limits. The largest buildspec is <code>buildspec-application.yml</code> at 1,820 lines (pre-modularization; split into sub-buildspecs for execution).
+</div>
+</section>
+
+<!-- Section 7: GitHub Actions -->
+<section id="github-actions">
+<h2>GitHub Actions Workflows (6)</h2>
+
+<div class="three-col">
+  <div class="workflow-card">
+    <div class="wf-name">Release Please</div>
+    <div class="wf-trigger">Trigger: push to main</div>
+    <div class="wf-desc">Automated changelog generation, semantic versioning, and GitHub Release creation. Analyzes conventional commits to determine version bumps. Current: v1.6.1</div>
+  </div>
+  <div class="workflow-card">
+    <div class="wf-name">Code Quality</div>
+    <div class="wf-trigger">Trigger: PR to main/develop, push to main</div>
+    <div class="wf-desc">Python linting (black, flake8, mypy, bandit), pytest with 70% coverage minimum, Trivy vulnerability scan (CRITICAL/HIGH → SARIF). 25 min timeout.</div>
+  </div>
+  <div class="workflow-card">
+    <div class="wf-name">Nightly IAM Validation</div>
+    <div class="wf-trigger">Trigger: daily at 2 AM UTC</div>
+    <div class="wf-desc">Validates IAM actions in all 168 CloudFormation templates. Runs cfn-lint + validate_iam_actions.py. Creates GitHub issue for invalid actions. 30-day artifact retention.</div>
+  </div>
+  <div class="workflow-card">
+    <div class="wf-name">Aura Security Review</div>
+    <div class="wf-trigger">Trigger: PR to main/develop</div>
+    <div class="wf-desc">Agent-based LLM security code review via Aura API. Analyzes Python/YAML diffs. Skips Dependabot and docs-only PRs.</div>
+  </div>
+  <div class="workflow-card">
+    <div class="wf-name">Aura CI Autofix</div>
+    <div class="wf-trigger">Trigger: automated</div>
+    <div class="wf-desc">Automated fixes for code quality and security issues detected during CI checks.</div>
+  </div>
+  <div class="workflow-card">
+    <div class="wf-name">Aura Webhook</div>
+    <div class="wf-trigger">Trigger: GitHub events</div>
+    <div class="wf-desc">Real-time webhook integration for notifications and event-driven automation.</div>
+  </div>
+</div>
+</section>
+
+<!-- Section 8: Pre-Commit Hooks -->
+<section id="pre-commit">
+<h2>Pre-Commit Hooks (18 Total)</h2>
+
+<h3>Custom Aura Security Hooks (3)</h3>
+<div class="hook-grid">
+  <div class="hook-item" style="border-left:3px solid var(--critical);">
+    <div class="hook-name">aura-secrets-scan</div>
+    <div class="hook-desc">Detects hardcoded API keys, passwords, tokens. Excludes tests/docs/archive. Runs <code>scripts.security_hooks.secrets_hook</code></div>
+  </div>
+  <div class="hook-item" style="border-left:3px solid var(--medium);">
+    <div class="hook-name">aura-config-validation</div>
+    <div class="hook-desc">Validates YAML/JSON/INI/ENV files for security issues. Runs <code>scripts.security_hooks.config_hook</code></div>
+  </div>
+  <div class="hook-item" style="border-left:3px solid var(--purple);">
+    <div class="hook-name">aura-strip-ai-attribution</div>
+    <div class="hook-desc">Removes Claude/AI attribution from commit messages. Stage: commit-msg. Enforces CLAUDE.md policy.</div>
+  </div>
+</div>
+
+<h3>Code Quality Hooks (5)</h3>
+<div class="hook-grid">
+  <div class="hook-item"><div class="hook-name">black (24.3.0)</div><div class="hook-desc">Python code formatting, 88-char line length</div></div>
+  <div class="hook-item"><div class="hook-name">flake8 (7.0.0)</div><div class="hook-desc">Linting (E501, W503, E203 ignored for black compatibility)</div></div>
+  <div class="hook-item"><div class="hook-name">isort (5.13.2)</div><div class="hook-desc">Import sorting with black profile</div></div>
+  <div class="hook-item"><div class="hook-name">bandit (1.7.7)</div><div class="hook-desc">Security analysis, MEDIUM+ severity only</div></div>
+  <div class="hook-item"><div class="hook-name">markdownlint (0.39.0)</div><div class="hook-desc">Markdown validation (MD013, MD033, MD041 disabled)</div></div>
+</div>
+
+<h3>File Validation Hooks (10)</h3>
+<div class="hook-grid">
+  <div class="hook-item"><div class="hook-name">no-commit-to-branch</div><div class="hook-desc">Blocks direct commits to main/master</div></div>
+  <div class="hook-item"><div class="hook-name">detect-private-key</div><div class="hook-desc">Prevents committing private keys</div></div>
+  <div class="hook-item"><div class="hook-name">check-added-large-files</div><div class="hook-desc">500 KB maximum file size</div></div>
+  <div class="hook-item"><div class="hook-name">check-yaml</div><div class="hook-desc">YAML syntax (--unsafe for CloudFormation)</div></div>
+  <div class="hook-item"><div class="hook-name">check-json / check-toml</div><div class="hook-desc">JSON and TOML syntax validation</div></div>
+  <div class="hook-item"><div class="hook-name">check-merge-conflict</div><div class="hook-desc">Detects merge conflict markers</div></div>
+  <div class="hook-item"><div class="hook-name">check-case-conflict</div><div class="hook-desc">Filesystem case sensitivity check</div></div>
+  <div class="hook-item"><div class="hook-name">check-executables-have-shebangs</div><div class="hook-desc">Executable validation</div></div>
+  <div class="hook-item"><div class="hook-name">end-of-file-fixer</div><div class="hook-desc">Ensures newline endings (excludes .svg, .lock)</div></div>
+  <div class="hook-item"><div class="hook-name">trailing-whitespace</div><div class="hook-desc">Removes trailing whitespace (excludes .md)</div></div>
+</div>
+</section>
+
+<!-- Section 9: Release Please -->
+<section id="release-please">
+<h2>Release Please (Automated Versioning)</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title">Configuration</div>
+    <table>
+      <tbody>
+        <tr><td><strong>Release Type</strong></td><td>Python</td></tr>
+        <tr><td><strong>Current Version</strong></td><td>v1.6.1</td></tr>
+        <tr><td><strong>Changelog</strong></td><td>CHANGELOG.md (auto-generated)</td></tr>
+        <tr><td><strong>Commit Search Depth</strong></td><td>100 commits</td></tr>
+        <tr><td><strong>Release Search Depth</strong></td><td>50 releases</td></tr>
+        <tr><td><strong>Extra Files Updated</strong></td><td>PROJECT_STATUS.md, pyproject.toml</td></tr>
+        <tr><td><strong>Tag Format</strong></td><td>v1.6.1 + v1.6 + v1</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="card-title">Conventional Commit &rarr; Version Bump</div>
+    <table>
+      <thead><tr><th>Prefix</th><th>Bump</th><th>Changelog Section</th></tr></thead>
+      <tbody>
+        <tr><td><code>feat:</code></td><td>MINOR</td><td>Features</td></tr>
+        <tr><td><code>fix:</code></td><td>PATCH</td><td>Bug Fixes</td></tr>
+        <tr><td><code>perf:</code></td><td>PATCH</td><td>Performance</td></tr>
+        <tr><td><code>security:</code></td><td>PATCH</td><td>Security</td></tr>
+        <tr><td><code>feat!:</code> / <code>BREAKING CHANGE:</code></td><td>MAJOR</td><td>Features</td></tr>
+        <tr><td><code>docs:</code></td><td>PATCH</td><td>Documentation</td></tr>
+        <tr><td><code>chore:</code> / <code>refactor:</code> / <code>test:</code></td><td>&mdash;</td><td><em>Hidden</em></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</section>
+
+<!-- Section 10: cfn-lint -->
+<section id="cfn-lint">
+<h2>CloudFormation Validation (cfn-lint)</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title">.cfnlintrc Configuration</div>
+    <table>
+      <thead><tr><th>Setting</th><th>Value</th><th>Rationale</th></tr></thead>
+      <tbody>
+        <tr><td>W3002</td><td><span class="badge badge-warning">Ignored</span></td><td>Dynamic references handled at deploy time</td></tr>
+        <tr><td>W1020</td><td><span class="badge badge-warning">Ignored</span></td><td>Fn::Sub with static strings for consistency</td></tr>
+        <tr><td>W3037</td><td><span class="badge badge-blocking">Enforced</span></td><td>IAM action validation (catches unrecognized actions)</td></tr>
+        <tr><td>E3012</td><td>strict: false</td><td>Allow dynamic values in properties</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="card-title">cfn-lint-wrapper.sh Exit Codes</div>
+    <table>
+      <thead><tr><th>Code</th><th>Meaning</th><th>Build Impact</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>No errors or warnings</td><td><span class="badge badge-deployed">Pass</span></td></tr>
+        <tr><td>4</td><td>Warnings only</td><td><span class="badge badge-deployed">Pass</span> (non-blocking)</td></tr>
+        <tr><td>2</td><td>Parse error</td><td><span class="badge badge-blocking">Fail</span></td></tr>
+        <tr><td>6</td><td>Errors found</td><td><span class="badge badge-blocking">Fail</span></td></tr>
+        <tr><td>8</td><td>Errors + warnings</td><td><span class="badge badge-blocking">Fail</span></td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12px;color:var(--text-secondary);margin-top:8px;"><strong>Nightly:</strong> <code>validate_iam_actions.py</code> runs at 2 AM UTC via GitHub Actions, creates issues for invalid IAM actions.</p>
+  </div>
+</div>
+</section>
+
+<!-- Section 11: Deployment Scripts -->
+<section id="scripts">
+<h2>Deployment Scripts (66 Total)</h2>
+
+<div class="three-col">
+  <div class="card">
+    <div class="card-title">Core Layer Scripts (8)</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li><code>deploy-foundation.sh</code></li>
+      <li><code>deploy-data.sh</code></li>
+      <li><code>deploy-compute.sh</code></li>
+      <li><code>deploy-application.sh</code></li>
+      <li><code>deploy-observability.sh</code></li>
+      <li><code>deploy-serverless.sh</code></li>
+      <li><code>deploy-sandbox.sh</code></li>
+      <li><code>deploy-security.sh</code></li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-title">CodeBuild Trigger Scripts (16+)</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li><code>deploy-*-codebuild.sh</code> (one per layer)</li>
+      <li><code>deploy-network-services-codebuild.sh</code></li>
+      <li><code>deploy-frontend-codebuild.sh</code></li>
+      <li><code>deploy-marketing-codebuild.sh</code></li>
+      <li><code>deploy-identity-codebuild.sh</code></li>
+      <li><code>deploy-chat-assistant-codebuild.sh</code></li>
+      <li><code>deploy-documentation-codebuild.sh</code></li>
+      <li><code>deploy-incident-response-codebuild.sh</code></li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-title">Utility &amp; Infrastructure (40+)</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li><code>bootstrap-fresh-account.sh</code></li>
+      <li><code>bootstrap-base-images.sh</code></li>
+      <li><code>cfn-lint-wrapper.sh</code></li>
+      <li><code>validate-deployment.sh</code></li>
+      <li><code>package-lambdas.sh</code></li>
+      <li><code>update-eks-node-ami.sh</code></li>
+      <li><code>harden-eks-nodes.sh</code></li>
+      <li><code>validate-stig-fips.sh</code></li>
+      <li><code>eks-readiness.sh</code></li>
+      <li><code>update-dnsmasq-blocklist.sh</code></li>
+      <li>+ 30 more utility scripts</li>
+    </ul>
+  </div>
+</div>
+</section>
+
+<!-- Section 12: Environment Management -->
+<section id="environments">
+<h2>Environment Management</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title">DEV Cost Scheduler (Layer 5.11)</div>
+    <div class="metric-grid" style="grid-template-columns:repeat(2,1fr);">
+      <div class="metric-item"><div class="value" style="color:var(--success);">$115-145</div><div class="label">Monthly Savings</div></div>
+      <div class="metric-item"><div class="value">27-37%</div><div class="label">Compute Reduction</div></div>
+    </div>
+    <table style="margin-top:10px;">
+      <thead><tr><th>Action</th><th>Schedule</th></tr></thead>
+      <tbody>
+        <tr><td>Scale Down</td><td>1:00 UTC daily (off-hours)</td></tr>
+        <tr><td>Scale Up</td><td>12:00 UTC Mon-Fri (business hours)</td></tr>
+        <tr><td>Weekends</td><td>Fully off</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12px;color:var(--text-secondary);margin-top:8px;">Manages 3 EKS nodegroups: general (SPOT), memory (ON_DEMAND), GPU (SPOT). Uses Lambda + EventBridge + SNS.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">QA Kill-Switch</div>
+    <div class="metric-grid" style="grid-template-columns:repeat(2,1fr);">
+      <div class="metric-item"><div class="value" style="color:var(--success);">Significant</div><div class="label">Monthly Savings</div></div>
+      <div class="metric-item"><div class="value">9</div><div class="label">Stacks Managed</div></div>
+    </div>
+    <table style="margin-top:10px;">
+      <thead><tr><th>Stack</th><th>Cost/mo</th></tr></thead>
+      <tbody>
+        <tr><td>Neptune</td><td>~$90</td></tr>
+        <tr><td>EKS Control Plane</td><td>~$73</td></tr>
+        <tr><td>VPC Endpoints</td><td>~$58</td></tr>
+        <tr><td>EKS Node Groups (3)</td><td>~$35</td></tr>
+        <tr><td>OpenSearch + ElastiCache + dnsmasq</td><td>~$52</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12px;color:var(--text-secondary);margin-top:8px;">QA shut down Feb 15, 2026. Safety: qa-only hardcoded, dry-run default, interactive confirmation, S3 state persistence.</p>
+  </div>
+</div>
+
+<h3>Stack Deployment Status</h3>
+<table>
+  <thead><tr><th>Environment</th><th>Stacks</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td><strong>DEV</strong></td><td>137 stacks</td><td><span class="badge badge-deployed">Operational</span></td></tr>
+    <tr><td><strong>QA</strong></td><td>111 deployed, 9 shut down</td><td><span class="badge badge-warning">Dormant</span> (significant savings)</td></tr>
+    <tr><td><strong>PROD</strong></td><td>0</td><td><span class="badge badge-info">Planned</span></td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- Section 13: Container Pipeline -->
+<section id="containers">
+<h2>Container Build Pipeline</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title">Private ECR Base Images (Mandatory)</div>
+    <table>
+      <thead><tr><th>Image</th><th>Tag</th></tr></thead>
+      <tbody>
+        <tr><td><code>aura-base-images/python</code></td><td>3.11-slim</td></tr>
+        <tr><td><code>aura-base-images/alpine</code></td><td>3.19</td></tr>
+        <tr><td><code>aura-base-images/node</code></td><td>20-slim</td></tr>
+        <tr><td><code>aura-base-images/nginx</code></td><td>1.25</td></tr>
+      </tbody>
+    </table>
+    <div class="callout warning" style="margin-top:10px;">
+      <div class="callout-title">Public Registries Prohibited</div>
+      Docker Hub, public ECR, and GHCR are banned. Private images are scanned, hardened, and tracked with vulnerability scanning.
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Build Pattern</div>
+    <h4>Local Development (Podman-first)</h4>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Podman is primary runtime to avoid Docker Desktop licensing fees (ADR-049).</p>
+    <h4>CI/CD Build Flow</h4>
+    <ol style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li>Get AWS account ID via <code>aws sts get-caller-identity</code></li>
+      <li>Construct private base image URI</li>
+      <li>Build with <code>--build-arg PYTHON_BASE_IMAGE=${PRIVATE_BASE}</code></li>
+      <li>Tag and push to private ECR</li>
+      <li>K8s admission controller verifies image signature</li>
+    </ol>
+    <p style="font-size:12px;color:var(--text-secondary);margin-top:8px;">Always use <code>--platform linux/amd64</code> on Apple Silicon.</p>
+  </div>
+</div>
+</section>
+
+<!-- Section 14: Key Patterns -->
+<section id="patterns">
+<h2>Key Deployment Patterns</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title">Idempotent CloudFormation Deploy</div>
+    <div class="ascii-diagram" style="font-size:11px;padding:14px 18px;"><span class="hl-green">aws cloudformation deploy</span> \
+  --stack-name ${PROJECT}-&lt;layer&gt;-${ENV} \
+  --template-file deploy/cloudformation/&lt;template&gt;.yaml \
+  --parameter-overrides &lt;params&gt; \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --tags Project=$PROJECT Environment=$ENV \
+  <span class="hl-yellow">--no-fail-on-empty-changeset</span> \
+  --region $AWS_DEFAULT_REGION</div>
+    <ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;">
+      <li><code>--no-fail-on-empty-changeset</code>: Safe for CI/CD (no error when no changes)</li>
+      <li><code>CAPABILITY_NAMED_IAM</code>: Required for custom IAM resource names</li>
+      <li>Tags for cost allocation and governance</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Stack State Machine Handling</div>
+    <table>
+      <thead><tr><th>State</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><code>DOES_NOT_EXIST</code></td><td>Create new stack</td></tr>
+        <tr><td><code>CREATE_COMPLETE</code></td><td>Update via deploy</td></tr>
+        <tr><td><code>UPDATE_COMPLETE</code></td><td>Update via deploy</td></tr>
+        <tr><td><code>ROLLBACK_COMPLETE</code></td><td>Delete &amp; recreate</td></tr>
+        <tr><td><code>ROLLBACK_FAILED</code></td><td>Delete &amp; recreate</td></tr>
+        <tr><td><code>*_IN_PROGRESS</code></td><td>Exit with error (wait)</td></tr>
+        <tr><td><code>DELETE_FAILED</code></td><td>Manual intervention</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h3>Buildspec Phase Structure</h3>
+<div class="pipeline">
+  <div class="pipeline-step"><div class="step-name">install</div><div class="step-detail">Python, cfn-lint, boto3</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step" style="border-color:var(--critical);"><div class="step-name" style="color:var(--critical);">pre_build</div><div class="step-detail">Gate 1 + Gate 2</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step" style="border-color:var(--brand);"><div class="step-name">build</div><div class="step-detail">CloudFormation deploy</div></div>
+  <div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step" style="border-color:var(--success);"><div class="step-name" style="color:var(--success);">post_build</div><div class="step-detail">Gate 3 + artifacts</div></div>
+</div>
+</section>
+
+<!-- Section 15: Critical Rules -->
+<section id="rules">
+<h2>Critical CI/CD Rules</h2>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-title" style="color:var(--critical);">Prohibitions</div>
+    <table>
+      <tbody>
+        <tr><td><strong>No Manual Deployments</strong></td><td>Breaks audit trail and IAM consistency. Fix: delete stack &rarr; redeploy via CodeBuild.</td></tr>
+        <tr><td><strong>No Duplicate Builds</strong></td><td>Never trigger CodeBuild while another build is running. Check: <code>list-builds-for-project</code></td></tr>
+        <tr><td><strong>No Hardcoded Secrets</strong></td><td>Use Secrets Manager or SSM. Pre-commit hook blocks credential commits.</td></tr>
+        <tr><td><strong>No Hardcoded Values</strong></td><td>Always use <code>${AWS::AccountId}</code>, <code>!Sub</code>, <code>!Ref</code>. Never hardcode account IDs or endpoints.</td></tr>
+        <tr><td><strong>No Public Images</strong></td><td>All container builds MUST use private ECR base images.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:var(--success);">Requirements</div>
+    <table>
+      <tbody>
+        <tr><td><strong>70% Test Coverage</strong></td><td>Enforced in <code>pyproject.toml</code>. Never lower. Add tests instead.</td></tr>
+        <tr><td><strong>600-Line Buildspec Max</strong></td><td>Split into sub-buildspecs when approaching limit.</td></tr>
+        <tr><td><strong>10 KB IAM Policy Max</strong></td><td>Use managed policies for large permission sets.</td></tr>
+        <tr><td><strong>Conventional Commits</strong></td><td>Required for Release Please: <code>feat:</code>, <code>fix:</code>, <code>docs:</code>, etc.</td></tr>
+        <tr><td><strong>GovCloud Partitions</strong></td><td>Always use <code>${AWS::Partition}</code>. Never hardcode <code>arn:aws</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</section>
+
+<!-- Section 16: Statistics -->
+<section id="stats">
+<h2>Key Statistics</h2>
+
+<div class="exec-summary" style="grid-template-columns:repeat(4,1fr);">
+  <div class="exec-card"><div class="number">24</div><div class="label">CodeBuild Projects</div></div>
+  <div class="exec-card"><div class="number purple">38</div><div class="label">Buildspec Files</div></div>
+  <div class="exec-card"><div class="number">9,284</div><div class="label">Buildspec Lines</div></div>
+  <div class="exec-card"><div class="number green">168</div><div class="label">CloudFormation Templates</div></div>
+  <div class="exec-card"><div class="number orange">137</div><div class="label">Stacks (DEV)</div></div>
+  <div class="exec-card"><div class="number">111</div><div class="label">Stacks (QA)</div></div>
+  <div class="exec-card"><div class="number">66</div><div class="label">Deployment Scripts</div></div>
+  <div class="exec-card"><div class="number green">6</div><div class="label">GitHub Workflows</div></div>
+  <div class="exec-card"><div class="number">18</div><div class="label">Pre-Commit Hooks</div></div>
+  <div class="exec-card"><div class="number">3</div><div class="label">Validation Gates</div></div>
+  <div class="exec-card"><div class="number green">v1.6.1</div><div class="label">Current Version</div></div>
+  <div class="exec-card"><div class="number" style="font-size:28px;">90-150m</div><div class="label">Full Deploy Time</div></div>
+  <div class="exec-card"><div class="number" style="color:var(--success);">Significant</div><div class="label">QA Monthly Savings</div></div>
+  <div class="exec-card"><div class="number" style="color:var(--success);">$145</div><div class="label">DEV Monthly Savings</div></div>
+  <div class="exec-card"><div class="number">70%</div><div class="label">Min Test Coverage</div></div>
+  <div class="exec-card"><div class="number">10 KB</div><div class="label">IAM Policy Limit</div></div>
+</div>
+
+<div class="callout success">
+  <div class="callout-title">Pipeline Summary</div>
+  Project Aura's CI/CD system is a comprehensive, production-grade automation platform: 24 CodeBuild projects managing a 9-layer deployment cascade, 38 buildspecs with 3-gate validation, 168 CloudFormation templates with idempotent state machine handling, 6 GitHub Actions workflows for code quality and automated releases, 18 pre-commit hooks for security enforcement, and cost optimization saving $453+/month across environments.
+</div>
+</section>
+
+</div>
+
+<div class="footer">
+  Aenea Labs &middot; Project Aura &middot; CI/CD Pipeline &amp; Deployment Automation &middot; February 2026
+</div>
+
+</body>
+</html>

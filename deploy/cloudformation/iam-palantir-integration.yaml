@@ -1,0 +1,529 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.13 - Palantir AIP Integration IAM (ADR-074)'
+
+# ===========================================================================
+# Palantir AIP Integration IAM Roles and Policies
+# ===========================================================================
+# This template creates IAM resources for the Palantir AIP integration:
+# - Service role for Ontology Bridge, Event Stream, and Federated Identity
+# - Managed policies for least-privilege access
+# - Support for both commercial AWS and GovCloud partitions
+#
+# Reference: docs/architecture-decisions/ADR-074-palantir-aip-integration.md
+# ===========================================================================
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  EKSOIDCProviderArn:
+    Type: String
+    Default: ''
+    Description: ARN of the EKS OIDC provider for IRSA (leave empty to skip IRSA configuration)
+
+  EKSOIDCIssuer:
+    Type: String
+    Default: ''
+    Description: OIDC issuer URL for EKS cluster (without https://)
+
+Conditions:
+  HasOIDCProvider: !Not [!Equals [!Ref EKSOIDCProviderArn, '']]
+
+Resources:
+  # ===========================================================================
+  # Palantir Integration Service Role
+  # ===========================================================================
+  PalantirIntegrationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-palantir-integration-role-${Environment}'
+      AssumeRolePolicyDocument: !If
+        - HasOIDCProvider
+        - !Sub
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCIssuer}:aud": "sts.amazonaws.com",
+                      "${OIDCIssuer}:sub": [
+                        "system:serviceaccount:${ProjectName}:palantir-ontology-bridge",
+                        "system:serviceaccount:${ProjectName}:palantir-event-stream",
+                        "system:serviceaccount:${ProjectName}:palantir-identity"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "lambda.amazonaws.com"
+                  },
+                  "Action": "sts:AssumeRole"
+                },
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "ecs-tasks.amazonaws.com"
+                  },
+                  "Action": "sts:AssumeRole"
+                }
+              ]
+            }
+          - OIDCArn: !Ref EKSOIDCProviderArn
+            OIDCIssuer: !Ref EKSOIDCIssuer
+            ProjectName: !Ref ProjectName
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: lambda.amazonaws.com
+              Action: sts:AssumeRole
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref PalantirOntologyBridgePolicy
+        - !Ref PalantirEventStreamPolicy
+        - !Ref PalantirObservabilityPolicy
+        - !Ref PalantirSecretsManagementPolicy
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Integration
+          Value: palantir-aip
+        - Key: ADR
+          Value: ADR-074
+
+  # ===========================================================================
+  # Policy 1: Ontology Bridge Service
+  # ===========================================================================
+  PalantirOntologyBridgePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-palantir-ontology-bridge-${Environment}'
+      Description: 'Permissions for Palantir Ontology Bridge Service (ADR-074)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # DynamoDB: Object mapping tables and sync state
+          - Sid: OntologyMappingTables
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-palantir-tenant-mapping-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-palantir-tenant-mapping-${Environment}/index/*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-palantir-object-sync-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-palantir-object-sync-${Environment}/index/*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-palantir-conflict-audit-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-palantir-conflict-audit-${Environment}/index/*'
+
+          # ElastiCache: Describe only (data access via VPC/SG)
+          - Sid: OntologyCacheDescribe
+            Effect: Allow
+            Action:
+              - elasticache:DescribeReplicationGroups
+              - elasticache:DescribeCacheClusters
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:replicationgroup:${ProjectName}-redis-${Environment}'
+
+          # CloudWatch Logs: Sync operation logging
+          - Sid: OntologySyncLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/palantir/ontology-bridge-${Environment}:*'
+
+  # ===========================================================================
+  # Policy 2: Event Stream Connector
+  # ===========================================================================
+  PalantirEventStreamPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-palantir-event-stream-${Environment}'
+      Description: 'Permissions for Palantir Event Stream Connector (ADR-074)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Kinesis: Event publishing to Palantir
+          - Sid: EventStreamKinesis
+            Effect: Allow
+            Action:
+              - kinesis:PutRecord
+              - kinesis:PutRecords
+              - kinesis:DescribeStream
+              - kinesis:DescribeStreamSummary
+              - kinesis:GetShardIterator
+              - kinesis:GetRecords
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${ProjectName}-palantir-events-${Environment}'
+
+          # SQS: Dead Letter Queue for failed deliveries
+          - Sid: EventStreamDLQ
+            Effect: Allow
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:ChangeMessageVisibility
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-palantir-events-dlq-${Environment}'
+
+          # S3: Large payload storage (events >256KB)
+          - Sid: EventStreamLargePayloads
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-palantir-events-${Environment}/*'
+
+          - Sid: EventStreamBucketAccess
+            Effect: Allow
+            Action:
+              - s3:GetBucketLocation
+              - s3:ListBucket
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-palantir-events-${Environment}'
+
+          # CloudWatch Logs: Event delivery logging
+          - Sid: EventStreamLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/palantir/event-stream-${Environment}:*'
+
+  # ===========================================================================
+  # Policy 3: Federated Identity Provider
+  # ===========================================================================
+  PalantirFederatedIdentityPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-palantir-federated-identity-${Environment}'
+      Description: 'Permissions for Palantir Federated Identity (ADR-074)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Cognito: SAML identity provider management
+          - Sid: CognitoSAMLProvider
+            Effect: Allow
+            Action:
+              - cognito-idp:DescribeUserPool
+              - cognito-idp:DescribeIdentityProvider
+              - cognito-idp:CreateIdentityProvider
+              - cognito-idp:UpdateIdentityProvider
+              - cognito-idp:DeleteIdentityProvider
+              - cognito-idp:GetIdentityProviderByIdentifier
+              - cognito-idp:ListIdentityProviders
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+
+          # Cognito: User attribute synchronization
+          - Sid: CognitoUserManagement
+            Effect: Allow
+            Action:
+              - cognito-idp:AdminGetUser
+              - cognito-idp:AdminUpdateUserAttributes
+              - cognito-idp:AdminCreateUser
+              - cognito-idp:AdminAddUserToGroup
+              - cognito-idp:AdminRemoveUserFromGroup
+              - cognito-idp:AdminListGroupsForUser
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+
+          # CloudWatch Logs: Authentication event logging
+          - Sid: FederatedIdentityLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/palantir/federated-identity-${Environment}:*'
+
+  # ===========================================================================
+  # Policy 4: Observability Infrastructure
+  # ===========================================================================
+  PalantirObservabilityPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-palantir-observability-${Environment}'
+      Description: 'Permissions for Palantir Integration Observability (ADR-074)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # CloudWatch Metrics: Custom metrics publishing
+          - Sid: CustomMetrics
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricData
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'cloudwatch:namespace':
+                  - 'Aura/PalantirIntegration'
+                  - !Sub '${ProjectName}/${Environment}/Palantir'
+
+          # CloudWatch Alarms: Integration health alarms
+          - Sid: AlarmManagement
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricAlarm
+              - cloudwatch:DeleteAlarms
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:DescribeAlarmsForMetric
+              - cloudwatch:EnableAlarmActions
+              - cloudwatch:DisableAlarmActions
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-palantir-*-${Environment}'
+
+          # CloudWatch Dashboards: Integration dashboards
+          - Sid: DashboardManagement
+            Effect: Allow
+            Action:
+              - cloudwatch:PutDashboard
+              - cloudwatch:DeleteDashboards
+              - cloudwatch:GetDashboard
+              - cloudwatch:ListDashboards
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cloudwatch::${AWS::AccountId}:dashboard/${ProjectName}-palantir-*'
+
+          # SNS: Alarm notifications
+          - Sid: AlarmNotifications
+            Effect: Allow
+            Action:
+              - sns:Publish
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-palantir-alerts-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-ops-critical-${Environment}'
+
+          # CloudWatch Logs: Log group management
+          - Sid: LogGroupManagement
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:DeleteLogGroup
+              - logs:PutRetentionPolicy
+              - logs:DescribeLogGroups
+              - logs:TagLogGroup
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/palantir/*'
+
+          # CloudWatch Logs: Log stream operations
+          - Sid: LogStreamOperations
+            Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+              - logs:FilterLogEvents
+              - logs:GetLogEvents
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/palantir/*:*'
+
+  # ===========================================================================
+  # Policy 5: Secrets Management
+  # ===========================================================================
+  PalantirSecretsManagementPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-palantir-secrets-${Environment}'
+      Description: 'Permissions for Palantir Secrets Management (ADR-074)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Secrets Manager: Palantir API credentials
+          - Sid: PalantirSecrets
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+              - secretsmanager:PutSecretValue
+              - secretsmanager:UpdateSecret
+              - secretsmanager:RotateSecret
+              - secretsmanager:ListSecretVersionIds
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/palantir/*'
+
+          # Secrets Manager: Create/delete for initial setup
+          - Sid: PalantirSecretsLifecycle
+            Effect: Allow
+            Action:
+              - secretsmanager:CreateSecret
+              - secretsmanager:DeleteSecret
+              - secretsmanager:TagResource
+              - secretsmanager:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/palantir/*'
+
+          # Secrets Manager: Random password generation
+          - Sid: GeneratePasswords
+            Effect: Allow
+            Action:
+              - secretsmanager:GetRandomPassword
+            Resource: '*'
+
+          # KMS: Decrypt/encrypt secrets
+          - Sid: SecretsKMSAccess
+            Effect: Allow
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey
+              - kms:DescribeKey
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+
+          # ACM: mTLS certificate access (read-only)
+          - Sid: MTLSCertificates
+            Effect: Allow
+            Action:
+              - acm:DescribeCertificate
+              - acm:GetCertificate
+              - acm:ListCertificates
+              - acm:ListTagsForCertificate
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:acm:${AWS::Region}:${AWS::AccountId}:certificate/*'
+
+  # ===========================================================================
+  # CloudWatch Log Groups for Palantir Integration
+  # ===========================================================================
+  OntologyBridgeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/${ProjectName}/palantir/ontology-bridge-${Environment}'
+      RetentionInDays: !If [HasOIDCProvider, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Integration
+          Value: palantir-aip
+
+  EventStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/${ProjectName}/palantir/event-stream-${Environment}'
+      RetentionInDays: !If [HasOIDCProvider, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Integration
+          Value: palantir-aip
+
+  FederatedIdentityLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/${ProjectName}/palantir/federated-identity-${Environment}'
+      RetentionInDays: !If [HasOIDCProvider, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Integration
+          Value: palantir-aip
+
+Outputs:
+  PalantirIntegrationRoleArn:
+    Description: ARN of the Palantir Integration Role
+    Value: !GetAtt PalantirIntegrationRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PalantirIntegrationRoleArn'
+
+  PalantirIntegrationRoleName:
+    Description: Name of the Palantir Integration Role
+    Value: !Ref PalantirIntegrationRole
+    Export:
+      Name: !Sub '${AWS::StackName}-PalantirIntegrationRoleName'
+
+  OntologyBridgePolicyArn:
+    Description: ARN of the Ontology Bridge Policy
+    Value: !Ref PalantirOntologyBridgePolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-OntologyBridgePolicyArn'
+
+  EventStreamPolicyArn:
+    Description: ARN of the Event Stream Policy
+    Value: !Ref PalantirEventStreamPolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-EventStreamPolicyArn'
+
+  FederatedIdentityPolicyArn:
+    Description: ARN of the Federated Identity Policy
+    Value: !Ref PalantirFederatedIdentityPolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-FederatedIdentityPolicyArn'
+
+  ObservabilityPolicyArn:
+    Description: ARN of the Observability Policy
+    Value: !Ref PalantirObservabilityPolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-ObservabilityPolicyArn'
+
+  SecretsManagementPolicyArn:
+    Description: ARN of the Secrets Management Policy
+    Value: !Ref PalantirSecretsManagementPolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-SecretsManagementPolicyArn'
+
+  OntologyBridgeLogGroupArn:
+    Description: ARN of the Ontology Bridge Log Group
+    Value: !GetAtt OntologyBridgeLogGroup.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OntologyBridgeLogGroupArn'
+
+  EventStreamLogGroupArn:
+    Description: ARN of the Event Stream Log Group
+    Value: !GetAtt EventStreamLogGroup.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-EventStreamLogGroupArn'

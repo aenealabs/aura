@@ -1,0 +1,292 @@
+version: 0.2
+
+# Docker-Podman Build Layer: Lightweight buildspec for building and pushing container images only
+# Use this instead of full application layer when you only need to update Docker/Podman images
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Default image tag - can be overridden via CodeBuild environment variable override
+    IMAGE_TAG: "latest"
+    # Which image to build: api, dnsmasq, frontend, agent-orchestrator, agent, sandbox, memory-service
+    BUILD_TARGET: "api"
+    # Enable BuildKit for efficient layer caching
+    DOCKER_BUILDKIT: "1"
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Docker-Podman Build Project - Lightweight image builder"
+      # Configure ECR credential helper (eliminates password storage warnings)
+      - chmod +x deploy/scripts/configure-ecr-credential-helper.sh
+      - ./deploy/scripts/configure-ecr-credential-helper.sh
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - 'echo "Docker-Podman Build - ${BUILD_TARGET}"'
+      - echo "=========================================="
+      - 'echo "Build Target = $BUILD_TARGET"'
+      - 'echo "Image Tag = $IMAGE_TAG"'
+      - 'echo "Environment = $ENVIRONMENT"'
+
+      # Set repository name and base image type based on build target
+      - |
+        case "$BUILD_TARGET" in
+          api)
+            ECR_REPO_NAME="${PROJECT_NAME}-api-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/api/Dockerfile.api"
+            BUILD_CONTEXT="."
+            BASE_IMAGE_TYPE="python"
+            ;;
+          dnsmasq)
+            ECR_REPO_NAME="${PROJECT_NAME}-dnsmasq-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/dnsmasq/Dockerfile"
+            BUILD_CONTEXT="deploy/docker/dnsmasq/"
+            BASE_IMAGE_TYPE="alpine"
+            ;;
+          frontend)
+            ECR_REPO_NAME="${PROJECT_NAME}-frontend-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/frontend/Dockerfile.frontend"
+            BUILD_CONTEXT="."
+            BASE_IMAGE_TYPE="node"
+            ;;
+          agent-orchestrator)
+            # Agent Orchestrator: Multi-agent coordinator (Coder/Reviewer/Validator)
+            # NOT related to buildspec-coordinator.yml (CI/CD deployment coordinator)
+            ECR_REPO_NAME="${PROJECT_NAME}-agent-orchestrator-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/agents/Dockerfile.orchestrator"
+            BUILD_CONTEXT="."
+            BASE_IMAGE_TYPE="python"
+            ;;
+          agent)
+            ECR_REPO_NAME="${PROJECT_NAME}-agent-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/agents/Dockerfile.agent"
+            BUILD_CONTEXT="."
+            BASE_IMAGE_TYPE="python"
+            ;;
+          sandbox)
+            ECR_REPO_NAME="${PROJECT_NAME}-sandbox-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/sandbox/Dockerfile"
+            BUILD_CONTEXT="."
+            BASE_IMAGE_TYPE="python"
+            ;;
+          memory-service)
+            ECR_REPO_NAME="${PROJECT_NAME}-memory-service-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/memory-service/Dockerfile.memory-service"
+            BUILD_CONTEXT="."
+            BASE_IMAGE_TYPE="python"
+            ;;
+          meta-orchestrator)
+            # Meta Orchestrator: High-level orchestration across agent orchestrators
+            ECR_REPO_NAME="${PROJECT_NAME}-meta-orchestrator-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/meta-orchestrator/Dockerfile.meta-orchestrator"
+            BUILD_CONTEXT="."
+            BASE_IMAGE_TYPE="python"
+            ;;
+          memory-service-cpu)
+            ECR_REPO_NAME="${PROJECT_NAME}-memory-service-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/memory-service/Dockerfile.memory-service-cpu"
+            BUILD_CONTEXT="."
+            BASE_IMAGE_TYPE="python"
+            ;;
+          *)
+            echo "ERROR: Unknown build target: $BUILD_TARGET"
+            echo "Valid targets: api, dnsmasq, frontend, agent-orchestrator, agent, sandbox, memory-service, memory-service-cpu, meta-orchestrator"
+            exit 1
+            ;;
+        esac
+
+        ECR_REPO_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO_NAME}"
+        echo "ECR Repository: $ECR_REPO_URI"
+        echo "Dockerfile: $DOCKERFILE"
+        echo "Build Context: $BUILD_CONTEXT"
+        echo "Base Image Type: $BASE_IMAGE_TYPE"
+
+      # Get base image from private ECR (ADR-020: Controlled Supply Chain)
+      - |
+        echo "Getting base image from private ECR..."
+        BASE_IMAGES_STACK="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
+
+        case "$BASE_IMAGE_TYPE" in
+          python)
+            BASE_IMAGE_OUTPUT="PythonRepositoryUri"
+            BASE_IMAGE_TAG="3.11-slim"
+            BASE_IMAGE_ARG="PYTHON_BASE_IMAGE"
+            FALLBACK_IMAGE="public.ecr.aws/docker/library/python:3.11-slim"
+            ;;
+          alpine)
+            BASE_IMAGE_OUTPUT="AlpineRepositoryUri"
+            BASE_IMAGE_TAG="3.19"
+            BASE_IMAGE_ARG="BASE_IMAGE_URI"
+            FALLBACK_IMAGE="public.ecr.aws/docker/library/alpine:3.19"
+            ;;
+          node)
+            BASE_IMAGE_OUTPUT="NodeRepositoryUri"
+            BASE_IMAGE_TAG="20-alpine"
+            BASE_IMAGE_ARG="NODE_BASE_IMAGE_URI"
+            FALLBACK_IMAGE="public.ecr.aws/docker/library/node:20-alpine"
+            ;;
+          *)
+            echo "WARNING: Unknown base image type, skipping base image injection"
+            BASE_IMAGE_ARG=""
+            ;;
+        esac
+
+        if [ -n "$BASE_IMAGE_ARG" ]; then
+          BASE_IMAGE_URI_RAW=$(aws cloudformation describe-stacks --stack-name $BASE_IMAGES_STACK \
+            --query "Stacks[0].Outputs[?OutputKey==\`${BASE_IMAGE_OUTPUT}\`].OutputValue" \
+            --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+          if [[ -z "$BASE_IMAGE_URI_RAW" || "$BASE_IMAGE_URI_RAW" == "None" ]]; then
+            echo "Private ECR base image stack not found, using ECR Public Gallery fallback..."
+            BASE_IMAGE_URI="$FALLBACK_IMAGE"
+          else
+            # Extract repo name from URI (format: account.dkr.ecr.region.amazonaws.com/repo-name)
+            BASE_IMAGE_REPO_NAME=$(echo "$BASE_IMAGE_URI_RAW" | sed 's|.*/||')
+
+            # Verify the image tag actually exists in the private ECR repo
+            if aws ecr describe-images --repository-name "$BASE_IMAGE_REPO_NAME" --image-ids imageTag="$BASE_IMAGE_TAG" --region $AWS_DEFAULT_REGION 2>/dev/null; then
+              echo "Private ECR base image found: $BASE_IMAGE_REPO_NAME:$BASE_IMAGE_TAG"
+              BASE_IMAGE_URI="${BASE_IMAGE_URI_RAW}:${BASE_IMAGE_TAG}"
+            else
+              echo "Private ECR base image $BASE_IMAGE_REPO_NAME:$BASE_IMAGE_TAG not found, using ECR Public Gallery fallback..."
+              BASE_IMAGE_URI="$FALLBACK_IMAGE"
+            fi
+          fi
+          echo "Base Image URI: $BASE_IMAGE_URI"
+        fi
+
+      # Verify ECR repository exists
+      - |
+        if ! aws ecr describe-repositories --repository-names $ECR_REPO_NAME --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "ERROR: ECR repository $ECR_REPO_NAME does not exist"
+          echo "Please run the application layer first to create the repository"
+          exit 1
+        fi
+
+      # Verify Dockerfile exists
+      - |
+        if [ ! -f "$DOCKERFILE" ]; then
+          echo "ERROR: Dockerfile not found at $DOCKERFILE"
+          exit 1
+        fi
+
+  build:
+    commands:
+      - echo "Building container image (Docker/Podman compatible)..."
+      - COMMIT_SHA="${CODEBUILD_RESOLVED_SOURCE_VERSION:0:7}"
+      - BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+      # Pull cache image if it exists (for layer caching)
+      - |
+        echo "Attempting to pull cache image for layer reuse..."
+        docker pull ${ECR_REPO_URI}:cache 2>/dev/null || echo "No cache image found, building from scratch"
+
+      # Build with multiple tags and layer caching
+      # Pass base image from private ECR for controlled supply chain (ADR-020)
+      - |
+        BUILD_ARGS="--build-arg BUILDKIT_INLINE_CACHE=1"
+        BUILD_ARGS="$BUILD_ARGS --build-arg BUILD_TIME=$BUILD_TIME"
+        BUILD_ARGS="$BUILD_ARGS --build-arg COMMIT_SHA=$COMMIT_SHA"
+        BUILD_ARGS="$BUILD_ARGS --build-arg ENVIRONMENT=$ENVIRONMENT"
+
+        # Add base image arg if set (controlled supply chain)
+        if [ -n "$BASE_IMAGE_ARG" ] && [ -n "$BASE_IMAGE_URI" ]; then
+          BUILD_ARGS="$BUILD_ARGS --build-arg ${BASE_IMAGE_ARG}=${BASE_IMAGE_URI}"
+          echo "Using controlled base image: ${BASE_IMAGE_ARG}=${BASE_IMAGE_URI}"
+        fi
+
+        docker build \
+          --platform linux/amd64 \
+          $BUILD_ARGS \
+          --cache-from ${ECR_REPO_URI}:cache \
+          -t ${ECR_REPO_URI}:${IMAGE_TAG} \
+          -t ${ECR_REPO_URI}:${COMMIT_SHA} \
+          -t ${ECR_REPO_URI}:build-${CODEBUILD_BUILD_NUMBER} \
+          -t ${ECR_REPO_URI}:cache \
+          -f ${DOCKERFILE} \
+          ${BUILD_CONTEXT}
+
+      - echo "Container build completed successfully"
+      - docker images | grep ${ECR_REPO_NAME}
+
+  post_build:
+    commands:
+      - echo "Pushing images to ECR..."
+
+      # Push all tags including cache tag for layer reuse
+      - docker push ${ECR_REPO_URI}:${IMAGE_TAG}
+      - docker push ${ECR_REPO_URI}:${COMMIT_SHA}
+      - docker push ${ECR_REPO_URI}:build-${CODEBUILD_BUILD_NUMBER}
+      - docker push ${ECR_REPO_URI}:cache
+
+      # ECR Image Scanning - block on critical vulnerabilities (CMMC SC.3.180)
+      - |
+        echo "Starting ECR image scan..."
+        aws ecr start-image-scan \
+          --repository-name ${ECR_REPO_NAME} \
+          --image-id imageTag=${IMAGE_TAG} \
+          --region ${AWS_DEFAULT_REGION} || echo "Scan already in progress"
+
+        echo "Waiting for scan to complete..."
+        aws ecr wait image-scan-complete \
+          --repository-name ${ECR_REPO_NAME} \
+          --image-id imageTag=${IMAGE_TAG} \
+          --region ${AWS_DEFAULT_REGION} || echo "Scan wait timed out, checking results anyway"
+
+        echo "Checking scan results..."
+        CRITICAL_COUNT=$(aws ecr describe-image-scan-findings \
+          --repository-name ${ECR_REPO_NAME} \
+          --image-id imageTag=${IMAGE_TAG} \
+          --query 'imageScanFindings.findingSeverityCounts.CRITICAL' \
+          --output text \
+          --region ${AWS_DEFAULT_REGION} 2>/dev/null || echo "0")
+
+        HIGH_COUNT=$(aws ecr describe-image-scan-findings \
+          --repository-name ${ECR_REPO_NAME} \
+          --image-id imageTag=${IMAGE_TAG} \
+          --query 'imageScanFindings.findingSeverityCounts.HIGH' \
+          --output text \
+          --region ${AWS_DEFAULT_REGION} 2>/dev/null || echo "0")
+
+        echo "Scan Results: CRITICAL=$CRITICAL_COUNT, HIGH=$HIGH_COUNT"
+
+        if [ "$CRITICAL_COUNT" != "None" ] && [ "$CRITICAL_COUNT" != "0" ] && [ -n "$CRITICAL_COUNT" ]; then
+          echo "ERROR: $CRITICAL_COUNT critical vulnerabilities found - blocking deployment"
+          echo "Run: aws ecr describe-image-scan-findings --repository-name ${ECR_REPO_NAME} --image-id imageTag=${IMAGE_TAG}"
+          exit 1
+        fi
+
+        if [ "$HIGH_COUNT" != "None" ] && [ "$HIGH_COUNT" != "0" ] && [ -n "$HIGH_COUNT" ]; then
+          echo "WARNING: $HIGH_COUNT high severity vulnerabilities found - review recommended"
+        fi
+
+        echo "Image scan passed - no critical vulnerabilities"
+
+      - echo "=========================================="
+      - echo "Build Complete"
+      - echo "=========================================="
+      - 'echo "Image URI: ${ECR_REPO_URI}:${IMAGE_TAG}"'
+      - 'echo "Commit Tag: ${ECR_REPO_URI}:${COMMIT_SHA}"'
+      - 'echo "Build Tag: ${ECR_REPO_URI}:build-${CODEBUILD_BUILD_NUMBER}"'
+      - 'echo "Cache Tag: ${ECR_REPO_URI}:cache"'
+      - echo ""
+      - 'echo "To deploy this image to EKS, run:"'
+      - 'echo "  kubectl set image deployment/${BUILD_TARGET} ${BUILD_TARGET}=${ECR_REPO_URI}:${IMAGE_TAG}"'
+
+artifacts:
+  files:
+    - deploy/docker/**/*
+  name: docker-build-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

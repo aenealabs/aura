@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 3.5 - Cluster Autoscaler IRSA Role'
+
+# Purpose: Provides IAM permissions for Kubernetes Cluster Autoscaler
+# Workloads: cluster-autoscaler deployment in kube-system namespace
+# Pattern: IRSA (IAM Roles for Service Accounts) for secure pod-level access
+# Scaling: Enables automatic node group scaling based on pending pods
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  OIDCProviderArn:
+    Type: String
+    Description: ARN of the EKS OIDC provider
+
+  OIDCProviderURL:
+    Type: String
+    Description: URL of the EKS OIDC provider (without https://)
+
+  ServiceAccountNamespace:
+    Type: String
+    Default: kube-system
+    Description: Kubernetes namespace for the service account
+
+  ServiceAccountName:
+    Type: String
+    Default: cluster-autoscaler
+    Description: Kubernetes service account name
+
+Resources:
+  # IAM Policy for Cluster Autoscaler with least-privilege permissions
+  # Reference: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/aws/README.md
+  ClusterAutoscalerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-cluster-autoscaler-policy-${Environment}'
+      Description: !Sub 'Cluster Autoscaler permissions for ${ProjectName} in ${Environment}'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Describe permissions for discovering Auto Scaling Groups and EC2 instances
+          - Sid: DescribePermissions
+            Effect: Allow
+            Action:
+              - autoscaling:DescribeAutoScalingGroups
+              - autoscaling:DescribeAutoScalingInstances
+              - autoscaling:DescribeLaunchConfigurations
+              - autoscaling:DescribeScalingActivities
+              - autoscaling:DescribeTags
+              - ec2:DescribeImages
+              - ec2:DescribeInstanceTypes
+              - ec2:DescribeLaunchTemplateVersions
+              - ec2:GetInstanceTypesFromInstanceRequirements
+              - eks:DescribeNodegroup
+            Resource: '*'
+
+          # Modify permissions for scaling ASGs - scoped to project resources
+          # Uses k8s.io/cluster-autoscaler/enabled tag which is set on all our node groups
+          - Sid: AutoScalingModify
+            Effect: Allow
+            Action:
+              - autoscaling:SetDesiredCapacity
+              - autoscaling:TerminateInstanceInAutoScalingGroup
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/eks-${ProjectName}-*-${Environment}*'
+            Condition:
+              StringEquals:
+                aws:ResourceTag/k8s.io/cluster-autoscaler/enabled: 'true'
+
+  # IAM Role for IRSA with OIDC trust policy
+  ClusterAutoscalerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-cluster-autoscaler-role-${Environment}'
+      Description: !Sub 'IRSA role for Cluster Autoscaler in ${Environment}'
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCUrl}:aud": "sts.amazonaws.com",
+                      "${OIDCUrl}:sub": "system:serviceaccount:${Namespace}:${SA}"
+                    }
+                  }
+                }
+              ]
+            }
+          - OIDCArn: !Ref OIDCProviderArn
+            OIDCUrl: !Ref OIDCProviderURL
+            Namespace: !Ref ServiceAccountNamespace
+            SA: !Ref ServiceAccountName
+      ManagedPolicyArns:
+        - !Ref ClusterAutoscalerPolicy
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ClusterAutoscaler
+        - Key: Layer
+          Value: compute
+
+Outputs:
+  RoleArn:
+    Description: ARN of the IRSA role for Cluster Autoscaler
+    Value: !GetAtt ClusterAutoscalerRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-cluster-autoscaler-role-arn-${Environment}'
+
+  PolicyArn:
+    Description: ARN of the IAM policy for Cluster Autoscaler
+    Value: !Ref ClusterAutoscalerPolicy
+    Export:
+      Name: !Sub '${ProjectName}-cluster-autoscaler-policy-arn-${Environment}'
+
+  ServiceAccountAnnotation:
+    Description: Annotation to add to Kubernetes service account
+    Value: !Sub 'eks.amazonaws.com/role-arn: ${ClusterAutoscalerRole.Arn}'

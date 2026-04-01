@@ -1,0 +1,187 @@
+name: Nightly IAM Action Validation
+
+on:
+  schedule:
+    # Run every night at 2 AM UTC (avoids midnight traffic)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      generate_report:
+        description: 'Generate detailed report'
+        type: boolean
+        default: true
+
+concurrency:
+  group: nightly-iam-validation
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  validate-iam-actions:
+    name: Validate CloudFormation IAM Actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install cfn-lint pyyaml boto3
+
+      - name: Run cfn-lint with wrapper
+        id: cfnlint
+        run: |
+          echo "=== Running cfn-lint on all CloudFormation templates ==="
+          chmod +x scripts/cfn-lint-wrapper.sh
+
+          # Run on all templates and capture output
+          # Exclude: archive/ (old templates), marketplace.yaml (uses !Sub as dict key which cfn-lint can't parse)
+          TEMPLATES=$(find deploy/cloudformation -name "*.yaml" -not -path "*/archive/*" -not -name "marketplace.yaml" | sort)
+          TEMPLATE_COUNT=$(echo "$TEMPLATES" | wc -l)
+          echo "Found $TEMPLATE_COUNT templates to validate"
+
+          WARNINGS=0
+          ERRORS=0
+
+          for template in $TEMPLATES; do
+            echo ""
+            echo "--- Validating: $template ---"
+            if ./scripts/cfn-lint-wrapper.sh "$template"; then
+              echo "  Status: PASSED"
+            else
+              EXIT_CODE=$?
+              if [ $EXIT_CODE -eq 4 ]; then
+                echo "  Status: WARNINGS"
+                ((WARNINGS++))
+              else
+                echo "  Status: ERROR (exit code $EXIT_CODE)"
+                ((ERRORS++))
+              fi
+            fi
+          done
+
+          echo ""
+          echo "=== Summary ==="
+          echo "Templates: $TEMPLATE_COUNT"
+          echo "With warnings: $WARNINGS"
+          echo "With errors: $ERRORS"
+
+          # Set outputs for subsequent steps
+          echo "template_count=$TEMPLATE_COUNT" >> $GITHUB_OUTPUT
+          echo "warnings=$WARNINGS" >> $GITHUB_OUTPUT
+          echo "errors=$ERRORS" >> $GITHUB_OUTPUT
+
+          # Only fail on actual errors, not warnings
+          if [ $ERRORS -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Validate IAM actions
+        id: validate
+        run: |
+          echo "=== Running IAM Action Validation ==="
+          python scripts/validate_iam_actions.py --report --verbose > iam-validation-report.txt 2>&1 || true
+          cat iam-validation-report.txt
+
+          # Extract counts from report
+          VALID=$(grep -oP 'Valid actions: \K\d+' iam-validation-report.txt || echo "0")
+          INVALID=$(grep -oP 'Invalid actions: \K\d+' iam-validation-report.txt || echo "0")
+
+          echo "valid_count=$VALID" >> $GITHUB_OUTPUT
+          echo "invalid_count=$INVALID" >> $GITHUB_OUTPUT
+
+          if [ "$INVALID" -gt 0 ]; then
+            echo "::warning::Found $INVALID invalid IAM actions"
+          fi
+
+      - name: Upload validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: iam-validation-report
+          path: iam-validation-report.txt
+          retention-days: 30
+
+      - name: Create issue for invalid actions
+        if: steps.validate.outputs.invalid_count > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('iam-validation-report.txt', 'utf8');
+
+            // Check for existing open issue
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'iam-validation,automated'
+            });
+
+            const existingIssue = issues.data.find(i =>
+              i.title.includes('IAM Action Validation')
+            );
+
+            const body = `## Nightly IAM Action Validation Report
+
+            **Run Date:** ${new Date().toISOString()}
+            **Valid Actions:** ${{ steps.validate.outputs.valid_count }}
+            **Invalid Actions:** ${{ steps.validate.outputs.invalid_count }}
+
+            ### Full Report
+            \`\`\`
+            ${report.substring(0, 60000)}  // GitHub has 65535 char limit
+            \`\`\`
+
+            ### Action Required
+            Please review the invalid actions above. These may be:
+            1. Typos in action names
+            2. Deprecated AWS actions
+            3. Actions from a service not yet in the validator's database
+
+            To add known valid actions, update \`scripts/validate_iam_actions.py\` KNOWN_VALID_ACTIONS set.
+            `;
+
+            if (existingIssue) {
+              // Update existing issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: body
+              });
+              console.log(`Updated existing issue #${existingIssue.number}`);
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '⚠️ IAM Action Validation: Invalid Actions Found',
+                body: body,
+                labels: ['iam-validation', 'automated', 'infrastructure']
+              });
+              console.log('Created new issue for invalid IAM actions');
+            }
+
+      - name: Summary
+        run: |
+          echo "## IAM Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Templates Scanned | ${{ steps.cfnlint.outputs.template_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Templates with Warnings | ${{ steps.cfnlint.outputs.warnings }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Templates with Errors | ${{ steps.cfnlint.outputs.errors }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Valid IAM Actions | ${{ steps.validate.outputs.valid_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Invalid IAM Actions | ${{ steps.validate.outputs.invalid_count }} |" >> $GITHUB_STEP_SUMMARY

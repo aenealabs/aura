@@ -1,0 +1,323 @@
+# Project Aura - Agent Services NetworkPolicy
+#
+# Network policies for agent-related services:
+#   - Agent Orchestrator (coordinates multi-agent workflows)
+#   - Memory Service (neural memory - gRPC)
+#   - Sandbox Runner (isolated code execution)
+#
+# ADR-049 Phase 0 - Self-Hosted Deployment
+#
+---
+# Agent Orchestrator
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-orchestrator-network-policy
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: agent-orchestrator
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: service-allow
+spec:
+  podSelector:
+    matchLabels:
+      app: agent-orchestrator
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow requests from aura-api
+    - from:
+        - podSelector:
+            matchLabels:
+              app: aura-api
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow internal agent-to-agent communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: aura
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow Prometheus metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Access to databases
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: neo4j
+      ports:
+        - protocol: TCP
+          port: 7687
+
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: opensearch
+      ports:
+        - protocol: TCP
+          port: 9200
+
+    # Access to LLM inference
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-llm
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8080
+
+    # Access to memory service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: memory-service
+      ports:
+        - protocol: TCP
+          port: 50051
+
+    # Access to sandbox runner
+    - to:
+        - podSelector:
+            matchLabels:
+              app: sandbox-runner
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Kubernetes API for job management
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Memory Service (Neural Memory - gRPC)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: memory-service-network-policy
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: memory-service
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: service-allow
+spec:
+  podSelector:
+    matchLabels:
+      app: memory-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow gRPC from aura-api
+    - from:
+        - podSelector:
+            matchLabels:
+              app: aura-api
+      ports:
+        - protocol: TCP
+          port: 50051
+
+    # Allow gRPC from agent-orchestrator
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agent-orchestrator
+      ports:
+        - protocol: TCP
+          port: 50051
+
+    # Allow Prometheus metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Access to PostgreSQL for persistence
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Access to Redis for caching
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # Access to MinIO for artifact storage
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+
+---
+# Sandbox Runner (Isolated Code Execution)
+# CRITICAL: This service runs untrusted code - strict isolation required
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-runner-network-policy
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: sandbox-runner
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: sandbox
+  annotations:
+    description: "STRICT isolation for untrusted code execution"
+spec:
+  podSelector:
+    matchLabels:
+      app: sandbox-runner
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # ONLY allow requests from agent-orchestrator
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agent-orchestrator
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow health checks (from within cluster only)
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8081  # Dedicated health check port
+  egress:
+    # MINIMAL egress - only what's absolutely necessary
+
+    # Allow access to package registries for dependency installation
+    # REMOVE these rules for maximum isolation
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.169.254/32  # CRITICAL: Block metadata service
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Sandbox Runner - Air-Gapped Mode (strictest)
+# Use this for maximum isolation - no external network access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-runner-airgap-network-policy
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: sandbox-runner
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: sandbox-airgap
+  annotations:
+    description: "Maximum isolation - no external network access"
+spec:
+  podSelector:
+    matchLabels:
+      app: sandbox-runner
+      isolation: airgap
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # ONLY allow requests from agent-orchestrator
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agent-orchestrator
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # NO egress allowed - complete network isolation
+    # Sandbox uses pre-loaded dependencies only
+    []

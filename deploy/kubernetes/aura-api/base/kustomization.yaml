@@ -1,0 +1,31 @@
+# Project Aura - API Kustomization (Base)
+# Base configuration for the Aura API service
+#
+# This base provides environment-agnostic resources.
+# Use overlays (dev/qa/prod) to set environment-specific values.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: aura-api-base
+
+namespace: default
+
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  # Using Deployment until ClusterAnalysisTemplates are deployed
+  - deployment.yaml
+  - service.yaml
+  # Rollout and canary service available when Argo Rollouts analysis is configured
+  # - rollout.yaml
+  # - service-canary.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: aura-api
+      app.kubernetes.io/component: api
+      app.kubernetes.io/part-of: aura
+    includeSelectors: false
+    includeTemplates: true

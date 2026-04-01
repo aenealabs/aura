@@ -1,0 +1,15 @@
+# Project Aura - Agent Dependencies
+#
+# This file contains dependencies for Coder, Reviewer, and Validator agents.
+# Includes tree-sitter for AST parsing, excludes torch (neural memory only).
+#
+# Usage:
+#   pip install -r requirements-agents.txt
+
+# Include all API dependencies
+-r requirements-api.txt
+
+# AST Parsing (tree-sitter)
+tree-sitter>=0.24.0
+tree-sitter-python>=0.23.6
+tree-sitter-javascript>=0.23.1

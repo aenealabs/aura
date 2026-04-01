@@ -1,0 +1,67 @@
+# AWS Load Balancer Controller Helm Values
+# Chart: aws-load-balancer-controller
+# Repository: https://aws.github.io/eks-charts
+#
+# IMPORTANT: This file contains environment-specific values.
+# Copy to values-{env}.yaml and update for each environment:
+#   - clusterName
+#   - region
+#   - vpcId (from CloudFormation networking stack)
+#   - serviceAccount.annotations.eks.amazonaws.com/role-arn
+
+# TODO: Replace with environment-specific values
+clusterName: aura-cluster-${ENVIRONMENT}  # e.g., aura-cluster-qa
+region: ${AWS_REGION}                      # e.g., us-east-1
+vpcId: ${VPC_ID}                          # Query from CF: aura-networking-${ENV}
+
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations:
+    # Get role ARN from CloudFormation: aura-alb-controller-${ENV}
+    eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/aura-alb-controller-role-${ENVIRONMENT}
+
+# Controller configuration
+replicaCount: 2
+
+# Resource limits
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Enable shield, WAF, and WAFv2 addons
+enableShield: true
+enableWaf: true
+enableWafv2: true
+
+# Logging
+logLevel: info
+
+# Pod disruption budget
+podDisruptionBudget:
+  maxUnavailable: 1
+
+# Affinity for high availability
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - aws-load-balancer-controller
+          topologyKey: kubernetes.io/hostname
+
+# Tolerations for control plane nodes if needed
+tolerations: []
+
+# Node selector
+nodeSelector:
+  kubernetes.io/os: linux

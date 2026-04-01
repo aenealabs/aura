@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.3 - Diagram Service SSM Parameters (AI Provider Configuration)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Deployment environment
+  EnableOpenAI:
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+    Description: Enable OpenAI provider for diagram generation (not GovCloud compatible)
+  EnableVertexAI:
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+    Description: Enable Vertex AI provider for diagram generation (not GovCloud compatible)
+
+Conditions:
+  IsGovCloud: !Or
+    - !Equals [!Ref 'AWS::Region', 'us-gov-west-1']
+    - !Equals [!Ref 'AWS::Region', 'us-gov-east-1']
+  # OpenAI only enabled in commercial regions
+  OpenAIEnabled: !And
+    - !Equals [!Ref EnableOpenAI, 'true']
+    - !Not [!Condition IsGovCloud]
+  # Vertex only enabled in commercial regions
+  VertexEnabled: !And
+    - !Equals [!Ref EnableVertexAI, 'true']
+    - !Not [!Condition IsGovCloud]
+
+Resources:
+  # OpenAI Provider Configuration
+  OpenAIEnabledParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/providers/openai/enabled'
+      Description: Enable OpenAI provider for diagram generation
+      Type: String
+      Value: !If [OpenAIEnabled, 'true', 'false']
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Service: diagram-generation
+        Provider: openai
+
+  OpenAIApiKeyParam:
+    Type: AWS::SSM::Parameter
+    Condition: OpenAIEnabled
+    Properties:
+      Name: !Sub '/aura/${Environment}/providers/openai/api-key'
+      Description: OpenAI API key (set value via AWS Console or CLI)
+      Type: String
+      Value: 'PLACEHOLDER_SET_VIA_CONSOLE'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Service: diagram-generation
+        Provider: openai
+        Sensitive: 'true'
+
+  # Vertex AI Provider Configuration
+  VertexEnabledParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/providers/vertex/enabled'
+      Description: Enable Vertex AI provider for diagram generation
+      Type: String
+      Value: !If [VertexEnabled, 'true', 'false']
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Service: diagram-generation
+        Provider: vertex
+
+  VertexServiceAccountParam:
+    Type: AWS::SSM::Parameter
+    Condition: VertexEnabled
+    Properties:
+      Name: !Sub '/aura/${Environment}/providers/vertex/service-account'
+      Description: Vertex AI service account JSON (set value via AWS Console or CLI)
+      Type: String
+      Value: 'PLACEHOLDER_SET_VIA_CONSOLE'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Service: diagram-generation
+        Provider: vertex
+        Sensitive: 'true'
+
+  # Provider Cost Configuration
+  DailyBudgetParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/providers/diagram/daily-budget-usd'
+      Description: Daily budget for external AI providers (USD)
+      Type: String
+      Value: '100.0'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Service: diagram-generation
+
+  MonthlyBudgetParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/providers/diagram/monthly-budget-usd'
+      Description: Monthly budget for external AI providers (USD)
+      Type: String
+      Value: '2000.0'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Service: diagram-generation
+
+Outputs:
+  OpenAIEnabledParamArn:
+    Description: ARN of OpenAI enabled parameter
+    Value: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/providers/openai/enabled'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-diagram-openai-enabled-param'
+
+  OpenAIApiKeyParamArn:
+    Condition: OpenAIEnabled
+    Description: ARN of OpenAI API key parameter
+    Value: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/providers/openai/api-key'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-diagram-openai-apikey-param'
+
+  VertexEnabledParamArn:
+    Description: ARN of Vertex AI enabled parameter
+    Value: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/providers/vertex/enabled'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-diagram-vertex-enabled-param'
+
+  VertexServiceAccountParamArn:
+    Condition: VertexEnabled
+    Description: ARN of Vertex AI service account parameter
+    Value: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/providers/vertex/service-account'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-diagram-vertex-sa-param'
+
+  IsGovCloudMode:
+    Description: Whether deployment is in GovCloud
+    Value: !If [IsGovCloud, 'true', 'false']
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-diagram-govcloud-mode'

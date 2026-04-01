@@ -1,0 +1,202 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.9 - Docker Build CodeBuild Project (CI/CD Infrastructure)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  GitHubRepo:
+    Type: String
+    Default: 'https://github.com/aenealabs/aura'
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: GitHub branch to build from
+
+Resources:
+  # IAM Role for Docker Build CodeBuild Project
+  DockerBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-docker-build-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DockerBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-docker-build-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-docker-build-${Environment}:*'
+
+              # ECR - Push/Pull images
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeRepositories
+                  - ecr:DescribeImages
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-*'
+
+              # CodeConnections - GitHub access
+              # Note: This role is kept for reference but Foundation role is used instead
+              # due to IAM eventual consistency issues during stack creation
+              - Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codeconnections:GetConnectionToken
+                  - codestar-connections:UseConnection
+                  - codestar-connections:GetConnectionToken
+                Resource:
+                  - '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: docker-build
+
+  # CodeBuild Project for Docker/Podman container builds only
+  DockerBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-docker-build-${Environment}'
+      Description: 'Project Aura - Layer 1.9 - Docker Build (Container Images)'
+      # Use Foundation role to avoid IAM eventual consistency issues
+      # The DockerBuildRole created in this stack doesn't propagate fast enough
+      ServiceRole: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-foundation-codebuild-role-${Environment}'
+      TimeoutInMinutes: 30
+      QueuedTimeoutInMinutes: 60
+
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepo
+        BuildSpec: deploy/buildspecs/buildspec-docker-build.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+      SourceVersion: !Ref GitHubBranch
+
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: BUILD_TARGET
+            Value: api
+          - Name: IMAGE_TAG
+            Value: latest
+
+      Artifacts:
+        Type: NO_ARTIFACTS
+
+      # S3 Cache Configuration for pip and Docker layer caching
+      # Requires build-cache.yaml stack to be deployed first
+      Cache:
+        Type: S3
+        Location: !Sub '${ProjectName}-build-cache-${AWS::AccountId}-${Environment}'
+        # Enable cache warming for new build instances
+        Modes:
+          - LOCAL_DOCKER_LAYER_CACHE
+          - LOCAL_CUSTOM_CACHE
+
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub '/aws/codebuild/${ProjectName}-docker-build-${Environment}'
+          StreamName: build-log
+
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: docker-build
+        - Key: Layer
+          Value: '4.8'
+
+  # CloudWatch Log Group with retention
+  DockerBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-docker-build-${Environment}'
+      RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ProjectName:
+    Description: CodeBuild project name
+    Value: !Ref DockerBuildProject
+    Export:
+      Name: !Sub '${ProjectName}-docker-build-project-${Environment}'
+
+  ProjectArn:
+    Description: CodeBuild project ARN
+    Value: !GetAtt DockerBuildProject.Arn
+    Export:
+      Name: !Sub '${ProjectName}-docker-build-arn-${Environment}'
+
+  RoleArn:
+    Description: IAM Role ARN for Docker builds
+    Value: !GetAtt DockerBuildRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-docker-build-role-arn-${Environment}'
+
+  LogGroupName:
+    Description: CloudWatch Log Group for build logs
+    Value: !Ref DockerBuildLogGroup

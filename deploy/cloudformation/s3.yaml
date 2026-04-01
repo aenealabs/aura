@@ -1,0 +1,237 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 'Project Aura - Layer 2.2 - S3 (Object Storage)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # Artifacts Bucket
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-artifacts-${AWS::AccountId}-${Environment}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: STANDARD_IA
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: artifacts-logs/
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-artifacts-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Code Repository Bucket
+  CodeRepositoryBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-code-repo-${AWS::AccountId}-${Environment}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: code-repo-logs/
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-code-repo-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Neptune Bulk Load Bucket
+  NeptuneBulkLoadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-neptune-load-${AWS::AccountId}-${Environment}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldData
+            Status: Enabled
+            ExpirationInDays: 7
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-neptune-load-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Logging Bucket
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-logs-${AWS::AccountId}-${Environment}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldLogs
+            Status: Enabled
+            ExpirationInDays: !If [IsProduction, 90, 30]
+          - Id: TransitionToGlacier
+            Status: !If [IsProduction, Enabled, Disabled]
+            Transitions:
+              - TransitionInDays: 60
+                StorageClass: GLACIER
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-logs-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Logging Bucket Policy (allow S3 to write logs)
+  LoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: S3ServerAccessLogsPolicy
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action:
+              - s3:PutObject
+            Resource: !Sub "${LoggingBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+
+  # Backup Bucket (for production only)
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsProduction
+    Properties:
+      BucketName: !Sub "${ProjectName}-backups-${AWS::AccountId}-${Environment}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: GLACIER
+              - TransitionInDays: 90
+                StorageClass: DEEP_ARCHIVE
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-backups-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ArtifactsBucketName:
+    Description: Artifacts bucket name
+    Value: !Ref ArtifactsBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-ArtifactsBucketName"
+
+  ArtifactsBucketArn:
+    Description: Artifacts bucket ARN
+    Value: !GetAtt ArtifactsBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ArtifactsBucketArn"
+
+  CodeRepositoryBucketName:
+    Description: Code repository bucket name
+    Value: !Ref CodeRepositoryBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeRepositoryBucketName"
+
+  NeptuneBulkLoadBucketName:
+    Description: Neptune bulk load bucket name
+    Value: !Ref NeptuneBulkLoadBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-NeptuneBulkLoadBucketName"
+
+  LoggingBucketName:
+    Description: Logging bucket name
+    Value: !Ref LoggingBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-LoggingBucketName"
+
+  BackupBucketName:
+    Description: Backup bucket name
+    Condition: IsProduction
+    Value: !Ref BackupBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BackupBucketName"

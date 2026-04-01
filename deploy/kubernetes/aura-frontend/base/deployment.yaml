@@ -1,0 +1,70 @@
+# Project Aura - Frontend Deployment
+# Serves React dashboard via nginx, proxies API to aura-api service
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aura-frontend
+  namespace: default
+  labels:
+    app: aura-frontend
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aura-frontend
+  template:
+    metadata:
+      labels:
+        app: aura-frontend
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: aura-frontend:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        fsGroup: 1001
+      # Node affinity - prefer general-purpose nodes (ADR-058)
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: workload-type
+                    operator: In
+                    values:
+                      - general-purpose

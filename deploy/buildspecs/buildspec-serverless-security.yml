@@ -1,0 +1,77 @@
+version: 0.2
+
+# Serverless Layer Sub-BuildSpec: Security Components (Layer 6.0)
+# Deploys permission boundary and IAM security alerting.
+# MUST be deployed FIRST before other serverless stacks.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - pip3 install cfn-lint --quiet
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Serverless Security Components (Layer 6.0)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - validate_aws_credentials
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+      # Validate templates
+      - cfn-lint deploy/cloudformation/serverless-permission-boundary.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/iam-security-alerting.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+
+  build:
+    commands:
+      # CRITICAL: Deploy Permission Boundary FIRST
+      # Permission boundary must exist before roles that reference it can be created.
+      - |
+        echo "Deploying Serverless Permission Boundary (prerequisite for Lambda roles)..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-serverless-permission-boundary-${ENVIRONMENT}" \
+          "deploy/cloudformation/serverless-permission-boundary.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=security SecurityControl=PermissionBoundary DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Wait for IAM propagation (permission boundaries can take up to 60s)
+      - |
+        echo "Waiting 30 seconds for IAM permission boundary propagation..."
+        sleep 30
+
+      # IAM Security Alerting (Security Assessment)
+      - |
+        echo "Deploying IAM Security Alerting..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$ALERT_EMAIL" ]; then
+          PARAMS="$PARAMS AlertEmail=${ALERT_EMAIL}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-iam-security-alerting-${ENVIRONMENT}" \
+          "deploy/cloudformation/iam-security-alerting.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=security SecurityControl=IAMMonitoring DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+  post_build:
+    commands:
+      - echo "Serverless security components deployment complete"
+      - |
+        echo "Permission Boundary ARN:"
+        cfn_get_stack_output "${PROJECT_NAME}-serverless-permission-boundary-${ENVIRONMENT}" "PermissionBoundaryArn" || echo "Not available"
+      - |
+        echo "IAM Security Alerting SNS Topic:"
+        cfn_get_stack_output "${PROJECT_NAME}-iam-security-alerting-${ENVIRONMENT}" "AlertTopicArn" || echo "Not available"

@@ -1,0 +1,328 @@
+# Project Aura - LLM Inference Services NetworkPolicy
+#
+# Network policies for self-hosted LLM inference:
+#   - vLLM (primary inference engine)
+#   - Text Generation Inference (TGI) (alternative)
+#   - Ollama (development/evaluation)
+#
+# ADR-049 Phase 0 - Self-Hosted Deployment
+#
+# Security Note: LLM services should have MINIMAL egress.
+# Air-gapped deployments should have NO external egress.
+#
+---
+# vLLM Inference Service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vllm-network-policy
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: llm-inference
+spec:
+  podSelector:
+    matchLabels:
+      app: llm-inference
+      engine: vllm
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow inference requests from aura namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 8000  # vLLM OpenAI-compatible API
+
+    # Allow Prometheus metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8000
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # vLLM should have minimal egress in production
+    # Model weights are loaded from local storage (PV or init container)
+
+    # Allow access to shared model storage (if using NFS/S3)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+
+---
+# Text Generation Inference (TGI)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tgi-network-policy
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: tgi
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: llm-inference
+spec:
+  podSelector:
+    matchLabels:
+      app: llm-inference
+      engine: tgi
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow inference requests from aura namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 8080  # TGI default port
+
+    # Allow Prometheus metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # TGI should have minimal egress in production
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+
+---
+# Ollama (Development/Evaluation only)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ollama-network-policy
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: llm-inference
+  annotations:
+    description: "Development/evaluation only - not for production"
+spec:
+  podSelector:
+    matchLabels:
+      app: llm-inference
+      engine: ollama
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow inference requests from aura namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 11434  # Ollama default port
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 11434
+  egress:
+    # Ollama may need to pull models during development
+    # DISABLE THIS IN PRODUCTION/AIR-GAPPED ENVIRONMENTS
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.169.254/32  # AWS metadata (ALWAYS BLOCK)
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# LLM Load Balancer (routes requests to inference backends)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm-router-network-policy
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: llm-router
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: llm-inference
+spec:
+  podSelector:
+    matchLabels:
+      app: llm-router
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow requests from aura namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Route to vLLM
+    - to:
+        - podSelector:
+            matchLabels:
+              app: llm-inference
+              engine: vllm
+      ports:
+        - protocol: TCP
+          port: 8000
+
+    # Route to TGI
+    - to:
+        - podSelector:
+            matchLabels:
+              app: llm-inference
+              engine: tgi
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Route to Ollama
+    - to:
+        - podSelector:
+            matchLabels:
+              app: llm-inference
+              engine: ollama
+      ports:
+        - protocol: TCP
+          port: 11434
+
+---
+# Air-Gapped LLM Policy (strictest - no external egress)
+# Apply this INSTEAD of the above policies for air-gapped deployments
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm-airgap-network-policy
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: llm-inference
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: airgap
+  annotations:
+    description: "Use for air-gapped deployments - no external egress"
+spec:
+  podSelector:
+    matchLabels:
+      app: llm-inference
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow inference requests from aura namespace only
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 11434
+
+    # Allow Prometheus metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8080
+
+    # Allow health checks from within cluster only
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Only allow access to local model storage
+    # NO external internet access
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000

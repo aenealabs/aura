@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Aura — Human-in-the-Loop Capabilities</title>
+  <style>
+    :root {
+      --blue-50:#EFF6FF;--blue-100:#DBEAFE;--blue-200:#BFDBFE;--blue-600:#3B82F6;--blue-700:#2563EB;--blue-800:#1E40AF;--blue-900:#1E3A8A;
+      --slate-50:#F8FAFC;--slate-100:#F1F5F9;--slate-200:#E2E8F0;--slate-300:#CBD5E1;--slate-400:#94A3B8;
+      --slate-500:#64748B;--slate-600:#475569;--slate-700:#334155;--slate-800:#1E293B;--slate-900:#0F172A;
+      --green-50:#F0FDF4;--green-100:#DCFCE7;--green-600:#16A34A;--green-700:#15803D;
+      --red-50:#FEF2F2;--red-100:#FEE2E2;--red-600:#DC2626;--red-700:#B91C1C;
+      --amber-50:#FFFBEB;--amber-100:#FEF3C7;--amber-600:#D97706;--amber-700:#B45309;
+      --purple-50:#FAF5FF;--purple-100:#F3E8FF;--purple-600:#9333EA;--purple-700:#7C3AED;
+      --teal-50:#F0FDFA;--teal-100:#CCFBF1;--teal-600:#0D9488;--teal-700:#0F766E;
+      --indigo-50:#EEF2FF;--indigo-100:#E0E7FF;--indigo-600:#4F46E5;--indigo-700:#4338CA;
+      --cyan-50:#ECFEFF;--cyan-100:#CFFAFE;--cyan-600:#0891B2;
+      --orange-50:#FFF7ED;--orange-100:#FFEDD5;--orange-600:#EA580C;
+      --rose-50:#FFF1F2;--rose-600:#E11D48;
+      --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      --font-mono:'JetBrains Mono','Fira Code','Cascadia Code',monospace;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:var(--font-sans);background:var(--slate-50);color:var(--slate-800);line-height:1.6;font-size:14px}
+
+    .site-header{background:linear-gradient(135deg,var(--slate-900) 0%,var(--indigo-700) 50%,var(--blue-800) 100%);color:#fff;padding:56px 0 48px;border-bottom:4px solid var(--blue-600)}
+    .site-header .container{max-width:1200px;margin:0 auto;padding:0 28px}
+    .site-header h1{font-size:34px;font-weight:700;letter-spacing:-.5px;margin-bottom:10px}
+    .site-header .subtitle{font-size:16px;opacity:.85;max-width:760px;line-height:1.55}
+    .header-meta{display:flex;gap:24px;margin-top:22px;font-size:13px;opacity:.65;flex-wrap:wrap}
+
+    .container{max-width:1200px;margin:0 auto;padding:0 28px}
+    .page-body{padding:44px 0 80px}
+
+    .stats-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:40px}
+    .stat-card{background:#fff;border:1px solid var(--slate-200);border-radius:10px;padding:18px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+    .stat-card .sv{font-size:26px;font-weight:700;color:var(--blue-700);line-height:1.2}
+    .stat-card .sl{font-size:11px;color:var(--slate-500);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+
+    .toc{background:#fff;border:1px solid var(--slate-200);border-radius:10px;padding:24px 28px;margin-bottom:40px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+    .toc h2{font-size:16px;color:var(--slate-700);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--slate-200)}
+    .toc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:5px 24px}
+    .toc a{color:var(--blue-600);text-decoration:none;font-size:13px;padding:4px 0;display:flex;align-items:center;gap:8px}
+    .toc a:hover{color:var(--blue-800);text-decoration:underline}
+    .toc a .n{color:var(--slate-400);font-family:var(--font-mono);font-size:11px;min-width:24px}
+
+    .section{margin-bottom:44px}
+    .sh{display:flex;align-items:center;gap:12px;margin-bottom:8px;padding-bottom:12px;border-bottom:2px solid var(--slate-200)}
+    .si{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+    .sh h2{font-size:20px;font-weight:700;color:var(--slate-900)}
+    .si-blue{background:var(--blue-50);color:var(--blue-600)}.si-green{background:var(--green-50);color:var(--green-600)}
+    .si-red{background:var(--red-50);color:var(--red-600)}.si-amber{background:var(--amber-50);color:var(--amber-600)}
+    .si-purple{background:var(--purple-50);color:var(--purple-600)}.si-teal{background:var(--teal-50);color:var(--teal-600)}
+    .si-indigo{background:var(--indigo-50);color:var(--indigo-600)}.si-cyan{background:var(--cyan-50);color:var(--cyan-600)}
+    .si-orange{background:var(--orange-50);color:var(--orange-600)}.si-rose{background:var(--rose-50);color:var(--rose-600)}
+    .intro{font-size:14px;color:var(--slate-600);margin-bottom:20px;max-width:840px;line-height:1.6}
+
+    .cg{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+    .c{background:#fff;border:1px solid var(--slate-200);border-radius:10px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.04);transition:box-shadow .2s}
+    .c:hover{box-shadow:0 4px 12px rgba(0,0,0,.08)}
+    .c h3{font-size:15px;font-weight:600;color:var(--slate-900);margin-bottom:4px}
+    .c .cp{font-family:var(--font-mono);font-size:11px;color:var(--slate-400);margin-bottom:10px;word-break:break-all}
+    .c p{font-size:13px;color:var(--slate-600);margin-bottom:10px;line-height:1.55}
+    .c-accent{border-left:3px solid var(--blue-600)}
+
+    .tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+    .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;letter-spacing:.2px}
+    .tb{background:var(--blue-50);color:var(--blue-700)}
+    .tg{background:var(--green-50);color:var(--green-700)}
+    .tp{background:var(--purple-50);color:var(--purple-700)}
+    .ta{background:var(--amber-50);color:var(--amber-700)}
+    .tr{background:var(--red-50);color:var(--red-700)}
+    .tt{background:var(--teal-50);color:var(--teal-700)}
+
+    .ml{list-style:none;margin-top:8px}
+    .ml li{font-family:var(--font-mono);font-size:12px;color:var(--slate-600);padding:3px 0;display:flex;align-items:baseline;gap:6px}
+    .ml li::before{content:"\25B8";color:var(--slate-400);font-size:10px}
+
+    .tw{background:#fff;border:1px solid var(--slate-200);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);margin-bottom:16px;overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    thead{background:var(--slate-100)}
+    th{padding:10px 16px;text-align:left;font-weight:600;color:var(--slate-700);font-size:12px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--slate-200);white-space:nowrap}
+    td{padding:10px 16px;border-bottom:1px solid var(--slate-100);color:var(--slate-700);vertical-align:top}
+    tr:last-child td{border-bottom:none}
+    tr:hover td{background:var(--slate-50)}
+    td code,p code{font-family:var(--font-mono);font-size:12px;background:var(--slate-100);padding:1px 5px;border-radius:3px;color:var(--slate-700)}
+
+    .diagram{background:#fff;border:1px solid var(--slate-200);border-radius:10px;padding:28px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);overflow-x:auto}
+    .diagram pre{font-family:var(--font-mono);font-size:12px;line-height:1.5;color:var(--slate-700);white-space:pre}
+    .dt{font-size:12px;font-weight:600;color:var(--slate-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+
+    .callout{border-radius:10px;padding:18px 22px;margin-bottom:16px;font-size:13px;line-height:1.55;position:relative;overflow:hidden}
+    .callout::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%}
+    .cb{background:var(--blue-50);border:1px solid var(--blue-100);color:var(--blue-800)}.cb::before{background:var(--blue-600)}
+    .ca{background:var(--amber-50);border:1px solid var(--amber-100);color:var(--amber-700)}.ca::before{background:var(--amber-600)}
+    .callout strong{display:block;margin-bottom:4px}
+
+    .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;white-space:nowrap}
+    .b1{background:var(--green-100);color:var(--green-700)}.b2{background:var(--blue-100);color:var(--blue-700)}
+    .b3{background:var(--amber-100);color:var(--amber-700)}.b4{background:var(--red-100);color:var(--red-700)}
+
+    .site-footer{background:var(--slate-900);color:var(--slate-400);padding:32px 0;font-size:13px;text-align:center}
+    .site-footer strong{color:var(--slate-200)}
+
+    @media(max-width:768px){.site-header h1{font-size:24px}.cg{grid-template-columns:1fr}.stats-bar{grid-template-columns:repeat(2,1fr)}.toc-grid{grid-template-columns:1fr}}
+    @media print{.diagram,.tw{break-inside:avoid}}
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <h1>Human-in-the-Loop Capabilities</h1>
+    <p class="subtitle">
+      A comprehensive reference for every HITL approval gate, autonomy policy, real-time intervention
+      mechanism, and human oversight workflow in Project Aura.
+    </p>
+    <div class="header-meta">
+      <span>Project Aura &mdash; Aenea Labs</span>
+      <span>Version 1.0</span>
+      <span>Last Updated: February 2026</span>
+    </div>
+  </div>
+</header>
+
+<main class="page-body">
+  <div class="container">
+
+    <!-- Stats -->
+    <div class="stats-bar">
+      <div class="stat-card"><div class="sv">7</div><div class="sl">Autonomy Presets</div></div>
+      <div class="stat-card"><div class="sv">4</div><div class="sl">Autonomy Levels</div></div>
+      <div class="stat-card"><div class="sv">5</div><div class="sl">Non-Bypassable Guardrails</div></div>
+      <div class="stat-card"><div class="sv">6</div><div class="sl">Approval Statuses</div></div>
+      <div class="stat-card"><div class="sv">4</div><div class="sl">Grant Scopes</div></div>
+      <div class="stat-card"><div class="sv">7</div><div class="sl">Sandbox Workflow Stages</div></div>
+      <div class="stat-card"><div class="sv">12+</div><div class="sl">API Endpoints</div></div>
+      <div class="stat-card"><div class="sv">63</div><div class="sl">HITL Test Files</div></div>
+    </div>
+
+    <!-- TOC -->
+    <nav class="toc">
+      <h2>Contents</h2>
+      <div class="toc-grid">
+        <a href="#sec-overview"><span class="n">01</span> Architecture Overview</a>
+        <a href="#sec-approval"><span class="n">02</span> HITL Approval Service</a>
+        <a href="#sec-autonomy"><span class="n">03</span> Autonomy Framework (ADR-032)</a>
+        <a href="#sec-checkpoints"><span class="n">04</span> Real-Time Intervention (ADR-042)</a>
+        <a href="#sec-grants"><span class="n">05</span> Dynamic Capability Grants</a>
+        <a href="#sec-sandbox"><span class="n">06</span> Sandbox Workflow (ADR-005)</a>
+        <a href="#sec-constitutional"><span class="n">07</span> Constitutional AI Escalation</a>
+        <a href="#sec-infra"><span class="n">08</span> Infrastructure &amp; CloudFormation</a>
+        <a href="#sec-api"><span class="n">09</span> API Endpoints</a>
+        <a href="#sec-ui"><span class="n">10</span> Frontend &amp; Notifications</a>
+        <a href="#sec-audit"><span class="n">11</span> Audit &amp; Compliance</a>
+        <a href="#sec-summary"><span class="n">12</span> Summary Matrix</a>
+      </div>
+    </nav>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  1 · ARCHITECTURE OVERVIEW                           -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-overview">
+      <div class="sh"><div class="si si-blue">&#x1F3D7;</div><h2>1. Architecture Overview</h2></div>
+      <p class="intro">
+        HITL in Aura is not a single service &mdash; it is a cross-cutting concern woven through
+        autonomy policies, capability governance, sandbox testing, Constitutional AI, and real-time
+        intervention. The diagram below shows how a patch moves from detection to production with
+        every human checkpoint marked.
+      </p>
+      <div class="diagram">
+        <div class="dt">End-to-End HITL Flow</div>
+        <pre>
+  Vulnerability Detected
+        |
+        v
+  AutonomyPolicyService
+  |-- Check guardrails (5 non-bypassable)
+  |-- Resolve overrides (operation > repo > severity > default)
+  |-- Decision: HITL required?
+        |
+   +----+----+
+   |         |
+  YES        NO (auto-approved)
+   |         |-- Record autonomous decision
+   |         '-- Proceed to pipeline
+   v
+  HITLApprovalService
+  |-- Create ApprovalRequest
+  |-- Persist to DynamoDB
+  |-- Notify via SNS / SES / Slack
+  |-- Start 24-hour timeout clock
+        |
+   +----+----+----------+
+   |         |          |
+  APPROVED  REJECTED   EXPIRED
+   |         |          |-- Escalate to backup reviewers
+   |         |          '-- Max 2 escalations
+   |         '-- Return to agent with feedback
+   v
+  Sandbox Provisioning (ECS Fargate)
+  |-- Isolated network (no production access)
+  |-- Run unit, integration, security, perf tests
+  |-- Store results in DynamoDB
+        |
+        v
+  ┌─────────────────────────────────────────┐
+  │  HITL Approval Gate (Step Functions)     │
+  │  Reviewer sees: patch diff, test results │
+  │  Decision: APPROVE / REJECT / MODIFY     │
+  └──────────────────┬──────────────────────┘
+                     |
+                APPROVED
+                     |
+                     v
+  Production Deployment (CI/CD Pipeline)
+        |
+        v
+  Post-Deploy Verification (24-hour monitoring)</pre>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  2 · APPROVAL SERVICE                                -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-approval">
+      <div class="sh"><div class="si si-green">&#x2705;</div><h2>2. HITL Approval Service</h2></div>
+      <p class="intro">
+        The core approval engine manages the full lifecycle of approval requests from creation
+        through decision, expiration, and escalation. Supports MOCK mode (in-memory) for testing
+        and AWS mode (DynamoDB) for production.
+      </p>
+      <div class="cg">
+        <div class="c c-accent">
+          <h3>HITLApprovalService</h3>
+          <div class="cp">src/services/hitl_approval_service.py &middot; 1,860 lines</div>
+          <p>
+            Central approval service with DynamoDB persistence, partition-spread queries
+            (10 status buckets), 24-hour timeout with escalation, and conditional writes
+            to prevent race conditions.
+          </p>
+          <div class="tags">
+            <span class="tag tb">Core Service</span>
+            <span class="tag tg">Deployed</span>
+          </div>
+          <ul class="ml">
+            <li>create_approval_request()</li>
+            <li>create_or_auto_approve()</li>
+            <li>approve_request()</li>
+            <li>reject_request()</li>
+            <li>cancel_request()</li>
+            <li>process_expirations()</li>
+            <li>get_statistics()</li>
+            <li>get_audit_log()</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Approval Lifecycle</h3>
+          <div class="tw" style="margin-top:0">
+            <table>
+              <thead><tr><th>Status</th><th>Description</th><th>Transitions To</th></tr></thead>
+              <tbody>
+                <tr><td><span class="badge b3">PENDING</span></td><td>Awaiting reviewer decision</td><td>Approved, Rejected, Expired, Cancelled</td></tr>
+                <tr><td><span class="badge b1">APPROVED</span></td><td>Reviewer approved the request</td><td>Terminal</td></tr>
+                <tr><td><span class="badge b4">REJECTED</span></td><td>Reviewer rejected the request</td><td>Terminal</td></tr>
+                <tr><td><span class="badge b3">EXPIRED</span></td><td>Timeout elapsed without decision</td><td>Escalated</td></tr>
+                <tr><td><span class="badge b2">ESCALATED</span></td><td>Forwarded to backup reviewers</td><td>Approved, Rejected, Expired</td></tr>
+                <tr><td><span class="badge">CANCELLED</span></td><td>Programmatically cancelled</td><td>Terminal</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="c">
+          <h3>Timeout &amp; Escalation</h3>
+          <p>
+            Default timeout: <strong>24 hours</strong>. Warning sent at 75% (18&nbsp;hrs).
+            On expiration, request escalates to backup reviewers. Maximum
+            <strong>2 escalations</strong> before final expiration. TTL: 90 days in DynamoDB.
+          </p>
+          <div class="tags">
+            <span class="tag ta">24h Default Timeout</span>
+            <span class="tag ta">Max 2 Escalations</span>
+          </div>
+        </div>
+
+        <div class="c">
+          <h3>DynamoDB Schema</h3>
+          <p>
+            Primary key: <code>approvalId</code>. Three GSIs for efficient queries:
+            <code>StatusBucketIndex</code> (scatter-gather across 10 buckets),
+            <code>PatchIdIndex</code>, and <code>ReviewedAtIndex</code>.
+          </p>
+          <div class="tags">
+            <span class="tag tg">aura-approval-requests-{env}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  3 · AUTONOMY FRAMEWORK                              -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-autonomy">
+      <div class="sh"><div class="si si-purple">&#x1F3DB;</div><h2>3. Autonomy Framework (ADR-032)</h2></div>
+      <p class="intro">
+        Organizations select from 7 industry-tailored presets that map to 4 autonomy levels.
+        A master HITL toggle and 5 non-bypassable guardrails provide safety rails even in
+        fully-autonomous mode. Target: 85% autonomous operation for commercial enterprises.
+      </p>
+
+      <h3 style="font-size:15px;margin-bottom:12px;color:var(--slate-800)">4 Autonomy Levels</h3>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Level</th><th>HITL Required</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>FULL_HITL</code></td><td>All actions</td><td>Every agent action requires human approval</td></tr>
+            <tr><td><code>CRITICAL_HITL</code></td><td>HIGH + CRITICAL severity</td><td>Only high-risk actions require approval</td></tr>
+            <tr><td><code>AUDIT_ONLY</code></td><td>None (post-hoc audit)</td><td>Actions logged, reviewed after the fact</td></tr>
+            <tr><td><code>FULL_AUTONOMOUS</code></td><td>None</td><td>No approval required (guardrails still apply)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size:15px;margin:20px 0 12px;color:var(--slate-800)">7 Industry Presets</h3>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Preset</th><th>Default Level</th><th>Target Industry</th><th>Key Overrides</th></tr></thead>
+          <tbody>
+            <tr><td><code>defense_contractor</code></td><td>FULL_HITL</td><td>GovCloud, CMMC L3+</td><td>Even LOW severity &rarr; CRITICAL_HITL</td></tr>
+            <tr><td><code>financial_services</code></td><td>FULL_HITL</td><td>SOX, PCI-DSS</td><td>LOW &rarr; AUDIT_ONLY</td></tr>
+            <tr><td><code>healthcare</code></td><td>FULL_HITL</td><td>HIPAA</td><td>LOW &rarr; AUDIT_ONLY</td></tr>
+            <tr><td><code>fintech_startup</code></td><td>CRITICAL_HITL</td><td>Growth-stage fintech</td><td>LOW/MEDIUM &rarr; AUDIT_ONLY</td></tr>
+            <tr><td><code>enterprise_standard</code></td><td>CRITICAL_HITL</td><td>Fortune 500</td><td>LOW &rarr; AUTONOMOUS, MEDIUM &rarr; AUDIT</td></tr>
+            <tr><td><code>internal_tools</code></td><td>FULL_AUTONOMOUS</td><td>Internal development</td><td>prod_deploy &rarr; CRITICAL_HITL, cred_mod &rarr; FULL_HITL</td></tr>
+            <tr><td><code>fully_autonomous</code></td><td>FULL_AUTONOMOUS</td><td>Dev/test environments</td><td>Master HITL toggle OFF</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size:15px;margin:20px 0 12px;color:var(--slate-800)">5 Non-Bypassable Guardrails</h3>
+      <div class="callout ca">
+        <strong>These always require HITL &mdash; even when the master toggle is OFF</strong>
+        <code>production_deployment</code> &middot;
+        <code>credential_modification</code> &middot;
+        <code>access_control_change</code> &middot;
+        <code>database_migration</code> &middot;
+        <code>infrastructure_change</code>
+      </div>
+
+      <div class="diagram">
+        <div class="dt">Override Resolution Order (Highest Priority First)</div>
+        <pre>
+  1. Guardrails ──────── Always enforced regardless of policy (non-bypassable)
+  2. Operation overrides  Per-operation configs (e.g., prod_deploy → FULL_HITL)
+  3. Repository overrides Per-repo configs (e.g., payments-service → CRITICAL_HITL)
+  4. Severity overrides ─ Per-severity configs (e.g., LOW → AUDIT_ONLY)
+  5. Default level ────── Policy default (e.g., CRITICAL_HITL)</pre>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  4 · REAL-TIME INTERVENTION                          -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-checkpoints">
+      <div class="sh"><div class="si si-red">&#x23F8;</div><h2>4. Real-Time Agent Intervention (ADR-042)</h2></div>
+      <p class="intro">
+        Execution checkpoints pause agents mid-action for human approval via WebSocket streaming.
+        Trust rules enable auto-approval for frequently-approved action patterns.
+      </p>
+      <div class="cg">
+        <div class="c c-accent">
+          <h3>ExecutionCheckpointService</h3>
+          <div class="cp">src/services/execution_checkpoint_service.py</div>
+          <p>
+            Creates checkpoints before risky operations. Publishes to WebSocket for real-time UI.
+            Users approve (<kbd>A</kbd>), deny (<kbd>D</kbd>), or modify (<kbd>M</kbd>) actions via keyboard.
+            Trust rules auto-approve recurring safe patterns.
+          </p>
+          <div class="tags"><span class="tag tp">ADR-042 Phase 1</span></div>
+          <ul class="ml">
+            <li>create_checkpoint()</li>
+            <li>approve_checkpoint()</li>
+            <li>deny_checkpoint()</li>
+            <li>modify_checkpoint()</li>
+            <li>set_trust_rule()</li>
+            <li>check_trust_rules()</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Checkpoint State Machine</h3>
+          <div class="diagram" style="margin-bottom:0;padding:16px 20px">
+            <pre>
+         PENDING
+            |
+    +-------+--------+
+    |                |
+AUTO_APPROVED   AWAITING_APPROVAL
+    |                |
+    |         +------+------+
+    |         |             |
+    |      APPROVED      DENIED
+    |         |
+    |      EXECUTING
+    |         |
+    |     +---+---+
+    v     v       v
+  COMPLETED    FAILED</pre>
+          </div>
+        </div>
+
+        <div class="c">
+          <h3>Intervention Modes</h3>
+          <div class="tw" style="margin-top:0">
+            <table>
+              <thead><tr><th>Mode</th><th>What Gets Checkpointed</th></tr></thead>
+              <tbody>
+                <tr><td><code>ALL_ACTIONS</code></td><td>Every agent action</td></tr>
+                <tr><td><code>WRITE_ACTIONS</code></td><td>File writes, DB writes, API mutations</td></tr>
+                <tr><td><code>HIGH_RISK</code></td><td>Dangerous + Critical tools only</td></tr>
+                <tr><td><code>CRITICAL_ONLY</code></td><td>Level 4 Critical tools only</td></tr>
+                <tr><td><code>NONE</code></td><td>No checkpoints (trust rules only)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="c">
+          <h3>Action Types Tracked</h3>
+          <div class="tags">
+            <span class="tag tb">TOOL_CALL</span>
+            <span class="tag tb">FILE_WRITE</span>
+            <span class="tag tb">FILE_DELETE</span>
+            <span class="tag tb">API_REQUEST</span>
+            <span class="tag tb">COMMAND_EXEC</span>
+            <span class="tag tb">DATABASE_WRITE</span>
+            <span class="tag tb">NETWORK_REQUEST</span>
+            <span class="tag tb">RESOURCE_CREATE</span>
+            <span class="tag tb">RESOURCE_DELETE</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  5 · DYNAMIC GRANTS                                  -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-grants">
+      <div class="sh"><div class="si si-amber">&#x1F511;</div><h2>5. Dynamic Capability Grants (ADR-066)</h2></div>
+      <p class="intro">
+        When an agent requests a tool above its base permission level, the system escalates to HITL.
+        On approval, a time-bounded grant is issued with precise scope and usage limits.
+      </p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Grant Scope</th><th>Duration</th><th>Use Case</th><th>Max Usage</th></tr></thead>
+          <tbody>
+            <tr><td><code>SINGLE_USE</code></td><td>60 minutes</td><td>One-time privileged operation</td><td>1 invocation</td></tr>
+            <tr><td><code>SESSION</code></td><td>8 hours</td><td>Duration of agent session</td><td>100 invocations</td></tr>
+            <tr><td><code>TASK_TREE</code></td><td>24 hours</td><td>All agents in execution tree</td><td>100 invocations</td></tr>
+            <tr><td><code>TIME_BOUNDED</code></td><td>4 hours (default)</td><td>Custom time window</td><td>100 invocations</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cg" style="margin-top:16px">
+        <div class="c">
+          <h3>DynamicGrantManager</h3>
+          <div class="cp">src/services/capability_governance/dynamic_grants.py</div>
+          <p>
+            Creates, validates, tracks, and revokes grants. DynamoDB persistence with TTL auto-expiration.
+            Max 10 active grants per agent. Usage counted per invocation.
+          </p>
+          <ul class="ml">
+            <li>create_grant()</li>
+            <li>check_grant()</li>
+            <li>use_grant()</li>
+            <li>revoke_grant()</li>
+            <li>extend_grant()</li>
+            <li>cleanup_expired()</li>
+          </ul>
+        </div>
+        <div class="c">
+          <h3>Grant Flow</h3>
+          <div class="diagram" style="margin-bottom:0;padding:14px 18px">
+            <pre>
+Agent requests Level 3/4 tool
+        |
+        v
+Middleware: ESCALATE decision
+        |
+        v
+HITL Approval Queue
+        |
+   +----+----+
+   |         |
+APPROVED   DENIED
+   |         '-- Agent receives error
+   v
+DynamicGrantManager.create_grant()
+   |-- Persist to DynamoDB
+   |-- Set TTL, max_usage
+   '-- Agent retries tool call
+        |
+        v
+Middleware: Grant found → ALLOW</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  6 · SANDBOX WORKFLOW                                -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-sandbox">
+      <div class="sh"><div class="si si-teal">&#x1F9EA;</div><h2>6. Sandbox Approval Workflow (ADR-005)</h2></div>
+      <p class="intro">
+        The 7-stage remediation workflow provisions isolated ECS Fargate environments,
+        runs comprehensive test suites, and gates production deployment behind human approval.
+      </p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Stage</th><th>Name</th><th>HITL Gate?</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Detection &amp; Generation</td><td></td><td>Agent detects vulnerability, Coder generates patch</td></tr>
+            <tr><td>2</td><td>Sandbox Provisioning</td><td></td><td>Isolated ECS/Fargate environment with network isolation</td></tr>
+            <tr><td>3</td><td>Sandbox Testing</td><td></td><td>Unit, integration, security, and performance tests</td></tr>
+            <tr><td>4</td><td>HITL Notification</td><td><span class="badge b4">GATE</span></td><td>Approval request created, reviewers notified (SNS/SES/Slack)</td></tr>
+            <tr><td>5</td><td>Human Decision</td><td><span class="badge b4">GATE</span></td><td>Reviewer sees diff, test results, scan results &rarr; APPROVE / REJECT / MODIFY</td></tr>
+            <tr><td>6</td><td>Production Deployment</td><td></td><td>CI/CD pipeline deploys approved patch</td></tr>
+            <tr><td>7</td><td>Post-Deploy Verification</td><td></td><td>24-hour monitoring for errors, perf regression, security events</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout cb">
+        <strong>What the Reviewer Sees</strong>
+        Original vulnerable code, AI-generated patch diff, sandbox test results (pass/fail counts),
+        SAST/SCA security scan results, deployment plan with blast radius estimate, and any
+        Constitutional AI critique findings.
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  7 · CONSTITUTIONAL AI ESCALATION                    -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-constitutional">
+      <div class="sh"><div class="si si-rose">&#x2696;</div><h2>7. Constitutional AI Escalation (ADR-063)</h2></div>
+      <p class="intro">
+        The critique pipeline evaluates agent outputs against 16 constitutional principles.
+        MAJOR and CRITICAL severity critiques automatically escalate to HITL.
+      </p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Critique Severity</th><th>Action</th><th>HITL?</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge b1">MINOR</span></td><td>Style issues &mdash; non-blocking</td><td>No</td></tr>
+            <tr><td><span class="badge b2">MODERATE</span></td><td>Potential logic errors &mdash; logged</td><td>No</td></tr>
+            <tr><td><span class="badge b3">MAJOR</span></td><td>Security concerns, anti-patterns</td><td><strong>Yes &mdash; Escalate</strong></td></tr>
+            <tr><td><span class="badge b4">CRITICAL</span></td><td>Dangerous outputs, policy violations</td><td><strong>Yes &mdash; Immediate</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  8 · INFRASTRUCTURE                                  -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-infra">
+      <div class="sh"><div class="si si-orange">&#x2601;</div><h2>8. Infrastructure &amp; CloudFormation</h2></div>
+      <div class="cg">
+        <div class="c">
+          <h3>hitl-workflow.yaml</h3>
+          <div class="cp">deploy/cloudformation/ &middot; Layer 7.2</div>
+          <p>Step Functions state machine for the full 7-stage patch approval workflow.</p>
+          <div class="tags"><span class="tag tt">Step Functions</span></div>
+        </div>
+        <div class="c">
+          <h3>hitl-callback.yaml</h3>
+          <div class="cp">deploy/cloudformation/</div>
+          <p>Lambda function processing approval callbacks, registering Step Functions task tokens, and sending success/failure results.</p>
+          <div class="tags"><span class="tag tt">Lambda</span></div>
+        </div>
+        <div class="c">
+          <h3>hitl-scheduler.yaml</h3>
+          <div class="cp">deploy/cloudformation/</div>
+          <p>CloudWatch Events trigger for expiration processing, timeout escalations, and notification scheduling.</p>
+          <div class="tags"><span class="tag tt">CloudWatch Events</span></div>
+        </div>
+        <div class="c">
+          <h3>checkpoint-websocket.yaml</h3>
+          <div class="cp">deploy/cloudformation/ &middot; Layer 6.12</div>
+          <p>API Gateway WebSocket API with connect/disconnect/message Lambda handlers for real-time checkpoint streaming.</p>
+          <div class="tags"><span class="tag tt">API Gateway WebSocket</span><span class="tag tt">Lambda</span></div>
+        </div>
+        <div class="c">
+          <h3>DynamoDB Tables</h3>
+          <div class="tw" style="margin-top:0">
+            <table>
+              <thead><tr><th>Table</th><th>Purpose</th><th>TTL</th></tr></thead>
+              <tbody>
+                <tr><td><code>aura-approval-requests-{env}</code></td><td>Approval lifecycle</td><td>90 days</td></tr>
+                <tr><td><code>aura-autonomy-policies-{env}</code></td><td>Policy storage</td><td>None</td></tr>
+                <tr><td><code>aura-policy-audit-{env}</code></td><td>Policy change audit</td><td>365 days</td></tr>
+                <tr><td><code>aura-autonomy-decisions-{env}</code></td><td>Autonomous decisions</td><td>90 days</td></tr>
+                <tr><td><code>aura-checkpoints-{env}</code></td><td>Execution checkpoints</td><td>Auto</td></tr>
+                <tr><td><code>aura-ws-connections-{env}</code></td><td>WebSocket connections</td><td>Auto</td></tr>
+                <tr><td><code>aura-capability-grants-{env}</code></td><td>Dynamic grants</td><td>TTL per grant</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  9 · API ENDPOINTS                                   -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-api">
+      <div class="sh"><div class="si si-blue">&#x1F310;</div><h2>9. API Endpoints</h2></div>
+      <h3 style="font-size:14px;margin-bottom:10px">Approval Endpoints <span style="font-weight:400;color:var(--slate-500)">&mdash; /api/v1/approvals</span></h3>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Rate Limit</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><code>/approvals</code></td><td>60/min</td><td>List with status/severity filters</td></tr>
+            <tr><td><code>GET</code></td><td><code>/approvals/stats</code></td><td>60/min</td><td>Statistics by status and severity</td></tr>
+            <tr><td><code>GET</code></td><td><code>/approvals/{id}</code></td><td>60/min</td><td>Full approval details</td></tr>
+            <tr><td><code>POST</code></td><td><code>/approvals/{id}/approve</code></td><td>2/min</td><td>Approve request (conditional write)</td></tr>
+            <tr><td><code>POST</code></td><td><code>/approvals/{id}/reject</code></td><td>2/min</td><td>Reject request (conditional write)</td></tr>
+            <tr><td><code>POST</code></td><td><code>/approvals/{id}/cancel</code></td><td>10/min</td><td>Cancel request</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 style="font-size:14px;margin:16px 0 10px">Autonomy Endpoints <span style="font-weight:400;color:var(--slate-500)">&mdash; /api/v1/autonomy</span></h3>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Role</th><th>Rate Limit</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><code>/policies</code></td><td>Any</td><td>60/min</td><td>List organization policies</td></tr>
+            <tr><td><code>POST</code></td><td><code>/policies</code></td><td>Admin</td><td>5/min</td><td>Create policy from preset</td></tr>
+            <tr><td><code>GET</code></td><td><code>/policies/{id}</code></td><td>Any</td><td>60/min</td><td>Policy details</td></tr>
+            <tr><td><code>PUT</code></td><td><code>/policies/{id}</code></td><td>Admin</td><td>60/min</td><td>Update policy</td></tr>
+            <tr><td><code>PUT</code></td><td><code>/policies/{id}/toggle</code></td><td>Admin</td><td>2/min</td><td>Master HITL toggle</td></tr>
+            <tr><td><code>POST</code></td><td><code>/policies/{id}/override</code></td><td>Admin</td><td>60/min</td><td>Add override</td></tr>
+            <tr><td><code>POST</code></td><td><code>/check</code></td><td>Any</td><td>60/min</td><td>Check if HITL required</td></tr>
+            <tr><td><code>GET</code></td><td><code>/decisions</code></td><td>Any</td><td>60/min</td><td>Decision history</td></tr>
+            <tr><td><code>GET</code></td><td><code>/presets</code></td><td>Any</td><td>60/min</td><td>Available presets</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  10 · FRONTEND & NOTIFICATIONS                       -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-ui">
+      <div class="sh"><div class="si si-cyan">&#x1F5A5;</div><h2>10. Frontend &amp; Notifications</h2></div>
+      <div class="cg">
+        <div class="c">
+          <h3>ApprovalDashboard</h3>
+          <div class="cp">frontend/src/components/ApprovalDashboard.jsx</div>
+          <p>
+            Full-featured approval UI: list/detail views, code diff viewer (vulnerable vs. patched),
+            sandbox test results display, approve/reject actions with reason entry, and real-time
+            WebSocket updates.
+          </p>
+        </div>
+        <div class="c">
+          <h3>ApprovalQueueWidget</h3>
+          <div class="cp">frontend/src/components/scheduling/ApprovalQueueWidget.jsx</div>
+          <p>Dashboard widget showing pending approval count, recent decisions, and quick-action link.</p>
+        </div>
+        <div class="c">
+          <h3>Notification Channels</h3>
+          <div class="tw" style="margin-top:0">
+            <table>
+              <thead><tr><th>Event</th><th>Channels</th></tr></thead>
+              <tbody>
+                <tr><td>Approval created</td><td>Email (SES), Slack webhook, SNS</td></tr>
+                <tr><td>Approval decided</td><td>API callback, EventBridge</td></tr>
+                <tr><td>Warning (75% timeout)</td><td>Email, Slack</td></tr>
+                <tr><td>Expired / Escalated</td><td>Email, SMS, high-priority Slack</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="c">
+          <h3>Autonomy Frontend API</h3>
+          <div class="cp">frontend/src/services/autonomyApi.js</div>
+          <ul class="ml">
+            <li>getPolicies()</li>
+            <li>getPolicy(id)</li>
+            <li>updatePolicy(id, data)</li>
+            <li>toggleHITL(id, enabled)</li>
+            <li>addOverride(id, override)</li>
+            <li>checkHITLRequired(context)</li>
+            <li>getPresets()</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  11 · AUDIT & COMPLIANCE                             -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-audit">
+      <div class="sh"><div class="si si-indigo">&#x1F4DD;</div><h2>11. Audit &amp; Compliance</h2></div>
+      <p class="intro">
+        Every HITL decision produces an immutable audit record covering who, when, what, why,
+        and result. Three DynamoDB tables with retention policies aligned to SOX, HIPAA, and PCI-DSS.
+      </p>
+      <div class="cg">
+        <div class="c" style="grid-column:1/-1">
+          <h3>Audit Record Fields</h3>
+          <div class="tw" style="margin-top:0">
+            <table>
+              <thead><tr><th>Field</th><th>Description</th><th>Example</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Who</strong></td><td>Reviewer identity</td><td><code>reviewer_id: "user-abc"</code></td></tr>
+                <tr><td><strong>When</strong></td><td>Timestamps</td><td><code>created_at, reviewed_at</code></td></tr>
+                <tr><td><strong>What</strong></td><td>Request identifiers</td><td><code>approval_id, patch_id, vulnerability_id</code></td></tr>
+                <tr><td><strong>Why</strong></td><td>Decision rationale</td><td><code>decision_reason: "Patch verified safe"</code></td></tr>
+                <tr><td><strong>Result</strong></td><td>Outcome + test data</td><td><code>status: APPROVED, sandbox_results: {passed: 10}</code></td></tr>
+                <tr><td><strong>Context</strong></td><td>Policy context</td><td><code>severity, operation, autonomy_level, guardrail_triggered</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════ -->
+    <!--  12 · SUMMARY MATRIX                                 -->
+    <!-- ═════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-summary">
+      <div class="sh"><div class="si si-blue">&#x1F4CB;</div><h2>12. Summary Matrix</h2></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Component</th><th>Service</th><th>ADR</th><th>Status</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>Approval Service</td><td><code>HITLApprovalService</code></td><td>&mdash;</td><td>Deployed</td><td>Core approval lifecycle</td></tr>
+            <tr><td>Autonomy Framework</td><td><code>AutonomyPolicyService</code></td><td>032</td><td>Deployed</td><td>7 presets, 4 levels, 5 guardrails</td></tr>
+            <tr><td>Execution Checkpoints</td><td><code>ExecutionCheckpointService</code></td><td>042</td><td>Phase 1</td><td>Real-time agent pausing</td></tr>
+            <tr><td>Dynamic Grants</td><td><code>DynamicGrantManager</code></td><td>066</td><td>Deployed</td><td>HITL-approved capability elevation</td></tr>
+            <tr><td>Sandbox Workflow</td><td>Step Functions state machine</td><td>005</td><td>Deployed</td><td>7-stage patch approval</td></tr>
+            <tr><td>Constitutional Escalation</td><td><code>CritiqueService</code></td><td>063</td><td>Deployed</td><td>MAJOR/CRITICAL &rarr; HITL</td></tr>
+            <tr><td>Approval Callbacks</td><td>Lambda handler</td><td>&mdash;</td><td>Deployed</td><td>Step Functions task tokens</td></tr>
+            <tr><td>Expiration Scheduler</td><td>CloudWatch Events</td><td>&mdash;</td><td>Deployed</td><td>Timeout &amp; escalation</td></tr>
+            <tr><td>WebSocket Streaming</td><td>API Gateway WebSocket</td><td>&mdash;</td><td>Deployed</td><td>Real-time checkpoint UI</td></tr>
+            <tr><td>Approval Dashboard</td><td>React component</td><td>&mdash;</td><td>Deployed</td><td>Human approval interface</td></tr>
+            <tr><td>Autonomy API</td><td>FastAPI endpoints</td><td>&mdash;</td><td>Deployed</td><td>Policy management (12 endpoints)</td></tr>
+            <tr><td>Notification Service</td><td>SNS / SES / Slack</td><td>&mdash;</td><td>Deployed</td><td>Multi-channel alerts</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <strong>Project Aura</strong> &mdash; Aenea Labs &middot; Human-in-the-Loop Capabilities Reference
+  </div>
+</footer>
+
+</body>
+</html>

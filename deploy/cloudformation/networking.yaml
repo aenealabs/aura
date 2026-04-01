@@ -1,0 +1,412 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 'Project Aura - Layer 1.1 - VPC (Network Foundation)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    AllowedPattern: ^[a-z][a-z0-9-]*$
+    Description: Project name (lowercase, alphanumeric with hyphens)
+
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: ^(10\.)([0-9]{1,3}\.){2}(0\/16)$
+    Description: VPC CIDR block (10.x.0.0/16)
+
+  AvailabilityZones:
+    Type: CommaDelimitedList
+    Default: us-east-1a,us-east-1b,us-east-1c
+    Description: List of Availability Zones (min 2, max 3)
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment Configuration
+        Parameters:
+          - Environment
+          - ProjectName
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VpcCIDR
+          - AvailabilityZones
+
+Conditions:
+  UseThreeAZs: !Equals [!Ref Environment, prod]
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-vpc-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-igw-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-subnet-1-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-subnet-2-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Condition: UseThreeAZs
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [2, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [2, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-subnet-3-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [3, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-subnet-1-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [4, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-subnet-2-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Condition: UseThreeAZs
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [5, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [2, !Ref AvailabilityZones]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-subnet-3-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+  # NAT Gateways - REMOVED (Replaced with VPC Endpoints)
+  # Project Aura uses VPC Endpoints exclusively for AWS service connectivity.
+  # This provides:
+  #   - Cost savings: ~$66/month per environment
+  #   - Better security: No internet egress (CMMC Level 3 compliant)
+  #   - Lower latency: 5-10ms faster than NAT Gateway routing
+  #   - GovCloud compatibility: Same architecture for commercial and GovCloud
+  #
+  # VPC Endpoints are created separately via deploy/scripts/migrate-to-vpc-endpoints.sh
+  # Services with endpoints: S3, DynamoDB, Bedrock, CodeConnections, CloudWatch Logs,
+  # Secrets Manager, ECR API, ECR DKR
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-rt-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: UseThreeAZs
+    Properties:
+      SubnetId: !Ref PublicSubnet3
+      RouteTableId: !Ref PublicRouteTable
+
+  # Private Route Tables
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-rt-1-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # PrivateRoute1 - REMOVED
+  # No default route to internet via NAT Gateway
+  # AWS services accessed via VPC Endpoints only
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-rt-2-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # PrivateRoute2 - REMOVED
+  # No default route to internet via NAT Gateway
+  # AWS services accessed via VPC Endpoints only
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  PrivateRouteTable3:
+    Type: AWS::EC2::RouteTable
+    Condition: UseThreeAZs
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-rt-3-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # PrivateRoute3 - REMOVED
+  # No default route to internet via NAT Gateway
+  # AWS services accessed via VPC Endpoints only
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: UseThreeAZs
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTable3
+
+  # VPC Flow Logs (for security monitoring)
+  FlowLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchLogPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: "*"
+
+  FlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/vpc/${ProjectName}-${Environment}"
+      RetentionInDays: !If [UseThreeAZs, 365, 90]  # 365 days for prod, 90 for dev/qa (CMMC Level 3 compliant)
+
+  VPCFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      ResourceType: VPC
+      ResourceId: !Ref VPC
+      TrafficType: ALL
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref FlowLogGroup
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-flow-log-${Environment}"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${AWS::StackName}-VpcId"
+
+  VpcCIDR:
+    Description: VPC CIDR block
+    Value: !Ref VpcCIDR
+    Export:
+      Name: !Sub "${AWS::StackName}-VpcCIDR"
+
+  PublicSubnetIds:
+    Description: Public subnet IDs (comma-delimited)
+    Value: !If
+      - UseThreeAZs
+      - !Sub "${PublicSubnet1},${PublicSubnet2},${PublicSubnet3}"
+      - !Sub "${PublicSubnet1},${PublicSubnet2}"
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnetIds"
+
+  PrivateSubnetIds:
+    Description: Private subnet IDs (comma-delimited)
+    Value: !If
+      - UseThreeAZs
+      - !Sub "${PrivateSubnet1},${PrivateSubnet2},${PrivateSubnet3}"
+      - !Sub "${PrivateSubnet1},${PrivateSubnet2}"
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetIds"
+
+  PrivateSubnet1Id:
+    Description: Private subnet 1 ID
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnet1Id"
+
+  PrivateSubnet2Id:
+    Description: Private subnet 2 ID
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnet2Id"
+
+  PublicSubnet1Id:
+    Description: Public subnet 1 ID
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnet1Id"
+
+  PublicSubnet2Id:
+    Description: Public subnet 2 ID
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnet2Id"
+
+  # NAT Gateway Outputs - REMOVED
+  # VPC Endpoints are used instead (see deploy/scripts/migrate-to-vpc-endpoints.sh)

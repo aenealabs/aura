@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.9 - Runtime Security Correlation (ADR-083 Runtime-to-Code Remediation)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # IAM Role for Correlation Service (GraphRAG access + remediation)
+  CorrelationServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-correlation-service-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com, states.amazonaws.com]
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CorrelationAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Neptune - Graph trace queries
+              - Effect: Allow
+                Action: [neptune-db:ReadDataViaQuery, neptune-db:GetQueryStatus]
+                Resource: !Sub 'arn:${AWS::Partition}:neptune-db:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*-${Environment}/*'
+              # OpenSearch - Vector similarity search
+              - Effect: Allow
+                Action: [es:ESHttpGet, es:ESHttpPost]
+                Resource: !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-*-${Environment}/*'
+              # DynamoDB - Read traffic events, write correlation results
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:PutItem, dynamodb:BatchWriteItem]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-traffic-events-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-traffic-events-${Environment}/index/*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-correlation-results-${Environment}'
+              # EventBridge - Publish remediation events
+              - Effect: Allow
+                Action: events:PutEvents
+                Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # DynamoDB Table - Correlation Results
+  CorrelationResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-correlation-results-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: correlation_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: agent_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: correlation_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: agent-timestamp-index
+          KeySchema:
+            - AttributeName: agent_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-correlation-results-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # DynamoDB Table - Remediation Plans
+  RemediationPlansTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-remediation-plans-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: plan_id
+          AttributeType: S
+        - AttributeName: vulnerability_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: plan_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: vulnerability-index
+          KeySchema:
+            - AttributeName: vulnerability_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-remediation-plans-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # SNS Topic - Remediation Alerts
+  RemediationAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-remediation-alerts-${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # EventBridge Rule - Correlation Complete Events
+  CorrelationCompleteRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-correlation-complete-${Environment}'
+      Description: Triggers when runtime-to-code correlation finds a match
+      State: ENABLED
+      EventPattern:
+        source:
+          - !Sub '${ProjectName}.runtime-security'
+        detail-type:
+          - CorrelationComplete
+          - RemediationPlanCreated
+      Targets:
+        - Arn: !Ref RemediationAlertTopic
+          Id: RemediationSNSTarget
+
+  CorrelationCompleteTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref RemediationAlertTopic
+      Topics:
+        - !Ref RemediationAlertTopic
+
+  # CloudWatch Alarm - Low Correlation Rate
+  LowCorrelationRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-low-correlation-rate-${Environment}'
+      AlarmDescription: Alert when correlation rate drops below 50%
+      MetricName: CorrelationRate
+      Namespace: !Sub 'Aura/RuntimeSecurity/${Environment}'
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 3
+      Threshold: 50
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref RemediationAlertTopic
+
+Outputs:
+  CorrelationResultsTableName:
+    Description: Correlation results table name
+    Value: !Ref CorrelationResultsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CorrelationResultsTableName'
+
+  CorrelationResultsTableArn:
+    Description: Correlation results table ARN
+    Value: !GetAtt CorrelationResultsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CorrelationResultsTableArn'
+
+  RemediationPlansTableName:
+    Description: Remediation plans table name
+    Value: !Ref RemediationPlansTable
+    Export:
+      Name: !Sub '${AWS::StackName}-RemediationPlansTableName'
+
+  RemediationPlansTableArn:
+    Description: Remediation plans table ARN
+    Value: !GetAtt RemediationPlansTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RemediationPlansTableArn'
+
+  CorrelationServiceRoleArn:
+    Description: Correlation service role ARN
+    Value: !GetAtt CorrelationServiceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CorrelationServiceRoleArn'
+
+  RemediationAlertTopicArn:
+    Description: Remediation alert SNS topic ARN
+    Value: !Ref RemediationAlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-RemediationAlertTopicArn'

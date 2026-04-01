@@ -1,0 +1,401 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.4 - Test Environment Service Catalog (Self-Service Provisioning)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  CatalogLaunchRoleArn:
+    Type: String
+    Description: ARN of the Service Catalog launch role (from test-env-iam stack)
+
+Resources:
+  # ==========================================================================
+  # Service Catalog Portfolio
+  # ==========================================================================
+  TestEnvPortfolio:
+    Type: AWS::ServiceCatalog::Portfolio
+    Properties:
+      DisplayName: !Sub '${ProjectName} Test Environments'
+      Description: 'Self-service test environment templates for rapid prototyping and testing'
+      ProviderName: 'Aura Platform Team'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: 'Self-Service Test Environments'
+
+  # ==========================================================================
+  # Portfolio Principal Association - Allow all IAM roles in the account
+  # IAM_PATTERN requires NO accountID in ARN (triple colon :::)
+  # See: https://docs.aws.amazon.com/servicecatalog/latest/dg/API_AssociatePrincipalWithPortfolio.html
+  # ==========================================================================
+  PortfolioPrincipalAssociation:
+    Type: AWS::ServiceCatalog::PortfolioPrincipalAssociation
+    Properties:
+      PortfolioId: !Ref TestEnvPortfolio
+      PrincipalARN: !Sub 'arn:${AWS::Partition}:iam:::role/*'
+      PrincipalType: IAM_PATTERN
+
+  # ==========================================================================
+  # Product: Python FastAPI Environment
+  # ==========================================================================
+  PythonFastAPIProduct:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Name: Python FastAPI Environment
+      Description: 'FastAPI backend with DynamoDB table and S3 bucket (24 hour TTL, $0.50/day)'
+      Owner: 'Aura Platform Team'
+      SupportDescription: 'Contact platform-team@aenealabs.com for support'
+      SupportEmail: 'platform-team@aenealabs.com'
+      Distributor: 'Aura Platform'
+      Tags:
+        - Key: EnvironmentType
+          Value: standard
+        - Key: CostPerDay
+          Value: '0.50'
+        - Key: DefaultTTLHours
+          Value: '24'
+      ProvisioningArtifactParameters:
+        - Name: 'v1.0.0'
+          Description: 'Initial release - Fargate task, DynamoDB, S3'
+          Info:
+            LoadTemplateFromURL: !Sub 'https://${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}.s3.${AWS::Region}.amazonaws.com/service-catalog/products/python-fastapi-v1.yaml'
+          Type: CLOUD_FORMATION_TEMPLATE
+          DisableTemplateValidation: true
+
+  PythonFastAPIAssociation:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref PythonFastAPIProduct
+
+  PythonFastAPILaunchConstraint:
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    DependsOn: PythonFastAPIAssociation
+    Properties:
+      Description: 'Launch constraint using service role for Python FastAPI product'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref PythonFastAPIProduct
+      RoleArn: !Ref CatalogLaunchRoleArn
+
+  # ==========================================================================
+  # Product: React Frontend Environment
+  # ==========================================================================
+  ReactFrontendProduct:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Name: React Frontend Environment
+      Description: 'React app with S3 static hosting (24 hour TTL, $0.30/day)'
+      Owner: 'Aura Platform Team'
+      SupportDescription: 'Contact platform-team@aenealabs.com for support'
+      SupportEmail: 'platform-team@aenealabs.com'
+      Distributor: 'Aura Platform'
+      Tags:
+        - Key: EnvironmentType
+          Value: standard
+        - Key: CostPerDay
+          Value: '0.30'
+        - Key: DefaultTTLHours
+          Value: '24'
+      ProvisioningArtifactParameters:
+        - Name: 'v1.0.0'
+          Description: 'Initial release - S3 static hosting with CloudFront'
+          Info:
+            LoadTemplateFromURL: !Sub 'https://${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}.s3.${AWS::Region}.amazonaws.com/service-catalog/products/react-frontend-v1.yaml'
+          Type: CLOUD_FORMATION_TEMPLATE
+          DisableTemplateValidation: true
+
+  ReactFrontendAssociation:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref ReactFrontendProduct
+
+  ReactFrontendLaunchConstraint:
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    DependsOn: ReactFrontendAssociation
+    Properties:
+      Description: 'Launch constraint using service role for React Frontend product'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref ReactFrontendProduct
+      RoleArn: !Ref CatalogLaunchRoleArn
+
+  # ==========================================================================
+  # Product: Full Stack Environment
+  # ==========================================================================
+  FullStackProduct:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Name: Full Stack Environment
+      Description: 'Complete stack with API, frontend, DynamoDB, and S3 (24 hour TTL, $1.20/day)'
+      Owner: 'Aura Platform Team'
+      SupportDescription: 'Contact platform-team@aenealabs.com for support'
+      SupportEmail: 'platform-team@aenealabs.com'
+      Distributor: 'Aura Platform'
+      Tags:
+        - Key: EnvironmentType
+          Value: standard
+        - Key: CostPerDay
+          Value: '1.20'
+        - Key: DefaultTTLHours
+          Value: '24'
+      ProvisioningArtifactParameters:
+        - Name: 'v1.0.0'
+          Description: 'Initial release - API + UI Fargate tasks, DynamoDB, S3'
+          Info:
+            LoadTemplateFromURL: !Sub 'https://${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}.s3.${AWS::Region}.amazonaws.com/service-catalog/products/full-stack-v1.yaml'
+          Type: CLOUD_FORMATION_TEMPLATE
+          DisableTemplateValidation: true
+
+  FullStackAssociation:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref FullStackProduct
+
+  FullStackLaunchConstraint:
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    DependsOn: FullStackAssociation
+    Properties:
+      Description: 'Launch constraint using service role for Full Stack product'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref FullStackProduct
+      RoleArn: !Ref CatalogLaunchRoleArn
+
+  # ==========================================================================
+  # Product: Data Pipeline Environment (Extended - Requires Approval)
+  # ==========================================================================
+  DataPipelineProduct:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Name: Data Pipeline Environment
+      Description: 'Step Functions workflow with Lambda and storage (7 day TTL, $0.80/day, requires approval)'
+      Owner: 'Aura Platform Team'
+      SupportDescription: 'Contact platform-team@aenealabs.com for support'
+      SupportEmail: 'platform-team@aenealabs.com'
+      Distributor: 'Aura Platform'
+      Tags:
+        - Key: EnvironmentType
+          Value: extended
+        - Key: CostPerDay
+          Value: '0.80'
+        - Key: DefaultTTLHours
+          Value: '168'
+        - Key: RequiresApproval
+          Value: 'true'
+      ProvisioningArtifactParameters:
+        - Name: 'v1.0.0'
+          Description: 'Initial release - Step Functions, Lambda, S3, DynamoDB'
+          Info:
+            LoadTemplateFromURL: !Sub 'https://${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}.s3.${AWS::Region}.amazonaws.com/service-catalog/products/data-pipeline-v1.yaml'
+          Type: CLOUD_FORMATION_TEMPLATE
+          DisableTemplateValidation: true
+
+  DataPipelineAssociation:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref DataPipelineProduct
+
+  DataPipelineLaunchConstraint:
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    DependsOn: DataPipelineAssociation
+    Properties:
+      Description: 'Launch constraint using service role for Data Pipeline product'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref DataPipelineProduct
+      RoleArn: !Ref CatalogLaunchRoleArn
+
+  # ==========================================================================
+  # Product: Quick Test Namespace
+  # ==========================================================================
+  QuickTestProduct:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Name: Quick Test Namespace
+      Description: 'Lightweight EKS namespace for rapid testing (4 hour TTL, $0.10/day)'
+      Owner: 'Aura Platform Team'
+      SupportDescription: 'Contact platform-team@aenealabs.com for support'
+      SupportEmail: 'platform-team@aenealabs.com'
+      Distributor: 'Aura Platform'
+      Tags:
+        - Key: EnvironmentType
+          Value: quick
+        - Key: CostPerDay
+          Value: '0.10'
+        - Key: DefaultTTLHours
+          Value: '4'
+      ProvisioningArtifactParameters:
+        - Name: 'v1.0.0'
+          Description: 'Initial release - ECS Fargate task with minimal resources'
+          Info:
+            LoadTemplateFromURL: !Sub 'https://${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}.s3.${AWS::Region}.amazonaws.com/service-catalog/products/quick-test-v1.yaml'
+          Type: CLOUD_FORMATION_TEMPLATE
+          DisableTemplateValidation: true
+
+  QuickTestAssociation:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref QuickTestProduct
+
+  QuickTestLaunchConstraint:
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    DependsOn: QuickTestAssociation
+    Properties:
+      Description: 'Launch constraint using service role for Quick Test product'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref QuickTestProduct
+      RoleArn: !Ref CatalogLaunchRoleArn
+
+  # ==========================================================================
+  # Tag Update Constraints - Enforce mandatory tags
+  # Must wait for PortfolioProductAssociation to complete before creating constraints
+  # ==========================================================================
+  PythonFastAPITagConstraint:
+    Type: AWS::ServiceCatalog::ResourceUpdateConstraint
+    DependsOn: PythonFastAPIAssociation
+    Properties:
+      Description: 'Enforce mandatory tags on Python FastAPI resources'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref PythonFastAPIProduct
+      TagUpdateOnProvisionedProduct: ALLOWED
+
+  ReactFrontendTagConstraint:
+    Type: AWS::ServiceCatalog::ResourceUpdateConstraint
+    DependsOn: ReactFrontendAssociation
+    Properties:
+      Description: 'Enforce mandatory tags on React Frontend resources'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref ReactFrontendProduct
+      TagUpdateOnProvisionedProduct: ALLOWED
+
+  FullStackTagConstraint:
+    Type: AWS::ServiceCatalog::ResourceUpdateConstraint
+    DependsOn: FullStackAssociation
+    Properties:
+      Description: 'Enforce mandatory tags on Full Stack resources'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref FullStackProduct
+      TagUpdateOnProvisionedProduct: ALLOWED
+
+  DataPipelineTagConstraint:
+    Type: AWS::ServiceCatalog::ResourceUpdateConstraint
+    DependsOn: DataPipelineAssociation
+    Properties:
+      Description: 'Enforce mandatory tags on Data Pipeline resources'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref DataPipelineProduct
+      TagUpdateOnProvisionedProduct: ALLOWED
+
+  QuickTestTagConstraint:
+    Type: AWS::ServiceCatalog::ResourceUpdateConstraint
+    DependsOn: QuickTestAssociation
+    Properties:
+      Description: 'Enforce mandatory tags on Quick Test resources'
+      PortfolioId: !Ref TestEnvPortfolio
+      ProductId: !Ref QuickTestProduct
+      TagUpdateOnProvisionedProduct: ALLOWED
+
+  # ==========================================================================
+  # SNS Topic for Test Environment Notifications
+  # ==========================================================================
+  TestEnvNotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-test-env-notifications-${Environment}'
+      DisplayName: 'Test Environment Notifications'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  TestEnvNotificationsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref TestEnvNotificationsTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowLambdaPublish
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref TestEnvNotificationsTopic
+            Condition:
+              ArnLike:
+                'aws:SourceArn': !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-test-env-*'
+          - Sid: AllowStepFunctionsPublish
+            Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref TestEnvNotificationsTopic
+
+Outputs:
+  PortfolioId:
+    Description: Service Catalog Portfolio ID
+    Value: !Ref TestEnvPortfolio
+    Export:
+      Name: !Sub '${AWS::StackName}-PortfolioId'
+
+  PortfolioArn:
+    Description: Service Catalog Portfolio ARN
+    Value: !Sub 'arn:${AWS::Partition}:catalog:${AWS::Region}:${AWS::AccountId}:portfolio/${TestEnvPortfolio}'
+    Export:
+      Name: !Sub '${AWS::StackName}-PortfolioArn'
+
+  PythonFastAPIProductId:
+    Description: Python FastAPI Product ID
+    Value: !Ref PythonFastAPIProduct
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonFastAPIProductId'
+
+  ReactFrontendProductId:
+    Description: React Frontend Product ID
+    Value: !Ref ReactFrontendProduct
+    Export:
+      Name: !Sub '${AWS::StackName}-ReactFrontendProductId'
+
+  FullStackProductId:
+    Description: Full Stack Product ID
+    Value: !Ref FullStackProduct
+    Export:
+      Name: !Sub '${AWS::StackName}-FullStackProductId'
+
+  DataPipelineProductId:
+    Description: Data Pipeline Product ID
+    Value: !Ref DataPipelineProduct
+    Export:
+      Name: !Sub '${AWS::StackName}-DataPipelineProductId'
+
+  QuickTestProductId:
+    Description: Quick Test Product ID
+    Value: !Ref QuickTestProduct
+    Export:
+      Name: !Sub '${AWS::StackName}-QuickTestProductId'
+
+  NotificationsTopicArn:
+    Description: SNS topic ARN for test environment notifications
+    Value: !Ref TestEnvNotificationsTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-NotificationsTopicArn'

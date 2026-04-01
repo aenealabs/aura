@@ -1,0 +1,665 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.4 - Red Team (Adversarial Testing)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  VpcId:
+    Type: String
+    Description: VPC ID for ECS tasks (imported from networking stack)
+    Default: ''
+
+  AlertEmail:
+    Type: String
+    Description: Email address for critical security findings
+    Default: ''
+
+  EnableRedTeam:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable red-team infrastructure (requires explicit opt-in)
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+  HasVpc: !Not [!Equals [!Ref VpcId, '']]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  RedTeamEnabled: !Equals [!Ref EnableRedTeam, 'true']
+  CreateResources: !And [!Condition RedTeamEnabled, !Condition HasVpc]
+  CreateAlerts: !And [!Condition CreateResources, !Condition HasAlertEmail]
+
+Resources:
+  # ============================================================================
+  # S3 Bucket - Red-Team Reports & Artifacts
+  # ============================================================================
+
+  RedTeamReportsBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateResources
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-red-team-reports-${Environment}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref RedTeamKMSKey
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ArchiveOldReports
+            Status: Enabled
+            Transitions:
+              - StorageClass: INTELLIGENT_TIERING
+                TransitionInDays: 30
+            NoncurrentVersionTransitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 90
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 365
+      LoggingConfiguration:
+        DestinationBucketName: !Ref RedTeamAccessLogsBucket
+        LogFilePrefix: red-team-reports/
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+        - Key: Purpose
+          Value: adversarial-testing-reports
+
+  RedTeamAccessLogsBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateResources
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-red-team-logs-${Environment}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldLogs
+            Status: Enabled
+            ExpirationInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+        - Key: Purpose
+          Value: access-logging
+
+  # S3 Bucket Policy for access logs
+  RedTeamAccessLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateResources
+    Properties:
+      Bucket: !Ref RedTeamAccessLogsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: S3ServerAccessLogsPolicy
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${RedTeamAccessLogsBucket.Arn}/*'
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-red-team-*'
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  # ============================================================================
+  # KMS Key - Encryption for Red-Team Data
+  # ============================================================================
+
+  RedTeamKMSKey:
+    Type: AWS::KMS::Key
+    Condition: CreateResources
+    Properties:
+      Description: !Sub 'KMS key for ${ProjectName} red-team encryption in ${Environment}'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RootAccountAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowS3Service
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - kms:GenerateDataKey*
+              - kms:Decrypt
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 's3.${AWS::Region}.amazonaws.com'
+          - Sid: AllowDynamoDBService
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - kms:GenerateDataKey*
+              - kms:Decrypt
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+          - Sid: AllowLogsService
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - kms:GenerateDataKey*
+              - kms:Decrypt
+              - kms:Encrypt
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-red-team-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+
+  RedTeamKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: CreateResources
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-red-team-${Environment}'
+      TargetKeyId: !Ref RedTeamKMSKey
+
+  # ============================================================================
+  # DynamoDB Tables - Test Results & Findings
+  # ============================================================================
+
+  RedTeamFindingsTable:
+    Type: AWS::DynamoDB::Table
+    Condition: CreateResources
+    Properties:
+      TableName: !Sub '${ProjectName}-red-team-findings-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: finding_id
+          AttributeType: S
+        - AttributeName: severity
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: target_id
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+      KeySchema:
+        - AttributeName: finding_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: severity-created_at-index
+          KeySchema:
+            - AttributeName: severity
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: target-created_at-index
+          KeySchema:
+            - AttributeName: target_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: category-created_at-index
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt RedTeamKMSKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+        - Key: Purpose
+          Value: adversarial-findings
+
+  RedTeamTestRunsTable:
+    Type: AWS::DynamoDB::Table
+    Condition: CreateResources
+    Properties:
+      TableName: !Sub '${ProjectName}-red-team-runs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: run_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: started_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: run_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-started_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: started_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt RedTeamKMSKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+        - Key: Purpose
+          Value: test-execution-tracking
+
+  # ============================================================================
+  # IAM Roles - ECS Task Execution
+  # ============================================================================
+
+  RedTeamTaskRole:
+    Type: AWS::IAM::Role
+    Condition: CreateResources
+    Properties:
+      RoleName: !Sub '${ProjectName}-red-team-task-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RedTeamTaskPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: S3Access
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt RedTeamReportsBucket.Arn
+                  - !Sub '${RedTeamReportsBucket.Arn}/*'
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt RedTeamFindingsTable.Arn
+                  - !Sub '${RedTeamFindingsTable.Arn}/index/*'
+                  - !GetAtt RedTeamTestRunsTable.Arn
+                  - !Sub '${RedTeamTestRunsTable.Arn}/index/*'
+              - Sid: KMSAccess
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey*
+                Resource: !GetAtt RedTeamKMSKey.Arn
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-red-team-${Environment}:*'
+              - Sid: SSMParameterRead
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/red-team/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+
+  RedTeamTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Condition: CreateResources
+    Properties:
+      RoleName: !Sub '${ProjectName}-red-team-execution-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: GetSecrets
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/red-team/*'
+              - Sid: KMSForSecrets
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: !GetAtt RedTeamKMSKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+
+  # ============================================================================
+  # CloudWatch Log Group
+  # ============================================================================
+
+  RedTeamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CreateResources
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}-red-team-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 90]
+      KmsKeyId: !GetAtt RedTeamKMSKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+
+  # ============================================================================
+  # ECS Task Definition
+  # ============================================================================
+
+  RedTeamTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Condition: CreateResources
+    Properties:
+      Family: !Sub '${ProjectName}-red-team-${Environment}'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt RedTeamTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt RedTeamTaskRole.Arn
+      ContainerDefinitions:
+        - Name: red-team-agent
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ProjectName}-red-team-${Environment}:latest'
+          Essential: true
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: PROJECT_NAME
+              Value: !Ref ProjectName
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: FINDINGS_TABLE
+              Value: !Ref RedTeamFindingsTable
+            - Name: RUNS_TABLE
+              Value: !Ref RedTeamTestRunsTable
+            - Name: REPORTS_BUCKET
+              Value: !Ref RedTeamReportsBucket
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RedTeamLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: red-team
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - python -c "import sys; sys.exit(0)"
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+
+  # ============================================================================
+  # SNS Topic - Critical Findings Alerts
+  # ============================================================================
+
+  RedTeamAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateAlerts
+    Properties:
+      TopicName: !Sub '${ProjectName}-red-team-alerts-${Environment}'
+      KmsMasterKeyId: !Ref RedTeamKMSKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: red-team
+
+  RedTeamAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: CreateAlerts
+    Properties:
+      TopicArn: !Ref RedTeamAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================================
+  # EventBridge Rule - Critical Finding Detection
+  # ============================================================================
+
+  CriticalFindingRule:
+    Type: AWS::Events::Rule
+    Condition: CreateAlerts
+    Properties:
+      Name: !Sub '${ProjectName}-red-team-critical-${Environment}'
+      Description: Route critical red-team findings to alerts
+      EventBusName: default
+      EventPattern:
+        source:
+          - 'aura.red-team'
+        detail-type:
+          - 'CriticalFindingDetected'
+        detail:
+          severity:
+            - 'CRITICAL'
+            - 'HIGH'
+      State: ENABLED
+      Targets:
+        - Id: AlertTopic
+          Arn: !Ref RedTeamAlertTopic
+
+  # ============================================================================
+  # SSM Parameters
+  # ============================================================================
+
+  RedTeamEnabledParameter:
+    Type: AWS::SSM::Parameter
+    Condition: CreateResources
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/red-team/enabled'
+      Type: String
+      Value: 'true'
+      Description: Red-team infrastructure enabled flag
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  RedTeamFindingsTableParameter:
+    Type: AWS::SSM::Parameter
+    Condition: CreateResources
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/red-team/findings-table'
+      Type: String
+      Value: !Ref RedTeamFindingsTable
+      Description: Red-team findings DynamoDB table name
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  RedTeamReportsBucketParameter:
+    Type: AWS::SSM::Parameter
+    Condition: CreateResources
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/red-team/reports-bucket'
+      Type: String
+      Value: !Ref RedTeamReportsBucket
+      Description: Red-team reports S3 bucket name
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+Outputs:
+  RedTeamReportsBucketName:
+    Condition: CreateResources
+    Description: S3 bucket for red-team reports
+    Value: !Ref RedTeamReportsBucket
+    Export:
+      Name: !Sub '${ProjectName}-red-team-reports-bucket-${Environment}'
+
+  RedTeamReportsBucketArn:
+    Condition: CreateResources
+    Description: ARN of red-team reports bucket
+    Value: !GetAtt RedTeamReportsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-red-team-reports-bucket-arn-${Environment}'
+
+  RedTeamFindingsTableName:
+    Condition: CreateResources
+    Description: DynamoDB table for red-team findings
+    Value: !Ref RedTeamFindingsTable
+    Export:
+      Name: !Sub '${ProjectName}-red-team-findings-table-${Environment}'
+
+  RedTeamFindingsTableArn:
+    Condition: CreateResources
+    Description: ARN of red-team findings table
+    Value: !GetAtt RedTeamFindingsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-red-team-findings-table-arn-${Environment}'
+
+  RedTeamTestRunsTableName:
+    Condition: CreateResources
+    Description: DynamoDB table for red-team test runs
+    Value: !Ref RedTeamTestRunsTable
+    Export:
+      Name: !Sub '${ProjectName}-red-team-runs-table-${Environment}'
+
+  RedTeamTaskDefinitionArn:
+    Condition: CreateResources
+    Description: ARN of red-team ECS task definition
+    Value: !Ref RedTeamTaskDefinition
+    Export:
+      Name: !Sub '${ProjectName}-red-team-task-def-${Environment}'
+
+  RedTeamTaskRoleArn:
+    Condition: CreateResources
+    Description: ARN of red-team task IAM role
+    Value: !GetAtt RedTeamTaskRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-red-team-task-role-arn-${Environment}'
+
+  RedTeamKMSKeyArn:
+    Condition: CreateResources
+    Description: ARN of red-team KMS key
+    Value: !GetAtt RedTeamKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-red-team-kms-key-arn-${Environment}'
+
+  RedTeamAlertTopicArn:
+    Condition: CreateAlerts
+    Description: ARN of red-team alert SNS topic
+    Value: !Ref RedTeamAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-red-team-alert-topic-arn-${Environment}'

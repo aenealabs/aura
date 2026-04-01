@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Aura — Hybrid GraphRAG Architecture</title>
+<style>
+  :root {
+    --brand:#3B82F6;--brand-dark:#1E40AF;--critical:#DC2626;--high:#EA580C;
+    --medium:#F59E0B;--success:#10B981;--bg:#F8FAFC;--surface:#FFFFFF;
+    --border:#E2E8F0;--text:#1E293B;--text-secondary:#64748B;--text-muted:#94A3B8;
+    --purple:#7C3AED;--teal:#0D9488;--orange:#EA580C;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:var(--text);background:var(--bg)}
+
+  .header{background:linear-gradient(135deg,#0F172A 0%,#1E3A5F 40%,var(--brand) 100%);color:#fff;padding:48px 32px;text-align:center}
+  .header h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+  .header .subtitle{font-size:18px;opacity:0.9;margin-bottom:24px}
+  .header .meta{font-size:13px;opacity:0.75}
+
+  .stats-bar{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;padding:24px 32px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .stat{text-align:center}
+  .stat .number{font-size:28px;font-weight:800;color:var(--brand)}
+  .stat .number.green{color:var(--success)}
+  .stat .number.purple{color:var(--purple)}
+  .stat .number.orange{color:var(--orange)}
+  .stat .number.teal{color:var(--teal)}
+  .stat .label{font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px}
+
+  .nav-bar{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom:1px solid var(--border);padding:12px 32px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+  .nav-bar a{font-size:12px;padding:4px 12px;border-radius:9999px;background:#F1F5F9;color:var(--text-secondary);text-decoration:none;font-weight:500;transition:all 0.15s;white-space:nowrap}
+  .nav-bar a:hover{background:var(--brand);color:#fff}
+
+  .container{max-width:1320px;margin:0 auto;padding:32px}
+  section{margin-bottom:48px}
+  section>h2{font-size:24px;font-weight:700;color:var(--brand-dark);border-bottom:3px solid var(--brand);padding-bottom:8px;margin-bottom:24px}
+  section>p.desc{color:var(--text-secondary);margin-bottom:20px;max-width:800px}
+  h3{font-size:16px;font-weight:700;color:var(--text);margin:20px 0 12px}
+  h4{font-size:14px;font-weight:600;color:var(--text-secondary);margin:12px 0 8px}
+  p{margin-bottom:12px}
+  ul,ol{padding-left:24px;margin-bottom:12px}
+  li{margin-bottom:4px}
+
+  .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;margin-bottom:24px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;transition:box-shadow 0.15s}
+  .card:hover{box-shadow:0 4px 12px rgba(0,0,0,0.08);border-color:var(--brand)}
+  .card .card-title{font-size:15px;font-weight:700;margin-bottom:8px}
+  .card .card-body{font-size:13px;color:var(--text-secondary);line-height:1.6}
+  .card .card-body strong{color:var(--text)}
+  .card-accent{border-left:4px solid}
+
+  .table-wrapper{overflow-x:auto;margin-bottom:24px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:var(--brand-dark);color:#fff;padding:10px 12px;text-align:left;font-weight:600;position:sticky;top:0}
+  th.dark{background:#0F172A}
+  td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  tr:hover td{background:#F8FAFC}
+  td:first-child{font-weight:600}
+
+  .badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:9999px;text-transform:uppercase;letter-spacing:0.5px}
+  .badge-deployed{background:#D1FAE5;color:#065F46}
+  .badge-core{background:#DBEAFE;color:#1E40AF}
+  .badge-security{background:#FEE2E2;color:#991B1B}
+  .badge-research{background:#F3E8FF;color:#6B21A8}
+
+  .code-block{background:#1E293B;color:#E2E8F0;border-radius:8px;padding:20px;font-family:'JetBrains Mono','Fira Code',monospace;font-size:12px;line-height:1.7;overflow-x:auto;white-space:pre;margin-bottom:20px}
+  .code-block .comment{color:#64748B}
+  .code-block .hl{color:#34D399}
+  .code-block .svc{color:#93C5FD}
+  .code-block .arrow{color:#F59E0B}
+  .code-block .kw{color:#C084FC}
+  .code-block .str{color:#FCA5A5}
+
+  .callout{background:#EFF6FF;border:1px solid #BFDBFE;border-left:4px solid var(--brand);border-radius:8px;padding:16px 20px;margin-bottom:20px}
+  .callout.warn{background:#FFFBEB;border-color:#FDE68A;border-left-color:var(--medium)}
+  .callout.success{background:#ECFDF5;border-color:#A7F3D0;border-left-color:var(--success)}
+  .callout.purple{background:#FAF5FF;border-color:#E9D5FF;border-left-color:var(--purple)}
+
+  .flow-diagram{background:#0F172A;color:#E2E8F0;border-radius:10px;padding:24px;font-family:'JetBrains Mono','Fira Code',monospace;font-size:12px;line-height:1.5;overflow-x:auto;white-space:pre;margin-bottom:24px}
+
+  .layer-card{border-radius:10px;padding:20px;margin-bottom:12px;color:#fff}
+  .layer-card h4{font-size:15px;font-weight:700;margin-bottom:6px;color:#fff}
+  .layer-card .layer-body{font-size:13px;opacity:0.9;line-height:1.6}
+  .l1{background:linear-gradient(135deg,#312E81,#4338CA)}
+  .l2{background:linear-gradient(135deg,#1E40AF,#3B82F6)}
+  .l3{background:linear-gradient(135deg,#065F46,#10B981)}
+  .l4{background:linear-gradient(135deg,#5B21B6,#7C3AED)}
+  .l5{background:linear-gradient(135deg,#92400E,#F59E0B)}
+  .l6{background:linear-gradient(135deg,#0F766E,#14B8A6)}
+
+  @media print{.nav-bar{display:none}.header{padding:24px}.card{break-inside:avoid}}
+  @media(max-width:768px){.header h1{font-size:24px}.stats-bar{gap:16px}.card-grid{grid-template-columns:1fr}.container{padding:16px}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Hybrid GraphRAG Architecture</h1>
+  <div class="subtitle">Project Aura &mdash; Neptune Graph + OpenSearch Vector Hybrid Retrieval</div>
+  <div class="meta">Aenea Labs &middot; ADR-034 Context Engineering &middot; Issue #151 &middot; 8 Core Services &middot; 367 Tests &middot; February 2026</div>
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><div class="number">8</div><div class="label">Core Services</div></div>
+  <div class="stat"><div class="number green">367</div><div class="label">Tests</div></div>
+  <div class="stat"><div class="number purple">3</div><div class="label">Retrieval Methods</div></div>
+  <div class="stat"><div class="number teal">5</div><div class="label">Graph Query Types</div></div>
+  <div class="stat"><div class="number orange">6</div><div class="label">Context Layers</div></div>
+  <div class="stat"><div class="number">5,040+</div><div class="label">Lines of Code</div></div>
+</div>
+
+<div class="nav-bar">
+  <a href="#overview">Overview</a>
+  <a href="#hybrid-advantage">Hybrid Advantage</a>
+  <a href="#services">Core Services</a>
+  <a href="#three-way">Three-Way Retrieval</a>
+  <a href="#graph-model">Graph Data Model</a>
+  <a href="#graph-queries">Graph Queries</a>
+  <a href="#context-stack">Context Stack</a>
+  <a href="#hoprag">HopRAG</a>
+  <a href="#security">Security</a>
+  <a href="#performance">Performance</a>
+  <a href="#configuration">Configuration</a>
+  <a href="#tests">Test Coverage</a>
+</div>
+
+<div class="container">
+
+<!-- 1. Overview -->
+<section id="overview">
+  <h2>1. Overview</h2>
+  <p class="desc">Hybrid GraphRAG is Aura's retrieval architecture that combines graph databases with vector search to provide comprehensive code understanding for autonomous vulnerability detection and remediation.</p>
+
+  <div class="callout">
+    <strong>What is Hybrid GraphRAG?</strong> &mdash; Traditional RAG (Retrieval-Augmented Generation) uses vector similarity search alone. Aura's Hybrid GraphRAG adds structural code analysis through graph databases and keyword matching through BM25, enabling queries like "find all functions that call this vulnerable method" alongside semantic queries like "find similar authentication code."
+  </div>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:var(--brand)">
+      <div class="card-title">Dense Retrieval (Vector k-NN)</div>
+      <div class="card-body">Semantic similarity via embedding comparison using <strong>OpenSearch k-NN</strong> with 1536-dimensional vectors. Captures meaning and finds code pattern similarities across the codebase.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--success)">
+      <div class="card-title">Sparse Retrieval (BM25)</div>
+      <div class="card-body">Keyword matching via traditional text search with <strong>field-specific boosting</strong>: function_names (3x), file_path (2x), content (1x). Critical for exact identifier matches.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--purple)">
+      <div class="card-title">Graph Retrieval (Gremlin)</div>
+      <div class="card-body">Structural relationship traversal via <strong>AWS Neptune</strong> property graph. Navigates call graphs, dependencies, inheritance, and references with up to 3-hop traversal.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. Hybrid Advantage -->
+<section id="hybrid-advantage">
+  <h2>2. Why Hybrid Retrieval Matters</h2>
+  <p class="desc">Code has two types of relationships: structural (explicit, deterministic connections) and semantic (implicit, similarity-based). Neither alone provides complete context for security analysis.</p>
+
+  <h3>Structural Relationships (Graph)</h3>
+  <ul>
+    <li><strong>Call graphs</strong> &mdash; Function A calls Function B</li>
+    <li><strong>Dependencies</strong> &mdash; Module X imports Module Y</li>
+    <li><strong>Inheritance</strong> &mdash; Class Child extends Class Parent</li>
+    <li><strong>References</strong> &mdash; Variable usage across files</li>
+  </ul>
+
+  <h3>Semantic Relationships (Vector)</h3>
+  <ul>
+    <li><strong>Pattern similarity</strong> &mdash; Code that does similar things</li>
+    <li><strong>Intent matching</strong> &mdash; Code that serves similar purposes</li>
+    <li><strong>Contextual relevance</strong> &mdash; Code related to a concept</li>
+  </ul>
+
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Retrieval Type</th><th>Strengths</th><th>Limitations</th><th>Best For</th></tr>
+      <tr><td>Structural (Graph)</td><td>Precise relationships, deterministic</td><td>Misses semantic similarity</td><td>Impact analysis, dependency tracing</td></tr>
+      <tr><td>Semantic (Vector)</td><td>Captures meaning, finds patterns</td><td>Misses explicit connections</td><td>Finding similar code, pattern matching</td></tr>
+      <tr><td>Keyword (BM25)</td><td>Exact identifier matches</td><td>No semantic understanding</td><td>Finding specific function/variable names</td></tr>
+      <tr><td><strong>Hybrid (All Three)</strong></td><td><strong>Comprehensive context</strong></td><td>Requires fusion logic</td><td><strong>Complete security analysis</strong></td></tr>
+    </table>
+  </div>
+
+  <div class="callout success">
+    <strong>Research-Validated:</strong> Aura's three-way hybrid approach achieves <strong>22-25% improvement</strong> in mean reciprocal rank (MRR) compared to single-method approaches. Adding BM25 sparse search to dense vectors and graph traversal captures exact identifier matches that vector search alone misses.
+  </div>
+</section>
+
+<!-- 3. Core Services -->
+<section id="services">
+  <h2>3. Core Services (8 Services, 5,040+ Lines)</h2>
+  <p class="desc">The Hybrid GraphRAG implementation consists of 8 core services deployed as part of ADR-034 Context Engineering, plus supporting infrastructure services.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Service</th><th>File</th><th>Lines</th><th>Purpose</th><th>Status</th></tr>
+      <tr>
+        <td>Context Retrieval Service</td>
+        <td>context_retrieval_service.py</td>
+        <td>940</td>
+        <td>Main orchestrator combining Neptune + OpenSearch + filesystem</td>
+        <td><span class="badge badge-deployed">Deployed</span></td>
+      </tr>
+      <tr>
+        <td>Three-Way Retrieval Service</td>
+        <td>three_way_retrieval_service.py</td>
+        <td>527</td>
+        <td>RRF fusion engine (dense k-NN + sparse BM25 + graph)</td>
+        <td><span class="badge badge-deployed">Deployed</span></td>
+      </tr>
+      <tr>
+        <td>HopRAG Service</td>
+        <td>hoprag_service.py</td>
+        <td>712</td>
+        <td>Multi-hop query optimization with pseudo-query edges</td>
+        <td><span class="badge badge-deployed">Deployed</span></td>
+      </tr>
+      <tr>
+        <td>Context Scoring Service</td>
+        <td>context_scoring_service.py</td>
+        <td>427</td>
+        <td>Relevance-based pruning (prevents context rot)</td>
+        <td><span class="badge badge-deployed">Deployed</span></td>
+      </tr>
+      <tr>
+        <td>Community Summarization</td>
+        <td>community_summarization_service.py</td>
+        <td>725</td>
+        <td>Leiden clustering + hierarchical LLM summaries</td>
+        <td><span class="badge badge-deployed">Deployed</span></td>
+      </tr>
+      <tr>
+        <td>Hierarchical Tool Registry</td>
+        <td>hierarchical_tool_registry.py</td>
+        <td>642</td>
+        <td>3-tier tool presentation (~20 atomic tools)</td>
+        <td><span class="badge badge-deployed">Deployed</span></td>
+      </tr>
+      <tr>
+        <td>Context Stack Manager</td>
+        <td>context_stack_manager.py</td>
+        <td>593</td>
+        <td>6-layer explicit context stack management</td>
+        <td><span class="badge badge-deployed">Deployed</span></td>
+      </tr>
+      <tr>
+        <td>MCP Context Manager</td>
+        <td>mcp_context_manager.py</td>
+        <td>474</td>
+        <td>Multi-agent context isolation via Model Context Protocol</td>
+        <td><span class="badge badge-deployed">Deployed</span></td>
+      </tr>
+    </table>
+  </div>
+
+  <h3>Supporting Infrastructure</h3>
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Component</th><th>File</th><th>Lines</th><th>Purpose</th></tr>
+      <tr>
+        <td>Neptune Graph Service</td>
+        <td>neptune_graph_service.py</td>
+        <td>1,551</td>
+        <td>AWS Neptune Gremlin client (connection pooling, retry logic)</td>
+      </tr>
+      <tr>
+        <td>GraphRAG Security Service</td>
+        <td>security/graphrag_security_service.py</td>
+        <td>807</td>
+        <td>Context poisoning defense, entity signatures, anomaly detection</td>
+      </tr>
+      <tr>
+        <td>OpenSearch Vector Service</td>
+        <td>opensearch_vector_service.py</td>
+        <td>&mdash;</td>
+        <td>Vector indexing, k-NN search, BM25 keyword search</td>
+      </tr>
+    </table>
+  </div>
+</section>
+
+<!-- 4. Three-Way Retrieval -->
+<section id="three-way">
+  <h2>4. Three-Way Retrieval &amp; RRF Fusion</h2>
+  <p class="desc">When a query is issued, all three retrieval methods execute concurrently and results are fused using Reciprocal Rank Fusion (RRF).</p>
+
+  <h3>Retrieval Flow</h3>
+  <div class="flow-diagram"><span class="comment">Query: "Find code that validates user authentication tokens"</span>
+
+<span class="svc">  Query Analysis</span>
+       |
+       |  <span class="comment">Determine which retrieval methods are relevant</span>
+       |  <span class="hl">semantic_keywords</span>: ["validates", "authentication", "tokens"]
+       |  <span class="hl">graph_traversal</span>: true   <span class="hl">vector_search</span>: true   <span class="hl">bm25_search</span>: true
+       |
+       <span class="arrow">+-------------------+-------------------+</span>
+       |                   |                   |
+       v                   v                   v
+<span class="svc">  Dense (k-NN)</span>       <span class="svc">  Sparse (BM25)</span>      <span class="svc">  Graph (Gremlin)</span>
+  OpenSearch          OpenSearch           Neptune
+  50 results          50 results           50 results
+       |                   |                   |
+       <span class="arrow">+-------------------+-------------------+</span>
+                           |
+                           v
+                  <span class="hl"> RRF Fusion (k=60)</span>
+                  Score = <span class="kw">SUM</span>(weight / (k + rank))
+                           |
+                           v
+                    <span class="svc">Top 20 Results</span>
+                  (deduplicated, enriched)</div>
+
+  <h3>Reciprocal Rank Fusion (RRF)</h3>
+  <p>Results from all sources are combined using RRF, which balances precision and recall without requiring score normalization across different retrieval systems:</p>
+
+  <div class="code-block"><span class="comment">// RRF formula</span>
+<span class="hl">RRF_Score</span> = <span class="kw">SUM</span>( weight / (k + rank) )
+
+<span class="comment">// Where:</span>
+<span class="comment">//   k    = 60 (constant to dampen high-ranking outliers)</span>
+<span class="comment">//   rank = position in source result list (1-indexed)</span>
+<span class="comment">//   weight = source-specific weight</span></div>
+
+  <h3>Default Source Weights</h3>
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Source</th><th>Weight</th><th>Rationale</th></tr>
+      <tr><td>Dense (Vector k-NN)</td><td>1.0</td><td>Baseline semantic relevance</td></tr>
+      <tr><td>Sparse (BM25)</td><td>1.2</td><td>Boost for exact keyword matches (research-tuned)</td></tr>
+      <tr><td>Graph (Gremlin)</td><td>1.0</td><td>Structural relationships</td></tr>
+    </table>
+  </div>
+
+  <div class="callout warn">
+    <strong>Sparse Boost (1.2) is critical.</strong> BM25 excels at finding exact function names and identifiers that vector search might miss. This weight was empirically tuned from retrieval evaluation benchmarks.
+  </div>
+
+  <h3>Enriched Result Example</h3>
+  <div class="code-block"><span class="comment">// After RRF fusion and enrichment</span>
+{
+  <span class="str">"doc_id"</span>: <span class="str">"file_auth_service_validate_token"</span>,
+  <span class="str">"content"</span>: <span class="str">"def validate_token(token: str) -> bool: ..."</span>,
+  <span class="hl">"rrf_score"</span>: 0.156,
+  <span class="str">"source_scores"</span>: {
+    <span class="str">"dense"</span>: 0.052,
+    <span class="str">"sparse"</span>: 0.062,
+    <span class="str">"graph"</span>: 0.042
+  },
+  <span class="str">"sources_contributed"</span>: [<span class="str">"dense"</span>, <span class="str">"sparse"</span>, <span class="str">"graph"</span>],
+  <span class="str">"file_path"</span>: <span class="str">"src/services/auth_service.py"</span>,
+  <span class="str">"metadata"</span>: {
+    <span class="str">"function_names"</span>: [<span class="str">"validate_token"</span>],
+    <span class="str">"related_functions"</span>: [<span class="str">"decode_jwt"</span>, <span class="str">"check_expiry"</span>],
+    <span class="str">"callers"</span>: [<span class="str">"authenticate_user"</span>, <span class="str">"verify_session"</span>]
+  }
+}</div>
+</section>
+
+<!-- 5. Graph Data Model -->
+<section id="graph-model">
+  <h2>5. Neptune Graph Data Model</h2>
+  <p class="desc">AWS Neptune stores structural code relationships as a property graph, enabling precise traversal of call chains, dependencies, and inheritance hierarchies.</p>
+
+  <h3>Node Types</h3>
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Node Type</th><th>Description</th><th>Key Properties</th></tr>
+      <tr><td>File</td><td>Source code file</td><td>path, language, last_modified</td></tr>
+      <tr><td>Function</td><td>Function or method definition</td><td>name, signature, line_start, line_end</td></tr>
+      <tr><td>Class</td><td>Class definition</td><td>name, docstring, decorators</td></tr>
+      <tr><td>Variable</td><td>Variable definition</td><td>name, type, scope</td></tr>
+      <tr><td>Import</td><td>Import statement</td><td>module, alias</td></tr>
+    </table>
+  </div>
+
+  <h3>Edge Types</h3>
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Edge Type</th><th>From</th><th>To</th><th>Description</th></tr>
+      <tr><td>CONTAINS</td><td>File</td><td>Function / Class</td><td>File contains definition</td></tr>
+      <tr><td>CALLS</td><td>Function</td><td>Function</td><td>Function invocation</td></tr>
+      <tr><td>IMPORTS</td><td>File</td><td>File / Module</td><td>Import dependency</td></tr>
+      <tr><td>EXTENDS</td><td>Class</td><td>Class</td><td>Inheritance relationship</td></tr>
+      <tr><td>REFERENCES</td><td>Function</td><td>Variable</td><td>Variable usage</td></tr>
+      <tr><td>DEPENDS_ON</td><td>File</td><td>Package</td><td>External dependency</td></tr>
+      <tr><td>RELATED_BY_QUERY</td><td>Node</td><td>Node</td><td>HopRAG pseudo-query edges</td></tr>
+    </table>
+  </div>
+
+  <h3>OpenSearch Index Structure</h3>
+  <div class="code-block">{
+  <span class="str">"mappings"</span>: {
+    <span class="str">"properties"</span>: {
+      <span class="str">"content"</span>:        { <span class="str">"type"</span>: <span class="str">"text"</span> },
+      <span class="str">"embedding"</span>: {
+        <span class="str">"type"</span>: <span class="str">"knn_vector"</span>,
+        <span class="str">"dimension"</span>: <span class="hl">1536</span>,
+        <span class="str">"method"</span>: {
+          <span class="str">"name"</span>: <span class="str">"hnsw"</span>,
+          <span class="str">"engine"</span>: <span class="str">"nmslib"</span>,
+          <span class="str">"parameters"</span>: { <span class="str">"m"</span>: 16, <span class="str">"ef_construction"</span>: 512 }
+        }
+      },
+      <span class="str">"file_path"</span>:       { <span class="str">"type"</span>: <span class="str">"keyword"</span> },
+      <span class="str">"function_names"</span>:  { <span class="str">"type"</span>: <span class="str">"keyword"</span> },
+      <span class="str">"language"</span>:        { <span class="str">"type"</span>: <span class="str">"keyword"</span> },
+      <span class="str">"last_modified"</span>:   { <span class="str">"type"</span>: <span class="str">"date"</span> }
+    }
+  }
+}</div>
+</section>
+
+<!-- 6. Graph Query Patterns -->
+<section id="graph-queries">
+  <h2>6. Graph Query Patterns (5 Types)</h2>
+  <p class="desc">Aura implements five structured graph query patterns for security-focused structural code analysis, defined in the GraphQueryType enum.</p>
+
+  <div class="code-block"><span class="kw">class</span> <span class="svc">GraphQueryType</span>(Enum):
+    CALL_GRAPH   = <span class="str">"call_graph"</span>     <span class="comment"># Functions that call / are called by target</span>
+    DEPENDENCIES = <span class="str">"dependencies"</span>   <span class="comment"># Import relationships</span>
+    INHERITANCE  = <span class="str">"inheritance"</span>    <span class="comment"># Class hierarchies</span>
+    REFERENCES   = <span class="str">"references"</span>     <span class="comment"># All references to an entity</span>
+    RELATED      = <span class="str">"related"</span>        <span class="comment"># General related entities</span></div>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:var(--critical)">
+      <div class="card-title">CALL_GRAPH</div>
+      <div class="card-body">
+        <strong>Use case:</strong> Impact analysis for vulnerability fixes<br><br>
+        Find all functions that call a specific vulnerable function, enabling precise blast-radius assessment before patching.
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--high)">
+      <div class="card-title">DEPENDENCIES</div>
+      <div class="card-body">
+        <strong>Use case:</strong> Dependency vulnerability assessment<br><br>
+        Find all files that depend on a vulnerable package, revealing the full scope of exposure across the codebase.
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--purple)">
+      <div class="card-title">INHERITANCE</div>
+      <div class="card-body">
+        <strong>Use case:</strong> Inherited vulnerability detection<br><br>
+        Find all classes inheriting from an insecure base class, traversing the full hierarchy with recursive descent.
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--medium)">
+      <div class="card-title">REFERENCES</div>
+      <div class="card-body">
+        <strong>Use case:</strong> Secret exposure analysis<br><br>
+        Find all usages of a specific variable or constant (e.g., API_KEY), tracing references across functions and files.
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--teal)">
+      <div class="card-title">RELATED</div>
+      <div class="card-body">
+        <strong>Use case:</strong> Comprehensive context gathering<br><br>
+        Find structurally related code through multiple relationship types: callers, callees, and co-located functions.
+      </div>
+    </div>
+  </div>
+
+  <h3>Example Gremlin Queries</h3>
+  <div class="code-block"><span class="comment">// CALL_GRAPH: Find all callers of a vulnerable function</span>
+g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, <span class="str">'insecure_hash'</span>)
+  .in(<span class="str">'CALLS'</span>)
+  .project(<span class="str">'caller'</span>, <span class="str">'file'</span>, <span class="str">'line'</span>)
+    .by(<span class="str">'name'</span>)
+    .by(out(<span class="str">'CONTAINED_IN'</span>).values(<span class="str">'path'</span>))
+    .by(<span class="str">'line_start'</span>)
+
+<span class="comment">// DEPENDENCIES: Find files depending on a vulnerable package</span>
+g.V().has(<span class="str">'Package'</span>, <span class="str">'name'</span>, <span class="str">'vulnerable-lib'</span>)
+  .in(<span class="str">'DEPENDS_ON'</span>)
+  .values(<span class="str">'path'</span>)
+
+<span class="comment">// INHERITANCE: Recursive class hierarchy traversal</span>
+g.V().has(<span class="str">'Class'</span>, <span class="str">'name'</span>, <span class="str">'InsecureBase'</span>)
+  .in(<span class="str">'EXTENDS'</span>)
+  .emit()
+  .repeat(in(<span class="str">'EXTENDS'</span>))
+  .until(__.not(in(<span class="str">'EXTENDS'</span>)))
+
+<span class="comment">// REFERENCES: Trace variable usage across codebase</span>
+g.V().has(<span class="str">'Variable'</span>, <span class="str">'name'</span>, <span class="str">'API_KEY'</span>)
+  .in(<span class="str">'REFERENCES'</span>)
+  .project(<span class="str">'function'</span>, <span class="str">'file'</span>)
+    .by(<span class="str">'name'</span>)
+    .by(out(<span class="str">'CONTAINED_IN'</span>).values(<span class="str">'path'</span>))
+
+<span class="comment">// RELATED: Multi-relationship context gathering</span>
+g.V().has(<span class="str">'Function'</span>, <span class="str">'name'</span>, <span class="str">'target_function'</span>)
+  .union(
+    in(<span class="str">'CALLS'</span>),            <span class="comment">// Functions that call this</span>
+    out(<span class="str">'CALLS'</span>),           <span class="comment">// Functions this calls</span>
+    out(<span class="str">'CONTAINED_IN'</span>)     <span class="comment">// File containing this</span>
+      .in(<span class="str">'CONTAINED_IN'</span>)   <span class="comment">// Other functions in same file</span>
+  )
+  .dedup()</div>
+</section>
+
+<!-- 7. Context Stack -->
+<section id="context-stack">
+  <h2>7. Context Engineering Stack (6 Layers)</h2>
+  <p class="desc">The Context Stack Manager implements explicit layered context management, ensuring optimal token allocation across different context types.</p>
+
+  <div class="layer-card l1">
+    <h4>Layer 1: System Instructions (2K tokens)</h4>
+    <div class="layer-body">Agent identity, behavioral rules, and operational constraints. Highest priority, always included.</div>
+  </div>
+  <div class="layer-card l2">
+    <h4>Layer 2: Long-Term Memory (10K tokens)</h4>
+    <div class="layer-body">Titan Neural Memory integration (ADR-024). Persistent learned patterns and cross-session knowledge.</div>
+  </div>
+  <div class="layer-card l3">
+    <h4>Layer 3: Retrieved Documents (50K tokens)</h4>
+    <div class="layer-body">Hybrid GraphRAG context &mdash; the primary output of the three-way retrieval system. Largest token allocation.</div>
+  </div>
+  <div class="layer-card l4">
+    <h4>Layer 4: Tool Definitions (3K tokens)</h4>
+    <div class="layer-body">Hierarchical tool registry with ~20 atomic tools organized in 3 tiers for efficient selection.</div>
+  </div>
+  <div class="layer-card l5">
+    <h4>Layer 5: Conversation History (20K tokens)</h4>
+    <div class="layer-body">Session context with community summarization for compression. Preserves dialogue continuity.</div>
+  </div>
+  <div class="layer-card l6">
+    <h4>Layer 6: Current Task (15K tokens)</h4>
+    <div class="layer-body">Immediate objective, active vulnerability analysis, or patch generation context.</div>
+  </div>
+
+  <div class="callout purple">
+    <strong>Total Context Budget: ~100K tokens.</strong> Research finding: effective context window is &lt;256K tokens. The 6-layer stack ensures optimal allocation with Layer 3 (Hybrid GraphRAG) receiving 50% of the budget for maximum retrieval depth.
+  </div>
+</section>
+
+<!-- 8. HopRAG -->
+<section id="hoprag">
+  <h2>8. HopRAG Multi-Hop Retrieval</h2>
+  <p class="desc">HopRAG extends the base retrieval system with multi-hop graph traversal guided by semantic similarity, enabling complex reasoning chains across the codebase.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Pseudo-Query Edge Generation</div>
+      <div class="card-body">LLM-powered generation of hypothetical query edges that link semantically related nodes even without explicit structural connections. Stored as <strong>RELATED_BY_QUERY</strong> edges in Neptune.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Retrieve-Reason-Prune Pipeline</div>
+      <div class="card-body">Three-stage pipeline: (1) Retrieve candidate nodes, (2) Reason about relevance using LLM, (3) Prune low-confidence results. <strong>Pruning threshold: 0.5</strong></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Multi-Hop Traversal</div>
+      <div class="card-body">Up to <strong>3 hops</strong> through the graph with semantic guidance at each step. Each hop uses both structural edges and pseudo-query edges for navigation.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Embedding Cache</div>
+      <div class="card-body">LRU cache of <strong>1,000 items</strong> for frequently accessed embeddings. Reduces recomputation during multi-hop traversal and improves query latency.</div>
+    </div>
+  </div>
+
+  <div class="callout success">
+    <strong>HopRAG Performance (arXiv:2502.12442):</strong> +65.07% retrieval F1 improvement and +76.78% answer accuracy on complex multi-hop queries compared to single-hop retrieval.
+  </div>
+</section>
+
+<!-- 9. Security -->
+<section id="security">
+  <h2>9. Security &amp; Integrity</h2>
+  <p class="desc">GraphRAG context is a high-value attack surface. Aura implements multiple defense layers to protect against context poisoning and manipulation.</p>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:var(--critical)">
+      <div class="card-title">GraphRAG Security Service <span class="badge badge-security">Security</span></div>
+      <div class="card-body">
+        <strong>807 lines</strong> of defense against context poisoning:<br>
+        &bull; Entity signature verification<br>
+        &bull; Anomaly detection on graph mutations<br>
+        &bull; Rate limiting on graph writes<br>
+        &bull; Audit logging for all modifications
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--high)">
+      <div class="card-title">Context Provenance (ADR-067) <span class="badge badge-core">Core</span></div>
+      <div class="card-body">
+        Index-time provenance tracking with trust scoring:<br>
+        &bull; Every retrieved document includes provenance metadata<br>
+        &bull; Anomaly detection flags suspicious context<br>
+        &bull; Quarantine system for untrusted results<br>
+        &bull; 275 tests validating integrity
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--purple)">
+      <div class="card-title">Input Sanitization (RLM) <span class="badge badge-security">Security</span></div>
+      <div class="card-body">
+        Prompt injection prevention in retrieval inputs:<br>
+        &bull; RLM InputSanitizer validates all queries<br>
+        &bull; REPLSecurityGuard validates code in context<br>
+        &bull; 119 tests in the RLM package
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--medium)">
+      <div class="card-title">MCP Context Isolation <span class="badge badge-core">Core</span></div>
+      <div class="card-body">
+        Multi-agent context isolation via Model Context Protocol:<br>
+        &bull; Agents cannot access each other's context<br>
+        &bull; Prevents cross-contamination in multi-agent workflows<br>
+        &bull; Enforced at the protocol level
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10. Performance -->
+<section id="performance">
+  <h2>10. Performance Characteristics</h2>
+  <p class="desc">Optimized for enterprise-scale codebases with sub-second retrieval latency.</p>
+
+  <h3>Latency Targets</h3>
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Operation</th><th>Target</th><th>Actual (p95)</th><th>Status</th></tr>
+      <tr><td>Single source retrieval</td><td>&lt; 100ms</td><td>~45ms</td><td><span class="badge badge-deployed">Met</span></td></tr>
+      <tr><td>Three-way RRF fusion</td><td>&lt; 150ms</td><td>~85ms</td><td><span class="badge badge-deployed">Met</span></td></tr>
+      <tr><td>Graph traversal (2 hops)</td><td>&lt; 200ms</td><td>~120ms</td><td><span class="badge badge-deployed">Met</span></td></tr>
+      <tr><td>Full context retrieval</td><td>&lt; 500ms</td><td>~350ms</td><td><span class="badge badge-deployed">Met</span></td></tr>
+    </table>
+  </div>
+
+  <h3>Scaling Characteristics</h3>
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Codebase Size</th><th>Index Size</th><th>Latency Impact</th></tr>
+      <tr><td>&lt; 100K LOC</td><td>&lt; 1 GB</td><td>Baseline</td></tr>
+      <tr><td>100K &ndash; 1M LOC</td><td>1 &ndash; 10 GB</td><td>+10-20%</td></tr>
+      <tr><td>1M &ndash; 10M LOC</td><td>10 &ndash; 100 GB</td><td>+20-40%</td></tr>
+      <tr><td>&gt; 10M LOC</td><td>&gt; 100 GB</td><td>Requires sharding</td></tr>
+    </table>
+  </div>
+
+  <h3>Index Update Frequency</h3>
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Event</th><th>Update Type</th><th>Latency</th></tr>
+      <tr><td>File saved</td><td>Incremental</td><td>&lt; 5 seconds</td></tr>
+      <tr><td>PR merged</td><td>Batch update</td><td>&lt; 60 seconds</td></tr>
+      <tr><td>Full rescan</td><td>Complete rebuild</td><td>1-4 hours (background)</td></tr>
+    </table>
+  </div>
+
+  <h3>Research-Validated Metrics</h3>
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Metric</th><th>Value</th><th>Source</th></tr>
+      <tr><td>Three-way retrieval MRR improvement</td><td>+22-25%</td><td>ADR-034</td></tr>
+      <tr><td>HopRAG retrieval F1 improvement</td><td>+65.07%</td><td>arXiv:2502.12442</td></tr>
+      <tr><td>HopRAG answer accuracy improvement</td><td>+76.78%</td><td>arXiv:2502.12442</td></tr>
+      <tr><td>Context efficiency (token reduction)</td><td>30-50%</td><td>Chain of Draft (ADR-029)</td></tr>
+      <tr><td>Effective context window</td><td>&lt; 256K tokens</td><td>Research finding</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 11. Configuration -->
+<section id="configuration">
+  <h2>11. Configuration Options</h2>
+  <p class="desc">Administrators can tune retrieval behavior through configuration to optimize for different codebase characteristics.</p>
+
+  <h3>Retrieval Weights</h3>
+  <div class="code-block"><span class="comment">// Adjust relative importance of each retrieval method</span>
+{
+  <span class="str">"retrieval_config"</span>: {
+    <span class="str">"dense_weight"</span>:  <span class="hl">1.0</span>,    <span class="comment">// Baseline semantic relevance</span>
+    <span class="str">"sparse_boost"</span>:  <span class="hl">1.2</span>,    <span class="comment">// Boost for exact keyword matches</span>
+    <span class="str">"graph_weight"</span>:  <span class="hl">1.0</span>,    <span class="comment">// Structural relationships</span>
+    <span class="str">"rrf_k"</span>:         <span class="hl">60</span>      <span class="comment">// RRF damping constant</span>
+  }
+}</div>
+
+  <div class="callout">
+    <strong>Tuning guidance:</strong> Increase <code>sparse_boost</code> for codebases with unique naming conventions. Increase <code>graph_weight</code> for highly interconnected architectures. Decrease <code>graph_weight</code> for isolated microservices.
+  </div>
+
+  <h3>Index Configuration</h3>
+  <div class="code-block">{
+  <span class="str">"index_config"</span>: {
+    <span class="str">"include_patterns"</span>: [<span class="str">"*.py"</span>, <span class="str">"*.js"</span>, <span class="str">"*.ts"</span>, <span class="str">"*.java"</span>],
+    <span class="str">"exclude_patterns"</span>: [<span class="str">"**/test/**"</span>, <span class="str">"**/vendor/**"</span>],
+    <span class="str">"chunk_size"</span>:        <span class="hl">500</span>,         <span class="comment">// tokens per chunk</span>
+    <span class="str">"chunk_overlap"</span>:     <span class="hl">50</span>,          <span class="comment">// overlap between chunks</span>
+    <span class="str">"embedding_model"</span>:   <span class="str">"code-embedding-v2"</span>
+  }
+}</div>
+
+  <h3>Query Limits</h3>
+  <div class="code-block">{
+  <span class="str">"query_limits"</span>: {
+    <span class="str">"max_results_per_source"</span>: <span class="hl">50</span>,
+    <span class="str">"max_graph_hops"</span>:         <span class="hl">3</span>,
+    <span class="str">"max_graph_terms"</span>:        <span class="hl">10</span>,
+    <span class="str">"query_timeout_ms"</span>:       <span class="hl">5000</span>
+  }
+}</div>
+</section>
+
+<!-- 12. Test Coverage -->
+<section id="tests">
+  <h2>12. Test Coverage (367 Tests)</h2>
+  <p class="desc">Comprehensive test suite covering all retrieval paths, fusion logic, scoring algorithms, and security defenses.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Test File</th><th>Tests</th><th>Coverage Area</th></tr>
+      <tr><td>test_hierarchical_tool_registry.py</td><td>62</td><td>Tool hierarchy, selection logic, 3-tier presentation</td></tr>
+      <tr><td>test_context_retrieval_service.py</td><td>58</td><td>Full context retrieval flow, query routing</td></tr>
+      <tr><td>test_context_stack_manager.py</td><td>44</td><td>6-layer stack management, token budgets</td></tr>
+      <tr><td>test_three_way_retrieval_service.py</td><td>38</td><td>RRF fusion, ranking, deduplication</td></tr>
+      <tr><td>test_context_scoring_service.py</td><td>36</td><td>Scoring algorithms, relevance pruning</td></tr>
+      <tr><td>test_hoprag_service.py</td><td>29</td><td>Multi-hop traversal, pseudo-query edges, pruning</td></tr>
+      <tr><td>test_community_summarization_service.py</td><td>26</td><td>Leiden clustering, hierarchical LLM summaries</td></tr>
+      <tr><td colspan="3" style="background:#F1F5F9;font-weight:700">Supporting Tests</td></tr>
+      <tr><td>test_graphrag_security_service.py</td><td>+</td><td>Context poisoning defense, entity signatures</td></tr>
+      <tr><td>test_neptune_graph_service.py</td><td>+</td><td>Gremlin client, connection pooling, retries</td></tr>
+      <tr><td>test_mcp_context_manager.py</td><td>+</td><td>Multi-agent context isolation</td></tr>
+      <tr><td colspan="2" style="font-weight:700">Total: 367</td><td style="font-weight:700">293 core + 74 supporting</td></tr>
+    </table>
+  </div>
+
+  <div class="callout success">
+    <strong>All 367 tests passing.</strong> Coverage spans the full retrieval pipeline: query analysis, parallel retrieval, RRF fusion, result enrichment, context scoring, stack management, multi-hop traversal, and security validation.
+  </div>
+</section>
+
+<!-- References -->
+<section id="references">
+  <h2>Technical References</h2>
+  <div class="table-wrapper">
+    <table>
+      <tr><th>Reference</th><th>Description</th></tr>
+      <tr><td>ADR-034</td><td>Context Engineering Implementation (7 services, architecture decisions)</td></tr>
+      <tr><td>Issue #151</td><td>Hybrid GraphRAG Implementation (full graph search: CALL_GRAPH, DEPENDENCIES, INHERITANCE, REFERENCES, RELATED)</td></tr>
+      <tr><td>ADR-024</td><td>Titan Neural Memory Architecture (Layer 2 integration)</td></tr>
+      <tr><td>ADR-051</td><td>Recursive Context &amp; Embedding Prediction (RLM 100x context scaling)</td></tr>
+      <tr><td>ADR-067</td><td>Context Provenance &amp; Integrity (trust scoring, anomaly detection)</td></tr>
+      <tr><td>ADR-029</td><td>Agent Optimization Roadmap (Chain of Draft, 30-50% token reduction)</td></tr>
+      <tr><td>arXiv:2502.12442</td><td>HopRAG research paper (multi-hop retrieval benchmarks)</td></tr>
+    </table>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,457 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 3.4 - Neural Memory GPU (Titan Memory Inference)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for neural memory instances
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnet IDs for neural memory instances
+
+  EKSNodeSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: EKS node security group ID (for communication with pods)
+
+  GPUInstanceType:
+    Type: String
+    Default: g5.xlarge
+    Description: GPU instance type for neural memory inference
+    AllowedValues:
+      - g5.xlarge
+      - g5.2xlarge
+      - g5.4xlarge
+      - g5.8xlarge
+
+  MinCapacity:
+    Type: Number
+    Default: 1
+    Description: Minimum number of GPU instances
+
+  MaxCapacity:
+    Type: Number
+    Default: 3
+    Description: Maximum number of GPU instances
+
+  DesiredCapacity:
+    Type: Number
+    Default: 1
+    Description: Desired number of GPU instances
+
+  EBSVolumeSize:
+    Type: Number
+    Default: 100
+    Description: EBS volume size in GB for model storage
+
+  KMSKeyArn:
+    Type: String
+    Default: ''
+    Description: KMS key ARN for EBS encryption (optional, uses AWS managed key if empty)
+
+Conditions:
+  UseCustomKMSKey: !Not [!Equals [!Ref KMSKeyArn, '']]
+
+# Note: AMI is retrieved via SSM parameter at deploy time for latest GPU-optimized AMI
+
+Resources:
+  # Security Group for Neural Memory Instances
+  NeuralMemorySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-neural-memory-sg-${Environment}'
+      GroupDescription: Security group for neural memory GPU instances
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow gRPC from EKS nodes (port 50051)
+        - IpProtocol: tcp
+          FromPort: 50051
+          ToPort: 50051
+          SourceSecurityGroupId: !Ref EKSNodeSecurityGroupId
+          Description: gRPC from EKS pods
+        # Allow HTTP health checks from EKS nodes (port 8080)
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref EKSNodeSecurityGroupId
+          Description: Health checks from EKS
+        # Allow Prometheus metrics (port 9090)
+        - IpProtocol: tcp
+          FromPort: 9090
+          ToPort: 9090
+          SourceSecurityGroupId: !Ref EKSNodeSecurityGroupId
+          Description: Prometheus metrics scraping
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: '0.0.0.0/0'
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neural-memory-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # IAM Role for Neural Memory Instances
+  NeuralMemoryInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-neural-memory-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy'
+      Policies:
+        - PolicyName: NeuralMemoryPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # S3 access for model checkpoints
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-models-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-models-${Environment}/*'
+              # CloudWatch metrics publishing
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/NeuralMemory'
+              # ECR access for container images
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+              # DynamoDB for memory state persistence
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-neural-memory-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-neural-memory-${Environment}/index/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Instance Profile
+  NeuralMemoryInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${ProjectName}-neural-memory-profile-${Environment}'
+      Roles:
+        - !Ref NeuralMemoryInstanceRole
+
+  # Launch Template for GPU Instances
+  NeuralMemoryLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-neural-memory-lt-${Environment}'
+      LaunchTemplateData:
+        # Use ECS GPU-optimized AMI via SSM parameter (includes NVIDIA drivers)
+        ImageId: '{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2/gpu/recommended/image_id}}'
+        InstanceType: !Ref GPUInstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt NeuralMemoryInstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref NeuralMemorySecurityGroup
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: !Ref EBSVolumeSize
+              VolumeType: gp3
+              Iops: 3000
+              Throughput: 125
+              Encrypted: true
+              KmsKeyId: !If [UseCustomKMSKey, !Ref KMSKeyArn, !Ref 'AWS::NoValue']
+              DeleteOnTermination: true
+        MetadataOptions:
+          HttpTokens: required  # IMDSv2 required
+          HttpPutResponseHopLimit: 1
+          HttpEndpoint: enabled
+        Monitoring:
+          Enabled: true
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-neural-memory-${Environment}'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Component
+                Value: neural-memory
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-neural-memory-vol-${Environment}'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -ex
+
+            # Log to CloudWatch
+            exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+
+            echo "=== Neural Memory Instance Bootstrap ==="
+            echo "Environment: ${Environment}"
+            echo "Project: ${ProjectName}"
+
+            # Install CloudWatch agent
+            yum install -y amazon-cloudwatch-agent
+
+            # Configure CloudWatch agent for neural memory metrics
+            cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'EOF'
+            {
+              "agent": {
+                "metrics_collection_interval": 60,
+                "run_as_user": "root"
+              },
+              "metrics": {
+                "namespace": "Aura/NeuralMemory",
+                "metrics_collected": {
+                  "cpu": {
+                    "measurement": ["cpu_usage_active"],
+                    "totalcpu": true
+                  },
+                  "mem": {
+                    "measurement": ["mem_used_percent"]
+                  },
+                  "disk": {
+                    "measurement": ["disk_used_percent"],
+                    "resources": ["/"]
+                  },
+                  "nvidia_smi": {
+                    "measurement": [
+                      "utilization_gpu",
+                      "utilization_memory",
+                      "memory_total",
+                      "memory_used",
+                      "temperature_gpu"
+                    ]
+                  }
+                },
+                "append_dimensions": {
+                  "InstanceId": "${!aws:InstanceId}",
+                  "Environment": "${Environment}"
+                }
+              }
+            }
+            EOF
+
+            # Start CloudWatch agent
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+              -a fetch-config \
+              -m ec2 \
+              -s \
+              -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+            # Install Docker if not present
+            if ! command -v docker &> /dev/null; then
+              yum install -y docker
+              systemctl enable docker
+              systemctl start docker
+            fi
+
+            # Login to ECR
+            aws ecr get-login-password --region ${AWS::Region} | \
+              docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+
+            # Pull and run neural memory service
+            # Note: Image will be built and pushed by CI/CD pipeline
+            echo "Bootstrap complete. Neural memory service will be deployed via CI/CD."
+
+  # Auto Scaling Group
+  NeuralMemoryASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${ProjectName}-neural-memory-asg-${Environment}'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref NeuralMemoryLaunchTemplate
+        Version: !GetAtt NeuralMemoryLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinCapacity
+      MaxSize: !Ref MaxCapacity
+      DesiredCapacity: !Ref DesiredCapacity
+      VPCZoneIdentifier: !Ref PrivateSubnetIds
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neural-memory-${Environment}'
+          PropagateAtLaunch: true
+        - Key: Project
+          Value: !Ref ProjectName
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+
+  # Target Tracking Scaling Policy - GPU Utilization
+  GPUUtilizationScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref NeuralMemoryASG
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        CustomizedMetricSpecification:
+          MetricName: utilization_gpu
+          Namespace: Aura/NeuralMemory
+          Statistic: Average
+          Dimensions:
+            - Name: Environment
+              Value: !Ref Environment
+        TargetValue: 70.0
+        DisableScaleIn: false
+
+  # Network Load Balancer for gRPC traffic
+  NeuralMemoryNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-neural-mem-nlb-${Environment}'
+      Type: network
+      Scheme: internal
+      Subnets: !Ref PrivateSubnetIds
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Target Group for gRPC
+  NeuralMemoryTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ProjectName}-neural-mem-tg-${Environment}'
+      Port: 50051
+      Protocol: TCP
+      VpcId: !Ref VpcId
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPort: '8080'
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # NLB Listener
+  NeuralMemoryListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NeuralMemoryNLB
+      Port: 50051
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref NeuralMemoryTargetGroup
+
+  # CloudWatch Alarms
+  GPUMemoryHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-neural-memory-gpu-memory-high-${Environment}'
+      AlarmDescription: GPU memory utilization is high
+      MetricName: utilization_memory
+      Namespace: Aura/NeuralMemory
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: breaching
+
+  GPUTemperatureHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-neural-memory-gpu-temp-high-${Environment}'
+      AlarmDescription: GPU temperature is critically high
+      MetricName: temperature_gpu
+      Namespace: Aura/NeuralMemory
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+
+Outputs:
+  NeuralMemorySecurityGroupId:
+    Description: Neural Memory Security Group ID
+    Value: !Ref NeuralMemorySecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-neural-memory-sg-${Environment}'
+
+  NeuralMemoryRoleArn:
+    Description: Neural Memory Instance Role ARN
+    Value: !GetAtt NeuralMemoryInstanceRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-neural-memory-role-arn-${Environment}'
+
+  NeuralMemoryNLBDNS:
+    Description: Neural Memory NLB DNS Name
+    Value: !GetAtt NeuralMemoryNLB.DNSName
+    Export:
+      Name: !Sub '${ProjectName}-neural-memory-nlb-dns-${Environment}'
+
+  NeuralMemoryNLBArn:
+    Description: Neural Memory NLB ARN
+    Value: !Ref NeuralMemoryNLB
+    Export:
+      Name: !Sub '${ProjectName}-neural-memory-nlb-arn-${Environment}'
+
+  NeuralMemoryEndpoint:
+    Description: Neural Memory gRPC Endpoint
+    Value: !Sub '${NeuralMemoryNLB.DNSName}:50051'
+    Export:
+      Name: !Sub '${ProjectName}-neural-memory-endpoint-${Environment}'

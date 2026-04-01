@@ -1,0 +1,925 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.7 - Chat Assistant (AI Backend)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-12-12'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+    Description: Bedrock model ID for chat completions
+
+  HaikuModelId:
+    Type: String
+    Default: anthropic.claude-3-haiku-20240307-v1:0
+    Description: Bedrock model ID for simple queries (FAST tier - cost optimization)
+
+  OpusModelId:
+    Type: String
+    Default: anthropic.claude-3-opus-20240229-v1:0
+    Description: Bedrock model ID for complex queries (MAXIMUM tier - deep research)
+
+  ConversationTTLDays:
+    Type: Number
+    Default: 30
+    MinValue: 7
+    MaxValue: 365
+    Description: Days to retain chat conversations
+
+  LambdaMemorySize:
+    Type: Number
+    Default: 512
+    MinValue: 256
+    MaxValue: 1024
+    Description: Lambda function memory in MB
+
+  LambdaTimeout:
+    Type: Number
+    Default: 60
+    MinValue: 30
+    MaxValue: 120
+    Description: Lambda function timeout in seconds
+
+  RateLimitPerMinute:
+    Type: Number
+    Default: 30
+    Description: Max requests per user per minute
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ============================================================================
+  # DynamoDB Tables
+  # ============================================================================
+
+  # Chat Conversations Table
+  ChatConversationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-chat-conversations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: updated_at
+          AttributeType: S
+        - AttributeName: tenant_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: user-conversations-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: updated_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: tenant-conversations-index
+          KeySchema:
+            - AttributeName: tenant_id
+              KeyType: HASH
+            - AttributeName: updated_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-chat-conversations-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Chat Messages Table
+  ChatMessagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-chat-messages-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: tenant-messages-index
+          KeySchema:
+            - AttributeName: tenant_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-chat-messages-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # WebSocket Connections Table
+  ChatConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-chat-connections-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-connections-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-chat-connections-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Research Tasks Table - Async deep research task tracking
+  ResearchTasksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-research-tasks-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: task_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: task_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-tasks-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: tenant-tasks-index
+          KeySchema:
+            - AttributeName: tenant_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-research-tasks-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # IAM Role for Lambda Functions
+  # ============================================================================
+
+  ChatLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-chat-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt ChatConversationsTable.Arn
+                  - !Sub '${ChatConversationsTable.Arn}/index/*'
+                  - !GetAtt ChatMessagesTable.Arn
+                  - !Sub '${ChatMessagesTable.Arn}/index/*'
+                  - !GetAtt ChatConnectionsTable.Arn
+                  - !Sub '${ChatConnectionsTable.Arn}/index/*'
+                  # Research tasks table for deep research tool
+                  - !GetAtt ResearchTasksTable.Arn
+                  - !Sub '${ResearchTasksTable.Arn}/index/*'
+                  # Access to existing tables for chat tools
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-anomalies-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-approval-requests-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-patch-workflows-${Environment}'
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  # 3-tier model routing: FAST (Haiku), ACCURATE (Sonnet), MAXIMUM (Opus)
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${HaikuModelId}'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${OpusModelId}'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0'
+        - PolicyName: CloudWatchMetricsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:ListMetrics
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace:
+                      - !Sub 'Aura/${Environment}'
+                      - 'Aura/Anomalies'
+                      - 'AWS/Lambda'
+                      - 'AWS/DynamoDB'
+        - PolicyName: OpenSearchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - es:ESHttpGet
+                  - es:ESHttpPost
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-*'
+        - PolicyName: WebSocketManagement
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*/@connections/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # Lambda Functions
+  # ============================================================================
+
+  # Chat Handler Lambda - Main chat processing
+  ChatHandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-chat-handler-${Environment}'
+      Description: Processes chat messages via Bedrock Claude with tool use
+      Runtime: python3.11
+      Handler: chat_handler.handler
+      Role: !GetAtt ChatLambdaRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Code:
+        ZipFile: |
+          # Placeholder - real code deployed via CI/CD
+          def handler(event, context):
+              return {"statusCode": 501, "body": "Deployed via CI/CD"}
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          CONVERSATIONS_TABLE: !Ref ChatConversationsTable
+          MESSAGES_TABLE: !Ref ChatMessagesTable
+          CONNECTIONS_TABLE: !Ref ChatConnectionsTable
+          RESEARCH_TASKS_TABLE: !Ref ResearchTasksTable
+          # 3-tier model routing configuration
+          HAIKU_MODEL_ID: !Ref HaikuModelId
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          OPUS_MODEL_ID: !Ref OpusModelId
+          CONVERSATION_TTL_DAYS: !Ref ConversationTTLDays
+          RATE_LIMIT_PER_MINUTE: !Ref RateLimitPerMinute
+      # Reserved concurrency only for production (requires quota)
+      # ReservedConcurrentExecutions: !If [IsProd, 50, 10]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # WebSocket Connect Handler
+  WSConnectFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-chat-ws-connect-${Environment}'
+      Description: Handles WebSocket connection establishment
+      Runtime: python3.11
+      Handler: ws_connect.handler
+      Role: !GetAtt ChatLambdaRole.Arn
+      MemorySize: 256
+      Timeout: 10
+      Code:
+        ZipFile: |
+          # Placeholder - real code deployed via CI/CD
+          def handler(event, context):
+              return {"statusCode": 200}
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          CONNECTIONS_TABLE: !Ref ChatConnectionsTable
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # WebSocket Disconnect Handler
+  WSDisconnectFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-chat-ws-disconnect-${Environment}'
+      Description: Handles WebSocket disconnection cleanup
+      Runtime: python3.11
+      Handler: ws_disconnect.handler
+      Role: !GetAtt ChatLambdaRole.Arn
+      MemorySize: 256
+      Timeout: 10
+      Code:
+        ZipFile: |
+          # Placeholder - real code deployed via CI/CD
+          def handler(event, context):
+              return {"statusCode": 200}
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          CONNECTIONS_TABLE: !Ref ChatConnectionsTable
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # WebSocket Message Handler
+  WSMessageFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-chat-ws-message-${Environment}'
+      Description: Handles incoming WebSocket messages for streaming
+      Runtime: python3.11
+      Handler: ws_message.handler
+      Role: !GetAtt ChatLambdaRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Code:
+        ZipFile: |
+          # Placeholder - real code deployed via CI/CD
+          def handler(event, context):
+              return {"statusCode": 200}
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          CONVERSATIONS_TABLE: !Ref ChatConversationsTable
+          MESSAGES_TABLE: !Ref ChatMessagesTable
+          CONNECTIONS_TABLE: !Ref ChatConnectionsTable
+          RESEARCH_TASKS_TABLE: !Ref ResearchTasksTable
+          # 3-tier model routing configuration
+          HAIKU_MODEL_ID: !Ref HaikuModelId
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          OPUS_MODEL_ID: !Ref OpusModelId
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # API Gateway - REST API
+  # ============================================================================
+
+  ChatRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${ProjectName}-chat-api-${Environment}'
+      Description: REST API for Aura Chat Assistant
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # /chat resource
+  ChatResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ChatRestApi
+      ParentId: !GetAtt ChatRestApi.RootResourceId
+      PathPart: chat
+
+  # /chat/message resource
+  ChatMessageResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ChatRestApi
+      ParentId: !Ref ChatResource
+      PathPart: message
+
+  # POST /chat/message
+  ChatMessageMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ChatRestApi
+      ResourceId: !Ref ChatMessageResource
+      HttpMethod: POST
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ChatApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatHandlerFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  # /conversations resource
+  ConversationsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ChatRestApi
+      ParentId: !Ref ChatResource
+      PathPart: conversations
+
+  # GET /chat/conversations
+  GetConversationsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ChatRestApi
+      ResourceId: !Ref ConversationsResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ChatApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatHandlerFunction.Arn}/invocations'
+
+  # /conversations/{conversationId} resource
+  ConversationIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ChatRestApi
+      ParentId: !Ref ConversationsResource
+      PathPart: '{conversationId}'
+
+  # GET /chat/conversations/{conversationId}
+  GetConversationMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ChatRestApi
+      ResourceId: !Ref ConversationIdResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ChatApiAuthorizer
+      RequestParameters:
+        method.request.path.conversationId: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatHandlerFunction.Arn}/invocations'
+
+  # DELETE /chat/conversations/{conversationId}
+  DeleteConversationMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ChatRestApi
+      ResourceId: !Ref ConversationIdResource
+      HttpMethod: DELETE
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ChatApiAuthorizer
+      RequestParameters:
+        method.request.path.conversationId: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatHandlerFunction.Arn}/invocations'
+
+  # Cognito Authorizer
+  ChatApiAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: !Sub '${ProjectName}-chat-cognito-authorizer-${Environment}'
+      Type: COGNITO_USER_POOLS
+      RestApiId: !Ref ChatRestApi
+      IdentitySource: method.request.header.Authorization
+      ProviderARNs:
+        # Import from Cognito stack - no hardcoded pool IDs
+        - !ImportValue
+            Fn::Sub: '${ProjectName}-user-pool-arn-${Environment}'
+
+  # API Deployment
+  ChatApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ChatMessageMethod
+      - GetConversationsMethod
+      - GetConversationMethod
+      - DeleteConversationMethod
+    Properties:
+      RestApiId: !Ref ChatRestApi
+
+  # API Stage
+  ChatApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ChatRestApi
+      DeploymentId: !Ref ChatApiDeployment
+      StageName: !Ref Environment
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingBurstLimit: 100
+          ThrottlingRateLimit: 50
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Lambda Permission for REST API
+  ChatHandlerApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ChatHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatRestApi}/*'
+
+  # ============================================================================
+  # API Gateway - WebSocket API
+  # ============================================================================
+
+  ChatWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${ProjectName}-chat-ws-${Environment}'
+      Description: WebSocket API for real-time chat streaming
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # $connect route
+  WSConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ChatWebSocketApi
+      RouteKey: '$connect'
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WSConnectIntegration}'
+
+  WSConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ChatWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WSConnectFunction.Arn}/invocations'
+
+  # $disconnect route
+  WSDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ChatWebSocketApi
+      RouteKey: '$disconnect'
+      Target: !Sub 'integrations/${WSDisconnectIntegration}'
+
+  WSDisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ChatWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WSDisconnectFunction.Arn}/invocations'
+
+  # sendMessage route
+  WSSendMessageRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ChatWebSocketApi
+      RouteKey: 'sendMessage'
+      Target: !Sub 'integrations/${WSSendMessageIntegration}'
+
+  WSSendMessageIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ChatWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WSMessageFunction.Arn}/invocations'
+
+  # $default route
+  WSDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ChatWebSocketApi
+      RouteKey: '$default'
+      Target: !Sub 'integrations/${WSDefaultIntegration}'
+
+  WSDefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ChatWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WSMessageFunction.Arn}/invocations'
+
+  # WebSocket Stage
+  ChatWebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ChatWebSocketApi
+      StageName: !Ref Environment
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # Lambda Permissions for WebSocket
+  WSConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WSConnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatWebSocketApi}/*'
+
+  WSDisconnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WSDisconnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatWebSocketApi}/*'
+
+  WSMessagePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WSMessageFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatWebSocketApi}/*'
+
+  # ============================================================================
+  # CloudWatch Logging
+  # ============================================================================
+
+  ChatHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-chat-handler-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  WSConnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-chat-ws-connect-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  WSDisconnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-chat-ws-disconnect-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  WSMessageLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-chat-ws-message-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # CloudWatch Alarms
+  # ============================================================================
+
+  ChatHandlerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-chat-handler-errors-${Environment}'
+      AlarmDescription: Alert when chat handler Lambda encounters errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ChatHandlerFunction
+      TreatMissingData: notBreaching
+
+  ChatHandlerLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-chat-handler-latency-${Environment}'
+      AlarmDescription: Alert when chat response latency exceeds 8 seconds
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      ExtendedStatistic: p99
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 8000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ChatHandlerFunction
+      TreatMissingData: notBreaching
+
+Outputs:
+  # DynamoDB Tables
+  ConversationsTableName:
+    Description: Chat conversations table name
+    Value: !Ref ChatConversationsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ConversationsTableName'
+
+  ConversationsTableArn:
+    Description: Chat conversations table ARN
+    Value: !GetAtt ChatConversationsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ConversationsTableArn'
+
+  MessagesTableName:
+    Description: Chat messages table name
+    Value: !Ref ChatMessagesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-MessagesTableName'
+
+  MessagesTableArn:
+    Description: Chat messages table ARN
+    Value: !GetAtt ChatMessagesTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-MessagesTableArn'
+
+  ConnectionsTableName:
+    Description: WebSocket connections table name
+    Value: !Ref ChatConnectionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ConnectionsTableName'
+
+  ResearchTasksTableName:
+    Description: Research tasks table name
+    Value: !Ref ResearchTasksTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ResearchTasksTableName'
+
+  ResearchTasksTableArn:
+    Description: Research tasks table ARN
+    Value: !GetAtt ResearchTasksTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ResearchTasksTableArn'
+
+  # Lambda Functions
+  ChatHandlerFunctionArn:
+    Description: Chat handler Lambda ARN
+    Value: !GetAtt ChatHandlerFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ChatHandlerArn'
+
+  ChatHandlerFunctionName:
+    Description: Chat handler Lambda function name
+    Value: !Ref ChatHandlerFunction
+
+  # API Endpoints
+  RestApiUrl:
+    Description: REST API URL for chat
+    Value: !Sub 'https://${ChatRestApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-RestApiUrl'
+
+  WebSocketUrl:
+    Description: WebSocket API URL for streaming
+    Value: !Sub 'wss://${ChatWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-WebSocketUrl'
+
+  # IAM Role
+  ChatLambdaRoleArn:
+    Description: Chat Lambda execution role ARN
+    Value: !GetAtt ChatLambdaRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ChatLambdaRoleArn'

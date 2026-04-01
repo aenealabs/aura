@@ -1,0 +1,229 @@
+version: 0.2
+
+# Frontend Service: Build React Dashboard + Deploy to EKS
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    FRONTEND_IMAGE_TAG: "latest"
+    KUBECTL_VERSION: "v1.34.0"
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+      nodejs: 20
+    commands:
+      - echo "Installing cfn-lint and kubectl..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint
+      - echo "Installing kubectl ${KUBECTL_VERSION}..."
+      - curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+      - chmod +x kubectl && mv kubectl /usr/local/bin/
+      - echo "Installing kubectl-argo-rollouts plugin..."
+      - curl -LO https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
+      - chmod +x kubectl-argo-rollouts-linux-amd64 && mv kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
+      # Configure ECR credential helper (eliminates password storage warnings)
+      - chmod +x deploy/scripts/configure-ecr-credential-helper.sh
+      - ./deploy/scripts/configure-ecr-credential-helper.sh
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Frontend Service Deployment"
+      - echo "=========================================="
+
+      # Validate templates
+      - echo "Validating ECR template..."
+      - cfn-lint deploy/cloudformation/ecr-frontend.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+
+      # Generate image tag with git commit
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG="${COMMIT_HASH}-$(date +%Y%m%d%H%M%S)"
+      - echo "Image tag = $IMAGE_TAG"
+
+  build:
+    commands:
+      # Generate deployment timestamp
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # ============================================
+      # PHASE 1: Deploy ECR Repository
+      # ============================================
+      - |
+        echo "Deploying ECR Frontend Repository Stack..."
+        ECR_STACK="${PROJECT_NAME}-ecr-frontend-${ENVIRONMENT}"
+
+        STACK_EXISTS=false
+        if aws cloudformation describe-stacks --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          STACK_EXISTS=true
+          echo "ECR stack exists, checking if update needed..."
+        else
+          echo "ECR stack does not exist, creating..."
+        fi
+
+        if [ "$STACK_EXISTS" = "true" ]; then
+          if aws cloudformation update-stack \
+            --stack-name $ECR_STACK \
+            --template-body file://deploy/cloudformation/ecr-frontend.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=frontend Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1; then
+            echo "ECR stack update initiated, waiting..."
+            aws cloudformation wait stack-update-complete --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION
+          else
+            echo "ECR stack already up-to-date (no changes needed)"
+          fi
+        else
+          aws cloudformation create-stack \
+            --stack-name $ECR_STACK \
+            --template-body file://deploy/cloudformation/ecr-frontend.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=frontend Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          echo "ECR stack creation initiated, waiting..."
+          aws cloudformation wait stack-create-complete --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+        # Get ECR Repository URI
+        ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $ECR_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "ECR Repository URI: $ECR_REPO_URI"
+
+        if [[ -z "$ECR_REPO_URI" || "$ECR_REPO_URI" == "None" ]]; then
+          echo "ERROR: Failed to get ECR Repository URI"
+          exit 1
+        fi
+
+      # ============================================
+      # PHASE 2: Build Frontend Application
+      # ============================================
+      - |
+        echo "Building frontend application..."
+        cd frontend
+        npm ci
+        npm run build
+        cd ..
+
+      # ============================================
+      # PHASE 3: Build and Push Docker Image
+      # ============================================
+      - |
+        echo "Building frontend Docker image..."
+
+        # Get base image URIs from ECR Base Images stack (controlled supply chain)
+        BASE_IMAGES_STACK="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
+        NODE_BASE_IMAGE_URI=$(aws cloudformation describe-stacks --stack-name $BASE_IMAGES_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`NodeRepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION):20-alpine
+        NGINX_BASE_IMAGE_URI=$(aws cloudformation describe-stacks --stack-name $BASE_IMAGES_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`NginxRepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION):1.25-alpine
+
+        echo "Node Base Image: $NODE_BASE_IMAGE_URI"
+        echo "Nginx Base Image: $NGINX_BASE_IMAGE_URI"
+
+        # Get frontend ECR repository URI
+        ECR_STACK="${PROJECT_NAME}-ecr-frontend-${ENVIRONMENT}"
+        ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $ECR_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+
+        COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+        IMAGE_TAG="${COMMIT_HASH}-$(date +%Y%m%d%H%M%S)"
+        FULL_IMAGE_URI="${ECR_REPO_URI}:${IMAGE_TAG}"
+        LATEST_IMAGE_URI="${ECR_REPO_URI}:latest"
+
+        echo "Building image: $FULL_IMAGE_URI"
+
+        docker build \
+          --build-arg NODE_BASE_IMAGE_URI=${NODE_BASE_IMAGE_URI} \
+          --build-arg NGINX_BASE_IMAGE_URI=${NGINX_BASE_IMAGE_URI} \
+          -t ${PROJECT_NAME}-frontend:${IMAGE_TAG} \
+          -t ${FULL_IMAGE_URI} \
+          -t ${LATEST_IMAGE_URI} \
+          -f deploy/docker/frontend/Dockerfile.frontend \
+          .
+
+        echo "Pushing frontend image to ECR..."
+        docker push ${FULL_IMAGE_URI}
+        docker push ${LATEST_IMAGE_URI}
+        echo "Image pushed successfully: ${FULL_IMAGE_URI}"
+
+  post_build:
+    commands:
+      - echo "Frontend build completed!"
+
+      # ============================================
+      # PHASE 4: Deploy to Kubernetes
+      # ============================================
+      - echo "=========================================="
+      - echo "Deploying to Kubernetes"
+      - echo "=========================================="
+      - |
+        CLUSTER_NAME="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+        echo "Configuring kubectl for cluster: $CLUSTER_NAME"
+        aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_DEFAULT_REGION
+
+      # Apply Kustomize manifests
+      - |
+        echo "Applying frontend manifests..."
+        kubectl apply -k deploy/kubernetes/aura-frontend/
+
+      # Patch Argo Rollout with new image (use :latest tag which was just pushed)
+      - |
+        echo "Updating frontend Argo Rollout with new image..."
+        ECR_STACK="${PROJECT_NAME}-ecr-frontend-${ENVIRONMENT}"
+        ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $ECR_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+
+        LATEST_IMAGE_URI="${ECR_REPO_URI}:latest"
+        echo "Using image: $LATEST_IMAGE_URI"
+
+        # Use Argo Rollouts plugin to update the rollout image
+        kubectl argo rollouts set image aura-frontend frontend=${LATEST_IMAGE_URI}
+
+        # Restart the rollout to pick up the new :latest image
+        kubectl argo rollouts restart aura-frontend
+
+      # Wait for rollout promotion
+      - echo "Waiting for frontend Argo Rollout..."
+      - kubectl argo rollouts status aura-frontend --timeout=5m || echo "Frontend rollout timeout - check rollout status"
+
+      # Verify pods
+      - echo "Verifying frontend pods..."
+      - kubectl get pods -l app=${PROJECT_NAME}-frontend -o wide
+      - kubectl logs -l app=${PROJECT_NAME}-frontend --tail=10 || echo "Could not get logs"
+
+      # ============================================
+      # Deployment Summary
+      # ============================================
+      - |
+        echo "=========================================="
+        echo "Deployment Summary"
+        echo "=========================================="
+        ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-ecr-frontend-${ENVIRONMENT} \
+          --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+        echo "ECR Image: ${ECR_REPO_URI}:${COMMIT_HASH}"
+        echo "Cluster: ${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+        echo "Service: kubectl get svc aura-frontend"
+
+artifacts:
+  files:
+    - deploy/cloudformation/ecr-frontend.yaml
+    - deploy/kubernetes/aura-frontend/**/*
+  name: frontend-service-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.0 - SSM Common Parameters (Shared Configuration Values)'
+
+# =============================================================================
+# This template creates SSM Parameters for commonly used values across all
+# CloudFormation templates. This reduces duplication and provides a single
+# source of truth for project configuration.
+#
+# Usage in other templates:
+#   Parameters:
+#     ProjectName:
+#       Type: AWS::SSM::Parameter::Value<String>
+#       Default: /aura/config/project-name
+#
+# Or use dynamic references:
+#   !Sub '{{resolve:ssm:/aura/config/project-name}}'
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Default: dev
+    Description: Deployment environment
+
+Resources:
+  # =============================================================================
+  # Project Configuration Parameters
+  # =============================================================================
+
+  ProjectNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/config/project-name
+      Type: String
+      Value: aura
+      Description: Project name used across all resources
+      Tags:
+        Project: aura
+        Environment: !Ref Environment
+        Layer: Foundation
+        Component: SSM-Parameters
+
+  EnvironmentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/config/environment'
+      Type: String
+      Value: !Ref Environment
+      Description: Current deployment environment
+      Tags:
+        Project: aura
+        Environment: !Ref Environment
+        Layer: Foundation
+        Component: SSM-Parameters
+
+  # =============================================================================
+  # Resource Naming Pattern Parameters
+  # =============================================================================
+
+  S3BucketPrefixParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/config/s3-bucket-prefix
+      Type: String
+      Value: !Sub 'aura-${Environment}'
+      Description: S3 bucket naming prefix
+      Tags:
+        Project: aura
+        Environment: !Ref Environment
+        Layer: Foundation
+        Component: SSM-Parameters
+
+  LogGroupPrefixParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/config/log-group-prefix
+      Type: String
+      Value: !Sub '/aura/${Environment}'
+      Description: CloudWatch log group naming prefix
+      Tags:
+        Project: aura
+        Environment: !Ref Environment
+        Layer: Foundation
+        Component: SSM-Parameters
+
+  # =============================================================================
+  # Common ARN Patterns (for IAM policies)
+  # =============================================================================
+
+  CloudWatchLogsArnPatternParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/config/arn-patterns/cloudwatch-logs
+      Type: String
+      Value: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/*'
+      Description: ARN pattern for CloudWatch Logs access
+      Tags:
+        Project: aura
+        Environment: !Ref Environment
+        Layer: Foundation
+        Component: SSM-Parameters
+
+  S3ArnPatternParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/config/arn-patterns/s3
+      Type: String
+      Value: !Sub 'arn:${AWS::Partition}:s3:::aura-*-${Environment}'
+      Description: ARN pattern for S3 bucket access
+      Tags:
+        Project: aura
+        Environment: !Ref Environment
+        Layer: Foundation
+        Component: SSM-Parameters
+
+  DynamoDBArnPatternParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/config/arn-patterns/dynamodb
+      Type: String
+      Value: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/aura-*'
+      Description: ARN pattern for DynamoDB table access
+      Tags:
+        Project: aura
+        Environment: !Ref Environment
+        Layer: Foundation
+        Component: SSM-Parameters
+
+  # =============================================================================
+  # Standard Tag Values
+  # =============================================================================
+
+  TagProjectParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/config/tags/project
+      Type: String
+      Value: aura
+      Description: Standard Project tag value
+      Tags:
+        Project: aura
+        Environment: !Ref Environment
+        Layer: Foundation
+        Component: SSM-Parameters
+
+  TagManagedByParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /aura/config/tags/managed-by
+      Type: String
+      Value: CloudFormation
+      Description: Standard ManagedBy tag value
+      Tags:
+        Project: aura
+        Environment: !Ref Environment
+        Layer: Foundation
+        Component: SSM-Parameters
+
+Outputs:
+  ProjectName:
+    Description: Project name parameter path
+    Value: /aura/config/project-name
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectNameParam'
+
+  Environment:
+    Description: Environment parameter path
+    Value: /aura/config/environment
+    Export:
+      Name: !Sub '${AWS::StackName}-EnvironmentParam'
+
+  S3BucketPrefix:
+    Description: S3 bucket prefix parameter path
+    Value: /aura/config/s3-bucket-prefix
+    Export:
+      Name: !Sub '${AWS::StackName}-S3PrefixParam'
+
+  CloudWatchLogsArnPattern:
+    Description: CloudWatch Logs ARN pattern parameter path
+    Value: /aura/config/arn-patterns/cloudwatch-logs
+    Export:
+      Name: !Sub '${AWS::StackName}-LogsArnParam'

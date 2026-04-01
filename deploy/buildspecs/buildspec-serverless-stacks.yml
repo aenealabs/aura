@@ -1,0 +1,232 @@
+version: 0.2
+
+# Serverless Layer Sub-BuildSpec: CloudFormation Stacks (Layer 6.2)
+# Deploys serverless infrastructure stacks.
+# Called by buildspec-serverless.yml or Step Functions.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - pip3 install cfn-lint --quiet
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Serverless Stacks Deployment (Layer 6.2)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - validate_aws_credentials
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+      # Get Lambda bucket and S3 keys (from previous stage)
+      - LAMBDA_BUCKET="${PROJECT_NAME}-serverless-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+      - TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - THREAT_INTEL_S3_KEY="lambda/threat-intel-processor-${TIMESTAMP}.zip"
+      - EXPIRATION_PROCESSOR_S3_KEY="lambda/expiration-processor-${TIMESTAMP}.zip"
+      - APPROVAL_CALLBACK_S3_KEY="lambda/approval-callback-handler-${TIMESTAMP}.zip"
+      - CHECKPOINT_HANDLERS_S3_KEY="lambda/checkpoint-handlers-${TIMESTAMP}.zip"
+      - ORCHESTRATOR_DISPATCHER_S3_KEY="lambda/orchestrator-dispatcher-latest.zip"
+      - ENV_VALIDATOR_DRIFT_S3_KEY="lambda/env-validator-drift-${TIMESTAMP}.zip"
+
+      # Get monitoring SNS topic
+      - |
+        MONITORING_STACK="${PROJECT_NAME}-monitoring-${ENVIRONMENT}"
+        SNS_TOPIC_ARN=$(cfn_get_stack_output "$MONITORING_STACK" "AlertTopicArn" "")
+        echo "SNS Topic ARN: ${SNS_TOPIC_ARN:-not found}"
+
+      # Get EKS OIDC details
+      - |
+        EKS_STACK="${PROJECT_NAME}-eks-${ENVIRONMENT}"
+        OIDC_PROVIDER_ARN=$(cfn_get_stack_output "$EKS_STACK" "OIDCProviderArn" "")
+        OIDC_PROVIDER_URL=$(cfn_get_stack_output "$EKS_STACK" "OIDCProviderUrl" "")
+        echo "OIDC Provider ARN: ${OIDC_PROVIDER_ARN:-not found}"
+
+  build:
+    commands:
+      # Threat Intelligence Scheduler
+      - |
+        echo "Deploying Threat Intelligence Scheduler..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        PARAMS="$PARAMS SeverityThreshold=MEDIUM MaxCVEAgeDays=30"
+        PARAMS="$PARAMS LambdaS3Bucket=${LAMBDA_BUCKET} LambdaS3Key=${THREAT_INTEL_S3_KEY}"
+        if [ -n "$SNS_TOPIC_ARN" ]; then
+          PARAMS="$PARAMS SNSTopicArn=${SNS_TOPIC_ARN}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-threat-intel-scheduler-${ENVIRONMENT}" \
+          "deploy/cloudformation/threat-intel-scheduler.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # HITL Scheduler
+      - |
+        if [ -f "deploy/cloudformation/hitl-scheduler.yaml" ]; then
+          echo "Deploying HITL Scheduler..."
+          cfn_deploy_stack \
+            "${PROJECT_NAME}-hitl-scheduler-${ENVIRONMENT}" \
+            "deploy/cloudformation/hitl-scheduler.yaml" \
+            "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME} LambdaS3Bucket=${LAMBDA_BUCKET} LambdaS3Key=${EXPIRATION_PROCESSOR_S3_KEY}" \
+            "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless DeployTimestamp=${DEPLOY_TIMESTAMP}"
+        fi
+
+      # HITL Approval Callback
+      - |
+        if [ -f "deploy/cloudformation/hitl-callback.yaml" ]; then
+          echo "Deploying HITL Approval Callback..."
+          cfn_deploy_stack \
+            "${PROJECT_NAME}-hitl-callback-${ENVIRONMENT}" \
+            "deploy/cloudformation/hitl-callback.yaml" \
+            "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME} LambdaS3Bucket=${LAMBDA_BUCKET} LambdaS3Key=${APPROVAL_CALLBACK_S3_KEY}" \
+            "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless DeployTimestamp=${DEPLOY_TIMESTAMP}"
+        fi
+
+      # A2A Protocol Infrastructure
+      - |
+        if [ -f "deploy/cloudformation/a2a-infrastructure.yaml" ]; then
+          echo "Deploying A2A Protocol Infrastructure..."
+          PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME} EnableA2A=false"
+          if [ -n "$ALERT_EMAIL" ]; then
+            PARAMS="$PARAMS AlertEmail=${ALERT_EMAIL}"
+          fi
+          cfn_deploy_stack \
+            "${PROJECT_NAME}-a2a-infrastructure-${ENVIRONMENT}" \
+            "deploy/cloudformation/a2a-infrastructure.yaml" \
+            "$PARAMS" \
+            "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless DeployTimestamp=${DEPLOY_TIMESTAMP}"
+        fi
+
+      # Agent Messaging Queues
+      - |
+        echo "Deploying Agent Messaging Queues..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$ALERT_EMAIL" ]; then
+          PARAMS="$PARAMS AlertEmail=${ALERT_EMAIL}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-agent-queues-${ENVIRONMENT}" \
+          "deploy/cloudformation/agent-queues.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless Issue=19 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Orchestrator Dispatcher
+      - |
+        echo "Deploying Orchestrator Dispatcher..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$OIDC_PROVIDER_ARN" ] && [ "$OIDC_PROVIDER_ARN" != "None" ]; then
+          PARAMS="$PARAMS OIDCProviderArn=${OIDC_PROVIDER_ARN} OIDCProviderURL=${OIDC_PROVIDER_URL}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-orchestrator-dispatcher-${ENVIRONMENT}" \
+          "deploy/cloudformation/orchestrator-dispatcher.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # DNS Blocklist Lambda
+      - |
+        echo "Deploying DNS Blocklist Lambda..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$ALERT_EMAIL" ]; then
+          PARAMS="$PARAMS AlertEmail=${ALERT_EMAIL}"
+        fi
+        if [ -n "$OIDC_PROVIDER_ARN" ] && [ "$OIDC_PROVIDER_ARN" != "None" ]; then
+          PARAMS="$PARAMS EKSOIDCProviderArn=${OIDC_PROVIDER_ARN} EKSOIDCProviderURL=${OIDC_PROVIDER_URL}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-dns-blocklist-lambda-${ENVIRONMENT}" \
+          "deploy/cloudformation/dns-blocklist-lambda.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Runbook Agent Infrastructure
+      - |
+        echo "Deploying Runbook Agent Infrastructure..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$ALERT_EMAIL" ]; then
+          PARAMS="$PARAMS AlertEmail=${ALERT_EMAIL}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-runbook-agent-${ENVIRONMENT}" \
+          "deploy/cloudformation/runbook-agent.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Checkpoint DynamoDB Tables (ADR-042)
+      - |
+        echo "Deploying Checkpoint DynamoDB Tables..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-checkpoint-dynamodb-${ENVIRONMENT}" \
+          "deploy/cloudformation/checkpoint-dynamodb.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless ADR=ADR-042 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Checkpoint WebSocket API (ADR-042)
+      - |
+        echo "Deploying Checkpoint WebSocket API..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-checkpoint-websocket-${ENVIRONMENT}" \
+          "deploy/cloudformation/checkpoint-websocket.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME} LambdaCodeBucket=${LAMBDA_BUCKET} LambdaCodeKey=${CHECKPOINT_HANDLERS_S3_KEY}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless ADR=ADR-042 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Agent Scheduling Infrastructure (ADR-055)
+      - |
+        echo "Deploying Agent Scheduling Infrastructure..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-scheduling-infrastructure-${ENVIRONMENT}" \
+          "deploy/cloudformation/scheduling-infrastructure.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless ADR=ADR-055 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Deployment Pipeline (Layer 6.11)
+      - |
+        if [ -f "deploy/cloudformation/deployment-pipeline.yaml" ]; then
+          echo "Deploying Deployment Pipeline (Layer 6.11)..."
+          # Note: DeployTimestamp tag removed - CloudFormation propagates stack tags to SNS Topics,
+          # and SNS has stricter character validation that rejects certain timestamp formats
+          cfn_deploy_stack \
+            "${PROJECT_NAME}-deployment-pipeline-${ENVIRONMENT}" \
+            "deploy/cloudformation/deployment-pipeline.yaml" \
+            "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+            "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless"
+        fi
+
+      # Environment Validator Infrastructure (Layer 6.16 - ADR-062)
+      - |
+        echo "Deploying Environment Validator Infrastructure (Layer 6.16)..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-env-validator-infra-${ENVIRONMENT}" \
+          "deploy/cloudformation/env-validator-infrastructure.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless ADR=ADR-062 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Environment Validator Drift Detection Lambda (Layer 6.17 - ADR-062)
+      - |
+        echo "Deploying Environment Validator Drift Lambda (Layer 6.17)..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-env-drift-lambda-${ENVIRONMENT}" \
+          "deploy/cloudformation/env-validator-drift-lambda.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME} LambdaS3Bucket=${LAMBDA_BUCKET} LambdaS3Key=${ENV_VALIDATOR_DRIFT_S3_KEY}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=serverless ADR=ADR-062 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+  post_build:
+    commands:
+      - echo "Serverless stacks deployment complete"
+      - |
+        echo "=== Deployed Lambda Functions ==="
+        aws lambda list-functions \
+          --query "Functions[?starts_with(FunctionName, '${PROJECT_NAME}-')].{Name:FunctionName,Runtime:Runtime}" \
+          --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No functions found"

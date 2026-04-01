@@ -1,0 +1,462 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.11 - Calibration Pipeline (Documentation Agent)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2026-01-06'
+  DescriptionSync: 'Layer-6.11'
+  ADR: 'ADR-056 Phase 1.5 - Confidence Calibration Infrastructure'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  MinSamplesForCalibration:
+    Type: Number
+    Default: 100
+    MinValue: 10
+    MaxValue: 1000
+    Description: Minimum feedback samples required before calibration
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for calibration notifications (optional)
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # ==========================================================================
+  # DynamoDB Table for Documentation Feedback
+  # ==========================================================================
+  DocumentationFeedbackTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-documentation-feedback-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: feedback_id
+          AttributeType: S
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: feedback_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: organization-index
+          KeySchema:
+            - AttributeName: organization_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: documentation-calibration
+
+  # ==========================================================================
+  # S3 Bucket for Calibration Models
+  # ==========================================================================
+  CalibrationModelsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-calibration-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldModelVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+          - Id: ExpireOldModels
+            Status: Enabled
+            Prefix: calibration-models/
+            ExpirationInDays: 365
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: documentation-calibration
+
+  # ==========================================================================
+  # SNS Topic for Calibration Notifications
+  # ==========================================================================
+  CalibrationNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-calibration-notifications-${Environment}'
+      DisplayName: !Sub 'Aura Calibration Notifications (${Environment})'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  CalibrationEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref CalibrationNotificationTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ==========================================================================
+  # IAM Role for Calibration Lambda
+  # ==========================================================================
+  CalibrationLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-calibration-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: CalibrationLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB permissions
+              - Effect: Allow
+                Action: [dynamodb:Query, dynamodb:Scan, dynamodb:GetItem]
+                Resource:
+                  - !GetAtt DocumentationFeedbackTable.Arn
+                  - !Sub '${DocumentationFeedbackTable.Arn}/index/*'
+              # S3 permissions
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject, s3:HeadObject, s3:ListBucket]
+                Resource:
+                  - !GetAtt CalibrationModelsBucket.Arn
+                  - !Sub '${CalibrationModelsBucket.Arn}/*'
+              # SNS permissions
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref CalibrationNotificationTopic
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/DocumentationCalibration'
+              # CloudWatch Logs
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-calibration-pipeline-${Environment}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Lambda Function - Calibration Pipeline
+  # ==========================================================================
+  CalibrationPipelineLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-calibration-pipeline-${Environment}'
+      Description: 'Nightly calibration training for documentation confidence scores'
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt CalibrationLambdaRole.Arn
+      Timeout: 900
+      MemorySize: 1024
+      # Note: External sklearn layer removed - calibration uses mock/simple interpolation
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          S3_BUCKET: !Ref CalibrationModelsBucket
+          DYNAMODB_TABLE: !Ref DocumentationFeedbackTable
+          SNS_TOPIC_ARN: !Ref CalibrationNotificationTopic
+          MIN_SAMPLES: !Ref MinSamplesForCalibration
+          USE_MOCK: 'false'
+      Code:
+        ZipFile: |
+          """
+          Calibration Pipeline Lambda - Inline Handler
+
+          This is a minimal stub. The full implementation is in
+          src/lambda/calibration_pipeline.py and should be deployed
+          via the Lambda package build process.
+          """
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info(f"Calibration Pipeline triggered: {json.dumps(event)}")
+
+              execution_id = f"calibration-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+              env = os.environ.get('ENVIRONMENT', 'dev')
+
+              # Stub response - full implementation in src/lambda/calibration_pipeline.py
+              result = {
+                  'execution_id': execution_id,
+                  'timestamp': datetime.now(timezone.utc).isoformat(),
+                  'status': 'stub_mode',
+                  'message': 'Deploy full Lambda package for calibration functionality',
+                  'environment': env,
+              }
+
+              logger.info(f"Stub complete: {json.dumps(result)}")
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(result),
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: documentation-calibration
+
+  # ==========================================================================
+  # CloudWatch Log Group
+  # ==========================================================================
+  CalibrationLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-calibration-pipeline-${Environment}'
+      RetentionInDays: !If [IsProd, 90, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # CloudWatch Events Rule - Nightly at 2 AM UTC
+  # ==========================================================================
+  CalibrationScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-calibration-nightly-${Environment}'
+      Description: 'Triggers calibration pipeline daily at 2 AM UTC'
+      ScheduleExpression: 'cron(0 2 * * ? *)'
+      State: ENABLED
+      Targets:
+        - Id: CalibrationLambdaTarget
+          Arn: !GetAtt CalibrationPipelineLambda.Arn
+
+  CalibrationLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CalibrationPipelineLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CalibrationScheduleRule.Arn
+
+  # ==========================================================================
+  # CloudWatch Alarms for Calibration Quality
+  # ==========================================================================
+  HighECEAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProd
+    Properties:
+      AlarmName: !Sub '${ProjectName}-high-ece-${Environment}'
+      AlarmDescription: 'ECE after calibration is above 0.15 threshold'
+      Namespace: !Sub '${ProjectName}/DocumentationCalibration'
+      MetricName: ECEAfterCalibration
+      Statistic: Average
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 0.15
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref CalibrationNotificationTopic
+
+  CalibrationFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProd
+    Properties:
+      AlarmName: !Sub '${ProjectName}-calibration-failure-${Environment}'
+      AlarmDescription: 'Calibration Lambda function is failing'
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CalibrationPipelineLambda
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref CalibrationNotificationTopic
+
+  # ==========================================================================
+  # CloudWatch Dashboard
+  # ==========================================================================
+  CalibrationDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-calibration-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "ECE Before vs After Calibration",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  ["${ProjectName}/DocumentationCalibration", "ECEBeforeCalibration", {"stat": "Average", "label": "ECE Before"}],
+                  [".", "ECEAfterCalibration", {"stat": "Average", "label": "ECE After"}]
+                ],
+                "region": "${AWS::Region}",
+                "period": 86400
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "ECE Improvement %",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  ["${ProjectName}/DocumentationCalibration", "ECEImprovementPercent", {"stat": "Average"}]
+                ],
+                "region": "${AWS::Region}",
+                "period": 86400
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Calibration Sample Count",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  ["${ProjectName}/DocumentationCalibration", "CalibrationSampleCount", {"stat": "Sum"}]
+                ],
+                "region": "${AWS::Region}",
+                "period": 86400
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Lambda Execution",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${ProjectName}-calibration-pipeline-${Environment}"],
+                  [".", "Errors", ".", "."],
+                  [".", "Duration", ".", ".", {"stat": "Average"}]
+                ],
+                "region": "${AWS::Region}",
+                "period": 86400
+              }
+            }
+          ]
+        }
+
+Outputs:
+  FeedbackTableName:
+    Description: DynamoDB table for documentation feedback
+    Value: !Ref DocumentationFeedbackTable
+    Export:
+      Name: !Sub '${ProjectName}-feedback-table-${Environment}'
+
+  FeedbackTableArn:
+    Description: ARN of the feedback DynamoDB table
+    Value: !GetAtt DocumentationFeedbackTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-feedback-table-arn-${Environment}'
+
+  CalibrationBucketName:
+    Description: S3 bucket for calibration models
+    Value: !Ref CalibrationModelsBucket
+    Export:
+      Name: !Sub '${ProjectName}-calibration-bucket-${Environment}'
+
+  CalibrationBucketArn:
+    Description: ARN of the calibration S3 bucket
+    Value: !GetAtt CalibrationModelsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-calibration-bucket-arn-${Environment}'
+
+  LambdaFunctionArn:
+    Description: ARN of the calibration pipeline Lambda
+    Value: !GetAtt CalibrationPipelineLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-calibration-lambda-arn-${Environment}'
+
+  SNSTopicArn:
+    Description: SNS topic for calibration notifications
+    Value: !Ref CalibrationNotificationTopic
+    Export:
+      Name: !Sub '${ProjectName}-calibration-sns-${Environment}'
+
+  DashboardURL:
+    Description: CloudWatch dashboard URL
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-calibration-${Environment}'

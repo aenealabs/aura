@@ -1,0 +1,318 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.4 - Dashboard DynamoDB Tables (Customizable Widgets)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+Resources:
+  # Dashboard Configurations Table - Single-table design per ADR-064
+  DashboardConfigsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-dashboard-configs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: dashboard_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: role_default_for
+          AttributeType: S
+        - AttributeName: org_id
+          AttributeType: S
+        - AttributeName: updated_at
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # GSI 1: Direct dashboard lookup by ID
+        - IndexName: DashboardIdIndex
+          KeySchema:
+            - AttributeName: dashboard_id
+              KeyType: HASH
+            - AttributeName: user_id
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # GSI 2: Role-based default dashboards
+        - IndexName: RoleDefaultIndex
+          KeySchema:
+            - AttributeName: role_default_for
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # GSI 3: Organization shared dashboards
+        - IndexName: OrgDashboardIndex
+          KeySchema:
+            - AttributeName: org_id
+              KeyType: HASH
+            - AttributeName: updated_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dashboard-service
+
+  # EventBridge Event Bus for Dashboard Audit Events
+  DashboardEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub '${ProjectName}-dashboard-events-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Lambda function to process DynamoDB Streams and send to EventBridge
+  DashboardAuditStreamFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-dashboard-audit-stream-${Environment}'
+      Runtime: python3.11
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 128
+      Role: !GetAtt DashboardAuditStreamRole.Arn
+      Environment:
+        Variables:
+          EVENT_BUS_NAME: !Ref DashboardEventBus
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from datetime import datetime
+
+          eventbridge = boto3.client('events')
+          EVENT_BUS_NAME = os.environ['EVENT_BUS_NAME']
+
+          def handler(event, context):
+              """Process DynamoDB Stream events and emit to EventBridge for audit."""
+              entries = []
+
+              for record in event.get('Records', []):
+                  event_name = record['eventName']
+
+                  # Skip non-dashboard records (only process USER# and SHARE# records)
+                  keys = record['dynamodb'].get('Keys', {})
+                  pk = keys.get('pk', {}).get('S', '')
+
+                  if not (pk.startswith('USER#') or pk.startswith('SHARE#')):
+                      continue
+
+                  # Determine action type
+                  if event_name == 'INSERT':
+                      action = 'DASHBOARD_CREATED' if pk.startswith('USER#') else 'SHARE_GRANTED'
+                  elif event_name == 'MODIFY':
+                      action = 'DASHBOARD_UPDATED' if pk.startswith('USER#') else 'SHARE_MODIFIED'
+                  elif event_name == 'REMOVE':
+                      action = 'DASHBOARD_DELETED' if pk.startswith('USER#') else 'SHARE_REVOKED'
+                  else:
+                      continue
+
+                  # Build audit event
+                  new_image = record['dynamodb'].get('NewImage', {})
+                  old_image = record['dynamodb'].get('OldImage', {})
+
+                  detail = {
+                      'action': action,
+                      'pk': pk,
+                      'sk': keys.get('sk', {}).get('S', ''),
+                      'timestamp': datetime.utcnow().isoformat() + 'Z',
+                      'eventId': record['eventID'],
+                  }
+
+                  # Add relevant fields from new/old image
+                  if new_image.get('dashboard_id'):
+                      detail['dashboardId'] = new_image['dashboard_id'].get('S')
+                  if new_image.get('user_id'):
+                      detail['userId'] = new_image['user_id'].get('S')
+                  if new_image.get('name'):
+                      detail['dashboardName'] = new_image['name'].get('S')
+
+                  entries.append({
+                      'Source': 'aura.dashboard',
+                      'DetailType': 'DashboardAuditEvent',
+                      'Detail': json.dumps(detail),
+                      'EventBusName': EVENT_BUS_NAME,
+                  })
+
+              if entries:
+                  # Send in batches of 10 (EventBridge limit)
+                  for i in range(0, len(entries), 10):
+                      batch = entries[i:i+10]
+                      eventbridge.put_events(Entries=batch)
+
+              return {'statusCode': 200, 'processed': len(entries)}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # IAM Role for the audit stream Lambda
+  DashboardAuditStreamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-dashboard-audit-stream-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DashboardAuditStreamPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetRecords
+                  - dynamodb:GetShardIterator
+                  - dynamodb:DescribeStream
+                  - dynamodb:ListStreams
+                Resource: !GetAtt DashboardConfigsTable.StreamArn
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource: !GetAtt DashboardEventBus.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Event Source Mapping for DynamoDB Stream to Lambda
+  DashboardStreamEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DashboardConfigsTable.StreamArn
+      FunctionName: !Ref DashboardAuditStreamFunction
+      StartingPosition: LATEST
+      BatchSize: 100
+      MaximumBatchingWindowInSeconds: 5
+
+  # Rule to log dashboard audit events for compliance
+  DashboardAuditRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-dashboard-audit-${Environment}'
+      Description: Log all dashboard changes for CMMC compliance audit trail
+      EventBusName: !Ref DashboardEventBus
+      EventPattern:
+        source:
+          - aura.dashboard
+        detail-type:
+          - DashboardAuditEvent
+      State: ENABLED
+      Targets:
+        - Id: CloudWatchLogs
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${ProjectName}-dashboard-audit-${Environment}'
+
+  # CloudWatch Log Group for dashboard audit
+  DashboardAuditLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/events/${ProjectName}-dashboard-audit-${Environment}'
+      RetentionInDays: 365
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Resource policy for EventBridge to write to CloudWatch Logs
+  DashboardAuditLogPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-dashboard-audit-policy-${Environment}'
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${ProjectName}-dashboard-audit-${Environment}:*"
+            }
+          ]
+        }
+
+Outputs:
+  DashboardConfigsTableName:
+    Description: Name of the dashboard configs DynamoDB table
+    Value: !Ref DashboardConfigsTable
+    Export:
+      Name: !Sub '${ProjectName}-dashboard-configs-table-${Environment}'
+
+  DashboardConfigsTableArn:
+    Description: ARN of the dashboard configs DynamoDB table
+    Value: !GetAtt DashboardConfigsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dashboard-configs-table-arn-${Environment}'
+
+  DashboardConfigsTableStreamArn:
+    Description: ARN of the dashboard configs DynamoDB Stream
+    Value: !GetAtt DashboardConfigsTable.StreamArn
+    Export:
+      Name: !Sub '${ProjectName}-dashboard-configs-stream-arn-${Environment}'
+
+  DashboardEventBusName:
+    Description: Name of the dashboard EventBridge event bus
+    Value: !Ref DashboardEventBus
+    Export:
+      Name: !Sub '${ProjectName}-dashboard-eventbus-${Environment}'
+
+  DashboardEventBusArn:
+    Description: ARN of the dashboard EventBridge event bus
+    Value: !GetAtt DashboardEventBus.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dashboard-eventbus-arn-${Environment}'
+
+  DashboardAuditLogGroupName:
+    Description: Name of the dashboard audit CloudWatch Log Group
+    Value: !Ref DashboardAuditLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-dashboard-audit-log-group-${Environment}'

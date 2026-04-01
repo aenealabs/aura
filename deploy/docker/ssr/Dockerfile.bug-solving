@@ -1,0 +1,133 @@
+# Project Aura - SSR Bug Solving Agent Container Image
+#
+# Multi-stage Dockerfile for the bug solving agent used in
+# Self-Play SWE-RL training pipeline (ADR-050).
+#
+# Uses private ECR base images for supply chain security.
+# CI/CD overrides base image via --build-arg PYTHON_BASE_IMAGE.
+#
+# This container includes additional tools for test execution:
+# - pytest for running test suites
+# - git for applying patches and managing code
+#
+# Usage (Podman - primary per ADR-049):
+#   podman build --platform linux/amd64 -f Dockerfile.bug-solving -t aura-ssr-bug-solving:latest ../../..
+#
+# Usage (Docker - CI/CD fallback):
+#   docker build -f Dockerfile.bug-solving -t aura-ssr-bug-solving:latest ../../..
+#
+# CI/CD Usage (with private base image):
+#   podman build --platform linux/amd64 \
+#     --build-arg PYTHON_BASE_IMAGE=123456789012.dkr.ecr.us-east-1.amazonaws.com/aura-base-images/python:3.11-slim \
+#     -f Dockerfile.bug-solving -t aura-ssr-bug-solving:latest ../../..
+
+# ============================================================================
+# Base Image Configuration
+# ============================================================================
+# Default to ECR Public Gallery for local development
+# CI/CD overrides with private ECR via --build-arg for controlled supply chain
+ARG PYTHON_BASE_IMAGE=public.ecr.aws/docker/library/python:3.11-slim
+
+# ============================================================================
+# STAGE 1: BUILDER
+# ============================================================================
+
+FROM ${PYTHON_BASE_IMAGE} AS builder
+
+# Suppress debconf warnings in non-interactive builds
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /build
+
+# Pip security hardening and suppress script location warnings
+ENV PIP_ROOT_USER_ACTION=ignore \
+    PIP_NO_CACHE_DIR=true \
+    PATH=/root/.local/bin:$PATH
+
+# Copy agent-specific dependencies
+COPY requirements-api.txt requirements-agents.txt ./
+
+# Install Python dependencies including pytest for test execution
+RUN pip install --no-cache-dir --user --no-warn-script-location -r requirements-agents.txt && \
+    pip install --no-cache-dir --user --no-warn-script-location pytest pytest-asyncio pytest-cov
+
+# ============================================================================
+# STAGE 2: RUNTIME
+# ============================================================================
+
+FROM ${PYTHON_BASE_IMAGE} AS runtime
+
+# Suppress debconf warnings in non-interactive builds
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies (more tools needed for test execution)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    patch \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN useradd -m -u 1000 -s /bin/bash aura
+
+# Create workspace directory for cloned repositories
+RUN mkdir -p /workspace && chown aura:aura /workspace
+
+# Set working directory
+WORKDIR /app
+
+# Copy Python dependencies from builder
+COPY --from=builder /root/.local /home/aura/.local
+
+# Copy application code
+COPY src/ ./src/
+COPY deploy/config/ ./config/
+
+# Set ownership
+RUN chown -R aura:aura /app
+
+# Switch to non-root user
+USER aura
+
+# Add local bin to PATH
+ENV PATH=/home/aura/.local/bin:$PATH
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    ENVIRONMENT=dev \
+    LOG_LEVEL=INFO \
+    AGENT_TYPE=bug_solving \
+    # SSR-specific environment variables (overridden at runtime)
+    SSR_BUCKET_NAME="" \
+    SSR_TABLE_NAME="" \
+    ARTIFACT_ID="" \
+    REPOSITORY_ID="" \
+    TRAINING_JOB_ID="" \
+    MAX_ATTEMPTS="3" \
+    # Workspace for cloned repositories
+    WORKSPACE_DIR="/workspace"
+
+# Health check (ECS uses task-level health checks, this is backup)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)"
+
+# Default command - run the bug solving agent
+# Environment variables ARTIFACT_ID, REPOSITORY_ID, and MAX_ATTEMPTS should be set at runtime
+CMD ["python", "-m", "src.agents.ssr.bug_solving_agent"]
+
+# Metadata
+LABEL maintainer="Project Aura Team" \
+      description="SSR Bug Solving Agent for Self-Play SWE-RL training" \
+      version="1.0.0" \
+      adr="ADR-050" \
+      org.opencontainers.image.source="https://github.com/aenealabs/aura" \
+      org.opencontainers.image.vendor="Aenea Labs" \
+      org.opencontainers.image.title="Aura SSR Bug Solving Agent"

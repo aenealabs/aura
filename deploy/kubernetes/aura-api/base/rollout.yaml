@@ -1,0 +1,182 @@
+# Project Aura - API Rollout (Base - Canary Strategy)
+# Progressive delivery using Argo Rollouts (ADR-022 Phase 3)
+#
+# Canary Strategy:
+#   Step 1: 10% traffic -> manual pause (verify initial health)
+#   Step 2: 25% traffic -> pod-health analysis (2 min)
+#   Step 3: 50% traffic -> http-benchmark analysis (5 min)
+#   Step 4: 100% traffic (promotion complete)
+#
+# Rollback triggers automatically if any analysis fails.
+#
+# Prerequisites:
+# 1. ECR repository: aura-api-{env}
+# 2. ConfigMap: aura-api-config
+# 3. ServiceAccount with IRSA for DynamoDB/Bedrock access
+
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: aura-api
+  namespace: default
+  labels:
+    app: aura-api
+    component: api
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: aura-api
+  template:
+    metadata:
+      labels:
+        app: aura-api
+        component: api
+      annotations:
+        # Force pod restart on ConfigMap changes
+        checksum/config: "{{ include (print $.Template.BasePath \"/configmap.yaml\") . | sha256sum }}"
+    spec:
+      serviceAccountName: aura-api
+
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: aura-api
+          # Image placeholder - override via Kustomize overlay images transformer
+          image: aura-api:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # Environment variables from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: aura-api-config
+
+          # Resource limits (adjust based on load testing)
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          # Probes for Kubernetes health management
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+          # Security context for the container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # Needs write for /tmp/aura-repos
+            capabilities:
+              drop:
+                - ALL
+
+          # Volume mounts
+          volumeMounts:
+            - name: repo-cache
+              mountPath: /tmp/aura-repos
+
+      volumes:
+        - name: repo-cache
+          emptyDir:
+            sizeLimit: 1Gi
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30
+
+      # Node affinity (prefer application nodes if labeled)
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-type
+                    operator: In
+                    values:
+                      - application
+
+  strategy:
+    canary:
+      # Canary service receives traffic during rollout
+      canaryService: aura-api-canary
+      # Stable service continues receiving production traffic
+      stableService: aura-api
+      steps:
+        # Step 1: Deploy canary with 10% of replicas
+        - setWeight: 10
+        # Pause for manual verification (promote via: kubectl argo rollouts promote aura-api)
+        - pause: {}
+
+        # Step 2: Scale to 25% with automated health check
+        - setWeight: 25
+        - analysis:
+            templates:
+              - templateName: pod-health
+                clusterScope: true
+            args:
+              - name: service-name
+                value: aura-api
+              - name: namespace
+                value: default
+        - pause:
+            duration: 2m
+
+        # Step 3: Scale to 50% with HTTP benchmark
+        - setWeight: 50
+        - analysis:
+            templates:
+              - templateName: http-benchmark
+                clusterScope: true
+            args:
+              - name: service-url
+                value: http://aura-api.default.svc.cluster.local:8080/health/ready
+        - pause:
+            duration: 3m
+
+        # Step 4: Full promotion
+        - setWeight: 100
+
+      # Automatic rollback configuration
+      abortScaleDownDelaySeconds: 30
+
+      # Anti-affinity for spreading canary pods
+      antiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          weight: 100

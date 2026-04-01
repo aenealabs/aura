@@ -1,0 +1,120 @@
+# Project Aura - Agent Orchestrator Deployment (Warm Pool Mode)
+# Deploys the multi-agent orchestrator with HTTP server and SQS queue consumer
+#
+# Architecture (Hybrid Architecture Pattern):
+#   1. HTTP Server provides /health endpoints for K8s probes
+#   2. Background task polls SQS for orchestration jobs
+#   3. System2Orchestrator processes jobs (Coder, Reviewer, Validator)
+#   4. Results stored in DynamoDB with optional webhook callback
+#
+# Prerequisites:
+# 1. ECR repository: aura-agent-orchestrator-{env} (Layer 4.2)
+# 2. ConfigMap: aura-agent-orchestrator-config
+# 3. ServiceAccount with IRSA for DynamoDB/SQS/Bedrock access
+# 4. SQS queue: aura-orchestrator-tasks-{env} (Layer 6.4)
+# 5. DynamoDB table: aura-orchestrator-jobs-{env} (Layer 6.4)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aura-agent-orchestrator
+  namespace: default
+  labels:
+    app: aura-agent-orchestrator
+    component: agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aura-agent-orchestrator
+  template:
+    metadata:
+      labels:
+        app: aura-agent-orchestrator
+        component: agents
+    spec:
+      serviceAccountName: aura-api  # Shares IRSA role with aura-api for AWS access
+
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: aura-agent-orchestrator
+          # Image placeholder - override via Kustomize overlay images transformer
+          image: aura-agent-orchestrator:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # Environment variables from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: aura-agent-orchestrator-config
+
+          # Resource limits
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+
+          # Probes for Kubernetes health management
+          # See src/agents/orchestrator_server.py for endpoint definitions
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 30
+
+          # Security context for the container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30
+
+      # Node affinity - prefer general-purpose nodes (ADR-058)
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: workload-type
+                    operator: In
+                    values:
+                      - general-purpose

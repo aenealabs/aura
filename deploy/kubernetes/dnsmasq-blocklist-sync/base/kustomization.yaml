@@ -1,0 +1,23 @@
+# Project Aura - DNS Blocklist Sync Base Kustomization
+#
+# Base configuration for DNS blocklist sync CronJob.
+# Use overlays for environment-specific configuration.
+#
+# Usage (via overlay):
+#   kubectl apply -k deploy/kubernetes/dnsmasq-blocklist-sync/overlays/dev/
+#   kubectl apply -k deploy/kubernetes/dnsmasq-blocklist-sync/overlays/qa/
+#   kubectl apply -k deploy/kubernetes/dnsmasq-blocklist-sync/overlays/prod/
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: aura-network-services
+
+resources:
+  - dnsmasq-blocklist-sync.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: aura
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false

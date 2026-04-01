@@ -1,0 +1,58 @@
+version: 0.2
+
+# Serverless Sublayer: Agent Scheduling Infrastructure (ADR-055)
+# DynamoDB table, Lambda dispatcher, EventBridge trigger, CloudWatch alarm
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing build dependencies..."
+      - pip3 install cfn-lint
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Serverless Sublayer - Agent Scheduling (ADR-055)"
+      - echo "=========================================="
+      - echo "Environment $ENVIRONMENT | Project $PROJECT_NAME | Region $AWS_DEFAULT_REGION"
+      - echo "Validating scheduling infrastructure template..."
+      - cfn-lint deploy/cloudformation/scheduling-infrastructure.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - echo "Template validation complete"
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+  build:
+    commands:
+      - echo "Deploying Agent Scheduling Infrastructure..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-scheduling-infrastructure-${ENVIRONMENT} --template-file deploy/cloudformation/scheduling-infrastructure.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=serverless ADR=ADR-055 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset --region $AWS_DEFAULT_REGION
+      - echo "Agent Scheduling Infrastructure deployment complete"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Agent Scheduling Deployment Complete"
+      - echo "=========================================="
+      - echo "=== Scheduling Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-scheduling-infrastructure-${ENVIRONMENT} --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Stack not available"
+      - echo "=== Scheduling DynamoDB Table ==="
+      - aws dynamodb describe-table --table-name ${PROJECT_NAME}-scheduled-jobs-${ENVIRONMENT} --query 'Table.{Name:TableName,Status:TableStatus,ItemCount:ItemCount}' --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "Table not available"
+      - echo "=== Scheduler Dispatcher Lambda ==="
+      - aws lambda get-function --function-name ${PROJECT_NAME}-scheduler-dispatcher-${ENVIRONMENT} --query 'Configuration.{Name:FunctionName,Runtime:Runtime,Memory:MemorySize,Timeout:Timeout}' --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "Lambda not available"
+      - echo "=== EventBridge Rule ==="
+      - aws events describe-rule --name ${PROJECT_NAME}-scheduler-trigger-${ENVIRONMENT} --query '{Name:Name,State:State,Schedule:ScheduleExpression}' --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "Rule not available"
+      - echo "Publishing build metrics..."
+      - aws cloudwatch put-metric-data --namespace "Aura/CICD/Serverless" --metric-name "SchedulingDeployments" --value 1 --unit Count --dimensions Environment=$ENVIRONMENT --region $AWS_DEFAULT_REGION || echo "Failed to publish metrics"
+
+artifacts:
+  files:
+    - deploy/cloudformation/scheduling-infrastructure.yaml
+  name: scheduling-infrastructure-artifacts
+  discard-paths: no
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

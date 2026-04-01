@@ -1,0 +1,619 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.19 - Constitutional AI Evaluation (Nightly Quality)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2026-01-21'
+  DescriptionSync: 'Layer-6.19'
+  ADR: 'ADR-063 Phase 4 - Constitutional AI Evaluation Infrastructure'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  ScheduleExpression:
+    Type: String
+    Default: 'cron(0 2 * * ? *)'
+    Description: Schedule for nightly evaluation (default 2 AM UTC)
+
+  SampleSize:
+    Type: Number
+    Default: 50
+    MinValue: 10
+    MaxValue: 500
+    Description: Number of response pairs to sample per evaluation
+
+  LambdaMemorySize:
+    Type: Number
+    Default: 1024
+    MinValue: 512
+    MaxValue: 3008
+    Description: Lambda function memory in MB
+
+  LambdaTimeout:
+    Type: Number
+    Default: 900
+    MinValue: 300
+    MaxValue: 900
+    Description: Lambda function timeout in seconds (max 15 min)
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for regression alerts (optional)
+
+  EnableRegressionAlerts:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable SNS alerts for critical regressions
+
+  LambdaS3Bucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+
+  LambdaS3Key:
+    Type: String
+    Description: S3 key for Lambda deployment package
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  IsProd: !Equals [!Ref Environment, 'prod']
+  AlertsEnabled: !Equals [!Ref EnableRegressionAlerts, 'true']
+  ShouldCreateEmailSubscription: !And
+    - !Condition AlertsEnabled
+    - !Condition HasAlertEmail
+
+Resources:
+  # ==========================================================================
+  # S3 Bucket for Evaluation Data
+  # ==========================================================================
+  EvaluationDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-constitutional-ai-eval-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldEvaluationResults
+            Status: Enabled
+            Prefix: evaluation_results/
+            ExpirationInDays: 90
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: constitutional-ai-evaluation
+
+  # ==========================================================================
+  # DynamoDB Table for Golden Set
+  # ==========================================================================
+  GoldenSetTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-cai-golden-set-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: constitutional-ai-golden-set
+
+  # ==========================================================================
+  # SNS Topic for Regression Alerts
+  # ==========================================================================
+  RegressionAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: AlertsEnabled
+    Properties:
+      TopicName: !Sub '${ProjectName}-cai-regression-alerts-${Environment}'
+      DisplayName: !Sub 'Constitutional AI Regression Alerts (${Environment})'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: constitutional-ai-evaluation
+
+  RegressionAlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: ShouldCreateEmailSubscription
+    Properties:
+      TopicArn: !Ref RegressionAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ==========================================================================
+  # IAM Role for Evaluation Lambda
+  # ==========================================================================
+  EvaluationLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-cai-evaluation-lambda-role-${Environment}'
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: EvaluationLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # S3 permissions
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:ListBucket, s3:GetObjectAttributes]
+                Resource:
+                  - !GetAtt EvaluationDataBucket.Arn
+                  - !Sub '${EvaluationDataBucket.Arn}/*'
+              # DynamoDB permissions
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query, dynamodb:Scan]
+                Resource:
+                  - !GetAtt GoldenSetTable.Arn
+                  - !Sub '${GoldenSetTable.Arn}/index/*'
+              # SNS permissions
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !If
+                  - AlertsEnabled
+                  - !Ref RegressionAlertTopic
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-cai-*'
+              # Bedrock permissions for LLM-as-Judge
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-sonnet-*'
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/ConstitutionalAI'
+              # CloudWatch Logs
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-cai-evaluation-${Environment}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # Lambda Function - Constitutional AI Evaluation
+  # ==========================================================================
+  EvaluationLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-cai-evaluation-${Environment}'
+      Description: Nightly Constitutional AI evaluation - LLM-as-Judge, golden set regression
+      Runtime: python3.11
+      Handler: src.lambda.constitutional_evaluation.handler.handler
+      Role: !GetAtt EvaluationLambdaRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          EVALUATION_BUCKET: !Ref EvaluationDataBucket
+          GOLDEN_SET_TABLE: !Ref GoldenSetTable
+          SNS_TOPIC_ARN: !If [AlertsEnabled, !Ref RegressionAlertTopic, '']
+          SAMPLE_SIZE: !Ref SampleSize
+          ENABLE_REGRESSION_ALERTS: !Ref EnableRegressionAlerts
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: constitutional-ai-evaluation
+
+  # ==========================================================================
+  # EventBridge Rule - Nightly Schedule
+  # ==========================================================================
+  EvaluationScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-cai-evaluation-schedule-${Environment}'
+      Description: Triggers Constitutional AI evaluation nightly at 2 AM UTC
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Targets:
+        - Id: EvaluationLambdaTarget
+          Arn: !GetAtt EvaluationLambda.Arn
+          Input: '{"source": "eventbridge-schedule"}'
+
+  EvaluationSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref EvaluationLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EvaluationScheduleRule.Arn
+
+  # ==========================================================================
+  # CloudWatch Dashboard - Constitutional AI Evaluation
+  # ==========================================================================
+  ConstitutionalAIDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-constitutional-ai-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0, "y": 0, "width": 24, "height": 1,
+              "properties": {
+                "markdown": "## Constitutional AI Evaluation Dashboard (ADR-063 Phase 4)\nTarget metrics: Critique Accuracy >90%, Revision Convergence >95%, Cache Hit Rate >30%, Non-Evasive Rate >70%, Latency P95 <500ms"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 1, "width": 8, "height": 6,
+              "properties": {
+                "title": "Critique Accuracy (Target: >90%)",
+                "metrics": [
+                  ["Aura/ConstitutionalAI", "CritiqueAccuracy", "Environment", "${Environment}", "Service", "constitutional-ai", {"stat": "Average", "period": 86400}]
+                ],
+                "view": "gauge",
+                "region": "${AWS::Region}",
+                "yAxis": {"left": {"min": 0, "max": 100}},
+                "annotations": {
+                  "horizontal": [{"value": 90, "label": "Target 90%", "color": "#2ca02c"}]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8, "y": 1, "width": 8, "height": 6,
+              "properties": {
+                "title": "Revision Convergence Rate (Target: >95%)",
+                "metrics": [
+                  ["Aura/ConstitutionalAI", "RevisionConvergenceRate", "Environment", "${Environment}", "Service", "constitutional-ai", {"stat": "Average", "period": 86400}]
+                ],
+                "view": "gauge",
+                "region": "${AWS::Region}",
+                "yAxis": {"left": {"min": 0, "max": 100}},
+                "annotations": {
+                  "horizontal": [{"value": 95, "label": "Target 95%", "color": "#2ca02c"}]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16, "y": 1, "width": 8, "height": 6,
+              "properties": {
+                "title": "Non-Evasive Rate (Target: >70%)",
+                "metrics": [
+                  ["Aura/ConstitutionalAI", "NonEvasiveRate", "Environment", "${Environment}", "Service", "constitutional-ai", {"stat": "Average", "period": 86400}]
+                ],
+                "view": "gauge",
+                "region": "${AWS::Region}",
+                "yAxis": {"left": {"min": 0, "max": 100}},
+                "annotations": {
+                  "horizontal": [{"value": 70, "label": "Target 70%", "color": "#2ca02c"}]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 7, "width": 12, "height": 6,
+              "properties": {
+                "title": "Critique Latency P95 (Target: <500ms)",
+                "metrics": [
+                  ["Aura/ConstitutionalAI", "CritiqueLatencyP95", "Environment", "${Environment}", "Service", "constitutional-ai", {"stat": "Average"}]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "period": 3600,
+                "yAxis": {"left": {"min": 0, "label": "ms"}},
+                "annotations": {
+                  "horizontal": [{"value": 500, "label": "500ms Threshold", "color": "#d62728"}]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 7, "width": 12, "height": 6,
+              "properties": {
+                "title": "Cache Hit Rate (Target: >30%)",
+                "metrics": [
+                  ["Aura/ConstitutionalAI", "CacheHitRate", "Environment", "${Environment}", "Service", "constitutional-ai", {"stat": "Average"}]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "period": 3600,
+                "yAxis": {"left": {"min": 0, "max": 100, "label": "%"}},
+                "annotations": {
+                  "horizontal": [{"value": 30, "label": "30% Threshold", "color": "#2ca02c"}]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 13, "width": 8, "height": 6,
+              "properties": {
+                "title": "Golden Set Pass Rate",
+                "metrics": [
+                  ["Aura/ConstitutionalAI", "GoldenSetPassRate", "Environment", "${Environment}", "Service", "constitutional-ai", {"stat": "Average", "period": 86400}]
+                ],
+                "view": "singleValue",
+                "region": "${AWS::Region}"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8, "y": 13, "width": 8, "height": 6,
+              "properties": {
+                "title": "Daily Evaluation Volume",
+                "metrics": [
+                  ["Aura/ConstitutionalAI", "EvaluationPairsProcessed", "Environment", "${Environment}", "Service", "constitutional-ai", {"stat": "Sum", "label": "Pairs Evaluated"}],
+                  [".", "CritiqueCount", ".", ".", ".", ".", {"stat": "Sum", "label": "Critiques"}]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "period": 86400,
+                "stacked": false
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16, "y": 13, "width": 8, "height": 6,
+              "properties": {
+                "title": "Issues by Severity",
+                "metrics": [
+                  ["Aura/ConstitutionalAI", "CriticalIssues", "Environment", "${Environment}", "Service", "constitutional-ai", {"stat": "Sum", "color": "#d62728", "label": "Critical"}],
+                  [".", "HighIssues", ".", ".", ".", ".", {"stat": "Sum", "color": "#ff7f0e", "label": "High"}],
+                  [".", "MediumIssues", ".", ".", ".", ".", {"stat": "Sum", "color": "#ffbb78", "label": "Medium"}],
+                  [".", "LowIssues", ".", ".", ".", ".", {"stat": "Sum", "color": "#2ca02c", "label": "Low"}]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "period": 86400,
+                "stacked": true
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 19, "width": 12, "height": 6,
+              "properties": {
+                "title": "Regressions Detected",
+                "metrics": [
+                  ["Aura/ConstitutionalAI", "RegressionsDetected", "Environment", "${Environment}", "Service", "constitutional-ai", {"stat": "Sum", "label": "Total Regressions"}],
+                  [".", "CriticalRegressions", ".", ".", ".", ".", {"stat": "Sum", "color": "#d62728", "label": "Critical Regressions"}]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "period": 86400
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 19, "width": 12, "height": 6,
+              "properties": {
+                "title": "Evaluation Lambda Performance",
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "${ProjectName}-cai-evaluation-${Environment}", {"stat": "Average", "label": "Avg Duration"}],
+                  [".", "Errors", ".", ".", {"stat": "Sum", "color": "#d62728", "label": "Errors", "yAxis": "right"}],
+                  [".", "Invocations", ".", ".", {"stat": "Sum", "label": "Invocations", "yAxis": "right"}]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "period": 86400,
+                "yAxis": {
+                  "left": {"label": "Duration (ms)"},
+                  "right": {"label": "Count"}
+                }
+              }
+            }
+          ]
+        }
+
+  # ==========================================================================
+  # CloudWatch Alarms
+  # ==========================================================================
+  CritiqueAccuracyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-cai-critique-accuracy-low-${Environment}'
+      AlarmDescription: Alert when critique accuracy drops below 90% target
+      MetricName: CritiqueAccuracy
+      Namespace: Aura/ConstitutionalAI
+      Statistic: Average
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 90
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Service
+          Value: constitutional-ai
+      AlarmActions:
+        - !If [AlertsEnabled, !Ref RegressionAlertTopic, !Ref 'AWS::NoValue']
+
+  CritiqueLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-cai-critique-latency-high-${Environment}'
+      AlarmDescription: Alert when critique latency P95 exceeds 500ms target
+      MetricName: CritiqueLatencyP95
+      Namespace: Aura/ConstitutionalAI
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 3
+      Threshold: 500
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Service
+          Value: constitutional-ai
+      AlarmActions:
+        - !If [AlertsEnabled, !Ref RegressionAlertTopic, !Ref 'AWS::NoValue']
+
+  CriticalRegressionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-cai-critical-regressions-${Environment}'
+      AlarmDescription: Alert when critical regressions are detected in golden set
+      MetricName: CriticalRegressions
+      Namespace: Aura/ConstitutionalAI
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Service
+          Value: constitutional-ai
+      AlarmActions:
+        - !If [AlertsEnabled, !Ref RegressionAlertTopic, !Ref 'AWS::NoValue']
+
+  EvaluationLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-cai-evaluation-errors-${Environment}'
+      AlarmDescription: Alert when evaluation Lambda has errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub '${ProjectName}-cai-evaluation-${Environment}'
+      AlarmActions:
+        - !If [AlertsEnabled, !Ref RegressionAlertTopic, !Ref 'AWS::NoValue']
+
+Outputs:
+  EvaluationBucketName:
+    Description: S3 bucket for evaluation datasets
+    Value: !Ref EvaluationDataBucket
+    Export:
+      Name: !Sub '${ProjectName}-cai-evaluation-bucket-${Environment}'
+
+  EvaluationBucketArn:
+    Description: S3 bucket ARN
+    Value: !GetAtt EvaluationDataBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-cai-evaluation-bucket-arn-${Environment}'
+
+  GoldenSetTableName:
+    Description: DynamoDB table for golden set cases
+    Value: !Ref GoldenSetTable
+    Export:
+      Name: !Sub '${ProjectName}-cai-golden-set-table-${Environment}'
+
+  GoldenSetTableArn:
+    Description: DynamoDB table ARN
+    Value: !GetAtt GoldenSetTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-cai-golden-set-table-arn-${Environment}'
+
+  EvaluationLambdaArn:
+    Description: Evaluation Lambda ARN
+    Value: !GetAtt EvaluationLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-cai-evaluation-lambda-arn-${Environment}'
+
+  EvaluationLambdaName:
+    Description: Evaluation Lambda function name
+    Value: !Ref EvaluationLambda
+    Export:
+      Name: !Sub '${ProjectName}-cai-evaluation-lambda-name-${Environment}'
+
+  RegressionAlertTopicArn:
+    Description: SNS topic for regression alerts
+    Condition: AlertsEnabled
+    Value: !Ref RegressionAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-cai-regression-alerts-topic-${Environment}'
+
+  DashboardName:
+    Description: CloudWatch dashboard name
+    Value: !Sub '${ProjectName}-constitutional-ai-${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-cai-dashboard-name-${Environment}'

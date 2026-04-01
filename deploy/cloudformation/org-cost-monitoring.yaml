@@ -1,0 +1,870 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.4 - Organization Cost Monitoring (Multi-Account)'
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  AlertEmail:
+    Type: String
+    Description: Email address for cost alerts
+    AllowedPattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+  OrganizationMonthlyBudget:
+    Type: Number
+    Default: 1000
+    MinValue: 100
+    MaxValue: 100000
+    Description: Total monthly budget across all accounts (USD)
+
+  OrganizationBudgetThreshold:
+    Type: Number
+    Default: 900
+    MinValue: 90
+    MaxValue: 90000
+    Description: Budget threshold for alerts (should be 90% of OrganizationMonthlyBudget)
+
+  EnableAnomalyDetection:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable AWS Cost Anomaly Detection
+
+  NeptuneBudget:
+    Type: Number
+    Default: 200
+    Description: Monthly budget for Neptune (USD)
+
+  OpenSearchBudget:
+    Type: Number
+    Default: 150
+    Description: Monthly budget for OpenSearch (USD)
+
+  EKSBudget:
+    Type: Number
+    Default: 400
+    Description: Monthly budget for EKS compute (USD)
+
+  BedrockBudget:
+    Type: Number
+    Default: 100
+    Description: Monthly budget for Bedrock LLM (USD)
+
+Conditions:
+  EnableAnomaly: !Equals [!Ref EnableAnomalyDetection, 'true']
+
+Resources:
+  # ==========================================================================
+  # SNS Topics for Organization-Level Alerts
+  # ==========================================================================
+
+  OrgCostAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-org-cost-alerts-${Environment}'
+      DisplayName: Aura Organization Cost Alerts
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: platform
+
+  OrgCostAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref OrgCostAlertTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowBudgetPublish
+            Effect: Allow
+            Principal:
+              Service: budgets.amazonaws.com
+            Action: SNS:Publish
+            Resource: !Ref OrgCostAlertTopic
+          - Sid: AllowCostAnomalyPublish
+            Effect: Allow
+            Principal:
+              Service: costalerts.amazonaws.com
+            Action: SNS:Publish
+            Resource: !Ref OrgCostAlertTopic
+          - Sid: AllowCloudWatchPublish
+            Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: SNS:Publish
+            Resource: !Ref OrgCostAlertTopic
+
+  # ==========================================================================
+  # Organization-Level Budget (Consolidated)
+  # ==========================================================================
+
+  OrganizationBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-org-monthly-${Environment}'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref OrganizationMonthlyBudget
+          Unit: USD
+        CostFilters:
+          TagKeyValue:
+            - !Sub 'user:Project$${ProjectName}'
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+          IncludeCredit: false
+          IncludeRefund: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 50
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 75
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 90
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+
+  # ==========================================================================
+  # Per-Service Budgets
+  # ==========================================================================
+
+  NeptuneBudgetResource:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-neptune-monthly-${Environment}'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref NeptuneBudget
+          Unit: USD
+        CostFilters:
+          Service:
+            - Amazon Neptune
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+
+  OpenSearchBudgetResource:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-opensearch-monthly-${Environment}'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref OpenSearchBudget
+          Unit: USD
+        CostFilters:
+          Service:
+            - Amazon OpenSearch Service
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+
+  EKSBudgetResource:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-eks-monthly-${Environment}'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref EKSBudget
+          Unit: USD
+        CostFilters:
+          Service:
+            - Amazon Elastic Kubernetes Service
+            - Amazon Elastic Compute Cloud - Compute
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+
+  BedrockBudgetResource:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-bedrock-monthly-${Environment}'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref BedrockBudget
+          Unit: USD
+        CostFilters:
+          Service:
+            - Amazon Bedrock
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 70
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 90
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref OrgCostAlertTopic
+
+  # ==========================================================================
+  # AWS Cost Anomaly Detection
+  # ==========================================================================
+
+  CostAnomalyMonitor:
+    Type: AWS::CE::AnomalyMonitor
+    Condition: EnableAnomaly
+    Properties:
+      MonitorName: !Sub '${ProjectName}-service-anomaly-${Environment}'
+      MonitorType: DIMENSIONAL
+      MonitorDimension: SERVICE
+
+  CostAnomalySubscription:
+    Type: AWS::CE::AnomalySubscription
+    Condition: EnableAnomaly
+    Properties:
+      SubscriptionName: !Sub '${ProjectName}-anomaly-alerts-${Environment}'
+      Frequency: IMMEDIATE
+      MonitorArnList:
+        - !GetAtt CostAnomalyMonitor.MonitorArn
+      Subscribers:
+        - Type: SNS
+          Address: !Ref OrgCostAlertTopic
+      Threshold: 10
+
+  # ==========================================================================
+  # Cost Aggregation DynamoDB Table
+  # ==========================================================================
+
+  CostAggregationTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-org-cost-tracking-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: account_id
+          AttributeType: S
+        - AttributeName: month
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: account-month-index
+          KeySchema:
+            - AttributeName: account_id
+              KeyType: HASH
+            - AttributeName: month
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Cost Aggregator Lambda
+  # ==========================================================================
+
+  CostAggregatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-cost-aggregator-${Environment}'
+      Description: Aggregates costs across accounts and services for organization-level tracking
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt CostAggregatorRole.Arn
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref CostAggregationTable
+          ENVIRONMENT: !Ref Environment
+          ALERT_TOPIC_ARN: !Ref OrgCostAlertTopic
+          ORG_BUDGET: !Ref OrganizationMonthlyBudget
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import boto3
+          from datetime import datetime, timedelta
+          from decimal import Decimal
+
+          ce = boto3.client('ce')
+          dynamodb = boto3.resource('dynamodb')
+          sns = boto3.client('sns')
+          cloudwatch = boto3.client('cloudwatch')
+
+          def handler(event, context):
+              """Aggregate costs from Cost Explorer and store in DynamoDB."""
+              table = dynamodb.Table(os.environ['TABLE_NAME'])
+              environment = os.environ['ENVIRONMENT']
+              topic_arn = os.environ['ALERT_TOPIC_ARN']
+              org_budget = float(os.environ['ORG_BUDGET'])
+
+              # Date range: current month
+              today = datetime.utcnow()
+              start_of_month = today.replace(day=1).strftime('%Y-%m-%d')
+              end_date = today.strftime('%Y-%m-%d')
+              month_key = today.strftime('%Y-%m')
+
+              try:
+                  # Get costs by service
+                  response = ce.get_cost_and_usage(
+                      TimePeriod={'Start': start_of_month, 'End': end_date},
+                      Granularity='MONTHLY',
+                      Metrics=['UnblendedCost'],
+                      GroupBy=[
+                          {'Type': 'DIMENSION', 'Key': 'SERVICE'},
+                          {'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}
+                      ]
+                  )
+
+                  total_cost = Decimal('0')
+                  service_costs = {}
+                  account_costs = {}
+
+                  for result in response.get('ResultsByTime', []):
+                      for group in result.get('Groups', []):
+                          service = group['Keys'][0]
+                          account = group['Keys'][1]
+                          cost = Decimal(str(group['Metrics']['UnblendedCost']['Amount']))
+
+                          total_cost += cost
+                          service_costs[service] = service_costs.get(service, Decimal('0')) + cost
+                          account_costs[account] = account_costs.get(account, Decimal('0')) + cost
+
+                  # Store aggregated data
+                  ttl = int((datetime.utcnow() + timedelta(days=90)).timestamp())
+
+                  # Store total
+                  table.put_item(Item={
+                      'pk': f'ORG#{environment}',
+                      'sk': f'MONTH#{month_key}',
+                      'account_id': 'CONSOLIDATED',
+                      'month': month_key,
+                      'total_cost': total_cost,
+                      'service_breakdown': {k: str(v) for k, v in service_costs.items()},
+                      'account_breakdown': {k: str(v) for k, v in account_costs.items()},
+                      'updated_at': datetime.utcnow().isoformat(),
+                      'ttl': ttl
+                  })
+
+                  # Publish CloudWatch metrics
+                  cloudwatch.put_metric_data(
+                      Namespace=f'Aura/OrgCosts',
+                      MetricData=[
+                          {
+                              'MetricName': 'TotalMonthlyCost',
+                              'Value': float(total_cost),
+                              'Unit': 'None',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': environment}
+                              ]
+                          },
+                          {
+                              'MetricName': 'BudgetUtilization',
+                              'Value': (float(total_cost) / org_budget) * 100 if org_budget > 0 else 0,
+                              'Unit': 'Percent',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': environment}
+                              ]
+                          }
+                      ]
+                  )
+
+                  # Publish per-service metrics
+                  for service, cost in list(service_costs.items())[:20]:
+                      safe_service = service[:50].replace('/', '-')
+                      cloudwatch.put_metric_data(
+                          Namespace='Aura/OrgCosts',
+                          MetricData=[{
+                              'MetricName': 'ServiceCost',
+                              'Value': float(cost),
+                              'Unit': 'None',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': environment},
+                                  {'Name': 'Service', 'Value': safe_service}
+                              ]
+                          }]
+                      )
+
+                  # Check for budget threshold alerts
+                  utilization = (float(total_cost) / org_budget) * 100 if org_budget > 0 else 0
+                  if utilization >= 90:
+                      sns.publish(
+                          TopicArn=topic_arn,
+                          Subject=f'CRITICAL: Org Budget at {utilization:.1f}% ({environment})',
+                          Message=f"""Organization budget alert
+
+          Environment: {environment}
+          Total Spend: ${float(total_cost):.2f}
+          Budget: ${org_budget:.2f}
+          Utilization: {utilization:.1f}%
+
+          Top Services:
+          {chr(10).join([f'  - {s}: ${float(c):.2f}' for s, c in sorted(service_costs.items(), key=lambda x: x[1], reverse=True)[:5]])}
+
+          Top Accounts:
+          {chr(10).join([f'  - {a}: ${float(c):.2f}' for a, c in sorted(account_costs.items(), key=lambda x: x[1], reverse=True)[:3]])}
+          """
+                      )
+
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps({
+                          'total_cost': str(total_cost),
+                          'services': len(service_costs),
+                          'accounts': len(account_costs)
+                      })
+                  }
+
+              except Exception as e:
+                  print(f"Error aggregating costs: {e}")
+                  raise
+
+  CostAggregatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-cost-aggregator-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+      Policies:
+        - PolicyName: CostAggregatorPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: CostExplorerRead
+                Effect: Allow
+                Action:
+                  - ce:GetCostAndUsage
+                  - ce:GetCostForecast
+                Resource: '*'
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem]
+                Resource:
+                  - !GetAtt CostAggregationTable.Arn
+                  - !Sub '${CostAggregationTable.Arn}/index/*'
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/OrgCosts'
+              - Sid: SNSPublish
+                Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref OrgCostAlertTopic
+
+  # Schedule: Run every 6 hours
+  CostAggregatorSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-cost-aggregator-schedule-${Environment}'
+      Description: Triggers cost aggregation daily (cost optimized from 6 hours)
+      ScheduleExpression: 'rate(1 day)'
+      State: ENABLED
+      Targets:
+        - Id: CostAggregatorTarget
+          Arn: !GetAtt CostAggregatorFunction.Arn
+
+  CostAggregatorInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CostAggregatorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CostAggregatorSchedule.Arn
+
+  # ==========================================================================
+  # Consolidated Cost Dashboard
+  # ==========================================================================
+
+  OrgCostDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-org-costs-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/OrgCosts", "TotalMonthlyCost", "Environment", "${Environment}", {"label": "Total Spend"}]
+                ],
+                "period": 86400,
+                "stat": "Maximum",
+                "region": "${AWS::Region}",
+                "title": "Organization Total Spend (MTD)",
+                "yAxis": {"left": {"label": "USD", "showUnits": false}},
+                "annotations": {
+                  "horizontal": [
+                    {"label": "Budget", "value": ${OrganizationMonthlyBudget}, "color": "#ff7f0e"},
+                    {"label": "90% Threshold", "value": ${OrganizationBudgetThreshold}, "color": "#d62728"}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/OrgCosts", "BudgetUtilization", "Environment", "${Environment}"]
+                ],
+                "period": 86400,
+                "stat": "Maximum",
+                "region": "${AWS::Region}",
+                "title": "Budget Utilization (%)",
+                "yAxis": {"left": {"min": 0, "max": 150}},
+                "annotations": {
+                  "horizontal": [
+                    {"label": "Warning", "value": 75, "color": "#ff7f0e"},
+                    {"label": "Critical", "value": 90, "color": "#d62728"},
+                    {"label": "Over Budget", "value": 100, "color": "#9467bd"}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/OrgCosts", "ServiceCost", "Environment", "${Environment}", "Service", "Amazon Neptune", {"label": "Neptune"}],
+                  ["...", "Service", "Amazon OpenSearch Service", {"label": "OpenSearch"}],
+                  ["...", "Service", "Amazon Elastic Kubernetes Service", {"label": "EKS"}],
+                  ["...", "Service", "Amazon Bedrock", {"label": "Bedrock"}],
+                  ["...", "Service", "AWS Lambda", {"label": "Lambda"}]
+                ],
+                "period": 86400,
+                "stat": "Maximum",
+                "region": "${AWS::Region}",
+                "title": "Cost by Service (MTD)",
+                "yAxis": {"left": {"label": "USD"}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Budgets", "ActualCost", "BudgetName", "${ProjectName}-neptune-monthly-${Environment}", {"label": "Neptune"}],
+                  ["...", "${ProjectName}-opensearch-monthly-${Environment}", {"label": "OpenSearch"}],
+                  ["...", "${ProjectName}-eks-monthly-${Environment}", {"label": "EKS"}],
+                  ["...", "${ProjectName}-bedrock-monthly-${Environment}", {"label": "Bedrock"}]
+                ],
+                "period": 86400,
+                "stat": "Maximum",
+                "region": "${AWS::Region}",
+                "title": "Service Budget vs Actual"
+              }
+            },
+            {
+              "type": "text",
+              "x": 0, "y": 12, "width": 24, "height": 2,
+              "properties": {
+                "markdown": "## Budget Thresholds\n| Service | Budget | 80% Alert | 100% Alert |\n|---------|--------|-----------|------------|\n| Neptune | $${NeptuneBudget} | $${NeptuneBudget}*0.8 | $${NeptuneBudget} |\n| OpenSearch | $${OpenSearchBudget} | $${OpenSearchBudget}*0.8 | $${OpenSearchBudget} |\n| EKS | $${EKSBudget} | $${EKSBudget}*0.8 | $${EKSBudget} |\n| Bedrock | $${BedrockBudget} | $${BedrockBudget}*0.7 | $${BedrockBudget} |"
+              }
+            }
+          ]
+        }
+
+  # ==========================================================================
+  # CloudWatch Alarms for Organization-Level Monitoring
+  # ==========================================================================
+
+  OrgBudgetUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-org-budget-critical-${Environment}'
+      AlarmDescription: Organization budget utilization exceeds 90%
+      MetricName: BudgetUtilization
+      Namespace: Aura/OrgCosts
+      Statistic: Maximum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 90
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref OrgCostAlertTopic
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+
+  NeptuneCostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-neptune-cost-high-${Environment}'
+      AlarmDescription: Neptune costs exceed 90% of budget
+      MetricName: ServiceCost
+      Namespace: Aura/OrgCosts
+      Statistic: Maximum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !GetAtt ServiceThresholdCalculator.Neptune90
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref OrgCostAlertTopic
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Service
+          Value: Amazon Neptune
+      TreatMissingData: notBreaching
+
+  # Custom resource for threshold calculation
+  ServiceThresholdCalculator:
+    Type: Custom::ThresholdCalculator
+    Properties:
+      ServiceToken: !GetAtt ThresholdCalculatorFunction.Arn
+      NeptuneBudget: !Ref NeptuneBudget
+      OpenSearchBudget: !Ref OpenSearchBudget
+      EKSBudget: !Ref EKSBudget
+      BedrockBudget: !Ref BedrockBudget
+
+  ThresholdCalculatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-threshold-calc-${Environment}'
+      Description: Calculates service-specific budget thresholds
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt ThresholdCalculatorRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+
+                  props = event['ResourceProperties']
+                  response_data = {
+                      'Neptune90': float(props['NeptuneBudget']) * 0.9,
+                      'Neptune80': float(props['NeptuneBudget']) * 0.8,
+                      'OpenSearch90': float(props['OpenSearchBudget']) * 0.9,
+                      'OpenSearch80': float(props['OpenSearchBudget']) * 0.8,
+                      'EKS90': float(props['EKSBudget']) * 0.9,
+                      'EKS80': float(props['EKSBudget']) * 0.8,
+                      'Bedrock90': float(props['BedrockBudget']) * 0.9,
+                      'Bedrock70': float(props['BedrockBudget']) * 0.7
+                  }
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)
+              except Exception as e:
+                  print(f"Error: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+
+  ThresholdCalculatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+
+Outputs:
+  OrgCostAlertTopicArn:
+    Description: SNS Topic ARN for organization cost alerts
+    Value: !Ref OrgCostAlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-OrgCostAlertTopic'
+
+  CostAggregationTableName:
+    Description: DynamoDB table for cost aggregation
+    Value: !Ref CostAggregationTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CostAggregationTable'
+
+  OrgCostDashboardURL:
+    Description: CloudWatch Dashboard URL for organization costs
+    Value: !Sub 'https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-org-costs-${Environment}'
+
+  AnomalyMonitorArn:
+    Condition: EnableAnomaly
+    Description: Cost Anomaly Monitor ARN
+    Value: !GetAtt CostAnomalyMonitor.MonitorArn
+
+  CostAggregatorFunctionArn:
+    Description: Cost Aggregator Lambda ARN
+    Value: !GetAtt CostAggregatorFunction.Arn
+
+  OrganizationBudgetName:
+    Description: Organization-level budget name
+    Value: !Sub '${ProjectName}-org-monthly-${Environment}'
+
+  ServiceBudgets:
+    Description: Per-service budget names
+    Value: !Sub |
+      Neptune: ${ProjectName}-neptune-monthly-${Environment}
+      OpenSearch: ${ProjectName}-opensearch-monthly-${Environment}
+      EKS: ${ProjectName}-eks-monthly-${Environment}
+      Bedrock: ${ProjectName}-bedrock-monthly-${Environment}

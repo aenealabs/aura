@@ -1,0 +1,115 @@
+version: 0.2
+
+# Application Layer Sub-BuildSpec: IRSA Deployments (Layer 4.3)
+# Deploys IAM Roles for Service Accounts (IRSA) for EKS workloads.
+# Called by buildspec-application.yml or Step Functions.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+run-as: root
+
+env:
+  shell: bash
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint..."
+      - pip3 install cfn-lint --quiet
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "IRSA Deployment (Layer 4.3)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - validate_aws_credentials
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+      # Validate templates
+      - cfn-lint deploy/cloudformation/irsa-aura-api.yaml --ignore-checks W3002 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/irsa-memory-service.yaml --ignore-checks W3002 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/env-validator-irsa.yaml --ignore-checks W3002 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/iam-palantir-integration.yaml --ignore-checks W3002,W3037,W7001 || echo "warnings (non-blocking)"
+
+      # Get OIDC provider info from EKS cluster
+      - |
+        CLUSTER_NAME="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+        echo "Getting OIDC provider info from cluster: $CLUSTER_NAME"
+        OIDC_URL=$(aws eks describe-cluster --name $CLUSTER_NAME \
+          --query "cluster.identity.oidc.issuer" --output text --region $AWS_DEFAULT_REGION)
+        OIDC_PROVIDER_URL=$(echo $OIDC_URL | sed 's|https://||')
+        OIDC_PROVIDER_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER_URL}"
+        echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
+        echo "OIDC Provider URL: $OIDC_PROVIDER_URL"
+
+  build:
+    commands:
+      # IRSA for aura-api
+      - |
+        echo "Deploying IRSA for aura-api..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-irsa-api-${ENVIRONMENT}" \
+          "deploy/cloudformation/irsa-aura-api.yaml" \
+          "ProjectName=${PROJECT_NAME} Environment=${ENVIRONMENT} OIDCProviderArn=${OIDC_PROVIDER_ARN} OIDCProviderURL=${OIDC_PROVIDER_URL} ServiceAccountNamespace=default ServiceAccountName=${PROJECT_NAME}-api" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          "CAPABILITY_NAMED_IAM"
+
+        IRSA_API_ROLE_ARN=$(cfn_get_stack_output "${PROJECT_NAME}-irsa-api-${ENVIRONMENT}" "RoleArn")
+        echo "IRSA API Role ARN: $IRSA_API_ROLE_ARN"
+
+      # IRSA for memory-service
+      - |
+        echo "Deploying IRSA for memory-service..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-irsa-memory-service-${ENVIRONMENT}" \
+          "deploy/cloudformation/irsa-memory-service.yaml" \
+          "ProjectName=${PROJECT_NAME} Environment=${ENVIRONMENT} OIDCProviderArn=${OIDC_PROVIDER_ARN} OIDCProviderURL=${OIDC_PROVIDER_URL} ServiceAccountNamespace=default ServiceAccountName=memory-service" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          "CAPABILITY_NAMED_IAM"
+
+        IRSA_MEMORY_ROLE_ARN=$(cfn_get_stack_output "${PROJECT_NAME}-irsa-memory-service-${ENVIRONMENT}" "RoleArn")
+        echo "IRSA Memory Service Role ARN: $IRSA_MEMORY_ROLE_ARN"
+
+      # IRSA for env-validator (ADR-062)
+      - |
+        echo "Deploying IRSA for env-validator..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-env-validator-irsa-${ENVIRONMENT}" \
+          "deploy/cloudformation/env-validator-irsa.yaml" \
+          "ProjectName=${PROJECT_NAME} Environment=${ENVIRONMENT} OIDCProviderArn=${OIDC_PROVIDER_ARN} OIDCProviderURL=${OIDC_PROVIDER_URL} ServiceAccountNamespace=aura-system ServiceAccountName=env-validator" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application ADR=ADR-062 DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          "CAPABILITY_NAMED_IAM"
+
+        IRSA_ENV_VALIDATOR_ROLE_ARN=$(cfn_get_stack_output "${PROJECT_NAME}-env-validator-irsa-${ENVIRONMENT}" "RoleArn")
+        echo "IRSA Env Validator Role ARN: $IRSA_ENV_VALIDATOR_ROLE_ARN"
+
+      # Palantir AIP Integration IAM (ADR-074)
+      - |
+        echo "Deploying Palantir Integration IAM (ADR-074)..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-iam-palantir-integration-${ENVIRONMENT}" \
+          "deploy/cloudformation/iam-palantir-integration.yaml" \
+          "ProjectName=${PROJECT_NAME} Environment=${ENVIRONMENT} EKSOIDCProviderArn=${OIDC_PROVIDER_ARN} EKSOIDCIssuer=${OIDC_PROVIDER_URL}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application ADR=ADR-074 Integration=palantir-aip DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          "CAPABILITY_NAMED_IAM"
+
+        PALANTIR_ROLE_ARN=$(cfn_get_stack_output "${PROJECT_NAME}-iam-palantir-integration-${ENVIRONMENT}" "PalantirIntegrationRoleArn")
+        echo "Palantir Integration Role ARN: $PALANTIR_ROLE_ARN"
+
+  post_build:
+    commands:
+      - echo "IRSA deployment complete"
+      - |
+        echo "IRSA Role ARNs:"
+        echo "  aura-api: $(cfn_get_stack_output ${PROJECT_NAME}-irsa-api-${ENVIRONMENT} RoleArn)"
+        echo "  memory-service: $(cfn_get_stack_output ${PROJECT_NAME}-irsa-memory-service-${ENVIRONMENT} RoleArn)"
+        echo "  env-validator: $(cfn_get_stack_output ${PROJECT_NAME}-env-validator-irsa-${ENVIRONMENT} RoleArn)"
+        echo "  palantir-integration: $(cfn_get_stack_output ${PROJECT_NAME}-iam-palantir-integration-${ENVIRONMENT} PalantirIntegrationRoleArn)"

@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.6 - OpenTelemetry (Collector IAM)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  OIDCProviderArn:
+    Type: String
+    Description: EKS OIDC Provider ARN for IRSA
+
+  OIDCProviderURL:
+    Type: String
+    Description: EKS OIDC Provider URL (without https://)
+
+Resources:
+  # IAM Policy for OpenTelemetry Collector
+  OTelCollectorPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-otel-collector-policy-${Environment}'
+      Description: IAM policy for OpenTelemetry Collector to export to AWS services
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # X-Ray trace export
+          - Sid: XRayTraceExport
+            Effect: Allow
+            Action:
+              - xray:PutTraceSegments
+              - xray:PutTelemetryRecords
+              - xray:GetSamplingRules
+              - xray:GetSamplingTargets
+              - xray:GetSamplingStatisticSummaries
+            Resource: '*'
+
+          # CloudWatch metrics export
+          - Sid: CloudWatchMetricsExport
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricData
+            Resource: '*'
+            Condition:
+              StringEquals:
+                cloudwatch:namespace:
+                  - !Sub '${ProjectName}/OTel'
+                  - !Sub '${ProjectName}/Agents'
+                  - !Sub '${ProjectName}/LLM'
+
+          # CloudWatch Logs export
+          - Sid: CloudWatchLogsExport
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/otel/${ProjectName}-${Environment}*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/otel/${ProjectName}-${Environment}*:log-stream:*'
+
+  # IAM Role for OpenTelemetry Collector (IRSA)
+  OTelCollectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-otel-collector-role-${Environment}'
+      Description: !Sub 'IRSA role for OpenTelemetry Collector in ${Environment}'
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCUrl}:aud": "sts.amazonaws.com",
+                      "${OIDCUrl}:sub": "system:serviceaccount:otel-system:otel-collector"
+                    }
+                  }
+                }
+              ]
+            }
+          - OIDCArn: !Ref OIDCProviderArn
+            OIDCUrl: !Ref OIDCProviderURL
+      ManagedPolicyArns:
+        - !Ref OTelCollectorPolicy
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  OTelCollectorRoleArn:
+    Description: ARN of the IAM role for OpenTelemetry Collector
+    Value: !GetAtt OTelCollectorRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-otel-collector-role-arn-${Environment}'
+
+  OTelCollectorPolicyArn:
+    Description: ARN of the IAM policy for OpenTelemetry Collector
+    Value: !Ref OTelCollectorPolicy
+    Export:
+      Name: !Sub '${ProjectName}-otel-collector-policy-arn-${Environment}'

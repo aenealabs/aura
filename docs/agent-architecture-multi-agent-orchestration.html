@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Aura - Agent Architecture &amp; Multi-Agent Orchestration</title>
+<style>
+  :root {
+    --brand: #3B82F6;
+    --brand-dark: #2563EB;
+    --critical: #DC2626;
+    --high: #EA580C;
+    --medium: #F59E0B;
+    --success: #10B981;
+    --info: #3B82F6;
+    --bg: #F8FAFC;
+    --surface: #FFFFFF;
+    --border: #E2E8F0;
+    --text: #1E293B;
+    --text-secondary: #64748B;
+    --code-bg: #F1F5F9;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .header {
+    background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+    color: white;
+    padding: 48px 0;
+    text-align: center;
+  }
+  .header h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+  .header .subtitle { font-size: 16px; color: #94A3B8; max-width: 720px; margin: 0 auto; }
+  .header .meta { margin-top: 16px; font-size: 13px; color: #64748B; }
+  .header .meta span { margin: 0 12px; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 32px;
+    margin-bottom: 32px;
+  }
+  .toc h2 { font-size: 18px; margin-bottom: 12px; color: var(--brand); }
+  .toc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 24px; }
+  .toc a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 4px 0;
+    display: block;
+    border-bottom: 1px solid transparent;
+  }
+  .toc a:hover { color: var(--brand); }
+  .toc a .num { color: var(--text-secondary); margin-right: 6px; }
+  section { margin-bottom: 32px; }
+  section h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--brand);
+    margin-bottom: 16px;
+  }
+  section h3 { font-size: 16px; font-weight: 600; margin: 16px 0 8px; color: var(--text); }
+  section h4 { font-size: 14px; font-weight: 600; margin: 12px 0 6px; color: var(--text-secondary); }
+  p, li { font-size: 14px; line-height: 1.7; }
+  p { margin-bottom: 12px; }
+  ul, ol { padding-left: 24px; margin-bottom: 12px; }
+  li { margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13px; }
+  th {
+    background: #F1F5F9;
+    text-align: left;
+    padding: 10px 12px;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+    white-space: nowrap;
+  }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: #F8FAFC; }
+  pre {
+    background: #0F172A;
+    color: #E2E8F0;
+    padding: 16px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    margin: 12px 0 16px;
+  }
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12.5px;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  pre code { background: none; padding: 0; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin: 16px 0; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    transition: box-shadow 0.2s;
+  }
+  .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .card h4 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+  .card p { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+  .card .stats { font-size: 12px; color: var(--text-secondary); }
+  .card .stats span { margin-right: 12px; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-deployed { background: #D1FAE5; color: #065F46; }
+  .badge-phase1 { background: #DBEAFE; color: #1E40AF; }
+  .badge-critical { background: #FEE2E2; color: #991B1B; }
+  .badge-high { background: #FFEDD5; color: #9A3412; }
+  .badge-medium { background: #FEF3C7; color: #92400E; }
+  .badge-brand { background: #DBEAFE; color: #1E40AF; }
+  .tier-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0; }
+  .tier {
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    border: 1px solid var(--border);
+  }
+  .tier h4 { margin-bottom: 6px; }
+  .tier p { font-size: 12px; margin-bottom: 0; }
+  .tier-1 { background: #F0FDF4; border-color: #BBF7D0; }
+  .tier-2 { background: #DBEAFE; border-color: #BFDBFE; }
+  .tier-3 { background: #FEF3C7; border-color: #FDE68A; }
+  .tier-4 { background: #FEE2E2; border-color: #FECACA; }
+  .flow-diagram {
+    background: #0F172A;
+    color: #94A3B8;
+    padding: 20px 24px;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 12px 0 16px;
+    white-space: pre;
+  }
+  .flow-diagram .hl { color: #60A5FA; }
+  .flow-diagram .hl-green { color: #34D399; }
+  .flow-diagram .hl-yellow { color: #FBBF24; }
+  .flow-diagram .hl-red { color: #F87171; }
+  .flow-diagram .hl-purple { color: #C084FC; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin: 16px 0; }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: var(--brand); }
+  .stat-card .label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  .phase-bar {
+    display: flex;
+    gap: 2px;
+    margin: 8px 0;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .phase-bar .segment { height: 100%; }
+  .callout {
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin: 12px 0 16px;
+    font-size: 13px;
+  }
+  .callout-info { background: #EFF6FF; border-left: 4px solid var(--brand); }
+  .callout-warning { background: #FFFBEB; border-left: 4px solid var(--medium); }
+  .callout-critical { background: #FEF2F2; border-left: 4px solid var(--critical); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 768px) {
+    .card-grid, .tier-grid, .stat-grid, .two-col, .toc-grid { grid-template-columns: 1fr; }
+    .header { padding: 32px 16px; }
+    .header h1 { font-size: 24px; }
+    pre, .flow-diagram { font-size: 11px; }
+  }
+  .footer {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+  }
+  .memory-type {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .memory-type .icon { font-size: 20px; width: 36px; text-align: center; }
+  .memory-type .info { flex: 1; }
+  .memory-type .info strong { font-size: 14px; }
+  .memory-type .info p { font-size: 12px; color: var(--text-secondary); margin: 0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Agent Architecture &amp; Multi-Agent Orchestration</h1>
+  <div class="subtitle">Autonomous multi-agent system with 28+ specialized agents, 5-layer cognitive memory, constitutional AI governance, and configurable human-in-the-loop workflows</div>
+  <div class="meta">
+    <span>Project Aura</span>
+    <span>|</span>
+    <span>Aenea Labs</span>
+    <span>|</span>
+    <span>February 2026</span>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- Table of Contents -->
+<div class="toc">
+  <h2>Contents</h2>
+  <div class="toc-grid">
+    <a href="#overview"><span class="num">1.</span> Architecture Overview</a>
+    <a href="#orchestration"><span class="num">2.</span> Multi-Agent Orchestration</a>
+    <a href="#agents"><span class="num">3.</span> Specialized Agent Catalog</a>
+    <a href="#communication"><span class="num">4.</span> Agent Communication &amp; A2A Protocol</a>
+    <a href="#memory"><span class="num">5.</span> Cognitive Memory Architecture</a>
+    <a href="#context"><span class="num">6.</span> Context Engineering Pipeline</a>
+    <a href="#graphrag"><span class="num">7.</span> Hybrid GraphRAG Integration</a>
+    <a href="#llm"><span class="num">8.</span> LLM Integration &amp; Bedrock Service</a>
+    <a href="#hitl"><span class="num">9.</span> HITL Autonomy Framework</a>
+    <a href="#sandbox"><span class="num">10.</span> Sandbox Architecture &amp; Patch Workflow</a>
+    <a href="#constitutional"><span class="num">11.</span> Constitutional AI Governance</a>
+    <a href="#capability"><span class="num">12.</span> Agent Capability Governance</a>
+    <a href="#guardrails"><span class="num">13.</span> Semantic Guardrails Engine</a>
+    <a href="#runtime"><span class="num">14.</span> Runtime Agent Security Platform</a>
+    <a href="#anomaly"><span class="num">15.</span> Anomaly Detection &amp; Behavioral Baselines</a>
+    <a href="#explainability"><span class="num">16.</span> Universal Explainability Framework</a>
+    <a href="#constraint"><span class="num">17.</span> Constraint Geometry Engine</a>
+    <a href="#training"><span class="num">18.</span> Self-Play SWE-RL Training</a>
+    <a href="#optimization"><span class="num">19.</span> Agent Optimization &amp; Enhancement</a>
+    <a href="#recursive"><span class="num">20.</span> Recursive Context &amp; Embedding Prediction</a>
+    <a href="#adrs"><span class="num">21.</span> Architecture Decision Records</a>
+    <a href="#stats"><span class="num">22.</span> Key Statistics</a>
+  </div>
+</div>
+
+<!-- 1. Architecture Overview -->
+<section id="overview">
+  <h2>1. Architecture Overview</h2>
+  <p>Project Aura's agent architecture implements a hierarchical multi-agent system where a Meta-Orchestrator dynamically spawns and coordinates specialized agents to perform autonomous code intelligence, vulnerability remediation, and security analysis. The system is secured by layered AI governance including Constitutional AI principles, capability governance, semantic guardrails, and configurable human-in-the-loop workflows.</p>
+
+  <div class="flow-diagram"><span class="hl">                         ┌──────────────────────────────────────────┐</span>
+<span class="hl">                         │          META-ORCHESTRATOR              │</span>
+<span class="hl">                         │   Dynamic Agent Spawning (ADR-018)      │</span>
+<span class="hl">                         │   Task Decomposition &amp; Parallelization  │</span>
+<span class="hl">                         └────────────────┬─────────────────────────┘</span>
+                                          │
+                    ┌─────────────────────┼─────────────────────┐
+                    ▼                     ▼                     ▼
+<span class="hl-green">       ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐</span>
+<span class="hl-green">       │   SYSTEM 2       │   │   SECURITY       │   │   DEVOPS         │</span>
+<span class="hl-green">       │   ORCHESTRATOR   │   │   ORCHESTRATOR   │   │   ORCHESTRATOR   │</span>
+<span class="hl-green">       │   (2,260 LOC)    │   │   (1,313 LOC)    │   │   (1,028 LOC)    │</span>
+<span class="hl-green">       └───────┬─────────┘   └───────┬─────────┘   └───────┬─────────┘</span>
+               │                     │                     │
+       ┌───────┼───────┐     ┌───────┼───────┐     ┌───────┼───────┐
+       ▼       ▼       ▼     ▼       ▼       ▼     ▼       ▼       ▼
+<span class="hl-yellow">   ┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐</span>
+<span class="hl-yellow">   │Coder ││Review││Valid.││RedTm ││PenTst││Threat││Runbk ││Incid.││EnvVal│</span>
+<span class="hl-yellow">   │Agent ││Agent ││Agent ││Agent ││Agent ││Intel ││Agent ││Agent ││Agent │</span>
+<span class="hl-yellow">   └──┬───┘└──┬───┘└──┬───┘└──┬───┘└──┬───┘└──┬───┘└──┬───┘└──┬───┘└──┬───┘</span>
+      │       │       │       │       │       │       │       │       │
+<span class="hl-purple">   ┌──┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴──┐</span>
+<span class="hl-purple">   │                        SHARED SERVICES LAYER                        │</span>
+<span class="hl-purple">   │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────────────┐│</span>
+<span class="hl-purple">   │  │ Cognitive   │ │ Bedrock    │ │ Capability │ │ Constitutional AI  ││</span>
+<span class="hl-purple">   │  │ Memory     │ │ LLM Svc    │ │ Governance │ │ Critique-Revision  ││</span>
+<span class="hl-purple">   │  └────────────┘ └────────────┘ └────────────┘ └────────────────────┘│</span>
+<span class="hl-purple">   │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────────────┐│</span>
+<span class="hl-purple">   │  │ Semantic   │ │ Context    │ │ HITL       │ │ A2A Gateway        ││</span>
+<span class="hl-purple">   │  │ Guardrails │ │ Retrieval  │ │ Approval   │ │ Agent Registry     ││</span>
+<span class="hl-purple">   │  └────────────┘ └────────────┘ └────────────┘ └────────────────────┘│</span>
+<span class="hl-purple">   └────────────────────────────────────────────────────────────────────┘</span>
+      │               │               │               │
+<span class="hl-red">   ┌──┴───────────────┴───────────────┴───────────────┴──┐</span>
+<span class="hl-red">   │              DATA &amp; INFRASTRUCTURE                  │</span>
+<span class="hl-red">   │  Neptune (Graph) │ OpenSearch (Vector) │ DynamoDB   │</span>
+<span class="hl-red">   │  S3 (Artifacts)  │ SQS (Queues)       │ EventBridge│</span>
+<span class="hl-red">   └───────────────────────────────────────────────────┘</span></div>
+</section>
+
+<!-- 2. Multi-Agent Orchestration -->
+<section id="orchestration">
+  <h2>2. Multi-Agent Orchestration</h2>
+
+  <h3>Meta-Orchestrator (ADR-018)</h3>
+  <p>The Meta-Orchestrator dynamically spawns agents based on task requirements, performing recursive task decomposition and parallel execution of independent sub-tasks. It manages 20 agent capabilities and routes tasks across 4 configurable autonomy levels.</p>
+
+  <div class="two-col">
+    <div>
+      <h4>20 Agent Capabilities</h4>
+      <table>
+        <tr><th>Capability</th><th>Category</th></tr>
+        <tr><td><code>CODE_GENERATION</code></td><td>Core</td></tr>
+        <tr><td><code>SECURITY_REVIEW</code></td><td>Core</td></tr>
+        <tr><td><code>VULNERABILITY_SCAN</code></td><td>Core</td></tr>
+        <tr><td><code>PATCH_VALIDATION</code></td><td>Core</td></tr>
+        <tr><td><code>THREAT_ANALYSIS</code></td><td>Security</td></tr>
+        <tr><td><code>DEPENDENCY_AUDIT</code></td><td>Security</td></tr>
+        <tr><td><code>COMPLIANCE_CHECK</code></td><td>Security</td></tr>
+        <tr><td><code>ARCHITECTURE_REVIEW</code></td><td>Analysis</td></tr>
+        <tr><td><code>TEST_GENERATION</code></td><td>Quality</td></tr>
+        <tr><td><code>DOCUMENTATION</code></td><td>Quality</td></tr>
+        <tr><td><code>CONTEXT_RETRIEVAL</code></td><td>Context</td></tr>
+        <tr><td><code>CODE_ANALYSIS</code></td><td>Analysis</td></tr>
+        <tr><td><code>GITHUB_INTEGRATION</code></td><td>DevOps</td></tr>
+        <tr><td><code>DESIGN_SECURITY_REVIEW</code></td><td>Security</td></tr>
+        <tr><td><code>PENETRATION_TESTING</code></td><td>Security</td></tr>
+        <tr><td><code>BUSINESS_LOGIC_ANALYSIS</code></td><td>Analysis</td></tr>
+        <tr><td><code>MARKET_INTELLIGENCE</code></td><td>Intelligence</td></tr>
+        <tr><td><code>COMPETITOR_WATCH</code></td><td>Intelligence</td></tr>
+        <tr><td><code>TREND_ANALYSIS</code></td><td>Intelligence</td></tr>
+        <tr><td><code>DOCUMENTATION_AGGREGATION</code></td><td>Quality</td></tr>
+      </table>
+    </div>
+    <div>
+      <h4>Workflow Execution Phases</h4>
+      <p>The System 2 Orchestrator executes a 10-phase workflow with checkpoint/resume support:</p>
+      <ol>
+        <li><strong>INIT</strong> &mdash; Initialize task context and parameters</li>
+        <li><strong>PLANNING</strong> &mdash; Decompose task into sub-tasks via DAG</li>
+        <li><strong>MEMORY_LOAD</strong> &mdash; Load relevant cognitive memory</li>
+        <li><strong>CONTEXT_RETRIEVAL</strong> &mdash; Fetch code context via GraphRAG</li>
+        <li><strong>CODE_GENERATION</strong> &mdash; Coder Agent generates patches</li>
+        <li><strong>SECURITY_REVIEW</strong> &mdash; Security analysis of generated code</li>
+        <li><strong>VALIDATION</strong> &mdash; Validator Agent runs tests in sandbox</li>
+        <li><strong>REMEDIATION</strong> &mdash; Apply fixes based on review feedback</li>
+        <li><strong>MEMORY_STORE</strong> &mdash; Persist learnings to cognitive memory</li>
+        <li><strong>COMPLETED</strong> &mdash; Final result aggregation</li>
+      </ol>
+
+      <h4>Task Status Lifecycle</h4>
+      <pre><code>PENDING &rarr; IN_PROGRESS &rarr; COMPLETED
+                    &darr;            &darr;
+                  BLOCKED    AWAITING_HITL
+                    &darr;            &darr;
+                  FAILED     APPROVED/DENIED</code></pre>
+    </div>
+  </div>
+
+  <h3>Key Data Structures</h3>
+  <pre><code>@dataclass
+class AgentTask:
+    task_id: str              # Unique task identifier
+    task_type: str            # Capability type
+    description: str          # Human-readable description
+    parameters: dict          # Task-specific parameters
+    context: dict             # Code context and metadata
+    priority: int             # Execution priority (1-10)
+    timeout_seconds: int      # Max execution time
+
+@dataclass
+class AgentResult:
+    task_id: str              # Matching task ID
+    success: bool             # Pass/fail
+    data: dict                # Result payload
+    error: Optional[str]      # Error message if failed
+    execution_time_ms: int    # Duration
+    tools_invoked: list[str]  # Tools called during execution
+    tokens_used: int          # LLM tokens consumed
+    cost_usd: float           # Estimated cost</code></pre>
+</section>
+
+<!-- 3. Specialized Agent Catalog -->
+<section id="agents">
+  <h2>3. Specialized Agent Catalog</h2>
+  <p>Project Aura implements 28+ specialized agent types organized into functional categories. All agents inherit from a common <code>BaseAgent</code> class (25,054 lines) with MCP tool support, SQS messaging, and async execution.</p>
+
+  <h3>Core Workflow Agents</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>Coder Agent</h4>
+      <p>Generates code patches and remediation for identified vulnerabilities. Produces diff-format output with test coverage.</p>
+      <div class="stats"><span>383 LOC</span> <span>|</span> <span>Code generation, patch creation</span></div>
+    </div>
+    <div class="card">
+      <h4>Reviewer Agent</h4>
+      <p>Reviews generated code for quality, security, and correctness. Multi-pass review with severity scoring.</p>
+      <div class="stats"><span>558 LOC</span> <span>|</span> <span>Code review, validation</span></div>
+    </div>
+    <div class="card">
+      <h4>Validator Agent</h4>
+      <p>Executes patches in sandbox environments, running unit, integration, security, and performance tests.</p>
+      <div class="stats"><span>839 LOC</span> <span>|</span> <span>Sandbox testing, verification</span></div>
+    </div>
+    <div class="card">
+      <h4>Agent Orchestrator (System 2)</h4>
+      <p>Coordinates the full remediation lifecycle with checkpoint/resume support for long-running workflows.</p>
+      <div class="stats"><span>2,260 LOC</span> <span>|</span> <span>10-phase execution pipeline</span></div>
+    </div>
+    <div class="card">
+      <h4>Meta-Orchestrator</h4>
+      <p>Dynamic agent spawning based on task requirements. Recursive task decomposition with parallel execution.</p>
+      <div class="stats"><span>1,463 LOC</span> <span>|</span> <span>ADR-018, DAG-based task routing</span></div>
+    </div>
+  </div>
+
+  <h3>Security &amp; Intelligence Agents</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>Security Agent Orchestrator</h4>
+      <p>Application security throughout development lifecycle. Coordinates threat analysis, pen testing, and compliance checks.</p>
+      <div class="stats"><span>1,313 LOC</span> <span>|</span> <span>ADR-037, AWS Agent Parity</span></div>
+    </div>
+    <div class="card">
+      <h4>Red Team Agent</h4>
+      <p>Adversarial attack simulation using AURA-ATT&amp;CK taxonomy. 75 techniques across 8 categories.</p>
+      <div class="stats"><span>1,214 LOC</span> <span>|</span> <span>ADR-083, automated red teaming</span></div>
+    </div>
+    <div class="card">
+      <h4>Threat Intelligence Agent</h4>
+      <p>Threat landscape analysis, CVE monitoring, and proactive vulnerability assessment.</p>
+      <div class="stats"><span>1,329 LOC</span> <span>|</span> <span>CVE tracking, threat feeds</span></div>
+    </div>
+    <div class="card">
+      <h4>Penetration Testing Agent</h4>
+      <p>Automated security testing against target applications and infrastructure.</p>
+      <div class="stats"><span>630 LOC</span> <span>|</span> <span>OWASP Top 10, AI-specific</span></div>
+    </div>
+    <div class="card">
+      <h4>Design Doc Security Agent</h4>
+      <p>Analyzes design documents for security implications before implementation begins.</p>
+      <div class="stats"><span>793 LOC</span> <span>|</span> <span>Proactive security review</span></div>
+    </div>
+    <div class="card">
+      <h4>Business Logic Analyzer Agent</h4>
+      <p>Detects business logic vulnerabilities and authorization bypass patterns.</p>
+      <div class="stats"><span>789 LOC</span> <span>|</span> <span>Logic flaw detection</span></div>
+    </div>
+    <div class="card">
+      <h4>Market Intelligence Agent</h4>
+      <p>Competitor monitoring, market trend analysis, and technology landscape assessment.</p>
+      <div class="stats"><span>962 LOC</span> <span>|</span> <span>ADR-037 Phase 2</span></div>
+    </div>
+  </div>
+
+  <h3>DevOps &amp; Operations Agents</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>DevOps Agent Orchestrator</h4>
+      <p>Incident response and operational excellence. Coordinates runbook execution and environment validation.</p>
+      <div class="stats"><span>1,028 LOC</span> <span>|</span> <span>ADR-037, incident response</span></div>
+    </div>
+    <div class="card">
+      <h4>Runtime Incident Agent</h4>
+      <p>Real-time incident response with automated triage, correlation, and remediation routing.</p>
+      <div class="stats"><span>959 LOC</span> <span>|</span> <span>CloudTrail, real-time alerting</span></div>
+    </div>
+    <div class="card">
+      <h4>Environment Validator Agent</h4>
+      <p>Cross-environment drift detection and HITL remediation for infrastructure consistency.</p>
+      <div class="stats"><span>ADR-062</span> <span>|</span> <span>165 tests, drift detection</span></div>
+    </div>
+    <div class="card">
+      <h4>Runbook Agent</h4>
+      <p>Operational playbook execution with step-by-step procedure automation.</p>
+      <div class="stats"><span>agent-config</span> <span>|</span> <span>Operational automation</span></div>
+    </div>
+  </div>
+
+  <h3>Analysis &amp; Code Intelligence Agents</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>Architecture Review Agent</h4>
+      <p>Architecture assessment with pattern detection, anti-pattern flagging, and complexity analysis.</p>
+      <div class="stats"><span>771 LOC</span> <span>|</span> <span>Pattern compliance</span></div>
+    </div>
+    <div class="card">
+      <h4>AST Parser Agent</h4>
+      <p>Abstract syntax tree analysis for code structure, dependency extraction, and call graph building.</p>
+      <div class="stats"><span>561 LOC</span> <span>|</span> <span>Code structural analysis</span></div>
+    </div>
+    <div class="card">
+      <h4>ADR Generator Agent</h4>
+      <p>Architecture Decision Record generation with rationale extraction and impact analysis.</p>
+      <div class="stats"><span>1,230 LOC</span> <span>|</span> <span>Decision documentation</span></div>
+    </div>
+    <div class="card">
+      <h4>Adaptive Intelligence Agent</h4>
+      <p>Self-improving recommendations using feedback loops and performance tracking.</p>
+      <div class="stats"><span>1,223 LOC</span> <span>|</span> <span>Continuous learning</span></div>
+    </div>
+    <div class="card">
+      <h4>Query Planning Agent</h4>
+      <p>Determines optimal search strategy across graph, vector, and filesystem backends.</p>
+      <div class="stats"><span>341 LOC</span> <span>|</span> <span>Search strategy routing</span></div>
+    </div>
+    <div class="card">
+      <h4>Result Synthesis Agent</h4>
+      <p>Cross-agent result aggregation, deduplication, ranking, and context budget management.</p>
+      <div class="stats"><span>726 LOC</span> <span>|</span> <span>Multi-source fusion</span></div>
+    </div>
+    <div class="card">
+      <h4>Code Interpreter Agent</h4>
+      <p>Executes code in sandboxed environments for analysis, testing, and verification.</p>
+      <div class="stats"><span>876 LOC</span> <span>|</span> <span>Sandboxed execution</span></div>
+    </div>
+    <div class="card">
+      <h4>Browser Tool Agent</h4>
+      <p>Web automation, form filling, and UI testing capabilities.</p>
+      <div class="stats"><span>919 LOC</span> <span>|</span> <span>Web interaction</span></div>
+    </div>
+  </div>
+
+  <h3>Specialized Review Agents (Configuration-Driven)</h3>
+  <p>Five specialized review agents defined in <code>agent-config/agents/</code> provide domain-specific code review capabilities:</p>
+  <table>
+    <tr><th>Agent</th><th>Focus Areas</th><th>Key Standards</th></tr>
+    <tr><td>Security Code Reviewer</td><td>OWASP Top 10, AI-specific threats, prompt injection</td><td>NIST 800-53, SOX, CMMC</td></tr>
+    <tr><td>Code Quality Reviewer</td><td>Clean code, SOLID principles, naming, complexity</td><td>DRY, SRP, cyclomatic complexity</td></tr>
+    <tr><td>Performance Reviewer</td><td>Bottleneck detection, caching, async patterns</td><td>Time/space complexity, scalability</td></tr>
+    <tr><td>Test Coverage Reviewer</td><td>Coverage gaps, test quality, anti-patterns</td><td>70% minimum threshold</td></tr>
+    <tr><td>Documentation Accuracy Reviewer</td><td>Doc-code sync, consistency, technical accuracy</td><td>Docstring standards, ADR format</td></tr>
+  </table>
+</section>
+
+<!-- 4. Agent Communication & A2A Protocol -->
+<section id="communication">
+  <h2>4. Agent Communication &amp; A2A Protocol</h2>
+  <p>Agents communicate through a structured Agent-to-Agent (A2A) protocol implemented via three core services, with SQS-based async queuing for task distribution.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>A2A Gateway Service</h4>
+      <p>MCP Gateway client wrapper for all inter-agent communication. Handles message routing, serialization, and protocol negotiation.</p>
+      <div class="stats"><span>1,224 LOC</span></div>
+    </div>
+    <div class="card">
+      <h4>A2A Agent Registry</h4>
+      <p>Agent capability discovery and routing. Maintains live registry of available agents, their capabilities, and health status.</p>
+      <div class="stats"><span>783 LOC</span></div>
+    </div>
+    <div class="card">
+      <h4>A2A Security Service</h4>
+      <p>Agent request validation, isolation enforcement, and cross-agent authorization checks.</p>
+      <div class="stats"><span>905 LOC</span></div>
+    </div>
+    <div class="card">
+      <h4>Agent Queue Service</h4>
+      <p>SQS-based async agent task queuing with priority scheduling, retry logic, and dead-letter handling.</p>
+      <div class="stats"><span>20,948 LOC</span></div>
+    </div>
+  </div>
+
+  <h3>Communication Flow</h3>
+  <div class="flow-diagram"><span class="hl">Agent A</span> &rarr; <span class="hl-yellow">A2A Gateway</span> &rarr; <span class="hl-green">A2A Security</span> (validate) &rarr; <span class="hl-yellow">A2A Registry</span> (route) &rarr; <span class="hl">Agent B</span>
+    &darr;                                                                               &darr;
+<span class="hl-purple">SQS Queue</span> (async tasks)                                                 <span class="hl-purple">SQS Queue</span> (results)
+    &darr;                                                                               &darr;
+<span class="hl">Agent Worker</span> (dequeue &amp; execute)                                      <span class="hl">Result Aggregation</span></div>
+
+  <h3>Agent Runtime Service</h3>
+  <p>The Agent Runtime Service (1,020 LOC) manages the full agent lifecycle: spawning, health monitoring, resource tracking, error handling, and graceful shutdown. Agents operate as async workers with configurable timeouts and automatic retry on transient failures.</p>
+</section>
+
+<!-- 5. Cognitive Memory Architecture -->
+<section id="memory">
+  <h2>5. Cognitive Memory Architecture</h2>
+  <p>Aura implements a 5-type cognitive memory system combining Titan Neural Memory (ADR-024) with the Evo-Memory Framework (ADR-080) for persistent learning across agent interactions.</p>
+
+  <div class="memory-type">
+    <div class="icon">&#x1F9E0;</div>
+    <div class="info">
+      <strong>Working Memory</strong>
+      <p>Active task context held during execution. Manages attention, token budgets, and intermediate results. Cleared on task completion.</p>
+    </div>
+  </div>
+  <div class="memory-type">
+    <div class="icon">&#x1F4D6;</div>
+    <div class="info">
+      <strong>Episodic Memory</strong>
+      <p>Full context snapshots of past interactions with TTL-based expiration. Records task parameters, results, and execution traces.</p>
+    </div>
+  </div>
+  <div class="memory-type">
+    <div class="icon">&#x1F4DA;</div>
+    <div class="info">
+      <strong>Semantic Memory</strong>
+      <p>Guardrails, patterns, and schemas learned from experience. Stores domain knowledge, coding conventions, and security rules.</p>
+    </div>
+  </div>
+  <div class="memory-type">
+    <div class="icon">&#x2699;&#xFE0F;</div>
+    <div class="info">
+      <strong>Procedural Memory</strong>
+      <p>Action sequences with success tracking. Records tool invocation patterns, workflow recipes, and remediation strategies.</p>
+    </div>
+  </div>
+  <div class="memory-type">
+    <div class="icon">&#x1F52E;</div>
+    <div class="info">
+      <strong>Neural Memory (Titan)</strong>
+      <p>Deep MLP with test-time training (TTT) and MIRAS configuration. Provides sub-symbolic learning and pattern generalization.</p>
+    </div>
+  </div>
+
+  <h3>Titan Neural Memory (ADR-024)</h3>
+  <p>A 5-phase cognitive architecture implementing deep MLP memory with test-time training capabilities:</p>
+  <table>
+    <tr><th>Component</th><th>File</th><th>LOC</th><th>Purpose</th></tr>
+    <tr><td>Titan Memory Service</td><td><code>titan_memory_service.py</code></td><td>989</td><td>Deep MLP memory with MIRAS configuration</td></tr>
+    <tr><td>Cognitive Integration</td><td><code>titan_cognitive_integration.py</code></td><td>1,225</td><td>Integration bridge for agents</td></tr>
+    <tr><td>Memory Consolidation</td><td><code>memory_consolidation.py</code></td><td>639</td><td>Weight pruning, slot reduction, layer reset</td></tr>
+    <tr><td>Neural Memory Audit</td><td><code>neural_memory_audit.py</code></td><td>778</td><td>Audit logging for SOX/NIST compliance</td></tr>
+    <tr><td>Episodic Memory Service</td><td><code>episodic_memory_service.py</code></td><td>1,168</td><td>Episodic memory with TTL expiration</td></tr>
+    <tr><td>Cognitive Memory Service</td><td><code>cognitive_memory_service.py</code></td><td>2,828</td><td>Unified cognitive memory interface</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">237 tests | 5 phases deployed</div>
+
+  <h3>Evo-Memory Framework (ADR-080)</h3>
+  <p>The ReMem Action Framework provides 7 memory evolution operations executed in a ReAct loop, enabling agents to learn and improve continuously:</p>
+  <div class="tier-grid">
+    <div class="tier tier-1">
+      <h4>CONSOLIDATE</h4>
+      <p>Merge similar memories to reduce redundancy</p>
+    </div>
+    <div class="tier tier-1">
+      <h4>PRUNE</h4>
+      <p>Remove low-value memories below threshold</p>
+    </div>
+    <div class="tier tier-2">
+      <h4>REINFORCE</h4>
+      <p>Strengthen patterns from successful outcomes</p>
+    </div>
+    <div class="tier tier-2">
+      <h4>ABSTRACT</h4>
+      <p>Extract generalizable strategies from specifics</p>
+    </div>
+  </div>
+  <div class="tier-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="tier tier-3">
+      <h4>LINK</h4>
+      <p>Create cross-memory associations</p>
+    </div>
+    <div class="tier tier-3">
+      <h4>CORRECT</h4>
+      <p>Fix incorrect memories from feedback</p>
+    </div>
+    <div class="tier tier-4">
+      <h4>ROLLBACK</h4>
+      <p>Restore from previous memory state</p>
+    </div>
+  </div>
+
+  <table>
+    <tr><th>Component</th><th>LOC</th><th>Purpose</th></tr>
+    <tr><td>Memory Refiner</td><td>22,764</td><td>Core evolution engine with ReAct loop</td></tr>
+    <tr><td>Multi-Agent Sharing</td><td>35,495</td><td>Cross-agent memory sharing and synchronization</td></tr>
+    <tr><td>Advanced Operations</td><td>1,187</td><td>Complex memory transformations</td></tr>
+    <tr><td>Evolution Benchmark</td><td>1,451</td><td>Performance benchmarking for memory operations</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">336 tests | All phases deployed</div>
+</section>
+
+<!-- 6. Context Engineering Pipeline -->
+<section id="context">
+  <h2>6. Context Engineering Pipeline</h2>
+  <p>The Context Engineering system (ADR-034) provides 7 deployed services that ensure agents receive optimal, relevant code context for every task.</p>
+
+  <div class="flow-diagram"><span class="hl">User Query / Agent Task</span>
+         &darr;
+<span class="hl-yellow">  Context Scoring Service</span>  &rarr;  Relevance-based pruning (prevents context rot)
+         &darr;
+<span class="hl-green">  Three-Way Retrieval</span>     &rarr;  Dense + Sparse (BM25) + Graph RRF fusion (+22-25% accuracy)
+         &darr;
+<span class="hl-purple">  HopRAG Service</span>          &rarr;  Multi-hop retrieval across code relationships (+65% F1)
+         &darr;
+<span class="hl-yellow">  Community Summarization</span>  &rarr;  Leiden clustering + LLM summaries for large codebases
+         &darr;
+<span class="hl-green">  Hierarchical Tool Registry</span> &rarr;  ~20 atomic tools, domain-specific on-demand loading
+         &darr;
+<span class="hl-purple">  MCP Context Manager</span>     &rarr;  Multi-agent context isolation
+         &darr;
+<span class="hl">  Optimized Context (100K token budget)</span></div>
+
+  <table>
+    <tr><th>Service</th><th>Key Feature</th><th>Impact</th></tr>
+    <tr><td>Context Scoring</td><td>Relevance-based pruning</td><td>Prevents context rot in long sessions</td></tr>
+    <tr><td>Three-Way Retrieval</td><td>Dense + Sparse + Graph RRF fusion</td><td>+22-25% retrieval accuracy</td></tr>
+    <tr><td>HopRAG</td><td>Multi-hop reasoning across code relationships</td><td>+65% F1 on complex queries</td></tr>
+    <tr><td>Community Summarization</td><td>Leiden clustering + LLM summaries</td><td>Handles large codebases efficiently</td></tr>
+    <tr><td>Hierarchical Tool Registry</td><td>~20 atomic tools, on-demand loading</td><td>Reduces tool confusion</td></tr>
+    <tr><td>MCP Context Manager</td><td>Multi-agent context isolation</td><td>Prevents cross-agent context leakage</td></tr>
+    <tr><td>Context Retrieval Service</td><td>6-layer explicit context stack</td><td>Structured context management</td></tr>
+  </table>
+</section>
+
+<!-- 7. Hybrid GraphRAG Integration -->
+<section id="graphrag">
+  <h2>7. Hybrid GraphRAG Integration</h2>
+  <p>Agents leverage a Hybrid GraphRAG architecture combining Neptune graph structural search with OpenSearch vector semantic search for comprehensive code understanding.</p>
+
+  <h3>5 Graph Query Types</h3>
+  <table>
+    <tr><th>Query Type</th><th>Description</th><th>Use Case</th></tr>
+    <tr><td><code>CALL_GRAPH</code></td><td>Functions that call / are called by target</td><td>Vulnerability propagation analysis</td></tr>
+    <tr><td><code>DEPENDENCIES</code></td><td>Import and module relationships</td><td>Supply chain security assessment</td></tr>
+    <tr><td><code>INHERITANCE</code></td><td>Class hierarchy traversal</td><td>Security implications of polymorphism</td></tr>
+    <tr><td><code>REFERENCES</code></td><td>All references to a code entity</td><td>Impact analysis for patches</td></tr>
+    <tr><td><code>RELATED</code></td><td>General semantic relationships</td><td>Contextual code discovery</td></tr>
+  </table>
+
+  <h3>Context Retrieval Architecture</h3>
+  <div class="flow-diagram"><span class="hl">User Query</span>
+    &darr;
+<span class="hl-yellow">QueryPlanningAgent</span> (LLM-powered strategy selection)
+    &darr;
+<span class="hl-green">Parallel Execution:</span>
+    ├── <span class="hl-purple">Graph Search</span> (Neptune &mdash; Gremlin queries)
+    ├── <span class="hl-purple">Vector Search</span> (OpenSearch &mdash; embedding similarity)
+    ├── <span class="hl-purple">Filesystem Search</span> (FilesystemNavigatorAgent)
+    └── <span class="hl-purple">Git Search</span> (commit history and blame)
+    &darr;
+<span class="hl-yellow">ResultSynthesisAgent</span> (ranking, deduplication, budget fitting)
+    &darr;
+<span class="hl">Optimized Context Response</span> (within 100K token budget)</div>
+
+  <h3>GraphRAG Service Components</h3>
+  <table>
+    <tr><th>Service</th><th>LOC</th><th>Purpose</th></tr>
+    <tr><td>Neptune Graph Service</td><td>1,551</td><td>Multi-provider graph support (Neptune, Cosmos, Neo4j)</td></tr>
+    <tr><td>GraphRAG Security Service</td><td>807</td><td>Embeds security findings into graph structure</td></tr>
+    <tr><td>Context Retrieval Service</td><td>940</td><td>3-strategy search with async concurrent execution</td></tr>
+    <tr><td>Neptune Adapter</td><td>321</td><td>Provider abstraction layer</td></tr>
+    <tr><td>Filesystem Navigator Agent</td><td>701</td><td>File system traversal and git metadata</td></tr>
+    <tr><td>Graph Builder Agent</td><td>part of orchestrator</td><td>Neptune graph construction from code analysis</td></tr>
+  </table>
+</section>
+
+<!-- 8. LLM Integration -->
+<section id="llm">
+  <h2>8. LLM Integration &amp; Bedrock Service</h2>
+  <p>All agents access LLM capabilities through the Bedrock LLM Service (1,200+ LOC), which provides a unified interface to multiple model providers with built-in cost tracking, retry logic, and tool use support.</p>
+
+  <div class="two-col">
+    <div>
+      <h4>Supported Models</h4>
+      <table>
+        <tr><th>Model</th><th>Role</th></tr>
+        <tr><td>Claude 3.5 Sonnet</td><td>Primary agent model</td></tr>
+        <tr><td>Claude 3 Opus</td><td>Complex reasoning tasks</td></tr>
+        <tr><td>Claude 3 Haiku</td><td>Fast, lightweight operations</td></tr>
+        <tr><td>GPT-4</td><td>Via provider adapter</td></tr>
+        <tr><td>Llama 2</td><td>Self-hosted / air-gapped</td></tr>
+      </table>
+    </div>
+    <div>
+      <h4>Key Capabilities</h4>
+      <ul>
+        <li>Native Bedrock tool_use block support</li>
+        <li>MCP tool server integration</li>
+        <li>Streaming responses for long generation</li>
+        <li>Token counting for cost tracking</li>
+        <li>Automatic retry with exponential backoff</li>
+        <li>Rate limit handling</li>
+        <li>Parallel tool execution</li>
+        <li>Budget tracking per agent task</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Provider Abstraction</h3>
+  <p>A provider abstraction layer enables multi-cloud and self-hosted LLM deployments:</p>
+  <table>
+    <tr><th>Provider</th><th>Adapter</th><th>Use Case</th></tr>
+    <tr><td>AWS Bedrock</td><td><code>bedrock_adapter.py</code></td><td>Primary cloud deployment (Claude models)</td></tr>
+    <tr><td>Azure OpenAI</td><td><code>providers/azure/</code></td><td>Multi-cloud support (GPT-4)</td></tr>
+    <tr><td>Local LLM</td><td><code>local_llm_adapter.py</code></td><td>Self-hosted via Ollama / vLLM (ADR-049)</td></tr>
+    <tr><td>Mock</td><td><code>mock_llm_service.py</code></td><td>Testing without API calls</td></tr>
+  </table>
+</section>
+
+<!-- 9. HITL Autonomy Framework -->
+<section id="hitl">
+  <h2>9. HITL Autonomy Framework</h2>
+  <p>The Configurable Autonomy Framework (ADR-032) provides fine-grained control over when human approval is required, with 4 autonomy levels, 7 policy presets, and 5 mandatory guardrails that always require human approval.</p>
+
+  <h3>4 Autonomy Levels</h3>
+  <div class="tier-grid">
+    <div class="tier tier-4">
+      <h4>FULL_HITL</h4>
+      <p>Human approval required for ALL operations</p>
+    </div>
+    <div class="tier tier-3">
+      <h4>CRITICAL_HITL</h4>
+      <p>Approval only for HIGH/CRITICAL severity</p>
+    </div>
+    <div class="tier tier-2">
+      <h4>AUDIT_ONLY</h4>
+      <p>Log all decisions, no blocking approval</p>
+    </div>
+    <div class="tier tier-1">
+      <h4>FULL_AUTONOMOUS</h4>
+      <p>Fully automated, minimal logging</p>
+    </div>
+  </div>
+
+  <h3>7 Policy Presets</h3>
+  <table>
+    <tr><th>Preset</th><th>Autonomy Level</th><th>Target Industry</th></tr>
+    <tr><td><code>defense_contractor</code></td><td><span class="badge badge-critical">FULL_HITL</span></td><td>GovCloud, CMMC Level 3+</td></tr>
+    <tr><td><code>financial_services</code></td><td><span class="badge badge-critical">FULL_HITL</span></td><td>SOX, PCI-DSS compliance</td></tr>
+    <tr><td><code>healthcare</code></td><td><span class="badge badge-critical">FULL_HITL</span></td><td>HIPAA requirements</td></tr>
+    <tr><td><code>fintech_startup</code></td><td><span class="badge badge-high">CRITICAL_HITL</span></td><td>Growth-stage companies</td></tr>
+    <tr><td><code>enterprise_standard</code></td><td><span class="badge badge-high">CRITICAL_HITL</span></td><td>Fortune 500 enterprises</td></tr>
+    <tr><td><code>internal_tools</code></td><td><span class="badge badge-deployed">FULL_AUTONOMOUS</span></td><td>Internal development teams</td></tr>
+    <tr><td><code>fully_autonomous</code></td><td><span class="badge badge-deployed">FULL_AUTONOMOUS</span></td><td>Commercial dev/test</td></tr>
+  </table>
+
+  <h3>5 Mandatory Guardrails</h3>
+  <div class="callout callout-critical">
+    <strong>Always require HITL approval regardless of autonomy level:</strong>
+    <ol style="margin-top:8px; margin-bottom:0;">
+      <li><code>production_deployment</code> &mdash; Any deployment to production environments</li>
+      <li><code>credential_modification</code> &mdash; Changes to secrets, keys, or credentials</li>
+      <li><code>access_control_change</code> &mdash; IAM, RBAC, or permission modifications</li>
+      <li><code>database_migration</code> &mdash; Schema changes or data migrations</li>
+      <li><code>infrastructure_change</code> &mdash; CloudFormation, Terraform, or infrastructure modifications</li>
+    </ol>
+  </div>
+
+  <h3>Override Hierarchy (Priority Order)</h3>
+  <ol>
+    <li><strong>Guardrails</strong> (highest) &mdash; 5 mandatory approvals, cannot be overridden</li>
+    <li><strong>Repository Overrides</strong> &mdash; Per-repo policy adjustments</li>
+    <li><strong>Operation Overrides</strong> &mdash; Per-operation type settings</li>
+    <li><strong>Severity Overrides</strong> &mdash; Severity-based thresholds</li>
+    <li><strong>Default Level</strong> (lowest) &mdash; Policy preset baseline</li>
+  </ol>
+
+  <h3>Implementation</h3>
+  <table>
+    <tr><th>Component</th><th>Details</th></tr>
+    <tr><td>Service</td><td><code>src/services/autonomy_policy_service.py</code></td></tr>
+    <tr><td>API</td><td><code>src/api/autonomy_endpoints.py</code> (10 REST endpoints)</td></tr>
+    <tr><td>Tests</td><td>37 tests</td></tr>
+    <tr><td>Storage</td><td>3 DynamoDB tables: policies, audit, decisions</td></tr>
+  </table>
+</section>
+
+<!-- 10. Sandbox Architecture -->
+<section id="sandbox">
+  <h2>10. Sandbox Architecture &amp; Patch Workflow</h2>
+  <p>The HITL Sandbox Architecture defines a 7-stage workflow for safe patch validation in isolated environments with human approval gates before production deployment.</p>
+
+  <div class="flow-diagram"><span class="hl-red">Stage 1</span>: Detection &amp; Generation
+  Reviewer Agent detects vulnerability &rarr; Coder Agent generates patch
+                    &darr;
+<span class="hl-yellow">Stage 2</span>: Sandbox Provisioning
+  ECS/Fargate isolated environment &rarr; Deploy patched code &rarr; Configure security groups
+  Environment ID: sandbox-{timestamp}-{uuid}
+                    &darr;
+<span class="hl-green">Stage 3</span>: Sandbox Testing
+  Unit tests &rarr; Integration tests &rarr; Security tests (SAST/SCA) &rarr; Performance tests
+                    &darr;
+<span class="hl-purple">Stage 4</span>: HITL Notification
+  Create approval request &rarr; SNS notification &rarr; SES email with diff + results
+  24-hour timeout (configurable)
+                    &darr;
+<span class="hl">Stage 5</span>: Human Approval Decision
+  Dashboard review &rarr; APPROVE / REJECT / REQUEST_CHANGES
+                    &darr;
+<span class="hl-green">Stage 6</span>: Production Deployment (Gated)
+  Feature branch &rarr; CI/CD gates (SAST/SCA/ECR) &rarr; Staging &rarr; Production
+  Monitor Agent tracks metrics for 24 hours
+                    &darr;
+<span class="hl-yellow">Stage 7</span>: Post-Deployment Verification
+  Verify patch is live &rarr; Track errors/performance/security &rarr; Completion notice</div>
+
+  <h3>AWS Step Functions State Machine</h3>
+  <p>The workflow is orchestrated by a 14-state Step Functions state machine:</p>
+  <pre><code>DetectVulnerability &rarr; GeneratePatch &rarr; ProvisionSandbox &rarr; RunSandboxTests
+    &rarr; EvaluateTestResults &rarr; CreateApprovalRequest &rarr; SendNotification
+    &rarr; WaitForHumanApproval &rarr; ProcessApprovalDecision
+    &rarr; DeployToProduction | HandleRejection | HandleTimeout
+    &rarr; TeardownSandbox</code></pre>
+
+  <h3>SLA Targets</h3>
+  <table>
+    <tr><th>Operation</th><th>Target</th></tr>
+    <tr><td>Sandbox provisioning</td><td>&lt; 5 minutes</td></tr>
+    <tr><td>Test execution</td><td>&lt; 10 minutes</td></tr>
+    <tr><td>Notification delivery</td><td>&lt; 1 minute</td></tr>
+    <tr><td>Human approval</td><td>&lt; 24 hours</td></tr>
+    <tr><td>Production deployment</td><td>&lt; 30 minutes</td></tr>
+  </table>
+  <div class="callout callout-info"><strong>Cost:</strong> ~$0.03 per patch validation cycle (~$3/month for 100 patches). DynamoDB approval records retained for 7 years (SOX compliance).</div>
+</section>
+
+<!-- 11. Constitutional AI Governance -->
+<section id="constitutional">
+  <h2>11. Constitutional AI Governance</h2>
+  <p>The Constitutional AI Integration (ADR-063) enforces 16 principles across 7 categories through a critique-revision pipeline targeting &lt;500ms P95 latency. Every agent output is evaluated against these principles before delivery.</p>
+
+  <h3>16 Constitutional Principles</h3>
+  <table>
+    <tr><th>#</th><th>Principle</th><th>Severity</th><th>Category</th></tr>
+    <tr><td>1</td><td>Security-First Code Generation</td><td><span class="badge badge-critical">CRITICAL</span></td><td>Security</td></tr>
+    <tr><td>2</td><td>Non-Destructive Defaults</td><td><span class="badge badge-critical">CRITICAL</span></td><td>Safety</td></tr>
+    <tr><td>3</td><td>Sandbox Containment Awareness</td><td><span class="badge badge-critical">CRITICAL</span></td><td>Isolation</td></tr>
+    <tr><td>4</td><td>Regulatory Compliance</td><td><span class="badge badge-high">HIGH</span></td><td>Compliance</td></tr>
+    <tr><td>5</td><td>Decision Audit Trail</td><td><span class="badge badge-high">HIGH</span></td><td>Accountability</td></tr>
+    <tr><td>6</td><td>Honest Uncertainty Expression</td><td><span class="badge badge-medium">MEDIUM</span></td><td>Transparency</td></tr>
+    <tr><td>7</td><td>Transparent Reasoning Chain</td><td><span class="badge badge-medium">MEDIUM</span></td><td>Transparency</td></tr>
+    <tr><td>8</td><td>Genuine Technical Assistance</td><td><span class="badge badge-medium">MEDIUM</span></td><td>Quality</td></tr>
+    <tr><td>9</td><td>Non-Evasive Security Discussion</td><td><span class="badge badge-medium">MEDIUM</span></td><td>Security</td></tr>
+    <tr><td>10</td><td>Independent Technical Judgment</td><td><span class="badge badge-high">HIGH</span></td><td>Quality</td></tr>
+    <tr><td>11</td><td>Constructive Technical Pushback</td><td><span class="badge badge-medium">MEDIUM</span></td><td>Quality</td></tr>
+    <tr><td>12</td><td>Long-Term Maintainability</td><td><span class="badge badge-brand">LOW</span></td><td>Quality</td></tr>
+    <tr><td>13&ndash;16</td><td>Additional compliance &amp; code quality</td><td><span class="badge badge-brand">VARIES</span></td><td>Mixed</td></tr>
+  </table>
+
+  <h3>Critique-Revision Pipeline (&lt;500ms P95)</h3>
+  <div class="flow-diagram"><span class="hl-green">Layer 1: Semantic Cache</span> (10ms)        &rarr; 30-40% hit rate, skip further checks
+         &darr; (cache miss)
+<span class="hl-yellow">Layer 2: Bedrock Guardrails</span> (100ms)    &rarr; Fast-fail on obvious violations
+         &darr; (passed)
+<span class="hl-purple">Layer 3: Batched Critique</span> (200-300ms)   &rarr; 2-3 Haiku calls evaluate principles
+         &darr; (violations found)
+<span class="hl-red">         Revision Service</span>               &rarr; Rewrite output to comply
+         &darr;
+<span class="hl">Layer 4: Async Persistence</span> (0ms)        &rarr; SQS audit queue (non-blocking)</div>
+
+  <h3>Service Components</h3>
+  <table>
+    <tr><th>Service</th><th>LOC</th><th>Purpose</th></tr>
+    <tr><td>Critique Service</td><td>1,030</td><td>Parallel batched LLM critique against principles</td></tr>
+    <tr><td>Revision Service</td><td>580</td><td>Output revision when violations detected</td></tr>
+    <tr><td>Guardrails Fast Path</td><td>430</td><td>Bedrock Guardrails for 100ms fast-fail</td></tr>
+    <tr><td>LLM Judge Service</td><td>663</td><td>Preference evaluation for quality scoring</td></tr>
+    <tr><td>Golden Set Service</td><td>798</td><td>100+ evaluation test cases for regression</td></tr>
+    <tr><td>Tiered Critique</td><td>236</td><td>Autonomy-level-based critique strategy</td></tr>
+    <tr><td>Audit Queue Service</td><td>374</td><td>Async SQS audit persistence</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">463 tests | 16,742 LOC total | DEV/QA infrastructure deployed</div>
+</section>
+
+<!-- 12. Agent Capability Governance -->
+<section id="capability">
+  <h2>12. Agent Capability Governance</h2>
+  <p>The Agent Capability Governance framework (ADR-066) implements a 4-tier tool classification system with runtime enforcement middleware, dynamic capability grants, and full audit trails.</p>
+
+  <h3>4-Tier Tool Classification</h3>
+  <div class="tier-grid">
+    <div class="tier tier-1">
+      <h4>Level 1: SAFE</h4>
+      <p>Read-only introspection. No approval needed.</p>
+    </div>
+    <div class="tier tier-2">
+      <h4>Level 2: MONITORING</h4>
+      <p>File operations (scoped). Audit logging required.</p>
+    </div>
+    <div class="tier tier-3">
+      <h4>Level 3: DANGEROUS</h4>
+      <p>External APIs. HITL approval + context validation.</p>
+    </div>
+    <div class="tier tier-4">
+      <h4>Level 4: CRITICAL</h4>
+      <p>Destructive ops. Multi-approval + security controls.</p>
+    </div>
+  </div>
+
+  <h3>Enforcement Pipeline</h3>
+  <div class="flow-diagram"><span class="hl">Agent requests tool invocation</span>
+         &darr;
+<span class="hl-yellow">FastAPI Middleware</span> &rarr; Intercepts all tool calls
+         &darr;
+<span class="hl-green">Policy Check</span> &rarr; Agent policy lookup (YAML/code-defined)
+         &darr;
+<span class="hl-purple">Context Validation</span> &rarr; Sandbox vs production scoping
+         &darr;
+<span class="hl-yellow">Tier Check</span> &rarr; Classification determines approval path
+         &darr;
+    ┌────────┬────────┬────────┐
+    ▼        ▼        ▼        ▼
+  <span class="hl-green">SAFE</span>    <span class="hl">MONITOR</span>  <span class="hl-yellow">DANGER</span>  <span class="hl-red">CRITICAL</span>
+  Allow   Log+Allow HITL    Multi-HITL
+                    Approve  Approve
+         &darr;
+<span class="hl-purple">Audit Trail</span> &rarr; Log all decisions (DynamoDB)</div>
+
+  <h3>Implementation Scale</h3>
+  <table>
+    <tr><th>Component</th><th>LOC</th><th>Tests</th></tr>
+    <tr><td>Tool Contracts &amp; Classification</td><td>13,987</td><td>&mdash;</td></tr>
+    <tr><td>Permission Policies</td><td>22,659</td><td>&mdash;</td></tr>
+    <tr><td>Tool Registry &amp; Dispatch</td><td>18,371</td><td>&mdash;</td></tr>
+    <tr><td>Dynamic Grants</td><td>24,922</td><td>&mdash;</td></tr>
+    <tr><td>Policy Validator &amp; Simulator</td><td>21,847</td><td>&mdash;</td></tr>
+    <tr><td>Cross-Agent Graph Analyzer</td><td>26,544</td><td>&mdash;</td></tr>
+    <tr><td>Honeypot Detector</td><td>14,203</td><td>&mdash;</td></tr>
+    <tr><td><strong>Total</strong></td><td><strong>~5,400 core</strong></td><td><strong>322</strong></td></tr>
+  </table>
+</section>
+
+<!-- 13. Semantic Guardrails Engine -->
+<section id="guardrails">
+  <h2>13. Semantic Guardrails Engine</h2>
+  <p>The 6-layer Semantic Guardrails Engine (ADR-065) defends against 13 attack vectors that bypass traditional pattern-based regex detection, achieving 95%+ accuracy on novel jailbreak variants vs 60-70% for pattern matching alone.</p>
+
+  <h3>13 Attack Vectors Defended</h3>
+  <div class="two-col">
+    <div>
+      <ol>
+        <li>Unicode whitespace injection (<code>\u00A0</code>)</li>
+        <li>Homograph attacks (Cyrillic vs Latin)</li>
+        <li>Zero-width character insertion (<code>U+200B</code>)</li>
+        <li>Bidirectional text override</li>
+        <li>Mixed case tricks (Turkish I)</li>
+        <li>Comment injection</li>
+        <li>String concatenation obfuscation</li>
+      </ol>
+    </div>
+    <div>
+      <ol start="8">
+        <li>Encoding variations (Base64, URL)</li>
+        <li>Semantic rephrasing</li>
+        <li>Indirect injection via context</li>
+        <li>Role confusion attacks</li>
+        <li>Instruction smuggling</li>
+        <li>Multi-turn manipulation</li>
+      </ol>
+    </div>
+  </div>
+
+  <h3>6 Core Capabilities</h3>
+  <table>
+    <tr><th>Layer</th><th>Capability</th><th>Mechanism</th></tr>
+    <tr><td>1</td><td>Embedding-Based Threat Detection</td><td>Cosine similarity to curated jailbreak corpus</td></tr>
+    <tr><td>2</td><td>LLM-as-Judge Intent Classification</td><td>Classify input as legitimate vs adversarial</td></tr>
+    <tr><td>3</td><td>Adversarial Robustness Layer</td><td>Canonical normalization + perturbation detection</td></tr>
+    <tr><td>4</td><td>Context Integrity Verification</td><td>Detect indirect injection in retrieved context</td></tr>
+    <tr><td>5</td><td>Multi-Turn Attack Detection</td><td>Track manipulation patterns across conversation</td></tr>
+    <tr><td>6</td><td>Transparent Threat Scoring</td><td>Explainable assessment for HITL review</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">793 tests | ~12,000 LOC | 95%+ accuracy on novel jailbreak variants</div>
+</section>
+
+<!-- 14. Runtime Agent Security Platform -->
+<section id="runtime">
+  <h2>14. Runtime Agent Security Platform</h2>
+  <p>The Runtime Agent Security Platform (ADR-083) provides comprehensive agent monitoring, shadow detection, behavioral analysis, and automated red teaming through 5 core modules integrated with the AURA-ATT&amp;CK taxonomy.</p>
+
+  <h3>5 Core Modules</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>Agent Traffic Interceptor</h4>
+      <p>Real-time capture of all agent communications across 8 interception points: FastAPI middleware, Capability Governance, LLM Prompt Sanitizer, MCP Tool Server, Execution Checkpoints, K8s Admission, Container Escape, Constitutional AI.</p>
+      <div class="stats"><span>8 interception points</span></div>
+    </div>
+    <div class="card">
+      <h4>Agent Discovery Service</h4>
+      <p>Continuous agent inventory with shadow agent detection via traffic pattern analysis. Maintains Neptune topology graph of all agent relationships.</p>
+      <div class="stats"><span>Shadow detection</span></div>
+    </div>
+    <div class="card">
+      <h4>Behavioral Baseline Engine</h4>
+      <p>Per-agent behavioral profiling with drift detection. Tracks tool call frequency, token consumption, approval rate, error rate, and latency percentiles.</p>
+      <div class="stats"><span>Statistical deviation scoring</span></div>
+    </div>
+    <div class="card">
+      <h4>Automated Red Teaming Engine</h4>
+      <p>AURA-ATT&amp;CK taxonomy with 75 adversarial techniques across 8 categories. Continuously tests agent defenses in production.</p>
+      <div class="stats"><span>75 techniques, 8 categories</span></div>
+    </div>
+    <div class="card">
+      <h4>Runtime-to-Code Correlator</h4>
+      <p>Links runtime anomalies to source code via Neptune CALL_GRAPH traversal and OpenSearch similarity search, then routes to Coder Agent for automated patch generation.</p>
+      <div class="stats"><span>GraphRAG-powered remediation</span></div>
+    </div>
+  </div>
+
+  <h3>AURA-ATT&amp;CK Taxonomy (75 Techniques)</h3>
+  <table>
+    <tr><th>Category</th><th>ID</th><th>Techniques</th><th>Examples</th><th>NIST Controls</th></tr>
+    <tr><td>Prompt Injection</td><td>ATA-01</td><td>12</td><td>Direct, indirect, recursive, multi-modal, context window</td><td>SI-10, SC-18</td></tr>
+    <tr><td>Tool Abuse</td><td>ATA-02</td><td>10</td><td>Parameter manipulation, chain exploitation, capability escalation</td><td>AC-6, CM-7</td></tr>
+    <tr><td>Agent Confusion</td><td>ATA-03</td><td>9</td><td>Role hijacking, goal drift, memory poisoning, identity spoofing</td><td>IA-2, SC-7</td></tr>
+    <tr><td>Data Exfiltration</td><td>ATA-04</td><td>8</td><td>Side-channel encoding, token-level leakage, embedding extraction</td><td>SC-8, SC-28</td></tr>
+    <tr><td>Privilege Escalation</td><td>ATA-05</td><td>10</td><td>Horizontal, vertical, cross-tenant, approval bypass</td><td>AC-2, AC-6</td></tr>
+    <tr><td>Denial of Service</td><td>ATA-06</td><td>8</td><td>Token exhaustion, recursive loops, resource starvation</td><td>SC-5, CP-9</td></tr>
+    <tr><td>Supply Chain</td><td>ATA-07</td><td>9</td><td>MCP server poisoning, dependency confusion, model weight tampering</td><td>SA-12, SR-3</td></tr>
+    <tr><td>Evasion</td><td>ATA-08</td><td>9</td><td>Encoding bypass, language switching, semantic obfuscation</td><td>SI-3, SI-4</td></tr>
+  </table>
+
+  <h3>Runtime-to-Code Correlation Flow</h3>
+  <div class="flow-diagram"><span class="hl-red">Runtime Anomaly Detected</span>
+         &darr;
+<span class="hl-purple">Graph Tracer</span> (Neptune CALL_GRAPH traversal)
+         &darr;
+<span class="hl-yellow">Vector Matcher</span> (OpenSearch semantic similarity)
+         &darr;
+<span class="hl-green">Remediation Engine</span>
+         &darr;
+<span class="hl">Coder Agent</span> (Patch Generation)
+         &darr;
+<span class="hl-yellow">HITL Approval</span> (ADR-032)
+         &darr;
+<span class="hl-green">Autonomous Fix</span></div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">~10,300 LOC | 848 tests | 7 dashboard widgets</div>
+</section>
+
+<!-- 15. Anomaly Detection -->
+<section id="anomaly">
+  <h2>15. Anomaly Detection &amp; Behavioral Baselines</h2>
+  <p>The ML-Based Anomaly Detection system (ADR-072) identifies 5 categories of anomalous agent behavior using statistical analysis, sequence n-gram detection, and honeypot capabilities with zero false positives.</p>
+
+  <h3>5 Detection Categories</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>Volume Anomalies</h4>
+      <p>Agent invoking 10x normal DANGEROUS tool calls. Spike in CRITICAL capability requests. Unusual burst patterns (100 calls / minute).</p>
+    </div>
+    <div class="card">
+      <h4>Sequence Anomalies</h4>
+      <p>Tool invocation order deviating from learned workflows. Skipping prerequisite tools. Unusual tool combinations not seen in training.</p>
+    </div>
+    <div class="card">
+      <h4>Temporal Anomalies</h4>
+      <p>Agent activity outside normal hours. Sudden capability usage after long dormancy. Timing patterns matching known attack signatures.</p>
+    </div>
+    <div class="card">
+      <h4>Context Anomalies</h4>
+      <p>Production agent using sandbox-typical patterns. Test agent accessing production-like resources. Environment confusion indicators.</p>
+    </div>
+    <div class="card">
+      <h4>Cross-Agent Anomalies</h4>
+      <p>Multiple agents simultaneously accessing same sensitive resource. Coordinated capability escalation attempts.</p>
+    </div>
+  </div>
+
+  <h3>Response Actions</h3>
+  <ul>
+    <li><strong>Z-score statistical detection</strong> for volume and temporal anomalies</li>
+    <li><strong>Sequence n-gram analysis</strong> for workflow deviation detection</li>
+    <li><strong>Honeypot capabilities</strong> with zero false positive rate</li>
+    <li><strong>Automatic quarantine</strong> mechanism for confirmed threats</li>
+    <li><strong>Natural language explanation</strong> (Bedrock-powered) for HITL review</li>
+    <li><strong>HITL release workflow</strong> for quarantined operations</li>
+  </ul>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">113 tests | ~1,400 LOC | 4 detector components</div>
+</section>
+
+<!-- 16. Universal Explainability Framework -->
+<section id="explainability">
+  <h2>16. Universal Explainability Framework</h2>
+  <p>The Universal Explainability Framework (ADR-068) ensures every agent decision is transparent and auditable, providing reasoning chains, alternatives disclosure, and confidence calibration across all operation types.</p>
+
+  <h3>6 Core Capabilities</h3>
+  <table>
+    <tr><th>Capability</th><th>Description</th><th>Compliance</th></tr>
+    <tr><td>Reasoning Chain Transparency</td><td>Full decision rationale for all operations</td><td>CMMC AC.L2-3.1.7</td></tr>
+    <tr><td>Alternatives Disclosure</td><td>Show options considered and why they were rejected</td><td>EU AI Act Article 14</td></tr>
+    <tr><td>Confidence Intervals</td><td>Uncertainty quantification on all estimates</td><td>NIST AI RMF 1.0</td></tr>
+    <tr><td>Consistency Verification</td><td>Validate stated reasoning matches actual actions</td><td>SOX Section 404</td></tr>
+    <tr><td>Inter-Agent Trust Validation</td><td>Downstream agents verify upstream reasoning</td><td>Zero Trust</td></tr>
+    <tr><td>Explainability Dashboard</td><td>Visual exploration of decision rationales</td><td>Human oversight</td></tr>
+  </table>
+
+  <h3>Coverage Improvement</h3>
+  <div class="two-col">
+    <div>
+      <h4>Before ADR-068</h4>
+      <ul>
+        <li>CRITICAL decisions: Full reasoning (5%)</li>
+        <li>SIGNIFICANT decisions: Partial reasoning (15%)</li>
+        <li>NORMAL/TRIVIAL: No reasoning (80%)</li>
+      </ul>
+    </div>
+    <div>
+      <h4>After ADR-068</h4>
+      <ul>
+        <li>CRITICAL decisions: Full reasoning + alternatives (100%)</li>
+        <li>SIGNIFICANT decisions: Full reasoning (100%)</li>
+        <li>NORMAL/TRIVIAL: Summary reasoning (100%)</li>
+      </ul>
+    </div>
+  </div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">227 tests | ~8,200 LOC</div>
+</section>
+
+<!-- 17. Constraint Geometry Engine -->
+<section id="constraint">
+  <h2>17. Constraint Geometry Engine</h2>
+  <p>The Constraint Geometry Engine (ADR-081) provides deterministic cortical discrimination through a 7-axis constraint space, computing a Coherence Conformance Score (CCS) that determines whether agent outputs meet all required constraints.</p>
+
+  <h3>7-Axis Constraint Space</h3>
+  <table>
+    <tr><th>Axis</th><th>Constraint</th><th>Description</th></tr>
+    <tr><td>C1</td><td>Syntactic Validity</td><td>AST parsing, type checking, format compliance</td></tr>
+    <tr><td>C2</td><td>Semantic Correctness</td><td>Function signature matching, test passage verification</td></tr>
+    <tr><td>C3</td><td>Security Policy</td><td>NIST 800-53 rules, CWE/CVE pattern matching</td></tr>
+    <tr><td>C4</td><td>Operational Bounds</td><td>Resource limits, blast radius containment</td></tr>
+    <tr><td>C5</td><td>Domain Compliance</td><td>SOX, business rules, industry regulations</td></tr>
+    <tr><td>C6</td><td>Provenance Trust</td><td>Source integrity, context authenticity scoring</td></tr>
+    <tr><td>C7</td><td>Temporal Validity</td><td>SLA compliance, version compatibility</td></tr>
+  </table>
+
+  <h3>4 Policy Profiles</h3>
+  <div class="tier-grid">
+    <div class="tier tier-4">
+      <h4>DoD-IL5</h4>
+      <p>Maximum security constraints for defense workloads</p>
+    </div>
+    <div class="tier tier-3">
+      <h4>SOX</h4>
+      <p>Financial compliance with audit trail requirements</p>
+    </div>
+    <div class="tier tier-2">
+      <h4>Enterprise</h4>
+      <p>Standard enterprise security and quality</p>
+    </div>
+    <div class="tier tier-1">
+      <h4>Sandbox</h4>
+      <p>Relaxed constraints for development/testing</p>
+    </div>
+  </div>
+
+  <h3>Implementation Scale</h3>
+  <table>
+    <tr><th>Component</th><th>LOC</th><th>Purpose</th></tr>
+    <tr><td>Core Engine</td><td>8,408</td><td>CCS computation and constraint evaluation</td></tr>
+    <tr><td>Coherence Calculator</td><td>9,857</td><td>Deterministic CCS scoring (153 parametrized tests)</td></tr>
+    <tr><td>Embedding Cache</td><td>7,913</td><td>Two-tier frozen embedding cache</td></tr>
+    <tr><td>Policy Profiles</td><td>7,448</td><td>4 configurable policy profiles</td></tr>
+    <tr><td>Contract Graph</td><td>5,299</td><td>Neptune constraint graph schema</td></tr>
+    <tr><td>Configuration</td><td>9,450</td><td>Constraint axis configuration</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">358 tests (153 parametrized determinism tests) | ~4,500 LOC core | Phase 1 Deployed</div>
+</section>
+
+<!-- 18. Self-Play SWE-RL Training -->
+<section id="training">
+  <h2>18. Self-Play SWE-RL Training</h2>
+  <p>The Self-Play SWE-RL system (ADR-050) enables continuous agent improvement through a dual-role training loop where a Bug Injection Agent creates challenges and a Bug Solving Agent generates patches, validated through a 7-stage consistency pipeline.</p>
+
+  <h3>Training Architecture</h3>
+  <div class="flow-diagram"><span class="hl-red">Bug Injection Agent</span> &rarr; Generate bug artifacts (test_script, test_parser, bug_inject.diff, test_weaken.diff)
+         &darr;
+<span class="hl-yellow">7-Stage Validation Pipeline</span>
+  1. Test files existence
+  2. Test parser validity
+  3. Test script validity
+  4. Bug scope (min_files)
+  5. Bug validity (min_failing_tests)
+  6. Test weakening validity
+  7. Inverse mutation testing
+         &darr;
+<span class="hl-green">Bug Solving Agent</span> &rarr; Generate patches to fix injected bugs
+         &darr;
+<span class="hl-purple">Self-Play Orchestrator</span> &rarr; Compare, score, update training data
+         &darr;
+<span class="hl">Model Update Service</span> &rarr; RL policy update based on outcomes
+         &darr;
+<span class="hl-yellow">Curriculum Scheduler</span> &rarr; Progressive difficulty adjustment</div>
+
+  <h3>Service Components</h3>
+  <table>
+    <tr><th>Service</th><th>LOC</th><th>Purpose</th></tr>
+    <tr><td>Self-Play Orchestrator</td><td>642</td><td>Main dual-role training loop</td></tr>
+    <tr><td>Validation Pipeline</td><td>844</td><td>7-stage artifact consistency verification</td></tr>
+    <tr><td>Training Data Pipeline</td><td>1,055</td><td>Data flow orchestration</td></tr>
+    <tr><td>Artifact Storage Service</td><td>846</td><td>S3-based artifact storage</td></tr>
+    <tr><td>Failure Analyzer</td><td>686</td><td>Failed patch root cause analysis</td></tr>
+    <tr><td>Higher-Order Queue</td><td>633</td><td>Curriculum learning queue</td></tr>
+    <tr><td>History Injector</td><td>864</td><td>History-aware bug generation</td></tr>
+    <tr><td>Git Analyzer</td><td>834</td><td>Git history extraction for training</td></tr>
+    <tr><td>Model Update Service</td><td>839</td><td>RL policy update after training</td></tr>
+    <tr><td>Curriculum Scheduler</td><td>603</td><td>Progressive difficulty scaling</td></tr>
+  </table>
+
+  <h3>Research Results</h3>
+  <div class="two-col">
+    <div class="stat-card" style="border-left: 4px solid var(--success);">
+      <div class="value">+10.4</div>
+      <div class="label">SWE-Bench Verified improvement (41.0% &rarr; 51.4%)</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--brand);">
+      <div class="value">+7.8</div>
+      <div class="label">SWE-Bench Pro improvement (21.1% &rarr; 28.9%)</div>
+    </div>
+  </div>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">354 tests | ~15,900 LOC | All phases deployed</div>
+</section>
+
+<!-- 19. Agent Optimization -->
+<section id="optimization">
+  <h2>19. Agent Optimization &amp; Enhancement</h2>
+  <p>The Agent Optimization Roadmap (ADR-029) delivers performance enhancements that are enabled by default for all agents. Three phases are currently active in production.</p>
+
+  <h3>Active Optimizations</h3>
+  <div class="card-grid">
+    <div class="card" style="border-left: 4px solid var(--success);">
+      <h4>Phase 1.3: Semantic Caching <span class="badge badge-deployed">ENABLED</span></h4>
+      <p>Caches responses for semantically identical prompts. Reduces LLM API calls by 30-40% and lowers latency for repeated queries.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--success);">
+      <h4>Phase 2.2: Self-Reflection <span class="badge badge-deployed">ENABLED</span></h4>
+      <p>Agents critique their own output before submission. Catches errors, improves quality, and reduces reviewer workload.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--success);">
+      <h4>Phase 2.3: A2AS Security <span class="badge badge-deployed">ENABLED</span></h4>
+      <p>Agent-to-Agent Security with input validation. Prevents cross-agent injection attacks and validates all inter-agent messages.</p>
+    </div>
+  </div>
+
+  <h3>Factory Configuration</h3>
+  <pre><code>orchestrator = create_system2_orchestrator(
+    enable_semantic_cache=True,   # ADR-029 Phase 1.3
+    enable_reflection=True,       # ADR-029 Phase 2.2
+    enable_a2as=True,             # ADR-029 Phase 2.3
+)</code></pre>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">187 integration tests passing</div>
+</section>
+
+<!-- 20. Recursive Context & Embedding Prediction -->
+<section id="recursive">
+  <h2>20. Recursive Context &amp; Embedding Prediction</h2>
+  <p>ADR-051 combines two December 2025 research paradigms &mdash; MIT CSAIL's Recursive Language Models for 100x context scaling and Meta FAIR's VL-JEPA for 2.85x inference efficiency &mdash; to dramatically expand agent capabilities.</p>
+
+  <div class="two-col">
+    <div>
+      <h3>Recursive Language Models (MIT CSAIL)</h3>
+      <p>LLMs generate Python code to examine and decompose context, treating long prompts as external variables in a REPL. Handles 10M+ token inputs with cost scaling by task complexity, not input size.</p>
+      <pre><code># LLM generates analysis code:
+def analyze_codebase(context):
+    jwt_files = search_by_pattern(
+        context, "jwt|authentication"
+    )
+    analysis = [
+        analyze(section)
+        for section in jwt_files
+    ]
+    return summarize(analysis)</code></pre>
+      <div class="stats" style="margin-top:8px; color:var(--text-secondary); font-size:13px;">100x context scaling | 2x improvement on long-context benchmarks</div>
+    </div>
+    <div>
+      <h3>VL-JEPA (Meta FAIR)</h3>
+      <p>Predicts embeddings instead of generating tokens. For non-generative tasks (classification, retrieval, routing), the Y-Decoder is skipped entirely, providing 2.85x efficiency.</p>
+      <pre><code>Input &rarr; X-Encoder &rarr; Embedding Space
+                    &darr;
+              Predictor
+                    &darr;
+For retrieval: Stop (2.85x faster)
+For generation: Y-Decoder &rarr; Text</code></pre>
+      <div class="stats" style="margin-top:8px; color:var(--text-secondary); font-size:13px;">2.85x inference efficiency | 50% fewer trainable parameters</div>
+    </div>
+  </div>
+
+  <h3>Agent Integration Impact</h3>
+  <table>
+    <tr><th>Agent Type</th><th>Context Scaling</th><th>Inference Efficiency</th></tr>
+    <tr><td>Code Analyzer</td><td>100x via RLM decomposition</td><td>2.85x via JEPA embedding prediction</td></tr>
+    <tr><td>Security Reviewer</td><td>Handles 10M+ token codebases</td><td>Fast classification without generation</td></tr>
+    <tr><td>Query Planner</td><td>Decomposes complex multi-hop queries</td><td>Embedding-only path for strategy routing</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">167 tests (119 RLM + 48 JEPA) | Fully deployed</div>
+</section>
+
+<!-- 21. ADRs -->
+<section id="adrs">
+  <h2>21. Architecture Decision Records</h2>
+  <p>13 agent-related ADRs define the architectural foundation for Aura's multi-agent system:</p>
+
+  <table>
+    <tr><th>ADR</th><th>Title</th><th>Status</th><th>Tests</th><th>Key Capabilities</th></tr>
+    <tr><td>018</td><td>Meta-Orchestrator Dynamic Agent Spawning</td><td><span class="badge badge-deployed">Deployed</span></td><td>187</td><td>Recursive decomposition, parallel execution</td></tr>
+    <tr><td>024</td><td>Titan Neural Memory</td><td><span class="badge badge-deployed">Deployed</span></td><td>237</td><td>Deep MLP memory, test-time training, MIRAS</td></tr>
+    <tr><td>029</td><td>Agent Optimization Roadmap</td><td><span class="badge badge-deployed">Deployed</span></td><td>187</td><td>Semantic caching, self-reflection, A2AS security</td></tr>
+    <tr><td>032</td><td>Configurable Autonomy Framework</td><td><span class="badge badge-deployed">Deployed</span></td><td>37</td><td>4 autonomy levels, 7 policy presets, 5 guardrails</td></tr>
+    <tr><td>034</td><td>Context Engineering</td><td><span class="badge badge-deployed">Deployed</span></td><td>400+</td><td>7 services, 3-way retrieval, HopRAG</td></tr>
+    <tr><td>042</td><td>Real-Time Agent Intervention</td><td><span class="badge badge-phase1">Phase 1</span></td><td>&mdash;</td><td>Checkpoints, WebSocket streaming, action approval</td></tr>
+    <tr><td>050</td><td>Self-Play SWE-RL</td><td><span class="badge badge-deployed">Deployed</span></td><td>354</td><td>Dual-role training, bug artifacts, curriculum learning</td></tr>
+    <tr><td>051</td><td>Recursive Context &amp; Embedding</td><td><span class="badge badge-deployed">Deployed</span></td><td>167</td><td>100x context scaling, 2.85x inference efficiency</td></tr>
+    <tr><td>063</td><td>Constitutional AI Integration</td><td><span class="badge badge-deployed">Deployed</span></td><td>463</td><td>16 principles, critique-revision, &lt;500ms P95</td></tr>
+    <tr><td>065</td><td>Semantic Guardrails Engine</td><td><span class="badge badge-deployed">Deployed</span></td><td>793</td><td>6-layer threat detection, 95%+ accuracy</td></tr>
+    <tr><td>066</td><td>Agent Capability Governance</td><td><span class="badge badge-deployed">Deployed</span></td><td>322</td><td>4-tier classification, runtime enforcement</td></tr>
+    <tr><td>080</td><td>Evo-Memory Enhancements</td><td><span class="badge badge-deployed">Deployed</span></td><td>336</td><td>ReMem 7 operations, multi-agent memory sharing</td></tr>
+    <tr><td>081</td><td>Constraint Geometry Engine</td><td><span class="badge badge-phase1">Phase 1</span></td><td>358</td><td>7-axis constraints, deterministic CCS</td></tr>
+  </table>
+</section>
+
+<!-- 22. Key Statistics -->
+<section id="stats">
+  <h2>22. Key Statistics</h2>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="value">28+</div>
+      <div class="label">Specialized Agent Types</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">24,973</div>
+      <div class="label">Agent Code (LOC)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">20</div>
+      <div class="label">Agent Capabilities</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">13</div>
+      <div class="label">Agent-Related ADRs</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">5</div>
+      <div class="label">Memory Types</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">7</div>
+      <div class="label">Context Services</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">16</div>
+      <div class="label">Constitutional Principles</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">75</div>
+      <div class="label">AURA-ATT&amp;CK Techniques</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">4</div>
+      <div class="label">Autonomy Levels</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">7</div>
+      <div class="label">Policy Presets</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">793</div>
+      <div class="label">Guardrails Tests</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">100x</div>
+      <div class="label">Context Scaling (RLM)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">2.85x</div>
+      <div class="label">Inference Efficiency (JEPA)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">6</div>
+      <div class="label">Guardrail Layers</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">4</div>
+      <div class="label">Tool Classification Tiers</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">&lt;500ms</div>
+      <div class="label">Constitutional AI P95</div>
+    </div>
+  </div>
+
+  <h3>Test Coverage by Component</h3>
+  <table>
+    <tr><th>Component</th><th>Tests</th><th>ADR</th></tr>
+    <tr><td>Semantic Guardrails Engine</td><td>793</td><td>ADR-065</td></tr>
+    <tr><td>Constitutional AI Integration</td><td>463</td><td>ADR-063</td></tr>
+    <tr><td>Context Engineering</td><td>400+</td><td>ADR-034</td></tr>
+    <tr><td>Constraint Geometry Engine</td><td>358</td><td>ADR-081</td></tr>
+    <tr><td>Self-Play SWE-RL</td><td>354</td><td>ADR-050</td></tr>
+    <tr><td>Evo-Memory Enhancements</td><td>336</td><td>ADR-080</td></tr>
+    <tr><td>Agent Capability Governance</td><td>322</td><td>ADR-066</td></tr>
+    <tr><td>Titan Neural Memory</td><td>237</td><td>ADR-024</td></tr>
+    <tr><td>Universal Explainability</td><td>227</td><td>ADR-068</td></tr>
+    <tr><td>Agent Optimization</td><td>187</td><td>ADR-029</td></tr>
+    <tr><td>Recursive Context &amp; Embedding</td><td>167</td><td>ADR-051</td></tr>
+    <tr><td>ML Anomaly Detection</td><td>113</td><td>ADR-072</td></tr>
+    <tr><td>Autonomy Framework</td><td>37</td><td>ADR-032</td></tr>
+    <tr><td><strong>Total Agent-Related Tests</strong></td><td><strong>3,994+</strong></td><td>&mdash;</td></tr>
+  </table>
+</section>
+
+</div>
+
+<div class="footer">
+  <p>Project Aura &mdash; Agent Architecture &amp; Multi-Agent Orchestration Reference &mdash; Aenea Labs &mdash; February 2026</p>
+</div>
+
+</body>
+</html>

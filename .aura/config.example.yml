@@ -1,0 +1,143 @@
+# Aura Platform Configuration
+# Copy this file to config.yml and customize for your environment
+
+# Compliance Profile Configuration
+compliance:
+  # Compliance profile to use (determines scanning behavior)
+  # Options:
+  #   - CMMC_LEVEL_3: DoD CMMC Level 3 (most stringent)
+  #   - CMMC_LEVEL_2: DoD CMMC Level 2 (moderate)
+  #   - SOX: Sarbanes-Oxley financial controls
+  #   - PCI_DSS: Payment Card Industry Data Security
+  #   - NIST_800_53: Federal security controls
+  #   - DEVELOPMENT: Fast development profile (minimal scanning)
+  profile: CMMC_LEVEL_3
+
+  # Enable/disable compliance enforcement
+  enabled: true
+
+  # Custom overrides for the selected profile
+  # Format: section.field: value
+  custom_overrides:
+    # Example: Disable documentation scanning (not recommended for CMMC L3)
+    # scanning.scan_documentation: false
+
+    # Example: Require 3 reviewers instead of profile default
+    # review.min_reviewers: 3
+
+    # Example: Increase audit log retention
+    # audit.log_retention_days: 730
+
+# Agent Configuration
+agent:
+  # Orchestrator settings
+  orchestrator:
+    max_retries: 3
+    timeout_seconds: 300
+    enable_parallel_execution: true
+
+  # Coder agent settings
+  coder:
+    model: claude-3-5-sonnet-20241022
+    temperature: 0.2
+    max_tokens: 4096
+
+  # Reviewer agent settings
+  reviewer:
+    model: claude-3-5-sonnet-20241022
+    temperature: 0.0  # Deterministic for security reviews
+    enable_auto_fix: true
+
+  # Validator agent settings
+  validator:
+    model: claude-3-5-sonnet-20241022
+    timeout_seconds: 600
+    parallel_test_execution: true
+
+# Sandbox Configuration
+sandbox:
+  # Default isolation level for sandbox environments
+  # Options: container, vpc, full
+  default_isolation_level: container
+
+  # Timeout for sandbox operations (minutes)
+  timeout_minutes: 30
+
+  # Automatically cleanup sandboxes after use
+  auto_cleanup: true
+
+  # Resource limits
+  resources:
+    cpu_limit: "2000m"  # 2 CPU cores
+    memory_limit: "4Gi"  # 4 GB RAM
+    storage_limit: "10Gi"  # 10 GB storage
+
+# GraphRAG Configuration
+graphrag:
+  # Neptune graph database
+  neptune:
+    endpoint: neptune.aura.local:8182
+    enable_iam_auth: true
+
+  # OpenSearch vector database
+  opensearch:
+    endpoint: opensearch.aura.local:9200
+    enable_ssl: true
+
+  # Context retrieval settings
+  context_retrieval:
+    max_results: 20
+    similarity_threshold: 0.7
+    enable_hybrid_search: true
+
+# Monitoring Configuration
+monitoring:
+  # CloudWatch metrics
+  cloudwatch:
+    enabled: true
+    namespace: Aura/Platform
+
+  # Anomaly detection
+  anomaly_detection:
+    enabled: true
+    sensitivity: high  # Options: low, medium, high
+    alert_on_critical: true
+
+# HITL (Human-in-the-Loop) Configuration
+hitl:
+  # Approval workflow settings
+  approval:
+    # Timeout for approval requests (hours)
+    timeout_hours: 24
+
+    # Auto-reject on timeout
+    auto_reject_on_timeout: true
+
+    # Require approval for patch deployment
+    require_approval_for_patches: true
+
+  # Notification settings
+  notifications:
+    email:
+      enabled: true
+      recipients:
+        - ${SECURITY_EMAIL:-security@example.com}
+
+    sns:
+      enabled: true
+      # Note: Set via HITL_SNS_TOPIC_ARN environment variable at runtime
+      topic_arn: ${HITL_SNS_TOPIC_ARN}
+
+# Logging Configuration
+logging:
+  # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  level: INFO
+
+  # Log format (json, text)
+  format: json
+
+  # Enable audit logging
+  audit_logging: true
+
+  # Audit log retention (days)
+  audit_retention_days: 365

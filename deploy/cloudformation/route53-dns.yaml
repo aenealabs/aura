@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.6 - Route 53 DNS Records'
+
+# =============================================================================
+# Route 53 DNS Records for Project Aura
+# =============================================================================
+# Creates DNS records for:
+# - app.aenealabs.com → Application Load Balancer (frontend/API)
+# - docs.aenealabs.com → CloudFront (API documentation portal) [placeholder]
+# - aenealabs.com → CloudFront (marketing site) [placeholder]
+#
+# Prerequisites:
+# - Existing Route 53 hosted zone for aenealabs.com
+# - ACM certificate (deployed via acm-certificate.yaml)
+# - Application Load Balancer (deployed via alb.yaml)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  DomainName:
+    Type: String
+    Default: aenealabs.com
+    Description: Root domain name
+
+  HostedZoneId:
+    Type: String
+    Description: Route 53 Hosted Zone ID (required - no default to prevent hardcoding)
+
+  # ALB configuration - imported from compute layer
+  ALBDNSName:
+    Type: String
+    Description: Application Load Balancer DNS name
+    Default: ''
+
+  ALBHostedZoneId:
+    Type: String
+    Description: Application Load Balancer hosted zone ID
+    Default: ''
+
+  # CloudFront configuration - for marketing site (optional)
+  MarketingCloudFrontDNS:
+    Type: String
+    Description: CloudFront distribution DNS for marketing site
+    Default: ''
+
+  MarketingCloudFrontZoneId:
+    Type: String
+    Description: CloudFront hosted zone ID (always Z2FDTNDATAQYW2)
+    Default: Z2FDTNDATAQYW2
+
+  # CloudFront configuration - for docs portal (optional)
+  DocsCloudFrontDNS:
+    Type: String
+    Description: CloudFront distribution DNS for docs portal
+    Default: ''
+
+Conditions:
+  HasALB: !Not [!Equals [!Ref ALBDNSName, '']]
+  HasMarketingSite: !Not [!Equals [!Ref MarketingCloudFrontDNS, '']]
+  HasDocsPortal: !Not [!Equals [!Ref DocsCloudFrontDNS, '']]
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # app.aenealabs.com → Application (EKS/ALB)
+  # ===========================================================================
+  AppDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasALB
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'app.${DomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref ALBDNSName
+        HostedZoneId: !Ref ALBHostedZoneId
+        EvaluateTargetHealth: true
+
+  # Environment-specific app subdomain (e.g., app-dev.aenealabs.com)
+  AppEnvDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasALB
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'app-${Environment}.${DomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref ALBDNSName
+        HostedZoneId: !Ref ALBHostedZoneId
+        EvaluateTargetHealth: true
+
+  # ===========================================================================
+  # API subdomain (same ALB, different routing rules)
+  # ===========================================================================
+  APIDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasALB
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'api.${DomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref ALBDNSName
+        HostedZoneId: !Ref ALBHostedZoneId
+        EvaluateTargetHealth: true
+
+  # Environment-specific API subdomain
+  APIEnvDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasALB
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'api-${Environment}.${DomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref ALBDNSName
+        HostedZoneId: !Ref ALBHostedZoneId
+        EvaluateTargetHealth: true
+
+  # ===========================================================================
+  # Marketing site (aenealabs.com → CloudFront)
+  # ===========================================================================
+  # Note: Apex domain requires CloudFront distribution to be configured
+  MarketingDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasMarketingSite
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !Ref MarketingCloudFrontDNS
+        HostedZoneId: !Ref MarketingCloudFrontZoneId
+        EvaluateTargetHealth: false
+
+  # www subdomain redirects to apex
+  WWWDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasMarketingSite
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'www.${DomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref MarketingCloudFrontDNS
+        HostedZoneId: !Ref MarketingCloudFrontZoneId
+        EvaluateTargetHealth: false
+
+  # ===========================================================================
+  # Documentation portal (docs.aenealabs.com → CloudFront)
+  # ===========================================================================
+  DocsDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasDocsPortal
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'docs.${DomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref DocsCloudFrontDNS
+        HostedZoneId: !Ref MarketingCloudFrontZoneId
+        EvaluateTargetHealth: false
+
+  # ===========================================================================
+  # Status page subdomain (external Statuspage/Atlassian)
+  # ===========================================================================
+  StatusDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'status.${DomainName}'
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - statuspage.io.  # Placeholder - update with actual Statuspage domain
+
+Outputs:
+  AppDomainName:
+    Description: Application domain name
+    Value: !Sub 'app.${DomainName}'
+    Export:
+      Name: !Sub '${ProjectName}-app-domain-${Environment}'
+
+  AppEnvDomainName:
+    Description: Environment-specific application domain
+    Value: !Sub 'app-${Environment}.${DomainName}'
+    Export:
+      Name: !Sub '${ProjectName}-app-env-domain-${Environment}'
+
+  APIDomainName:
+    Description: API domain name
+    Value: !Sub 'api.${DomainName}'
+    Export:
+      Name: !Sub '${ProjectName}-api-domain-${Environment}'
+
+  MarketingDomainName:
+    Description: Marketing site domain
+    Value: !Ref DomainName
+    Export:
+      Name: !Sub '${ProjectName}-marketing-domain-${Environment}'
+
+  DocsDomainName:
+    Description: Documentation portal domain
+    Value: !Sub 'docs.${DomainName}'
+    Export:
+      Name: !Sub '${ProjectName}-docs-domain-${Environment}'

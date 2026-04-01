@@ -1,0 +1,557 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - CodeBuild CI/CD Pipeline for Infrastructure Deployment'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  GitHubRepository:
+    Type: String
+    Description: GitHub repository URL (e.g., https://github.com/username/repo)
+    Default: ""
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: GitHub branch to build
+
+  AlertEmail:
+    Type: String
+    Description: Email for build notifications
+
+Conditions:
+  HasGitHubRepo: !Not [!Equals [!Ref GitHubRepository, ""]]
+
+Resources:
+  # S3 Bucket for Build Artifacts
+  BuildArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-codebuild-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CodeBuild Project
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-infra-deploy-${Environment}'
+      Description: Deploy Aura infrastructure using CloudFormation
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: S3
+        Location: !Ref BuildArtifactsBucket
+        Name: cloudformation-artifacts
+        Packaging: ZIP
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+      Source:
+        Type: !If [HasGitHubRepo, GITHUB, NO_SOURCE]
+        Location: !If [HasGitHubRepo, !Ref GitHubRepository, !Ref AWS::NoValue]
+        BuildSpec: deploy/buildspec-modular.yml
+      Cache:
+        Type: S3
+        Location: !Sub '${BuildArtifactsBucket}/cache'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref CodeBuildLogGroup
+      TimeoutInMinutes: 60
+      QueuedTimeoutInMinutes: 480
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CodeBuild Service Role
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-codebuild-service-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildServicePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs (for CodeBuild, OpenSearch, Neptune, etc.)
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:DescribeLogGroups
+                  - logs:TagResource
+                  - logs:UntagResource
+                  - logs:PutResourcePolicy
+                  - logs:DeleteResourcePolicy
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/opensearch/${ProjectName}-*:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/neptune/${ProjectName}-*:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/eks/${ProjectName}-*:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*:*'
+
+              # S3 for artifacts and infrastructure buckets
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource:
+                  - !Sub 'arn:aws:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:aws:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}/*'
+                  - !Sub 'arn:aws:s3:::${ProjectName}-*-${Environment}'
+                  - !Sub 'arn:aws:s3:::${ProjectName}-*-${Environment}/*'
+
+              # CloudFormation
+              - Effect: Allow
+                Action:
+                  - cloudformation:*
+                Resource: '*'
+
+              # IAM (for CloudFormation to create roles)
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PassRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:CreateOpenIDConnectProvider
+                  - iam:DeleteOpenIDConnectProvider
+                  - iam:GetOpenIDConnectProvider
+                  - iam:TagRole
+                  - iam:TagOpenIDConnectProvider
+                  - iam:CreateServiceLinkedRole
+                  - iam:ListAttachedRolePolicies
+                Resource: '*'
+
+              # EC2/VPC
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                Resource: '*'
+
+              # EKS
+              - Effect: Allow
+                Action:
+                  - eks:*
+                Resource: '*'
+
+              # Neptune
+              - Effect: Allow
+                Action:
+                  - neptune-db:*
+                  - rds:*
+                Resource: '*'
+
+              # OpenSearch
+              - Effect: Allow
+                Action:
+                  - es:*
+                Resource: '*'
+
+              # DynamoDB
+              - Effect: Allow
+                Action:
+                  - dynamodb:*
+                Resource: '*'
+
+              # Secrets Manager
+              - Effect: Allow
+                Action:
+                  - secretsmanager:*
+                Resource: '*'
+
+              # SNS
+              - Effect: Allow
+                Action:
+                  - sns:*
+                Resource: '*'
+
+              # CloudWatch
+              - Effect: Allow
+                Action:
+                  - cloudwatch:*
+                Resource: '*'
+
+              # Budgets
+              - Effect: Allow
+                Action:
+                  - budgets:*
+                Resource: '*'
+
+              # Lambda (for custom resources)
+              - Effect: Allow
+                Action:
+                  - lambda:*
+                Resource: '*'
+
+              # SSM Parameter Store
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Log Group
+  CodeBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-infra-deploy-${Environment}'
+      RetentionInDays: 30
+
+  # SNS Topic for Build Notifications
+  BuildNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-build-notifications-${Environment}'
+      DisplayName: Aura CodeBuild Notifications
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # EventBridge Rule for Build Failures
+  BuildFailureRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-build-failure-${Environment}'
+      Description: Notify on CodeBuild failures
+      EventPattern:
+        source:
+          - aws.codebuild
+        detail-type:
+          - CodeBuild Build State Change
+        detail:
+          build-status:
+            - FAILED
+            - STOPPED
+          project-name:
+            - !Ref CodeBuildProject
+      State: ENABLED
+      Targets:
+        - Arn: !Ref BuildNotificationTopic
+          Id: BuildFailureNotification
+
+  # EventBridge Rule for Build Success
+  BuildSuccessRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-build-success-${Environment}'
+      Description: Notify on successful builds
+      EventPattern:
+        source:
+          - aws.codebuild
+        detail-type:
+          - CodeBuild Build State Change
+        detail:
+          build-status:
+            - SUCCEEDED
+          project-name:
+            - !Ref CodeBuildProject
+      State: ENABLED
+      Targets:
+        - Arn: !Ref BuildNotificationTopic
+          Id: BuildSuccessNotification
+
+  # SNS Topic Policy
+  BuildNotificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref BuildNotificationTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref BuildNotificationTopic
+
+  # SSM Parameter for Alert Email
+  AlertEmailParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/alert-email'
+      Type: String
+      Value: !Ref AlertEmail
+      Description: Alert email for CloudFormation deployments
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # ============================================================
+  # PHASE 2: Multi-Project Setup (Currently Commented Out)
+  # Uncomment these resources when transitioning to team-based
+  # infrastructure ownership model
+  # ============================================================
+
+  # # Foundation Layer CodeBuild Project (Platform Team)
+  # FoundationCodeBuildProject:
+  #   Type: AWS::CodeBuild::Project
+  #   Properties:
+  #     Name: !Sub '${ProjectName}-foundation-deploy-${Environment}'
+  #     Description: Deploy foundation layer (networking, security, IAM)
+  #     ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+  #     Artifacts:
+  #       Type: S3
+  #       Location: !Ref BuildArtifactsBucket
+  #       Name: foundation-artifacts
+  #     Environment:
+  #       Type: LINUX_CONTAINER
+  #       ComputeType: BUILD_GENERAL1_SMALL
+  #       Image: aws/codebuild/standard:7.0
+  #       EnvironmentVariables:
+  #         - Name: ENVIRONMENT
+  #           Value: !Ref Environment
+  #         - Name: PROJECT_NAME
+  #           Value: !Ref ProjectName
+  #         - Name: AWS_ACCOUNT_ID
+  #           Value: !Ref AWS::AccountId
+  #         - Name: AWS_DEFAULT_REGION
+  #           Value: !Ref AWS::Region
+  #     Source:
+  #       Type: !If [HasGitHubRepo, GITHUB, NO_SOURCE]
+  #       Location: !If [HasGitHubRepo, !Ref GitHubRepository, !Ref AWS::NoValue]
+  #       BuildSpec: deploy/buildspecs/buildspec-foundation.yml
+  #     Cache:
+  #       Type: S3
+  #       Location: !Sub '${BuildArtifactsBucket}/cache'
+  #     LogsConfig:
+  #       CloudWatchLogs:
+  #         Status: ENABLED
+  #         GroupName: !Sub '/aws/codebuild/${ProjectName}-foundation-${Environment}'
+  #     Tags:
+  #       - Key: Project
+  #         Value: !Ref ProjectName
+  #       - Key: Environment
+  #         Value: !Ref Environment
+  #       - Key: Layer
+  #         Value: foundation
+
+  # # Data Layer CodeBuild Project (Data Team)
+  # DataCodeBuildProject:
+  #   Type: AWS::CodeBuild::Project
+  #   Properties:
+  #     Name: !Sub '${ProjectName}-data-deploy-${Environment}'
+  #     Description: Deploy data layer (Neptune, OpenSearch, DynamoDB, S3)
+  #     ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+  #     Artifacts:
+  #       Type: S3
+  #       Location: !Ref BuildArtifactsBucket
+  #       Name: data-artifacts
+  #     Environment:
+  #       Type: LINUX_CONTAINER
+  #       ComputeType: BUILD_GENERAL1_SMALL
+  #       Image: aws/codebuild/standard:7.0
+  #       EnvironmentVariables:
+  #         - Name: ENVIRONMENT
+  #           Value: !Ref Environment
+  #         - Name: PROJECT_NAME
+  #           Value: !Ref ProjectName
+  #         - Name: AWS_ACCOUNT_ID
+  #           Value: !Ref AWS::AccountId
+  #         - Name: AWS_DEFAULT_REGION
+  #           Value: !Ref AWS::Region
+  #     Source:
+  #       Type: !If [HasGitHubRepo, GITHUB, NO_SOURCE]
+  #       Location: !If [HasGitHubRepo, !Ref GitHubRepository, !Ref AWS::NoValue]
+  #       BuildSpec: deploy/buildspecs/buildspec-data.yml
+  #     Cache:
+  #       Type: S3
+  #       Location: !Sub '${BuildArtifactsBucket}/cache'
+  #     LogsConfig:
+  #       CloudWatchLogs:
+  #         Status: ENABLED
+  #         GroupName: !Sub '/aws/codebuild/${ProjectName}-data-${Environment}'
+  #     Tags:
+  #       - Key: Project
+  #         Value: !Ref ProjectName
+  #       - Key: Environment
+  #         Value: !Ref Environment
+  #       - Key: Layer
+  #         Value: data
+
+  # # Compute Layer CodeBuild Project (App Team)
+  # ComputeCodeBuildProject:
+  #   Type: AWS::CodeBuild::Project
+  #   Properties:
+  #     Name: !Sub '${ProjectName}-compute-deploy-${Environment}'
+  #     Description: Deploy compute layer (EKS)
+  #     ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+  #     Artifacts:
+  #       Type: S3
+  #       Location: !Ref BuildArtifactsBucket
+  #       Name: compute-artifacts
+  #     Environment:
+  #       Type: LINUX_CONTAINER
+  #       ComputeType: BUILD_GENERAL1_SMALL
+  #       Image: aws/codebuild/standard:7.0
+  #       EnvironmentVariables:
+  #         - Name: ENVIRONMENT
+  #           Value: !Ref Environment
+  #         - Name: PROJECT_NAME
+  #           Value: !Ref ProjectName
+  #         - Name: AWS_ACCOUNT_ID
+  #           Value: !Ref AWS::AccountId
+  #         - Name: AWS_DEFAULT_REGION
+  #           Value: !Ref AWS::Region
+  #     Source:
+  #       Type: !If [HasGitHubRepo, GITHUB, NO_SOURCE]
+  #       Location: !If [HasGitHubRepo, !Ref GitHubRepository, !Ref AWS::NoValue]
+  #       BuildSpec: deploy/buildspecs/buildspec-compute.yml
+  #     Cache:
+  #       Type: S3
+  #       Location: !Sub '${BuildArtifactsBucket}/cache'
+  #     LogsConfig:
+  #       CloudWatchLogs:
+  #         Status: ENABLED
+  #         GroupName: !Sub '/aws/codebuild/${ProjectName}-compute-${Environment}'
+  #     Tags:
+  #       - Key: Project
+  #         Value: !Ref ProjectName
+  #       - Key: Environment
+  #         Value: !Ref Environment
+  #       - Key: Layer
+  #         Value: compute
+
+  # # Observability Layer CodeBuild Project (SRE Team)
+  # ObservabilityCodeBuildProject:
+  #   Type: AWS::CodeBuild::Project
+  #   Properties:
+  #     Name: !Sub '${ProjectName}-observability-deploy-${Environment}'
+  #     Description: Deploy observability layer (secrets, monitoring, alerts)
+  #     ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+  #     Artifacts:
+  #       Type: S3
+  #       Location: !Ref BuildArtifactsBucket
+  #       Name: observability-artifacts
+  #     Environment:
+  #       Type: LINUX_CONTAINER
+  #       ComputeType: BUILD_GENERAL1_SMALL
+  #       Image: aws/codebuild/standard:7.0
+  #       EnvironmentVariables:
+  #         - Name: ENVIRONMENT
+  #           Value: !Ref Environment
+  #         - Name: PROJECT_NAME
+  #           Value: !Ref ProjectName
+  #         - Name: AWS_ACCOUNT_ID
+  #           Value: !Ref AWS::AccountId
+  #         - Name: AWS_DEFAULT_REGION
+  #           Value: !Ref AWS::Region
+  #     Source:
+  #       Type: !If [HasGitHubRepo, GITHUB, NO_SOURCE]
+  #       Location: !If [HasGitHubRepo, !Ref GitHubRepository, !Ref AWS::NoValue]
+  #       BuildSpec: deploy/buildspecs/buildspec-observability.yml
+  #     Cache:
+  #       Type: S3
+  #       Location: !Sub '${BuildArtifactsBucket}/cache'
+  #     LogsConfig:
+  #       CloudWatchLogs:
+  #         Status: ENABLED
+  #         GroupName: !Sub '/aws/codebuild/${ProjectName}-observability-${Environment}'
+  #     Tags:
+  #       - Key: Project
+  #         Value: !Ref ProjectName
+  #       - Key: Environment
+  #         Value: !Ref Environment
+  #       - Key: Layer
+  #         Value: observability
+
+Outputs:
+  CodeBuildProjectName:
+    Description: CodeBuild project name
+    Value: !Ref CodeBuildProject
+    Export:
+      Name: !Sub '${AWS::StackName}-CodeBuildProjectName'
+
+  CodeBuildProjectArn:
+    Description: CodeBuild project ARN
+    Value: !GetAtt CodeBuildProject.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CodeBuildProjectArn'
+
+  BuildArtifactsBucketName:
+    Description: Build artifacts bucket name
+    Value: !Ref BuildArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BuildArtifactsBucketName'
+
+  BuildNotificationTopicArn:
+    Description: Build notification SNS topic ARN
+    Value: !Ref BuildNotificationTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-BuildNotificationTopicArn'
+
+  StartBuildCommand:
+    Description: AWS CLI command to start a build
+    Value: !Sub 'aws codebuild start-build --project-name ${CodeBuildProject} --region ${AWS::Region}'

@@ -1,0 +1,60 @@
+# Project Aura - Neural Memory Service
+# ClusterIP service for internal gRPC access from other Aura services
+#
+# Usage:
+#   kubectl port-forward svc/memory-service 50051:50051
+#   grpcurl -plaintext localhost:50051 list
+#
+# Internal access from other pods:
+#   memory-service.default.svc.cluster.local:50051
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: aura-memory-service
+  namespace: default
+  labels:
+    app: aura-memory-service
+    component: neural-memory
+    environment: dev
+  annotations:
+    # Service mesh annotations (if Istio/Linkerd is deployed)
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "tcp"
+spec:
+  type: ClusterIP
+  selector:
+    app: aura-memory-service
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+      protocol: TCP
+    - name: health
+      port: 8080
+      targetPort: health
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+---
+# Headless service for StatefulSet-like DNS (optional, for direct pod addressing)
+apiVersion: v1
+kind: Service
+metadata:
+  name: aura-memory-service-headless
+  namespace: default
+  labels:
+    app: aura-memory-service
+    component: neural-memory
+    environment: dev
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: aura-memory-service
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+      protocol: TCP

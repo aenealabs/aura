@@ -1,0 +1,298 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.18 - Constitutional AI Audit Queue (Async Logging)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  LambdaS3Bucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+
+  LambdaS3Key:
+    Type: String
+    Description: S3 key for Lambda deployment package
+
+Resources:
+  # ==========================================================================
+  # DynamoDB Table for Audit Persistence
+  # ==========================================================================
+
+  ConstitutionalAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-constitutional-audit-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: agent_name
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: agent-timestamp-index
+          KeySchema:
+            - AttributeName: agent_name
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: constitutional-ai
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # SQS FIFO Queue with Dead Letter Queue
+  # ==========================================================================
+
+  ConstitutionalAuditDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-constitutional-audit-dlq-${Environment}.fifo'
+      FifoQueue: true
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: constitutional-ai
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  ConstitutionalAuditQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-constitutional-audit-${Environment}.fifo'
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ConstitutionalAuditDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: constitutional-ai
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # IAM Role for Audit Consumer Lambda
+  # ==========================================================================
+
+  AuditConsumerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-constitutional-audit-lambda-role-${Environment}'
+      Description: IAM role for Constitutional AI audit consumer Lambda
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: AuditConsumerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # SQS - Receive messages from audit queue
+              - Sid: SQSReceive
+                Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !GetAtt ConstitutionalAuditQueue.Arn
+
+              # DynamoDB - Write audit records
+              - Sid: DynamoDBWrite
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !GetAtt ConstitutionalAuditTable.Arn
+
+              # KMS - Decrypt SQS messages
+              - Sid: KMSDecrypt
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/sqs'
+
+              # CloudWatch - Publish metrics (required wildcard per ADR-041)
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/ConstitutionalAI'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: constitutional-ai
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # Lambda Function - Audit Consumer
+  # ==========================================================================
+
+  AuditConsumerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-constitutional-audit-consumer-${Environment}'
+      Description: Constitutional AI audit queue consumer (ADR-063 Phase 3)
+      Runtime: python3.11
+      Handler: src.lambda.constitutional_audit.handler.lambda_handler
+      Role: !GetAtt AuditConsumerLambdaRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          AUDIT_TABLE_NAME: !Ref ConstitutionalAuditTable
+          CLOUDWATCH_NAMESPACE: Aura/ConstitutionalAI
+      ReservedConcurrentExecutions: 5
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: constitutional-ai
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # Lambda Event Source Mapping (SQS -> Lambda)
+  # ==========================================================================
+
+  AuditQueueEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref AuditConsumerLambda
+      EventSourceArn: !GetAtt ConstitutionalAuditQueue.Arn
+      BatchSize: 10
+      # Note: MaximumBatchingWindowInSeconds not supported for FIFO queues
+      Enabled: true
+
+  # ==========================================================================
+  # CloudWatch Alarms
+  # ==========================================================================
+
+  DLQMessageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-constitutional-audit-dlq-messages-${Environment}'
+      AlarmDescription: Messages in Constitutional AI audit dead letter queue
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ConstitutionalAuditDLQ.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-constitutional-audit-lambda-errors-${Environment}'
+      AlarmDescription: Errors in Constitutional AI audit consumer Lambda
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AuditConsumerLambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  AuditQueueUrl:
+    Description: URL of the Constitutional AI audit SQS queue
+    Value: !Ref ConstitutionalAuditQueue
+    Export:
+      Name: !Sub '${ProjectName}-constitutional-audit-queue-url-${Environment}'
+
+  AuditQueueArn:
+    Description: ARN of the Constitutional AI audit SQS queue
+    Value: !GetAtt ConstitutionalAuditQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-constitutional-audit-queue-arn-${Environment}'
+
+  AuditTableName:
+    Description: Name of the Constitutional AI audit DynamoDB table
+    Value: !Ref ConstitutionalAuditTable
+    Export:
+      Name: !Sub '${ProjectName}-constitutional-audit-table-${Environment}'
+
+  AuditTableArn:
+    Description: ARN of the Constitutional AI audit DynamoDB table
+    Value: !GetAtt ConstitutionalAuditTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-constitutional-audit-table-arn-${Environment}'
+
+  AuditConsumerLambdaArn:
+    Description: ARN of the Constitutional AI audit consumer Lambda
+    Value: !GetAtt AuditConsumerLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-constitutional-audit-lambda-arn-${Environment}'

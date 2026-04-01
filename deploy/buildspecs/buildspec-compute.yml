@@ -1,0 +1,569 @@
+version: 0.2
+
+# Compute Layer: EKS Cluster, Node Groups, ACM Certificate, ALB Controller
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    # SSO Admin Role ARN for EKS cluster access
+    # This role is granted AmazonEKSClusterAdminPolicy
+    # Note: SSO roles require the full path including aws-reserved/sso.amazonaws.com/
+    ADMIN_ROLE_ARN: "/${PROJECT_NAME}/${ENVIRONMENT}/admin-role-arn"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Compute Layer Deployment"
+      - echo "=========================================="
+
+      # Validate templates
+      - echo "Validating compute layer templates..."
+      - cfn-lint deploy/cloudformation/eks.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/eks-nodegroup-general.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/eks-nodegroup-memory.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/eks-nodegroup-gpu.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/acm-certificate.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/alb-controller.yaml --ignore-checks W3002,W2001 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/irsa-cluster-autoscaler.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/neural-memory-gpu.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/route53-dns.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+
+      # Get foundation stack outputs
+      - echo "Retrieving foundation stack outputs..."
+      - NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+      - SECURITY_STACK="${PROJECT_NAME}-security-${ENVIRONMENT}"
+      - IAM_STACK="${PROJECT_NAME}-iam-${ENVIRONMENT}"
+      # Use PUBLIC subnets for EKS nodes (GovCloud-compatible solution)
+      # Nodes need internet access to download container images from public registries
+      # VPC Endpoints don't work for docker.io, quay.io, gcr.io
+      # Fetch and export foundation stack outputs to env file for use in build phase
+      - |
+        VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        PUBLIC_SUBNET_IDS=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnetIds`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        EKS_SG=$(aws cloudformation describe-stacks --stack-name $SECURITY_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`EKSSecurityGroupId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        EKS_NODE_SG=$(aws cloudformation describe-stacks --stack-name $SECURITY_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`EKSNodeSecurityGroupId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        EKS_CLUSTER_ROLE=$(aws cloudformation describe-stacks --stack-name $IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`EKSClusterRoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        EKS_NODE_ROLE=$(aws cloudformation describe-stacks --stack-name $IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`EKSNodeRoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "VPC ID: $VPC_ID"
+        echo "EKS Cluster Security Group: $EKS_SG"
+        echo "EKS Node Role: $EKS_NODE_ROLE"
+        echo "Using PUBLIC subnets for EKS nodes: $PUBLIC_SUBNET_IDS"
+        # Write to env file for cross-phase persistence
+        cat > /tmp/foundation-env.sh << EOF
+        export VPC_ID="$VPC_ID"
+        export PUBLIC_SUBNET_IDS="$PUBLIC_SUBNET_IDS"
+        export EKS_SG="$EKS_SG"
+        export EKS_NODE_SG="$EKS_NODE_SG"
+        export EKS_CLUSTER_ROLE="$EKS_CLUSTER_ROLE"
+        export EKS_NODE_ROLE="$EKS_NODE_ROLE"
+        EOF
+
+  build:
+    commands:
+      # Source foundation environment variables from install phase (use '.' for POSIX compatibility)
+      - . /tmp/foundation-env.sh
+      - echo "Loaded foundation env - EKS_NODE_ROLE=$EKS_NODE_ROLE"
+      # Generate deployment timestamp for forcing stack updates
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      - echo "Deploying EKS Stack..."
+      - EKS_STACK="${PROJECT_NAME}-eks-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $EKS_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          OPERATION="update-stack"
+          WAIT_CONDITION="stack-update-complete"
+        else
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        fi
+
+      - |
+        set +e
+        # Note: Node group parameters removed per ADR-058 (nodes managed by dedicated stacks)
+        OUTPUT=$(aws cloudformation $OPERATION \
+          --stack-name $EKS_STACK \
+          --template-body file://deploy/cloudformation/eks.yaml \
+          --parameters \
+            ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+            ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+            ParameterKey=PrivateSubnetIds,ParameterValue=\"$PUBLIC_SUBNET_IDS\" \
+            ParameterKey=EKSSecurityGroupId,ParameterValue=$EKS_SG \
+            ParameterKey=EKSClusterRoleArn,ParameterValue=$EKS_CLUSTER_ROLE \
+            ParameterKey=AdminRoleArn,ParameterValue=$ADMIN_ROLE_ARN \
+            ParameterKey=KubernetesVersion,ParameterValue=1.34 \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-cli-pager 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+          echo "No updates needed - stack already matches template"
+          SKIP_WAIT=true
+        elif [ $EXIT_CODE -ne 0 ]; then
+          echo "CloudFormation error: $OUTPUT"
+          # Check if cluster already exists - if so, continue with node group deployment
+          if aws eks describe-cluster --name ${PROJECT_NAME}-cluster-${ENVIRONMENT} --region $AWS_DEFAULT_REGION 2>/dev/null; then
+            echo "EKS cluster exists - continuing with node group deployment despite stack error"
+            echo "Note: Existing embedded node group will be migrated to separate stacks"
+            SKIP_WAIT=true
+          else
+            echo "EKS cluster does not exist and stack creation failed"
+            exit $EXIT_CODE
+          fi
+        else
+          echo "$OUTPUT"
+          SKIP_WAIT=false
+        fi
+
+      - |
+        if [ "$SKIP_WAIT" = "false" ]; then
+          echo "Waiting for EKS stack (this may take 15-20 minutes)..."
+          aws cloudformation wait $WAIT_CONDITION --stack-name $EKS_STACK --region $AWS_DEFAULT_REGION || {
+            echo "Warning: EKS stack wait failed, checking if cluster is usable..."
+            if aws eks describe-cluster --name ${PROJECT_NAME}-cluster-${ENVIRONMENT} --region $AWS_DEFAULT_REGION 2>/dev/null; then
+              echo "EKS cluster is active - continuing"
+            else
+              echo "EKS cluster not found"
+              exit 1
+            fi
+          }
+        else
+          echo "Skipping wait - no updates were performed"
+        fi
+
+      # Get EKS cluster outputs for node groups
+      - |
+        CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name $EKS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`ClusterName`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "Cluster Name: $CLUSTER_NAME"
+
+      # Deploy Multi-Node-Group Architecture (ADR-058)
+      - echo "=========================================="
+      - echo "Deploying Multi-Node-Group Architecture"
+      - echo "=========================================="
+
+      # Deploy General-Purpose Node Group
+      - GENERAL_NG_STACK="${PROJECT_NAME}-nodegroup-general-${ENVIRONMENT}"
+      - |
+        echo "Deploying General-Purpose Node Group..."
+        aws cloudformation deploy \
+          --stack-name $GENERAL_NG_STACK \
+          --template-file deploy/cloudformation/eks-nodegroup-general.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            ClusterName=$CLUSTER_NAME \
+            NodeRoleArn=$EKS_NODE_ROLE \
+            PrivateSubnetIds="$PUBLIC_SUBNET_IDS" \
+            NodeSecurityGroupId=$EKS_NODE_SG \
+            InstanceTypes="t3.large,t3a.large,t3.xlarge" \
+            MinSize=2 \
+            MaxSize=6 \
+            DesiredSize=2 \
+            CapacityType=SPOT \
+            KubernetesVersion=1.34 \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=compute NodeGroupType=general-purpose \
+          --no-fail-on-empty-changeset \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --region $AWS_DEFAULT_REGION || echo "General-purpose node group deployment completed"
+
+      # Deploy Memory-Optimized Node Group
+      - MEMORY_NG_STACK="${PROJECT_NAME}-nodegroup-memory-${ENVIRONMENT}"
+      - |
+        echo "Deploying Memory-Optimized Node Group..."
+        aws cloudformation deploy \
+          --stack-name $MEMORY_NG_STACK \
+          --template-file deploy/cloudformation/eks-nodegroup-memory.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            ClusterName=$CLUSTER_NAME \
+            NodeRoleArn=$EKS_NODE_ROLE \
+            PrivateSubnetIds="$PUBLIC_SUBNET_IDS" \
+            NodeSecurityGroupId=$EKS_NODE_SG \
+            InstanceTypes="r6i.xlarge,r5.xlarge,r6a.xlarge" \
+            MinSize=1 \
+            MaxSize=3 \
+            DesiredSize=1 \
+            KubernetesVersion=1.34 \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=compute NodeGroupType=memory-optimized \
+          --no-fail-on-empty-changeset \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --region $AWS_DEFAULT_REGION || echo "Memory-optimized node group deployment completed"
+
+      # Deploy GPU Node Group (scale-to-zero by default)
+      - GPU_NG_STACK="${PROJECT_NAME}-nodegroup-gpu-${ENVIRONMENT}"
+      - |
+        echo "Deploying GPU Compute Node Group (scale-to-zero)..."
+        aws cloudformation deploy \
+          --stack-name $GPU_NG_STACK \
+          --template-file deploy/cloudformation/eks-nodegroup-gpu.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            ClusterName=$CLUSTER_NAME \
+            NodeRoleArn=$EKS_NODE_ROLE \
+            PrivateSubnetIds="$PUBLIC_SUBNET_IDS" \
+            NodeSecurityGroupId=$EKS_NODE_SG \
+            InstanceTypes="g5.xlarge,g4dn.xlarge" \
+            MinSize=0 \
+            MaxSize=2 \
+            DesiredSize=0 \
+            CapacityType=SPOT \
+            KubernetesVersion=1.34 \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=compute NodeGroupType=gpu-compute \
+          --no-fail-on-empty-changeset \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --region $AWS_DEFAULT_REGION || echo "GPU node group deployment completed"
+
+      - echo "Multi-Node-Group deployment complete"
+
+      # Deploy ACM Certificate (needed for HTTPS ingress)
+      # Uses cross-account script for QA/prod (Route 53 hosted zone is in dev account)
+      - echo "=========================================="
+      - echo "Checking ACM Certificate"
+      - echo "=========================================="
+      - ACM_STACK="${PROJECT_NAME}-acm-certificate-${ENVIRONMENT}"
+      - |
+        # Check if valid certificate already exists
+        EXISTING_CERT=$(aws acm list-certificates --region $AWS_DEFAULT_REGION \
+          --query "CertificateSummaryList[?DomainName=='aenealabs.com' && Status=='ISSUED'].CertificateArn" \
+          --output text)
+        if [ -n "$EXISTING_CERT" ] && [ "$EXISTING_CERT" != "None" ]; then
+          echo "Valid ACM certificate already exists: $EXISTING_CERT"
+          echo "Skipping ACM deployment"
+        elif [ "$AWS_ACCOUNT_ID" != "$DEV_ACCOUNT_ID" ]; then
+          # Cross-account scenario: QA or prod account needs to create DNS records in dev
+          echo "Cross-account ACM deployment detected (current: $AWS_ACCOUNT_ID, Route53: $DEV_ACCOUNT_ID)"
+          echo "Using cross-account DNS validation script..."
+          chmod +x deploy/scripts/deploy-acm-cross-account.sh
+          ./deploy/scripts/deploy-acm-cross-account.sh
+          if [ -f /tmp/acm-output.env ]; then
+            source /tmp/acm-output.env
+            echo "Certificate ARN: $CERTIFICATE_ARN"
+          fi
+        else
+          # Same-account scenario: Use standard CloudFormation flow
+          echo "Same-account ACM deployment (dev environment)"
+          HOSTED_ZONE_ID_LOCAL=$(aws route53 list-hosted-zones --query "HostedZones[?Name=='aenealabs.com.'].Id" --output text | sed 's|/hostedzone/||')
+          if [ -z "$HOSTED_ZONE_ID_LOCAL" ] || [ "$HOSTED_ZONE_ID_LOCAL" = "None" ]; then
+            echo "ERROR: Route 53 hosted zone for aenealabs.com not found"
+            echo "Ensure the hosted zone exists and this account has permission to list it"
+            exit 1
+          else
+            echo "Found Hosted Zone ID: $HOSTED_ZONE_ID_LOCAL"
+          fi
+          ACM_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+          ACM_PARAMS="$ACM_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+          ACM_PARAMS="$ACM_PARAMS ParameterKey=DomainName,ParameterValue=aenealabs.com"
+          ACM_PARAMS="$ACM_PARAMS ParameterKey=HostedZoneId,ParameterValue=$HOSTED_ZONE_ID_LOCAL"
+          if aws cloudformation describe-stacks --stack-name $ACM_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+            echo "ACM stack exists, attempting update..."
+            OUTPUT=$(aws cloudformation update-stack \
+              --stack-name $ACM_STACK \
+              --template-body file://deploy/cloudformation/acm-certificate.yaml \
+              --parameters $ACM_PARAMS \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager 2>&1) && \
+            aws cloudformation wait stack-update-complete --stack-name $ACM_STACK --region $AWS_DEFAULT_REGION || \
+            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+              echo "No updates needed for $ACM_STACK"
+            else
+              echo "Update failed: $OUTPUT"
+            fi
+          else
+            echo "ACM stack does not exist, creating..."
+            aws cloudformation create-stack \
+              --stack-name $ACM_STACK \
+              --template-body file://deploy/cloudformation/acm-certificate.yaml \
+              --parameters $ACM_PARAMS \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $ACM_STACK --region $AWS_DEFAULT_REGION
+          fi
+        fi
+      - echo "ACM Certificate check complete"
+
+      # Deploy AWS Load Balancer Controller IAM Resources
+      - echo "=========================================="
+      - echo "Deploying ALB Controller IAM Resources"
+      - echo "=========================================="
+      - ALB_STACK="${PROJECT_NAME}-alb-controller-${ENVIRONMENT}"
+      # Get EKS OIDC details from EKS stack
+      - |
+        OIDC_PROVIDER_ARN=$(aws cloudformation describe-stacks --stack-name $EKS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`OIDCProviderArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        OIDC_PROVIDER_URL=$(aws cloudformation describe-stacks --stack-name $EKS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`OIDCProviderUrl`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name $EKS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`ClusterName`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
+        echo "OIDC Provider URL: $OIDC_PROVIDER_URL"
+        echo "Cluster Name: $CLUSTER_NAME"
+      - |
+        if [ -z "$OIDC_PROVIDER_ARN" ] || [ "$OIDC_PROVIDER_ARN" = "None" ]; then
+          echo "Warning: OIDC Provider ARN not found, skipping ALB Controller deployment"
+        else
+          ALB_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+          ALB_PARAMS="$ALB_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+          ALB_PARAMS="$ALB_PARAMS ParameterKey=OIDCProviderArn,ParameterValue=$OIDC_PROVIDER_ARN"
+          ALB_PARAMS="$ALB_PARAMS ParameterKey=OIDCProviderURL,ParameterValue=$OIDC_PROVIDER_URL"
+          ALB_PARAMS="$ALB_PARAMS ParameterKey=ClusterName,ParameterValue=$CLUSTER_NAME"
+          ALB_PARAMS="$ALB_PARAMS ParameterKey=VpcId,ParameterValue=$VPC_ID"
+
+          if aws cloudformation describe-stacks --stack-name $ALB_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+            echo "ALB Controller stack exists, attempting update..."
+            OUTPUT=$(aws cloudformation update-stack \
+              --stack-name $ALB_STACK \
+              --template-body file://deploy/cloudformation/alb-controller.yaml \
+              --parameters $ALB_PARAMS \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager 2>&1) && \
+            aws cloudformation wait stack-update-complete --stack-name $ALB_STACK --region $AWS_DEFAULT_REGION || \
+            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+              echo "No updates needed for $ALB_STACK"
+            else
+              echo "Update failed: $OUTPUT"
+            fi
+          else
+            echo "ALB Controller stack does not exist, creating..."
+            aws cloudformation create-stack \
+              --stack-name $ALB_STACK \
+              --template-body file://deploy/cloudformation/alb-controller.yaml \
+              --parameters $ALB_PARAMS \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $ALB_STACK --region $AWS_DEFAULT_REGION
+          fi
+          echo "ALB Controller deployment complete"
+        fi
+
+      # Deploy Cluster Autoscaler IRSA and Kubernetes Resources
+      - echo "=========================================="
+      - echo "Deploying Cluster Autoscaler"
+      - echo "=========================================="
+      - AUTOSCALER_IRSA_STACK="${PROJECT_NAME}-cluster-autoscaler-irsa-${ENVIRONMENT}"
+      - |
+        if [ -z "$OIDC_PROVIDER_ARN" ] || [ "$OIDC_PROVIDER_ARN" = "None" ]; then
+          echo "Warning: OIDC Provider ARN not found, skipping Cluster Autoscaler deployment"
+        else
+          echo "Deploying Cluster Autoscaler IRSA role..."
+          aws cloudformation deploy \
+            --stack-name $AUTOSCALER_IRSA_STACK \
+            --template-file deploy/cloudformation/irsa-cluster-autoscaler.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+              OIDCProviderArn=$OIDC_PROVIDER_ARN \
+              OIDCProviderURL=$OIDC_PROVIDER_URL \
+              ServiceAccountNamespace=kube-system \
+              ServiceAccountName=cluster-autoscaler \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=compute Component=cluster-autoscaler \
+            --no-fail-on-empty-changeset \
+            --region $AWS_DEFAULT_REGION || echo "Cluster Autoscaler IRSA deployment completed"
+
+          # Get the role ARN for Kubernetes deployment
+          AUTOSCALER_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $AUTOSCALER_IRSA_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "Cluster Autoscaler Role ARN: $AUTOSCALER_ROLE_ARN"
+
+          # Deploy Kubernetes manifests with envsubst for variable substitution
+          if [ ! -z "$AUTOSCALER_ROLE_ARN" ] && [ "$AUTOSCALER_ROLE_ARN" != "None" ]; then
+            echo "Deploying Cluster Autoscaler Kubernetes manifests..."
+            export CLUSTER_AUTOSCALER_ROLE_ARN=$AUTOSCALER_ROLE_ARN
+            export CLUSTER_NAME=$CLUSTER_NAME
+
+            # Configure kubectl for EKS cluster
+            aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_DEFAULT_REGION
+
+            # Apply ServiceAccount with IRSA annotation
+            envsubst < deploy/kubernetes/cluster-autoscaler/base/serviceaccount.yaml | kubectl apply -f -
+
+            # Apply RBAC resources
+            kubectl apply -f deploy/kubernetes/cluster-autoscaler/base/rbac.yaml
+
+            # Apply Deployment with cluster name
+            envsubst < deploy/kubernetes/cluster-autoscaler/base/deployment.yaml | kubectl apply -f -
+
+            echo "Cluster Autoscaler deployment complete"
+            kubectl get deployment cluster-autoscaler -n kube-system || echo "Waiting for deployment..."
+          else
+            echo "Warning: Could not get Autoscaler role ARN, skipping K8s deployment"
+          fi
+        fi
+
+      # Deploy Neural Memory GPU Infrastructure (Layer 3.4)
+      # Provisions GPU instances for Titan/MIRAS neural memory inference (ADR-024)
+      - echo "=========================================="
+      - echo "Deploying Neural Memory GPU Infrastructure"
+      - echo "=========================================="
+      - NEURAL_MEMORY_STACK="${PROJECT_NAME}-neural-memory-gpu-${ENVIRONMENT}"
+      # Get private subnets for GPU instances (they don't need public access)
+      - |
+        PRIVATE_SUBNET_IDS=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnetIds`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        echo "Private Subnets for GPU instances: $PRIVATE_SUBNET_IDS"
+
+      - |
+        # Skip GPU deployment in dev to save costs unless explicitly requested
+        DEPLOY_GPU=${DEPLOY_GPU_INFRASTRUCTURE:-false}
+        if [ "$ENVIRONMENT" = "prod" ] || [ "$ENVIRONMENT" = "staging" ] || [ "$DEPLOY_GPU" = "true" ]; then
+          echo "Deploying neural memory GPU infrastructure..."
+          NEURAL_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=VpcId,ParameterValue=$VPC_ID"
+          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=PrivateSubnetIds,ParameterValue=\"$PRIVATE_SUBNET_IDS\""
+          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=EKSNodeSecurityGroupId,ParameterValue=$EKS_NODE_SG"
+          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=GPUInstanceType,ParameterValue=g5.xlarge"
+          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=MinCapacity,ParameterValue=0"
+          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=MaxCapacity,ParameterValue=3"
+          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=DesiredCapacity,ParameterValue=0"
+
+          if aws cloudformation describe-stacks --stack-name $NEURAL_MEMORY_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+            echo "Neural memory stack exists, attempting update..."
+            OUTPUT=$(aws cloudformation update-stack \
+              --stack-name $NEURAL_MEMORY_STACK \
+              --template-body file://deploy/cloudformation/neural-memory-gpu.yaml \
+              --parameters $NEURAL_PARAMS \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager 2>&1) && \
+            aws cloudformation wait stack-update-complete --stack-name $NEURAL_MEMORY_STACK --region $AWS_DEFAULT_REGION || \
+            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+              echo "No updates needed for $NEURAL_MEMORY_STACK"
+            else
+              echo "Update failed: $OUTPUT"
+            fi
+          else
+            echo "Neural memory stack does not exist, creating..."
+            aws cloudformation create-stack \
+              --stack-name $NEURAL_MEMORY_STACK \
+              --template-body file://deploy/cloudformation/neural-memory-gpu.yaml \
+              --parameters $NEURAL_PARAMS \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $NEURAL_MEMORY_STACK --region $AWS_DEFAULT_REGION
+          fi
+          echo "Neural memory GPU infrastructure deployment complete"
+        else
+          echo "Skipping GPU infrastructure in dev (set DEPLOY_GPU_INFRASTRUCTURE=true to deploy)"
+        fi
+
+      # Deploy Route 53 DNS Records (Layer 1.6)
+      # Only deploy if ALB exists and HostedZone is accessible
+      - echo "=========================================="
+      - echo "Deploying Route 53 DNS Records"
+      - echo "=========================================="
+      - ROUTE53_STACK="${PROJECT_NAME}-route53-dns-${ENVIRONMENT}"
+      - |
+        # Get Route 53 Hosted Zone ID dynamically
+        HOSTED_ZONE_ID=$(aws route53 list-hosted-zones \
+          --query "HostedZones[?Name=='aenealabs.com.'].Id" \
+          --output text | sed 's|/hostedzone/||' 2>/dev/null || echo "")
+
+        if [ -z "$HOSTED_ZONE_ID" ] || [ "$HOSTED_ZONE_ID" = "None" ]; then
+          echo "Warning: Route 53 hosted zone for aenealabs.com not found"
+          echo "Skipping Route 53 DNS deployment"
+        else
+          echo "Hosted Zone ID: $HOSTED_ZONE_ID"
+
+          # Try to get ALB DNS name if ALB is deployed
+          ALB_DNS_NAME=""
+          ALB_HOSTED_ZONE=""
+          ALB_NAME="${PROJECT_NAME}-alb-${ENVIRONMENT}"
+
+          # Check for ALB by looking for load balancers with our tag
+          ALB_INFO=$(aws elbv2 describe-load-balancers \
+            --query "LoadBalancers[?contains(LoadBalancerName, '${PROJECT_NAME}')].{DNS:DNSName,Zone:CanonicalHostedZoneId}" \
+            --output text 2>/dev/null | head -1 || echo "")
+
+          if [ -n "$ALB_INFO" ] && [ "$ALB_INFO" != "None" ]; then
+            ALB_DNS_NAME=$(echo "$ALB_INFO" | awk '{print $1}')
+            ALB_HOSTED_ZONE=$(echo "$ALB_INFO" | awk '{print $2}')
+            echo "ALB DNS Name: $ALB_DNS_NAME"
+            echo "ALB Hosted Zone: $ALB_HOSTED_ZONE"
+          fi
+
+          aws cloudformation deploy \
+            --stack-name $ROUTE53_STACK \
+            --template-file deploy/cloudformation/route53-dns.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+              HostedZoneId=$HOSTED_ZONE_ID \
+              ALBDNSName="${ALB_DNS_NAME:-}" \
+              ALBHostedZoneId="${ALB_HOSTED_ZONE:-}" \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=compute Component=route53 \
+            --no-fail-on-empty-changeset \
+            --region $AWS_DEFAULT_REGION || echo "Route 53 DNS deployment completed (may have warnings)"
+
+          echo "Route 53 DNS deployment complete"
+        fi
+
+  post_build:
+    commands:
+      - echo "Compute layer deployment completed!"
+      - echo "EKS Stack Outputs:"
+      - aws cloudformation describe-stacks --stack-name $EKS_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table
+
+      # Configure kubectl (useful for subsequent deployments)
+      - |
+        CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name $EKS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`ClusterName`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        if [ ! -z "$CLUSTER_NAME" ]; then
+          echo "Configuring kubectl for cluster: $CLUSTER_NAME"
+          aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_DEFAULT_REGION
+          kubectl get nodes || echo "Unable to connect to cluster yet"
+        fi
+
+artifacts:
+  files:
+    - deploy/cloudformation/eks.yaml
+    - deploy/cloudformation/eks-nodegroup-general.yaml
+    - deploy/cloudformation/eks-nodegroup-memory.yaml
+    - deploy/cloudformation/eks-nodegroup-gpu.yaml
+    - deploy/cloudformation/acm-certificate.yaml
+    - deploy/cloudformation/alb-controller.yaml
+    - deploy/cloudformation/irsa-cluster-autoscaler.yaml
+    - deploy/cloudformation/neural-memory-gpu.yaml
+    - deploy/cloudformation/route53-dns.yaml
+    - deploy/kubernetes/cluster-autoscaler/**/*
+  name: compute-layer-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

@@ -1,0 +1,404 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.5 - ElastiCache Redis (Distributed Caching)'
+
+# =============================================================================
+# ElastiCache Redis Cluster for Production State Management
+# =============================================================================
+# Provides Redis-backed caching infrastructure for:
+# - Cost tracking (daily_spend, monthly_spend)
+# - Rate limiting (request_history)
+# - Response caching for LLM calls
+# - Session state for agent workflows
+#
+# Used by: RedisCacheService (src/services/redis_cache_service.py)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: Private subnet IDs for ElastiCache subnet group
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for security group
+
+  ApplicationSecurityGroupId:
+    Type: String
+    Description: Security group ID of application tier (EKS nodes)
+
+  NodeType:
+    Type: String
+    Default: cache.t3.micro
+    AllowedValues:
+      - cache.t3.micro
+      - cache.t3.small
+      - cache.t3.medium
+      - cache.r6g.large
+      - cache.r6g.xlarge
+    Description: ElastiCache node type
+
+  NumCacheNodes:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 6
+    Description: Number of cache nodes (1 for dev, 2+ for HA in prod)
+
+  EngineVersion:
+    Type: String
+    Default: '7.0'
+    AllowedValues:
+      - '6.2'
+      - '7.0'
+      - '7.1'
+    Description: Redis engine version
+
+  AutomaticFailoverEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable automatic failover (requires 2+ nodes)
+
+  SnapshotRetentionLimit:
+    Type: Number
+    Default: 7
+    MinValue: 0
+    MaxValue: 35
+    Description: Days to retain automatic snapshots (0 = disabled)
+
+  AlertEmail:
+    Type: String
+    Description: Email address for operational alerts
+    Default: ''
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+  IsMultiNode: !Not [!Equals [!Ref NumCacheNodes, 1]]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  EnableFailover: !And
+    - !Condition IsMultiNode
+    - !Equals [!Ref AutomaticFailoverEnabled, 'true']
+
+Resources:
+  # ============================================================================
+  # Security Group for ElastiCache
+  # ============================================================================
+
+  ElastiCacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-elasticache-sg-${Environment}'
+      GroupDescription: Security group for ElastiCache Redis cluster
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref ApplicationSecurityGroupId
+          Description: Redis access from application tier
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-elasticache-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: data
+
+  # ============================================================================
+  # ElastiCache Subnet Group
+  # ============================================================================
+
+  ElastiCacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      CacheSubnetGroupName: !Sub '${ProjectName}-redis-subnet-${Environment}'
+      Description: Subnet group for ElastiCache Redis
+      SubnetIds: !Ref PrivateSubnetIds
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # ElastiCache Parameter Group
+  # ============================================================================
+
+  ElastiCacheParameterGroup:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      # AWS parameter group families use major version only (redis7, not redis7.0)
+      CacheParameterGroupFamily: redis7
+      Description: !Sub '${ProjectName} Redis parameters for ${Environment}'
+      Properties:
+        # Memory management
+        maxmemory-policy: volatile-lru
+        # Connection settings
+        timeout: '300'
+        tcp-keepalive: '300'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # ElastiCache Replication Group (Redis Cluster)
+  # ============================================================================
+
+  ElastiCacheReplicationGroup:
+    Type: AWS::ElastiCache::ReplicationGroup
+    DependsOn: ElastiCacheLogResourcePolicy
+    Properties:
+      ReplicationGroupId: !Sub '${ProjectName}-redis-${Environment}'
+      ReplicationGroupDescription: !Sub '${ProjectName} Redis cluster for ${Environment}'
+      Engine: redis
+      EngineVersion: !Ref EngineVersion
+      CacheNodeType: !Ref NodeType
+      NumCacheClusters: !Ref NumCacheNodes
+      AutomaticFailoverEnabled: !If [EnableFailover, true, false]
+      MultiAZEnabled: !If [EnableFailover, true, false]
+      CacheParameterGroupName: !Ref ElastiCacheParameterGroup
+      CacheSubnetGroupName: !Ref ElastiCacheSubnetGroup
+      SecurityGroupIds:
+        - !Ref ElastiCacheSecurityGroup
+      Port: 6379
+      # Encryption settings
+      AtRestEncryptionEnabled: true
+      TransitEncryptionEnabled: true
+      # Snapshot settings
+      SnapshotRetentionLimit: !Ref SnapshotRetentionLimit
+      SnapshotWindow: '03:00-05:00'
+      PreferredMaintenanceWindow: 'sun:05:00-sun:07:00'
+      # Auto minor version upgrade
+      AutoMinorVersionUpgrade: true
+      # Slow log delivery to CloudWatch Logs
+      LogDeliveryConfigurations:
+        - DestinationType: cloudwatch-logs
+          LogFormat: json
+          LogType: slow-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref ElastiCacheLogGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-redis-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: data
+        - Key: Purpose
+          Value: distributed-cache
+
+  # ============================================================================
+  # CloudWatch Log Group for Redis Slow Logs
+  # ============================================================================
+
+  ElastiCacheLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/elasticache-${Environment}'
+      RetentionInDays: !If [IsProd, 90, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: elasticache-logs
+
+  # Resource policy allowing AWS log delivery service to write ElastiCache logs
+  # Note: ElastiCache uses delivery.logs.amazonaws.com (not elasticache.amazonaws.com)
+  ElastiCacheLogResourcePolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-elasticache-logs-policy-${Environment}'
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "delivery.logs.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/elasticache-${Environment}:*",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": "${AWS::AccountId}"
+                },
+                "ArnLike": {
+                  "aws:SourceArn": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+                }
+              }
+            }
+          ]
+        }
+
+  # ============================================================================
+  # CloudWatch Alarms
+  # ============================================================================
+
+  # CPU Utilization Alarm
+  ElastiCacheCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-redis-cpu-high-${Environment}'
+      AlarmDescription: ElastiCache Redis CPU utilization exceeds threshold
+      MetricName: CPUUtilization
+      Namespace: AWS/ElastiCache
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 75
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Sub '${ProjectName}-redis-${Environment}-001'
+      AlarmActions:
+        - !If [HasAlertEmail, !Ref ElastiCacheAlertTopic, !Ref 'AWS::NoValue']
+      TreatMissingData: notBreaching
+
+  # Memory Utilization Alarm
+  ElastiCacheMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-redis-memory-high-${Environment}'
+      AlarmDescription: ElastiCache Redis memory utilization exceeds threshold
+      MetricName: DatabaseMemoryUsagePercentage
+      Namespace: AWS/ElastiCache
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Sub '${ProjectName}-redis-${Environment}-001'
+      AlarmActions:
+        - !If [HasAlertEmail, !Ref ElastiCacheAlertTopic, !Ref 'AWS::NoValue']
+      TreatMissingData: notBreaching
+
+  # Evictions Alarm
+  ElastiCacheEvictionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-redis-evictions-${Environment}'
+      AlarmDescription: ElastiCache Redis experiencing high eviction rate
+      MetricName: Evictions
+      Namespace: AWS/ElastiCache
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !If [IsProd, 1000, 100]
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Sub '${ProjectName}-redis-${Environment}-001'
+      AlarmActions:
+        - !If [HasAlertEmail, !Ref ElastiCacheAlertTopic, !Ref 'AWS::NoValue']
+      TreatMissingData: notBreaching
+
+  # ============================================================================
+  # SNS Topic for Alerts
+  # ============================================================================
+
+  ElastiCacheAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: !Sub '${ProjectName}-elasticache-alerts-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  ElastiCacheAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref ElastiCacheAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================================
+  # SSM Parameters for Service Discovery
+  # ============================================================================
+
+  RedisEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/redis/endpoint'
+      Type: String
+      Value: !GetAtt ElastiCacheReplicationGroup.PrimaryEndPoint.Address
+      Description: Redis primary endpoint address
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  RedisPortParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/redis/port'
+      Type: String
+      Value: !GetAtt ElastiCacheReplicationGroup.PrimaryEndPoint.Port
+      Description: Redis primary endpoint port
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+Outputs:
+  ElastiCacheReplicationGroupId:
+    Description: ElastiCache Replication Group ID
+    Value: !Ref ElastiCacheReplicationGroup
+    Export:
+      Name: !Sub '${ProjectName}-redis-replication-group-${Environment}'
+
+  ElastiCachePrimaryEndpoint:
+    Description: Redis primary endpoint address
+    Value: !GetAtt ElastiCacheReplicationGroup.PrimaryEndPoint.Address
+    Export:
+      Name: !Sub '${ProjectName}-redis-endpoint-${Environment}'
+
+  ElastiCachePrimaryPort:
+    Description: Redis primary endpoint port
+    Value: !GetAtt ElastiCacheReplicationGroup.PrimaryEndPoint.Port
+    Export:
+      Name: !Sub '${ProjectName}-redis-port-${Environment}'
+
+  ElastiCacheSecurityGroupId:
+    Description: ElastiCache security group ID
+    Value: !Ref ElastiCacheSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-redis-sg-${Environment}'
+
+  ElastiCacheLogGroupName:
+    Description: CloudWatch log group for Redis logs
+    Value: !Ref ElastiCacheLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-redis-log-group-${Environment}'

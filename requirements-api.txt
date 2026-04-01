@@ -1,0 +1,51 @@
+# Project Aura - Slim API Dependencies
+#
+# This file contains only the dependencies needed for the FastAPI service.
+# Excludes heavy ML packages (torch), AST parsers (tree-sitter), and test deps.
+#
+# Usage:
+#   pip install -r requirements-api.txt
+#
+# For full development environment, use requirements.txt instead.
+# Estimated image size reduction: ~2GB (excludes torch ~1.8GB, tree-sitter ~50MB)
+
+# AWS SDK
+boto3>=1.42.0
+botocore>=1.42.0
+
+# Graph Database and Vector Store
+gremlinpython>=3.7.3         # Amazon Neptune connectivity
+nest-asyncio>=1.6.0          # Nested event loops for gremlin-python in FastAPI
+opensearch-py>=2.8.0         # OpenSearch vector store
+requests>=2.32.0             # HTTP client for requests-aws4auth
+requests-aws4auth>=1.3.1     # AWS SigV4 signing for OpenSearch FGAC
+
+# Git Integration
+GitPython>=3.1.43            # Git metadata extraction
+PyGithub>=2.5.0              # GitHub API integration
+
+# Authentication
+PyJWT>=2.9.0                 # GitHub App JWT authentication
+python-jose[cryptography]>=3.3.0  # Cognito JWT validation with JWKS
+cryptography>=43.0.0         # RSA key support
+
+# API Framework
+fastapi>=0.115.0             # REST API
+uvicorn>=0.32.0              # ASGI server
+httpx>=0.28.0                # HTTP client
+pydantic>=2.10.0             # Data validation
+email-validator>=2.0.0       # Email validation for Pydantic
+python-multipart>=0.0.20     # Form data support
+
+# Async HTTP Client (Enterprise Integrations)
+aiohttp>=3.13.0              # ServiceNow, Splunk, Terraform Cloud, etc.
+
+# Structured Logging
+structlog>=24.1.0            # Security agent orchestrator logging
+
+# Configuration
+python-dotenv>=1.0.1         # Environment variable loading
+networkx>=3.4.0              # Graph processing (lightweight, used in API)
+
+# YAML Support (config parsing)
+PyYAML>=6.0.2

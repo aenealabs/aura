@@ -1,0 +1,596 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Neptune Graph Database Performance - Query Latency, Throughput, and Connection Metrics",
+  "editable": false,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "iteration": 1703500000000,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "panels": [],
+      "title": "Query Performance Overview",
+      "type": "row"
+    },
+    {
+      "datasource": "CloudWatch",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.2.3",
+      "targets": [
+        {
+          "alias": "Gremlin P95",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "expression": "",
+          "id": "",
+          "matchExact": true,
+          "metricEditorMode": 0,
+          "metricName": "GremlinRequestsPerSec",
+          "metricQueryType": 0,
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "A",
+          "region": "us-east-1",
+          "statistic": "p95"
+        }
+      ],
+      "title": "Gremlin Query Latency (P95)",
+      "type": "stat"
+    },
+    {
+      "datasource": "CloudWatch",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "alias": "Requests/sec",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "GremlinRequestsPerSec",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "A",
+          "region": "us-east-1",
+          "statistic": "Average"
+        }
+      ],
+      "title": "Gremlin Requests/sec",
+      "type": "stat"
+    },
+    {
+      "datasource": "CloudWatch",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 95 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "alias": "CPU",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "CPUUtilization",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "A",
+          "region": "us-east-1",
+          "statistic": "Average"
+        }
+      ],
+      "title": "CPU Utilization",
+      "type": "stat"
+    },
+    {
+      "datasource": "CloudWatch",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "alias": "Memory",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "FreeableMemory",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "A",
+          "region": "us-east-1",
+          "statistic": "Average"
+        }
+      ],
+      "title": "Memory Available",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 10,
+      "panels": [],
+      "title": "Query Latency Over Time",
+      "type": "row"
+    },
+    {
+      "datasource": "CloudWatch",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 500 }
+            ]
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 11,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "p95"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "alias": "p50",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "GremlinRequestsPerSec",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "A",
+          "region": "us-east-1",
+          "statistic": "p50"
+        },
+        {
+          "alias": "p90",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "GremlinRequestsPerSec",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "B",
+          "region": "us-east-1",
+          "statistic": "p90"
+        },
+        {
+          "alias": "p99",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "GremlinRequestsPerSec",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "C",
+          "region": "us-east-1",
+          "statistic": "p99"
+        }
+      ],
+      "title": "Gremlin Query Latency Percentiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "CloudWatch",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 12,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "alias": "Gremlin Requests",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "GremlinRequestsPerSec",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "A",
+          "region": "us-east-1",
+          "statistic": "Sum"
+        },
+        {
+          "alias": "SPARQL Requests",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "SparqlRequestsPerSec",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "B",
+          "region": "us-east-1",
+          "statistic": "Sum"
+        }
+      ],
+      "title": "Query Throughput",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "id": 20,
+      "panels": [],
+      "title": "Connection & Storage Metrics",
+      "type": "row"
+    },
+    {
+      "datasource": "CloudWatch",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+      "id": 21,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "alias": "HTTP Connections",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "Http1xxConnections",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "A",
+          "region": "us-east-1",
+          "statistic": "Average"
+        },
+        {
+          "alias": "WebSocket Connections",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "WebSocketConnections",
+          "namespace": "AWS/Neptune",
+          "period": "60",
+          "refId": "B",
+          "region": "us-east-1",
+          "statistic": "Average"
+        }
+      ],
+      "title": "Active Connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "CloudWatch",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
+      "id": 22,
+      "options": {
+        "legend": { "calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "alias": "Volume Used",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "VolumeBytesUsed",
+          "namespace": "AWS/Neptune",
+          "period": "300",
+          "refId": "A",
+          "region": "us-east-1",
+          "statistic": "Average"
+        },
+        {
+          "alias": "Buffer Cache Hit",
+          "dimensions": { "DBClusterIdentifier": "aura-neptune-cluster" },
+          "metricName": "BufferCacheHitRatio",
+          "namespace": "AWS/Neptune",
+          "period": "300",
+          "refId": "B",
+          "region": "us-east-1",
+          "statistic": "Average"
+        }
+      ],
+      "title": "Storage Metrics",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "id": 30,
+      "panels": [],
+      "title": "Graph Operations",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "id": 31,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation) (rate(aura_neptune_operations_total[5m]))",
+          "legendFormat": "{{ operation }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Graph Operations by Type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "id": 32,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "expr": "sum(aura_neptune_entities_total)",
+          "legendFormat": "Total Entities",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(aura_neptune_relationships_total)",
+          "legendFormat": "Total Relationships",
+          "refId": "B"
+        }
+      ],
+      "title": "Graph Size (Entities & Relationships)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["neptune", "database", "graph"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Neptune Graph Database",
+  "uid": "neptune-performance",
+  "version": 1,
+  "weekStart": ""
+}

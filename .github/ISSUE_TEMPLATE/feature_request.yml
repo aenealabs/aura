@@ -1,0 +1,85 @@
+name: Feature Request
+description: Propose a new feature for Project Aura
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please describe what you'd like to see.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve?
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How should this feature work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other solutions did you consider?
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this feature is complete?
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Tests pass
+        - [ ] Documentation updated
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the system does this affect?
+      options:
+        - Agent Orchestrator
+        - Context Retrieval Service
+        - Sandbox Network Service
+        - Monitoring/Observability
+        - Neptune Graph Database
+        - OpenSearch Vector Database
+        - Infrastructure (CloudFormation/EKS)
+        - CI/CD Pipeline
+        - Frontend/UI
+        - API/Webhooks
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P3-low (Nice to have)
+        - P2-medium (Improves workflow)
+        - P1-high (Critical for milestone)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: This feature aligns with Project Aura's security-first approach
+          required: true

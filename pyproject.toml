@@ -1,0 +1,339 @@
+[project]
+name = "project-aura"
+version = "1.6.1"
+description = "Autonomous AI SaaS Platform for Code Intelligence and Security"
+authors = [{name = "Project Aura Team"}]
+requires-python = ">=3.11"
+dependencies = [
+    "pytest==8.3.4",
+    "pytest-mock==3.14.0",
+    "pytest-cov==6.0.0",
+    "pytest-asyncio==0.24.0",
+    "pytest-forked==1.6.0",
+    "pytest-xdist==3.5.0",
+    # AWS service mocking for 85% coverage target
+    "moto[all]==5.0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.14.0",
+    "mypy==1.8.0",
+    "bandit==1.9.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+# ==========================================
+# Ruff Configuration
+# ==========================================
+[tool.ruff]
+# Set the maximum line length to 100 (PEP 8 recommends 79, but 100 is common in modern projects)
+line-length = 100
+indent-width = 4
+
+# Target Python 3.12
+target-version = "py312"
+
+# Exclude common directories
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+    "node_modules",
+]
+
+[tool.ruff.lint]
+# Enable comprehensive rule sets
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort (import sorting)
+    "N",      # pep8-naming
+    "UP",     # pyupgrade (modernize Python syntax)
+    "B",      # flake8-bugbear (find likely bugs)
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "RET",    # flake8-return
+    "ARG",    # flake8-unused-arguments
+    "PTH",    # flake8-use-pathlib
+    "ERA",    # eradicate (commented-out code)
+    "PL",     # Pylint
+    "S",      # flake8-bandit (security)
+    "T20",    # flake8-print (no print statements)
+    "RUF",    # Ruff-specific rules
+]
+
+# Ignore specific rules
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "S101",   # Use of assert (OK in tests)
+    "T201",   # Print statements (OK for scripts, will review manually)
+    "PLR0913", # Too many arguments (sometimes necessary)
+]
+
+# Allow autofix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.per-file-ignores]
+# Ignore security checks in test files
+"tests/**/*.py" = ["S", "ARG"]
+# Ignore import rules in __init__.py
+"**/__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.lint.mccabe]
+# Maximum cyclomatic complexity
+max-complexity = 10
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Indent with spaces
+indent-style = "space"
+
+# Respect PEP 8 line endings
+line-ending = "auto"
+
+# ==========================================
+# Mypy Configuration
+# ==========================================
+[tool.mypy]
+# Specify Python version
+python_version = "3.12"
+
+# Strict mode (enables all optional error checking flags)
+strict = false  # Start with false, gradually enable
+
+# Import discovery
+files = ["src"]
+exclude = ["tests", "build", "dist"]
+explicit_package_bases = true
+mypy_path = "$MYPY_CONFIG_FILE_DIR"
+
+# Error output
+show_error_codes = true
+show_column_numbers = true
+pretty = true
+
+# Warnings
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false  # Can be noisy, enable later
+warn_unreachable = true
+
+# Type checking
+disallow_untyped_defs = false  # Gradually enable
+disallow_any_generics = false  # Gradually enable
+check_untyped_defs = true
+no_implicit_optional = true
+
+# Error strictness
+ignore_missing_imports = true  # Allow for packages without type stubs
+
+# Cache
+cache_dir = ".mypy_cache"
+
+# Per-module options
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+# Abstractions and config - enforce strict typing
+[[tool.mypy.overrides]]
+module = ["src.abstractions.*", "src.config.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+# API layer - warn on Any returns to catch issues
+[[tool.mypy.overrides]]
+module = "src.api.*"
+warn_return_any = true
+
+# Lambda handlers - allow Any for AWS event/context types
+[[tool.mypy.overrides]]
+module = "src.lambda.*"
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+# ==========================================
+# Bandit Configuration
+# ==========================================
+# Documentation: docs/reference/PRE_COMMIT_FALSE_POSITIVES.md
+[tool.bandit]
+# Exclude test files and build directories
+exclude_dirs = ["tests", "build", "dist", ".venv", "venv", "archive", "scripts", "deploy"]
+
+# Set confidence level (LOW, MEDIUM, HIGH)
+# Report only medium and high confidence issues
+level = "MEDIUM"
+
+# Severity level (LOW, MEDIUM, HIGH)
+# Report only medium and high severity issues - this filters out B105 false positives
+# on enum values like SECRET = "secret" which are type identifiers, not credentials
+severity = "MEDIUM"
+
+# Tests to skip globally
+# B101: assert_used - OK in tests and for type narrowing
+# B311: random - We use random for non-cryptographic purposes (UI, tests, demos)
+#       Cryptographic randomness uses secrets module (verified in src/services/crypto_service.py)
+# B110: try_except_pass - Intentional patterns for graceful degradation with comments
+skips = ["B101", "B311", "B110"]
+
+# Per-file ignores for verified false positives
+# See docs/reference/PRE_COMMIT_FALSE_POSITIVES.md for detailed rationale
+[tool.bandit.per_file_ignores]
+# Secrets detection service contains enum definitions with secret type names
+# e.g., SECRET = "secret", PASSWORD = "password" - these are type identifiers
+"src/services/secrets_detection_service.py" = ["B105"]
+
+# GitHub service contains PEM header patterns for detection logic, not actual keys
+"src/services/github_pr_service.py" = ["B105"]
+
+# SSM/Secrets Manager services have path prefix defaults like "aura/"
+"src/services/ssm_service.py" = ["B105", "B107"]
+"src/services/secrets_manager_service.py" = ["B105", "B107"]
+
+# Config service has default configuration key names
+"src/config/*.py" = ["B105"]
+
+# Lambda handlers may use subprocess for legitimate purposes
+"src/lambda/*.py" = ["B404", "B603"]
+
+# API handlers use FastAPI patterns that may trigger false positives
+"src/api/*.py" = ["B105"]
+
+# Abstractions define interfaces that may reference secret patterns
+"src/abstractions/*.py" = ["B105"]
+
+# Self-hosted providers use parameterized queries with internal schema names
+# Table/column names are from trusted internal config, not user input
+"src/services/providers/self_hosted/*.py" = ["B608"]
+
+# Migration scripts use parameterized queries with internal schema names
+"src/migration/*.py" = ["B608"]
+
+# ==========================================
+# Pytest Configuration
+# ==========================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# Note: --cov runs by default for unit tests. For integration/E2E tests against
+# real AWS services, use --no-cov to avoid false coverage failures:
+#   pytest tests/test_aws_services_e2e.py --no-cov
+#   RUN_INTEGRATION_TESTS=1 pytest tests/test_bedrock_service.py --no-cov
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+markers = [
+    # Test type markers (REQUIRED on test modules for clarity)
+    "unit: Unit tests with all external dependencies mocked (fast, deterministic)",
+    "component: Component tests using real local resources (Testcontainers, LocalStack)",
+    "integration: Integration tests with mocked external services (moto, aiohttp mocks)",
+    "e2e: End-to-end tests requiring real external services (requires RUN_E2E_TESTS=1)",
+
+    # Validation markers
+    "smoke: Smoke tests for production validation (run before deployment)",
+    "performance: Performance and SLA validation tests",
+    "deployment: Post-deployment validation tests",
+
+    # Infrastructure markers
+    "aws_integration: Tests requiring mocked AWS services via moto",
+    "slow: Tests that take more than 1 second",
+
+    # Isolation markers (applied as needed for test stability)
+    "torch_required: Tests that require PyTorch (run in isolated worker or last)",
+    "forked: Tests requiring process isolation (prevents mock pollution)",
+    "subprocess_isolated: Tests requiring fresh subprocess isolation (spawn-safe)",
+    "gpu_required: Tests requiring NVIDIA GPU (skip on Apple Silicon)",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# Environment variable to force spawn multiprocessing on macOS (prevents fork crash with torch)
+env = [
+    "OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:pytest_forked",
+]
+
+# ==========================================
+# Coverage Configuration
+# ==========================================
+[tool.coverage.run]
+source = ["src"]
+# Note: parallel=true was disabled because it interferes with pytest-cov's
+# normal coverage collection. On Linux CI, tests don't use forking anyway.
+# For local macOS with forked tests, the non-forked test run still captures
+# the main process coverage which is sufficient for the 70% threshold.
+data_file = ".coverage"
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+    # Self-hosted providers require external services (Neo4j, MinIO, PostgreSQL)
+    "*/providers/self_hosted/*",
+    # Migration tools require both source and destination services
+    "*/migration/*",
+    # FIPS compliance requires FIPS-enabled environment
+    "*/licensing/fips_compliance.py",
+    # Agent worker is a subprocess runner, not directly testable in CI
+    "*/agents/agent_worker.py",
+    # Connectors registry is metadata only, no logic to test
+    "*/connectors/__init__.py",
+    # CLI requires interactive testing, tested via integration tests
+    "*/cli/main.py",
+    # Lambda entry points require AWS Lambda context, tested via E2E tests
+    "*/lambda/namespace_controller.py",
+    "*/lambda/environment_provisioner.py",
+    # WebSocket handlers require API Gateway WebSocket context
+    "*/lambda/chat/ws_message.py",
+]
+
+[tool.coverage.report]
+# Fail if coverage is below threshold (industry standard - DO NOT LOWER)
+fail_under = 70
+show_missing = true
+skip_covered = false
+precision = 2
+exclude_lines = [
+    # Standard exclusions
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    # Don't cover main/demo blocks
+    "if __name__ == .__main__.:",
+    # Don't cover import error fallbacks (tested via mock patches)
+    "except ImportError:",
+    # Type checking imports
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

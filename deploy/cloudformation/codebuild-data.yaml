@@ -1,0 +1,657 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Data Layer CodeBuild Project (Layer 2: Neptune, OpenSearch, DynamoDB, S3)'
+
+Mappings:
+  # Mapping for GovCloud partition support
+  # AWS Commercial: aws, AWS GovCloud: aws-us-gov
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    AllowedValues:
+      - main
+      - develop
+    Description: GitHub branch to build from
+
+Resources:
+  # S3 Bucket for Data Layer Artifacts
+  DataArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-data-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldDataArtifacts
+            Status: Enabled
+            ExpirationInDays: 30  # Data layer changes frequently
+            NoncurrentVersionExpirationInDays: 7
+          # No transition to Intelligent-Tiering (stay in Standard for fast access)
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: data
+        - Key: CostCenter
+          Value: Data-Team
+
+  # CloudWatch Log Group for Data Layer Builds
+  DataBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-data-deploy-${Environment}'
+      RetentionInDays: 14  # Shorter retention for faster-changing layer
+
+  # IAM Role for Data Layer CodeBuild
+  DataCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-data-codebuild-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/ReadOnlyAccess'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+        - !Ref DataKMSManagedPolicy
+      Policies:
+        - PolicyName: DataDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs - Log Group and Stream Operations (Data Layer only)
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:DescribeLogGroups
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-data-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/opensearch/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/neptune/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/elasticache-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${ProjectName}-*:*'
+
+              # CloudWatch Logs - Tagging Operations (log group level, no :* suffix)
+              - Effect: Allow
+                Action:
+                  - logs:TagResource
+                  - logs:UntagResource
+                  - logs:ListTagsForResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-data-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/opensearch/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/neptune/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/elasticache-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${ProjectName}-*'
+
+              # CloudWatch Logs - Resource Policy Operations (service-level, requires '*')
+              - Effect: Allow
+                Action:
+                  - logs:PutResourcePolicy
+                  - logs:DeleteResourcePolicy
+                  - logs:DescribeResourcePolicies
+                Resource: '*'
+
+              # CloudWatch Logs - Log Delivery Operations (for ElastiCache slow logs)
+              # These are account-level actions required to configure log delivery
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                Resource: '*'
+
+              # CloudWatch Metrics (for build monitoring)
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/CICD/Data'
+
+              # CloudWatch Alarms (for ElastiCache monitoring)
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:EnableAlarmActions
+                  - cloudwatch:DisableAlarmActions
+                  - cloudwatch:SetAlarmState
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-redis-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-elasticache-*'
+
+              # S3 - Data artifacts bucket + infrastructure buckets
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource:
+                  - !GetAtt DataArtifactsBucket.Arn
+                  - !Sub '${DataArtifactsBucket.Arn}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}/*'
+
+              # CloudFormation - Data stacks only
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:GetTemplateSummary
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-neptune-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-opensearch-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-dynamodb-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-repository-tables-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-context-provenance-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-s3-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-elasticache-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-dashboard-dynamodb-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-supply-chain-dynamodb-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-runtime-security-dynamodb-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ai-security-dynamodb-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-memory-evolution-dynamodb-${Environment}/*'
+
+              # Neptune Management - Scoped to project resources (least privilege)
+              - Effect: Allow
+                Action:
+                  - neptune-db:*
+                  - rds:CreateDBCluster
+                  - rds:DeleteDBCluster
+                  - rds:ModifyDBCluster
+                  - rds:CreateDBInstance
+                  - rds:DeleteDBInstance
+                  - rds:ModifyDBInstance
+                  - rds:CreateDBSubnetGroup
+                  - rds:DeleteDBSubnetGroup
+                  - rds:ModifyDBSubnetGroup
+                  - rds:CreateDBParameterGroup
+                  - rds:DeleteDBParameterGroup
+                  - rds:ModifyDBParameterGroup
+                  - rds:CreateDBClusterParameterGroup
+                  - rds:DeleteDBClusterParameterGroup
+                  - rds:ModifyDBClusterParameterGroup
+                  - rds:AddTagsToResource
+                  - rds:RemoveTagsFromResource
+                  - rds:ListTagsForResource
+                  - rds:DescribeDBClusters
+                  - rds:DescribeDBInstances
+                  - rds:DescribeDBSubnetGroups
+                  - rds:DescribeDBParameterGroups
+                  - rds:DescribeDBClusterParameterGroups
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:cluster:${ProjectName}-neptune-*'
+                  - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:${ProjectName}-neptune-*'
+                  - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:subgrp:${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:pg:${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:cluster-pg:${ProjectName}-*'
+
+              # OpenSearch Management - Scoped to project domains (least privilege)
+              - Effect: Allow
+                Action:
+                  - es:*
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-*'
+
+              # DynamoDB Management
+              - Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                  - dynamodb:ListTagsOfResource
+                  - dynamodb:UpdateTimeToLive
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:UpdateContinuousBackups
+                  - dynamodb:DescribeContinuousBackups
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*'
+
+              # Secrets Manager (for Neptune/OpenSearch passwords)
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:UpdateSecret
+                  - secretsmanager:DeleteSecret
+                  - secretsmanager:TagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:aura/${Environment}/*'
+
+              # Parameter Store (for configuration)
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                  - ssm:AddTagsToResource
+                  - ssm:RemoveTagsFromResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/*'
+
+              # ElastiCache (for caching layer)
+              - Effect: Allow
+                Action:
+                  - elasticache:CreateCacheSubnetGroup
+                  - elasticache:DeleteCacheSubnetGroup
+                  - elasticache:DescribeCacheSubnetGroups
+                  - elasticache:CreateCacheParameterGroup
+                  - elasticache:DeleteCacheParameterGroup
+                  - elasticache:DescribeCacheParameterGroups
+                  - elasticache:ModifyCacheParameterGroup
+                  - elasticache:CreateReplicationGroup
+                  - elasticache:DeleteReplicationGroup
+                  - elasticache:DescribeReplicationGroups
+                  - elasticache:ModifyReplicationGroup
+                  - elasticache:AddTagsToResource
+                  - elasticache:RemoveTagsFromResource
+                  - elasticache:ListTagsForResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:subnetgroup:${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:parametergroup:${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:replicationgroup:${ProjectName}-*'
+
+              # SNS (for ElastiCache alerts)
+              - Effect: Allow
+                Action:
+                  - sns:CreateTopic
+                  - sns:DeleteTopic
+                  - sns:GetTopicAttributes
+                  - sns:SetTopicAttributes
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                  - sns:TagResource
+                  - sns:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-elasticache-*'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-quarantine-alerts-*'
+
+              # EventBridge - Context Provenance event bus and rules
+              - Effect: Allow
+                Action:
+                  - events:CreateEventBus
+                  - events:DeleteEventBus
+                  - events:DescribeEventBus
+                  - events:PutRule
+                  - events:DeleteRule
+                  - events:DescribeRule
+                  - events:EnableRule
+                  - events:DisableRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                  - events:ListRules
+                  - events:ListTargetsByRule
+                  - events:TagResource
+                  - events:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-provenance-events-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-dashboard-events-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-provenance-events-*/*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-dashboard-*/*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*-alert-*'
+
+              # CloudWatch Logs - Provenance audit logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - logs:DescribeLogGroups
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/provenance/*'
+
+              # CloudWatch Alarms - Context provenance monitoring
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:TagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-*-${Environment}'
+
+              # EC2 - Describe operations (AWS requires Resource: '*' for Describe actions)
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+                Resource: '*'
+
+              # EC2 - Security group management (scoped to account/region)
+              - Effect: Allow
+                Action:
+                  - ec2:CreateSecurityGroup
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*'
+
+              - Effect: Allow
+                Action:
+                  - ec2:DeleteSecurityGroup
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+
+              # Lambda (for dashboard audit stream function)
+              - Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - lambda:ListTags
+                  - lambda:CreateEventSourceMapping
+                  - lambda:DeleteEventSourceMapping
+                  - lambda:GetEventSourceMapping
+                  - lambda:UpdateEventSourceMapping
+                  - lambda:ListEventSourceMappings
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-dashboard-*'
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:event-source-mapping:*'
+
+              # IAM Role Management (for dashboard audit stream and other data layer roles)
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:ListRoleTags
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-dashboard-*'
+
+              # IAM PassRole (for Neptune/OpenSearch/Dashboard service roles)
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-neptune-*'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-opensearch-*'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-dashboard-*'
+
+              # IAM CreateServiceLinkedRole (required for Neptune/OpenSearch first-time setup)
+              - Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/*'
+                Condition:
+                  StringLike:
+                    iam:AWSServiceName:
+                      - rds.amazonaws.com
+                      - es.amazonaws.com
+                      - opensearchservice.amazonaws.com
+                      - elasticache.amazonaws.com
+
+              # CodeConnections (for GitHub source access)
+              - Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codeconnections:GetConnectionToken
+                Resource:
+                  - '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: data
+
+  # CodeBuild Project for Data Layer
+  DataCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-data-deploy-${Environment}'
+      Description: 'Project Aura - Data Layer CodeBuild Project (Layer 2: Neptune, OpenSearch, DynamoDB, S3)'
+      ServiceRole: !GetAtt DataCodeBuildRole.Arn
+      Artifacts:
+        Type: S3
+        Location: !Ref DataArtifactsBucket
+        Name: data-artifacts
+        Packaging: ZIP
+        EncryptionDisabled: false
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM  # 7 GB RAM, 4 vCPUs (Neptune/OpenSearch deployments need more resources)
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: LAYER
+            Value: data
+          - Name: AUTO_RETRY_TRANSIENT_FAILURES
+            Value: "true"
+          - Name: MAX_RETRIES
+            Value: "3"
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-data.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref DataBuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_DOCKER_LAYER_CACHE  # Cache Docker layers for faster builds
+          - LOCAL_SOURCE_CACHE  # Cache source code
+      TimeoutInMinutes: 60  # Data layer takes longer (Neptune creation ~15-20 min)
+      QueuedTimeoutInMinutes: 480
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: data
+        - Key: CostCenter
+          Value: Data-Team
+
+  # CloudWatch Alarm - Data Layer Build Failures
+  DataBuildFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-data-build-failures-${Environment}'
+      AlarmDescription: 'Alert when Data Layer has 2+ failures in 1 hour'
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref DataCodeBuildProject
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # CloudWatch Alarm - Data Layer Build Duration
+  DataBuildDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-data-build-slow-${Environment}'
+      AlarmDescription: 'Alert when Data Layer build takes longer than 30 minutes'
+      MetricName: Duration
+      Namespace: AWS/CodeBuild
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref DataCodeBuildProject
+      Statistic: Average
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 1
+      Threshold: 1800000  # 30 minutes in milliseconds
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # CloudWatch Alarm - Data Layer Cost Alert
+  DataLayerCostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-data-layer-cost-exceeded-${Environment}'
+      AlarmDescription: 'Alert when Data Layer costs exceed $15/day'
+      MetricName: EstimatedCharges
+      Namespace: AWS/Billing
+      Dimensions:
+        - Name: ServiceName
+          Value: CodeBuild
+      Statistic: Maximum
+      Period: 86400  # Daily
+      EvaluationPeriods: 1
+      Threshold: 15
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # Managed policy for KMS and SQS permissions (separate to avoid 10KB inline policy limit)
+  DataKMSManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-data-kms-${Environment}'
+      Description: KMS and SQS permissions for data layer CodeBuild (memory-evolution)
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: KMSKeyCreation
+            Effect: Allow
+            Action: kms:CreateKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:RequestTag/Project: !Ref ProjectName
+          - Sid: KMSKeyManagement
+            Effect: Allow
+            Action: [kms:DescribeKey, kms:GetKeyPolicy, kms:PutKeyPolicy, kms:EnableKeyRotation, kms:GetKeyRotationStatus, kms:ScheduleKeyDeletion, kms:TagResource, kms:UntagResource, kms:ListResourceTags, kms:CreateGrant, kms:RevokeGrant, kms:Encrypt, kms:Decrypt, kms:GenerateDataKey]
+            Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+            Condition:
+              StringEquals:
+                aws:ResourceTag/Project: !Ref ProjectName
+          - Sid: SQSQueueManagement
+            Effect: Allow
+            Action: [sqs:CreateQueue, sqs:DeleteQueue, sqs:GetQueueAttributes, sqs:SetQueueAttributes, sqs:TagQueue, sqs:UntagQueue, sqs:ListQueueTags, sqs:GetQueueUrl]
+            Resource: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+Outputs:
+  DataCodeBuildProjectName:
+    Description: Data Layer CodeBuild project name
+    Value: !Ref DataCodeBuildProject
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectName'
+
+  DataCodeBuildProjectArn:
+    Description: Data Layer CodeBuild project ARN
+    Value: !GetAtt DataCodeBuildProject.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectArn'
+
+  DataArtifactsBucketName:
+    Description: Data Layer artifacts bucket name
+    Value: !Ref DataArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
+
+  DataBuildLogGroupName:
+    Description: Data Layer build log group name
+    Value: !Ref DataBuildLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroup'

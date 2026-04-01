@@ -1,0 +1,150 @@
+version: 0.2
+
+# Application Layer Sub-BuildSpec: ECR Repositories (Layer 4.1)
+# Deploys ECR repositories and builds container images.
+# Called by buildspec-application.yml or Step Functions.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+run-as: root
+
+env:
+  shell: bash
+  variables:
+    DNSMASQ_IMAGE_TAG: "v1.0.1"
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - chmod +x deploy/scripts/configure-ecr-credential-helper.sh
+      - ./deploy/scripts/configure-ecr-credential-helper.sh
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "ECR Repository Deployment (Layer 4.1)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - validate_aws_credentials
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+  build:
+    commands:
+      # ECR Repository for dnsmasq
+      - |
+        echo "Deploying ECR dnsmasq repository..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT}" \
+          "deploy/cloudformation/ecr-dnsmasq.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          ""
+
+      # Get ECR URI and build dnsmasq image
+      - |
+        echo "Building dnsmasq container image..."
+        ECR_STACK="${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT}"
+        ECR_REPO_URI=$(cfn_get_stack_output "$ECR_STACK" "RepositoryUri")
+        echo "ECR Repository URI: $ECR_REPO_URI"
+
+        # Get base image (with fallback)
+        BASE_IMAGES_STACK="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
+        BASE_IMAGE_URI=$(cfn_get_stack_output "$BASE_IMAGES_STACK" "AlpineRepositoryUri" "")
+
+        if [[ -z "$BASE_IMAGE_URI" || "$BASE_IMAGE_URI" == "None" ]]; then
+          BASE_IMAGE_URI="public.ecr.aws/docker/library/alpine:3.19"
+          echo "Using fallback base image: $BASE_IMAGE_URI"
+        else
+          BASE_IMAGE_URI="${BASE_IMAGE_URI}:3.19"
+        fi
+
+        FULL_IMAGE_URI="${ECR_REPO_URI}:${DNSMASQ_IMAGE_TAG}"
+        docker build \
+          --platform linux/amd64 \
+          --build-arg BASE_IMAGE_URI=${BASE_IMAGE_URI} \
+          -t ${FULL_IMAGE_URI} \
+          -f deploy/docker/dnsmasq/Dockerfile \
+          deploy/docker/dnsmasq/
+
+        docker push ${FULL_IMAGE_URI}
+        echo "Image pushed: ${FULL_IMAGE_URI}"
+
+      # ECR Repository for API
+      - |
+        echo "Deploying ECR API repository..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-ecr-api-${ENVIRONMENT}" \
+          "deploy/cloudformation/ecr-api.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application" \
+          ""
+
+      # ECR Repository for Agent Orchestrator
+      - |
+        echo "Deploying ECR Agent Orchestrator repository..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-ecr-agent-orchestrator-${ENVIRONMENT}" \
+          "deploy/cloudformation/ecr-agent-orchestrator.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application" \
+          ""
+
+      # ECR Repository for Frontend
+      - |
+        echo "Deploying ECR Frontend repository..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-ecr-frontend-${ENVIRONMENT}" \
+          "deploy/cloudformation/ecr-frontend.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application" \
+          ""
+
+      # ECR Repository for Memory Service
+      - |
+        echo "Deploying ECR Memory Service repository..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-ecr-memory-service-${ENVIRONMENT}" \
+          "deploy/cloudformation/ecr-memory-service.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application" \
+          ""
+
+      # ECR Repository for Meta Orchestrator
+      - |
+        echo "Deploying ECR Meta Orchestrator repository..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-ecr-meta-orchestrator-${ENVIRONMENT}" \
+          "deploy/cloudformation/ecr-meta-orchestrator.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application" \
+          ""
+
+      # ECR Repository for Runtime Incident Agent
+      - |
+        echo "Deploying ECR Runtime Incident Agent repository..."
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-ecr-runtime-incident-agent-${ENVIRONMENT}" \
+          "deploy/cloudformation/ecr-runtime-incident-agent.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=application" \
+          ""
+
+  post_build:
+    commands:
+      - echo "ECR Repository deployment complete"
+      - |
+        echo "ECR Repositories:"
+        echo "  dnsmasq: $(cfn_get_stack_output ${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT} RepositoryUri)"
+        echo "  api: $(cfn_get_stack_output ${PROJECT_NAME}-ecr-api-${ENVIRONMENT} RepositoryUri)"
+        echo "  agent-orchestrator: $(cfn_get_stack_output ${PROJECT_NAME}-ecr-agent-orchestrator-${ENVIRONMENT} RepositoryUri)"
+        echo "  frontend: $(cfn_get_stack_output ${PROJECT_NAME}-ecr-frontend-${ENVIRONMENT} RepositoryUri)"
+        echo "  memory-service: $(cfn_get_stack_output ${PROJECT_NAME}-ecr-memory-service-${ENVIRONMENT} RepositoryUri)"
+        echo "  meta-orchestrator: $(cfn_get_stack_output ${PROJECT_NAME}-ecr-meta-orchestrator-${ENVIRONMENT} RepositoryUri)"
+        echo "  runtime-incident-agent: $(cfn_get_stack_output ${PROJECT_NAME}-ecr-runtime-incident-agent-${ENVIRONMENT} RepositoryUri)"

@@ -1,0 +1,269 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.16 - Environment Validator Infrastructure (DynamoDB, SSM, CloudWatch)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  DriftScheduleRate:
+    Type: String
+    Default: 'rate(6 hours)'
+    Description: Schedule for drift detection (cron or rate expression)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ==========================================================================
+  # DynamoDB Tables - Validation History (Single-Table Design per ADR-062)
+  # ==========================================================================
+
+  ValidationHistoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-env-validation-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        # Primary key: PK = "ENV#qa" or "RUNID#uuid", SK = "RUN#timestamp" or "VIOLATION#rule-id"
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        # GSI1: Query runs by date for dashboards
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # GSI1: Query runs by date: GSI1PK="DATE#2026-01-14", GSI1SK="ENV#qa#RUN#timestamp"
+        - IndexName: date-env-index
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-env-validation-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: env-validator
+
+  # ==========================================================================
+  # DynamoDB Table - Drift Baselines
+  # ==========================================================================
+
+  BaselineTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-env-baseline-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        # Primary key: resource_key = "configmap/aura-api-config", environment = "qa"
+        - AttributeName: resource_key
+          AttributeType: S
+        - AttributeName: environment
+          AttributeType: S
+      KeySchema:
+        - AttributeName: resource_key
+          KeyType: HASH
+        - AttributeName: environment
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: baseline_expires_at
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-env-baseline-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: env-validator
+
+  # ==========================================================================
+  # SSM Parameter - Environment Registry (Current Environment Only)
+  # Stores only the current environment's config using CloudFormation intrinsics.
+  # Python code merges this with DEFAULT_REGISTRY for cross-env validation.
+  # ==========================================================================
+
+  EnvironmentRegistryParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/env-validator/registry'
+      Type: String
+      Tier: Standard
+      Description: !Sub 'Environment registry for ${Environment} validation rules'
+      Value: !Sub |
+        {
+          "${Environment}": {
+            "account_id": "${AWS::AccountId}",
+            "ecr_registry": "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com",
+            "neptune_cluster": "${ProjectName}-neptune-${Environment}",
+            "opensearch_domain": "${ProjectName}-search-${Environment}",
+            "resource_suffix": "-${Environment}",
+            "eks_cluster": "${ProjectName}-cluster-${Environment}",
+            "region": "${AWS::Region}"
+          }
+        }
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Component: env-validator
+
+  # ==========================================================================
+  # CloudWatch Alarms
+  # ==========================================================================
+
+  CriticalViolationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-env-validator-critical-violation-${Environment}'
+      AlarmDescription: Critical environment validation violation detected
+      Namespace: Aura/EnvValidator
+      MetricName: ViolationsDetected
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Severity
+          Value: critical
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  DriftDetectedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-env-validator-drift-detected-${Environment}'
+      AlarmDescription: Configuration drift detected in environment
+      Namespace: Aura/EnvValidator
+      MetricName: DriftDetected
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  ValidationFailureRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-env-validator-failure-rate-${Environment}'
+      AlarmDescription: High validation failure rate detected
+      Namespace: Aura/EnvValidator
+      MetricName: ValidationFailureRate
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  DeploymentsBlockedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-env-validator-deployments-blocked-${Environment}'
+      AlarmDescription: Deployments blocked due to validation failures
+      Namespace: Aura/EnvValidator
+      MetricName: DeploymentsBlocked
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # ==========================================================================
+  # EventBridge Rule - Scheduled Drift Detection
+  # Note: Rule created without targets - Lambda target will be added when
+  # drift detector Lambda is deployed in a future phase
+  # ==========================================================================
+
+  DriftDetectionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-env-drift-check-${Environment}'
+      Description: Scheduled drift detection for environment validator (target pending)
+      ScheduleExpression: !Ref DriftScheduleRate
+      State: DISABLED
+
+Outputs:
+  ValidationHistoryTableName:
+    Description: DynamoDB table for validation history
+    Value: !Ref ValidationHistoryTable
+    Export:
+      Name: !Sub '${ProjectName}-env-validation-table-${Environment}'
+
+  ValidationHistoryTableArn:
+    Description: ARN of validation history table
+    Value: !GetAtt ValidationHistoryTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-env-validation-table-arn-${Environment}'
+
+  BaselineTableName:
+    Description: DynamoDB table for drift baselines
+    Value: !Ref BaselineTable
+    Export:
+      Name: !Sub '${ProjectName}-env-baseline-table-${Environment}'
+
+  BaselineTableArn:
+    Description: ARN of baseline table
+    Value: !GetAtt BaselineTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-env-baseline-table-arn-${Environment}'
+
+  EnvironmentRegistryParameter:
+    Description: SSM parameter path for environment registry
+    Value: !Ref EnvironmentRegistryParameter
+    Export:
+      Name: !Sub '${ProjectName}-env-validator-registry-${Environment}'
+
+  DriftDetectionRuleArn:
+    Description: EventBridge rule for drift detection
+    Value: !GetAtt DriftDetectionRule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-env-drift-rule-arn-${Environment}'

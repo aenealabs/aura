@@ -1,0 +1,20 @@
+{
+  "default": true,
+  "MD013": false,
+  "MD022": {
+    "lines_above": 1,
+    "lines_below": 1
+  },
+  "MD029": {
+    "style": "ordered"
+  },
+  "MD032": {
+    "style": "consistent"
+  },
+  "MD036": {
+    "punctuation": ".,;:!?"
+  },
+  "MD041": false,
+  "MD033": false,
+  "MD034": false
+}

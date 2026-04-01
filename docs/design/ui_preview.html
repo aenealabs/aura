@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CKGE Console UI Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gray-50 p-4 sm:p-8 font-sans">
+
+    <header class="text-center mb-10">
+        <h1 class="text-5xl font-extrabold text-indigo-900 mb-2">CKGE Console</h1>
+        <p class="text-xl text-gray-600">Autonomous System 2 AI Development Platform</p>
+    </header>
+
+    <!-- --- User Input Area --- -->
+    <div class="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-2xl shadow-2xl mb-8">
+        <form>
+            <textarea
+                class="w-full p-4 border-2 border-indigo-200 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out text-lg resize-none"
+                rows="5"
+                placeholder="Enter your high-level project requirement (e.g., 'Refactor the authentication module to use OAuth2 and enforce multi-factor authentication policy')."
+            ></textarea>
+            <button
+                type="button"
+                class="w-full mt-4 py-3 px-6 rounded-xl text-white text-lg font-bold transition-all duration-200 shadow-lg bg-indigo-600 hover:bg-indigo-700 hover:shadow-xl"
+            >
+                Execute Autonomous Development Sprint
+            </button>
+        </form>
+    </div>
+
+    <div class="text-center my-12">
+        <hr class="border-t-2 border-dashed border-gray-300 max-w-lg mx-auto">
+        <p class="text-gray-500 font-semibold mt-4">-- Below is the view after a successful run --</p>
+    </div>
+
+    <!-- --- Results and Metrics Display --- -->
+    <div class="max-w-6xl mx-auto mt-12">
+
+        <!-- Executive Metrics Dashboard -->
+        <h2 class="text-3xl font-extrabold text-gray-800 mb-4">Executive Metrics Dashboard</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Metric Card 1: Velocity -->
+            <div class="bg-white p-4 rounded-xl shadow-lg border-t-4" style="border-color: #4F46E5;">
+                <p class="text-xs font-semibold uppercase text-gray-500">Eng. Hours Saved (Velocity)</p>
+                <p class="text-3xl font-bold mt-1 text-gray-900">
+                    8.7
+                </p>
+            </div>
+            <!-- Metric Card 2: Quality -->
+            <div class="bg-white p-4 rounded-xl shadow-lg border-t-4" style="border-color: #10B981;">
+                <p class="text-xs font-semibold uppercase text-gray-500">Vulnerabilities Fixed (Quality)</p>
+                <p class="text-3xl font-bold mt-1 text-gray-900">
+                    Issues 2
+                </p>
+            </div>
+            <!-- Metric Card 3: Cost -->
+            <div class="bg-white p-4 rounded-xl shadow-lg border-t-4" style="border-color: #EF4444;">
+                <p class="text-xs font-semibold uppercase text-gray-500">Cost per Feature (Budget)</p>
+                <p class="text-3xl font-bold mt-1 text-gray-900">
+                    $ 3.45
+                </p>
+            </div>
+        </div>
+
+        <!-- Handover Report -->
+        <div class="bg-white p-6 rounded-xl shadow-2xl mt-8">
+            <h1 class="text-3xl font-extrabold text-indigo-800 mb-4 border-b pb-2">Autonomous Development Handover</h1>
+
+            <h2 class="text-2xl font-bold mt-6 mb-3 text-indigo-700">AI Autonomous Development Handover Report</h2>
+            <p class="text-gray-700">- **Feature:** Secure Hash Function Implementation</p>
+            <p class="text-gray-700">- **Status:** READY FOR HUMAN REVIEW AND DEPLOYMENT</p>
+            <p class="text-gray-700">- **Total Autonomous Time:** 4.2 seconds</p>
+            <br>
+
+            <h3 class="text-xl font-semibold mt-4 mb-2 text-gray-800">Key Metrics for Leadership</h3>
+            <li class="list-disc ml-6 text-gray-700">**Estimated Engineering Hours Saved:** 8.7 hours</li>
+            <li class="list-disc ml-6 text-gray-700">**LLM Cost (per feature):** $3.45</li>
+            <li class="list-disc ml-6 text-gray-700">**Vulnerabilities Fixed by AI (Critical/High):** 2 (e.g., SHA1 -> SHA256)</li>
+            <br>
+
+            <h3 class="text-xl font-semibold mt-4 mb-2 text-gray-800">Final Code Changes</h3>
+            <pre class="bg-gray-800 text-green-300 p-4 rounded-lg overflow-x-auto text-sm my-4">import hashlib
+class DataProcessor:
+    def calculate_checksum(self, data):
+        # Security Policy Enforced: Using SHA256
+        return hashlib.sha256(data.encode()).hexdigest()
+</pre>
+
+            <h3 class="text-xl font-semibold mt-4 mb-2 text-gray-800">Human Developer Next Steps (The Critical 20% - Focus on Excellence)</h3>
+            <li class="list-disc ml-6 text-gray-700">**Performance Testing:** Manually benchmark the SHA256 function against production data latency requirements.</li>
+            <li class="list-disc ml-6 text-gray-700">**Integration Test:** Verify that the new checksum integrates correctly with the downstream ResultStore API.</li>
+            <li class="list-disc ml-6 text-gray-700">**CI/CD Review:** Verify the committed code passes all SAST/SCA security gates in the CodePipeline before merge to 'main'.</li>
+        </div>
+    </div>
+
+    <!-- --- Footer --- -->
+    <footer class="text-center mt-12 pt-6 border-t border-gray-200">
+        <p class="text-sm text-gray-500">CKGE Platform designed for Enterprise Engineering Excellence and CMMC/SOX Compliance.</p>
+    </footer>
+
+</body>
+</html>

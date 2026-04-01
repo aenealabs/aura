@@ -1,0 +1,269 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.10 - Customer Onboarding Infrastructure'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+Resources:
+  # User Onboarding State Table - Stores user onboarding progress
+  UserOnboardingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-user-onboarding-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: organization-index
+          KeySchema:
+            - AttributeName: organization_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: onboarding
+
+  # Team Invitations Table - Stores pending team invitations
+  TeamInvitationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-team-invitations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: invitation_id
+          AttributeType: S
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: invitee_email
+          AttributeType: S
+        - AttributeName: invitation_token
+          AttributeType: S
+      KeySchema:
+        - AttributeName: invitation_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: organization-status-index
+          KeySchema:
+            - AttributeName: organization_id
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: invitee_email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: token-index
+          KeySchema:
+            - AttributeName: invitation_token
+              KeyType: HASH
+          Projection:
+            ProjectionType: KEYS_ONLY
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: onboarding
+
+  # S3 Bucket for Onboarding Videos
+  OnboardingVideosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-onboarding-videos-${Environment}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedHeaders:
+              - '*'
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: onboarding
+
+  # SNS Topic for Team Invitations
+  TeamInvitationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-team-invitations-${Environment}'
+      DisplayName: Team Invitations
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: onboarding
+
+  # SNS Topic Policy
+  TeamInvitationsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref TeamInvitationsTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowLambdaPublish
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref TeamInvitationsTopic
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-*'
+
+  # SSM Parameters for service discovery
+  UserOnboardingTableParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/onboarding/user-table-name'
+      Type: String
+      Value: !Ref UserOnboardingTable
+      Description: User onboarding DynamoDB table name
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  TeamInvitationsTableParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/onboarding/invitations-table-name'
+      Type: String
+      Value: !Ref TeamInvitationsTable
+      Description: Team invitations DynamoDB table name
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  VideosBucketParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/onboarding/videos-bucket-name'
+      Type: String
+      Value: !Ref OnboardingVideosBucket
+      Description: Onboarding videos S3 bucket name
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  InvitationsTopicParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/onboarding/invitations-topic-arn'
+      Type: String
+      Value: !Ref TeamInvitationsTopic
+      Description: Team invitations SNS topic ARN
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+Outputs:
+  UserOnboardingTableName:
+    Description: Name of the user onboarding DynamoDB table
+    Value: !Ref UserOnboardingTable
+    Export:
+      Name: !Sub '${ProjectName}-user-onboarding-table-${Environment}'
+
+  UserOnboardingTableArn:
+    Description: ARN of the user onboarding DynamoDB table
+    Value: !GetAtt UserOnboardingTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-user-onboarding-table-arn-${Environment}'
+
+  TeamInvitationsTableName:
+    Description: Name of the team invitations DynamoDB table
+    Value: !Ref TeamInvitationsTable
+    Export:
+      Name: !Sub '${ProjectName}-team-invitations-table-${Environment}'
+
+  TeamInvitationsTableArn:
+    Description: ARN of the team invitations DynamoDB table
+    Value: !GetAtt TeamInvitationsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-team-invitations-table-arn-${Environment}'
+
+  OnboardingVideosBucketName:
+    Description: Name of the onboarding videos S3 bucket
+    Value: !Ref OnboardingVideosBucket
+    Export:
+      Name: !Sub '${ProjectName}-onboarding-videos-bucket-${Environment}'
+
+  OnboardingVideosBucketArn:
+    Description: ARN of the onboarding videos S3 bucket
+    Value: !GetAtt OnboardingVideosBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-onboarding-videos-bucket-arn-${Environment}'
+
+  TeamInvitationsTopicArn:
+    Description: ARN of the team invitations SNS topic
+    Value: !Ref TeamInvitationsTopic
+    Export:
+      Name: !Sub '${ProjectName}-team-invitations-topic-${Environment}'

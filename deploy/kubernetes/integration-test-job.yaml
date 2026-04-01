@@ -1,0 +1,204 @@
+---
+# Integration Test Runner Job
+#
+# Purpose: Run VPC-only integration tests from within the EKS cluster
+# to validate Neptune and OpenSearch connectivity before production deployment.
+#
+# IMPORTANT: This manifest uses ConfigMap references instead of hardcoded values.
+# Before running, ensure the integration-test-config ConfigMap exists:
+#   kubectl apply -f deploy/kubernetes/test-configs/integration-test-config-${ENV}.yaml
+#
+# Or generate it automatically:
+#   ./deploy/scripts/generate-k8s-config.sh ${ENV}
+#
+# Usage:
+#   # Run integration tests
+#   kubectl apply -f deploy/kubernetes/integration-test-job.yaml
+#
+#   # Check results
+#   kubectl logs job/aura-integration-tests -n aura
+#
+#   # Clean up after tests
+#   kubectl delete job aura-integration-tests -n aura
+#
+# Environment Variables (from ConfigMap):
+#   RUN_VPC_INTEGRATION_TESTS=1    - Enables VPC-only tests (Neptune, OpenSearch)
+#   RUN_INTEGRATION_TESTS=1        - Enables Bedrock integration tests
+#   NEPTUNE_ENDPOINT               - Neptune cluster endpoint (from ConfigMap)
+#   OPENSEARCH_ENDPOINT            - OpenSearch VPC endpoint (from ConfigMap)
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aura-integration-tests
+  namespace: aura
+  labels:
+    app: aura-integration-tests
+    app.kubernetes.io/name: aura-integration-tests
+    app.kubernetes.io/component: testing
+    app.kubernetes.io/part-of: aura
+spec:
+  # Run once, fail after 3 attempts
+  backoffLimit: 2
+  # Auto-cleanup after 1 hour
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: aura-integration-tests
+        app.kubernetes.io/name: aura-integration-tests
+    spec:
+      restartPolicy: Never
+      serviceAccountName: aura-api
+      containers:
+        - name: test-runner
+          # Image is environment-agnostic - uses ConfigMap for configuration
+          image: aura-api:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "=================================================="
+              echo "Project Aura - Integration Test Runner"
+              echo "=================================================="
+              echo "Start Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo "Environment: ${ENVIRONMENT:-unknown}"
+              echo "Neptune: ${NEPTUNE_ENDPOINT:-NOT_CONFIGURED}"
+              echo "OpenSearch: ${OPENSEARCH_ENDPOINT:-NOT_CONFIGURED}"
+              echo ""
+
+              # Validate configuration
+              if [ -z "$NEPTUNE_ENDPOINT" ] || [ "$NEPTUNE_ENDPOINT" = "PENDING_DEPLOYMENT" ]; then
+                echo "ERROR: NEPTUNE_ENDPOINT not configured"
+                echo "Run: ./deploy/scripts/generate-k8s-config.sh <env>"
+                exit 1
+              fi
+
+              # Install test dependencies (if not in image)
+              pip install pytest pytest-asyncio --quiet 2>/dev/null || true
+
+              echo "Running VPC Integration Tests..."
+              echo "--------------------------------------------------"
+
+              # Run integration tests with verbose output
+              pytest tests/smoke/test_critical_paths.py \
+                -k "test_neptune or test_opensearch" \
+                -v \
+                --no-cov \
+                --tb=short \
+                2>&1
+
+              TEST_EXIT_CODE=$?
+
+              echo ""
+              echo "--------------------------------------------------"
+              echo "End Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+              if [ $TEST_EXIT_CODE -eq 0 ]; then
+                echo "Result: ALL TESTS PASSED"
+              else
+                echo "Result: TESTS FAILED (exit code: $TEST_EXIT_CODE)"
+              fi
+
+              exit $TEST_EXIT_CODE
+          env:
+            # Enable VPC integration tests
+            - name: RUN_VPC_INTEGRATION_TESTS
+              value: "1"
+            # Enable Bedrock integration tests (optional)
+            - name: RUN_INTEGRATION_TESTS
+              value: "1"
+          # Load all configuration from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: integration-test-config
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+
+---
+# CronJob variant for scheduled integration tests
+# Runs every 6 hours to catch infrastructure drift
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: aura-integration-tests-scheduled
+  namespace: aura
+  labels:
+    app: aura-integration-tests
+    app.kubernetes.io/name: aura-integration-tests-scheduled
+    app.kubernetes.io/component: testing
+    app.kubernetes.io/part-of: aura
+spec:
+  # Run every 6 hours
+  schedule: "0 */6 * * *"
+  # Keep last 3 successful and 1 failed job
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  # Don't run if previous job is still running
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 7200
+      template:
+        metadata:
+          labels:
+            app: aura-integration-tests
+        spec:
+          restartPolicy: Never
+          serviceAccountName: aura-api
+          containers:
+            - name: test-runner
+              image: aura-api:latest
+              imagePullPolicy: Always
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  echo "Scheduled Integration Test - $(date -u)"
+                  echo "Environment: ${ENVIRONMENT:-unknown}"
+
+                  if [ -z "$NEPTUNE_ENDPOINT" ] || [ "$NEPTUNE_ENDPOINT" = "PENDING_DEPLOYMENT" ]; then
+                    echo "ERROR: NEPTUNE_ENDPOINT not configured"
+                    exit 1
+                  fi
+
+                  pytest tests/smoke/test_critical_paths.py \
+                    -k "test_neptune or test_opensearch" \
+                    -v --no-cov --tb=short
+              env:
+                - name: RUN_VPC_INTEGRATION_TESTS
+                  value: "1"
+                - name: RUN_INTEGRATION_TESTS
+                  value: "1"
+              envFrom:
+                - configMapRef:
+                    name: integration-test-config
+              resources:
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+                requests:
+                  cpu: "250m"
+                  memory: "256Mi"
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 1000
+                capabilities:
+                  drop:
+                    - ALL

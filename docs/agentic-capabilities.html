@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Aura — Agentic Capabilities</title>
+  <style>
+    :root {
+      --blue-50: #EFF6FF; --blue-100: #DBEAFE; --blue-600: #3B82F6; --blue-700: #2563EB; --blue-800: #1E40AF; --blue-900: #1E3A8A;
+      --slate-50: #F8FAFC; --slate-100: #F1F5F9; --slate-200: #E2E8F0; --slate-300: #CBD5E1; --slate-400: #94A3B8;
+      --slate-500: #64748B; --slate-600: #475569; --slate-700: #334155; --slate-800: #1E293B; --slate-900: #0F172A;
+      --green-50: #F0FDF4; --green-100: #DCFCE7; --green-600: #16A34A; --green-700: #15803D;
+      --red-50: #FEF2F2; --red-100: #FEE2E2; --red-600: #DC2626; --red-700: #B91C1C;
+      --amber-50: #FFFBEB; --amber-100: #FEF3C7; --amber-600: #D97706; --amber-700: #B45309;
+      --purple-50: #FAF5FF; --purple-100: #F3E8FF; --purple-600: #9333EA; --purple-700: #7C3AED;
+      --teal-50: #F0FDFA; --teal-100: #CCFBF1; --teal-600: #0D9488; --teal-700: #0F766E;
+      --rose-50: #FFF1F2; --rose-100: #FFE4E6; --rose-600: #E11D48;
+      --indigo-50: #EEF2FF; --indigo-100: #E0E7FF; --indigo-600: #4F46E5; --indigo-700: #4338CA;
+      --cyan-50: #ECFEFF; --cyan-100: #CFFAFE; --cyan-600: #0891B2;
+      --orange-50: #FFF7ED; --orange-100: #FFEDD5; --orange-600: #EA580C;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-sans); background: var(--slate-50); color: var(--slate-800); line-height: 1.6; font-size: 14px; }
+
+    /* ── Header ── */
+    .site-header { background: linear-gradient(135deg, var(--slate-900) 0%, var(--blue-900) 50%, var(--indigo-700) 100%); color: #fff; padding: 48px 0 40px; border-bottom: 4px solid var(--blue-600); }
+    .site-header .container { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
+    .site-header h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+    .site-header .subtitle { font-size: 16px; opacity: 0.85; max-width: 780px; line-height: 1.5; }
+    .header-meta { display: flex; gap: 24px; margin-top: 20px; font-size: 13px; opacity: 0.7; flex-wrap: wrap; }
+
+    /* ── Layout ── */
+    .container { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
+    .page-body { padding: 40px 0 80px; }
+
+    /* ── Stats Bar ── */
+    .stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 14px; margin-bottom: 40px; }
+    .stat-card { background: #fff; border: 1px solid var(--slate-200); border-radius: 10px; padding: 18px 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .stat-card .stat-value { font-size: 26px; font-weight: 700; color: var(--blue-700); line-height: 1.2; }
+    .stat-card .stat-label { font-size: 11px; color: var(--slate-500); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+    /* ── TOC ── */
+    .toc { background: #fff; border: 1px solid var(--slate-200); border-radius: 10px; padding: 24px 28px; margin-bottom: 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .toc h2 { font-size: 16px; color: var(--slate-700); margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--slate-200); }
+    .toc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 5px 24px; }
+    .toc a { color: var(--blue-600); text-decoration: none; font-size: 13px; padding: 4px 0; display: flex; align-items: center; gap: 8px; transition: color 0.15s; }
+    .toc a:hover { color: var(--blue-800); text-decoration: underline; }
+    .toc a .toc-num { color: var(--slate-400); font-family: var(--font-mono); font-size: 11px; min-width: 24px; }
+
+    /* ── Sections ── */
+    .section { margin-bottom: 40px; }
+    .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid var(--slate-200); }
+    .section-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+    .section-header h2 { font-size: 20px; font-weight: 700; color: var(--slate-900); }
+    .section-intro { font-size: 14px; color: var(--slate-600); margin-bottom: 18px; max-width: 860px; line-height: 1.6; }
+
+    /* ── Cards ── */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    .card-grid-3 { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+    .card { background: #fff; border: 1px solid var(--slate-200); border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: box-shadow 0.2s; }
+    .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .card h3 { font-size: 15px; font-weight: 600; color: var(--slate-900); margin-bottom: 4px; }
+    .card .card-path { font-family: var(--font-mono); font-size: 11px; color: var(--slate-400); margin-bottom: 10px; word-break: break-all; }
+    .card p { font-size: 13px; color: var(--slate-600); margin-bottom: 10px; line-height: 1.55; }
+    .card-accent { border-left: 3px solid var(--blue-600); }
+
+    /* ── Tags ── */
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.2px; }
+    .tag-blue   { background: var(--blue-50);   color: var(--blue-700); }
+    .tag-green  { background: var(--green-50);  color: var(--green-700); }
+    .tag-purple { background: var(--purple-50); color: var(--purple-700); }
+    .tag-amber  { background: var(--amber-50);  color: var(--amber-700); }
+    .tag-red    { background: var(--red-50);    color: var(--red-700); }
+    .tag-teal   { background: var(--teal-50);   color: var(--teal-700); }
+    .tag-indigo { background: var(--indigo-50); color: var(--indigo-700); }
+
+    /* ── Methods ── */
+    .methods { list-style: none; margin-top: 8px; }
+    .methods li { font-family: var(--font-mono); font-size: 12px; color: var(--slate-600); padding: 3px 0; display: flex; align-items: baseline; gap: 6px; }
+    .methods li::before { content: "\25B8"; color: var(--slate-400); font-size: 10px; }
+
+    /* ── Tables ── */
+    .tw { background: #fff; border: 1px solid var(--slate-200); border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 16px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead { background: var(--slate-100); }
+    th { padding: 10px 16px; text-align: left; font-weight: 600; color: var(--slate-700); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid var(--slate-200); white-space: nowrap; }
+    td { padding: 10px 16px; border-bottom: 1px solid var(--slate-100); color: var(--slate-700); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--slate-50); }
+    td code, p code { font-family: var(--font-mono); font-size: 12px; background: var(--slate-100); padding: 1px 5px; border-radius: 3px; color: var(--slate-700); }
+
+    /* ── Diagrams ── */
+    .diagram { background: #fff; border: 1px solid var(--slate-200); border-radius: 10px; padding: 28px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow-x: auto; }
+    .diagram pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: var(--slate-700); white-space: pre; }
+    .diagram-title { font-size: 13px; font-weight: 600; color: var(--slate-500); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+
+    /* ── Tier badges ── */
+    .tier { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
+    .tier-1 { background: var(--green-100); color: var(--green-700); }
+    .tier-2 { background: var(--blue-100); color: var(--blue-700); }
+    .tier-3 { background: var(--amber-100); color: var(--amber-700); }
+    .tier-4 { background: var(--red-100); color: var(--red-700); }
+
+    /* ── Callout ── */
+    .callout { border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; font-size: 13px; line-height: 1.55; }
+    .callout-blue { background: var(--blue-50); border: 1px solid var(--blue-100); color: var(--blue-800); }
+    .callout-amber { background: var(--amber-50); border: 1px solid var(--amber-100); color: var(--amber-700); }
+    .callout strong { display: block; margin-bottom: 4px; }
+
+    /* ── Section icon colors ── */
+    .icon-blue   { background: var(--blue-50);   color: var(--blue-600); }
+    .icon-green  { background: var(--green-50);  color: var(--green-600); }
+    .icon-red    { background: var(--red-50);    color: var(--red-600); }
+    .icon-amber  { background: var(--amber-50);  color: var(--amber-600); }
+    .icon-purple { background: var(--purple-50); color: var(--purple-600); }
+    .icon-teal   { background: var(--teal-50);   color: var(--teal-600); }
+    .icon-rose   { background: var(--rose-50);   color: var(--rose-600); }
+    .icon-indigo { background: var(--indigo-50); color: var(--indigo-600); }
+    .icon-cyan   { background: var(--cyan-50);   color: var(--cyan-600); }
+    .icon-orange { background: var(--orange-50); color: var(--orange-600); }
+
+    /* ── Footer ── */
+    .site-footer { background: var(--slate-900); color: var(--slate-400); padding: 32px 0; font-size: 13px; text-align: center; }
+    .site-footer strong { color: var(--slate-200); }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .site-header h1 { font-size: 24px; }
+      .card-grid, .card-grid-3 { grid-template-columns: 1fr; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .toc-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
+<header class="site-header">
+  <div class="container">
+    <h1>Agentic Capabilities Reference</h1>
+    <p class="subtitle">
+      A comprehensive inventory of every agent, orchestrator, tool system, memory architecture,
+      governance layer, and multi-agent coordination mechanism in Project Aura.
+    </p>
+    <div class="header-meta">
+      <span>Project Aura &mdash; Aenea Labs</span>
+      <span>Version 1.0</span>
+      <span>Last Updated: February 2026</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════ BODY ═══════════════════════════ -->
+<main class="page-body">
+  <div class="container">
+
+    <!-- Stats -->
+    <div class="stats-bar">
+      <div class="stat-card"><div class="stat-value">35+</div><div class="stat-label">Agent Types</div></div>
+      <div class="stat-card"><div class="stat-value">6</div><div class="stat-label">Orchestrators</div></div>
+      <div class="stat-card"><div class="stat-value">17</div><div class="stat-label">Capability Axes</div></div>
+      <div class="stat-card"><div class="stat-value">4</div><div class="stat-label">Tool Tiers</div></div>
+      <div class="stat-card"><div class="stat-value">16</div><div class="stat-label">Constitutional Principles</div></div>
+      <div class="stat-card"><div class="stat-value">7</div><div class="stat-label">Autonomy Policies</div></div>
+      <div class="stat-card"><div class="stat-value">13</div><div class="stat-label">Evaluators</div></div>
+      <div class="stat-card"><div class="stat-value">31</div><div class="stat-label">ADRs Defining Agents</div></div>
+    </div>
+
+    <!-- TOC -->
+    <nav class="toc">
+      <h2>Contents</h2>
+      <div class="toc-grid">
+        <a href="#sec-framework"><span class="toc-num">01</span> Agent Framework &amp; Base Classes</a>
+        <a href="#sec-orchestrators"><span class="toc-num">02</span> Orchestrators &amp; Coordination</a>
+        <a href="#sec-code-agents"><span class="toc-num">03</span> Code Remediation Agents</a>
+        <a href="#sec-security-agents"><span class="toc-num">04</span> Security &amp; Red-Team Agents</a>
+        <a href="#sec-intel-agents"><span class="toc-num">05</span> Intelligence &amp; Analysis Agents</a>
+        <a href="#sec-infra-agents"><span class="toc-num">06</span> Infrastructure &amp; Operations Agents</a>
+        <a href="#sec-tool-system"><span class="toc-num">07</span> Tool System &amp; MCP Integration</a>
+        <a href="#sec-governance"><span class="toc-num">08</span> Capability Governance (ADR-066)</a>
+        <a href="#sec-constitutional"><span class="toc-num">09</span> Constitutional AI &amp; Guardrails</a>
+        <a href="#sec-memory"><span class="toc-num">10</span> Memory &amp; Intelligence</a>
+        <a href="#sec-autonomy"><span class="toc-num">11</span> Autonomy &amp; HITL Framework</a>
+        <a href="#sec-evaluation"><span class="toc-num">12</span> Agent Evaluation &amp; Testing</a>
+        <a href="#sec-a2a"><span class="toc-num">13</span> Multi-Agent Communication</a>
+        <a href="#sec-api"><span class="toc-num">14</span> API Endpoints</a>
+        <a href="#sec-summary"><span class="toc-num">15</span> Summary Matrix</a>
+      </div>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  1 · AGENT FRAMEWORK                                       -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-framework">
+      <div class="section-header">
+        <div class="section-icon icon-blue">&#x1F9E9;</div>
+        <h2>1. Agent Framework &amp; Base Classes</h2>
+      </div>
+      <p class="section-intro">
+        Every agent in Aura inherits from a common base class that provides MCP tool access,
+        task lifecycle management, checkpoint/resume, and HITL integration.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">Agent Class Hierarchy</div>
+        <pre>
+  BaseAgent (Abstract)                       MCPToolMixin
+  ├─ invoke_tool()                           ├─ _init_mcp_tools()
+  ├─ execute(task) -> AgentResult            ├─ _discover_tools()
+  ├─ checkpoint() / resume()                 ├─ get_available_tools()
+  └─ request_hitl_approval()                 ├─ has_tool()
+       │                                     └─ invoke_tools_parallel()
+       │
+       ├── CoderAgent ─────────────────── Code generation + patch authoring
+       ├── ReviewerAgent ──────────────── Security & quality review + self-reflection
+       ├── ValidatorAgent ─────────────── Patch testing in sandbox
+       ├── RedTeamAgent ───────────────── Adversarial simulation
+       ├── ThreatIntelligenceAgent ────── CVE tracking & threat patterns
+       ├── PenetrationTestingAgent ────── Automated pentest
+       ├── AdaptiveIntelligenceAgent ──── Proactive vulnerability detection
+       ├── RuntimeIncidentAgent ───────── Live incident triage
+       ├── RunbookAgent ───────────────── Automated runbook execution
+       ├── DocumentationAgent ─────────── Auto-doc generation
+       ├── ADRGeneratorAgent ──────────── Architecture Decision Records
+       ├── BrowserToolAgent ───────────── Web research
+       ├── CodeInterpreterAgent ───────── Sandboxed code execution
+       └── ... (35+ total)
+       │
+  SpawnableAgent (Abstract, extends BaseAgent)
+  ├─ spawn_child_agent()                     Recursive spawning with depth limits
+  └─ Used by MetaOrchestrator                Dependency-aware execution
+       │
+       ├── SpawnableCoderAgent
+       ├── SpawnableReviewerAgent
+       ├── SpawnableValidatorAgent
+       ├── SpawnableArchitectureReviewAgent
+       ├── SpawnablePenetrationTestingAgent
+       ├── SpawnableThreatAnalysisAgent
+       └── ... (10 adapters)
+
+  SQSConsumerMixin                           AgentWorker
+  └─ Queue-based task processing             └─ Extends SQSConsumerMixin for
+     for async agent workers                    async job processing</pre>
+      </div>
+
+      <div class="card-grid">
+        <div class="card">
+          <h3>BaseAgent</h3>
+          <div class="card-path">src/agents/base_agent.py</div>
+          <p>
+            Abstract base class for all agents. Provides task lifecycle (<code>AgentTask</code> &rarr;
+            <code>AgentResult</code>), MCP tool invocation via <code>MCPToolMixin</code>,
+            checkpoint/resume support, and HITL approval requests.
+          </p>
+          <div class="tags">
+            <span class="tag tag-blue">Core Framework</span>
+          </div>
+          <ul class="methods">
+            <li>invoke_tool(tool_name, params)</li>
+            <li>invoke_tools_parallel(invocations)</li>
+            <li>get_available_tools()</li>
+            <li>request_hitl_approval()</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>MetaOrchestrator</h3>
+          <div class="card-path">src/agents/meta_orchestrator.py</div>
+          <p>
+            Advanced dynamic agent spawning engine (ADR-018). Decomposes tasks recursively,
+            spawns specialized agents on demand, runs independent sub-tasks in parallel,
+            and manages an <code>AgentRegistry</code> for capability-based discovery.
+          </p>
+          <div class="tags">
+            <span class="tag tag-purple">ADR-018</span>
+            <span class="tag tag-blue">Dynamic Spawning</span>
+          </div>
+          <ul class="methods">
+            <li>spawn_child_agent(capability)</li>
+            <li>decompose_task()</li>
+            <li>execute_parallel()</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>AgentCapability Enum</h3>
+          <div class="card-path">src/agents/meta_orchestrator.py</div>
+          <p>17+ capability axes that MetaOrchestrator uses for agent discovery and dispatch:</p>
+          <div class="tags">
+            <span class="tag tag-teal">CODE_GENERATION</span>
+            <span class="tag tag-teal">SECURITY_REVIEW</span>
+            <span class="tag tag-teal">VULNERABILITY_SCAN</span>
+            <span class="tag tag-teal">PATCH_VALIDATION</span>
+            <span class="tag tag-teal">THREAT_ANALYSIS</span>
+            <span class="tag tag-teal">COMPLIANCE_CHECK</span>
+            <span class="tag tag-teal">ARCHITECTURE_REVIEW</span>
+            <span class="tag tag-teal">TEST_GENERATION</span>
+            <span class="tag tag-teal">DOCUMENTATION</span>
+            <span class="tag tag-teal">CONTEXT_RETRIEVAL</span>
+            <span class="tag tag-teal">PENETRATION_TESTING</span>
+            <span class="tag tag-teal">MARKET_INTELLIGENCE</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  2 · ORCHESTRATORS                                         -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-orchestrators">
+      <div class="section-header">
+        <div class="section-icon icon-purple">&#x1F3AF;</div>
+        <h2>2. Orchestrators &amp; Coordination</h2>
+      </div>
+      <p class="section-intro">
+        Six orchestrators manage agent workflows. The primary <code>System2Orchestrator</code>
+        coordinates the Coder&rarr;Reviewer&rarr;Validator pipeline, while domain-specific
+        orchestrators handle security, DevOps, transformation, scanning, and self-play training.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">Orchestrator Topology</div>
+        <pre>
+                          ┌──────────────────────────┐
+                          │    MetaOrchestrator       │   Dynamic agent spawning
+                          │    (ADR-018)              │   Recursive task decomposition
+                          └────────────┬─────────────┘
+                                       │
+            ┌──────────────────────────┼──────────────────────────┐
+            │                          │                          │
+  ┌─────────▼─────────┐   ┌──────────▼──────────┐   ┌──────────▼──────────┐
+  │ System2Orchestrator│   │ Security Orchestrator│   │  DevOps Orchestrator │
+  │ (Primary pipeline) │   │ (ADR-030)           │   │  (ADR-030)          │
+  │                    │   │                     │   │                     │
+  │ PLANNING           │   │ PR_REVIEW           │   │ Alert Triage        │
+  │ MEMORY_LOAD        │   │ SECURITY_ASSESSMENT │   │ Auto-Remediation    │
+  │ CODE_GENERATION    │   │ COMPLIANCE_AUDIT    │   │ Rollback Planning   │
+  │ SECURITY_REVIEW    │   │ INCIDENT_ANALYSIS   │   │ Health Reporting    │
+  │ VALIDATION         │   │ THREAT_MODELING     │   │ Incident Analysis   │
+  └────────────────────┘   └─────────────────────┘   └─────────────────────┘
+            │
+  ┌─────────▼─────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+  │ Transform          │   │ Vuln-Scan            │   │ Self-Play SWE-RL    │
+  │ Orchestrator       │   │ Orchestrator         │   │ Orchestrator        │
+  │ (ADR-037 Phase 4)  │   │ (ADR-084)           │   │ (ADR-050)          │
+  │                    │   │                     │   │                     │
+  │ COBOL Parser       │   │ GraphRAG Analysis   │   │ Bug Injection       │
+  │ .NET Parser        │   │ 3-Phase Adversarial │   │ Bug Solving         │
+  │ Cross-Lang Xlate   │   │ 4-Layer Isolation   │   │ Curriculum Learning │
+  │ Arch Reimaginer    │   │ Closed-Loop Remed.  │   │ Training Pipeline   │
+  └────────────────────┘   └─────────────────────┘   └─────────────────────┘</pre>
+      </div>
+
+      <div class="card-grid">
+        <div class="card card-accent">
+          <h3>System2Orchestrator</h3>
+          <div class="card-path">src/agents/agent_orchestrator.py</div>
+          <p>
+            Primary remediation pipeline: coordinates Coder, Reviewer, and Validator agents
+            through five workflow phases. Supports checkpoint/resume for long-running jobs.
+            Includes <code>GraphBuilderAgent</code> (AST &rarr; Neptune) and
+            <code>EmbeddingAgent</code> (code &rarr; OpenSearch vectors).
+          </p>
+          <div class="tags">
+            <span class="tag tag-blue">Primary Pipeline</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Security Agent Orchestrator</h3>
+          <div class="card-path">src/services/security/security_agent_orchestrator.py</div>
+          <p>
+            Unified security coordination with six workflow types. Produces correlated
+            findings from PR scanning, attack planning, and standards validation.
+            Emits security actions: <code>BLOCK_MERGE</code>, <code>AUTO_FIX</code>,
+            <code>ESCALATE</code>.
+          </p>
+          <div class="tags">
+            <span class="tag tag-purple">ADR-030</span>
+            <span class="tag tag-red">Security</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>DevOps Agent Orchestrator</h3>
+          <div class="card-path">src/services/devops/devops_agent_orchestrator.py</div>
+          <p>
+            Coordinates deployment correlation, incident analysis, resource topology mapping,
+            alert triage, auto-remediation, and rollback recommendations.
+          </p>
+          <div class="tags">
+            <span class="tag tag-purple">ADR-030</span>
+            <span class="tag tag-green">DevOps</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Transform Agent Orchestrator</h3>
+          <div class="card-path">src/services/transform/transform_agent_orchestrator.py</div>
+          <p>
+            Legacy modernization: COBOL and .NET parsing, cross-language translation,
+            and architecture reimagining for application modernization workflows.
+          </p>
+          <div class="tags">
+            <span class="tag tag-purple">ADR-037 Phase 4</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Vulnerability Scanner Orchestrator</h3>
+          <div class="card-path">src/services/vulnerability_scanner/pipeline/scan_orchestrator.py</div>
+          <p>
+            GraphRAG-enhanced LLM analysis with 3-phase adversarial verification,
+            4-layer isolation, and closed-loop remediation with Titan Memory integration.
+          </p>
+          <div class="tags">
+            <span class="tag tag-purple">ADR-084</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Self-Play SWE-RL Orchestrator</h3>
+          <div class="card-path">src/services/ssr/self_play_orchestrator.py</div>
+          <p>
+            Coordinates dual-role self-play between <code>BugInjectionAgent</code> and
+            <code>BugSolvingAgent</code> for curriculum learning and training pipeline management.
+          </p>
+          <div class="tags">
+            <span class="tag tag-purple">ADR-050</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  3 · CODE REMEDIATION AGENTS                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-code-agents">
+      <div class="section-header">
+        <div class="section-icon icon-green">&#x1F4BB;</div>
+        <h2>3. Code Remediation Agents</h2>
+      </div>
+      <div class="card-grid">
+        <div class="card">
+          <h3>CoderAgent</h3>
+          <div class="card-path">src/agents/coder_agent.py</div>
+          <p>
+            Generates code from hybrid GraphRAG context. Uses Chain of Draft prompting
+            (ADR-029 Phase 1.2) for 92% token reduction. Produces security patches with
+            language detection and remediation indicators.
+          </p>
+          <div class="tags">
+            <span class="tag tag-green">Code Generation</span>
+            <span class="tag tag-purple">ADR-029</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>ReviewerAgent</h3>
+          <div class="card-path">src/agents/reviewer_agent.py</div>
+          <p>
+            Security code review with LLM integration and self-reflection (ADR-029 Phase 2.2).
+            Checks CMMC, SOX, and NIST 800-53 compliance. Generates remediation recommendations.
+          </p>
+          <div class="tags">
+            <span class="tag tag-amber">Review</span>
+            <span class="tag tag-purple">ADR-029</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>ValidatorAgent</h3>
+          <div class="card-path">src/agents/validator_agent.py</div>
+          <p>
+            Validates patches in sandboxed environments. Runs integration tests, detects
+            performance regressions, and performs dynamic security testing.
+          </p>
+          <div class="tags">
+            <span class="tag tag-blue">Validation</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Self-Play Agents (SWE-RL)</h3>
+          <div class="card-path">src/agents/ssr/</div>
+          <p>
+            <code>BugInjectionAgent</code> injects synthetic bugs for training.
+            <code>BugSolvingAgent</code> solves them. Dual-role self-play enables
+            curriculum learning. ~15.9K lines, 354 tests.
+          </p>
+          <div class="tags">
+            <span class="tag tag-purple">ADR-050</span>
+            <span class="tag tag-indigo">Training</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  4 · SECURITY AGENTS                                       -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-security-agents">
+      <div class="section-header">
+        <div class="section-icon icon-red">&#x1F6E1;</div>
+        <h2>4. Security &amp; Red-Team Agents</h2>
+      </div>
+      <div class="card-grid">
+        <div class="card">
+          <h3>RedTeamAgent</h3>
+          <div class="card-path">src/agents/red_team_agent.py</div>
+          <p>Adversarial attack simulation, threat model generation, and attack surface analysis. Feeds the AURA-ATT&amp;CK framework (75 techniques).</p>
+          <div class="tags"><span class="tag tag-red">Red Team</span><span class="tag tag-purple">ADR-083</span></div>
+        </div>
+        <div class="card">
+          <h3>ThreatIntelligenceAgent</h3>
+          <div class="card-path">src/agents/threat_intelligence_agent.py</div>
+          <p>External threat monitoring, CVE tracking, and contextual vulnerability assessment with threat pattern recognition.</p>
+          <div class="tags"><span class="tag tag-red">Threat Intel</span></div>
+        </div>
+        <div class="card">
+          <h3>PenetrationTestingAgent</h3>
+          <div class="card-path">src/agents/penetration_testing_agent.py</div>
+          <p>Automated security boundary testing: authentication, authorization, and input validation assessments.</p>
+          <div class="tags"><span class="tag tag-red">Pentest</span></div>
+        </div>
+        <div class="card">
+          <h3>DesignDocSecurityAgent</h3>
+          <div class="card-path">src/agents/design_doc_security_agent.py</div>
+          <p>Reviews design documents for security flaws, validates threat models, and verifies architecture security posture.</p>
+          <div class="tags"><span class="tag tag-red">Design Review</span></div>
+        </div>
+        <div class="card">
+          <h3>AdaptiveIntelligenceAgent</h3>
+          <div class="card-path">src/agents/adaptive_intelligence_agent.py</div>
+          <p>Proactive vulnerability detection with adaptive threat monitoring. Learns from previous patches to improve future remediation.</p>
+          <div class="tags"><span class="tag tag-red">Adaptive</span></div>
+        </div>
+        <div class="card">
+          <h3>PR Security Scanner</h3>
+          <div class="card-path">src/services/security/pr_security_scanner.py</div>
+          <p>Pull-request-level scanning with SARIF output for GitHub Security tab. OWASP Top 10 coverage and AI-specific threat detection.</p>
+          <div class="tags"><span class="tag tag-red">PR Scanning</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  5 · INTELLIGENCE AGENTS                                   -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-intel-agents">
+      <div class="section-header">
+        <div class="section-icon icon-indigo">&#x1F9E0;</div>
+        <h2>5. Intelligence &amp; Analysis Agents</h2>
+      </div>
+      <div class="card-grid">
+        <div class="card">
+          <h3>ASTParserAgent</h3>
+          <div class="card-path">src/agents/ast_parser_agent.py</div>
+          <p>Abstract syntax tree analysis, code structure extraction, dependency mapping, and complexity scoring.</p>
+          <div class="tags"><span class="tag tag-indigo">Analysis</span></div>
+        </div>
+        <div class="card">
+          <h3>BusinessLogicAnalyzerAgent</h3>
+          <div class="card-path">src/agents/business_logic_analyzer_agent.py</div>
+          <p>Business logic flow analysis, data lineage tracking, integration point identification, and impact assessment.</p>
+          <div class="tags"><span class="tag tag-indigo">Business Logic</span></div>
+        </div>
+        <div class="card">
+          <h3>ArchitectureReviewAgent</h3>
+          <div class="card-path">src/agents/architecture_review_agent.py</div>
+          <p>System architecture review covering dependency analysis, scalability assessment, and architectural pattern validation.</p>
+          <div class="tags"><span class="tag tag-indigo">Architecture</span></div>
+        </div>
+        <div class="card">
+          <h3>MarketIntelligenceAgent</h3>
+          <div class="card-path">src/agents/market_intelligence_agent.py</div>
+          <p>Spawns <code>CompetitorWatchAgent</code>, <code>TrendAnalysisAgent</code>, and
+          <code>DocumentationAggregatorAgent</code> for external competitive intelligence.</p>
+          <div class="tags"><span class="tag tag-purple">ADR-019</span><span class="tag tag-indigo">Market Intel</span></div>
+        </div>
+        <div class="card">
+          <h3>QueryPlanningAgent</h3>
+          <div class="card-path">src/agents/query_planning_agent.py</div>
+          <p>Optimizes GraphRAG queries and generates context retrieval plans for hybrid graph+vector search.</p>
+          <div class="tags"><span class="tag tag-indigo">Query Planning</span></div>
+        </div>
+        <div class="card">
+          <h3>DocumentationAgent</h3>
+          <div class="card-path">src/services/documentation/documentation_agent.py</div>
+          <p>Auto-generates service documentation, maintains doc-code sync, generates diagrams, and creates API references.</p>
+          <div class="tags"><span class="tag tag-purple">ADR-056</span><span class="tag tag-indigo">Docs</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  6 · INFRASTRUCTURE AGENTS                                 -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-infra-agents">
+      <div class="section-header">
+        <div class="section-icon icon-teal">&#x2699;</div>
+        <h2>6. Infrastructure &amp; Operations Agents</h2>
+      </div>
+      <div class="card-grid">
+        <div class="card">
+          <h3>RuntimeIncidentAgent</h3>
+          <div class="card-path">src/agents/runtime_incident_agent.py</div>
+          <p>Runtime error detection, incident triage, root-cause determination, and remediation planning with on-call integration.</p>
+          <div class="tags"><span class="tag tag-purple">ADR-025</span><span class="tag tag-teal">Incidents</span></div>
+        </div>
+        <div class="card">
+          <h3>RunbookAgent</h3>
+          <div class="card-path">src/services/runbook/runbook_agent.py</div>
+          <p>Automated incident runbook execution with step orchestration, error recovery, and post-incident documentation.</p>
+          <div class="tags"><span class="tag tag-purple">ADR-033</span><span class="tag tag-teal">Runbooks</span></div>
+        </div>
+        <div class="card">
+          <h3>ADRGeneratorAgent</h3>
+          <div class="card-path">src/agents/adr_generator_agent.py</div>
+          <p>Automatic Architecture Decision Record generation with rationale capture and trade-off analysis.</p>
+          <div class="tags"><span class="tag tag-teal">ADR Generation</span></div>
+        </div>
+        <div class="card">
+          <h3>BrowserToolAgent</h3>
+          <div class="card-path">src/agents/browser_tool_agent.py</div>
+          <p>Web browsing for documentation research, external resource fetching, and API documentation analysis.</p>
+          <div class="tags"><span class="tag tag-teal">Web Research</span></div>
+        </div>
+        <div class="card">
+          <h3>CodeInterpreterAgent</h3>
+          <div class="card-path">src/agents/code_interpreter_agent.py</div>
+          <p>Sandboxed Python code execution, test execution, script validation, and output analysis.</p>
+          <div class="tags"><span class="tag tag-teal">Code Execution</span></div>
+        </div>
+        <div class="card">
+          <h3>FilesystemNavigatorAgent</h3>
+          <div class="card-path">src/agents/filesystem_navigator_agent.py</div>
+          <p>Repository navigation, file discovery, and codebase traversal for context location.</p>
+          <div class="tags"><span class="tag tag-teal">Navigation</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  7 · TOOL SYSTEM & MCP                                     -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-tool-system">
+      <div class="section-header">
+        <div class="section-icon icon-orange">&#x1F527;</div>
+        <h2>7. Tool System &amp; MCP Integration</h2>
+      </div>
+      <p class="section-intro">
+        Agents perform tasks by invoking <strong>tools</strong> through the Model Context Protocol (MCP).
+        Aura does not use a "skills" system &mdash; instead, tools are classified into 4 risk tiers with
+        runtime governance, and presented to agents via a hierarchical registry (Manus pattern) that
+        caps visible tools at 20&ndash;30 to prevent context confusion.
+      </p>
+
+      <div class="callout callout-blue">
+        <strong>Tools, Not Skills</strong>
+        Every agent action &mdash; from reading a graph to deploying to production &mdash; is modeled as a
+        <em>tool invocation</em> passing through capability enforcement middleware. Tools are executable
+        operations with explicit risk classification, rate limits, and audit requirements.
+      </div>
+
+      <div class="card-grid">
+        <div class="card card-accent">
+          <h3>MCP Tool Server (Internal)</h3>
+          <div class="card-path">src/services/mcp_tool_server.py</div>
+          <p>
+            Exposes Aura's internal services as MCP tools. Five handler categories serve
+            all internal agent operations.
+          </p>
+          <div class="tags">
+            <span class="tag tag-purple">ADR-029 Phase 1.4</span>
+          </div>
+          <div class="tw" style="margin-top: 12px;">
+            <table>
+              <thead><tr><th>Handler</th><th>Operations</th><th>Backend</th></tr></thead>
+              <tbody>
+                <tr><td><code>GraphToolHandler</code></td><td>query_code_graph, traversal, entity filtering</td><td>Neptune</td></tr>
+                <tr><td><code>VectorToolHandler</code></td><td>semantic_search, similarity scoring</td><td>OpenSearch</td></tr>
+                <tr><td><code>SandboxToolHandler</code></td><td>provision, destroy, execute_in_sandbox</td><td>ECS Fargate</td></tr>
+                <tr><td><code>EmbeddingToolHandler</code></td><td>generate_embedding, batch_embed</td><td>Bedrock Titan</td></tr>
+                <tr><td><code>CacheToolHandler</code></td><td>cache_query, retrieve_cached</td><td>ElastiCache</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card card-accent">
+          <h3>Hierarchical Tool Registry (Manus Pattern)</h3>
+          <div class="card-path">src/services/hierarchical_tool_registry.py</div>
+          <p>
+            Context-efficient tool presentation. ~20 atomic tools always available; domain-specific
+            tools loaded on demand; expert tools for complex scenarios only. Research-backed
+            cap of 20&ndash;30 tools to prevent hallucinated parameters and wrong tool calls.
+          </p>
+          <div class="tw" style="margin-top: 12px;">
+            <table>
+              <thead><tr><th>Level</th><th>Count</th><th>Availability</th><th>Examples</th></tr></thead>
+              <tbody>
+                <tr><td><strong>ATOMIC</strong></td><td>~20</td><td>Always loaded</td><td>file_read, search_code, query_graph, vector_search, git_status, store_memory, validate, think</td></tr>
+                <tr><td><strong>DOMAIN</strong></td><td>Variable</td><td>On detection</td><td>vuln_scan, dependency_check, provision_sandbox, deploy_stack, ast_parse</td></tr>
+                <tr><td><strong>EXPERT</strong></td><td>Variable</td><td>Complex tasks</td><td>rotate_credentials, modify_iam_policy, execute_arbitrary_code</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>MCP Gateway Client (External)</h3>
+          <div class="card-path">src/services/mcp_gateway_client.py</div>
+          <p>
+            Client for AWS AgentCore Gateway. Provides remote tool execution, semantic
+            tool search, rate limiting, and budget enforcement. Enterprise mode only.
+          </p>
+          <div class="tags">
+            <span class="tag tag-purple">ADR-023</span>
+          </div>
+          <ul class="methods">
+            <li>invoke_tool()</li>
+            <li>list_tools()</li>
+            <li>search_tools()</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>Aura Agents as MCP Tools</h3>
+          <div class="card-path">src/services/mcp_tool_adapters.py</div>
+          <p>
+            Six native agents wrapped as MCP-compatible tools for external consumption:
+          </p>
+          <div class="tags">
+            <span class="tag tag-teal">security_scanner</span>
+            <span class="tag tag-teal">code_reviewer</span>
+            <span class="tag tag-teal">patch_generator</span>
+            <span class="tag tag-teal">architecture_analyzer</span>
+            <span class="tag tag-teal">threat_intelligence</span>
+            <span class="tag tag-teal">documentation_generator</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>External Tool Connectors</h3>
+          <div class="card-path">src/services/external_tool_connectors.py</div>
+          <p>Real API integrations for Slack (webhooks + Web API), Jira (REST), and PagerDuty (Events API v2). Enterprise mode only.</p>
+          <div class="tags"><span class="tag tag-blue">Slack</span><span class="tag tag-blue">Jira</span><span class="tag tag-blue">PagerDuty</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Semantic Tool Search</h3>
+          <div class="card-path">src/services/semantic_tool_search.py</div>
+          <p>LLM-based tool discovery via natural language queries. Recommends tools and matches capabilities to task descriptions.</p>
+          <div class="tags"><span class="tag tag-blue">Discovery</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  8 · CAPABILITY GOVERNANCE                                 -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-governance">
+      <div class="section-header">
+        <div class="section-icon icon-amber">&#x1F512;</div>
+        <h2>8. Capability Governance (ADR-066)</h2>
+      </div>
+      <p class="section-intro">
+        Every tool invocation passes through a 4-layer enforcement stack that evaluates
+        agent identity, tool risk tier, execution context, and dynamic grants before
+        deciding <code>ALLOW</code>, <code>DENY</code>, <code>ESCALATE</code>, or <code>AUDIT_ONLY</code>.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">Tool Invocation Flow</div>
+        <pre>
+  Agent Code
+      │
+      ▼
+  invoke_tool("tool_name", {params})
+      │
+      ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │  CapabilityEnforcementMiddleware                            │
+  │  ├─ Extract: agent_id, agent_type, context                 │
+  │  ├─ Resolve: base policy + overrides + dynamic grants      │
+  │  ├─ Evaluate: policy.can_invoke(tool, action, context)     │
+  │  └─ Decision:                                              │
+  │       ALLOW ──────► Execute tool                           │
+  │       DENY ───────► Return error                           │
+  │       ESCALATE ───► Queue for HITL approval                │
+  │       AUDIT_ONLY ─► Execute + flag for review              │
+  └─────────────────────────────────────────────────────────────┘
+      │
+      ├─► Internal tools ──► MCP Tool Server
+      ├─► External tools ──► MCP Gateway Client
+      └─► Native agents ──► Adapter (Enterprise mode)
+      │
+      ▼
+  Audit Service ──► DynamoDB + CloudWatch</pre>
+      </div>
+
+      <!-- 4-Tier Table -->
+      <h3 style="font-size:16px; margin-bottom:12px; color:var(--slate-800);">4-Tier Tool Classification</h3>
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Tier</th><th>Risk Level</th><th>Default</th><th>Audit</th><th>Example Tools</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tier tier-1">Level 1</span></td>
+              <td>SAFE</td><td>ALLOW</td><td>10% sample</td>
+              <td><code>semantic_search</code>, <code>describe_tool</code>, <code>get_sandbox_status</code>, <code>list_tools</code></td>
+            </tr>
+            <tr>
+              <td><span class="tier tier-2">Level 2</span></td>
+              <td>MONITORING</td><td>ALLOW</td><td>100%</td>
+              <td><code>query_code_graph</code>, <code>get_code_dependencies</code>, <code>query_embeddings</code>, <code>query_audit_logs</code></td>
+            </tr>
+            <tr>
+              <td><span class="tier tier-3">Level 3</span></td>
+              <td>DANGEROUS</td><td>DENY</td><td>100%</td>
+              <td><code>index_code_embedding</code>, <code>destroy_sandbox</code>, <code>write_config</code>, <code>commit_changes</code></td>
+            </tr>
+            <tr>
+              <td><span class="tier tier-4">Level 4</span></td>
+              <td>CRITICAL</td><td>DENY + HITL</td><td>100%</td>
+              <td><code>provision_sandbox</code>, <code>deploy_to_production</code>, <code>rotate_credentials</code>, <code>modify_iam_policy</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card-grid" style="margin-top:16px;">
+        <div class="card">
+          <h3>Per-Agent Policies</h3>
+          <div class="card-path">src/services/capability_governance/policy.py</div>
+          <p>
+            Each agent type gets an <code>AgentCapabilityPolicy</code> specifying allowed/denied
+            tools, permitted contexts (test, sandbox, production), rate limits, and whether
+            the agent can elevate child permissions. Evaluation order: explicit deny &rarr;
+            context restriction &rarr; explicit allow &rarr; tier defaults &rarr; default decision.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Dynamic Capability Grants</h3>
+          <div class="card-path">src/services/capability_governance/dynamic_grants.py</div>
+          <p>
+            Temporary elevation through HITL approval. Four grant scopes:
+            <code>SINGLE_USE</code> (1&nbsp;hr), <code>SESSION</code> (8&nbsp;hr),
+            <code>TASK_TREE</code> (24&nbsp;hr), <code>TIME_BOUNDED</code> (custom).
+            Stored in DynamoDB with TTL expiration.
+          </p>
+          <ul class="methods">
+            <li>create_grant()</li>
+            <li>check_grant()</li>
+            <li>use_grant()</li>
+            <li>revoke_grant()</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>Cross-Agent Capability Graph</h3>
+          <div class="card-path">src/services/capability_governance/graph_analyzer.py</div>
+          <p>
+            Neptune graph of agent&rarr;tool relationships. Detects escalation paths,
+            coverage gaps, and circular dependencies across the agent fleet.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-071</span></div>
+        </div>
+
+        <div class="card">
+          <h3>ML Anomaly Detection</h3>
+          <div class="card-path">src/services/capability_governance/statistical_detector.py</div>
+          <p>
+            Statistical anomaly detection, honeypot capabilities for suspicious tool usage,
+            and human-readable anomaly explanations.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-072</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  9 · CONSTITUTIONAL AI & GUARDRAILS                        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-constitutional">
+      <div class="section-header">
+        <div class="section-icon icon-rose">&#x2696;</div>
+        <h2>9. Constitutional AI &amp; Guardrails</h2>
+      </div>
+      <p class="section-intro">
+        All agent outputs pass through Constitutional AI critique-revision pipelines
+        (16 principles) and a 6-layer Semantic Guardrails Engine before reaching users.
+      </p>
+
+      <div class="card-grid">
+        <div class="card">
+          <h3>Constitutional AI Pipeline</h3>
+          <div class="card-path">src/services/constitutional_ai/</div>
+          <p>
+            16 principles (helpfulness, harmlessness, honesty, privacy, fairness, transparency, etc.).
+            Tiered critique pipeline: safety &rarr; accuracy &rarr; efficiency. Fast-path bypass
+            for obviously safe outputs. 463 tests.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-063</span></div>
+          <div class="tw" style="margin-top: 12px;">
+            <table>
+              <thead><tr><th>Component</th><th>Purpose</th></tr></thead>
+              <tbody>
+                <tr><td><code>CritiqueService</code></td><td>LLM-as-judge evaluation (3&ndash;8 critiques per response)</td></tr>
+                <tr><td><code>RevisionService</code></td><td>Multi-round feedback-driven refinement</td></tr>
+                <tr><td><code>GoldenSetService</code></td><td>High-quality reference calibration set</td></tr>
+                <tr><td><code>TieredCritique</code></td><td>3-tier pipeline with cost/quality trade-offs</td></tr>
+                <tr><td><code>GuardrailsFastPath</code></td><td>Quick safe/unsafe classification bypass</td></tr>
+                <tr><td><code>AuditQueueService</code></td><td>SQS-based async audit trail</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Semantic Guardrails Engine</h3>
+          <div class="card-path">src/services/semantic_guardrails/</div>
+          <p>6-layer threat detection stack protecting all agent interactions. 793 tests.</p>
+          <div class="tags"><span class="tag tag-purple">ADR-065</span></div>
+          <div class="tw" style="margin-top: 12px;">
+            <table>
+              <thead><tr><th>Layer</th><th>Detection Method</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td>Token-level pattern matching (known attack signatures)</td></tr>
+                <tr><td>2</td><td>Embedding similarity analysis (prompt injection vectors)</td></tr>
+                <tr><td>3</td><td>LLM-as-Judge evaluation (constitutional assessment)</td></tr>
+                <tr><td>4</td><td>Policy violation checks</td></tr>
+                <tr><td>5</td><td>Behavioral baseline anomaly detection</td></tr>
+                <tr><td>6</td><td>Semantic coherence / output integrity validation</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Constraint Geometry Engine</h3>
+          <div class="card-path">src/services/constraint_geometry/</div>
+          <p>
+            Deterministic cortical discrimination across a 7-axis constraint space with coherence
+            scoring, provenance-aware weighting, and 4 policy profiles. 358 tests.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-081</span></div>
+        </div>
+
+        <div class="card">
+          <h3>AI Alignment &amp; Trust</h3>
+          <div class="card-path">src/services/alignment/</div>
+          <p>
+            Reversibility tracking, trust scoring, sycophancy prevention, and safe rollback.
+            Ensures agents remain aligned with operator intent.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-052</span></div>
+          <ul class="methods">
+            <li>reversibility.py</li>
+            <li>trust_calculator.py</li>
+            <li>sycophancy_guard.py</li>
+            <li>rollback_service.py</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  10 · MEMORY & INTELLIGENCE                                -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-memory">
+      <div class="section-header">
+        <div class="section-icon icon-cyan">&#x1F4A1;</div>
+        <h2>10. Memory &amp; Intelligence</h2>
+      </div>
+      <p class="section-intro">
+        Aura agents leverage three memory systems (Titan Neural Memory, Evo-Memory, Semantic Cache)
+        and two advanced reasoning engines (Recursive Context, Embedding Prediction) for
+        superhuman code understanding.
+      </p>
+
+      <div class="card-grid">
+        <div class="card card-accent">
+          <h3>Titan Neural Memory</h3>
+          <div class="card-path">src/services/models/ &amp; src/services/memory_backends/</div>
+          <p>
+            3-layer Deep MLP Memory with test-time training (MIRAS retention gates).
+            Supports 2M+ effective token context. CPU and GPU backends with benchmarking.
+            237 tests across 5 deployment phases.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-024</span><span class="tag tag-blue">2M+ tokens</span></div>
+        </div>
+
+        <div class="card card-accent">
+          <h3>Evo-Memory (ReMem Framework)</h3>
+          <div class="card-path">src/services/memory_evolution/</div>
+          <p>
+            Seven autonomous memory operations: CONSOLIDATE, PRUNE, REINFORCE, ABSTRACT,
+            LINK, CORRECT, ROLLBACK. Includes multi-agent memory sharing for cross-agent
+            knowledge propagation. 336 tests.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-080</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Recursive Context Engine (RLM)</h3>
+          <div class="card-path">src/services/rlm/recursive_context_engine.py</div>
+          <p>
+            100x context scaling via LLM-generated Python decomposition. 10-level recursion depth,
+            50&nbsp;MB absolute max context, 30s execution timeout. Security-validated execution
+            via <code>REPLSecurityGuard</code>. 119 tests.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-051</span><span class="tag tag-blue">100x Scaling</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Embedding Prediction (VL-JEPA)</h3>
+          <div class="card-path">src/services/jepa/embedding_predictor.py</div>
+          <p>
+            2.85x inference efficiency via predictive embeddings. Fast-path routing for common
+            queries skips full LLM generation. Selective decoding service for token reduction. 48 tests.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-051</span><span class="tag tag-blue">2.85x Faster</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Semantic Cache</h3>
+          <div class="card-path">src/services/semantic_cache_service.py</div>
+          <p>
+            OpenSearch-based embedding cache achieving 68% hit rate. Zero-cost cache hits
+            with automatic invalidation. Enabled by default (ADR-029 Phase 1.3).
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-029</span><span class="tag tag-green">68% Hit Rate</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Cognitive Memory &amp; Checkpoints</h3>
+          <div class="card-path">src/services/cognitive_memory_service.py<br>src/services/checkpoint_persistence_service.py</div>
+          <p>
+            Long-term episodic memory with cross-session persistence and experience-based learning.
+            Agent state checkpointing with 8-hour TTL and serialization/deserialization.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  11 · AUTONOMY & HITL                                      -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-autonomy">
+      <div class="section-header">
+        <div class="section-icon icon-amber">&#x1F9D1;</div>
+        <h2>11. Autonomy &amp; HITL Framework</h2>
+      </div>
+      <p class="section-intro">
+        Seven pre-built policy presets balance agent autonomy against human oversight.
+        The HITL service manages asynchronous approval queues with timeout escalation.
+      </p>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>Policy Preset</th><th>Oversight Level</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>FULL_HITL</code></td><td>Maximum</td><td>All actions require human approval</td></tr>
+            <tr><td><code>CRITICAL_HITL</code></td><td>High</td><td>CRITICAL and HIGH severity require approval</td></tr>
+            <tr><td><code>FINTECH</code></td><td>High</td><td>Financial compliance-oriented oversight</td></tr>
+            <tr><td><code>ENTERPRISE</code></td><td>Balanced</td><td>Standard enterprise oversight</td></tr>
+            <tr><td><code>STARTUP</code></td><td>Moderate</td><td>Faster iteration with moderate checks</td></tr>
+            <tr><td><code>AUDIT_ONLY</code></td><td>Low</td><td>Actions approved after-the-fact via audit</td></tr>
+            <tr><td><code>FULL_AUTONOMOUS</code></td><td>None</td><td>No approval required (development only)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card-grid" style="margin-top: 16px;">
+        <div class="card">
+          <h3>HITL Approval Service</h3>
+          <div class="card-path">src/services/hitl_approval_service.py</div>
+          <p>
+            Asynchronous SQS-based approval queue. Supports timeout escalation,
+            multi-approver workflows, and complete audit trail.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-032</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Real-Time Agent Intervention</h3>
+          <div class="card-path">src/services/real_time_agent_intervention_service.py</div>
+          <p>
+            CloudTrail monitoring, IAM security alerting, and runtime violation detection
+            with automatic intervention triggers and checkpoint infrastructure.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-042</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Context Provenance &amp; Integrity</h3>
+          <div class="card-path">src/services/context_provenance/</div>
+          <p>
+            Index-time provenance tracking, trust scoring, anomaly detection, context
+            quarantine, and source verification for every context fragment fed to agents.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-067</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  12 · AGENT EVALUATION                                     -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-evaluation">
+      <div class="section-header">
+        <div class="section-icon icon-green">&#x1F9EA;</div>
+        <h2>12. Agent Evaluation &amp; Testing</h2>
+      </div>
+
+      <div class="card-grid">
+        <div class="card" style="grid-column: 1 / -1;">
+          <h3>Agent Evaluation Service</h3>
+          <div class="card-path">src/services/agent_evaluation_service.py</div>
+          <p>
+            13 pre-built evaluators with A/B testing, regression detection, and benchmark suites.
+            Scores range 0.0&ndash;1.0 per evaluator with latency measurement and pass/fail statistics.
+          </p>
+          <div class="tw" style="margin-top: 12px;">
+            <table>
+              <thead><tr><th>Category</th><th>Evaluators</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Correctness</strong> (4)</td><td>Task Completion, Answer Accuracy, Fact Consistency, Instruction Following</td></tr>
+                <tr><td><strong>Safety</strong> (4)</td><td>Harmful Content, PII Detection, Prompt Injection, Policy Compliance</td></tr>
+                <tr><td><strong>Tool Use</strong> (3)</td><td>Tool Selection, Parameter Accuracy, Sequence Optimality</td></tr>
+                <tr><td><strong>Coherence</strong> (2)</td><td>Multi-turn Coherence, Context Retention</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  13 · MULTI-AGENT COMMUNICATION                            -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-a2a">
+      <div class="section-header">
+        <div class="section-icon icon-purple">&#x1F4E1;</div>
+        <h2>13. Multi-Agent Communication</h2>
+      </div>
+      <div class="card-grid">
+        <div class="card">
+          <h3>Agent-to-Agent Security (A2AS)</h3>
+          <div class="card-path">src/services/a2a_gateway.py</div>
+          <p>
+            Secure inter-agent messaging with command verification, sandbox untrust enforcement,
+            injection filtering, and per-interaction audit trails. Enabled by default (ADR-029 Phase 2.3).
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-029</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Evo-Memory Multi-Agent Sharing</h3>
+          <div class="card-path">src/services/memory_evolution/multi_agent_sharing.py</div>
+          <p>
+            Cross-agent memory propagation infrastructure. Agents share learned patterns,
+            vulnerability signatures, and remediation strategies through distributed memory coordination.
+          </p>
+          <div class="tags"><span class="tag tag-purple">ADR-080</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Orchestrator Dispatch (Step Functions)</h3>
+          <div class="card-path">deploy/cloudformation/orchestrator-dispatcher.yaml</div>
+          <p>
+            AWS Step Functions state machines coordinate multi-agent workflows with retry logic,
+            error handling, and parallel execution branches.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  14 · API ENDPOINTS                                        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-api">
+      <div class="section-header">
+        <div class="section-icon icon-blue">&#x1F310;</div>
+        <h2>14. API Endpoints</h2>
+      </div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Purpose</th><th>Source</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST</code></td><td><code>/orchestrate</code></td><td>Start agent orchestration</td><td>orchestration_endpoints.py</td></tr>
+            <tr><td><code>GET</code></td><td><code>/orchestrate/{id}</code></td><td>Get orchestration status</td><td>orchestration_endpoints.py</td></tr>
+            <tr><td><code>POST</code></td><td><code>/orchestrate/{id}/checkpoint</code></td><td>Save agent checkpoint</td><td>orchestration_endpoints.py</td></tr>
+            <tr><td><code>POST</code></td><td><code>/orchestrate/{id}/resume</code></td><td>Resume from checkpoint</td><td>orchestration_endpoints.py</td></tr>
+            <tr><td><code>GET</code></td><td><code>/agents</code></td><td>List all registered agents</td><td>agent_registry_endpoints.py</td></tr>
+            <tr><td><code>GET</code></td><td><code>/agents/{id}</code></td><td>Get agent details</td><td>agent_registry_endpoints.py</td></tr>
+            <tr><td><code>POST</code></td><td><code>/agents</code></td><td>Register a new agent</td><td>agent_registry_endpoints.py</td></tr>
+            <tr><td><code>GET</code></td><td><code>/agents/by-capability/{cap}</code></td><td>Find agents by capability</td><td>agent_registry_endpoints.py</td></tr>
+            <tr><td><code>GET</code></td><td><code>/settings</code></td><td>Get orchestrator config</td><td>orchestrator_settings_endpoints.py</td></tr>
+            <tr><td><code>PUT</code></td><td><code>/settings</code></td><td>Update orchestrator config</td><td>orchestrator_settings_endpoints.py</td></tr>
+            <tr><td><code>POST</code></td><td><code>/settings/autonomy</code></td><td>Set autonomy policy</td><td>orchestrator_settings_endpoints.py</td></tr>
+            <tr><td><code>GET</code></td><td><code>/settings/capabilities</code></td><td>List available capabilities</td><td>orchestrator_settings_endpoints.py</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  15 · SUMMARY MATRIX                                       -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section" id="sec-summary">
+      <div class="section-header">
+        <div class="section-icon icon-blue">&#x1F4CB;</div>
+        <h2>15. Summary Matrix</h2>
+      </div>
+
+      <h3 style="font-size:15px; margin-bottom:12px; color:var(--slate-800);">Agent Inventory</h3>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Agent</th><th>Category</th><th>Path</th><th>ADR</th></tr></thead>
+          <tbody>
+            <tr><td>CoderAgent</td><td>Code Remediation</td><td><code>src/agents/coder_agent.py</code></td><td>029</td></tr>
+            <tr><td>ReviewerAgent</td><td>Code Remediation</td><td><code>src/agents/reviewer_agent.py</code></td><td>029</td></tr>
+            <tr><td>ValidatorAgent</td><td>Code Remediation</td><td><code>src/agents/validator_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>RedTeamAgent</td><td>Security</td><td><code>src/agents/red_team_agent.py</code></td><td>083</td></tr>
+            <tr><td>ThreatIntelligenceAgent</td><td>Security</td><td><code>src/agents/threat_intelligence_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>PenetrationTestingAgent</td><td>Security</td><td><code>src/agents/penetration_testing_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>DesignDocSecurityAgent</td><td>Security</td><td><code>src/agents/design_doc_security_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>AdaptiveIntelligenceAgent</td><td>Security</td><td><code>src/agents/adaptive_intelligence_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>ASTParserAgent</td><td>Intelligence</td><td><code>src/agents/ast_parser_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>BusinessLogicAnalyzerAgent</td><td>Intelligence</td><td><code>src/agents/business_logic_analyzer_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>ArchitectureReviewAgent</td><td>Intelligence</td><td><code>src/agents/architecture_review_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>MarketIntelligenceAgent</td><td>Intelligence</td><td><code>src/agents/market_intelligence_agent.py</code></td><td>019</td></tr>
+            <tr><td>QueryPlanningAgent</td><td>Intelligence</td><td><code>src/agents/query_planning_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>RuntimeIncidentAgent</td><td>Operations</td><td><code>src/agents/runtime_incident_agent.py</code></td><td>025</td></tr>
+            <tr><td>RunbookAgent</td><td>Operations</td><td><code>src/services/runbook/runbook_agent.py</code></td><td>033</td></tr>
+            <tr><td>ADRGeneratorAgent</td><td>Operations</td><td><code>src/agents/adr_generator_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>BrowserToolAgent</td><td>Operations</td><td><code>src/agents/browser_tool_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>CodeInterpreterAgent</td><td>Operations</td><td><code>src/agents/code_interpreter_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>FilesystemNavigatorAgent</td><td>Operations</td><td><code>src/agents/filesystem_navigator_agent.py</code></td><td>&mdash;</td></tr>
+            <tr><td>DocumentationAgent</td><td>Intelligence</td><td><code>src/services/documentation/documentation_agent.py</code></td><td>056</td></tr>
+            <tr><td>BugInjectionAgent</td><td>Training</td><td><code>src/agents/ssr/</code></td><td>050</td></tr>
+            <tr><td>BugSolvingAgent</td><td>Training</td><td><code>src/agents/ssr/</code></td><td>050</td></tr>
+            <tr><td>CompetitorWatchAgent</td><td>Market Intel</td><td><code>src/agents/market_intelligence_agent.py</code></td><td>019</td></tr>
+            <tr><td>TrendAnalysisAgent</td><td>Market Intel</td><td><code>src/agents/market_intelligence_agent.py</code></td><td>019</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size:15px; margin: 20px 0 12px; color:var(--slate-800);">Architecture Decisions Defining Agent Behavior</h3>
+      <div class="tw">
+        <table>
+          <thead><tr><th>ADR</th><th>Title</th><th>Impact</th></tr></thead>
+          <tbody>
+            <tr><td>014</td><td>LLM-Enhanced Agent Search</td><td>Search pattern for all agents</td></tr>
+            <tr><td>018</td><td>MetaOrchestrator Dynamic Spawning</td><td>Recursive task decomposition</td></tr>
+            <tr><td>023</td><td>AgentCore Gateway (MCP)</td><td>Standardized tool protocol</td></tr>
+            <tr><td>024</td><td>Titan Neural Memory</td><td>2M+ token context</td></tr>
+            <tr><td>029</td><td>Agent Optimization Roadmap</td><td>CoD, self-reflection, A2AS, semantic cache</td></tr>
+            <tr><td>030</td><td>Security &amp; DevOps Orchestrators</td><td>Domain-specific coordination</td></tr>
+            <tr><td>032</td><td>Configurable Autonomy</td><td>7 policy presets</td></tr>
+            <tr><td>037</td><td>AWS Agent Capability Replication</td><td>27 services for parity</td></tr>
+            <tr><td>042</td><td>Real-Time Agent Intervention</td><td>Runtime violation detection</td></tr>
+            <tr><td>050</td><td>Self-Play SWE-RL</td><td>Bug injection/solving training</td></tr>
+            <tr><td>051</td><td>Recursive Context &amp; Embedding</td><td>RLM 100x scaling + VL-JEPA 2.85x</td></tr>
+            <tr><td>052</td><td>AI Alignment Principles</td><td>Trust scoring, reversibility</td></tr>
+            <tr><td>063</td><td>Constitutional AI</td><td>16 principles, critique-revision</td></tr>
+            <tr><td>065</td><td>Semantic Guardrails</td><td>6-layer threat detection</td></tr>
+            <tr><td>066</td><td>Agent Capability Governance</td><td>4-tier tool classification</td></tr>
+            <tr><td>068</td><td>Universal Explainability</td><td>Reasoning chains, alternatives</td></tr>
+            <tr><td>071</td><td>Cross-Agent Capability Graph</td><td>Escalation path analysis</td></tr>
+            <tr><td>072</td><td>ML Anomaly Detection</td><td>Statistical + honeypot detection</td></tr>
+            <tr><td>080</td><td>Evo-Memory Enhancements</td><td>7 ReMem operations + sharing</td></tr>
+            <tr><td>081</td><td>Constraint Geometry Engine</td><td>7-axis constraint space</td></tr>
+            <tr><td>083</td><td>Runtime Agent Security</td><td>75 AURA-ATT&amp;CK techniques</td></tr>
+            <tr><td>084</td><td>Native Vulnerability Scanner</td><td>GraphRAG-enhanced scanning</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size:15px; margin: 20px 0 12px; color:var(--slate-800);">Capability Summary</h3>
+      <div class="stats-bar" style="margin-bottom: 0;">
+        <div class="stat-card"><div class="stat-value">35+</div><div class="stat-label">Agent Types</div></div>
+        <div class="stat-card"><div class="stat-value">6</div><div class="stat-label">Orchestrators</div></div>
+        <div class="stat-card"><div class="stat-value">5</div><div class="stat-label">MCP Tool Handlers</div></div>
+        <div class="stat-card"><div class="stat-value">10</div><div class="stat-label">Governance Layers</div></div>
+        <div class="stat-card"><div class="stat-value">16</div><div class="stat-label">Constitutional Principles</div></div>
+        <div class="stat-card"><div class="stat-value">7</div><div class="stat-label">Autonomy Presets</div></div>
+        <div class="stat-card"><div class="stat-value">13</div><div class="stat-label">Evaluators</div></div>
+        <div class="stat-card"><div class="stat-value">183+</div><div class="stat-label">Supporting Services</div></div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<!-- ═══════════════════════════ FOOTER ═══════════════════════════ -->
+<footer class="site-footer">
+  <div class="container">
+    <strong>Project Aura</strong> &mdash; Aenea Labs &middot; Agentic Capabilities Reference
+  </div>
+</footer>
+
+</body>
+</html>

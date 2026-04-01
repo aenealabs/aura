@@ -1,0 +1,359 @@
+---
+# Project Aura - DNS Service Discovery DaemonSet
+# dnsmasq deployment for EKS cluster service discovery and DNS caching
+#
+# Purpose:
+#   - Provide fast local DNS caching for all microservices
+#   - Enable custom .aura.local domain resolution for internal services
+#   - Integrate with CoreDNS for Kubernetes-native service discovery
+#   - DNSSEC validation for external DNS queries
+#
+# Architecture:
+#   - Runs as DaemonSet (one pod per EKS node)
+#   - Uses hostNetwork for direct node DNS access
+#   - Integrates with existing CoreDNS via DNS forwarding
+#
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aura-network-services
+  labels:
+    name: aura-network-services
+    component: infrastructure
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dnsmasq-config
+  namespace: aura-network-services
+  labels:
+    app: dnsmasq
+    component: dns-cache
+data:
+  dnsmasq.conf: |
+    # Project Aura DNS Configuration
+    # Based on dnsmasq 2.90 configuration syntax
+
+    # ============================================================================
+    # CORE DNS SETTINGS
+    # ============================================================================
+
+    # Do not read /etc/resolv.conf or /etc/hosts
+    no-resolv
+    no-hosts
+
+    # Listen on all interfaces (required for DaemonSet)
+    listen-address=0.0.0.0
+    bind-interfaces
+
+    # DNS port
+    port=5353
+
+    # Cache size (1000 entries)
+    cache-size=1000
+
+    # Negative caching TTL (1 hour)
+    neg-ttl=3600
+
+    # Enable DNS query logging for debugging (disable in production)
+    log-queries
+    log-facility=/var/log/dnsmasq.log
+
+    # ============================================================================
+    # UPSTREAM DNS SERVERS
+    # ============================================================================
+
+    # AWS VPC DNS resolver (always at .2 in VPC CIDR)
+    # This will be templated based on VPC CIDR during deployment
+    server=10.0.0.2
+
+    # Cloudflare DNS as fallback
+    server=1.1.1.1
+    server=1.0.0.1
+
+    # Google DNS as secondary fallback
+    server=8.8.8.8
+    server=8.8.4.4
+
+    # ============================================================================
+    # CUSTOM DOMAIN RESOLUTION (.aura.local)
+    # ============================================================================
+
+    # Local domain for Project Aura services
+    local=/aura.local/
+    domain=aura.local
+    expand-hosts
+
+    # ============================================================================
+    # CONDITIONAL FORWARDING
+    # ============================================================================
+
+    # Forward Kubernetes cluster DNS to CoreDNS
+    # CoreDNS typically runs at 10.100.0.10 in EKS
+    server=/cluster.local/10.100.0.10
+
+    # Forward AWS service queries directly to VPC DNS
+    server=/amazonaws.com/10.0.0.2
+    server=/aws.internal/10.0.0.2
+
+    # ============================================================================
+    # SECURITY SETTINGS
+    # ============================================================================
+
+    # DNSSEC validation (enabled with Alpine dnsmasq)
+    dnssec
+    trust-anchor=.,20326,8,2,E06D44B80B8F1D39A95C0B0D7C65D08458E880409BBC683457104237C7F8EC8D
+
+    # Prevent DNS rebinding attacks
+    stop-dns-rebind
+    rebind-localhost-ok
+
+    # Bogus private reverse lookups
+    bogus-priv
+
+    # Domain blacklist for security (threat intelligence integration)
+    # Dynamic blocklist loaded from ConfigMap (updated by Lambda + CronJob)
+    conf-file=/etc/dnsmasq/blocklist/blocklist.conf
+
+    # Static fallback entries (used if dynamic blocklist not available)
+    address=/malware.example.com/0.0.0.0
+    address=/phishing.example.com/0.0.0.0
+
+    # ============================================================================
+    # PERFORMANCE TUNING
+    # ============================================================================
+
+    # Increase DNS packet size (supports larger responses)
+    edns-packet-max=4096
+
+    # Enable all DNS query types
+    all-servers
+
+    # Strict order for upstream servers
+    strict-order
+
+    # ============================================================================
+    # SERVICE DISCOVERY ENTRIES
+    # ============================================================================
+    # These will be dynamically populated via additional ConfigMaps
+    # For now, we include placeholders that can be updated post-deployment
+
+    # Neptune Graph Database
+    # address=/neptune.aura.local/10.0.3.50
+
+    # OpenSearch Service
+    # address=/opensearch.aura.local/10.0.3.51
+
+    # Context Retrieval Service
+    # address=/context-retrieval.aura.local/10.0.3.100
+
+    # Bedrock LLM Service
+    # address=/bedrock-llm.aura.local/10.0.3.101
+
+    # Agent Orchestrator
+    # address=/orchestrator.aura.local/10.0.3.102
+
+  # Additional hosts file for static entries
+  aura.hosts: |
+    # Project Aura Static Host Entries
+    # Format: IP_ADDRESS HOSTNAME
+
+    # Placeholder - update with actual service IPs after deployment
+    # 10.0.3.50 neptune.aura.local
+    # 10.0.3.51 opensearch.aura.local
+    # 10.0.3.100 context-retrieval.aura.local
+    # 10.0.3.101 bedrock-llm.aura.local
+    # 10.0.3.102 orchestrator.aura.local
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dnsmasq
+  namespace: aura-network-services
+  labels:
+    app: dnsmasq
+    component: dns-cache
+    version: "1.0.0"
+spec:
+  selector:
+    matchLabels:
+      app: dnsmasq
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: dnsmasq
+        component: dns-cache
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "false"
+        description: "DNS caching and service discovery for Project Aura"
+        # Blocklist integration - CronJob updates this annotation to trigger reload
+        blocklist.aura.local/enabled: "true"
+        blocklist.aura.local/source: "lambda-cronjob-sync"
+    spec:
+      # Use host network for direct DNS access
+      hostNetwork: true
+      dnsPolicy: Default
+
+      # Node selector (optional - deploy only on worker nodes)
+      nodeSelector:
+        kubernetes.io/os: linux
+
+      # Tolerations to run on all nodes including control plane if needed
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+
+      # Priority class for critical system component
+      priorityClassName: system-node-critical
+
+      containers:
+      - name: dnsmasq
+        # Using jpillora/dnsmasq (well-maintained, widely used)
+        # For production, build custom image with security hardening
+        image: jpillora/dnsmasq:latest
+        imagePullPolicy: IfNotPresent
+
+        # Run as non-root user (dnsmasq user)
+        securityContext:
+          runAsUser: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE  # Required for binding to port 53/5353
+
+        # Resource limits (optimized for 50K cache and high query volume)
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+        # Command to run dnsmasq with config file
+        args:
+        - --conf-file=/etc/dnsmasq/dnsmasq.conf
+        - --keep-in-foreground
+        - --no-daemon
+
+        # Health checks using TCP socket (BusyBox nslookup doesn't support -port flag)
+        livenessProbe:
+          tcpSocket:
+            port: 5353
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+        readinessProbe:
+          tcpSocket:
+            port: 5353
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+
+        # Startup probe for initial DNS service availability
+        startupProbe:
+          tcpSocket:
+            port: 5353
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 10
+
+        # Volume mounts
+        volumeMounts:
+        - name: dnsmasq-config
+          mountPath: /etc/dnsmasq
+          readOnly: true
+        - name: dnsmasq-blocklist
+          mountPath: /etc/dnsmasq/blocklist
+          readOnly: true
+        - name: log-volume
+          mountPath: /var/log
+
+        # Ports
+        ports:
+        - name: dns-tcp
+          containerPort: 5353
+          protocol: TCP
+          hostPort: 5353
+        - name: dns-udp
+          containerPort: 5353
+          protocol: UDP
+          hostPort: 5353
+
+      # Volumes
+      volumes:
+      - name: dnsmasq-config
+        configMap:
+          name: dnsmasq-config
+          items:
+          - key: dnsmasq.conf
+            path: dnsmasq.conf
+          - key: aura.hosts
+            path: aura.hosts
+      - name: dnsmasq-blocklist
+        configMap:
+          name: dnsmasq-blocklist
+          items:
+          - key: blocklist.conf
+            path: blocklist.conf
+          # Optional: continue if ConfigMap doesn't exist yet
+          optional: true
+      - name: log-volume
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dnsmasq
+  namespace: aura-network-services
+  labels:
+    app: dnsmasq
+    component: dns-cache
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for DaemonSet
+  selector:
+    app: dnsmasq
+  ports:
+  - name: dns-tcp
+    port: 5353
+    targetPort: 5353
+    protocol: TCP
+  - name: dns-udp
+    port: 5353
+    targetPort: 5353
+    protocol: UDP
+
+---
+# ServiceMonitor for Prometheus (if monitoring is enabled)
+# Uncomment when Prometheus is deployed
+# apiVersion: monitoring.coreos.com/v1
+# kind: ServiceMonitor
+# metadata:
+#   name: dnsmasq
+#   namespace: aura-network-services
+#   labels:
+#     app: dnsmasq
+# spec:
+#   selector:
+#     matchLabels:
+#       app: dnsmasq
+#   endpoints:
+#   - port: metrics
+#     interval: 30s

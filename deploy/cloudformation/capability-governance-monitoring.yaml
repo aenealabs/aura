@@ -1,0 +1,506 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.7 - Capability Governance Monitoring'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'aura'
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for alerts (leave empty to skip email subscription)
+
+  ViolationThresholdCritical:
+    Type: Number
+    Default: 5
+    Description: Critical violation count threshold for alarm
+
+  ViolationThresholdHigh:
+    Type: Number
+    Default: 20
+    Description: High violation count threshold for alarm
+
+  EscalationPendingThreshold:
+    Type: Number
+    Default: 10
+    Description: Pending escalation count threshold for alarm
+
+  LatencyThresholdP99Ms:
+    Type: Number
+    Default: 100
+    Description: P99 latency threshold in milliseconds
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # ===========================================================================
+  # CloudWatch Dashboard
+  # ===========================================================================
+
+  CapabilityGovernanceDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-capability-governance-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 1,
+              "properties": {
+                "markdown": "# Capability Governance Dashboard - ${Environment}\n**ADR-066 Agent Tool Access Control Monitoring**"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 1,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Capability Checks",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "CapabilityChecks", "Environment", "${Environment}", {"stat": "Sum", "period": 300}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false
+              }
+            },
+            {
+              "type": "metric",
+              "x": 6,
+              "y": 1,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Decisions by Type",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "DecisionsAllow", "Environment", "${Environment}", {"stat": "Sum", "period": 300, "color": "#2ca02c"}],
+                  [".", "DecisionsDeny", ".", ".", {"stat": "Sum", "period": 300, "color": "#d62728"}],
+                  [".", "DecisionsEscalate", ".", ".", {"stat": "Sum", "period": 300, "color": "#ff7f0e"}],
+                  [".", "DecisionsAuditOnly", ".", ".", {"stat": "Sum", "period": 300, "color": "#1f77b4"}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": true
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 1,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Tool Classifications",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "SafeToolInvocations", "Environment", "${Environment}", {"stat": "Sum", "period": 300, "color": "#2ca02c"}],
+                  [".", "MonitoringToolInvocations", ".", ".", {"stat": "Sum", "period": 300, "color": "#1f77b4"}],
+                  [".", "DangerousToolInvocations", ".", ".", {"stat": "Sum", "period": 300, "color": "#ff7f0e"}],
+                  [".", "CriticalToolInvocations", ".", ".", {"stat": "Sum", "period": 300, "color": "#d62728"}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": true
+              }
+            },
+            {
+              "type": "metric",
+              "x": 18,
+              "y": 1,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "title": "Check Latency (ms)",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "CheckLatencyMsP50", "Environment", "${Environment}", {"stat": "Average", "period": 300, "label": "P50"}],
+                  [".", "CheckLatencyMsP95", ".", ".", {"stat": "Average", "period": 300, "label": "P95"}],
+                  [".", "CheckLatencyMsP99", ".", ".", {"stat": "Average", "period": 300, "label": "P99"}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 7,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Violations by Severity",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "ViolationsCritical", "Environment", "${Environment}", {"stat": "Sum", "period": 300, "color": "#d62728"}],
+                  [".", "ViolationsHigh", ".", ".", {"stat": "Sum", "period": 300, "color": "#ff7f0e"}],
+                  [".", "ViolationsMedium", ".", ".", {"stat": "Sum", "period": 300, "color": "#ffbb78"}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": true
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 7,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Escalations",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "EscalationsRequested", "Environment", "${Environment}", {"stat": "Sum", "period": 300, "color": "#1f77b4"}],
+                  [".", "EscalationsApproved", ".", ".", {"stat": "Sum", "period": 300, "color": "#2ca02c"}],
+                  [".", "EscalationsDenied", ".", ".", {"stat": "Sum", "period": 300, "color": "#d62728"}],
+                  [".", "EscalationsExpired", ".", ".", {"stat": "Sum", "period": 300, "color": "#7f7f7f"}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 7,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Grants",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "GrantsCreated", "Environment", "${Environment}", {"stat": "Sum", "period": 300, "color": "#2ca02c"}],
+                  [".", "GrantsUsed", ".", ".", {"stat": "Sum", "period": 300, "color": "#1f77b4"}],
+                  [".", "GrantsRevoked", ".", ".", {"stat": "Sum", "period": 300, "color": "#d62728"}],
+                  [".", "GrantsExpired", ".", ".", {"stat": "Sum", "period": 300, "color": "#7f7f7f"}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 13,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Cache Performance",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "CacheHitRate", "Environment", "${Environment}", {"stat": "Average", "period": 300}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "annotations": {
+                  "horizontal": [
+                    {"label": "Target", "value": 80, "color": "#2ca02c"}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 13,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Rate Limit Rejections",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "RateLimitRejections", "Environment", "${Environment}", {"stat": "Sum", "period": 300, "color": "#d62728"}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 13,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Total Violations",
+                "metrics": [
+                  ["Aura/CapabilityGovernance", "Violations", "Environment", "${Environment}", {"stat": "Sum", "period": 300}]
+                ],
+                "region": "${AWS::Region}",
+                "view": "singleValue",
+                "setPeriodToTimeRange": true
+              }
+            }
+          ]
+        }
+
+  # ===========================================================================
+  # CloudWatch Alarms
+  # ===========================================================================
+
+  # Critical Violation Alarm
+  CriticalViolationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-capability-critical-violations-${Environment}'
+      AlarmDescription: Critical capability violations detected
+      Namespace: Aura/CapabilityGovernance
+      MetricName: ViolationsCritical
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref ViolationThresholdCritical
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - HasAlertEmail
+          - !Ref AlertTopic
+          - !Ref 'AWS::NoValue'
+      OKActions:
+        - !If
+          - HasAlertEmail
+          - !Ref AlertTopic
+          - !Ref 'AWS::NoValue'
+
+  # High Violation Alarm
+  HighViolationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-capability-high-violations-${Environment}'
+      AlarmDescription: High number of capability violations detected
+      Namespace: Aura/CapabilityGovernance
+      MetricName: Violations
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref ViolationThresholdHigh
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - HasAlertEmail
+          - !Ref AlertTopic
+          - !Ref 'AWS::NoValue'
+
+  # Pending Escalation Alarm
+  PendingEscalationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-capability-pending-escalations-${Environment}'
+      AlarmDescription: High number of pending capability escalations
+      Namespace: Aura/CapabilityGovernance
+      MetricName: EscalationsRequested
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: !Ref EscalationPendingThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - HasAlertEmail
+          - !Ref AlertTopic
+          - !Ref 'AWS::NoValue'
+
+  # High Latency Alarm
+  HighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-capability-high-latency-${Environment}'
+      AlarmDescription: Capability check latency exceeds threshold
+      Namespace: Aura/CapabilityGovernance
+      MetricName: CheckLatencyMsP99
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: !Ref LatencyThresholdP99Ms
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - HasAlertEmail
+          - !Ref AlertTopic
+          - !Ref 'AWS::NoValue'
+
+  # Low Cache Hit Rate Alarm
+  LowCacheHitRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-capability-low-cache-hit-rate-${Environment}'
+      AlarmDescription: Capability governance cache hit rate below threshold
+      Namespace: Aura/CapabilityGovernance
+      MetricName: CacheHitRate
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 50
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+
+  # Rate Limit Alarm
+  RateLimitAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-capability-rate-limit-rejections-${Environment}'
+      AlarmDescription: High number of rate limit rejections
+      Namespace: Aura/CapabilityGovernance
+      MetricName: RateLimitRejections
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - HasAlertEmail
+          - !Ref AlertTopic
+          - !Ref 'AWS::NoValue'
+
+  # ===========================================================================
+  # SNS Topic for Alerts
+  # ===========================================================================
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: !Sub '${ProjectName}-capability-governance-alerts-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ===========================================================================
+  # CloudWatch Log Groups
+  # ===========================================================================
+
+  CapabilityGovernanceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/${Environment}/capability-governance'
+      RetentionInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: capability-governance
+
+  # ===========================================================================
+  # CloudWatch Log Metric Filters
+  # ===========================================================================
+
+  ViolationLogFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref CapabilityGovernanceLogGroup
+      FilterPattern: '[timestamp, level="ERROR", ..., message="*violation*"]'
+      MetricTransformations:
+        - MetricName: LogViolations
+          MetricNamespace: Aura/CapabilityGovernance
+          MetricValue: '1'
+          DefaultValue: 0
+
+  DenialLogFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref CapabilityGovernanceLogGroup
+      FilterPattern: '[timestamp, level="WARNING", ..., message="*denied*"]'
+      MetricTransformations:
+        - MetricName: LogDenials
+          MetricNamespace: Aura/CapabilityGovernance
+          MetricValue: '1'
+          DefaultValue: 0
+
+  EscalationLogFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref CapabilityGovernanceLogGroup
+      FilterPattern: '[timestamp, level="INFO", ..., message="*escalation*"]'
+      MetricTransformations:
+        - MetricName: LogEscalations
+          MetricNamespace: Aura/CapabilityGovernance
+          MetricValue: '1'
+          DefaultValue: 0
+
+Outputs:
+  DashboardUrl:
+    Description: CloudWatch Dashboard URL
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-capability-governance-${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-capability-governance-dashboard-url-${Environment}'
+
+  CriticalViolationAlarmArn:
+    Description: Critical violation alarm ARN
+    Value: !GetAtt CriticalViolationAlarm.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-critical-violation-alarm-${Environment}'
+
+  HighLatencyAlarmArn:
+    Description: High latency alarm ARN
+    Value: !GetAtt HighLatencyAlarm.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-high-latency-alarm-${Environment}'
+
+  LogGroupArn:
+    Description: Capability governance log group ARN
+    Value: !GetAtt CapabilityGovernanceLogGroup.Arn
+    Export:
+      Name: !Sub '${ProjectName}-capability-governance-log-group-arn-${Environment}'
+
+  AlertTopicArn:
+    Condition: HasAlertEmail
+    Description: Alert SNS topic ARN
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-capability-governance-alert-topic-${Environment}'

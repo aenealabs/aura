@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="spiralGradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="spiralGradient2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+    <linearGradient id="spiralGradient3" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <!-- Spiral arms -->
+  <path d="M50 50 Q20 30 25 55 T35 75" fill="none" stroke="url(#spiralGradient1)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M50 50 Q80 30 75 55 T65 75" fill="none" stroke="url(#spiralGradient2)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M50 50 Q50 10 30 25 T20 50" fill="none" stroke="url(#spiralGradient3)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M50 50 Q50 90 70 75 T80 50" fill="none" stroke="url(#spiralGradient1)" stroke-width="6" stroke-linecap="round"/>
+  <!-- Central A -->
+  <text x="50" y="58" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#3B82F6" text-anchor="middle">A</text>
+</svg>

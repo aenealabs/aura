@@ -1,0 +1,130 @@
+version: 0.2
+
+# Serverless Layer Sub-BuildSpec: Lambda Packaging (Layer 6.1)
+# Packages Lambda functions and uploads to S3.
+# Called by buildspec-serverless.yml or Step Functions.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing build dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install setuptools wheel --quiet
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Lambda Packaging (Layer 6.1)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - source deploy/scripts/package-lambdas.sh
+      - validate_aws_credentials
+      - mkdir -p /tmp/lambda-packages
+      - LAMBDA_BUCKET="${PROJECT_NAME}-serverless-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+      - TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+  build:
+    commands:
+      # Package threat-intel-processor
+      - |
+        echo "Packaging threat-intel-processor..."
+        THREAT_INTEL_PACKAGE="/tmp/lambda-packages/threat-intel-processor.zip"
+        cd src && \
+        zip -r $THREAT_INTEL_PACKAGE lambda/threat_intelligence_processor.py && \
+        zip -r $THREAT_INTEL_PACKAGE agents/ -x "*.pyc" -x "__pycache__/*" && \
+        zip -r $THREAT_INTEL_PACKAGE services/ -x "*.pyc" -x "__pycache__/*" && \
+        cd ..
+        echo "Created: $THREAT_INTEL_PACKAGE"
+
+      # Package approval-callback-handler
+      - |
+        echo "Packaging approval-callback-handler..."
+        APPROVAL_CALLBACK_PACKAGE="/tmp/lambda-packages/approval-callback-handler.zip"
+        cd src && \
+        zip -r $APPROVAL_CALLBACK_PACKAGE lambda/approval_callback_handler.py && \
+        zip -r $APPROVAL_CALLBACK_PACKAGE services/notification_service.py && \
+        zip -r $APPROVAL_CALLBACK_PACKAGE services/hitl_approval_service.py && \
+        cd ..
+        echo "Created: $APPROVAL_CALLBACK_PACKAGE"
+
+      # Package expiration-processor
+      - |
+        echo "Packaging expiration-processor..."
+        EXPIRATION_PROCESSOR_PACKAGE="/tmp/lambda-packages/expiration-processor.zip"
+        cd src && \
+        zip -r $EXPIRATION_PROCESSOR_PACKAGE lambda/expiration_processor.py && \
+        zip -r $EXPIRATION_PROCESSOR_PACKAGE services/notification_service.py && \
+        zip -r $EXPIRATION_PROCESSOR_PACKAGE services/hitl_approval_service.py && \
+        cd ..
+        echo "Created: $EXPIRATION_PROCESSOR_PACKAGE"
+
+      # Package checkpoint-handlers
+      - |
+        echo "Packaging checkpoint-handlers..."
+        CHECKPOINT_HANDLERS_PACKAGE="/tmp/lambda-packages/checkpoint-handlers.zip"
+        cd src && \
+        zip -r $CHECKPOINT_HANDLERS_PACKAGE lambda/checkpoint/ && \
+        cd ..
+        echo "Created: $CHECKPOINT_HANDLERS_PACKAGE"
+
+      # Package orchestrator-dispatcher
+      - |
+        echo "Packaging orchestrator-dispatcher..."
+        ORCHESTRATOR_DISPATCHER_PACKAGE="/tmp/lambda-packages/orchestrator-dispatcher.zip"
+        cd src && \
+        zip -r $ORCHESTRATOR_DISPATCHER_PACKAGE lambda/orchestrator_dispatcher.py && \
+        cd ..
+        echo "Created: $ORCHESTRATOR_DISPATCHER_PACKAGE"
+
+      # Package env-validator-drift (ADR-062)
+      - |
+        echo "Packaging env-validator-drift..."
+        ENV_VALIDATOR_DRIFT_PACKAGE="/tmp/lambda-packages/env-validator-drift.zip"
+        cd src && \
+        zip -r $ENV_VALIDATOR_DRIFT_PACKAGE services/env_validator/ -x "*.pyc" -x "__pycache__/*" -x "*.egg-info/*" && \
+        cd ..
+        echo "Created: $ENV_VALIDATOR_DRIFT_PACKAGE"
+
+      # Upload to S3 with SSE encryption (required by SCP)
+      - |
+        echo "Uploading Lambda packages to S3..."
+        if aws s3 ls s3://$LAMBDA_BUCKET 2>/dev/null; then
+          aws s3 cp --sse AES256 $THREAT_INTEL_PACKAGE s3://$LAMBDA_BUCKET/lambda/threat-intel-processor-${TIMESTAMP}.zip
+          aws s3 cp --sse AES256 $APPROVAL_CALLBACK_PACKAGE s3://$LAMBDA_BUCKET/lambda/approval-callback-handler-${TIMESTAMP}.zip
+          aws s3 cp --sse AES256 $EXPIRATION_PROCESSOR_PACKAGE s3://$LAMBDA_BUCKET/lambda/expiration-processor-${TIMESTAMP}.zip
+          aws s3 cp --sse AES256 $CHECKPOINT_HANDLERS_PACKAGE s3://$LAMBDA_BUCKET/lambda/checkpoint-handlers-${TIMESTAMP}.zip
+          aws s3 cp --sse AES256 $ORCHESTRATOR_DISPATCHER_PACKAGE s3://$LAMBDA_BUCKET/lambda/orchestrator-dispatcher-latest.zip
+          aws s3 cp --sse AES256 $ENV_VALIDATOR_DRIFT_PACKAGE s3://$LAMBDA_BUCKET/lambda/env-validator-drift-${TIMESTAMP}.zip
+          echo "All packages uploaded to s3://$LAMBDA_BUCKET/lambda/"
+        else
+          echo "Warning: S3 bucket $LAMBDA_BUCKET not found"
+          echo "Bucket will be created by CodeBuild CloudFormation stack"
+        fi
+
+      # Export S3 keys for downstream stacks
+      - |
+        echo "Exporting Lambda S3 keys..."
+        echo "THREAT_INTEL_S3_KEY=lambda/threat-intel-processor-${TIMESTAMP}.zip"
+        echo "APPROVAL_CALLBACK_S3_KEY=lambda/approval-callback-handler-${TIMESTAMP}.zip"
+        echo "EXPIRATION_PROCESSOR_S3_KEY=lambda/expiration-processor-${TIMESTAMP}.zip"
+        echo "CHECKPOINT_HANDLERS_S3_KEY=lambda/checkpoint-handlers-${TIMESTAMP}.zip"
+        echo "ORCHESTRATOR_DISPATCHER_S3_KEY=lambda/orchestrator-dispatcher-latest.zip"
+        echo "ENV_VALIDATOR_DRIFT_S3_KEY=lambda/env-validator-drift-${TIMESTAMP}.zip"
+
+  post_build:
+    commands:
+      - echo "Lambda packaging complete"
+      - |
+        echo "Package Sizes:"
+        ls -lh /tmp/lambda-packages/*.zip 2>/dev/null || echo "No packages found"

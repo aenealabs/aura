@@ -1,0 +1,749 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.5 - AWS Marketplace (SaaS Metering, Subscriptions)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name prefix for resources
+
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Default: dev
+    Description: Deployment environment
+
+  MarketplaceProductCode:
+    Type: String
+    Description: AWS Marketplace product code for Aura SaaS offering
+    Default: aura-saas-prod
+
+  NotificationEmail:
+    Type: String
+    Default: marketplace@aenealabs.com
+    Description: Email for marketplace notifications
+
+  EKSClusterName:
+    Type: String
+    Default: ""
+    Description: EKS cluster name (optional, for IRSA configuration)
+
+  MeteringInterval:
+    Type: Number
+    Default: 60
+    Description: Usage metering interval in minutes
+    MinValue: 15
+    MaxValue: 1440
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasEKSCluster: !Not [!Equals [!Ref EKSClusterName, ""]]
+
+Resources:
+  # ===========================================================================
+  # DynamoDB Tables
+  # ===========================================================================
+
+  MarketplaceCustomersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-marketplace-customers-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      AttributeDefinitions:
+        - AttributeName: customer_id
+          AttributeType: S
+        - AttributeName: aws_customer_id
+          AttributeType: S
+        - AttributeName: entitlement_status
+          AttributeType: S
+        - AttributeName: product_code
+          AttributeType: S
+      KeySchema:
+        - AttributeName: customer_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: aws-customer-index
+          KeySchema:
+            - AttributeName: aws_customer_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-product-index
+          KeySchema:
+            - AttributeName: entitlement_status
+              KeyType: HASH
+            - AttributeName: product_code
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-marketplace-customers-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Service
+          Value: marketplace
+
+  UsageRecordsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-marketplace-usage-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - AttributeName: record_id
+          AttributeType: S
+        - AttributeName: customer_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: reported
+          AttributeType: S
+      KeySchema:
+        - AttributeName: record_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: customer-timestamp-index
+          KeySchema:
+            - AttributeName: customer_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: reported-timestamp-index
+          KeySchema:
+            - AttributeName: reported
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: KEYS_ONLY
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-marketplace-usage-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Service
+          Value: marketplace
+
+  # ===========================================================================
+  # SNS Topics for Marketplace Notifications
+  # ===========================================================================
+
+  MarketplaceNotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-marketplace-notifications-${Environment}'
+      DisplayName: AWS Marketplace Subscription Notifications
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-marketplace-notifications-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  MarketplaceNotificationsPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref MarketplaceNotificationsTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowAWSMarketplace
+            Effect: Allow
+            Principal:
+              Service: metering.marketplace.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref MarketplaceNotificationsTopic
+          - Sid: AllowOwnerAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action:
+              - sns:GetTopicAttributes
+              - sns:SetTopicAttributes
+              - sns:AddPermission
+              - sns:RemovePermission
+              - sns:DeleteTopic
+              - sns:Subscribe
+              - sns:ListSubscriptionsByTopic
+              - sns:Publish
+            Resource: !Ref MarketplaceNotificationsTopic
+
+  AdminNotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: IsProduction
+    Properties:
+      TopicArn: !Ref MarketplaceNotificationsTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ===========================================================================
+  # Lambda Function for SNS Processing
+  # ===========================================================================
+
+  SNSProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-marketplace-sns-processor-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: MarketplaceAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt MarketplaceCustomersTable.Arn
+                  - !Sub '${MarketplaceCustomersTable.Arn}/index/*'
+              - Effect: Allow
+                Action:
+                  - aws-marketplace:ResolveCustomer
+                  - aws-marketplace:GetEntitlements
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  SNSProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-marketplace-sns-processor-${Environment}'
+      Description: Process AWS Marketplace SNS subscription notifications
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt SNSProcessorRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          CUSTOMERS_TABLE: !Ref MarketplaceCustomersTable
+          PRODUCT_CODE: !Ref MarketplaceProductCode
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from datetime import datetime, timezone
+
+          dynamodb = boto3.resource('dynamodb')
+          marketplace = boto3.client('marketplace-metering')
+          customers_table = dynamodb.Table(os.environ['CUSTOMERS_TABLE'])
+
+          def handler(event, context):
+              """Process SNS notifications from AWS Marketplace."""
+              for record in event.get('Records', []):
+                  try:
+                      message = json.loads(record['Sns']['Message'])
+                      action = message.get('action')
+                      aws_customer_id = message.get('customer-identifier')
+                      product_code = message.get('product-code')
+
+                      print(f"Processing: {action} for {aws_customer_id}")
+
+                      if action == 'subscribe-success':
+                          handle_subscribe(aws_customer_id, product_code, message)
+                      elif action == 'unsubscribe-pending':
+                          handle_unsubscribe_pending(aws_customer_id, message)
+                      elif action == 'unsubscribe-success':
+                          handle_unsubscribe_success(aws_customer_id, message)
+                      elif action == 'entitlement-updated':
+                          handle_entitlement_updated(aws_customer_id, message)
+                      else:
+                          print(f"Unknown action: {action}")
+
+                  except Exception as e:
+                      print(f"Error processing record: {e}")
+                      raise
+
+              return {'statusCode': 200, 'body': 'Processed'}
+
+          def handle_subscribe(aws_customer_id, product_code, message):
+              """Handle new subscription."""
+              timestamp = datetime.now(timezone.utc).isoformat()
+              customers_table.put_item(Item={
+                  'customer_id': aws_customer_id,
+                  'aws_customer_id': aws_customer_id,
+                  'product_code': product_code,
+                  'entitlement_status': 'active',
+                  'subscription_start': timestamp,
+                  'created_at': timestamp,
+                  'updated_at': timestamp,
+                  'message_data': message
+              })
+              print(f"Customer {aws_customer_id} subscribed")
+
+          def handle_unsubscribe_pending(aws_customer_id, message):
+              """Handle pending cancellation."""
+              timestamp = datetime.now(timezone.utc).isoformat()
+              customers_table.update_item(
+                  Key={'customer_id': aws_customer_id},
+                  UpdateExpression='SET entitlement_status = :s, updated_at = :t',
+                  ExpressionAttributeValues={':s': 'suspended', ':t': timestamp}
+              )
+              print(f"Customer {aws_customer_id} cancellation pending")
+
+          def handle_unsubscribe_success(aws_customer_id, message):
+              """Handle successful cancellation."""
+              timestamp = datetime.now(timezone.utc).isoformat()
+              customers_table.update_item(
+                  Key={'customer_id': aws_customer_id},
+                  UpdateExpression='SET entitlement_status = :s, subscription_end = :e, updated_at = :t',
+                  ExpressionAttributeValues={':s': 'cancelled', ':e': timestamp, ':t': timestamp}
+              )
+              print(f"Customer {aws_customer_id} cancelled")
+
+          def handle_entitlement_updated(aws_customer_id, message):
+              """Handle entitlement updates."""
+              timestamp = datetime.now(timezone.utc).isoformat()
+              customers_table.update_item(
+                  Key={'customer_id': aws_customer_id},
+                  UpdateExpression='SET updated_at = :t, last_entitlement_update = :t',
+                  ExpressionAttributeValues={':t': timestamp}
+              )
+              print(f"Customer {aws_customer_id} entitlements updated")
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-marketplace-sns-processor-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  SNSProcessorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SNSProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref MarketplaceNotificationsTopic
+
+  SNSProcessorSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref MarketplaceNotificationsTopic
+      Protocol: lambda
+      Endpoint: !GetAtt SNSProcessorFunction.Arn
+
+  # ===========================================================================
+  # Metering Lambda Function
+  # ===========================================================================
+
+  MeteringProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-marketplace-metering-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: MeteringAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !GetAtt UsageRecordsTable.Arn
+                  - !Sub '${UsageRecordsTable.Arn}/index/*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt MarketplaceCustomersTable.Arn
+                  - !Sub '${MarketplaceCustomersTable.Arn}/index/*'
+              - Effect: Allow
+                Action:
+                  - aws-marketplace:MeterUsage
+                  - aws-marketplace:BatchMeterUsage
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  MeteringProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-marketplace-metering-${Environment}'
+      Description: Submit usage records to AWS Marketplace Metering Service
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt MeteringProcessorRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          USAGE_TABLE: !Ref UsageRecordsTable
+          CUSTOMERS_TABLE: !Ref MarketplaceCustomersTable
+          PRODUCT_CODE: !Ref MarketplaceProductCode
+      Code:
+        ZipFile: |
+          import json
+          import os
+          from datetime import datetime, timezone
+          import boto3
+          from boto3.dynamodb.conditions import Key, Attr
+
+          dynamodb = boto3.resource('dynamodb')
+          metering = boto3.client('meteringmarketplace')
+
+          usage_table = dynamodb.Table(os.environ['USAGE_TABLE'])
+          customers_table = dynamodb.Table(os.environ['CUSTOMERS_TABLE'])
+          product_code = os.environ['PRODUCT_CODE']
+
+          def handler(event, context):
+              """Submit pending usage records to AWS Marketplace."""
+              print("Starting metering submission...")
+
+              # Query pending usage records
+              response = usage_table.query(
+                  IndexName='reported-timestamp-index',
+                  KeyConditionExpression=Key('reported').eq('false'),
+                  Limit=100
+              )
+
+              records = response.get('Items', [])
+              print(f"Found {len(records)} pending records")
+
+              if not records:
+                  return {'statusCode': 200, 'body': 'No pending records'}
+
+              # Group by customer and dimension
+              grouped = {}
+              for record in records:
+                  key = f"{record['customer_id']}:{record['dimension']}"
+                  if key not in grouped:
+                      grouped[key] = []
+                  grouped[key].append(record)
+
+              results = []
+              for key, group_records in grouped.items():
+                  customer_id, dimension = key.split(':', 1)
+
+                  # Get customer info
+                  customer = customers_table.get_item(
+                      Key={'customer_id': customer_id}
+                  ).get('Item')
+
+                  if not customer:
+                      print(f"Customer not found: {customer_id}")
+                      continue
+
+                  if customer.get('entitlement_status') != 'active':
+                      print(f"Customer not active: {customer_id}")
+                      continue
+
+                  # Sum quantities
+                  total_quantity = sum(int(r['quantity']) for r in group_records)
+                  timestamp = datetime.now(timezone.utc)
+
+                  try:
+                      response = metering.meter_usage(
+                          ProductCode=product_code,
+                          Timestamp=timestamp,
+                          UsageDimension=dimension,
+                          UsageQuantity=total_quantity,
+                          DryRun=False
+                      )
+
+                      metering_record_id = response.get('MeteringRecordId')
+                      print(f"Submitted: {dimension}={total_quantity} for {customer_id}")
+
+                      # Mark records as reported
+                      for record in group_records:
+                          usage_table.update_item(
+                              Key={'record_id': record['record_id']},
+                              UpdateExpression='SET reported = :r, report_id = :id, reported_at = :t',
+                              ExpressionAttributeValues={
+                                  ':r': 'true',
+                                  ':id': metering_record_id,
+                                  ':t': timestamp.isoformat()
+                              }
+                          )
+
+                      results.append({
+                          'customer_id': customer_id,
+                          'dimension': dimension,
+                          'quantity': total_quantity,
+                          'success': True
+                      })
+
+                  except Exception as e:
+                      print(f"Error submitting usage: {e}")
+                      results.append({
+                          'customer_id': customer_id,
+                          'dimension': dimension,
+                          'quantity': total_quantity,
+                          'success': False,
+                          'error': str(e)
+                      })
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'processed': len(results),
+                      'results': results
+                  })
+              }
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-marketplace-metering-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ===========================================================================
+  # EventBridge Rule for Scheduled Metering
+  # ===========================================================================
+
+  MeteringScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-marketplace-metering-schedule-${Environment}'
+      Description: Trigger usage metering submission on schedule
+      ScheduleExpression: !Sub 'rate(${MeteringInterval} minutes)'
+      State: !If [IsProduction, ENABLED, DISABLED]
+      Targets:
+        - Id: MeteringProcessor
+          Arn: !GetAtt MeteringProcessorFunction.Arn
+
+  MeteringSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref MeteringProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt MeteringScheduleRule.Arn
+
+  # ===========================================================================
+  # IAM Role for EKS Service (IRSA)
+  # ===========================================================================
+
+  MarketplaceServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-marketplace-service-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+          - !If
+            - HasEKSCluster
+            - Effect: Allow
+              Principal:
+                Federated: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/oidc.eks.${AWS::Region}.amazonaws.com/id/${EKSClusterName}'
+              Action: sts:AssumeRoleWithWebIdentity
+              Condition:
+                StringEquals:
+                  !Sub 'oidc.eks.${AWS::Region}.amazonaws.com/id/${EKSClusterName}:sub': 'system:serviceaccount:aura:marketplace-service'
+            - !Ref AWS::NoValue
+      Policies:
+        - PolicyName: MarketplaceIntegration
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt MarketplaceCustomersTable.Arn
+                  - !Sub '${MarketplaceCustomersTable.Arn}/index/*'
+                  - !GetAtt UsageRecordsTable.Arn
+                  - !Sub '${UsageRecordsTable.Arn}/index/*'
+              - Sid: MarketplaceMetering
+                Effect: Allow
+                Action:
+                  - aws-marketplace:ResolveCustomer
+                  - aws-marketplace:MeterUsage
+                  - aws-marketplace:BatchMeterUsage
+                  - aws-marketplace:GetEntitlements
+                Resource: '*'
+              - Sid: KMSDecrypt
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ===========================================================================
+  # CloudWatch Alarms
+  # ===========================================================================
+
+  MeteringErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-marketplace-metering-errors-${Environment}'
+      AlarmDescription: Alert when marketplace metering errors occur
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref MeteringProcessorFunction
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref MarketplaceNotificationsTopic
+
+  SNSProcessorErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-marketplace-sns-errors-${Environment}'
+      AlarmDescription: Alert when SNS processor errors occur
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SNSProcessorFunction
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref MarketplaceNotificationsTopic
+
+Outputs:
+  MarketplaceCustomersTableName:
+    Description: DynamoDB table for marketplace customers
+    Value: !Ref MarketplaceCustomersTable
+    Export:
+      Name: !Sub '${ProjectName}-marketplace-customers-table-${Environment}'
+
+  MarketplaceCustomersTableArn:
+    Description: ARN of marketplace customers table
+    Value: !GetAtt MarketplaceCustomersTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-marketplace-customers-table-arn-${Environment}'
+
+  UsageRecordsTableName:
+    Description: DynamoDB table for usage records
+    Value: !Ref UsageRecordsTable
+    Export:
+      Name: !Sub '${ProjectName}-marketplace-usage-table-${Environment}'
+
+  UsageRecordsTableArn:
+    Description: ARN of usage records table
+    Value: !GetAtt UsageRecordsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-marketplace-usage-table-arn-${Environment}'
+
+  MarketplaceNotificationsTopicArn:
+    Description: SNS topic for marketplace notifications
+    Value: !Ref MarketplaceNotificationsTopic
+    Export:
+      Name: !Sub '${ProjectName}-marketplace-sns-topic-${Environment}'
+
+  SNSProcessorFunctionArn:
+    Description: Lambda function for SNS processing
+    Value: !GetAtt SNSProcessorFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-marketplace-sns-processor-${Environment}'
+
+  MeteringProcessorFunctionArn:
+    Description: Lambda function for usage metering
+    Value: !GetAtt MeteringProcessorFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-marketplace-metering-processor-${Environment}'
+
+  MarketplaceServiceRoleArn:
+    Description: IAM role for marketplace service
+    Value: !GetAtt MarketplaceServiceRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-marketplace-service-role-${Environment}'
+
+  MarketplaceProductCode:
+    Description: AWS Marketplace product code
+    Value: !Ref MarketplaceProductCode
+    Export:
+      Name: !Sub '${ProjectName}-marketplace-product-code-${Environment}'

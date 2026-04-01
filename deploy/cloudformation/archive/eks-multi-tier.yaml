@@ -1,0 +1,592 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Project Aura - Multi-Tier EKS Cluster Stack (Commercial & GovCloud Compatible)
+
+  Supports both AWS Commercial Cloud (dev/qa) and AWS GovCloud (prod) deployments.
+  Uses EC2 managed node groups exclusively (no Fargate) for GovCloud compatibility.
+
+  Three-tier architecture:
+  - System Node Group: Cluster-critical add-ons (CoreDNS, dnsmasq DaemonSet, monitoring)
+  - Application Node Group: Agent workloads (Orchestrator, Coder, Reviewer, Validator)
+  - Sandbox Node Group: Ephemeral isolated test environments (Spot instances)
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Environment Configuration"
+        Parameters:
+          - Environment
+          - ProjectName
+          - IsGovCloud
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - PrivateSubnetIds
+          - EKSSecurityGroupId
+      - Label:
+          default: "IAM Configuration"
+        Parameters:
+          - EKSClusterRoleArn
+          - EKSNodeRoleArn
+      - Label:
+          default: "System Node Group Configuration"
+        Parameters:
+          - SystemNodeInstanceType
+          - SystemNodeMinSize
+          - SystemNodeMaxSize
+          - SystemNodeDesiredSize
+      - Label:
+          default: "Application Node Group Configuration"
+        Parameters:
+          - AppNodeInstanceType
+          - AppNodeMinSize
+          - AppNodeMaxSize
+          - AppNodeDesiredSize
+          - AppNodeCapacityType
+      - Label:
+          default: "Sandbox Node Group Configuration"
+        Parameters:
+          - SandboxNodeInstanceType
+          - SandboxNodeMinSize
+          - SandboxNodeMaxSize
+          - SandboxNodeDesiredSize
+          - SandboxNodeCapacityType
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Environment name (dev/qa in Commercial Cloud, prod in GovCloud)
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  IsGovCloud:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Set to 'true' when deploying to AWS GovCloud (US)
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for EKS cluster
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnet IDs (minimum 2 for multi-AZ deployment)
+
+  EKSSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: EKS cluster security group ID
+
+  EKSClusterRoleArn:
+    Type: String
+    Description: EKS cluster IAM role ARN
+
+  EKSNodeRoleArn:
+    Type: String
+    Description: EKS node IAM role ARN
+
+  # System Node Group Parameters
+  SystemNodeInstanceType:
+    Type: String
+    Default: t3.medium
+    Description: Instance type for system node group (cluster add-ons)
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+
+  SystemNodeMinSize:
+    Type: Number
+    Default: 2
+    MinValue: 2
+    MaxValue: 6
+    Description: Minimum nodes for system node group (minimum 2 for HA)
+
+  SystemNodeMaxSize:
+    Type: Number
+    Default: 4
+    MinValue: 2
+    MaxValue: 10
+    Description: Maximum nodes for system node group
+
+  SystemNodeDesiredSize:
+    Type: Number
+    Default: 2
+    MinValue: 2
+    MaxValue: 10
+    Description: Desired nodes for system node group
+
+  # Application Node Group Parameters
+  AppNodeInstanceType:
+    Type: String
+    Default: m5.xlarge
+    Description: Instance type for application node group (agent workloads)
+    AllowedValues:
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+
+  AppNodeMinSize:
+    Type: Number
+    Default: 3
+    MinValue: 2
+    MaxValue: 20
+    Description: Minimum nodes for application node group
+
+  AppNodeMaxSize:
+    Type: Number
+    Default: 20
+    MinValue: 2
+    MaxValue: 100
+    Description: Maximum nodes for application node group
+
+  AppNodeDesiredSize:
+    Type: Number
+    Default: 5
+    MinValue: 2
+    MaxValue: 100
+    Description: Desired nodes for application node group
+
+  AppNodeCapacityType:
+    Type: String
+    Default: ON_DEMAND
+    AllowedValues:
+      - ON_DEMAND
+      - SPOT
+    Description: Capacity type for application nodes (ON_DEMAND for stability, SPOT for cost savings)
+
+  # Sandbox Node Group Parameters
+  SandboxNodeInstanceType:
+    Type: String
+    Default: t3.large
+    Description: Instance type for sandbox node group (ephemeral test environments)
+    AllowedValues:
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+
+  SandboxNodeMinSize:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    MaxValue: 20
+    Description: Minimum nodes for sandbox node group (0 for auto-scaling to zero)
+
+  SandboxNodeMaxSize:
+    Type: Number
+    Default: 50
+    MinValue: 0
+    MaxValue: 200
+    Description: Maximum nodes for sandbox node group
+
+  SandboxNodeDesiredSize:
+    Type: Number
+    Default: 2
+    MinValue: 0
+    MaxValue: 50
+    Description: Desired nodes for sandbox node group
+
+  SandboxNodeCapacityType:
+    Type: String
+    Default: SPOT
+    AllowedValues:
+      - ON_DEMAND
+      - SPOT
+    Description: Capacity type for sandbox nodes (SPOT recommended for cost savings)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'prod']
+  IsDevelopment: !Or
+    - !Equals [!Ref Environment, 'dev']
+    - !Equals [!Ref Environment, 'qa']
+  UseGovCloudFeatures: !Equals [!Ref IsGovCloud, 'true']
+
+Resources:
+  # EKS Cluster
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Sub '${ProjectName}-cluster-${Environment}'
+      Version: '1.31'
+      RoleArn: !Ref EKSClusterRoleArn
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref EKSSecurityGroupId
+        SubnetIds: !Ref PrivateSubnetIds
+        EndpointPrivateAccess: true
+        # GovCloud: Private endpoint DNS resolution disabled by default for security
+        EndpointPublicAccess: !If [UseGovCloudFeatures, false, true]
+      Logging:
+        ClusterLogging:
+          EnabledTypes:
+            - Type: api
+            - Type: audit
+            - Type: authenticator
+            - Type: controllerManager
+            - Type: scheduler
+      # Enable encryption for GovCloud compliance (CMMC Level 3, NIST 800-53)
+      EncryptionConfig:
+        - Provider:
+            KeyArn: !GetAtt EKSEncryptionKey.Arn
+          Resources:
+            - secrets
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-cluster-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: GovCloudCompatible
+          Value: 'true'
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # KMS Key for EKS Secrets Encryption
+  EKSEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'KMS key for ${ProjectName} EKS cluster secrets encryption'
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow EKS to use the key
+            Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action:
+              - 'kms:Decrypt'
+              - 'kms:DescribeKey'
+              - 'kms:CreateGrant'
+            Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-eks-encryption-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  EKSEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-eks-${Environment}'
+      TargetKeyId: !Ref EKSEncryptionKey
+
+  # OIDC Provider for IRSA (IAM Roles for Service Accounts)
+  EKSOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
+      ClientIdList:
+        - sts.amazonaws.com
+      # Updated thumbprint for EKS OIDC (valid as of 2025)
+      ThumbprintList:
+        - 9e99a48a9960b14926bb7f3b02e22da2b0ab7280
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Launch Template for System Nodes (shared configuration)
+  SystemNodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-system-nodes-${Environment}'
+      LaunchTemplateData:
+        # IMDSv2 required for security (GovCloud best practice)
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 50
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+              # IOPS and throughput for gp3 (cost-optimized)
+              Iops: 3000
+              Throughput: 125
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-system-node-${Environment}'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: NodeGroup
+                Value: system
+              - Key: k8s.io/cluster-autoscaler/enabled
+                Value: 'true'
+              - Key: !Sub 'k8s.io/cluster-autoscaler/${ProjectName}-cluster-${Environment}'
+                Value: 'owned'
+
+  # System Node Group (Cluster-critical workloads)
+  SystemNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodegroupName: !Sub '${ProjectName}-system-${Environment}'
+      NodeRole: !Ref EKSNodeRoleArn
+      Subnets: !Ref PrivateSubnetIds
+      ScalingConfig:
+        MinSize: !Ref SystemNodeMinSize
+        MaxSize: !Ref SystemNodeMaxSize
+        DesiredSize: !Ref SystemNodeDesiredSize
+      InstanceTypes:
+        - !Ref SystemNodeInstanceType
+      CapacityType: ON_DEMAND  # Always On-Demand for stability
+      LaunchTemplate:
+        Id: !Ref SystemNodeLaunchTemplate
+      UpdateConfig:
+        MaxUnavailable: 1
+      Labels:
+        project: !Ref ProjectName
+        environment: !Ref Environment
+        node-group: system
+        workload-type: cluster-critical
+      Taints:
+        # Prevent application pods from scheduling on system nodes
+        - Key: node-group
+          Value: system
+          Effect: NoSchedule
+      Tags:
+        Name: !Sub '${ProjectName}-system-node-${Environment}'
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        NodeGroup: system
+        ManagedBy: CloudFormation
+
+  # Launch Template for Application Nodes
+  ApplicationNodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-app-nodes-${Environment}'
+      LaunchTemplateData:
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 100
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+              Iops: 3000
+              Throughput: 125
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-app-node-${Environment}'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: NodeGroup
+                Value: application
+              - Key: k8s.io/cluster-autoscaler/enabled
+                Value: 'true'
+              - Key: !Sub 'k8s.io/cluster-autoscaler/${ProjectName}-cluster-${Environment}'
+                Value: 'owned'
+
+  # Application Node Group (Agent workloads)
+  ApplicationNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodegroupName: !Sub '${ProjectName}-application-${Environment}'
+      NodeRole: !Ref EKSNodeRoleArn
+      Subnets: !Ref PrivateSubnetIds
+      ScalingConfig:
+        MinSize: !Ref AppNodeMinSize
+        MaxSize: !Ref AppNodeMaxSize
+        DesiredSize: !Ref AppNodeDesiredSize
+      InstanceTypes:
+        - !Ref AppNodeInstanceType
+      CapacityType: !Ref AppNodeCapacityType
+      LaunchTemplate:
+        Id: !Ref ApplicationNodeLaunchTemplate
+      UpdateConfig:
+        MaxUnavailable: 2
+      Labels:
+        project: !Ref ProjectName
+        environment: !Ref Environment
+        node-group: application
+        workload-type: agent-workloads
+      Tags:
+        Name: !Sub '${ProjectName}-app-node-${Environment}'
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        NodeGroup: application
+        ManagedBy: CloudFormation
+
+  # Launch Template for Sandbox Nodes
+  SandboxNodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-sandbox-nodes-${Environment}'
+      LaunchTemplateData:
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 80
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+              Iops: 3000
+              Throughput: 125
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-sandbox-node-${Environment}'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: NodeGroup
+                Value: sandbox
+              - Key: k8s.io/cluster-autoscaler/enabled
+                Value: 'true'
+              - Key: !Sub 'k8s.io/cluster-autoscaler/${ProjectName}-cluster-${Environment}'
+                Value: 'owned'
+
+  # Sandbox Node Group (Ephemeral test environments)
+  SandboxNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodegroupName: !Sub '${ProjectName}-sandbox-${Environment}'
+      NodeRole: !Ref EKSNodeRoleArn
+      Subnets: !Ref PrivateSubnetIds
+      ScalingConfig:
+        MinSize: !Ref SandboxNodeMinSize
+        MaxSize: !Ref SandboxNodeMaxSize
+        DesiredSize: !Ref SandboxNodeDesiredSize
+      InstanceTypes:
+        - !Ref SandboxNodeInstanceType
+      CapacityType: !Ref SandboxNodeCapacityType
+      LaunchTemplate:
+        Id: !Ref SandboxNodeLaunchTemplate
+      UpdateConfig:
+        MaxUnavailable: 5
+      Labels:
+        project: !Ref ProjectName
+        environment: !Ref Environment
+        node-group: sandbox
+        workload-type: ephemeral-testing
+      Taints:
+        # Prevent non-sandbox pods from scheduling on sandbox nodes
+        - Key: node-group
+          Value: sandbox
+          Effect: NoSchedule
+      Tags:
+        Name: !Sub '${ProjectName}-sandbox-node-${Environment}'
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        NodeGroup: sandbox
+        ManagedBy: CloudFormation
+
+Outputs:
+  ClusterName:
+    Description: EKS cluster name
+    Value: !Ref EKSCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterName'
+
+  ClusterEndpoint:
+    Description: EKS cluster endpoint
+    Value: !GetAtt EKSCluster.Endpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterEndpoint'
+
+  ClusterArn:
+    Description: EKS cluster ARN
+    Value: !GetAtt EKSCluster.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterArn'
+
+  ClusterSecurityGroupId:
+    Description: EKS cluster security group ID
+    Value: !GetAtt EKSCluster.ClusterSecurityGroupId
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterSecurityGroupId'
+
+  OIDCProviderArn:
+    Description: OIDC provider ARN for IRSA
+    Value: !Ref EKSOIDCProvider
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProviderArn'
+
+  OIDCProviderUrl:
+    Description: OIDC provider URL (without https://)
+    Value: !Select [1, !Split ['https://', !GetAtt EKSCluster.OpenIdConnectIssuerUrl]]
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProviderUrl'
+
+  SystemNodeGroupName:
+    Description: System node group name
+    Value: !Ref SystemNodeGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SystemNodeGroupName'
+
+  ApplicationNodeGroupName:
+    Description: Application node group name
+    Value: !Ref ApplicationNodeGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ApplicationNodeGroupName'
+
+  SandboxNodeGroupName:
+    Description: Sandbox node group name
+    Value: !Ref SandboxNodeGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SandboxNodeGroupName'
+
+  EncryptionKeyArn:
+    Description: KMS key ARN for EKS secrets encryption
+    Value: !GetAtt EKSEncryptionKey.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-EncryptionKeyArn'
+
+  KubeconfigCommand:
+    Description: Command to update kubeconfig
+    Value: !Sub 'aws eks update-kubeconfig --region ${AWS::Region} --name ${EKSCluster}'

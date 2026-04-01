@@ -1,0 +1,117 @@
+# Project Aura - ArgoCD Installation via Kustomize
+# GitOps for Kubernetes Deployment (ADR-022)
+#
+# This installs ArgoCD using the official manifests with aura-specific customizations.
+#
+# Installation:
+#   kubectl apply -k deploy/kubernetes/argocd/
+#
+# Access ArgoCD UI:
+#   kubectl port-forward svc/argocd-server -n argocd 8080:443
+#   # Get initial admin password
+#   kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+#
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argocd
+
+resources:
+  - namespace.yaml
+  # Official ArgoCD installation manifest (stable release)
+  - https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.2/manifests/install.yaml
+  # ArgoCD Project for Aura
+  - projects/aura.yaml
+  # ArgoCD Applications
+  - applications/aura-frontend.yaml
+  - applications/aura-api.yaml
+
+labels:
+  - pairs:
+      project: aura
+      managed-by: kustomize
+    includeSelectors: false
+
+# Patches for ArgoCD server configuration
+patches:
+  # Configure ArgoCD server for insecure mode (behind ALB/ingress with TLS termination)
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-server
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-server
+                args:
+                  - /usr/local/bin/argocd-server
+                  - --insecure
+    target:
+      kind: Deployment
+      name: argocd-server
+
+  # Resource limits for ArgoCD components (right-sized for dev)
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-server
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-server
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 128Mi
+                  limits:
+                    cpu: 200m
+                    memory: 256Mi
+    target:
+      kind: Deployment
+      name: argocd-server
+
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-repo-server
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-repo-server
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 128Mi
+                  limits:
+                    cpu: 200m
+                    memory: 256Mi
+    target:
+      kind: Deployment
+      name: argocd-repo-server
+
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-applicationset-controller
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-applicationset-controller
+                resources:
+                  requests:
+                    cpu: 25m
+                    memory: 64Mi
+                  limits:
+                    cpu: 100m
+                    memory: 128Mi
+    target:
+      kind: Deployment
+      name: argocd-applicationset-controller

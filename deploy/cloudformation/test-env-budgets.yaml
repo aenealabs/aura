@@ -1,0 +1,403 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.7 - Test Environment Budgets (AWS Budgets for Cost Governance)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  MonthlyBudgetLimit:
+    Type: Number
+    Default: 500
+    Description: Monthly budget limit for test environments (USD)
+
+  AlertThreshold80:
+    Type: Number
+    Default: 80
+    Description: Alert when budget reaches this percentage (first alert)
+
+  AlertThreshold100:
+    Type: Number
+    Default: 100
+    Description: Alert when budget reaches this percentage (critical alert)
+
+  AlertEmail:
+    Type: String
+    Description: Email for budget alerts
+
+Resources:
+  # Main Test Environment Monthly Budget
+  TestEnvMonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-test-environments-monthly-${Environment}'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetLimit
+          Unit: USD
+        CostFilters:
+          TagKeyValue:
+            - !Sub 'user:Component$test-environments'
+            - !Sub 'user:Environment$${Environment}'
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+          IncludeRefund: false
+          IncludeCredit: false
+          IncludeUpfront: true
+          IncludeRecurring: true
+          IncludeOtherSubscription: true
+          IncludeSupport: false
+          IncludeDiscount: true
+          UseAmortized: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: !Ref AlertThreshold80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: !Ref AlertThreshold100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+  # Per-User Daily Budget (enforces $50/day per user concept)
+  TestEnvDailyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-test-environments-daily-${Environment}'
+        BudgetType: COST
+        TimeUnit: DAILY
+        BudgetLimit:
+          Amount: 50
+          Unit: USD
+        CostFilters:
+          TagKeyValue:
+            - !Sub 'user:Component$test-environments'
+            - !Sub 'user:Environment$${Environment}'
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+          IncludeRefund: false
+          IncludeCredit: false
+          IncludeUpfront: true
+          IncludeRecurring: true
+          IncludeOtherSubscription: true
+          IncludeSupport: false
+          IncludeDiscount: true
+          UseAmortized: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+  # Service Catalog Provisioned Product Budget (tracks Service Catalog usage)
+  ServiceCatalogBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-service-catalog-${Environment}'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetLimit
+          Unit: USD
+        CostFilters:
+          Service:
+            - AWS Service Catalog
+            - Amazon Elastic Container Service
+            - Amazon DynamoDB
+            - Amazon Simple Storage Service
+            - AWS Lambda
+            - AWS Step Functions
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+          IncludeRefund: false
+          IncludeCredit: false
+          IncludeUpfront: true
+          IncludeRecurring: true
+          IncludeOtherSubscription: true
+          IncludeSupport: false
+          IncludeDiscount: true
+          UseAmortized: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: !Ref AlertThreshold80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+  # DynamoDB Table for Cost Tracking per User
+  CostTrackingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-test-env-cost-tracking-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: month
+          AttributeType: S
+        - AttributeName: environment_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: month
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: environment-index
+          KeySchema:
+            - AttributeName: environment_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: test-environments
+
+  # Lambda to aggregate daily costs and update CloudWatch metrics
+  CostAggregatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-test-env-cost-aggregator-${Environment}'
+      Description: Aggregates test environment costs and publishes to CloudWatch
+      Runtime: python3.11
+      Handler: index.handler
+      Timeout: 60
+      MemorySize: 256
+      Role: !GetAtt CostAggregatorRole.Arn
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          COST_TABLE: !Ref CostTrackingTable
+          STATE_TABLE: !Sub '${ProjectName}-test-env-state-${Environment}'
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+          from datetime import datetime, timezone
+          from decimal import Decimal
+
+          cloudwatch = boto3.client('cloudwatch')
+          dynamodb = boto3.resource('dynamodb')
+
+          def handler(event, context):
+              """Aggregate test environment costs and publish metrics."""
+              env = os.environ['ENVIRONMENT']
+              project = os.environ['PROJECT_NAME']
+              state_table = dynamodb.Table(os.environ['STATE_TABLE'])
+
+              # Scan active environments
+              response = state_table.scan(
+                  FilterExpression='#s IN (:active, :provisioning, :pending)',
+                  ExpressionAttributeNames={'#s': 'status'},
+                  ExpressionAttributeValues={
+                      ':active': 'active',
+                      ':provisioning': 'provisioning',
+                      ':pending': 'pending_approval'
+                  }
+              )
+
+              environments = response.get('Items', [])
+
+              # Calculate metrics
+              total_daily_cost = Decimal('0')
+              by_type = {'quick': 0, 'standard': 0, 'extended': 0, 'compliance': 0}
+              by_status = {'active': 0, 'provisioning': 0, 'pending_approval': 0}
+              by_template = {}
+
+              for env_item in environments:
+                  status = env_item.get('status', 'unknown')
+                  env_type = env_item.get('environment_type', 'unknown')
+                  template = env_item.get('template_id', 'unknown')
+                  cost = Decimal(str(env_item.get('cost_estimate_daily', 0)))
+
+                  total_daily_cost += cost
+                  if env_type in by_type:
+                      by_type[env_type] += 1
+                  if status in by_status:
+                      by_status[status] += 1
+                  by_template[template] = by_template.get(template, Decimal('0')) + cost
+
+              namespace = f'{project}/TestEnvironments'
+
+              # Publish metrics
+              metrics = [
+                  {'MetricName': 'ActiveEnvironments', 'Value': by_status['active'], 'Unit': 'Count'},
+                  {'MetricName': 'PendingApproval', 'Value': by_status['pending_approval'], 'Unit': 'Count'},
+                  {'MetricName': 'Provisioning', 'Value': by_status['provisioning'], 'Unit': 'Count'},
+                  {'MetricName': 'EstimatedDailyCost', 'Value': float(total_daily_cost), 'Unit': 'None'},
+              ]
+
+              # Add type breakdown
+              for env_type, count in by_type.items():
+                  metrics.append({
+                      'MetricName': 'EnvironmentsByType',
+                      'Value': count,
+                      'Unit': 'Count',
+                      'Dimensions': [
+                          {'Name': 'Type', 'Value': env_type},
+                          {'Name': 'Environment', 'Value': env}
+                      ]
+                  })
+
+              # Add template cost breakdown
+              for template, cost in by_template.items():
+                  metrics.append({
+                      'MetricName': 'CostByTemplate',
+                      'Value': float(cost),
+                      'Unit': 'None',
+                      'Dimensions': [
+                          {'Name': 'Template', 'Value': template},
+                          {'Name': 'Environment', 'Value': env}
+                      ]
+                  })
+
+              # Publish to CloudWatch
+              for metric in metrics:
+                  if 'Dimensions' not in metric:
+                      metric['Dimensions'] = [{'Name': 'Environment', 'Value': env}]
+
+                  cloudwatch.put_metric_data(
+                      Namespace=namespace,
+                      MetricData=[metric]
+                  )
+
+              return {
+                  'statusCode': 200,
+                  'body': f'Published {len(metrics)} metrics for {len(environments)} environments'
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  CostAggregatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-cost-aggregator-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: CostAggregatorPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                  - dynamodb:GetItem
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-state-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-cost-tracking-${Environment}'
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': !Sub '${ProjectName}/TestEnvironments'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # EventBridge rule to run cost aggregator every 6 hours (cost optimized from 1 hour)
+  CostAggregatorSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-test-env-cost-aggregator-${Environment}'
+      Description: Run cost aggregator every 6 hours (cost optimized from 1 hour)
+      ScheduleExpression: rate(6 hours)
+      State: ENABLED
+      Targets:
+        - Id: CostAggregatorTarget
+          Arn: !GetAtt CostAggregatorFunction.Arn
+
+  CostAggregatorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CostAggregatorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CostAggregatorSchedule.Arn
+
+Outputs:
+  MonthlyBudgetName:
+    Description: Monthly budget name
+    Value: !Sub '${ProjectName}-test-environments-monthly-${Environment}'
+
+  DailyBudgetName:
+    Description: Daily budget name
+    Value: !Sub '${ProjectName}-test-environments-daily-${Environment}'
+
+  CostTrackingTableName:
+    Description: Cost tracking DynamoDB table name
+    Value: !Ref CostTrackingTable
+    Export:
+      Name: !Sub '${ProjectName}-test-env-cost-table-${Environment}'
+
+  CostAggregatorFunctionArn:
+    Description: Cost aggregator Lambda ARN
+    Value: !GetAtt CostAggregatorFunction.Arn

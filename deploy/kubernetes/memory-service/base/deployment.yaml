@@ -1,0 +1,183 @@
+# Project Aura - Neural Memory Service Deployment (Base)
+# Deploys the Titan Neural Memory inference service to EKS with GPU support
+#
+# This is the base deployment - use overlays for environment-specific values.
+#
+# Prerequisites:
+# 1. ECR repository: aura-memory-service-{env}
+# 2. ConfigMap: aura-memory-service-config
+# 3. ServiceAccount with IRSA for S3/DynamoDB access
+# 4. GPU-enabled nodes with nvidia.com/gpu resource available
+#
+# For GovCloud: Uses NVIDIA GPUs (g5 instances)
+# For Commercial AWS: Can optionally use Inferentia2 (inf2 instances)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aura-memory-service
+  namespace: default
+  labels:
+    app: aura-memory-service
+    component: neural-memory
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aura-memory-service
+  template:
+    metadata:
+      labels:
+        app: aura-memory-service
+        component: neural-memory
+      annotations:
+        # Force pod restart on ConfigMap changes
+        checksum/config: "{{ include (print $.Template.BasePath \"/configmap.yaml\") . | sha256sum }}"
+        # Prometheus scraping
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: aura-memory-service
+
+      # Node affinity - schedule on memory-optimized or GPU nodes (ADR-058)
+      # Pod anti-affinity to spread across nodes for high availability
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: workload-type
+                    operator: In
+                    values:
+                      - memory-optimized
+                      - gpu-compute
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: aura-memory-service
+                topologyKey: kubernetes.io/hostname
+
+      # Tolerate memory-optimized and GPU node taints
+      tolerations:
+        - key: "workload-type"
+          operator: "Equal"
+          value: "memory-optimized"
+          effect: "NoSchedule"
+        - key: "workload-type"
+          operator: "Equal"
+          value: "gpu-compute"
+          effect: "NoSchedule"
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: aura-memory-service
+          # Base image name - overlays replace with full ECR path
+          image: aura-memory-service:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+
+          # Environment variables from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: aura-memory-service-config
+
+          # Resource requests - CPU-only mode for testing
+          # Uncomment nvidia.com/gpu lines when GPU nodes are available
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+              # nvidia.com/gpu: 1
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+              # nvidia.com/gpu: 1
+
+          # Probes for Kubernetes health management
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: health
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          # Longer startup probe for model loading
+          startupProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 15
+            failureThreshold: 30  # Allow up to 5 minutes for model loading
+
+          # Security context for the container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # Needs write for model cache
+            capabilities:
+              drop:
+                - ALL
+
+          # Volume mounts
+          volumeMounts:
+            - name: model-cache
+              mountPath: /var/lib/memory-service/models
+            - name: memory-state
+              mountPath: /var/lib/memory-service/state
+            - name: shm
+              mountPath: /dev/shm
+
+      volumes:
+        # Persistent model cache
+        - name: model-cache
+          emptyDir:
+            sizeLimit: 50Gi
+        # Memory state persistence
+        - name: memory-state
+          emptyDir:
+            sizeLimit: 10Gi
+        # Shared memory for PyTorch
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+
+      # Graceful shutdown - allow time for request draining
+      terminationGracePeriodSeconds: 60

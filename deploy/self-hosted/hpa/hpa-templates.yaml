@@ -1,0 +1,316 @@
+# Project Aura - HPA Configuration Templates
+#
+# Horizontal Pod Autoscaler configurations for self-hosted deployments.
+# Based on resource baselines defined in docs/self-hosted/RESOURCE_BASELINES.md
+#
+# ADR-049 Phase 0 - Self-Hosted Deployment
+#
+# Prerequisites:
+#   - metrics-server installed
+#   - prometheus-adapter for custom metrics
+#   - DCGM exporter for GPU metrics (optional)
+#
+---
+# API Service HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: aura-api-hpa
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: aura-api
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: aura
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: aura-api
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+      selectPolicy: Min
+
+---
+# Frontend HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: aura-frontend-hpa
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: aura-frontend
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: aura
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: aura-frontend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+
+---
+# Agent Orchestrator HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: agent-orchestrator-hpa
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: agent-orchestrator
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: aura
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: agent-orchestrator
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+
+---
+# Memory Service HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: memory-service-hpa
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: memory-service
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: aura
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: memory-service
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+
+---
+# LLM Router HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: llm-router-hpa
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: llm-router
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: aura
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-router
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+
+---
+# vLLM Inference HPA (GPU-aware)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vllm-hpa
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: aura
+  annotations:
+    description: "GPU-aware scaling - requires DCGM exporter for GPU metrics"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vllm-inference
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    # Fallback to CPU for non-GPU deployments
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 900  # 15 min - GPU pods expensive to restart
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 300
+
+---
+# OTEL Collector HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: otel-collector-hpa
+  namespace: aura-monitoring
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: aura
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: otel-collector
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

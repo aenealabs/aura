@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.7 - Runtime Security Discovery (ADR-083 Agent Topology & Shadow Detection)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # EventBridge Rule - Shadow Agent Detection Events
+  ShadowAgentEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-shadow-agent-detected-${Environment}'
+      Description: Triggers on shadow agent detection events
+      State: ENABLED
+      EventPattern:
+        source:
+          - !Sub '${ProjectName}.runtime-security'
+        detail-type:
+          - ShadowAgentDetected
+      Targets:
+        - Arn: !Ref ShadowAgentAlertTopic
+          Id: ShadowAgentSNSTarget
+
+  # EventBridge Rule - Agent Topology Change Events
+  TopologyChangeEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-topology-change-${Environment}'
+      Description: Triggers on agent topology changes
+      State: ENABLED
+      EventPattern:
+        source:
+          - !Sub '${ProjectName}.runtime-security'
+        detail-type:
+          - AgentTopologyChanged
+          - AgentRegistered
+          - AgentDeregistered
+      Targets:
+        - Arn: !Ref DiscoveryAlertTopic
+          Id: TopologyChangeSNSTarget
+
+  # SNS Topic - Shadow Agent Alerts (Critical)
+  ShadowAgentAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-shadow-agent-alerts-${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  ShadowAgentAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref ShadowAgentAlertTopic
+      Topics:
+        - !Ref ShadowAgentAlertTopic
+
+  # SNS Topic - Discovery Events
+  DiscoveryAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-discovery-alerts-${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  DiscoveryAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref DiscoveryAlertTopic
+      Topics:
+        - !Ref DiscoveryAlertTopic
+
+  # IAM Role for Discovery Service (Neptune graph access)
+  DiscoveryServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-discovery-service-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com, lambda.amazonaws.com]
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DiscoveryAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [neptune-db:ReadDataViaQuery, neptune-db:WriteDataViaQuery, neptune-db:GetQueryStatus]
+                Resource: !Sub 'arn:${AWS::Partition}:neptune-db:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*-${Environment}/*'
+              - Effect: Allow
+                Action: [events:PutEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-083
+
+  # CloudWatch Alarm - Shadow Agent Detection Rate
+  ShadowAgentAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-shadow-agents-detected-${Environment}'
+      AlarmDescription: Alert when 3+ shadow agents detected in 1 hour
+      MetricName: ShadowAgentsDetected
+      Namespace: !Sub 'Aura/RuntimeSecurity/${Environment}'
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref ShadowAgentAlertTopic
+
+Outputs:
+  ShadowAgentAlertTopicArn:
+    Description: Shadow agent alert SNS topic ARN
+    Value: !Ref ShadowAgentAlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-ShadowAgentAlertTopicArn'
+
+  DiscoveryAlertTopicArn:
+    Description: Discovery alert SNS topic ARN
+    Value: !Ref DiscoveryAlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-DiscoveryAlertTopicArn'
+
+  DiscoveryServiceRoleArn:
+    Description: Discovery service role ARN
+    Value: !GetAtt DiscoveryServiceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DiscoveryServiceRoleArn'

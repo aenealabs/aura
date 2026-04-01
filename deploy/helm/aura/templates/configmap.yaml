@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aura.fullname" . }}-config
+  labels:
+    {{- include "aura.labels" . | nindent 4 }}
+data:
+  # Deployment configuration
+  AURA_DEPLOYMENT_MODE: {{ .Values.global.deploymentMode | quote }}
+  AURA_EDITION: {{ include "aura.edition" . | quote }}
+
+  # TLS Configuration
+  TLS_ENABLED: {{ .Values.global.tls.enabled | quote }}
+
+  # Logging configuration
+  LOG_LEVEL: {{ .Values.logging.level | default "info" | quote }}
+  LOG_JSON: {{ .Values.logging.json | default true | quote }}
+  LOG_REQUEST_ID: {{ .Values.logging.requestId | default true | quote }}
+
+  # Database providers
+  GRAPH_PROVIDER: {{ include "aura.databaseProvider" (dict "type" "graph" "context" .) | quote }}
+  VECTOR_PROVIDER: {{ include "aura.databaseProvider" (dict "type" "vector" "context" .) | quote }}
+  DOCUMENT_PROVIDER: {{ include "aura.databaseProvider" (dict "type" "document" "context" .) | quote }}
+
+  # LLM provider
+  LLM_PROVIDER: {{ include "aura.llmProvider" . | quote }}
+
+  # Service endpoints (internal)
+  {{- if and (include "aura.isSelfHosted" .) .Values.databases.graph.neo4j.enabled }}
+  NEO4J_URI: {{ printf "bolt://%s-neo4j:%d" (include "aura.fullname" .) (.Values.databases.graph.neo4j.tls.boltPort | int) | quote }}
+  {{- end }}
+  {{- if and (include "aura.isSelfHosted" .) .Values.databases.vector.opensearch.enabled }}
+  OPENSEARCH_HOST: {{ printf "%s-opensearch" (include "aura.fullname" .) | quote }}
+  OPENSEARCH_PORT: "9200"
+  {{- end }}
+  {{- if and (include "aura.isSelfHosted" .) .Values.databases.document.postgres.enabled }}
+  POSTGRES_HOST: {{ printf "%s-postgres" (include "aura.fullname" .) | quote }}
+  POSTGRES_PORT: "5432"
+  POSTGRES_DATABASE: {{ .Values.databases.document.postgres.database | quote }}
+  {{- end }}
+  {{- if .Values.redis.enabled }}
+  REDIS_HOST: {{ printf "%s-redis-master" (include "aura.fullname" .) | quote }}
+  REDIS_PORT: "6379"
+  {{- end }}
+  {{- if .Values.storage.minio.enabled }}
+  MINIO_ENDPOINT: {{ printf "%s-minio:9000" (include "aura.fullname" .) | quote }}
+  {{- end }}
+
+  # Tracing configuration
+  {{- if .Values.tracing.enabled }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.tracing.otlpEndpoint | quote }}
+  OTEL_TRACE_SAMPLER_ARG: {{ .Values.tracing.sampleRate | quote }}
+  {{- end }}
+
+  # Feature flags based on edition
+  FEATURE_ADVANCED_GRAPHRAG: {{ if or (eq (include "aura.edition" .) "enterprise") (eq (include "aura.edition" .) "enterprise_plus") }}"true"{{ else }}"false"{{ end }}
+  FEATURE_SSO: {{ if or (eq (include "aura.edition" .) "enterprise") (eq (include "aura.edition" .) "enterprise_plus") }}"true"{{ else }}"false"{{ end }}
+  FEATURE_AUDIT_LOGGING: {{ if or (eq (include "aura.edition" .) "enterprise") (eq (include "aura.edition" .) "enterprise_plus") }}"true"{{ else }}"false"{{ end }}
+  FEATURE_MULTI_TENANCY: {{ if eq (include "aura.edition" .) "enterprise_plus" }}"true"{{ else }}"false"{{ end }}
+  FEATURE_CUSTOM_AGENTS: {{ if eq (include "aura.edition" .) "enterprise_plus" }}"true"{{ else }}"false"{{ end }}

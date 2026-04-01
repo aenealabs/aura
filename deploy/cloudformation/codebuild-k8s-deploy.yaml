@@ -1,0 +1,173 @@
+# Project Aura - K8s Deployment CodeBuild Project (Layer 3.5: EKS Manifest Deployment)
+#
+# Deploys Kubernetes manifests to EKS cluster.
+# Called by Step Functions deployment pipeline after container images are built.
+#
+# Usage:
+#   aws cloudformation deploy \
+#     --template-file deploy/cloudformation/codebuild-k8s-deploy.yaml \
+#     --stack-name aura-codebuild-k8s-deploy-qa \
+#     --parameter-overrides Environment=qa \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - K8s Deployment CodeBuild Project (Layer 3.5: EKS Manifest Deployment)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used for resource naming
+
+  Environment:
+    Type: String
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: GitHub branch to build from
+
+Resources:
+  # =============================================================================
+  # IAM Role for CodeBuild
+  # =============================================================================
+  K8sDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-k8s-deploy-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeConnectionsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: codestar-connections:UseConnection
+                Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-k8s-deploy-${Environment}*'
+        - PolicyName: EKSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                  - eks:ListClusters
+                Resource: !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
+        - PolicyName: SSMAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:PutParameter
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+        - PolicyName: ECRAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-*-${Environment}'
+        - PolicyName: CloudFormationRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-*-${Environment}/*'
+        - PolicyName: STSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:GetCallerIdentity
+                Resource: '*'
+
+  # =============================================================================
+  # CodeBuild Project
+  # =============================================================================
+  K8sDeployProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-k8s-deploy-${Environment}'
+      Description: 'Project Aura - K8s Deployment CodeBuild Project (Layer 3.5: EKS Manifest Deployment)'
+      # Use Foundation role to avoid IAM eventual consistency issues (see ADR-035)
+      # The K8sDeployRole created in this stack doesn't propagate fast enough
+      ServiceRole: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-foundation-codebuild-role-${Environment}'
+      TimeoutInMinutes: 30
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-k8s-deploy.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_REGION
+            Value: !Ref AWS::Region
+      Artifacts:
+        Type: NO_ARTIFACTS
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub '/aws/codebuild/${ProjectName}-k8s-deploy-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '3.5'
+
+Outputs:
+  ProjectName:
+    Description: Name of the CodeBuild project
+    Value: !Ref K8sDeployProject
+
+  ProjectArn:
+    Description: ARN of the CodeBuild project
+    Value: !GetAtt K8sDeployProject.Arn
+
+  RoleArn:
+    Description: ARN of the CodeBuild service role
+    Value: !GetAtt K8sDeployRole.Arn

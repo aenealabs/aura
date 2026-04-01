@@ -1,0 +1,1179 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.3 - SSR Training Pipeline (Self-Play SWE-RL Agent Training)'
+
+# ADR-050 Phase 2: Agent Training Pipeline
+# Provides ECS Fargate cluster, task definitions, Step Functions state machine,
+# and IAM roles for the Self-Play SWE-RL training pipeline.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  VpcId:
+    Type: String
+    Description: VPC ID for ECS tasks
+    Default: ''
+
+  PrivateSubnetIds:
+    Type: String
+    Description: Comma-separated list of private subnet IDs for ECS tasks
+    Default: ''
+
+  AlertEmail:
+    Type: String
+    Description: Email address for training alerts
+    Default: ''
+
+  BugInjectionCpu:
+    Type: Number
+    Default: 4096
+    Description: CPU units for bug injection task (1024 = 1 vCPU)
+
+  BugInjectionMemory:
+    Type: Number
+    Default: 16384
+    Description: Memory (MB) for bug injection task
+
+  BugSolvingCpu:
+    Type: Number
+    Default: 4096
+    Description: CPU units for bug solving task (1024 = 1 vCPU)
+
+  BugSolvingMemory:
+    Type: Number
+    Default: 16384
+    Description: Memory (MB) for bug solving task
+
+  SpotWeight:
+    Type: Number
+    Default: 4
+    Description: Weight for Fargate Spot (higher = more Spot usage)
+
+  OnDemandWeight:
+    Type: Number
+    Default: 1
+    Description: Weight for Fargate On-Demand
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+  HasVpc: !Not [!Equals [!Ref VpcId, '']]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ============================================================================
+  # ECS Cluster for SSR Training
+  # ============================================================================
+
+  SSRTrainingCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${ProjectName}-ssr-training-${Environment}'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE_SPOT
+          Weight: !Ref SpotWeight
+        - CapacityProvider: FARGATE
+          Weight: !Ref OnDemandWeight
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+        - Key: Purpose
+          Value: ssr-training
+
+  # ============================================================================
+  # Security Group for Training Tasks
+  # ============================================================================
+
+  SSRTrainingSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: HasVpc
+    Properties:
+      GroupName: !Sub '${ProjectName}-ssr-training-${Environment}'
+      GroupDescription: Security group for SSR training ECS tasks
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: DNS resolution
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS for AWS APIs and git operations
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH for git clone operations
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-ssr-training-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-training
+
+  # ============================================================================
+  # ECR Repositories
+  # ============================================================================
+
+  BugInjectionRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-ssr-bug-injection'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 20 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-bug-injection
+
+  BugSolvingRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-ssr-bug-solving'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 20 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-bug-solving
+
+  # ============================================================================
+  # CloudWatch Log Groups
+  # ============================================================================
+
+  BugInjectionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}-ssr-bug-injection-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-bug-injection
+
+  BugSolvingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}-ssr-bug-solving-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-bug-solving
+
+  SSRStepFunctionsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/states/${ProjectName}-ssr-training-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-training
+
+  # ============================================================================
+  # IAM Roles
+  # ============================================================================
+
+  # Task Execution Role (for ECS agent to pull images, write logs)
+  SSRTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ssr-task-execution-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: SSRTaskExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-training
+
+  # Task Role for Bug Injection Container
+  SSRBugInjectionTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ssr-bug-injection-task-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SSRBugInjectionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # S3 - Read/write artifacts
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}'
+              # DynamoDB - Update artifact state
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-training-state-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-training-state-${Environment}/index/*'
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !GetAtt BugInjectionLogGroup.Arn
+                  - !Sub '${BugInjectionLogGroup.Arn}:*'
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/SSRTraining'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-bug-injection
+
+  # Task Role for Bug Solving Container
+  SSRBugSolvingTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ssr-bug-solving-task-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SSRBugSolvingPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # S3 - Read artifacts, write solutions
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}'
+              # DynamoDB - Update training state
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-training-state-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-training-state-${Environment}/index/*'
+              # Bedrock - Invoke LLM for bug solving
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-*'
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !GetAtt BugSolvingLogGroup.Arn
+                  - !Sub '${BugSolvingLogGroup.Arn}:*'
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/SSRTraining'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-bug-solving
+
+  # Step Functions Execution Role
+  SSRStepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ssr-stepfunctions-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SSRStepFunctionsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # ECS task management
+              - Effect: Allow
+                Action:
+                  - ecs:RunTask
+                  - ecs:StopTask
+                  - ecs:DescribeTasks
+                Resource: '*'
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !GetAtt SSRTrainingCluster.Arn
+              # Pass roles to ECS
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt SSRTaskExecutionRole.Arn
+                  - !GetAtt SSRBugInjectionTaskRole.Arn
+                  - !GetAtt SSRBugSolvingTaskRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+              # DynamoDB operations
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-training-state-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-training-state-${Environment}/index/*'
+              # KMS - Decrypt/Encrypt for DynamoDB and S3 (key from Layer 7.2)
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                  - kms:DescribeKey
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService:
+                      - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+                      - !Sub 's3.${AWS::Region}.amazonaws.com'
+                  ForAnyValue:StringLike:
+                    kms:ResourceAliases: !Sub 'alias/${ProjectName}-ssr-training-${Environment}'
+              # S3 - Check artifact existence
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}/*'
+              # SNS notifications - always use computed ARN (avoids conditional !Ref issues)
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-ssr-training-alerts-${Environment}'
+              # CloudWatch Events (for wait states)
+              - Effect: Allow
+                Action:
+                  - events:PutTargets
+                  - events:PutRule
+                  - events:DescribeRule
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForECSTaskRule'
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !GetAtt SSRStepFunctionsLogGroup.Arn
+                  - !Sub '${SSRStepFunctionsLogGroup.Arn}:*'
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/SSRTraining'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-training
+
+  # ============================================================================
+  # ECS Task Definitions
+  # ============================================================================
+
+  BugInjectionTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ProjectName}-ssr-bug-injection-${Environment}'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref BugInjectionCpu
+      Memory: !Ref BugInjectionMemory
+      ExecutionRoleArn: !GetAtt SSRTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt SSRBugInjectionTaskRole.Arn
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: bug-injection
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${BugInjectionRepository}:latest'
+          Essential: true
+          LinuxParameters:
+            InitProcessEnabled: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BugInjectionLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: bug-injection
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: PROJECT_NAME
+              Value: !Ref ProjectName
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: SSR_BUCKET
+              Value: !Sub '${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}'
+            - Name: SSR_TABLE
+              Value: !Sub '${ProjectName}-ssr-training-state-${Environment}'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - python -c "import sys; sys.exit(0)"
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          Ulimits:
+            - Name: nofile
+              SoftLimit: 65535
+              HardLimit: 65535
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-bug-injection
+
+  BugSolvingTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ProjectName}-ssr-bug-solving-${Environment}'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref BugSolvingCpu
+      Memory: !Ref BugSolvingMemory
+      ExecutionRoleArn: !GetAtt SSRTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt SSRBugSolvingTaskRole.Arn
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: bug-solving
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${BugSolvingRepository}:latest'
+          Essential: true
+          LinuxParameters:
+            InitProcessEnabled: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BugSolvingLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: bug-solving
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: PROJECT_NAME
+              Value: !Ref ProjectName
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: SSR_BUCKET
+              Value: !Sub '${ProjectName}-ssr-training-${AWS::AccountId}-${Environment}'
+            - Name: SSR_TABLE
+              Value: !Sub '${ProjectName}-ssr-training-state-${Environment}'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - python -c "import sys; sys.exit(0)"
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          Ulimits:
+            - Name: nofile
+              SoftLimit: 65535
+              HardLimit: 65535
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-bug-solving
+
+  # ============================================================================
+  # Step Functions State Machine
+  # ============================================================================
+
+  SSRTrainingStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ProjectName}-ssr-training-workflow-${Environment}'
+      RoleArn: !GetAtt SSRStepFunctionsRole.Arn
+      LoggingConfiguration:
+        Level: ALL
+        IncludeExecutionData: true
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt SSRStepFunctionsLogGroup.Arn
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString: !Sub |
+        {
+          "Comment": "SSR Training Pipeline - Bug Injection and Solving Workflow",
+          "StartAt": "ValidateInput",
+          "States": {
+            "ValidateInput": {
+              "Type": "Pass",
+              "Comment": "Validate training job input parameters",
+              "Next": "GetArtifact"
+            },
+            "GetArtifact": {
+              "Type": "Task",
+              "Comment": "Retrieve bug artifact from DynamoDB",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:getItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-ssr-training-state-${Environment}",
+                "Key": {
+                  "artifact_id": {
+                    "S.$": "$.artifact_id"
+                  }
+                }
+              },
+              "ResultPath": "$.artifact",
+              "Next": "CheckArtifactExists"
+            },
+            "CheckArtifactExists": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.artifact.Item",
+                  "IsPresent": true,
+                  "Next": "UpdateStatusToTraining"
+                }
+              ],
+              "Default": "ArtifactNotFound"
+            },
+            "ArtifactNotFound": {
+              "Type": "Fail",
+              "Error": "ArtifactNotFound",
+              "Cause": "The specified artifact does not exist"
+            },
+            "UpdateStatusToTraining": {
+              "Type": "Task",
+              "Comment": "Update artifact status to training",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-ssr-training-state-${Environment}",
+                "Key": {
+                  "artifact_id": {
+                    "S.$": "$.artifact_id"
+                  }
+                },
+                "UpdateExpression": "SET #s = :status, training_started_at = :started",
+                "ExpressionAttributeNames": {
+                  "#s": "status"
+                },
+                "ExpressionAttributeValues": {
+                  ":status": {
+                    "S": "training"
+                  },
+                  ":started": {
+                    "S.$": "$$.State.EnteredTime"
+                  }
+                }
+              },
+              "ResultPath": null,
+              "Next": "RunBugSolvingTask"
+            },
+            "RunBugSolvingTask": {
+              "Type": "Task",
+              "Comment": "Run bug solving ECS task",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${SSRTrainingCluster.Arn}",
+                "TaskDefinition": "${BugSolvingTaskDefinition}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "Subnets.$": "States.StringSplit($.subnet_ids, ',')",
+                    "SecurityGroups.$": "States.Array($.security_group_id)",
+                    "AssignPublicIp": "DISABLED"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "bug-solving",
+                      "Environment": [
+                        {
+                          "Name": "ARTIFACT_ID",
+                          "Value.$": "$.artifact_id"
+                        },
+                        {
+                          "Name": "REPOSITORY_ID",
+                          "Value.$": "$.repository_id"
+                        },
+                        {
+                          "Name": "TRAINING_JOB_ID",
+                          "Value.$": "$.training_job_id"
+                        },
+                        {
+                          "Name": "MAX_ATTEMPTS",
+                          "Value.$": "States.Format('{}', $.max_attempts)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "ResultPath": "$.solving_result",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.error",
+                  "Next": "HandleSolvingFailure"
+                }
+              ],
+              "Next": "CheckSolvingResult"
+            },
+            "HandleSolvingFailure": {
+              "Type": "Task",
+              "Comment": "Update status on solving failure",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-ssr-training-state-${Environment}",
+                "Key": {
+                  "artifact_id": {
+                    "S.$": "$.artifact_id"
+                  }
+                },
+                "UpdateExpression": "SET #s = :status, error_message = :error",
+                "ExpressionAttributeNames": {
+                  "#s": "status"
+                },
+                "ExpressionAttributeValues": {
+                  ":status": {
+                    "S": "failed"
+                  },
+                  ":error": {
+                    "S.$": "$.error.Cause"
+                  }
+                }
+              },
+              "ResultPath": null,
+              "Next": "CreateHigherOrderBug"
+            },
+            "CheckSolvingResult": {
+              "Type": "Choice",
+              "Comment": "Check if bug was solved (exit code 0 = success)",
+              "Choices": [
+                {
+                  "Variable": "$.solving_result.Containers[0].ExitCode",
+                  "NumericEquals": 0,
+                  "Next": "RecordSuccess"
+                }
+              ],
+              "Default": "CreateHigherOrderBug"
+            },
+            "RecordSuccess": {
+              "Type": "Task",
+              "Comment": "Record successful bug resolution",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-ssr-training-state-${Environment}",
+                "Key": {
+                  "artifact_id": {
+                    "S.$": "$.artifact_id"
+                  }
+                },
+                "UpdateExpression": "SET #s = :status, training_completed_at = :completed, solved = :solved",
+                "ExpressionAttributeNames": {
+                  "#s": "status"
+                },
+                "ExpressionAttributeValues": {
+                  ":status": {
+                    "S": "completed"
+                  },
+                  ":completed": {
+                    "S.$": "$$.State.EnteredTime"
+                  },
+                  ":solved": {
+                    "BOOL": true
+                  }
+                }
+              },
+              "ResultPath": null,
+              "Next": "PublishMetrics"
+            },
+            "CreateHigherOrderBug": {
+              "Type": "Pass",
+              "Comment": "Failed attempts become higher-order bugs for curriculum learning",
+              "Parameters": {
+                "artifact_id.$": "$.artifact_id",
+                "parent_artifact_id.$": "$.artifact_id",
+                "order.$": "States.MathAdd(States.StringToJson($.artifact.Item.order.N), 1)",
+                "higher_order": true
+              },
+              "ResultPath": "$.higher_order_bug",
+              "Next": "UpdateAsHigherOrder"
+            },
+            "UpdateAsHigherOrder": {
+              "Type": "Task",
+              "Comment": "Mark original artifact as failed, enable higher-order training",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-ssr-training-state-${Environment}",
+                "Key": {
+                  "artifact_id": {
+                    "S.$": "$.artifact_id"
+                  }
+                },
+                "UpdateExpression": "SET #s = :status, training_completed_at = :completed, solved = :solved, higher_order_created = :higher",
+                "ExpressionAttributeNames": {
+                  "#s": "status"
+                },
+                "ExpressionAttributeValues": {
+                  ":status": {
+                    "S": "completed"
+                  },
+                  ":completed": {
+                    "S.$": "$$.State.EnteredTime"
+                  },
+                  ":solved": {
+                    "BOOL": false
+                  },
+                  ":higher": {
+                    "BOOL": true
+                  }
+                }
+              },
+              "ResultPath": null,
+              "Next": "PublishMetrics"
+            },
+            "PublishMetrics": {
+              "Type": "Task",
+              "Comment": "Publish training metrics to CloudWatch",
+              "Resource": "arn:${AWS::Partition}:states:::aws-sdk:cloudwatch:putMetricData",
+              "Parameters": {
+                "Namespace": "${ProjectName}/SSRTraining",
+                "MetricData": [
+                  {
+                    "MetricName": "TrainingJobsCompleted",
+                    "Value": 1,
+                    "Unit": "Count",
+                    "Dimensions": [
+                      {
+                        "Name": "Environment",
+                        "Value": "${Environment}"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "ResultPath": null,
+              "Next": "TrainingComplete"
+            },
+            "TrainingComplete": {
+              "Type": "Succeed",
+              "Comment": "Training job completed"
+            }
+          }
+        }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-training
+
+  # ============================================================================
+  # SNS Topic for Alerts
+  # ============================================================================
+
+  SSRAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: !Sub '${ProjectName}-ssr-training-alerts-${Environment}'
+      DisplayName: !Sub 'Aura SSR Training Alerts (${Environment})'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ssr-training
+
+  SSRAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref SSRAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================================
+  # CloudWatch Alarms
+  # ============================================================================
+
+  SSRTrainingFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-ssr-training-failures-${Environment}'
+      AlarmDescription: Alert when SSR training failures exceed threshold
+      MetricName: ExecutionsFailed
+      Namespace: AWS/States
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !Ref SSRTrainingStateMachine
+      AlarmActions:
+        - !If [HasAlertEmail, !Ref SSRAlertTopic, !Ref 'AWS::NoValue']
+      TreatMissingData: notBreaching
+
+  SSRTrainingDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-ssr-training-duration-high-${Environment}'
+      AlarmDescription: Alert when SSR training duration exceeds threshold
+      MetricName: ExecutionTime
+      Namespace: AWS/States
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 1800000  # 30 minutes in milliseconds
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !Ref SSRTrainingStateMachine
+      TreatMissingData: notBreaching
+
+  # ============================================================================
+  # AWS Budget for Cost Control
+  # ============================================================================
+
+  SSRTrainingBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-ssr-training-${Environment}'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !If [IsProd, 5000, 500]
+          Unit: USD
+        CostFilters:
+          TagKeyValue:
+            - !Sub 'user:Purpose$ssr-training'
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 50
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !If [HasAlertEmail, !Ref AlertEmail, 'no-reply@example.com']
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !If [HasAlertEmail, !Ref AlertEmail, 'no-reply@example.com']
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !If [HasAlertEmail, !Ref AlertEmail, 'no-reply@example.com']
+
+Outputs:
+  # ECS Cluster
+  SSRTrainingClusterName:
+    Description: ECS cluster for SSR training
+    Value: !Ref SSRTrainingCluster
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-cluster-${Environment}'
+
+  SSRTrainingClusterArn:
+    Description: ARN of SSR training ECS cluster
+    Value: !GetAtt SSRTrainingCluster.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-cluster-arn-${Environment}'
+
+  # Task Definitions
+  BugInjectionTaskDefinitionArn:
+    Description: Bug injection task definition ARN
+    Value: !Ref BugInjectionTaskDefinition
+    Export:
+      Name: !Sub '${ProjectName}-ssr-bug-injection-task-def-${Environment}'
+
+  BugSolvingTaskDefinitionArn:
+    Description: Bug solving task definition ARN
+    Value: !Ref BugSolvingTaskDefinition
+    Export:
+      Name: !Sub '${ProjectName}-ssr-bug-solving-task-def-${Environment}'
+
+  # Step Functions
+  SSRTrainingStateMachineArn:
+    Description: SSR training state machine ARN
+    Value: !Ref SSRTrainingStateMachine
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-state-machine-arn-${Environment}'
+
+  SSRTrainingStateMachineName:
+    Description: SSR training state machine name
+    Value: !GetAtt SSRTrainingStateMachine.Name
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-state-machine-name-${Environment}'
+
+  # IAM Roles
+  SSRTaskExecutionRoleArn:
+    Description: Task execution role for SSR Fargate tasks
+    Value: !GetAtt SSRTaskExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-task-execution-role-arn-${Environment}'
+
+  SSRBugInjectionTaskRoleArn:
+    Description: Task role for bug injection containers
+    Value: !GetAtt SSRBugInjectionTaskRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-bug-injection-task-role-arn-${Environment}'
+
+  SSRBugSolvingTaskRoleArn:
+    Description: Task role for bug solving containers
+    Value: !GetAtt SSRBugSolvingTaskRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-bug-solving-task-role-arn-${Environment}'
+
+  SSRStepFunctionsRoleArn:
+    Description: Step Functions execution role
+    Value: !GetAtt SSRStepFunctionsRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-stepfunctions-role-arn-${Environment}'
+
+  # ECR Repositories
+  BugInjectionRepositoryUri:
+    Description: ECR repository URI for bug injection
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${BugInjectionRepository}'
+    Export:
+      Name: !Sub '${ProjectName}-ssr-bug-injection-repo-uri-${Environment}'
+
+  BugSolvingRepositoryUri:
+    Description: ECR repository URI for bug solving
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${BugSolvingRepository}'
+    Export:
+      Name: !Sub '${ProjectName}-ssr-bug-solving-repo-uri-${Environment}'
+
+  # Security Group
+  SSRTrainingSecurityGroupId:
+    Condition: HasVpc
+    Description: Security group for SSR training tasks
+    Value: !Ref SSRTrainingSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-ssr-training-security-group-${Environment}'
+
+  # Log Groups
+  BugInjectionLogGroupName:
+    Description: CloudWatch log group for bug injection
+    Value: !Ref BugInjectionLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-ssr-bug-injection-log-group-${Environment}'
+
+  BugSolvingLogGroupName:
+    Description: CloudWatch log group for bug solving
+    Value: !Ref BugSolvingLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-ssr-bug-solving-log-group-${Environment}'
+
+  SSRStepFunctionsLogGroupArn:
+    Description: CloudWatch log group ARN for Step Functions
+    Value: !GetAtt SSRStepFunctionsLogGroup.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ssr-stepfunctions-log-group-arn-${Environment}'

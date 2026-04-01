@@ -1,0 +1,244 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.6 - API Documentation Portal (CloudFront + S3)'
+
+# =============================================================================
+# API Documentation Portal Infrastructure for docs.aenealabs.com
+# =============================================================================
+# Creates:
+# - S3 bucket for static ReDoc/OpenAPI documentation
+# - CloudFront distribution with edge caching
+# - Origin Access Control for secure S3 access
+#
+# Documentation includes:
+# - Interactive API reference (ReDoc)
+# - OpenAPI/Swagger spec download
+# - SDK documentation
+# - Integration guides
+#
+# Prerequisites:
+# - ACM certificate deployed (acm-certificate.yaml)
+# - Route 53 hosted zone configured (route53-dns.yaml)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  DomainName:
+    Type: String
+    Default: docs.aenealabs.com
+    Description: Documentation portal domain name
+
+  # ACM certificate ARN (must be in us-east-1 for CloudFront)
+  CertificateArn:
+    Type: String
+    Description: ARN of ACM certificate (must be in us-east-1)
+    Default: ''
+
+  # Logging bucket (optional)
+  LoggingBucketName:
+    Type: String
+    Description: S3 bucket for CloudFront access logs
+    Default: ''
+
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
+  HasLogging: !Not [!Equals [!Ref LoggingBucketName, '']]
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # S3 Bucket for Documentation
+  # ===========================================================================
+  DocsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-docs-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: !If [IsProd, Enabled, Suspended]
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-docs-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # CloudFront Origin Access Control
+  # ===========================================================================
+  DocsOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${ProjectName}-docs-oac-${Environment}'
+        Description: !Sub 'OAC for ${ProjectName} docs portal'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ===========================================================================
+  # S3 Bucket Policy for CloudFront Access
+  # ===========================================================================
+  DocsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${DocsBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${DocsDistribution}'
+
+  # ===========================================================================
+  # CloudFront Distribution
+  # ===========================================================================
+  DocsDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub '${ProjectName} API Docs Portal - ${Environment}'
+        Enabled: true
+        HttpVersion: http2and3
+        DefaultRootObject: index.html
+        PriceClass: !If [IsProd, PriceClass_All, PriceClass_100]
+
+        # Custom domain alias (when certificate is provided)
+        Aliases: !If
+          - HasCertificate
+          - - !Ref DomainName
+          - !Ref AWS::NoValue
+
+        ViewerCertificate: !If
+          - HasCertificate
+          - AcmCertificateArn: !Ref CertificateArn
+            MinimumProtocolVersion: TLSv1.2_2021
+            SslSupportMethod: sni-only
+          - CloudFrontDefaultCertificate: true
+
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt DocsBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt DocsOriginAccessControl.Id
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # Use CachingOptimized managed policy
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          # Use SecurityHeadersPolicy
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+
+        # Cache behavior for OpenAPI spec (shorter TTL for freshness)
+        CacheBehaviors:
+          - PathPattern: 'openapi*.json'
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            # Use CachingDisabled for fresh API spec
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+          - PathPattern: 'openapi*.yaml'
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 404
+            ResponsePagePath: /404.html
+            ErrorCachingMinTTL: 60
+
+        Logging: !If
+          - HasLogging
+          - Bucket: !Sub '${LoggingBucketName}.s3.amazonaws.com'
+            Prefix: !Sub 'cloudfront/${ProjectName}-docs/'
+            IncludeCookies: false
+          - !Ref AWS::NoValue
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-docs-cf-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  DocsBucketName:
+    Description: S3 bucket name for documentation
+    Value: !Ref DocsBucket
+    Export:
+      Name: !Sub '${ProjectName}-docs-bucket-${Environment}'
+
+  DocsBucketArn:
+    Description: S3 bucket ARN for documentation
+    Value: !GetAtt DocsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-docs-bucket-arn-${Environment}'
+
+  DocsDistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref DocsDistribution
+    Export:
+      Name: !Sub '${ProjectName}-docs-cf-id-${Environment}'
+
+  DocsDistributionDomainName:
+    Description: CloudFront distribution domain name
+    Value: !GetAtt DocsDistribution.DomainName
+    Export:
+      Name: !Sub '${ProjectName}-docs-cf-domain-${Environment}'
+
+  DocsPortalURL:
+    Description: Documentation portal URL
+    Value: !If
+      - HasCertificate
+      - !Sub 'https://${DomainName}'
+      - !Sub 'https://${DocsDistribution.DomainName}'
+    Export:
+      Name: !Sub '${ProjectName}-docs-url-${Environment}'

@@ -1,0 +1,161 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Python FastAPI Environment - Backend with DynamoDB table and S3 bucket (24 hour TTL)'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Name for this test environment
+    AllowedPattern: '[a-z0-9-]+'
+    MaxLength: 32
+
+  OwnerEmail:
+    Type: String
+    Description: Email of the environment owner
+
+  TTLHours:
+    Type: Number
+    Default: 24
+    MinValue: 1
+    MaxValue: 168
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the test environment
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets for ECS tasks
+
+  ContainerImage:
+    Type: String
+    Default: 'public.ecr.aws/docker/library/python:3.11-slim'
+
+  ECSExecutionRoleArn:
+    Type: String
+    Description: ARN of the ECS task execution role
+
+  ECSTaskRoleArn:
+    Type: String
+    Description: ARN of the ECS task role
+
+  ECSClusterArn:
+    Type: String
+    Description: ARN of the ECS cluster for sandboxes
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/test-env/${EnvironmentName}'
+      RetentionInDays: 7
+
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'aura-test-${EnvironmentName}-data'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: aura
+        - Key: TestEnvironment
+          Value: !Ref EnvironmentName
+
+  StorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'aura-test-${EnvironmentName}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AutoExpire
+            Status: Enabled
+            ExpirationInDays: 7
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'aura-test-${EnvironmentName}-api'
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSExecutionRoleArn
+      TaskRoleArn: !Ref ECSTaskRoleArn
+      ContainerDefinitions:
+        - Name: api
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: api
+          Environment:
+            - Name: ENVIRONMENT_NAME
+              Value: !Ref EnvironmentName
+            - Name: DYNAMODB_TABLE
+              Value: !Ref DataTable
+            - Name: S3_BUCKET
+              Value: !Ref StorageBucket
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Security group for ${EnvironmentName}'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: '10.0.0.0/8'
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'aura-test-${EnvironmentName}-api'
+      Cluster: !Ref ECSClusterArn
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref SecurityGroup
+          Subnets: !Ref SubnetIds
+
+Outputs:
+  EnvironmentName:
+    Value: !Ref EnvironmentName
+  ServiceArn:
+    Value: !Ref Service
+  DynamoDBTableName:
+    Value: !Ref DataTable
+  S3BucketName:
+    Value: !Ref StorageBucket

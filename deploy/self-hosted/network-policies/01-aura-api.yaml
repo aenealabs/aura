@@ -1,0 +1,225 @@
+# Project Aura - API Service NetworkPolicy
+#
+# Allows traffic for the main API service:
+#   - Ingress: Load balancer, frontend, health checks
+#   - Egress: Databases (Neo4j, PostgreSQL, OpenSearch), LLM services
+#
+# ADR-049 Phase 0 - Self-Hosted Deployment
+#
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aura-api-ingress
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: aura-api
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: service-allow
+spec:
+  podSelector:
+    matchLabels:
+      app: aura-api
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from ingress controller (nginx, traefik, etc.)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow traffic from frontend pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: aura-frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow health checks from kubelet (node CIDR)
+    # Adjust CIDR based on your cluster's node network
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8081  # Health check port
+
+    # Allow Prometheus metrics scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow internal service-to-service communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agent-orchestrator
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aura-api-egress
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: aura-api
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: service-allow
+spec:
+  podSelector:
+    matchLabels:
+      app: aura-api
+  policyTypes:
+    - Egress
+  egress:
+    # Neo4j (Bolt protocol)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: neo4j
+      ports:
+        - protocol: TCP
+          port: 7687  # Bolt
+        - protocol: TCP
+          port: 7474  # HTTP (if needed for admin)
+
+    # PostgreSQL (DynamoDB replacement)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # OpenSearch
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: opensearch
+      ports:
+        - protocol: TCP
+          port: 9200
+        - protocol: TCP
+          port: 9300
+
+    # Redis (session cache)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # LLM Inference Service (vLLM/TGI)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-llm
+          podSelector:
+            matchLabels:
+              app: llm-inference
+      ports:
+        - protocol: TCP
+          port: 8000  # vLLM default
+        - protocol: TCP
+          port: 8080  # TGI default
+
+    # Agent Orchestrator
+    - to:
+        - podSelector:
+            matchLabels:
+              app: agent-orchestrator
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Memory Service (gRPC)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: memory-service
+      ports:
+        - protocol: TCP
+          port: 50051
+
+    # Allow HTTPS to external services (cloud LLM APIs if not air-gapped)
+    # This is configurable - remove for air-gapped deployments
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8      # Private networks
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.169.254/32  # AWS metadata (CRITICAL: always block)
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# WebSocket support for real-time features
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aura-api-websocket
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: aura-api
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: service-allow
+spec:
+  podSelector:
+    matchLabels:
+      app: aura-api
+  policyTypes:
+    - Ingress
+  ingress:
+    # WebSocket connections from frontend
+    - from:
+        - podSelector:
+            matchLabels:
+              app: aura-frontend
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080

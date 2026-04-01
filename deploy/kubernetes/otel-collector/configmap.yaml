@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: otel-system
+  labels:
+    app.kubernetes.io/name: otel-collector
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      # OTLP receiver for application traces and metrics
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+            cors:
+              allowed_origins:
+                - "*"
+
+      # Prometheus receiver for scraping metrics
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: 'otel-collector'
+              scrape_interval: 30s
+              static_configs:
+                - targets: ['localhost:8888']
+
+    processors:
+      # Batch processor for efficient export
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+        send_batch_max_size: 2048
+
+      # Memory limiter to prevent OOM
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 400
+        spike_limit_mib: 100
+
+      # Resource processor to add common attributes
+      resource:
+        attributes:
+          - key: service.namespace
+            value: aura
+            action: upsert
+          - key: deployment.environment
+            value: ${ENVIRONMENT}
+            action: upsert
+
+      # Attributes processor for span enrichment
+      attributes:
+        actions:
+          - key: project
+            value: aura
+            action: insert
+
+    exporters:
+      # AWS X-Ray exporter for traces
+      awsxray:
+        region: ${AWS_REGION}
+        indexed_attributes:
+          - agent.name
+          - agent.tier
+          - operation.name
+
+      # AWS CloudWatch EMF exporter for metrics
+      awsemf:
+        region: ${AWS_REGION}
+        namespace: Aura/OTel
+        log_group_name: /aws/otel/aura-${ENVIRONMENT}/metrics
+        dimension_rollup_option: NoDimensionRollup
+        metric_declarations:
+          - dimensions:
+              - [agent_name, operation]
+              - [agent_name]
+            metric_name_selectors:
+              - "^agent_.*"
+          - dimensions:
+              - [model, tier]
+              - [tier]
+            metric_name_selectors:
+              - "^llm_.*"
+
+      # Logging exporter for debugging (stdout)
+      logging:
+        verbosity: normal
+        sampling_initial: 5
+        sampling_thereafter: 200
+
+    extensions:
+      # Health check extension
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+      # pprof for profiling
+      pprof:
+        endpoint: 0.0.0.0:1888
+
+      # zpages for debugging
+      zpages:
+        endpoint: 0.0.0.0:55679
+
+    service:
+      extensions:
+        - health_check
+        - pprof
+        - zpages
+
+      pipelines:
+        # Traces pipeline -> X-Ray
+        traces:
+          receivers:
+            - otlp
+          processors:
+            - memory_limiter
+            - batch
+            - resource
+            - attributes
+          exporters:
+            - awsxray
+            - logging
+
+        # Metrics pipeline -> CloudWatch EMF
+        metrics:
+          receivers:
+            - otlp
+            - prometheus
+          processors:
+            - memory_limiter
+            - batch
+            - resource
+          exporters:
+            - awsemf
+            - logging
+
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          address: 0.0.0.0:8888

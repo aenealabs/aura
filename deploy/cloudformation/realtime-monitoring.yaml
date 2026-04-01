@@ -1,0 +1,1227 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.4 - Real-Time Monitoring (EventBridge)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for critical alerts (optional)
+
+  SecurityAlertsTopicArn:
+    Type: String
+    Default: ''
+    Description: ARN of existing security alerts SNS topic (from account-bootstrap stack). If empty, creates a new topic.
+
+  DomainName:
+    Type: String
+    Default: ''
+    Description: Base domain name for application URLs (e.g., aenealabs.com). Retrieved from SSM at deployment.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  UseExistingSecurityAlertsTopic: !Not [!Equals [!Ref SecurityAlertsTopicArn, '']]
+  CreateSecurityAlertsTopic: !Equals [!Ref SecurityAlertsTopicArn, '']
+  HasDomainName: !Not [!Equals [!Ref DomainName, '']]
+
+Resources:
+  # ==========================================================================
+  # EventBridge Event Bus
+  # ==========================================================================
+
+  AnomalyEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub '${ProjectName}-anomaly-events-${Environment}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-anomaly-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Security EventBridge Bus for security service events
+  SecurityEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub '${ProjectName}-security-events-${Environment}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-security-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # EventBridge Rules for Anomaly Routing
+  # ==========================================================================
+
+  # Rule: Critical anomalies -> SNS for immediate notification
+  CriticalAnomalyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-critical-anomaly-rule-${Environment}'
+      Description: Routes critical and high severity anomalies to SNS
+      EventBusName: !Ref AnomalyEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura
+        detail-type:
+          - aura.anomaly.detected
+          - aura.security.cve_detected
+          - aura.security.threat_detected
+        detail:
+          data:
+            severity:
+              - critical
+              - high
+      Targets:
+        - Id: critical-anomaly-sns
+          Arn: !Ref CriticalAnomalySNSTopic
+          InputTransformer:
+            InputPathsMap:
+              anomalyId: $.detail.data.anomalyId
+              severity: $.detail.data.severity
+              title: $.detail.data.title
+              type: $.detail.data.type
+              source: $.detail.data.source
+              timestamp: $.detail.timestamp
+            InputTemplate:
+              Fn::Sub:
+                - |
+                  {
+                    "Subject": "[AURA ALERT] <severity> <type>",
+                    "Message": "Anomaly Detected\n\nID: <anomalyId>\nSeverity: <severity>\nType: <type>\nTitle: <title>\nSource: <source>\nTimestamp: <timestamp>\n\nView dashboard: ${DashboardUrl}/anomalies/<anomalyId>"
+                  }
+                - DashboardUrl: !If [HasDomainName, !Sub 'https://${ProjectName}.${DomainName}', !Sub 'https://${ProjectName}.aura.local']
+
+  # Rule: Security events -> CloudWatch Logs for audit
+  SecurityEventLoggingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-security-event-logging-${Environment}'
+      Description: Logs all security events to CloudWatch for audit trail
+      EventBusName: !Ref AnomalyEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura
+        detail-type:
+          - prefix: 'aura.security'
+      Targets:
+        - Id: security-event-log
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${SecurityEventLogGroup}'
+
+  # Rule: Orchestrator events -> CloudWatch Logs
+  OrchestratorEventLoggingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-orchestrator-logging-${Environment}'
+      Description: Logs orchestrator task events for monitoring
+      EventBusName: !Ref AnomalyEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura
+        detail-type:
+          - prefix: 'aura.orchestrator'
+      Targets:
+        - Id: orchestrator-event-log
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${OrchestratorEventLogGroup}'
+
+  # Rule: HITL approval required -> SNS notification
+  HITLApprovalRequiredRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-hitl-approval-required-${Environment}'
+      Description: Notifies when human approval is required
+      EventBusName: !Ref AnomalyEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura
+        detail-type:
+          - aura.hitl.approval_required
+      Targets:
+        - Id: hitl-approval-sns
+          Arn: !Ref HITLApprovalSNSTopic
+
+  # ==========================================================================
+  # Agent Task Workflow Events (Issue #19 - Microservices Messaging)
+  # ==========================================================================
+
+  # Rule: Agent task dispatched -> CloudWatch Logs for workflow tracking
+  AgentTaskDispatchedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-agent-task-dispatched-${Environment}'
+      Description: Logs when tasks are dispatched to individual agents
+      EventBusName: !Ref AnomalyEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura
+        detail-type:
+          - aura.agent.task_dispatched
+      Targets:
+        - Id: agent-dispatch-log
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${OrchestratorEventLogGroup}'
+
+  # Rule: Agent task completed -> CloudWatch Logs + metrics
+  AgentTaskCompletedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-agent-task-completed-${Environment}'
+      Description: Logs when agents complete their assigned tasks
+      EventBusName: !Ref AnomalyEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura
+        detail-type:
+          - aura.agent.task_completed
+      Targets:
+        - Id: agent-complete-log
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${OrchestratorEventLogGroup}'
+
+  # Rule: Agent task failed -> SNS alert + CloudWatch Logs
+  AgentTaskFailedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-agent-task-failed-${Environment}'
+      Description: Alerts when agent tasks fail after all retries
+      EventBusName: !Ref AnomalyEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura
+        detail-type:
+          - aura.agent.task_failed
+      Targets:
+        - Id: agent-fail-log
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${OrchestratorEventLogGroup}'
+        - Id: agent-fail-sns
+          Arn: !Ref CriticalAnomalySNSTopic
+          InputTransformer:
+            InputPathsMap:
+              taskId: $.detail.data.task_id
+              agentType: $.detail.data.agent_type
+              error: $.detail.data.error
+              timestamp: $.detail.timestamp
+            InputTemplate: |
+              {
+                "Subject": "[AURA ALERT] Agent Task Failed - <agentType>",
+                "Message": "Agent Task Failed\n\nTask ID: <taskId>\nAgent: <agentType>\nError: <error>\nTimestamp: <timestamp>\n\nCheck orchestrator logs for details."
+              }
+
+  # ==========================================================================
+  # Auto-Trigger: MetaOrchestrator on Critical Security Events
+  # ==========================================================================
+
+  # Rule: Critical security events -> Auto-trigger MetaOrchestrator
+  OrchestratorAutoTriggerRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-orchestrator-auto-trigger-${Environment}'
+      Description: Auto-triggers MetaOrchestrator when critical security events are detected
+      EventBusName: !Ref AnomalyEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura
+        detail-type:
+          - aura.security.cve_detected
+          - aura.security.threat_detected
+          - aura.anomaly.detected
+        detail:
+          data:
+            severity:
+              - critical
+            # Only trigger if affected components are identified
+            affectedComponents:
+              - exists: true
+      Targets:
+        - Id: orchestrator-trigger-lambda
+          Arn: !GetAtt OrchestratorTriggerFunction.Arn
+          InputTransformer:
+            InputPathsMap:
+              eventId: $.id
+              detailType: $.detail-type
+              severity: $.detail.data.severity
+              title: $.detail.data.title
+              cveId: $.detail.data.cveId
+              affectedComponents: $.detail.data.affectedComponents
+              timestamp: $.time
+            InputTemplate: |
+              {
+                "event_id": "<eventId>",
+                "event_type": "<detailType>",
+                "severity": "<severity>",
+                "title": "<title>",
+                "cve_id": "<cveId>",
+                "affected_components": <affectedComponents>,
+                "timestamp": "<timestamp>",
+                "auto_triggered": true
+              }
+
+  # Lambda Function: Orchestrator Trigger
+  OrchestratorTriggerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-orchestrator-trigger-${Environment}'
+      Description: Triggers MetaOrchestrator for autonomous remediation of critical security events
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt OrchestratorTriggerRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          API_ENDPOINT: !If
+            - HasDomainName
+            - !Sub 'https://api.${ProjectName}.${DomainName}'
+            - !Sub 'https://api.${ProjectName}.aura.local'
+          ORCHESTRATOR_QUEUE_URL: !Ref OrchestratorTaskQueue
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import boto3
+          import logging
+          from datetime import datetime
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          sqs = boto3.client('sqs')
+
+          def lambda_handler(event, context):
+              """
+              Trigger MetaOrchestrator for autonomous security remediation.
+
+              This Lambda is invoked by EventBridge when critical security events
+              are detected (CVEs, threats, anomalies). It queues a task for the
+              MetaOrchestrator to investigate and remediate.
+
+              For 85% autonomy: Low/medium severity auto-remediate, high/critical
+              go through HITL approval after investigation.
+              """
+              logger.info(f"Orchestrator trigger received: {json.dumps(event)}")
+
+              queue_url = os.environ.get('ORCHESTRATOR_QUEUE_URL')
+              environment = os.environ.get('ENVIRONMENT', 'dev')
+
+              # Build orchestrator task
+              task = {
+                  'task_id': f"auto-{event.get('event_id', 'unknown')}",
+                  'task_type': 'security_remediation',
+                  'priority': 'critical' if event.get('severity') == 'critical' else 'high',
+                  'source': 'eventbridge_auto_trigger',
+                  'created_at': datetime.utcnow().isoformat(),
+                  'payload': {
+                      'event_type': event.get('event_type'),
+                      'severity': event.get('severity'),
+                      'title': event.get('title'),
+                      'cve_id': event.get('cve_id'),
+                      'affected_components': event.get('affected_components', []),
+                      'original_event_id': event.get('event_id'),
+                      'auto_triggered': True
+                  },
+                  'autonomy_config': {
+                      # For 85% autonomy target:
+                      # - Auto-investigate all severities
+                      # - Auto-remediate low/medium in non-prod
+                      # - HITL for high/critical or any prod deployment
+                      'auto_investigate': True,
+                      'auto_remediate': environment != 'prod' and event.get('severity') not in ['critical', 'high'],
+                      'require_hitl_for_deploy': environment == 'prod' or event.get('severity') in ['critical', 'high']
+                  }
+              }
+
+              # Queue task for MetaOrchestrator
+              try:
+                  response = sqs.send_message(
+                      QueueUrl=queue_url,
+                      MessageBody=json.dumps(task),
+                      MessageAttributes={
+                          'TaskType': {
+                              'DataType': 'String',
+                              'StringValue': 'security_remediation'
+                          },
+                          'Priority': {
+                              'DataType': 'String',
+                              'StringValue': task['priority']
+                          },
+                          'AutoTriggered': {
+                              'DataType': 'String',
+                              'StringValue': 'true'
+                          }
+                      }
+                  )
+
+                  logger.info(f"Queued orchestrator task: {task['task_id']}, MessageId: {response['MessageId']}")
+
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps({
+                          'task_id': task['task_id'],
+                          'message_id': response['MessageId'],
+                          'status': 'queued'
+                      })
+                  }
+
+              except Exception as e:
+                  logger.error(f"Failed to queue orchestrator task: {str(e)}")
+                  raise
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-trigger-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # IAM Role for Orchestrator Trigger Lambda
+  OrchestratorTriggerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-orchestrator-trigger-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: OrchestratorTriggerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SQSSendMessage
+                Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt OrchestratorTaskQueue.Arn
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub 'Aura/Orchestrator'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-trigger-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Permission for EventBridge to invoke Lambda
+  OrchestratorTriggerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OrchestratorTriggerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt OrchestratorAutoTriggerRule.Arn
+
+  # SQS Queue for Orchestrator Tasks
+  OrchestratorTaskQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-orchestrator-tasks-${Environment}'
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 86400
+      ReceiveMessageWaitTimeSeconds: 20
+      KmsMasterKeyId: alias/aws/sqs
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt OrchestratorTaskDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-tasks-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Dead Letter Queue for failed orchestrator tasks
+  OrchestratorTaskDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-orchestrator-tasks-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-tasks-dlq-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # SNS Topics
+  # ==========================================================================
+
+  CriticalAnomalySNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-critical-anomalies-${Environment}'
+      DisplayName: Aura Critical Anomaly Alerts
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-critical-anomalies-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  CriticalAnomalyEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref CriticalAnomalySNSTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  HITLApprovalSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-hitl-approvals-${Environment}'
+      DisplayName: Aura HITL Approval Requests
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-hitl-approvals-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Security Alerts SNS Topic for security service notifications
+  # Only created if SecurityAlertsTopicArn parameter is not provided
+  # Otherwise uses existing topic from account-bootstrap stack
+  SecurityAlertsSNSTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateSecurityAlertsTopic
+    Properties:
+      TopicName: !Sub '${ProjectName}-security-alerts-${Environment}'
+      DisplayName: Aura Security Alerts
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-security-alerts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  SecurityAlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !If [UseExistingSecurityAlertsTopic, !Ref SecurityAlertsTopicArn, !Ref SecurityAlertsSNSTopic]
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  SecurityAlertsSNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Condition: CreateSecurityAlertsTopic
+    Properties:
+      Topics:
+        - !Ref SecurityAlertsSNSTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref SecurityAlertsSNSTopic
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*'
+          - Sid: AllowAuraAPIPublish
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: sns:Publish
+            Resource: !Ref SecurityAlertsSNSTopic
+            Condition:
+              StringEquals:
+                aws:PrincipalTag/Project: !Ref ProjectName
+
+  HITLApprovalEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref HITLApprovalSNSTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # SNS Topic Policy for EventBridge
+  CriticalAnomalySNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref CriticalAnomalySNSTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref CriticalAnomalySNSTopic
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*'
+
+  HITLApprovalSNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref HITLApprovalSNSTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref HITLApprovalSNSTopic
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*'
+
+  # ==========================================================================
+  # CloudWatch Log Groups for Event Logging
+  # ==========================================================================
+
+  SecurityEventLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/${Environment}/security-events'
+      RetentionInDays: !If [IsProduction, 365, 90]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-security-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  OrchestratorEventLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/${Environment}/orchestrator-events'
+      RetentionInDays: !If [IsProduction, 365, 90]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AnomalyMetricsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/${Environment}/anomaly-metrics'
+      RetentionInDays: !If [IsProduction, 365, 90]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-anomaly-metrics-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Resource policy for EventBridge to write to CloudWatch Logs
+  EventBridgeLogResourcePolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-eventbridge-logs-${Environment}'
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "EventBridgeToCloudWatchLogs",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": [
+                "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/${Environment}/*:*"
+              ]
+            }
+          ]
+        }
+
+  # ==========================================================================
+  # CloudWatch Alarms for Anomaly Monitoring
+  # ==========================================================================
+
+  # Alarm: High rate of critical anomalies
+  CriticalAnomalyRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-critical-anomaly-rate-${Environment}'
+      AlarmDescription: Alert when critical anomaly rate exceeds threshold
+      Namespace: Aura/Anomalies
+      MetricName: AnomalyCount
+      Dimensions:
+        - Name: Severity
+          Value: critical
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref CriticalAnomalySNSTopic
+      OKActions:
+        - !Ref CriticalAnomalySNSTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-critical-anomaly-rate-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Orchestrator failure rate
+  OrchestratorFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-orchestrator-failures-${Environment}'
+      AlarmDescription: Alert when orchestrator task failure rate is high
+      Namespace: Aura/Orchestrator
+      MetricName: TaskFailed
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref CriticalAnomalySNSTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-failures-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: HITL approval timeout rate
+  HITLTimeoutAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-hitl-timeout-rate-${Environment}'
+      AlarmDescription: Alert when HITL approvals are timing out (cost optimized from 1-hour period)
+      Namespace: Aura/HITL
+      MetricName: ApprovalTimeout
+      Statistic: Sum
+      Period: 10800
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref HITLApprovalSNSTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-hitl-timeout-rate-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Error rate in anomaly detection
+  AnomalyDetectionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-anomaly-detection-errors-${Environment}'
+      AlarmDescription: Alert when anomaly detection service has errors
+      Namespace: Aura/Anomalies
+      MetricName: DetectionErrors
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref CriticalAnomalySNSTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-anomaly-detection-errors-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Security Service Alarms
+  # ==========================================================================
+
+  # Alarm: High injection attempt rate
+  InjectionAttemptAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-injection-attempts-${Environment}'
+      AlarmDescription: Alert when injection attempt rate is high (SQL, XSS, Command)
+      Namespace: Aura/Security
+      MetricName: InjectionAttempts
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !If [UseExistingSecurityAlertsTopic, !Ref SecurityAlertsTopicArn, !Ref SecurityAlertsSNSTopic]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-injection-attempts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Secrets exposure detected
+  SecretsExposureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-secrets-exposure-${Environment}'
+      AlarmDescription: CRITICAL - Secrets exposure detected in code or requests
+      Namespace: Aura/Security
+      MetricName: SecretsExposed
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !If [UseExistingSecurityAlertsTopic, !Ref SecurityAlertsTopicArn, !Ref SecurityAlertsSNSTopic]
+        - !Ref CriticalAnomalySNSTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-secrets-exposure-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Prompt injection attempts
+  PromptInjectionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-prompt-injection-${Environment}'
+      AlarmDescription: Alert when prompt injection attempts are detected
+      Namespace: Aura/Security
+      MetricName: PromptInjectionAttempts
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !If [UseExistingSecurityAlertsTopic, !Ref SecurityAlertsTopicArn, !Ref SecurityAlertsSNSTopic]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-prompt-injection-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: High rate limit events
+  RateLimitAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-rate-limit-exceeded-${Environment}'
+      AlarmDescription: Alert when rate limiting is triggered frequently (cost optimized from 10-min period)
+      Namespace: Aura/Security
+      MetricName: RateLimitExceeded
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !If [UseExistingSecurityAlertsTopic, !Ref SecurityAlertsTopicArn, !Ref SecurityAlertsSNSTopic]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-rate-limit-exceeded-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Security Event Routing Rules
+  # ==========================================================================
+
+  # Rule: Security alerts -> SNS
+  SecurityAlertRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-security-alert-rule-${Environment}'
+      Description: Routes security alerts to SNS
+      EventBusName: !Ref SecurityEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura.security
+        detail-type:
+          - aura.security.alert
+          - aura.security.threat_detected
+          - aura.security.secrets_exposure
+        detail:
+          priority:
+            - P1
+            - P2
+      Targets:
+        - Id: security-alert-sns
+          Arn: !If [UseExistingSecurityAlertsTopic, !Ref SecurityAlertsTopicArn, !Ref SecurityAlertsSNSTopic]
+
+  # Rule: Security audit events -> CloudWatch Logs
+  SecurityAuditLoggingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-security-audit-logging-${Environment}'
+      Description: Logs all security audit events
+      EventBusName: !Ref SecurityEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura.security
+        detail-type:
+          - prefix: 'aura.security'
+      Targets:
+        - Id: security-audit-log
+          Arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${SecurityAuditLogGroup}'
+
+  # CloudWatch Log Group for security audit
+  SecurityAuditLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/${Environment}/security-audit'
+      RetentionInDays: !If [IsProduction, 365, 90]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-security-audit-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Log Group for security threats
+  SecurityThreatLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/${Environment}/security-threats'
+      RetentionInDays: !If [IsProduction, 365, 90]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-security-threats-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # CloudWatch Dashboard for Anomaly Monitoring
+  # ==========================================================================
+
+  AnomalyMonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-anomaly-monitoring-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Anomaly Count by Severity",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/Anomalies", "AnomalyCount", "Severity", "critical", {"color": "#d62728"}],
+                  [".", ".", ".", "high", {"color": "#ff7f0e"}],
+                  [".", ".", ".", "medium", {"color": "#ffbb78"}],
+                  [".", ".", ".", "low", {"color": "#2ca02c"}]
+                ],
+                "stat": "Sum",
+                "period": 300,
+                "view": "timeSeries",
+                "stacked": true
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Anomaly Count by Type",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/Anomalies", "AnomalyCount", "Type", "security_event"],
+                  [".", ".", ".", "new_cve"],
+                  [".", ".", ".", "latency_spike"],
+                  [".", ".", ".", "error_rate_surge"]
+                ],
+                "stat": "Sum",
+                "period": 300,
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Orchestrator Tasks",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/Orchestrator", "TaskTriggered", {"color": "#1f77b4"}],
+                  [".", "TaskCompleted", {"color": "#2ca02c"}],
+                  [".", "TaskFailed", {"color": "#d62728"}]
+                ],
+                "stat": "Sum",
+                "period": 300,
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "HITL Approvals",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/HITL", "ApprovalRequests", {"color": "#1f77b4"}],
+                  [".", "DecisionsMade", "Decision", "approved", {"color": "#2ca02c"}],
+                  [".", ".", ".", "rejected", {"color": "#d62728"}],
+                  [".", "ApprovalTimeout", {"color": "#ff7f0e"}]
+                ],
+                "stat": "Sum",
+                "period": 300,
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Orchestrator Task Duration",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/Orchestrator", "TaskDuration", {"stat": "p50"}],
+                  [".", ".", {"stat": "p95"}],
+                  [".", ".", {"stat": "p99"}]
+                ],
+                "period": 300,
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Notification Status",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/Notifications", "NotificationSent", "Channel", "slack", {"color": "#2ca02c"}],
+                  [".", "NotificationFailed", ".", "slack", {"color": "#d62728"}],
+                  [".", "NotificationSent", ".", "pagerduty", {"color": "#1f77b4"}],
+                  [".", "NotificationFailed", ".", "pagerduty", {"color": "#ff7f0e"}]
+                ],
+                "stat": "Sum",
+                "period": 300,
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Four Golden Signals",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/Observability", "ErrorRate"],
+                  [".", "LatencyP95"],
+                  [".", "Saturation"]
+                ],
+                "stat": "Average",
+                "period": 300,
+                "view": "timeSeries"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  AnomalyEventBusName:
+    Description: Name of the anomaly event bus
+    Value: !Ref AnomalyEventBus
+    Export:
+      Name: !Sub '${AWS::StackName}-AnomalyEventBusName'
+
+  AnomalyEventBusArn:
+    Description: ARN of the anomaly event bus
+    Value: !GetAtt AnomalyEventBus.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AnomalyEventBusArn'
+
+  CriticalAnomalySNSTopicArn:
+    Description: ARN of the critical anomaly SNS topic
+    Value: !Ref CriticalAnomalySNSTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-CriticalAnomalySNSTopicArn'
+
+  HITLApprovalSNSTopicArn:
+    Description: ARN of the HITL approval SNS topic
+    Value: !Ref HITLApprovalSNSTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-HITLApprovalSNSTopicArn'
+
+  SecurityEventLogGroupName:
+    Description: Name of the security event log group
+    Value: !Ref SecurityEventLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityEventLogGroupName'
+
+  OrchestratorEventLogGroupName:
+    Description: Name of the orchestrator event log group
+    Value: !Ref OrchestratorEventLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorEventLogGroupName'
+
+  AnomalyDashboardName:
+    Description: Name of the anomaly monitoring CloudWatch dashboard
+    Value: !Ref AnomalyMonitoringDashboard
+    Export:
+      Name: !Sub '${AWS::StackName}-AnomalyDashboardName'
+
+  OrchestratorTaskQueueUrl:
+    Description: URL of the orchestrator task queue
+    Value: !Ref OrchestratorTaskQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorTaskQueueUrl'
+
+  OrchestratorTaskQueueArn:
+    Description: ARN of the orchestrator task queue
+    Value: !GetAtt OrchestratorTaskQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorTaskQueueArn'
+
+  OrchestratorTriggerFunctionArn:
+    Description: ARN of the orchestrator trigger Lambda function
+    Value: !GetAtt OrchestratorTriggerFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorTriggerFunctionArn'
+
+  OrchestratorAutoTriggerRuleArn:
+    Description: ARN of the auto-trigger EventBridge rule
+    Value: !GetAtt OrchestratorAutoTriggerRule.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorAutoTriggerRuleArn'
+
+  # Security Service Outputs
+  SecurityEventBusName:
+    Description: Name of the security event bus
+    Value: !Ref SecurityEventBus
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityEventBusName'
+
+  SecurityEventBusArn:
+    Description: ARN of the security event bus
+    Value: !GetAtt SecurityEventBus.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityEventBusArn'
+
+  SecurityAlertsSNSTopicArn:
+    Description: ARN of the security alerts SNS topic
+    Value: !If [UseExistingSecurityAlertsTopic, !Ref SecurityAlertsTopicArn, !Ref SecurityAlertsSNSTopic]
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityAlertsSNSTopicArn'
+
+  SecurityAuditLogGroupName:
+    Description: Name of the security audit log group
+    Value: !Ref SecurityAuditLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityAuditLogGroupName'
+
+  SecurityThreatLogGroupName:
+    Description: Name of the security threat log group
+    Value: !Ref SecurityThreatLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityThreatLogGroupName'

@@ -1,0 +1,207 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.3 - Neptune (Graph Database)'
+
+# =============================================================================
+# Neptune Graph Database Configuration
+# =============================================================================
+# Deployed in provisioned mode for GovCloud compatibility (ADR-031).
+#
+# GovCloud Compatibility:
+#   - Provisioned mode: 100% compatible (db.t3.medium, db.r5.large supported)
+#   - Serverless mode: NOT available in GovCloud (not supported)
+#
+# Note: This is the only Neptune template used for all environments.
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: Private subnet IDs
+
+  NeptuneSecurityGroupId:
+    Type: String
+    Description: Neptune security group ID
+
+  NeptuneMode:
+    Type: String
+    Default: provisioned
+    AllowedValues:
+      - provisioned
+    Description: Neptune deployment mode (provisioned for GovCloud compatibility)
+
+  InstanceType:
+    Type: String
+    Default: db.t3.medium
+    Description: Neptune instance type
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  CreateReadReplica: !Condition IsProduction
+
+Resources:
+  # ===========================================================================
+  # Neptune Cluster Parameter Group (Performance Optimizations)
+  # ===========================================================================
+  # Configures Neptune query behavior for optimal graph traversal performance.
+  # Note: OSGP indexes are automatically enabled in Neptune 1.2+ during data loading.
+  NeptuneClusterParameterGroup:
+    Type: AWS::Neptune::DBClusterParameterGroup
+    Properties:
+      Name: !Sub '${ProjectName}-neptune-params-${Environment}'
+      Family: neptune1.3
+      Description: Neptune parameter group with performance optimizations
+      Parameters:
+        # Query timeout (30 seconds for complex graph traversals)
+        neptune_query_timeout: '30000'
+        # Enable result cache for repeated queries (2-10x improvement for hot queries)
+        neptune_result_cache: '1'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-params-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # Neptune Subnet Group
+  # ===========================================================================
+  NeptuneSubnetGroup:
+    Type: AWS::Neptune::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${ProjectName}-neptune-subnet-${Environment}-simple'
+      DBSubnetGroupDescription: Subnet group for Neptune cluster
+      SubnetIds: !Ref PrivateSubnetIds
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-subnet-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # Neptune Cluster (Provisioned Mode - GovCloud Compatible)
+  # ===========================================================================
+  NeptuneCluster:
+    Type: AWS::Neptune::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub '${ProjectName}-neptune-${Environment}'
+      DBClusterParameterGroupName: !Ref NeptuneClusterParameterGroup
+      EngineVersion: '1.3.1.0'
+      Port: 8182
+      DBSubnetGroupName: !Ref NeptuneSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref NeptuneSecurityGroupId
+      StorageEncrypted: true
+      BackupRetentionPeriod: !If [IsProduction, 7, 1]
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      DeletionProtection: !If [IsProduction, true, false]
+      IamAuthEnabled: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-cluster-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: NeptuneMode
+          Value: provisioned
+        - Key: GovCloudCompatible
+          Value: 'true'
+
+  NeptunePrimaryInstance:
+    Type: AWS::Neptune::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-neptune-primary-${Environment}'
+      DBInstanceClass: !Ref InstanceType
+      DBClusterIdentifier: !Ref NeptuneCluster
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      AutoMinorVersionUpgrade: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-primary-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  NeptuneReadReplica:
+    Type: AWS::Neptune::DBInstance
+    Condition: CreateReadReplica
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-neptune-replica-${Environment}'
+      DBInstanceClass: !Ref InstanceType
+      DBClusterIdentifier: !Ref NeptuneCluster
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      PreferredMaintenanceWindow: 'sun:05:00-sun:06:00'
+      AutoMinorVersionUpgrade: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-replica-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  NeptuneClusterEndpoint:
+    Description: Neptune cluster endpoint
+    Value: !GetAtt NeptuneCluster.Endpoint
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-neptune-cluster-endpoint'
+
+  NeptuneClusterPort:
+    Description: Neptune cluster port
+    Value: !GetAtt NeptuneCluster.Port
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-neptune-cluster-port'
+
+  NeptuneClusterIdentifier:
+    Description: Neptune cluster identifier
+    Value: !Ref NeptuneCluster
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-neptune-cluster-id'
+
+  NeptuneReadEndpoint:
+    Description: Neptune read endpoint
+    Value: !GetAtt NeptuneCluster.ReadEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-neptune-read-endpoint'
+
+  NeptuneSubnetGroupName:
+    Description: Neptune subnet group name
+    Value: !Ref NeptuneSubnetGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-neptune-subnet-group'
+
+  NeptuneMode:
+    Description: Neptune deployment mode (provisioned for GovCloud compatibility)
+    Value: !Ref NeptuneMode
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-neptune-mode'
+
+  NeptuneGovCloudCompatible:
+    Description: Whether this Neptune configuration is GovCloud-compatible
+    Value: 'true'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-neptune-govcloud-compatible'

@@ -1,0 +1,427 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.8 - Multi-Region Global Resources (DR Failover, Health Checks)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name prefix for resources
+
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Default: dev
+    Description: Deployment environment
+
+  HostedZoneName:
+    Type: String
+    Default: aenealabs.com
+    Description: Route 53 hosted zone name
+
+  PrimaryRegion:
+    Type: String
+    Default: us-east-1
+    Description: Primary AWS region
+
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: Secondary (DR) AWS region
+
+  PrimaryALBDNS:
+    Type: String
+    Description: Primary region ALB DNS name
+
+  SecondaryALBDNS:
+    Type: String
+    Default: ""
+    Description: Secondary region ALB DNS name (optional)
+
+  HealthCheckPath:
+    Type: String
+    Default: /health
+    Description: Health check endpoint path
+
+  HealthCheckPort:
+    Type: Number
+    Default: 443
+    Description: Health check port
+
+  NotificationEmail:
+    Type: String
+    Default: ops@aenealabs.com
+    Description: Email for failover notifications
+
+Conditions:
+  HasSecondaryRegion: !Not [!Equals [!Ref SecondaryALBDNS, ""]]
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # SNS Topic for Failover Notifications
+  # ===========================================================================
+
+  FailoverNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-failover-notifications-${Environment}'
+      DisplayName: Multi-Region Failover Alerts
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-failover-notifications-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  FailoverEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: IsProduction
+    Properties:
+      TopicArn: !Ref FailoverNotificationTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ===========================================================================
+  # Route 53 Health Checks
+  # ===========================================================================
+
+  PrimaryHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS
+        FullyQualifiedDomainName: !Ref PrimaryALBDNS
+        Port: !Ref HealthCheckPort
+        ResourcePath: !Ref HealthCheckPath
+        RequestInterval: 30
+        FailureThreshold: 3
+        EnableSNI: true
+        Regions:
+          - us-east-1
+          - us-west-1
+          - us-west-2
+          - eu-west-1
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-primary-health-${Environment}'
+        - Key: Region
+          Value: !Ref PrimaryRegion
+        - Key: Environment
+          Value: !Ref Environment
+
+  SecondaryHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Condition: HasSecondaryRegion
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS
+        FullyQualifiedDomainName: !Ref SecondaryALBDNS
+        Port: !Ref HealthCheckPort
+        ResourcePath: !Ref HealthCheckPath
+        RequestInterval: 30
+        FailureThreshold: 3
+        EnableSNI: true
+        Regions:
+          - us-east-1
+          - us-west-1
+          - us-west-2
+          - eu-west-1
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-secondary-health-${Environment}'
+        - Key: Region
+          Value: !Ref SecondaryRegion
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # CloudWatch Alarms for Health Checks
+  # ===========================================================================
+
+  PrimaryHealthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-primary-unhealthy-${Environment}'
+      AlarmDescription: Primary region health check failing
+      Namespace: AWS/Route53
+      MetricName: HealthCheckStatus
+      Dimensions:
+        - Name: HealthCheckId
+          Value: !Ref PrimaryHealthCheck
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Ref FailoverNotificationTopic
+      OKActions:
+        - !Ref FailoverNotificationTopic
+
+  SecondaryHealthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasSecondaryRegion
+    Properties:
+      AlarmName: !Sub '${ProjectName}-secondary-unhealthy-${Environment}'
+      AlarmDescription: Secondary region health check failing
+      Namespace: AWS/Route53
+      MetricName: HealthCheckStatus
+      Dimensions:
+        - Name: HealthCheckId
+          Value: !Ref SecondaryHealthCheck
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Ref FailoverNotificationTopic
+
+  # ===========================================================================
+  # Route 53 Failover Records
+  # ===========================================================================
+
+  # Note: These require a hosted zone to exist
+  # The actual DNS records would be created in the hosted zone
+
+  # ===========================================================================
+  # Lambda for Failover Automation
+  # ===========================================================================
+
+  FailoverAutomationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-failover-automation-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: FailoverAutomation
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - route53:GetHealthCheck
+                  - route53:GetHealthCheckStatus
+                  - route53:ListHealthChecks
+                  - route53:ChangeResourceRecordSets
+                  - route53:ListResourceRecordSets
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref FailoverNotificationTopic
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  FailoverAutomationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-failover-automation-${Environment}'
+      Description: Automates failover response and notifications
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt FailoverAutomationRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          PRIMARY_REGION: !Ref PrimaryRegion
+          SECONDARY_REGION: !Ref SecondaryRegion
+          SNS_TOPIC_ARN: !Ref FailoverNotificationTopic
+          PRIMARY_HEALTH_CHECK_ID: !Ref PrimaryHealthCheck
+          SECONDARY_HEALTH_CHECK_ID: !If [HasSecondaryRegion, !Ref SecondaryHealthCheck, ""]
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from datetime import datetime, timezone
+
+          route53 = boto3.client('route53')
+          sns = boto3.client('sns')
+          cloudwatch = boto3.client('cloudwatch')
+
+          def handler(event, context):
+              """Handle CloudWatch alarm events for failover automation."""
+              print(f"Received event: {json.dumps(event)}")
+
+              # Parse alarm details
+              alarm_name = event.get('detail', {}).get('alarmName', '')
+              alarm_state = event.get('detail', {}).get('state', {}).get('value', '')
+              region = event.get('region', 'unknown')
+
+              timestamp = datetime.now(timezone.utc).isoformat()
+
+              # Determine which region is affected
+              is_primary = 'primary' in alarm_name.lower()
+              affected_region = os.environ['PRIMARY_REGION'] if is_primary else os.environ['SECONDARY_REGION']
+
+              # Get health check status
+              primary_status = get_health_check_status(os.environ['PRIMARY_HEALTH_CHECK_ID'])
+              secondary_id = os.environ.get('SECONDARY_HEALTH_CHECK_ID', '')
+              secondary_status = get_health_check_status(secondary_id) if secondary_id else 'N/A'
+
+              # Build notification message
+              message = build_notification_message(
+                  alarm_name=alarm_name,
+                  alarm_state=alarm_state,
+                  affected_region=affected_region,
+                  primary_status=primary_status,
+                  secondary_status=secondary_status,
+                  timestamp=timestamp
+              )
+
+              # Send notification
+              sns.publish(
+                  TopicArn=os.environ['SNS_TOPIC_ARN'],
+                  Subject=f"[{alarm_state}] Aura Multi-Region Health Alert",
+                  Message=message
+              )
+
+              # Publish custom metrics
+              cloudwatch.put_metric_data(
+                  Namespace='Aura/MultiRegion',
+                  MetricData=[
+                      {
+                          'MetricName': 'FailoverEvent',
+                          'Dimensions': [
+                              {'Name': 'Region', 'Value': affected_region},
+                              {'Name': 'AlarmState', 'Value': alarm_state}
+                          ],
+                          'Value': 1,
+                          'Unit': 'Count'
+                      }
+                  ]
+              )
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'message': 'Failover automation executed',
+                      'alarm_state': alarm_state,
+                      'affected_region': affected_region
+                  })
+              }
+
+          def get_health_check_status(health_check_id):
+              """Get current health check status."""
+              if not health_check_id:
+                  return 'N/A'
+
+              try:
+                  response = route53.get_health_check_status(
+                      HealthCheckId=health_check_id
+                  )
+                  statuses = response.get('HealthCheckObservations', [])
+                  healthy_count = sum(1 for s in statuses if s.get('StatusReport', {}).get('Status') == 'Success')
+                  return f"{healthy_count}/{len(statuses)} healthy"
+              except Exception as e:
+                  print(f"Error getting health check status: {e}")
+                  return 'Unknown'
+
+          def build_notification_message(alarm_name, alarm_state, affected_region, primary_status, secondary_status, timestamp):
+              """Build detailed notification message."""
+              return f"""
+          Multi-Region Health Alert
+
+          Alarm: {alarm_name}
+          State: {alarm_state}
+          Affected Region: {affected_region}
+          Timestamp: {timestamp}
+
+          Current Status:
+          - Primary ({os.environ['PRIMARY_REGION']}): {primary_status}
+          - Secondary ({os.environ['SECONDARY_REGION']}): {secondary_status}
+
+          Action Required:
+          {"URGENT: Primary region is unhealthy. Verify automatic failover to secondary region." if 'primary' in alarm_name.lower() and alarm_state == 'ALARM' else "Monitor situation and verify service health."}
+
+          Dashboard: https://console.aws.amazon.com/cloudwatch/home?region={affected_region}#alarmsV2:
+          """
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-failover-automation-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # EventBridge rule to trigger Lambda on alarm state changes
+  FailoverEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-failover-events-${Environment}'
+      Description: Trigger failover automation on health check alarms
+      EventPattern:
+        source:
+          - aws.cloudwatch
+        detail-type:
+          - CloudWatch Alarm State Change
+        detail:
+          alarmName:
+            - prefix: !Sub '${ProjectName}-'
+          state:
+            value:
+              - ALARM
+              - OK
+      State: ENABLED
+      Targets:
+        - Id: FailoverAutomation
+          Arn: !GetAtt FailoverAutomationFunction.Arn
+
+  FailoverEventPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FailoverAutomationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt FailoverEventRule.Arn
+
+Outputs:
+  PrimaryHealthCheckId:
+    Description: Primary region health check ID
+    Value: !Ref PrimaryHealthCheck
+    Export:
+      Name: !Sub '${ProjectName}-primary-health-check-${Environment}'
+
+  SecondaryHealthCheckId:
+    Condition: HasSecondaryRegion
+    Description: Secondary region health check ID
+    Value: !Ref SecondaryHealthCheck
+    Export:
+      Name: !Sub '${ProjectName}-secondary-health-check-${Environment}'
+
+  FailoverNotificationTopicArn:
+    Description: SNS topic for failover notifications
+    Value: !Ref FailoverNotificationTopic
+    Export:
+      Name: !Sub '${ProjectName}-failover-topic-${Environment}'
+
+  FailoverAutomationFunctionArn:
+    Description: Failover automation Lambda ARN
+    Value: !GetAtt FailoverAutomationFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-failover-automation-${Environment}'

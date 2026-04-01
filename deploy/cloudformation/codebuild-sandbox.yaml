@@ -1,0 +1,684 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Sandbox Layer CodeBuild Project (Layer 7: Sandbox Environment, HITL Approval)'
+
+Mappings:
+  # Mapping for GovCloud partition support
+  # AWS Commercial: aws, AWS GovCloud: aws-us-gov
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    AllowedValues:
+      - main
+      - develop
+    Description: GitHub branch to build from
+
+Resources:
+  # CloudWatch Log Group for Sandbox Builds
+  SandboxBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-sandbox-deploy-${Environment}'
+      RetentionInDays: 30
+
+  # Managed Policy for Phase 2 Test Environment Permissions
+  # Separated to avoid 10KB inline policy limit
+  TestEnvManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-sandbox-test-env-policy-${Environment}'
+      Description: 'Phase 2 test environment permissions for sandbox CodeBuild'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Service Catalog - Portfolio and Product Management
+          - Effect: Allow
+            Action:
+              - servicecatalog:CreatePortfolio
+              - servicecatalog:DeletePortfolio
+              - servicecatalog:UpdatePortfolio
+              - servicecatalog:DescribePortfolio
+              - servicecatalog:ListPortfolios
+              - servicecatalog:CreateProduct
+              - servicecatalog:DeleteProduct
+              - servicecatalog:UpdateProduct
+              - servicecatalog:DescribeProduct
+              - servicecatalog:DescribeProductAsAdmin
+              - servicecatalog:ListProvisioningArtifacts
+              - servicecatalog:AssociateProductWithPortfolio
+              - servicecatalog:DisassociateProductFromPortfolio
+              - servicecatalog:AssociatePrincipalWithPortfolio
+              - servicecatalog:DisassociatePrincipalFromPortfolio
+              - servicecatalog:CreateConstraint
+              - servicecatalog:DeleteConstraint
+              - servicecatalog:UpdateConstraint
+              - servicecatalog:DescribeConstraint
+              - servicecatalog:ListConstraintsForPortfolio
+              - servicecatalog:CreateProvisioningArtifact
+              - servicecatalog:DeleteProvisioningArtifact
+              - servicecatalog:UpdateProvisioningArtifact
+              - servicecatalog:TagResource
+              - servicecatalog:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:catalog:${AWS::Region}:${AWS::AccountId}:portfolio/*'
+              - !Sub 'arn:${AWS::Partition}:catalog:${AWS::Region}:${AWS::AccountId}:product/*'
+              # Constraints use servicecatalog namespace in IAM (different from catalog for portfolios/products)
+              - !Sub 'arn:${AWS::Partition}:servicecatalog:${AWS::Region}:${AWS::AccountId}:*'
+
+          # Service Catalog - Search Products
+          - Effect: Allow
+            Action:
+              - servicecatalog:SearchProductsAsAdmin
+              - servicecatalog:ListPortfolios
+              - servicecatalog:ListAcceptedPortfolioShares
+            Resource: '*'
+
+          # Test Environment IAM Roles and Policies
+          - Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:GetRole
+              - iam:UpdateRole
+              - iam:UpdateRoleDescription
+              - iam:UpdateAssumeRolePolicy
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:GetRolePolicy
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:TagRole
+              - iam:UntagRole
+              - iam:ListAttachedRolePolicies
+              - iam:ListRolePolicies
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-test-env-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-sc-launch-*-${Environment}'
+
+          # Test Environment Permission Boundary Policies
+          - Effect: Allow
+            Action:
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:GetPolicy
+              - iam:GetPolicyVersion
+              - iam:ListPolicyVersions
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:TagPolicy
+              - iam:UntagPolicy
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-test-env-*-${Environment}'
+
+          # Test Environment PassRole
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-test-env-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-sc-launch-*-${Environment}'
+            Condition:
+              StringEquals:
+                iam:PassedToService:
+                  - servicecatalog.amazonaws.com
+                  - states.amazonaws.com
+                  - lambda.amazonaws.com
+
+          # Phase 3: CloudWatch Dashboards
+          - Effect: Allow
+            Action:
+              - cloudwatch:PutDashboard
+              - cloudwatch:DeleteDashboards
+              - cloudwatch:GetDashboard
+              - cloudwatch:ListDashboards
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cloudwatch::${AWS::AccountId}:dashboard/${ProjectName}-test-environments-${Environment}'
+
+          # Phase 3: AWS Budgets
+          - Effect: Allow
+            Action:
+              - budgets:ViewBudget
+              - budgets:ModifyBudget
+              - budgets:CreateBudgetAction
+              - budgets:DeleteBudgetAction
+              - budgets:TagResource
+              - budgets:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${ProjectName}-test-env-*'
+              - !Sub 'arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${ProjectName}-test-environments-*'
+              - !Sub 'arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${ProjectName}-service-catalog-*'
+
+          # Phase 4: EKS Namespace Controller permissions
+          - Effect: Allow
+            Action:
+              - eks:DescribeCluster
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-*'
+
+          # Phase 4: Lambda Layer management for kubectl
+          - Effect: Allow
+            Action:
+              - lambda:PublishLayerVersion
+              - lambda:GetLayerVersion
+              - lambda:DeleteLayerVersion
+              - lambda:ListLayerVersions
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:layer:${ProjectName}-kubectl-*'
+
+          # Phase 4: EKS Access Entry management
+          - Effect: Allow
+            Action:
+              - eks:CreateAccessEntry
+              - eks:DeleteAccessEntry
+              - eks:DescribeAccessEntry
+              - eks:AssociateAccessPolicy
+              - eks:DisassociateAccessPolicy
+              - eks:ListAccessEntries
+              - eks:ListAccessPolicies
+              - eks:TagResource
+              - eks:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:access-entry/${ProjectName}-*/*/*'
+
+  # IAM Role for Sandbox Layer CodeBuild
+  SandboxCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-sandbox-codebuild-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/ReadOnlyAccess'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+        - !Ref TestEnvManagedPolicy
+      Policies:
+        - PolicyName: SandboxDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs (for build logs)
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - logs:UntagResource
+                  - logs:DeleteLogGroup
+                Resource:
+                  # Log groups (for TagResource on log group itself)
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-sandbox-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/sandboxes-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-sandbox-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/states/${ProjectName}-hitl-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/states/${ProjectName}-test-env-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-test-env-*'
+                  # Custom log groups for test environment approval workflow
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/${Environment}/*'
+                  # Log streams (for operations on streams within groups)
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-sandbox-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/sandboxes-${Environment}:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-sandbox-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/states/${ProjectName}-hitl-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/states/${ProjectName}-test-env-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-test-env-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/${Environment}/*:*'
+
+              # CloudWatch Metrics (for build metrics)
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/CICD/Sandbox'
+
+              # CloudFormation - Sandbox stacks only
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:GetTemplateSummary
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-sandbox-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-hitl-workflow-${Environment}/*'
+                  # Consolidated: All test-env-* stacks (Phase 1-4)
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-test-env-*-${Environment}/*'
+
+              # DynamoDB - Table management for sandbox state
+              - Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                  - dynamodb:ListTagsOfResource
+                  - dynamodb:UpdateContinuousBackups
+                  - dynamodb:DescribeContinuousBackups
+                  - dynamodb:UpdateTimeToLive
+                  - dynamodb:DescribeTimeToLive
+                Resource:
+                  # Sandbox-related tables
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-approval-requests-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-sandbox-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-patch-workflows-${Environment}'
+                  # Consolidated: All test-env-* tables and indexes (Phase 1-4)
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-*'
+
+              # ECS - Cluster and task management
+              - Effect: Allow
+                Action:
+                  - ecs:CreateCluster
+                  - ecs:DeleteCluster
+                  - ecs:DescribeClusters
+                  - ecs:UpdateCluster
+                  - ecs:PutClusterCapacityProviders
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                  - ecs:RegisterTaskDefinition
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:DescribeTaskDefinition
+                  - ecs:ListTaskDefinitions
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-sandboxes-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ProjectName}-sandbox-*:*'
+
+              # EC2 - Security group creation (scoped to account/region)
+              - Effect: Allow
+                Action:
+                  - ec2:CreateSecurityGroup
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*'
+              - Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+
+              # EC2 - Security group modification (tag condition for existing resources)
+              - Effect: Allow
+                Action:
+                  - ec2:DeleteSecurityGroup
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupEgress
+                  - ec2:ModifySecurityGroupRules
+                  - ec2:DeleteTags
+                Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/Project: !Ref ProjectName
+
+              # EC2 - Read-only for VPC info
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                Resource: '*'
+
+              # SNS - Topic management for HITL and Test Environment notifications
+              - Effect: Allow
+                Action:
+                  - sns:CreateTopic
+                  - sns:DeleteTopic
+                  - sns:GetTopicAttributes
+                  - sns:SetTopicAttributes
+                  - sns:TagResource
+                  - sns:UntagResource
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                  - sns:Publish
+                  - sns:AddPermission
+                  - sns:RemovePermission
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-*'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-*'
+
+              # S3 - Sandbox artifacts bucket
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:PutBucketVersioning
+                  - s3:PutEncryptionConfiguration
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:PutLifecycleConfiguration
+                  - s3:PutBucketTagging
+                  - s3:PutBucketPolicy
+                  - s3:GetBucketVersioning
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:GetLifecycleConfiguration
+                  - s3:GetBucketTagging
+                  - s3:GetBucketPolicy
+                  - s3:DeleteBucketPolicy
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}/*'
+                  # General artifacts bucket for Service Catalog product templates
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-artifacts-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-artifacts-${AWS::AccountId}-${Environment}/*'
+
+              # ECR - Container image repository for sandbox test runner
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:CreateRepository
+                  - ecr:DeleteRepository
+                  - ecr:DescribeRepositories
+                  - ecr:GetRepositoryPolicy
+                  - ecr:SetRepositoryPolicy
+                  - ecr:DeleteRepositoryPolicy
+                  - ecr:ListImages
+                  - ecr:DescribeImages
+                  - ecr:BatchDeleteImage
+                  - ecr:PutLifecyclePolicy
+                  - ecr:GetLifecyclePolicy
+                  - ecr:DeleteLifecyclePolicy
+                  - ecr:TagResource
+                  - ecr:UntagResource
+                  - ecr:PutImageTagMutability
+                  - ecr:PutImageScanningConfiguration
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchCheckLayerAvailability
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-sandbox-*'
+
+              # Step Functions - State machine management
+              - Effect: Allow
+                Action:
+                  - states:CreateStateMachine
+                  - states:DeleteStateMachine
+                  - states:UpdateStateMachine
+                  - states:DescribeStateMachine
+                  - states:ListStateMachines
+                  - states:TagResource
+                  - states:UntagResource
+                  - states:CreateActivity
+                  - states:DeleteActivity
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-hitl-*'
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-test-env-*'
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:activity:${ProjectName}-hitl-*'
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:activity:${ProjectName}-test-env-*'
+
+              # Lambda - For sandbox, HITL, and test environment Lambdas
+              - Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-sandbox-*'
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-hitl-*'
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-test-env-*'
+
+              # API Gateway - For test environment approval callback API
+              - Effect: Allow
+                Action:
+                  - apigateway:POST
+                  - apigateway:PUT
+                  - apigateway:GET
+                  - apigateway:DELETE
+                  - apigateway:PATCH
+                  - apigateway:TagResource
+                  - apigateway:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/restapis'
+                  - !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/restapis/*'
+                  - !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/tags/*'
+
+              # CloudWatch Alarms
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:EnableAlarmActions
+                  - cloudwatch:DisableAlarmActions
+                  - cloudwatch:TagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-*sandbox*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-*hitl*'
+                  # Phase 3: Test environment monitoring alarms
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-test-env-*'
+
+              # IAM Role Management (for sandbox task roles)
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-sandbox-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-hitl-*-${Environment}'
+
+              # IAM Pass Role (for ECS and Step Functions)
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-sandbox-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-hitl-*-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService:
+                      - ecs-tasks.amazonaws.com
+                      - states.amazonaws.com
+                      - lambda.amazonaws.com
+
+              # Secrets Manager (for sandbox credentials)
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-*-${Environment}*'
+
+              # SSM Parameter Store (for sandbox config)
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                  - ssm:AddTagsToResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/global/*'
+
+              # CodeConnections (for GitHub source access)
+              - Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codeconnections:GetConnectionToken
+                Resource:
+                  - '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+              # EventBridge (for scheduled sandbox cleanup)
+              - Effect: Allow
+                Action:
+                  - events:PutRule
+                  - events:DeleteRule
+                  - events:DescribeRule
+                  - events:EnableRule
+                  - events:DisableRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                  - events:ListTargetsByRule
+                  - events:TagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-sandbox-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-test-env-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForECSTaskRule'
+
+  # CodeBuild Project for Sandbox Layer
+  SandboxCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-sandbox-deploy-${Environment}'
+      Description: 'Project Aura - Sandbox Layer CodeBuild Project (Layer 7: Ephemeral Test Environments, HITL)'
+      ServiceRole: !GetAtt SandboxCodeBuildRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true  # Required for Docker builds (sandbox test runner)
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: LAYER
+            Value: sandbox
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-sandbox.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref SandboxBuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_SOURCE_CACHE
+      TimeoutInMinutes: 45  # Extended for Docker image build with PyTorch
+      QueuedTimeoutInMinutes: 480
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+        - Key: CostCenter
+          Value: Platform-Team
+
+  # CloudWatch Alarm - Sandbox Build Failures
+  SandboxBuildFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-sandbox-build-failures-${Environment}'
+      AlarmDescription: 'Alert when Sandbox Layer has 2+ failures in 1 hour'
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref SandboxCodeBuildProject
+      TreatMissingData: notBreaching
+
+Outputs:
+  CodeBuildProjectName:
+    Description: CodeBuild Project Name
+    Value: !Ref SandboxCodeBuildProject
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-codebuild-project-${Environment}'
+
+  CodeBuildProjectArn:
+    Description: CodeBuild Project ARN
+    Value: !GetAtt SandboxCodeBuildProject.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-codebuild-arn-${Environment}'
+
+  CodeBuildRoleArn:
+    Description: IAM Role ARN for CodeBuild
+    Value: !GetAtt SandboxCodeBuildRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-codebuild-role-arn-${Environment}'

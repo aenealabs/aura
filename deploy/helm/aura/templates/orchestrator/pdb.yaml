@@ -1,0 +1,18 @@
+{{- if and .Values.orchestrator.enabled .Values.orchestrator.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aura.fullname" . }}-orchestrator
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "orchestrator" "context" .) | nindent 4 }}
+spec:
+  {{- if .Values.orchestrator.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.orchestrator.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.orchestrator.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.orchestrator.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "orchestrator" "context" .) | nindent 6 }}
+{{- end }}

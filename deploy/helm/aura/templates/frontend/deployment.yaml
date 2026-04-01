@@ -1,0 +1,78 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aura.fullname" . }}-frontend
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "frontend" "context" .) | nindent 4 }}
+spec:
+  {{- if not .Values.frontend.autoscaling.enabled }}
+  replicas: {{ .Values.frontend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "frontend" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- include "aura.configChecksum" . | nindent 8 }}
+      labels:
+        {{- include "aura.componentSelectorLabels" (dict "component" "frontend" "context" .) | nindent 8 }}
+    spec:
+      {{- include "aura.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "aura.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.frontend.securityContext | nindent 8 }}
+      containers:
+        - name: frontend
+          image: {{ include "aura.image" (dict "component" .Values.frontend "context" .) }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy | default (include "aura.imagePullPolicy" .) }}
+          securityContext:
+            {{- toYaml .Values.frontend.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.frontend.service.port }}
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: {{ printf "https://%s-api:%d" (include "aura.fullname" .) (.Values.api.service.port | int) | quote }}
+            - name: NEXT_PUBLIC_EDITION
+              value: {{ include "aura.edition" . | quote }}
+            {{- include "aura.commonEnv" . | nindent 12 }}
+          {{- include "aura.livenessProbe" .Values.frontend.healthChecks.liveness | nindent 10 }}
+          {{- include "aura.readinessProbe" .Values.frontend.healthChecks.readiness | nindent 10 }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nextjs-cache
+              mountPath: /app/.next/cache
+            {{- if .Values.global.tls.enabled }}
+            - name: tls-certs
+              mountPath: /etc/ssl/certs/aura
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nextjs-cache
+          emptyDir: {}
+        {{- if .Values.global.tls.enabled }}
+        - name: tls-certs
+          secret:
+            secretName: {{ include "aura.tlsSecretName" (dict "component" "frontend" "context" .) }}
+        {{- end }}
+      {{- with .Values.frontend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

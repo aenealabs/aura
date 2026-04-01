@@ -1,0 +1,53 @@
+---
+# Role for scaling the agent-orchestrator warm pool deployment
+# Used by the API service to enable/disable warm pool mode
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aura-orchestrator-scaler
+  labels:
+    app: aura-agent-orchestrator
+    component: rbac
+rules:
+  # Permission to scale the warm pool deployment
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: ["aura-agent-orchestrator-warm-pool"]
+    verbs: ["get", "patch"]
+  # Permission to read deployment status (for health checks)
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["aura-agent-orchestrator-warm-pool"]
+    verbs: ["get"]
+  # Permission to list and get jobs (for in-flight job tracking)
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+
+---
+# RoleBinding to allow the aura-api service account to scale warm pool
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aura-orchestrator-scaler-binding
+  labels:
+    app: aura-agent-orchestrator
+    component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: aura-api
+roleRef:
+  kind: Role
+  name: aura-orchestrator-scaler
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ServiceAccount for the aura-api if it doesn't exist
+# This SA is used by the API pods to authenticate to K8s API
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aura-api
+  labels:
+    app: aura-api
+    component: rbac

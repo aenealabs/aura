@@ -1,0 +1,31 @@
+# Project Aura - Frontend Base Kustomization
+# Uses Argo Rollouts for progressive delivery (ADR-022 Phase 3)
+#
+# Usage (via overlay):
+#   kubectl apply -k deploy/kubernetes/aura-frontend/overlays/dev/
+#   kubectl apply -k deploy/kubernetes/aura-frontend/overlays/qa/
+#   kubectl apply -k deploy/kubernetes/aura-frontend/overlays/prod/
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  # Using Deployment until ClusterAnalysisTemplates are deployed
+  - deployment.yaml
+  - service.yaml
+  # Rollout and canary service available when Argo Rollouts analysis is configured
+  # - rollout.yaml
+  # - service-canary.yaml
+
+labels:
+  - pairs:
+      project: aura
+      tier: frontend
+    includeSelectors: false
+
+# Base image name - overlays set full ECR path
+images:
+  - name: aura-frontend
+    newTag: latest

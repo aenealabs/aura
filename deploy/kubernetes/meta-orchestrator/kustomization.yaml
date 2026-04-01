@@ -1,0 +1,49 @@
+# Project Aura - MetaOrchestrator Kustomization
+#
+# Kustomize configuration for MetaOrchestrator Kubernetes resources.
+# Use with: kubectl apply -k deploy/kubernetes/meta-orchestrator/
+#
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: meta-orchestrator
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Namespace for all resources
+namespace: aura
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: meta-orchestrator
+  app.kubernetes.io/part-of: aura
+  app.kubernetes.io/managed-by: kustomize
+
+# Resources to include
+resources:
+  - serviceaccount.yaml
+  - networkpolicy.yaml
+  # Note: job-template.yaml is a template, not directly applied
+  # Jobs are created dynamically by the dispatcher Lambda
+
+# ConfigMap generator for orchestrator configuration
+configMapGenerator:
+  - name: meta-orchestrator-config
+    literals:
+      - ENVIRONMENT=dev
+      - PROJECT_NAME=aura
+      - LOG_LEVEL=INFO
+      - NEPTUNE_ENDPOINT=neptune.aura.local:8182
+      - OPENSEARCH_ENDPOINT=opensearch.aura.local:9200
+      - MAX_EXECUTION_TIME_SECONDS=1800
+      - MAX_AGENTS_PER_TASK=10
+      - ENABLE_METRICS=true
+
+# Images configuration (for reference, actual image is in job template)
+# Note: Uses envsubst placeholders - substituted during deployment
+# See deploy/kubernetes/overlays/{env}/ for environment-specific values
+images:
+  - name: meta-orchestrator
+    newName: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/aura-meta-orchestrator-${ENVIRONMENT}
+    newTag: latest

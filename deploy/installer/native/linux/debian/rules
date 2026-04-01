@@ -1,0 +1,38 @@
+#!/usr/bin/make -f
+# Debian rules file for aura-cli
+
+export DH_VERBOSE = 1
+export PYBUILD_NAME = aura-cli
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_build:
+	# Build standalone executable with PyInstaller
+	python3 -m PyInstaller \
+		--onefile \
+		--name aura \
+		--strip \
+		--clean \
+		src/cli/main.py
+
+override_dh_auto_install:
+	# Install binary
+	install -D -m 755 dist/aura debian/aura-cli/usr/bin/aura
+	# Install shell completions
+	install -D -m 644 completions/aura.bash debian/aura-cli/usr/share/bash-completion/completions/aura
+	install -D -m 644 completions/aura.zsh debian/aura-cli/usr/share/zsh/vendor-completions/_aura
+	# Install man page
+	install -D -m 644 docs/aura.1 debian/aura-cli/usr/share/man/man1/aura.1
+
+override_dh_auto_clean:
+	rm -rf build dist *.spec
+	dh_auto_clean
+
+override_dh_strip:
+	# Skip stripping - PyInstaller binary
+	true
+
+override_dh_shlibdeps:
+	# Skip shared lib deps for PyInstaller binary
+	true

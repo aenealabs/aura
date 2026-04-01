@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: aws-node-termination-handler
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: aws-node-termination-handler
+    app.kubernetes.io/part-of: aura
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aws-node-termination-handler
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aws-node-termination-handler
+        app.kubernetes.io/part-of: aura
+    spec:
+      serviceAccountName: aws-node-termination-handler
+      priorityClassName: system-node-critical
+      # Run on all nodes including GPU nodes with taints
+      tolerations:
+        - operator: Exists
+      # Ensure runs on all node types
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+      containers:
+        - name: aws-node-termination-handler
+          image: public.ecr.aws/aws-ec2/aws-node-termination-handler:v1.20.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Enable Spot interruption handling
+            - name: ENABLE_SPOT_INTERRUPTION_DRAINING
+              value: "true"
+            # Enable scheduled event handling
+            - name: ENABLE_SCHEDULED_EVENT_DRAINING
+              value: "true"
+            # Enable rebalance recommendation monitoring
+            - name: ENABLE_REBALANCE_MONITORING
+              value: "true"
+            # Taint nodes on interruption to prevent new pods
+            - name: TAINT_NODE
+              value: "true"
+            # Delete local data when draining
+            - name: DELETE_LOCAL_DATA
+              value: "false"
+            # Don't force pod deletion if they have owner references
+            - name: IGNORE_DAEMON_SETS
+              value: "true"
+            # Grace period for pod termination (seconds)
+            - name: POD_TERMINATION_GRACE_PERIOD
+              value: "120"
+            # Enable prometheus metrics
+            - name: ENABLE_PROMETHEUS_SERVER
+              value: "true"
+            - name: PROMETHEUS_SERVER_PORT
+              value: "9092"
+            # Log level
+            - name: LOG_LEVEL
+              value: "info"
+            # JSON logging for structured output
+            - name: JSON_LOGGING
+              value: "true"
+          ports:
+            - name: http-metrics
+              containerPort: 9092
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # Mount IMDS endpoint for metadata access
+          volumeMounts:
+            - name: uptime
+              mountPath: /proc/uptime
+              readOnly: true
+      volumes:
+        - name: uptime
+          hostPath:
+            path: /proc/uptime
+      hostNetwork: false
+      dnsPolicy: ClusterFirst

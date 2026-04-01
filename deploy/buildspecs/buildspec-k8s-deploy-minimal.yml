@@ -1,0 +1,28 @@
+# Minimal K8s deploy test buildspec
+version: 0.2
+
+env:
+  variables:
+    PROJECT_NAME: aura
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing tools..."
+
+  pre_build:
+    commands:
+      - echo "Pre-build phase"
+      - aws sts get-caller-identity
+
+  build:
+    commands:
+      - echo "Build phase - step 1"
+      - echo "Build phase - step 2"
+      - echo "Build phase - step 3"
+
+  post_build:
+    commands:
+      - echo "Post-build complete"

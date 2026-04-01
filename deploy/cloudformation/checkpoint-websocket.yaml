@@ -1,0 +1,328 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.12 - Checkpoint WebSocket API (Real-Time Intervention)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment packages
+  LambdaCodeKey:
+    Type: String
+    Default: lambda/checkpoint-handlers.zip
+    Description: S3 key for Lambda deployment package
+
+Resources:
+  # IAM Role for WebSocket Lambda Functions
+  # ============================================================================
+  # SECURITY: This role has a permission boundary attached that limits what
+  # the Lambda functions can do, even if this inline policy is overly permissive.
+  # Required tags: Project, Environment, ManagedBy (enforced by CodeBuild IAM policy)
+  # ============================================================================
+  WebSocketLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-checkpoint-ws-lambda-role-${Environment}'
+      # Permission Boundary - enforces ceiling on effective permissions
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-checkpoints-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-checkpoints-${Environment}/index/*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ws-connections-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ws-connections-${Environment}/index/*'
+        - PolicyName: EventBridgeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-checkpoint-events-${Environment}'
+        - PolicyName: ApiGatewayManagement
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: SecurityControl
+          Value: PermissionBoundary
+
+  # WebSocket Connect Lambda
+  ConnectFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-checkpoint-ws-connect-${Environment}'
+      Description: Handles WebSocket connection requests for real-time checkpoint notifications
+      Runtime: python3.12
+      Handler: ws_connect.handler
+      Role: !GetAtt WebSocketLambdaRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Sub '${ProjectName}-ws-connections-${Environment}'
+          CHECKPOINTS_TABLE: !Sub '${ProjectName}-checkpoints-${Environment}'
+          EVENT_BUS_NAME: !Sub '${ProjectName}-checkpoint-events-${Environment}'
+          ENVIRONMENT: !Ref Environment
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: checkpoint-websocket
+
+  # WebSocket Disconnect Lambda
+  DisconnectFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-checkpoint-ws-disconnect-${Environment}'
+      Description: Handles WebSocket disconnection and connection cleanup
+      Runtime: python3.12
+      Handler: ws_disconnect.handler
+      Role: !GetAtt WebSocketLambdaRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Sub '${ProjectName}-ws-connections-${Environment}'
+          ENVIRONMENT: !Ref Environment
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: checkpoint-websocket
+
+  # WebSocket Message Lambda
+  MessageFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-checkpoint-ws-message-${Environment}'
+      Description: Processes WebSocket messages for checkpoint approval and rejection
+      Runtime: python3.12
+      Handler: ws_message.handler
+      Role: !GetAtt WebSocketLambdaRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Sub '${ProjectName}-ws-connections-${Environment}'
+          CHECKPOINTS_TABLE: !Sub '${ProjectName}-checkpoints-${Environment}'
+          EVENT_BUS_NAME: !Sub '${ProjectName}-checkpoint-events-${Environment}'
+          ENVIRONMENT: !Ref Environment
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: checkpoint-websocket
+
+  # WebSocket API Gateway
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${ProjectName}-checkpoint-ws-${Environment}'
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Component: checkpoint-websocket
+        ADR: ADR-042
+
+  # Connect Route
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${ConnectIntegration}'
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConnectFunction.Arn}/invocations'
+
+  ConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ConnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$connect'
+
+  # Disconnect Route
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${DisconnectIntegration}'
+
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DisconnectFunction.Arn}/invocations'
+
+  DisconnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DisconnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$disconnect'
+
+  # Default Route (Message Handler)
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${DefaultIntegration}'
+
+  DefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessageFunction.Arn}/invocations'
+
+  DefaultPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref MessageFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$default'
+
+  # API Deployment
+  WebSocketDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+      - ConnectRoute
+      - DisconnectRoute
+      - DefaultRoute
+    Properties:
+      ApiId: !Ref WebSocketApi
+
+  # API Stage
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: !Ref Environment
+      DeploymentId: !Ref WebSocketDeployment
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 500
+        ThrottlingRateLimit: 1000
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # CloudWatch Log Group for Lambda Functions
+  ConnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-checkpoint-ws-connect-${Environment}'
+      RetentionInDays: 30
+
+  DisconnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-checkpoint-ws-disconnect-${Environment}'
+      RetentionInDays: 30
+
+  MessageLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-checkpoint-ws-message-${Environment}'
+      RetentionInDays: 30
+
+Outputs:
+  WebSocketApiId:
+    Description: WebSocket API ID
+    Value: !Ref WebSocketApi
+    Export:
+      Name: !Sub '${ProjectName}-checkpoint-ws-api-id-${Environment}'
+
+  WebSocketApiEndpoint:
+    Description: WebSocket API Endpoint URL
+    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-checkpoint-ws-endpoint-${Environment}'
+
+  ConnectFunctionArn:
+    Description: ARN of the connect Lambda function
+    Value: !GetAtt ConnectFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-checkpoint-ws-connect-arn-${Environment}'
+
+  DisconnectFunctionArn:
+    Description: ARN of the disconnect Lambda function
+    Value: !GetAtt DisconnectFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-checkpoint-ws-disconnect-arn-${Environment}'
+
+  MessageFunctionArn:
+    Description: ARN of the message Lambda function
+    Value: !GetAtt MessageFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-checkpoint-ws-message-arn-${Environment}'

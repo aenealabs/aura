@@ -1,0 +1,156 @@
+# Multi-Region Deployment Configuration
+# Defines region-specific settings for Project Aura deployments
+
+# Primary region for active workloads
+primary_region: us-east-1
+
+# Secondary region for disaster recovery
+secondary_region: us-west-2
+
+# GovCloud region for federal deployments
+govcloud_region: us-gov-west-1
+
+# Region-specific configurations
+regions:
+  us-east-1:
+    name: "US East (N. Virginia)"
+    environment: prod
+    is_primary: true
+    availability_zones:
+      - us-east-1a
+      - us-east-1b
+      - us-east-1c
+    vpc_cidr: "10.0.0.0/16"
+    neptune:
+      instance_class: db.r5.large
+      replica_count: 2
+    opensearch:
+      instance_type: r6g.large.search
+      instance_count: 3
+    eks:
+      node_instance_types:
+        - m5.xlarge
+        - m5.2xlarge
+      min_nodes: 3
+      max_nodes: 10
+      desired_nodes: 5
+    s3:
+      replication_enabled: true
+      replication_destination: us-west-2
+    features:
+      cross_region_replication: true
+      global_accelerator: true
+      route53_health_checks: true
+
+  us-west-2:
+    name: "US West (Oregon)"
+    environment: prod-dr
+    is_primary: false
+    availability_zones:
+      - us-west-2a
+      - us-west-2b
+      - us-west-2c
+    vpc_cidr: "10.1.0.0/16"
+    neptune:
+      instance_class: db.r5.large
+      replica_count: 1
+    opensearch:
+      instance_type: r6g.large.search
+      instance_count: 2
+    eks:
+      node_instance_types:
+        - m5.xlarge
+      min_nodes: 2
+      max_nodes: 6
+      desired_nodes: 2
+    s3:
+      replication_enabled: false
+    features:
+      cross_region_replication: false
+      global_accelerator: false
+      route53_health_checks: true
+
+  us-gov-west-1:
+    name: "AWS GovCloud (US-West)"
+    environment: govcloud-prod
+    is_primary: true
+    partition: aws-us-gov
+    availability_zones:
+      - us-gov-west-1a
+      - us-gov-west-1b
+      - us-gov-west-1c
+    vpc_cidr: "10.2.0.0/16"
+    neptune:
+      instance_class: db.r5.large
+      replica_count: 2
+    opensearch:
+      instance_type: r6g.large.search
+      instance_count: 3
+    eks:
+      node_instance_types:
+        - m5.xlarge
+        - m5.2xlarge
+      min_nodes: 3
+      max_nodes: 10
+      desired_nodes: 5
+    s3:
+      replication_enabled: false
+    features:
+      cross_region_replication: false
+      global_accelerator: false
+      route53_health_checks: true
+      fips_endpoints: true
+
+# Failover configuration
+failover:
+  # Automatic failover threshold (consecutive health check failures)
+  health_check_threshold: 3
+
+  # Health check interval in seconds
+  health_check_interval: 30
+
+  # DNS TTL for failover records
+  dns_ttl: 60
+
+  # RTO (Recovery Time Objective) in minutes
+  rto_minutes: 15
+
+  # RPO (Recovery Point Objective) in minutes
+  rpo_minutes: 5
+
+# Global resources (region-agnostic)
+global:
+  # Route 53 hosted zone
+  hosted_zone: aenealabs.com
+
+  # Global Accelerator endpoints
+  accelerator_endpoints:
+    - api.aenealabs.com
+    - app.aenealabs.com
+
+  # CloudFront distributions
+  cloudfront:
+    marketing: d1234567890.cloudfront.net
+    docs: d0987654321.cloudfront.net
+
+# Data replication settings
+replication:
+  # S3 cross-region replication
+  s3:
+    enabled: true
+    source_region: us-east-1
+    destination_region: us-west-2
+    storage_class: STANDARD_IA
+
+  # DynamoDB global tables
+  dynamodb:
+    enabled: true
+    regions:
+      - us-east-1
+      - us-west-2
+
+  # Neptune (manual snapshot-based)
+  neptune:
+    snapshot_frequency_hours: 1
+    cross_region_copy: true
+    retention_days: 7

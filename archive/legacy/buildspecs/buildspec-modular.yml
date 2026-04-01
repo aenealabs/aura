@@ -1,0 +1,207 @@
+version: 0.2
+
+# Project Aura - Modular Infrastructure Deployment (Phase 1)
+# Replaces: deploy/buildspec.yml
+# This buildspec detects changes and deploys only affected layers
+
+env:
+  variables:
+    ENVIRONMENT: "dev"
+    PROJECT_NAME: "aura"
+    AWS_DEFAULT_REGION: "us-east-1"
+  parameter-store:
+    ALERT_EMAIL: "/aura/dev/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - pip install --upgrade pip
+      - pip install cfn-lint boto3 pyyaml pytest pytest-mock pytest-anyio ruff mypy bandit
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Project Aura - Modular Deployment"
+      - echo "=========================================="
+      - echo "Environment - $ENVIRONMENT"
+      - echo "Region - $AWS_DEFAULT_REGION"
+      - echo ""
+
+      # ==========================================
+      # GATE 1: Smoke Tests (BLOCKING)
+      # ==========================================
+      - |
+        echo "=========================================="
+        echo "GATE 1: Running Smoke Tests (REQUIRED)"
+        echo "=========================================="
+        echo "Testing critical platform components..."
+        if pytest tests/smoke/test_platform_smoke.py -m smoke -v --tb=short -o addopts=""; then
+          echo "✓ Smoke tests PASSED (10/10)"
+        else
+          echo "✗ DEPLOYMENT BLOCKED: Smoke tests FAILED"
+          echo "Fix tests before deploying to $ENVIRONMENT"
+          exit 1
+        fi
+        echo ""
+
+      # ==========================================
+      # GATE 2: Deployment Validation Script
+      # ==========================================
+      - |
+        echo "=========================================="
+        echo "GATE 2: Deployment Validation (REQUIRED)"
+        echo "=========================================="
+        chmod +x deploy/scripts/validate-deployment-codebuild.sh
+        if bash deploy/scripts/validate-deployment-codebuild.sh $ENVIRONMENT; then
+          echo "✓ Deployment validation PASSED"
+        else
+          echo "✗ DEPLOYMENT BLOCKED: Validation script failed"
+          exit 1
+        fi
+        echo ""
+
+      # Detect changes (or deploy missing stacks if no changes detected)
+      - echo "Detecting infrastructure changes..."
+      - python3 deploy/scripts/detect_changes.py --deploy-missing --environment $ENVIRONMENT --output /tmp/deployment-plan.json
+
+      # Parse deployment plan
+      - |
+        export DEPLOY_FOUNDATION=$(python3 -c "import json; plan=json.load(open('/tmp/deployment-plan.json')); print('true' if 'foundation' in plan['layers_to_deploy'] else 'false')")
+        export DEPLOY_DATA=$(python3 -c "import json; plan=json.load(open('/tmp/deployment-plan.json')); print('true' if 'data' in plan['layers_to_deploy'] else 'false')")
+        export DEPLOY_COMPUTE=$(python3 -c "import json; plan=json.load(open('/tmp/deployment-plan.json')); print('true' if 'compute' in plan['layers_to_deploy'] else 'false')")
+        export DEPLOY_APPLICATION=$(python3 -c "import json; plan=json.load(open('/tmp/deployment-plan.json')); print('true' if 'application' in plan['layers_to_deploy'] else 'false')")
+        export DEPLOY_OBSERVABILITY=$(python3 -c "import json; plan=json.load(open('/tmp/deployment-plan.json')); print('true' if 'observability' in plan['layers_to_deploy'] else 'false')")
+        echo "Foundation: $DEPLOY_FOUNDATION"
+        echo "Data: $DEPLOY_DATA"
+        echo "Compute: $DEPLOY_COMPUTE"
+        echo "Application: $DEPLOY_APPLICATION"
+        echo "Observability: $DEPLOY_OBSERVABILITY"
+
+      # Global validation
+      - echo "Validating CloudFormation templates..."
+      - cfn-lint deploy/cloudformation/*.yaml --ignore-checks W3002 || echo "Validation warnings present"
+
+      # Set up artifact bucket
+      - ARTIFACT_BUCKET="${PROJECT_NAME}-cfn-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+      - |
+        if ! aws s3 ls "s3://${ARTIFACT_BUCKET}" 2>/dev/null; then
+          aws s3 mb "s3://${ARTIFACT_BUCKET}" --region $AWS_DEFAULT_REGION
+          aws s3api put-bucket-encryption \
+            --bucket "${ARTIFACT_BUCKET}" \
+            --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+          aws s3api put-public-access-block \
+            --bucket "${ARTIFACT_BUCKET}" \
+            --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+        fi
+
+  build:
+    commands:
+      - echo "=========================================="
+      - echo "Starting Layer Deployments"
+      - echo "=========================================="
+
+      # Deploy Foundation Layer
+      - |
+        if [ "$DEPLOY_FOUNDATION" = "true" ]; then
+          echo "Deploying Foundation Layer..."
+          bash deploy/scripts/deploy-foundation.sh
+        else
+          echo "Skipping Foundation Layer (no changes)"
+        fi
+
+      # Deploy Data Layer (depends on foundation)
+      - |
+        if [ "$DEPLOY_DATA" = "true" ]; then
+          echo "Deploying Data Layer..."
+          bash deploy/scripts/deploy-data.sh
+        else
+          echo "Skipping Data Layer (no changes)"
+        fi
+
+      # Deploy Compute Layer (depends on foundation, parallel with data)
+      - |
+        if [ "$DEPLOY_COMPUTE" = "true" ]; then
+          echo "Deploying Compute Layer..."
+          bash deploy/scripts/deploy-compute.sh
+        else
+          echo "Skipping Compute Layer (no changes)"
+        fi
+
+      # Deploy Application Layer (depends on all above)
+      - |
+        if [ "$DEPLOY_APPLICATION" = "true" ]; then
+          echo "Deploying Application Layer..."
+          bash deploy/scripts/deploy-application.sh
+        else
+          echo "Skipping Application Layer (no changes)"
+        fi
+
+      # Deploy Observability Layer (depends on foundation + data)
+      - |
+        if [ "$DEPLOY_OBSERVABILITY" = "true" ]; then
+          echo "Deploying Observability Layer..."
+          bash deploy/scripts/deploy-observability.sh
+        else
+          echo "Skipping Observability Layer (no changes)"
+        fi
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Post-Deployment Validation"
+      - echo "=========================================="
+
+      # Show stack status
+      - |
+        echo "Stack Status:"
+        aws cloudformation list-stacks \
+          --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
+          --query "StackSummaries[?starts_with(StackName, '${PROJECT_NAME}-')].{Name:StackName, Status:StackStatus, Updated:LastUpdatedTime}" \
+          --output table \
+          --region $AWS_DEFAULT_REGION
+
+      # ==========================================
+      # GATE 3: Post-Deployment Smoke Tests
+      # ==========================================
+      - |
+        echo ""
+        echo "=========================================="
+        echo "GATE 3: Post-Deployment Validation"
+        echo "=========================================="
+        echo "Running smoke tests against deployed infrastructure..."
+        if pytest tests/smoke/test_platform_smoke.py -m smoke -v --tb=short -o addopts=""; then
+          echo "✓ Post-deployment smoke tests PASSED"
+          echo "✓ Infrastructure is healthy and operational"
+        else
+          echo "⚠ WARNING: Post-deployment smoke tests FAILED"
+          echo "⚠ Infrastructure may be unhealthy - investigate immediately"
+          echo "Consider rollback if critical services are down"
+          # Don't fail the build - deployment already happened
+          # This is for notification purposes
+        fi
+        echo ""
+        echo "=========================================="
+        echo "Deployment Summary"
+        echo "=========================================="
+        echo "Environment: $ENVIRONMENT"
+        echo "Region: $AWS_DEFAULT_REGION"
+        echo "Deployment completed successfully!"
+        echo ""
+        echo "Next Steps:"
+        echo "  1. Monitor CloudWatch dashboards"
+        echo "  2. Check service health endpoints"
+        echo "  3. Review deployment logs"
+        echo "=========================================="
+
+artifacts:
+  files:
+    - 'deploy/cloudformation/**/*'
+    - '/tmp/deployment-plan.json'
+  name: infrastructure-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

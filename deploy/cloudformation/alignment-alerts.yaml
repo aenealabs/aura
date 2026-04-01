@@ -1,0 +1,422 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.10 - AI Alignment Monitoring Alerts'
+
+# ============================================================================
+# AI ALIGNMENT MONITORING
+#
+# Purpose: Real-time alerting on AI alignment metrics to detect potential
+# sycophancy, trust degradation, transparency violations, and rollback issues.
+#
+# Reference: ADR-052 AI Alignment Principles & Human-Machine Collaboration
+# ============================================================================
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for alignment alerts (optional)
+
+Conditions:
+  CreateAlertTopic: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ============================================================
+  # SNS Topic for Alignment Alerts
+  # ============================================================
+
+  AlignmentAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateAlertTopic
+    Properties:
+      TopicName: !Sub '${ProjectName}-alignment-alerts-${Environment}'
+      DisplayName: !Sub '${ProjectName} AI Alignment Alerts'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: Alignment
+
+  AlignmentAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: CreateAlertTopic
+    Properties:
+      TopicArn: !Ref AlignmentAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================
+  # CloudWatch Log Group for Alignment Events
+  # ============================================================
+
+  AlignmentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/${Environment}/alignment'
+      RetentionInDays: 90
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================
+  # CloudWatch Metrics Namespace
+  # ============================================================
+
+  # Custom Metric Filters for Alignment Events
+
+  SycophancyViolationFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AlignmentLogGroup
+      FilterPattern: '[timestamp, level="WARNING" || level="ERROR", module, message="*sycophancy*violation*" || message="*SYCOPHANCY_VIOLATION*"]'
+      MetricTransformations:
+        - MetricName: SycophancyViolations
+          MetricNamespace: !Sub '${ProjectName}/Alignment'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  TrustDemotionFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AlignmentLogGroup
+      FilterPattern: '[timestamp, level, module, message="*trust*demotion*" || message="*TRUST_DEMOTION*"]'
+      MetricTransformations:
+        - MetricName: TrustDemotions
+          MetricNamespace: !Sub '${ProjectName}/Alignment'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  TransparencyViolationFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AlignmentLogGroup
+      FilterPattern: '[timestamp, level="WARNING" || level="ERROR", module, message="*transparency*violation*" || message="*TRANSPARENCY_VIOLATION*"]'
+      MetricTransformations:
+        - MetricName: TransparencyViolations
+          MetricNamespace: !Sub '${ProjectName}/Alignment'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  RollbackFailureFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AlignmentLogGroup
+      FilterPattern: '[timestamp, level="ERROR", module, message="*rollback*failed*" || message="*ROLLBACK_FAILED*"]'
+      MetricTransformations:
+        - MetricName: RollbackFailures
+          MetricNamespace: !Sub '${ProjectName}/Alignment'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  AlignmentAlertFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AlignmentLogGroup
+      FilterPattern: '[timestamp, level, module, message="*Alignment alert triggered*"]'
+      MetricTransformations:
+        - MetricName: AlignmentAlerts
+          MetricNamespace: !Sub '${ProjectName}/Alignment'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  HumanOverrideFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AlignmentLogGroup
+      FilterPattern: '[timestamp, level, module, message="*override*granted*" || message="*OVERRIDE_GRANTED*"]'
+      MetricTransformations:
+        - MetricName: HumanOverrides
+          MetricNamespace: !Sub '${ProjectName}/Alignment'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  # ============================================================
+  # CloudWatch Alarms
+  # ============================================================
+
+  # Alarm: High Sycophancy Violation Rate
+  SycophancyViolationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-sycophancy-violations-${Environment}'
+      AlarmDescription: High rate of sycophancy violations detected - agents may be providing biased responses
+      Namespace: !Sub '${ProjectName}/Alignment'
+      MetricName: SycophancyViolations
+      Statistic: Sum
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - CreateAlertTopic
+          - !Ref AlignmentAlertTopic
+          - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+      OKActions:
+        - !If
+          - CreateAlertTopic
+          - !Ref AlignmentAlertTopic
+          - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: AlarmType
+          Value: Alignment
+
+  # Alarm: Trust Score Degradation
+  TrustDemotionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-trust-demotions-${Environment}'
+      AlarmDescription: Multiple agent trust demotions detected - investigate agent behavior
+      Namespace: !Sub '${ProjectName}/Alignment'
+      MetricName: TrustDemotions
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - CreateAlertTopic
+          - !Ref AlignmentAlertTopic
+          - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: AlarmType
+          Value: Alignment
+
+  # Alarm: Transparency Violations
+  TransparencyViolationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-transparency-violations-${Environment}'
+      AlarmDescription: Agents failing transparency requirements - audit trails may be incomplete
+      Namespace: !Sub '${ProjectName}/Alignment'
+      MetricName: TransparencyViolations
+      Statistic: Sum
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - CreateAlertTopic
+          - !Ref AlignmentAlertTopic
+          - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: AlarmType
+          Value: Alignment
+
+  # Alarm: Rollback Failures
+  RollbackFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-rollback-failures-${Environment}'
+      AlarmDescription: Critical - Rollback operations failing - human intervention required
+      Namespace: !Sub '${ProjectName}/Alignment'
+      MetricName: RollbackFailures
+      Statistic: Sum
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - CreateAlertTopic
+          - !Ref AlignmentAlertTopic
+          - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: AlarmType
+          Value: Alignment
+
+  # Alarm: High Volume of Human Overrides (may indicate automation issues)
+  ExcessiveOverridesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-excessive-overrides-${Environment}'
+      AlarmDescription: High volume of human overrides detected - automation may be malfunctioning
+      Namespace: !Sub '${ProjectName}/Alignment'
+      MetricName: HumanOverrides
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If
+          - CreateAlertTopic
+          - !Ref AlignmentAlertTopic
+          - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: AlarmType
+          Value: Alignment
+
+  # ============================================================
+  # CloudWatch Dashboard
+  # ============================================================
+
+  AlignmentDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-alignment-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/Alignment", "SycophancyViolations", {"stat": "Sum", "period": 3600}]
+                ],
+                "title": "Sycophancy Violations (Hourly)",
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 6,
+              "y": 0,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/Alignment", "TrustDemotions", {"stat": "Sum", "period": 3600}]
+                ],
+                "title": "Trust Demotions (Hourly)",
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/Alignment", "TransparencyViolations", {"stat": "Sum", "period": 3600}]
+                ],
+                "title": "Transparency Violations (Hourly)",
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 18,
+              "y": 0,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/Alignment", "RollbackFailures", {"stat": "Sum", "period": 3600}]
+                ],
+                "title": "Rollback Failures (Hourly)",
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${ProjectName}/Alignment", "AlignmentAlerts", {"stat": "Sum", "period": 3600}],
+                  ["${ProjectName}/Alignment", "HumanOverrides", {"stat": "Sum", "period": 3600}]
+                ],
+                "title": "Alerts and Overrides (Hourly)",
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "alarm",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Alignment Alarms Status",
+                "alarms": [
+                  "${SycophancyViolationAlarm.Arn}",
+                  "${TrustDemotionAlarm.Arn}",
+                  "${TransparencyViolationAlarm.Arn}",
+                  "${RollbackFailureAlarm.Arn}",
+                  "${ExcessiveOverridesAlarm.Arn}"
+                ]
+              }
+            }
+          ]
+        }
+
+Outputs:
+  AlignmentLogGroupName:
+    Description: CloudWatch Log Group for alignment events
+    Value: !Ref AlignmentLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-alignment-log-group-${Environment}'
+
+  AlignmentLogGroupArn:
+    Description: CloudWatch Log Group ARN for alignment events
+    Value: !GetAtt AlignmentLogGroup.Arn
+    Export:
+      Name: !Sub '${ProjectName}-alignment-log-group-arn-${Environment}'
+
+  AlignmentAlertTopicArn:
+    Condition: CreateAlertTopic
+    Description: SNS Topic ARN for alignment alerts
+    Value: !Ref AlignmentAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-alignment-alert-topic-${Environment}'
+
+  AlignmentDashboardName:
+    Description: CloudWatch Dashboard name for alignment metrics
+    Value: !Ref AlignmentDashboard
+    Export:
+      Name: !Sub '${ProjectName}-alignment-dashboard-${Environment}'
+
+  SycophancyAlarmArn:
+    Description: ARN of sycophancy violations alarm
+    Value: !GetAtt SycophancyViolationAlarm.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sycophancy-alarm-${Environment}'
+
+  RollbackAlarmArn:
+    Description: ARN of rollback failures alarm
+    Value: !GetAtt RollbackFailureAlarm.Arn
+    Export:
+      Name: !Sub '${ProjectName}-rollback-alarm-${Environment}'

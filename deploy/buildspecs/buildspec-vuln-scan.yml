@@ -1,0 +1,226 @@
+version: 0.2
+
+# Vulnerability Scanner Layer: ADR-084 Scanning Engine Infrastructure (Layer 9.1-9.8)
+# Deploys all Layer 9 stacks in strict dependency order.
+# All resources are serverless/on-demand — unaffected by DEV cost scheduler.
+# Environment variables provided by CodeBuild: ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Vulnerability Scanner Deployment (Layer 9)"
+      - echo "=========================================="
+      - echo "Installing dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install --quiet cfn-lint
+
+      # Validate all templates
+      - echo "Validating CloudFormation templates..."
+      - cfn-lint deploy/cloudformation/vuln-scan-infrastructure.yaml --ignore-checks W2001,W3002,W3005 || echo "Infrastructure template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/vuln-scan-iam.yaml --ignore-checks W2001,W3002,W3005 || echo "IAM template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/vuln-scan-networking.yaml --ignore-checks W2001,W3002,W3005 || echo "Networking template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/vuln-scan-ecr.yaml --ignore-checks W2001,W3002,W3005 || echo "ECR template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/vuln-scan-workflow.yaml --ignore-checks W2001,W3002,W3005 || echo "Workflow template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/vuln-scan-cleanup.yaml --ignore-checks W2001,W3002,W3005 || echo "Cleanup template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/vuln-scan-eventbridge.yaml --ignore-checks W2001,W3002,W3005 || echo "EventBridge template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/vuln-scan-monitoring.yaml --ignore-checks W2001,W3002,W3005 || echo "Monitoring template has warnings (non-blocking)"
+      - echo "Template validation complete"
+
+      # Retrieve networking stack outputs for VPC/subnet parameters
+      - echo "Retrieving networking stack outputs..."
+      - NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          PRIVATE_SUBNET_IDS=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnetIds`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "VPC ID: $VPC_ID"
+          echo "Private Subnet IDs: $PRIVATE_SUBNET_IDS"
+        else
+          echo "Warning: Networking stack not found - security groups will be skipped"
+          VPC_ID=""
+          PRIVATE_SUBNET_IDS=""
+        fi
+
+  build:
+    commands:
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+      - COMMON_TAGS="Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=9 DeployTimestamp=$DEPLOY_TIMESTAMP"
+      - BASE_PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+
+      # -----------------------------------------------------------------------
+      # Stage 1: Infrastructure (Layer 9.1) — DynamoDB, S3, KMS, SNS
+      # No cross-Layer-9 dependencies. Foundation for all other stacks.
+      # -----------------------------------------------------------------------
+      - echo "=========================================="
+      - echo "[1/8] Deploying Infrastructure (Layer 9.1)..."
+      - echo "=========================================="
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-vuln-scan-infra-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/vuln-scan-infrastructure.yaml \
+          --parameter-overrides $BASE_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags $COMMON_TAGS \
+          --no-fail-on-empty-changeset
+      - echo "Infrastructure deployment complete"
+
+      # -----------------------------------------------------------------------
+      # Stage 2: IAM (Layer 9.2) — Roles and policies
+      # Depends on: 9.1 (KMS key ARN, table ARNs, bucket ARNs via exports)
+      # -----------------------------------------------------------------------
+      - echo "=========================================="
+      - echo "[2/8] Deploying IAM (Layer 9.2)..."
+      - echo "=========================================="
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-vuln-scan-iam-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/vuln-scan-iam.yaml \
+          --parameter-overrides $BASE_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags $COMMON_TAGS \
+          --no-fail-on-empty-changeset
+      - echo "IAM deployment complete"
+
+      # -----------------------------------------------------------------------
+      # Stage 3: Networking (Layer 9.3) — ECS cluster, security groups, logs
+      # Depends on: Layer 1 (VPC/subnets via parameter overrides)
+      # Note: ECS Fargate cluster — NOT managed by dev-cost-scheduler.yaml
+      # -----------------------------------------------------------------------
+      - echo "=========================================="
+      - echo "[3/8] Deploying Networking (Layer 9.3)..."
+      - echo "=========================================="
+      - |
+        NET_PARAMS="$BASE_PARAMS"
+        if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+          NET_PARAMS="$NET_PARAMS VpcId=$VPC_ID"
+        fi
+        if [ -n "$PRIVATE_SUBNET_IDS" ] && [ "$PRIVATE_SUBNET_IDS" != "None" ]; then
+          NET_PARAMS="$NET_PARAMS PrivateSubnetIds=$PRIVATE_SUBNET_IDS"
+        fi
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-vuln-scan-networking-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/vuln-scan-networking.yaml \
+          --parameter-overrides $NET_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags $COMMON_TAGS \
+          --no-fail-on-empty-changeset
+      - echo "Networking deployment complete"
+
+      # -----------------------------------------------------------------------
+      # Stage 4: ECR (Layer 9.5) — Container repositories
+      # No cross-Layer-9 dependencies. Safe to deploy in parallel with 9.3
+      # but sequential here for single-command simplicity.
+      # -----------------------------------------------------------------------
+      - echo "=========================================="
+      - echo "[4/8] Deploying ECR (Layer 9.5)..."
+      - echo "=========================================="
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-vuln-scan-ecr-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/vuln-scan-ecr.yaml \
+          --parameter-overrides $BASE_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags $COMMON_TAGS \
+          --no-fail-on-empty-changeset
+      - echo "ECR deployment complete"
+
+      # -----------------------------------------------------------------------
+      # Stage 5: EventBridge (Layer 9.8) — Custom event bus and rules
+      # Depends on: 9.1 (SNS topic ARN via export)
+      # Deployed before workflow so the event bus exists for SFN to publish to.
+      # -----------------------------------------------------------------------
+      - echo "=========================================="
+      - echo "[5/8] Deploying EventBridge (Layer 9.8)..."
+      - echo "=========================================="
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-vuln-scan-eventbridge-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/vuln-scan-eventbridge.yaml \
+          --parameter-overrides $BASE_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags $COMMON_TAGS \
+          --no-fail-on-empty-changeset
+      - echo "EventBridge deployment complete"
+
+      # -----------------------------------------------------------------------
+      # Stage 6: Workflow (Layer 9.4) — Step Functions state machine
+      # Depends on: 9.1 (tables), 9.2 (IAM roles), 9.3 (cluster/SG/logs),
+      #             9.8 (event bus for scan events)
+      # -----------------------------------------------------------------------
+      - echo "=========================================="
+      - echo "[6/8] Deploying Workflow (Layer 9.4)..."
+      - echo "=========================================="
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-vuln-scan-workflow-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/vuln-scan-workflow.yaml \
+          --parameter-overrides $BASE_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags $COMMON_TAGS \
+          --no-fail-on-empty-changeset
+      - echo "Workflow deployment complete"
+
+      # -----------------------------------------------------------------------
+      # Stage 7: Cleanup (Layer 9.7) — Scheduled Lambda for artifact cleanup
+      # Depends on: 9.1 (tables, buckets), 9.2 (Lambda role)
+      # -----------------------------------------------------------------------
+      - echo "=========================================="
+      - echo "[7/8] Deploying Cleanup (Layer 9.7)..."
+      - echo "=========================================="
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-vuln-scan-cleanup-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/vuln-scan-cleanup.yaml \
+          --parameter-overrides $BASE_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags $COMMON_TAGS \
+          --no-fail-on-empty-changeset
+      - echo "Cleanup deployment complete"
+
+      # -----------------------------------------------------------------------
+      # Stage 8: Monitoring (Layer 9.6) — Dashboard and alarms
+      # Depends on: 9.1 (SNS topic), 9.4 (state machine ARN for alarms)
+      # Deployed LAST to ensure all monitored resources exist.
+      # -----------------------------------------------------------------------
+      - echo "=========================================="
+      - echo "[8/8] Deploying Monitoring (Layer 9.6)..."
+      - echo "=========================================="
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-vuln-scan-monitoring-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/vuln-scan-monitoring.yaml \
+          --parameter-overrides $BASE_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags $COMMON_TAGS \
+          --no-fail-on-empty-changeset
+      - echo "Monitoring deployment complete"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Layer 9 Deployment Summary"
+      - echo "=========================================="
+      - echo "All 8 vulnerability scanner stacks deployed successfully."
+      - echo "Stacks deployed:"
+      - echo "  9.1 ${PROJECT_NAME}-vuln-scan-infra-${ENVIRONMENT}"
+      - echo "  9.2 ${PROJECT_NAME}-vuln-scan-iam-${ENVIRONMENT}"
+      - echo "  9.3 ${PROJECT_NAME}-vuln-scan-networking-${ENVIRONMENT}"
+      - echo "  9.5 ${PROJECT_NAME}-vuln-scan-ecr-${ENVIRONMENT}"
+      - echo "  9.8 ${PROJECT_NAME}-vuln-scan-eventbridge-${ENVIRONMENT}"
+      - echo "  9.4 ${PROJECT_NAME}-vuln-scan-workflow-${ENVIRONMENT}"
+      - echo "  9.7 ${PROJECT_NAME}-vuln-scan-cleanup-${ENVIRONMENT}"
+      - echo "  9.6 ${PROJECT_NAME}-vuln-scan-monitoring-${ENVIRONMENT}"
+      - echo "All Layer 9 resources are serverless -- unaffected by DEV cost scheduler."
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

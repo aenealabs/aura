@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.7 - CloudTrail Logging (Security Audit Trail)'
+
+# ============================================================================
+# SECURITY CONTROL: CloudTrail Organization-Wide Logging
+#
+# Purpose: Enable CloudTrail for API auditing, compliance, and security monitoring.
+# Integrates with CloudWatch Logs for real-time IAM security alerting.
+#
+# Reference: Security Assessment, NIST 800-53 AU-2/AU-3/AU-6
+# ============================================================================
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+  LogRetentionDays:
+    Type: Number
+    Default: 90
+    AllowedValues: [30, 60, 90, 180, 365]
+    Description: CloudWatch Logs retention period in days
+
+Resources:
+  # S3 Bucket for CloudTrail Logs
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-cloudtrail-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+              - StorageClass: GLACIER
+                TransitionInDays: 90
+          - Id: DeleteOldLogs
+            Status: Enabled
+            ExpirationInDays: 365
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: SecurityControl
+          Value: CloudTrail
+
+  # S3 Bucket Policy for CloudTrail
+  CloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudTrailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt CloudTrailBucket.Arn
+            Condition:
+              StringEquals:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${ProjectName}-trail-${Environment}'
+          - Sid: AWSCloudTrailWrite
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${CloudTrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${ProjectName}-trail-${Environment}'
+
+  # CloudWatch Logs Group for CloudTrail
+  CloudTrailLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub 'aws-cloudtrail-logs-${AWS::AccountId}-${AWS::Region}-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: SecurityControl
+          Value: CloudTrail
+
+  # IAM Role for CloudTrail to write to CloudWatch Logs
+  CloudTrailLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-cloudtrail-logs-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchLogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub '${CloudTrailLogGroup.Arn}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # CloudTrail Trail
+  CloudTrail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn:
+      - CloudTrailBucketPolicy
+    Properties:
+      TrailName: !Sub '${ProjectName}-trail-${Environment}'
+      S3BucketName: !Ref CloudTrailBucket
+      IsLogging: true
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      CloudWatchLogsLogGroupArn: !GetAtt CloudTrailLogGroup.Arn
+      CloudWatchLogsRoleArn: !GetAtt CloudTrailLogRole.Arn
+      EventSelectors:
+        - IncludeManagementEvents: true
+          ReadWriteType: All
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: SecurityControl
+          Value: AuditTrail
+
+Outputs:
+  CloudTrailArn:
+    Description: ARN of the CloudTrail trail
+    Value: !GetAtt CloudTrail.Arn
+    Export:
+      Name: !Sub '${ProjectName}-cloudtrail-arn-${Environment}'
+
+  CloudTrailBucketName:
+    Description: S3 bucket for CloudTrail logs
+    Value: !Ref CloudTrailBucket
+    Export:
+      Name: !Sub '${ProjectName}-cloudtrail-bucket-${Environment}'
+
+  CloudTrailLogGroupName:
+    Description: CloudWatch Logs group name for CloudTrail (use in iam-security-alerting)
+    Value: !Ref CloudTrailLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-cloudtrail-log-group-${Environment}'
+
+  CloudTrailLogGroupArn:
+    Description: ARN of CloudWatch Logs group for CloudTrail
+    Value: !GetAtt CloudTrailLogGroup.Arn
+    Export:
+      Name: !Sub '${ProjectName}-cloudtrail-log-group-arn-${Environment}'

@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Aura — Agent Guardrail Capabilities</title>
+  <style>
+    :root {
+      --blue-50:#EFF6FF;--blue-100:#DBEAFE;--blue-200:#BFDBFE;--blue-600:#3B82F6;--blue-700:#2563EB;--blue-800:#1E40AF;--blue-900:#1E3A8A;
+      --slate-50:#F8FAFC;--slate-100:#F1F5F9;--slate-200:#E2E8F0;--slate-300:#CBD5E1;--slate-400:#94A3B8;
+      --slate-500:#64748B;--slate-600:#475569;--slate-700:#334155;--slate-800:#1E293B;--slate-900:#0F172A;
+      --green-50:#F0FDF4;--green-100:#DCFCE7;--green-600:#16A34A;--green-700:#15803D;
+      --red-50:#FEF2F2;--red-100:#FEE2E2;--red-600:#DC2626;--red-700:#B91C1C;
+      --amber-50:#FFFBEB;--amber-100:#FEF3C7;--amber-600:#D97706;--amber-700:#B45309;
+      --purple-50:#FAF5FF;--purple-100:#F3E8FF;--purple-600:#9333EA;--purple-700:#7C3AED;
+      --teal-50:#F0FDFA;--teal-100:#CCFBF1;--teal-600:#0D9488;--teal-700:#0F766E;
+      --indigo-50:#EEF2FF;--indigo-100:#E0E7FF;--indigo-600:#4F46E5;--indigo-700:#4338CA;
+      --cyan-50:#ECFEFF;--cyan-100:#CFFAFE;--cyan-600:#0891B2;
+      --orange-50:#FFF7ED;--orange-100:#FFEDD5;--orange-600:#EA580C;
+      --rose-50:#FFF1F2;--rose-100:#FFE4E6;--rose-600:#E11D48;
+      --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      --font-mono:'JetBrains Mono','Fira Code','Cascadia Code',monospace;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:var(--font-sans);background:var(--slate-50);color:var(--slate-800);line-height:1.6;font-size:14px}
+
+    .site-header{background:linear-gradient(135deg,var(--slate-900) 0%,var(--red-700) 50%,var(--amber-700) 100%);color:#fff;padding:56px 0 48px;border-bottom:4px solid var(--red-600)}
+    .site-header .container{max-width:1200px;margin:0 auto;padding:0 28px}
+    .site-header h1{font-size:34px;font-weight:700;letter-spacing:-.5px;margin-bottom:10px}
+    .site-header .subtitle{font-size:16px;opacity:.85;max-width:780px;line-height:1.55}
+    .header-meta{display:flex;gap:24px;margin-top:22px;font-size:13px;opacity:.65;flex-wrap:wrap}
+
+    .container{max-width:1200px;margin:0 auto;padding:0 28px}
+    .page-body{padding:44px 0 80px}
+
+    .stats-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:40px}
+    .stat-card{background:#fff;border:1px solid var(--slate-200);border-radius:10px;padding:18px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+    .stat-card .sv{font-size:26px;font-weight:700;color:var(--red-600);line-height:1.2}
+    .stat-card .sl{font-size:11px;color:var(--slate-500);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+
+    .toc{background:#fff;border:1px solid var(--slate-200);border-radius:10px;padding:24px 28px;margin-bottom:40px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+    .toc h2{font-size:16px;color:var(--slate-700);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--slate-200)}
+    .toc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:5px 24px}
+    .toc a{color:var(--red-600);text-decoration:none;font-size:13px;padding:4px 0;display:flex;align-items:center;gap:8px}
+    .toc a:hover{color:var(--red-700);text-decoration:underline}
+    .toc a .n{color:var(--slate-400);font-family:var(--font-mono);font-size:11px;min-width:24px}
+
+    .section{margin-bottom:44px}
+    .sh{display:flex;align-items:center;gap:12px;margin-bottom:8px;padding-bottom:12px;border-bottom:2px solid var(--slate-200)}
+    .si{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+    .sh h2{font-size:20px;font-weight:700;color:var(--slate-900)}
+    .si-blue{background:var(--blue-50);color:var(--blue-600)}.si-green{background:var(--green-50);color:var(--green-600)}
+    .si-red{background:var(--red-50);color:var(--red-600)}.si-amber{background:var(--amber-50);color:var(--amber-600)}
+    .si-purple{background:var(--purple-50);color:var(--purple-600)}.si-teal{background:var(--teal-50);color:var(--teal-600)}
+    .si-indigo{background:var(--indigo-50);color:var(--indigo-600)}.si-cyan{background:var(--cyan-50);color:var(--cyan-600)}
+    .si-orange{background:var(--orange-50);color:var(--orange-600)}.si-rose{background:var(--rose-50);color:var(--rose-600)}
+    .intro{font-size:14px;color:var(--slate-600);margin-bottom:20px;max-width:840px;line-height:1.6}
+
+    .cg{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+    .c{background:#fff;border:1px solid var(--slate-200);border-radius:10px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.04);transition:box-shadow .2s}
+    .c:hover{box-shadow:0 4px 12px rgba(0,0,0,.08)}
+    .c h3{font-size:15px;font-weight:600;color:var(--slate-900);margin-bottom:4px}
+    .c .cp{font-family:var(--font-mono);font-size:11px;color:var(--slate-400);margin-bottom:10px;word-break:break-all}
+    .c p{font-size:13px;color:var(--slate-600);margin-bottom:10px;line-height:1.55}
+    .c-accent{border-left:3px solid var(--red-600)}
+
+    .tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+    .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;letter-spacing:.2px}
+    .tb{background:var(--blue-50);color:var(--blue-700)}
+    .tg{background:var(--green-50);color:var(--green-700)}
+    .tp{background:var(--purple-50);color:var(--purple-700)}
+    .ta{background:var(--amber-50);color:var(--amber-700)}
+    .tr{background:var(--red-50);color:var(--red-700)}
+    .tt{background:var(--teal-50);color:var(--teal-700)}
+    .ti{background:var(--indigo-50);color:var(--indigo-700)}
+
+    .ml{list-style:none;margin-top:8px}
+    .ml li{font-family:var(--font-mono);font-size:12px;color:var(--slate-600);padding:3px 0;display:flex;align-items:baseline;gap:6px}
+    .ml li::before{content:"\25B8";color:var(--slate-400);font-size:10px}
+
+    .tw{background:#fff;border:1px solid var(--slate-200);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);margin-bottom:16px;overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    thead{background:var(--slate-100)}
+    th{padding:10px 16px;text-align:left;font-weight:600;color:var(--slate-700);font-size:12px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--slate-200);white-space:nowrap}
+    td{padding:10px 16px;border-bottom:1px solid var(--slate-100);color:var(--slate-700);vertical-align:top}
+    tr:last-child td{border-bottom:none}
+    tr:hover td{background:var(--slate-50)}
+    td code,p code{font-family:var(--font-mono);font-size:12px;background:var(--slate-100);padding:1px 5px;border-radius:3px;color:var(--slate-700)}
+
+    .diagram{background:#fff;border:1px solid var(--slate-200);border-radius:10px;padding:28px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);overflow-x:auto}
+    .diagram pre{font-family:var(--font-mono);font-size:12px;line-height:1.5;color:var(--slate-700);white-space:pre}
+    .dt{font-size:12px;font-weight:600;color:var(--slate-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+
+    .callout{border-radius:10px;padding:18px 22px;margin-bottom:16px;font-size:13px;line-height:1.55;position:relative;overflow:hidden}
+    .callout::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%}
+    .cb{background:var(--blue-50);border:1px solid var(--blue-100);color:var(--blue-800)}.cb::before{background:var(--blue-600)}
+    .cr{background:var(--red-50);border:1px solid var(--red-100);color:var(--red-700)}.cr::before{background:var(--red-600)}
+    .ca{background:var(--amber-50);border:1px solid var(--amber-100);color:var(--amber-700)}.ca::before{background:var(--amber-600)}
+    .callout strong{display:block;margin-bottom:4px}
+
+    .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;white-space:nowrap}
+    .b1{background:var(--green-100);color:var(--green-700)}.b2{background:var(--blue-100);color:var(--blue-700)}
+    .b3{background:var(--amber-100);color:var(--amber-700)}.b4{background:var(--red-100);color:var(--red-700)}
+
+    .layer-card{background:linear-gradient(135deg,var(--slate-900),var(--slate-800));border-radius:12px;padding:24px 28px;color:#fff;margin-bottom:16px}
+    .layer-card h3{font-size:16px;margin-bottom:6px}
+    .layer-card p{font-size:13px;opacity:.85;line-height:1.55}
+    .layer-card .perf{font-family:var(--font-mono);font-size:11px;opacity:.6;margin-top:8px}
+
+    .site-footer{background:var(--slate-900);color:var(--slate-400);padding:32px 0;font-size:13px;text-align:center}
+    .site-footer strong{color:var(--slate-200)}
+
+    @media(max-width:768px){.site-header h1{font-size:24px}.cg{grid-template-columns:1fr}.stats-bar{grid-template-columns:repeat(2,1fr)}.toc-grid{grid-template-columns:1fr}}
+    @media print{.diagram,.tw,.layer-card{break-inside:avoid}}
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <h1>Agent Guardrail Capabilities</h1>
+    <p class="subtitle">
+      A comprehensive reference for every safety layer, constraint system, threat detection mechanism,
+      and protective boundary governing agents in Project Aura.
+    </p>
+    <div class="header-meta">
+      <span>Project Aura &mdash; Aenea Labs</span>
+      <span>Version 1.0</span>
+      <span>Last Updated: February 2026</span>
+    </div>
+  </div>
+</header>
+
+<main class="page-body">
+  <div class="container">
+
+    <div class="stats-bar">
+      <div class="stat-card"><div class="sv">12</div><div class="sl">Guardrail Systems</div></div>
+      <div class="stat-card"><div class="sv">17</div><div class="sl">Detection Layers</div></div>
+      <div class="stat-card"><div class="sv">16</div><div class="sl">Constitutional Principles</div></div>
+      <div class="stat-card"><div class="sv">7</div><div class="sl">Constraint Axes</div></div>
+      <div class="stat-card"><div class="sv">8</div><div class="sl">Threat Categories</div></div>
+      <div class="stat-card"><div class="sv">39+</div><div class="sl">Input Sanitization Patterns</div></div>
+      <div class="stat-card"><div class="sv">9</div><div class="sl">Escape Techniques Monitored</div></div>
+      <div class="stat-card"><div class="sv">3,000+</div><div class="sl">Guardrail Tests</div></div>
+    </div>
+
+    <nav class="toc">
+      <h2>Contents</h2>
+      <div class="toc-grid">
+        <a href="#sec-pipeline"><span class="n">01</span> Guardrail Pipeline Overview</a>
+        <a href="#sec-semantic"><span class="n">02</span> Semantic Guardrails Engine (ADR-065)</a>
+        <a href="#sec-constitutional"><span class="n">03</span> Constitutional AI (ADR-063)</a>
+        <a href="#sec-cge"><span class="n">04</span> Constraint Geometry Engine (ADR-081)</a>
+        <a href="#sec-governance"><span class="n">05</span> Capability Governance (ADR-066)</a>
+        <a href="#sec-provenance"><span class="n">06</span> Context Provenance &amp; Integrity (ADR-067)</a>
+        <a href="#sec-alignment"><span class="n">07</span> AI Alignment &amp; Trust (ADR-052)</a>
+        <a href="#sec-a2a"><span class="n">08</span> Agent-to-Agent Security (A2AS)</a>
+        <a href="#sec-input"><span class="n">09</span> Input Sanitization</a>
+        <a href="#sec-runtime"><span class="n">10</span> Runtime Security (ADR-083)</a>
+        <a href="#sec-policy"><span class="n">11</span> Policy-as-Code &amp; ABAC</a>
+        <a href="#sec-summary"><span class="n">12</span> Summary Matrix</a>
+      </div>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  1 · PIPELINE OVERVIEW                             -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-pipeline">
+      <div class="sh"><div class="si si-red">&#x1F6E1;</div><h2>1. Guardrail Pipeline Overview</h2></div>
+      <p class="intro">
+        Guardrails are not a single layer &mdash; they form a defense-in-depth pipeline that wraps every
+        agent interaction from input to output to execution. Probabilistic layers (input/critique)
+        combine with deterministic layers (constraint coherence) for comprehensive coverage.
+      </p>
+      <div class="diagram">
+        <div class="dt">Agent Guardrail Pipeline</div>
+        <pre>
+  User / System Input
+        |
+        v
+  [ADR-065] Semantic Guardrails Engine ---- INPUT DISCRIMINATION (probabilistic)
+        |   6 layers: normalize > pattern > embedding > LLM intent > session > decision
+        |   Actions: ALLOW | SANITIZE | BLOCK | ESCALATE_HITL
+        |
+        v
+  [ADR-066] Capability Governance --------- TOOL ACCESS CONTROL
+        |   4-tier classification: SAFE > MONITORING > DANGEROUS > CRITICAL
+        |   Per-agent policies, dynamic grants, enforcement middleware
+        |
+        v
+  [ADR-029] A2A Security ------------------- INTER-AGENT FILTERING
+        |   4-layer defense: HMAC auth > sandboxing > injection filter > validation
+        |
+        v
+  Agent Processing (LLM + Tool Invocation)
+        |
+        v
+  [ADR-063] Constitutional AI -------------- OUTPUT CRITIQUE (probabilistic)
+        |   16 principles, tiered critique, fast-path bypass
+        |   Severity: MINOR > MODERATE > MAJOR > CRITICAL
+        |
+        v
+  [ADR-081] Constraint Geometry Engine ----- COHERENCE ASSESSMENT (deterministic)
+        |   7 axes: syntax > semantics > security > operations > domain > provenance > temporal
+        |   Actions: AUTO_EXECUTE | HUMAN_REVIEW | ESCALATE | REJECT
+        |
+        v
+  [ADR-067] Context Provenance ------------- TRUST SCORING
+        |   Source integrity, trust levels: HIGH > MEDIUM > LOW > UNTRUSTED
+        |
+        v
+  [ADR-052] AI Alignment ------------------- BEHAVIORAL CHECKS
+        |   Sycophancy guard, reversibility, confidence calibration
+        |
+        v
+  [ADR-083] Runtime Security --------------- EXECUTION MONITORING
+        |   Container escape, behavioral baselines, MITRE ATT&CK mapping
+        |
+        v
+  HITL / Final Decision</pre>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  2 · SEMANTIC GUARDRAILS ENGINE                    -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-semantic">
+      <div class="sh"><div class="si si-red">&#x1F50D;</div><h2>2. Semantic Guardrails Engine (ADR-065)</h2></div>
+      <p class="intro">
+        Six progressively deeper detection layers process every input with strict latency budgets.
+        The engine detects 8 threat categories and produces one of 4 actions.
+        Performance targets: P50 &lt;150ms, P95 &lt;300ms, P99 &lt;500ms. 793 tests.
+      </p>
+
+      <div class="layer-card">
+        <h3>Layer 1: Canonical Normalization</h3>
+        <p>Unicode NFKC normalization, homograph detection, zero-width character removal, multi-encoding decode (base64, URL, HTML entities), control character sanitization. Max 3 decode iterations to prevent decode bombs.</p>
+        <div class="perf">normalizer.py &middot; Target: 5ms</div>
+      </div>
+      <div class="layer-card">
+        <h3>Layer 2: Fast-Path Pattern Matching</h3>
+        <p>Regex-based threat patterns and SHA-256 blocklist hash verification. Categories: system override, jailbreak, hidden instructions, delimiter injection, exfiltration. Fast-exit on CRITICAL or blocklist hit.</p>
+        <div class="perf">pattern_matcher.py &middot; Target: 10ms</div>
+      </div>
+      <div class="layer-card">
+        <h3>Layer 3: Embedding Similarity Detection</h3>
+        <p>OpenSearch k-NN search (10 neighbors, min score 0.5) against threat corpus index. High-confidence threshold: 0.85 similarity. Query caching with 5-minute TTL.</p>
+        <div class="perf">embedding_detector.py &middot; Target: 50ms</div>
+      </div>
+      <div class="layer-card">
+        <h3>Layer 4: LLM Intent Classification</h3>
+        <p>Multi-model classification (Haiku fast / Sonnet balanced / Opus accurate). Classes: Legitimate, Override, Exfiltration, Role confusion, False positive. Semantic cache integration (95% similarity threshold).</p>
+        <div class="perf">intent_classifier.py &middot; Target: 150ms</div>
+      </div>
+      <div class="layer-card">
+        <h3>Layer 5: Multi-Turn Session Tracking</h3>
+        <p>DynamoDB-backed session state with exponential decay scoring (0.9 factor per turn). HITL escalation at cumulative score 2.5. Max 50 turns tracked per session. 24-hour TTL.</p>
+        <div class="perf">multi_turn_tracker.py &middot; Target: 20ms</div>
+      </div>
+      <div class="layer-card">
+        <h3>Layer 6: Decision Engine</h3>
+        <p>Aggregates all layer results into a final action: ALLOW, SANITIZE, BLOCK, or ESCALATE_HITL. Block on any CRITICAL threat or multiple HIGH threats. Full audit logging to DynamoDB queue.</p>
+        <div class="perf">decision_engine.py &middot; Target: 5ms</div>
+      </div>
+
+      <h3 style="font-size:15px;margin:20px 0 12px;color:var(--slate-800)">Threat Categories Detected</h3>
+      <div class="tags">
+        <span class="tag tr">JAILBREAK</span>
+        <span class="tag tr">PROMPT_INJECTION</span>
+        <span class="tag tr">ROLE_CONFUSION</span>
+        <span class="tag tr">DATA_EXFILTRATION</span>
+        <span class="tag tr">MULTI_TURN_ATTACK</span>
+        <span class="tag tr">CONTEXT_POISONING</span>
+        <span class="tag tr">ENCODING_BYPASS</span>
+        <span class="tag tr">DELIMITER_INJECTION</span>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  3 · CONSTITUTIONAL AI                             -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-constitutional">
+      <div class="sh"><div class="si si-purple">&#x2696;</div><h2>3. Constitutional AI (ADR-063)</h2></div>
+      <p class="intro">
+        Every agent output passes through a critique-revision pipeline evaluating adherence to
+        16 constitutional principles across 6 categories. Fast-path bypass skips full evaluation
+        for obviously safe outputs. 463 tests.
+      </p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>#</th><th>Principle</th><th>Severity</th><th>Category</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Security-First Code Generation</td><td><span class="badge b4">CRITICAL</span></td><td>SAFETY</td></tr>
+            <tr><td>2</td><td>NIST 800-53 Compliance</td><td><span class="badge b4">CRITICAL</span></td><td>COMPLIANCE</td></tr>
+            <tr><td>3</td><td>SOX Regulatory Requirements</td><td><span class="badge b4">CRITICAL</span></td><td>COMPLIANCE</td></tr>
+            <tr><td>4</td><td>Zero Trust Architecture</td><td><span class="badge b4">CRITICAL</span></td><td>SAFETY</td></tr>
+            <tr><td>5</td><td>Least Privilege Access</td><td><span class="badge b3">HIGH</span></td><td>SAFETY</td></tr>
+            <tr><td>6</td><td>Defense in Depth</td><td><span class="badge b3">HIGH</span></td><td>SAFETY</td></tr>
+            <tr><td>7</td><td>Encryption Mandatory</td><td><span class="badge b3">HIGH</span></td><td>SAFETY</td></tr>
+            <tr><td>8</td><td>Audit Trail Complete</td><td><span class="badge b3">HIGH</span></td><td>COMPLIANCE</td></tr>
+            <tr><td>9</td><td>Transparency Always</td><td><span class="badge b3">HIGH</span></td><td>TRANSPARENCY</td></tr>
+            <tr><td>10</td><td>No Deception</td><td><span class="badge b3">HIGH</span></td><td>ANTI_SYCOPHANCY</td></tr>
+            <tr><td>11</td><td>Honest Disagreement</td><td><span class="badge b2">MEDIUM</span></td><td>ANTI_SYCOPHANCY</td></tr>
+            <tr><td>12</td><td>Calibrated Confidence</td><td><span class="badge b2">MEDIUM</span></td><td>ANTI_SYCOPHANCY</td></tr>
+            <tr><td>13</td><td>Code Quality Standards</td><td><span class="badge b2">MEDIUM</span></td><td>CODE_QUALITY</td></tr>
+            <tr><td>14</td><td>Maintainability First</td><td><span class="badge b2">MEDIUM</span></td><td>CODE_QUALITY</td></tr>
+            <tr><td>15</td><td>Clear Documentation</td><td><span class="badge b2">MEDIUM</span></td><td>TRANSPARENCY</td></tr>
+            <tr><td>16</td><td>Helpful Assistance</td><td><span class="badge b1">LOW</span></td><td>HELPFULNESS</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cg" style="margin-top:16px">
+        <div class="c"><h3>CritiqueService</h3><div class="cp">critique_service.py</div><p>LLM-as-judge evaluation against each principle. 3&ndash;8 critiques per response with confidence scoring.</p></div>
+        <div class="c"><h3>RevisionService</h3><div class="cp">revision_service.py</div><p>Multi-round feedback-driven refinement with convergence checking and revision history.</p></div>
+        <div class="c"><h3>TieredCritique</h3><div class="cp">tiered_critique.py</div><p>Progressive scrutiny: safety checks &rarr; accuracy checks &rarr; efficiency. Cost/quality trade-offs.</p></div>
+        <div class="c"><h3>GuardrailsFastPath</h3><div class="cp">guardrails_fast_path.py</div><p>Quick bypass for obviously safe outputs: no code changes, read-only, or informational content.</p></div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  4 · CONSTRAINT GEOMETRY ENGINE                    -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-cge">
+      <div class="sh"><div class="si si-amber">&#x1F4D0;</div><h2>4. Constraint Geometry Engine (ADR-081)</h2></div>
+      <p class="intro">
+        Deterministic cortical discrimination across a 7-axis constraint space. Unlike the probabilistic
+        semantic guardrails, the CGE produces the same coherence score for the same input every time.
+        4 policy profiles map scores to actions. 358 tests.
+      </p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Axis</th><th>Constraint</th><th>What It Checks</th></tr></thead>
+          <tbody>
+            <tr><td><strong>C1</strong></td><td>Syntactic Validity</td><td>Code structure, AST validation, parsing correctness</td></tr>
+            <tr><td><strong>C2</strong></td><td>Semantic Correctness</td><td>Logic verification, type consistency, intent alignment</td></tr>
+            <tr><td><strong>C3</strong></td><td>Security Policy (NIST 800-53)</td><td>Control compliance, threat patterns, vulnerability checks</td></tr>
+            <tr><td><strong>C4</strong></td><td>Operational Bounds</td><td>Resource limits, blast radius constraints, deployment rules</td></tr>
+            <tr><td><strong>C5</strong></td><td>Domain Compliance</td><td>Industry-specific requirements, regulatory alignment</td></tr>
+            <tr><td><strong>C6</strong></td><td>Provenance Trust</td><td>Source integrity (ADR-067), context authenticity, trust adjustment</td></tr>
+            <tr><td><strong>C7</strong></td><td>Temporal Validity</td><td>Time-bound constraints, expiration rules, schedule compliance</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cg" style="margin-top:16px">
+        <div class="c">
+          <h3>Coherence Scoring</h3>
+          <p>
+            Cosine similarity against positive/negative centroids. Harmonic mean for rule aggregation,
+            geometric mean for axis aggregation. Normalized to [0.0,&nbsp;1.0].
+          </p>
+        </div>
+        <div class="c">
+          <h3>4 Policy Profiles</h3>
+          <div class="tw" style="margin-top:0">
+            <table>
+              <thead><tr><th>Profile</th><th>When</th></tr></thead>
+              <tbody>
+                <tr><td><span class="badge b1">AUTO_EXECUTE</span></td><td>CCS above threshold &mdash; auto-approve</td></tr>
+                <tr><td><span class="badge b2">HUMAN_REVIEW</span></td><td>CCS in range &mdash; requires review</td></tr>
+                <tr><td><span class="badge b3">ESCALATE</span></td><td>CCS low &mdash; human + audit trail</td></tr>
+                <tr><td><span class="badge b4">REJECT</span></td><td>CCS critical failure &mdash; block</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  5 · CAPABILITY GOVERNANCE                         -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-governance">
+      <div class="sh"><div class="si si-blue">&#x1F512;</div><h2>5. Capability Governance (ADR-066)</h2></div>
+      <p class="intro">
+        Every tool invocation passes through enforcement middleware that evaluates agent identity,
+        tool risk tier, execution context, and dynamic grants. 322 tests.
+      </p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Tier</th><th>Risk</th><th>Default</th><th>Audit</th><th>Examples</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge b1">Level 1</span></td><td>SAFE</td><td>ALLOW</td><td>10%</td><td><code>semantic_search</code>, <code>describe_tool</code>, <code>list_tools</code></td></tr>
+            <tr><td><span class="badge b2">Level 2</span></td><td>MONITORING</td><td>ALLOW</td><td>100%</td><td><code>query_code_graph</code>, <code>get_code_dependencies</code></td></tr>
+            <tr><td><span class="badge b3">Level 3</span></td><td>DANGEROUS</td><td>DENY</td><td>100%</td><td><code>destroy_sandbox</code>, <code>write_config</code>, <code>commit_changes</code></td></tr>
+            <tr><td><span class="badge b4">Level 4</span></td><td>CRITICAL</td><td>DENY+HITL</td><td>100%</td><td><code>deploy_to_production</code>, <code>rotate_credentials</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cg" style="margin-top:16px">
+        <div class="c"><h3>Per-Agent Policies</h3><div class="cp">policy.py</div><p>Each agent type gets allowed/denied tools, context restrictions (test/sandbox/prod), rate limits, and hierarchy constraints.</p></div>
+        <div class="c"><h3>Enforcement Middleware</h3><div class="cp">middleware.py</div><p>Real-time interception producing ALLOW / DENY / ESCALATE / AUDIT_ONLY decisions with request hashing and rate limiting.</p></div>
+        <div class="c"><h3>ML Anomaly Detection</h3><div class="cp">statistical_detector.py</div><p>Honeypot capabilities, behavioral baselines, and explainable anomaly findings. (ADR-072, 113 tests)</p><div class="tags"><span class="tag tp">ADR-072</span></div></div>
+        <div class="c"><h3>Cross-Agent Capability Graph</h3><div class="cp">graph_analyzer.py</div><p>Neptune graph analysis detecting escalation paths, coverage gaps, and circular dependencies. (ADR-071, 179 tests)</p><div class="tags"><span class="tag tp">ADR-071</span></div></div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  6 · CONTEXT PROVENANCE                            -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-provenance">
+      <div class="sh"><div class="si si-teal">&#x1F50F;</div><h2>6. Context Provenance &amp; Integrity (ADR-067)</h2></div>
+      <p class="intro">
+        Every context fragment fed to an agent is tracked with cryptographic provenance records,
+        trust-scored, and quarantined if integrity verification fails. 275 tests.
+      </p>
+      <div class="cg">
+        <div class="c">
+          <h3>Trust Scoring</h3>
+          <div class="tw" style="margin-top:0">
+            <table>
+              <thead><tr><th>Component</th><th>Weight</th></tr></thead>
+              <tbody>
+                <tr><td>Repository score</td><td>0.35</td></tr>
+                <tr><td>Author score</td><td>0.25</td></tr>
+                <tr><td>Verification score</td><td>0.25</td></tr>
+                <tr><td>Age score</td><td>0.15</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="tw" style="margin-top:8px">
+            <table>
+              <thead><tr><th>Trust Level</th><th>Score Range</th></tr></thead>
+              <tbody>
+                <tr><td><span class="badge b1">HIGH</span></td><td>&ge; 0.80</td></tr>
+                <tr><td><span class="badge b2">MEDIUM</span></td><td>&ge; 0.50</td></tr>
+                <tr><td><span class="badge b3">LOW</span></td><td>&ge; 0.30</td></tr>
+                <tr><td><span class="badge b4">UNTRUSTED</span></td><td>&lt; 0.30</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="c">
+          <h3>Integrity Verification</h3>
+          <p>SHA-256 content hash, HMAC verification, chunk boundary hashing, and embedding fingerprinting.</p>
+          <h3 style="margin-top:14px">Quarantine Management</h3>
+          <p>Automatic quarantine on integrity failure or low trust. Review workflow with user approval for release.</p>
+          <h3 style="margin-top:14px">Anomaly Detection</h3>
+          <p>Injection patterns, structural anomalies, statistical outliers, hidden instructions, and obfuscated code.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  7 · AI ALIGNMENT                                  -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-alignment">
+      <div class="sh"><div class="si si-indigo">&#x1F9ED;</div><h2>7. AI Alignment &amp; Trust (ADR-052)</h2></div>
+      <div class="cg">
+        <div class="c c-accent">
+          <h3>Sycophancy Guard</h3>
+          <div class="cp">src/services/alignment/sycophancy_guard.py</div>
+          <p>
+            Detects excessive agreement, hidden uncertainty, missing alternatives, suppressed negative
+            findings, and confirmation bias. Enforces minimum disagreement rate (5%) and maximum
+            confidence error (0.10).
+          </p>
+        </div>
+        <div class="c"><h3>Reversibility Tracking</h3><div class="cp">reversibility.py</div><p>Assesses rollback capability, estimates impact radius, and tracks recovery time for every agent action.</p></div>
+        <div class="c"><h3>Trust Calculator</h3><div class="cp">trust_calculator.py</div><p>Multi-factor trust scoring for agent reliability assessment across sessions.</p></div>
+        <div class="c"><h3>Rollback Service</h3><div class="cp">rollback_service.py</div><p>Executes safe rollback operations when alignment violations or errors are detected.</p></div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  8 · A2A SECURITY                                  -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-a2a">
+      <div class="sh"><div class="si si-orange">&#x1F4E1;</div><h2>8. Agent-to-Agent Security (A2AS)</h2></div>
+      <p class="intro">
+        4-layer defense for inter-agent communication. Prevents one compromised agent from attacking others.
+      </p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Layer</th><th>Defense</th><th>Mechanism</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Command Source Verification</td><td>HMAC-based authentication, command integrity checks</td></tr>
+            <tr><td>2</td><td>Containerized Sandboxing</td><td>Process isolation, network isolation, resource limits</td></tr>
+            <tr><td>3</td><td>Tool-Level Injection Filter</td><td>40+ regex patterns: prompt, code, SQL, path traversal, command injection</td></tr>
+            <tr><td>4</td><td>Multi-Layer Validation</td><td>Pattern matching + AI analysis + behavioral analysis</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 style="font-size:14px;margin:12px 0 8px">Attack Vectors Detected</h3>
+      <div class="tags">
+        <span class="tag tr">PROMPT_INJECTION</span>
+        <span class="tag tr">CODE_INJECTION</span>
+        <span class="tag tr">SQL_INJECTION</span>
+        <span class="tag tr">PATH_TRAVERSAL</span>
+        <span class="tag tr">COMMAND_INJECTION</span>
+        <span class="tag tr">SANDBOX_ESCAPE</span>
+        <span class="tag tr">TOOL_ABUSE</span>
+        <span class="tag tr">UNAUTHORIZED_COMMAND</span>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  9 · INPUT SANITIZATION                            -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-input">
+      <div class="sh"><div class="si si-rose">&#x1F9F9;</div><h2>9. Input Sanitization</h2></div>
+      <div class="cg">
+        <div class="c c-accent">
+          <h3>InputSanitizer (RLM)</h3>
+          <div class="cp">src/services/rlm/input_sanitizer.py</div>
+          <p>
+            39+ blocking patterns preventing code block escapes, instruction overrides, system prompt injection,
+            helper function overrides, variable manipulation, role-playing attacks, output manipulation,
+            and XML/JSON injection. Max context: 50&nbsp;MB, max task: 10&nbsp;KB.
+          </p>
+          <div class="tags"><span class="tag tp">ADR-051</span></div>
+        </div>
+        <div class="c c-accent">
+          <h3>REPLSecurityGuard</h3>
+          <div class="cp">src/services/rlm/security_guard.py</div>
+          <p>
+            Blocks 28 dangerous builtins (<code>eval</code>, <code>exec</code>, <code>__import__</code>,
+            <code>open</code>), blocked AST patterns (<code>Import</code>, <code>Global</code>),
+            and dunder attributes (<code>__class__</code>, <code>__globals__</code>). SHA-256 code hashing
+            and safe namespace creation.
+          </p>
+          <div class="tags"><span class="tag tp">ADR-051</span></div>
+        </div>
+        <div class="c">
+          <h3>Graph Injection Prevention</h3>
+          <div class="cp">src/agents/agent_orchestrator.py (InputSanitizer)</div>
+          <p>Gremlin/OpenCypher safe escaping, SQL injection prevention, and graph traversal depth limits.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  10 · RUNTIME SECURITY                             -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-runtime">
+      <div class="sh"><div class="si si-red">&#x1F6A8;</div><h2>10. Runtime Security (ADR-083)</h2></div>
+      <p class="intro">
+        Execution-time monitoring covering Kubernetes admission control, container escape detection,
+        and runtime-to-code correlation via GraphRAG. 155 tests.
+      </p>
+      <div class="cg">
+        <div class="c">
+          <h3>Kubernetes Admission Control</h3>
+          <div class="cp">admission_controller.py</div>
+          <p>ValidatingWebhookConfiguration enforcing 8 policy types in ENFORCE, AUDIT, or DRY_RUN mode.</p>
+          <div class="tags">
+            <span class="tag tr">SBOM_REQUIRED</span><span class="tag tr">IMAGE_SIGNED</span>
+            <span class="tag tr">CVE_THRESHOLD</span><span class="tag tr">LICENSE_COMPLIANCE</span>
+            <span class="tag tr">RESOURCE_LIMITS</span><span class="tag tr">POD_SECURITY</span>
+            <span class="tag tr">REGISTRY_ALLOWLIST</span><span class="tag tr">CUSTOM</span>
+          </div>
+        </div>
+        <div class="c">
+          <h3>Container Escape Detection</h3>
+          <div class="cp">escape_detector.py</div>
+          <p>9 escape techniques monitored with MITRE ATT&amp;CK mapping:</p>
+          <div class="tw" style="margin-top:8px">
+            <table>
+              <thead><tr><th>Technique</th><th>ATT&amp;CK</th></tr></thead>
+              <tbody>
+                <tr><td>Privilege Escalation</td><td>T1611</td></tr>
+                <tr><td>Kernel Exploit</td><td>T1068</td></tr>
+                <tr><td>Dirty Pipe</td><td>CVE-2022-0847</td></tr>
+                <tr><td>OverlayFS</td><td>CVE-2021-3493</td></tr>
+                <tr><td>Namespace Escape</td><td>&mdash;</td></tr>
+                <tr><td>Symlink Attack</td><td>&mdash;</td></tr>
+                <tr><td>Cgroup Escape</td><td>&mdash;</td></tr>
+                <tr><td>Mount / Ptrace / Capability Abuse</td><td>&mdash;</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="c">
+          <h3>Runtime-to-Code Correlation</h3>
+          <div class="cp">runtime_correlator.py</div>
+          <p>
+            Maps CloudTrail events and GuardDuty findings to source code via IaC provider detection
+            (Terraform, CloudFormation, CDK) and git blame author tracking.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  11 · POLICY-AS-CODE & ABAC                        -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-policy">
+      <div class="sh"><div class="si si-cyan">&#x1F4DC;</div><h2>11. Policy-as-Code &amp; ABAC</h2></div>
+      <div class="cg">
+        <div class="c">
+          <h3>Cedar Policy Engine</h3>
+          <div class="cp">src/services/cedar_policy_engine.py</div>
+          <p>
+            Natural language &rarr; Cedar policy conversion. Real-time tool call interception with
+            hierarchical policy inheritance. 5 priority levels: SYSTEM (1000) &rarr; ORGANIZATION (500) &rarr;
+            TEAM (250) &rarr; USER (100) &rarr; DEFAULT (0).
+          </p>
+          <div class="tags"><span class="tag tp">ADR-070</span></div>
+        </div>
+        <div class="c">
+          <h3>ABAC Authorization</h3>
+          <div class="cp">src/services/authorization/</div>
+          <p>
+            Attribute-based access control with clearance levels, multi-tenant isolation,
+            and dynamic attribute evaluation for agent permissions.
+          </p>
+          <div class="tags"><span class="tag tp">ADR-073</span></div>
+        </div>
+        <div class="c">
+          <h3>Guardrail Configuration UI</h3>
+          <div class="cp">src/services/guardrail_config/config_service.py</div>
+          <p>
+            Policy profile selection (4 presets), compliance profiles (NIST, SOX, CMMC),
+            threshold tuning per layer, and per-environment enable/disable.
+          </p>
+          <div class="tags"><span class="tag tp">ADR-069</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  12 · SUMMARY MATRIX                               -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section class="section" id="sec-summary">
+      <div class="sh"><div class="si si-blue">&#x1F4CB;</div><h2>12. Summary Matrix</h2></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Guardrail</th><th>ADR</th><th>Type</th><th>Pipeline Stage</th><th>Tests</th></tr></thead>
+          <tbody>
+            <tr><td>Semantic Guardrails (6 layers)</td><td>065</td><td>Probabilistic</td><td>Input</td><td>793</td></tr>
+            <tr><td>Constitutional AI (16 principles)</td><td>063</td><td>Probabilistic</td><td>Output</td><td>463</td></tr>
+            <tr><td>Constraint Geometry (7 axes)</td><td>081</td><td>Deterministic</td><td>Output</td><td>358</td></tr>
+            <tr><td>Capability Governance (4 tiers)</td><td>066</td><td>Policy</td><td>Tool Access</td><td>322</td></tr>
+            <tr><td>Context Provenance</td><td>067</td><td>Cryptographic</td><td>Context</td><td>275</td></tr>
+            <tr><td>AI Alignment &amp; Trust</td><td>052</td><td>Behavioral</td><td>Output</td><td>&mdash;</td></tr>
+            <tr><td>A2A Security (4 layers)</td><td>029</td><td>Defense-in-depth</td><td>Inter-agent</td><td>&mdash;</td></tr>
+            <tr><td>Input Sanitization (39+ patterns)</td><td>051</td><td>Pattern</td><td>Input</td><td>119</td></tr>
+            <tr><td>Runtime Security</td><td>083</td><td>Monitoring</td><td>Execution</td><td>155</td></tr>
+            <tr><td>Policy-as-Code (Cedar)</td><td>070</td><td>Policy</td><td>Tool Access</td><td>98</td></tr>
+            <tr><td>ABAC Authorization</td><td>073</td><td>Policy</td><td>Access</td><td>115</td></tr>
+            <tr><td>Guardrail Config UI</td><td>069</td><td>Configuration</td><td>Management</td><td>128</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <strong>Project Aura</strong> &mdash; Aenea Labs &middot; Agent Guardrail Capabilities Reference
+  </div>
+</footer>
+
+</body>
+</html>

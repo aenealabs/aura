@@ -1,0 +1,46 @@
+{
+    "title": "Aura Code Intelligence",
+    "description": "Settings for Aura Code Intelligence JupyterLab extension",
+    "type": "object",
+    "properties": {
+        "serverUrl": {
+            "type": "string",
+            "title": "Server URL",
+            "description": "URL of the Aura API server",
+            "default": "http://localhost:8080"
+        },
+        "autoScanOnSave": {
+            "type": "boolean",
+            "title": "Scan on Save",
+            "description": "Automatically scan notebooks when saved",
+            "default": true
+        },
+        "showGraphContext": {
+            "type": "boolean",
+            "title": "Show Graph Context",
+            "description": "Show GraphRAG code context panel (key differentiator)",
+            "default": true
+        },
+        "severityThreshold": {
+            "type": "string",
+            "title": "Severity Threshold",
+            "description": "Minimum severity level to display",
+            "enum": ["critical", "high", "medium", "low", "info"],
+            "default": "low"
+        },
+        "enableSecretsDetection": {
+            "type": "boolean",
+            "title": "Enable Secrets Detection",
+            "description": "Check for secrets before sharing notebooks",
+            "default": true
+        },
+        "graphDepth": {
+            "type": "integer",
+            "title": "Graph Depth",
+            "description": "Default traversal depth for code context graph",
+            "default": 2,
+            "minimum": 1,
+            "maximum": 5
+        }
+    }
+}

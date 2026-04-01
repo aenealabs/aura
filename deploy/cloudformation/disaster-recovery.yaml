@@ -1,0 +1,365 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.5 - Disaster Recovery (AWS Backup)'
+
+# =============================================================================
+# Disaster Recovery Infrastructure
+# =============================================================================
+# Implements:
+# - AWS Backup vault with KMS encryption (key imported from foundation kms.yaml)
+# - Backup plans for Neptune, DynamoDB, EBS
+# - SNS alerting for backup failures
+# - Cross-region backup copy (production only)
+#
+# RTO/RPO Targets:
+# - Neptune: RPO 24h, RTO 4h
+# - DynamoDB: RPO 1h, RTO 1h (PITR separate)
+# - OpenSearch: RPO 24h, RTO 4h (via S3 snapshots)
+# - S3: RPO 0, RTO 1h (CRR separate)
+# - EKS: N/A, RTO 2h (GitOps redeploy)
+#
+# Dependencies:
+# - Foundation Layer: kms.yaml (BackupKMSKey)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: notifications@aenealabs.com
+    Description: Email for backup failure alerts
+
+  # Cross-region replication destination (prod only)
+  DRRegion:
+    Type: String
+    Default: us-west-2
+    Description: Disaster recovery region for cross-region backups
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  EnableCrossRegion: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # Backup Vault (uses KMS key from foundation kms.yaml stack)
+  # ===========================================================================
+  BackupVault:
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: !Sub '${ProjectName}-vault-${Environment}'
+      # Import KMS key ARN from foundation layer
+      EncryptionKeyArn: !ImportValue
+        Fn::Sub: '${ProjectName}-backup-kms-key-arn-${Environment}'
+      Notifications:
+        BackupVaultEvents:
+          - BACKUP_JOB_FAILED
+          - COPY_JOB_FAILED
+          - RESTORE_JOB_FAILED
+        SNSTopicArn: !Ref BackupAlertTopic
+      BackupVaultTags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # DR Region Vault (production only)
+  DRBackupVault:
+    Type: AWS::Backup::BackupVault
+    Condition: EnableCrossRegion
+    Properties:
+      BackupVaultName: !Sub '${ProjectName}-dr-vault-${Environment}'
+      # Import KMS key ARN from foundation layer
+      EncryptionKeyArn: !ImportValue
+        Fn::Sub: '${ProjectName}-backup-kms-key-arn-${Environment}'
+      BackupVaultTags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Purpose: DisasterRecovery
+
+  # ===========================================================================
+  # SNS Topic for Backup Alerts
+  # ===========================================================================
+  BackupAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-backup-alerts-${Environment}'
+      DisplayName: !Sub '${ProjectName} Backup Alerts'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  BackupAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref BackupAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ===========================================================================
+  # IAM Role for AWS Backup
+  # ===========================================================================
+  BackupServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-backup-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # Backup Plan - Daily (Neptune, DynamoDB, EBS)
+  # ===========================================================================
+  DailyBackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub '${ProjectName}-daily-${Environment}'
+        BackupPlanRule:
+          - RuleName: DailyBackupRule
+            TargetBackupVault: !Ref BackupVault
+            ScheduleExpression: 'cron(0 3 * * ? *)'  # 3 AM UTC daily
+            StartWindowMinutes: 60
+            CompletionWindowMinutes: 180
+            Lifecycle:
+              DeleteAfterDays: !If [IsProduction, 35, 7]
+            RecoveryPointTags:
+              Project: !Ref ProjectName
+              Environment: !Ref Environment
+              BackupType: Daily
+            # Cross-region copy for production
+            CopyActions:
+              !If
+                - EnableCrossRegion
+                - - DestinationBackupVaultArn: !Sub 'arn:${AWS::Partition}:backup:${DRRegion}:${AWS::AccountId}:backup-vault:${ProjectName}-dr-vault-${Environment}'
+                    Lifecycle:
+                      DeleteAfterDays: 35
+                - !Ref AWS::NoValue
+      BackupPlanTags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # ===========================================================================
+  # Backup Plan - Hourly (Critical DynamoDB tables)
+  # ===========================================================================
+  HourlyBackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Condition: IsProduction
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub '${ProjectName}-hourly-${Environment}'
+        BackupPlanRule:
+          - RuleName: HourlyBackupRule
+            TargetBackupVault: !Ref BackupVault
+            ScheduleExpression: 'cron(0 * * * ? *)'  # Every hour
+            StartWindowMinutes: 60
+            CompletionWindowMinutes: 120
+            Lifecycle:
+              DeleteAfterDays: 7  # Keep 7 days of hourly backups
+            RecoveryPointTags:
+              Project: !Ref ProjectName
+              Environment: !Ref Environment
+              BackupType: Hourly
+      BackupPlanTags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # ===========================================================================
+  # Backup Selection - Neptune
+  # ===========================================================================
+  NeptuneBackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref DailyBackupPlan
+      BackupSelection:
+        SelectionName: !Sub '${ProjectName}-neptune-selection'
+        IamRoleArn: !GetAtt BackupServiceRole.Arn
+        Resources:
+          - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:cluster:${ProjectName}-${Environment}'
+        Conditions:
+          StringEquals:
+            - ConditionKey: 'aws:ResourceTag/Project'
+              ConditionValue: !Ref ProjectName
+
+  # ===========================================================================
+  # Backup Selection - DynamoDB Tables (Daily)
+  # ===========================================================================
+  DynamoDBBackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref DailyBackupPlan
+      BackupSelection:
+        SelectionName: !Sub '${ProjectName}-dynamodb-daily-selection'
+        IamRoleArn: !GetAtt BackupServiceRole.Arn
+        ListOfTags:
+          - ConditionType: STRINGEQUALS
+            ConditionKey: Project
+            ConditionValue: !Ref ProjectName
+
+  # ===========================================================================
+  # Backup Selection - Critical DynamoDB (Hourly - Production only)
+  # ===========================================================================
+  CriticalDynamoDBBackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Condition: IsProduction
+    Properties:
+      BackupPlanId: !Ref HourlyBackupPlan
+      BackupSelection:
+        SelectionName: !Sub '${ProjectName}-dynamodb-hourly-selection'
+        IamRoleArn: !GetAtt BackupServiceRole.Arn
+        Resources:
+          # Critical tables that need hourly backups
+          - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-hitl-approvals-${Environment}'
+          - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-incident-investigations-${Environment}'
+          - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-anomalies-${Environment}'
+
+  # ===========================================================================
+  # CloudWatch Alarms for Backup Monitoring
+  # ===========================================================================
+  BackupJobFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-backup-failed-${Environment}'
+      AlarmDescription: AWS Backup job failed
+      MetricName: NumberOfBackupJobsFailed
+      Namespace: AWS/Backup
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: BackupVaultName
+          Value: !Ref BackupVault
+      AlarmActions:
+        - !Ref BackupAlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  BackupJobCompletedMetric:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-backup-success-${Environment}'
+      AlarmDescription: Monitor successful backups (alert if none in 24h)
+      MetricName: NumberOfBackupJobsCompleted
+      Namespace: AWS/Backup
+      Statistic: Sum
+      Period: 86400  # 24 hours
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: BackupVaultName
+          Value: !Ref BackupVault
+      AlarmActions:
+        - !Ref BackupAlertTopic
+      TreatMissingData: breaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # EventBridge Rule for Backup Job Notifications
+  # ===========================================================================
+  BackupEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-backup-events-${Environment}'
+      Description: Capture AWS Backup job state changes
+      EventPattern:
+        source:
+          - aws.backup
+        detail-type:
+          - Backup Job State Change
+        detail:
+          state:
+            - FAILED
+            - ABORTED
+            - EXPIRED
+      State: ENABLED
+      Targets:
+        - Id: BackupAlertTarget
+          Arn: !Ref BackupAlertTopic
+
+  # Allow EventBridge to publish to SNS
+  BackupEventTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref BackupAlertTopic
+          - Sid: AllowBackupPublish
+            Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref BackupAlertTopic
+      Topics:
+        - !Ref BackupAlertTopic
+
+# =============================================================================
+# Outputs
+# =============================================================================
+Outputs:
+  BackupVaultName:
+    Description: AWS Backup vault name
+    Value: !Ref BackupVault
+    Export:
+      Name: !Sub '${ProjectName}-backup-vault-${Environment}'
+
+  BackupVaultArn:
+    Description: AWS Backup vault ARN
+    Value: !GetAtt BackupVault.BackupVaultArn
+    Export:
+      Name: !Sub '${ProjectName}-backup-vault-arn-${Environment}'
+
+  BackupAlertTopicArn:
+    Description: SNS topic ARN for backup alerts
+    Value: !Ref BackupAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-backup-alerts-topic-${Environment}'
+
+  DailyBackupPlanId:
+    Description: Daily backup plan ID
+    Value: !Ref DailyBackupPlan
+    Export:
+      Name: !Sub '${ProjectName}-daily-backup-plan-${Environment}'
+
+  BackupServiceRoleArn:
+    Description: AWS Backup service role ARN
+    Value: !GetAtt BackupServiceRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-backup-role-arn-${Environment}'

@@ -1,0 +1,104 @@
+{
+  "name": "@aenealabs/aura-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Aura Code Intelligence Platform",
+  "author": "Aenea Labs <support@aenealabs.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aenealabs/aura.git",
+    "directory": "sdk/typescript"
+  },
+  "homepage": "https://github.com/aenealabs/aura/tree/main/sdk/typescript#readme",
+  "bugs": {
+    "url": "https://github.com/aenealabs/aura/issues"
+  },
+  "keywords": [
+    "aura",
+    "security",
+    "vulnerability",
+    "code-review",
+    "ai",
+    "typescript",
+    "sdk",
+    "api-client",
+    "react-hooks"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./react": {
+      "import": {
+        "types": "./dist/react.d.mts",
+        "default": "./dist/react.mjs"
+      },
+      "require": {
+        "types": "./dist/react.d.ts",
+        "default": "./dist/react.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "build:types": "tsc --emitDeclarationOnly --declaration",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "typecheck": "tsc --noEmit",
+    "docs": "typedoc --out docs src/index.ts",
+    "clean": "rm -rf dist docs",
+    "prepublishOnly": "npm run clean && npm run build && npm run test"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "react": "^18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@testing-library/react": "^14.1.0",
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "eslint": "^8.55.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.33.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "happy-dom": "^12.10.0",
+    "msw": "^2.0.0",
+    "prettier": "^3.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsup": "^8.0.0",
+    "typedoc": "^0.25.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  }
+}

@@ -1,0 +1,292 @@
+version: '3.9'
+
+# Project Aura - dnsmasq Container Compose Configuration
+#
+# Purpose: Local development environment for testing dnsmasq integration
+#
+# NOTE: Per ADR-049, Podman is the primary container runtime for local development.
+# This compose file is compatible with both `podman compose` and `docker compose`.
+# Podman recognizes docker-compose.yml files natively.
+#
+# Usage (Podman - preferred per ADR-049):
+#   podman compose up -d          # Start services in background
+#   podman compose logs -f        # View logs
+#   podman compose down           # Stop and remove containers
+#   podman compose restart        # Restart services
+#
+# Usage (Docker - CI/CD only):
+#   docker compose up -d          # Start services in background
+#   docker compose logs -f        # View logs
+#   docker compose down           # Stop and remove containers
+#   docker compose restart        # Restart services
+
+services:
+  # ============================================================================
+  # DNSMASQ SERVICE (Production-like configuration)
+  # ============================================================================
+  # NOTE: For actual production deployments, use the pre-built ECR image:
+  #   ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/aura-dnsmasq:v1.1.0
+  # This compose file is for local development and testing only.
+  # ============================================================================
+  dnsmasq:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aura/dnsmasq:v1.1.0
+    container_name: aura-dnsmasq-prod
+    hostname: dnsmasq-prod
+    restart: unless-stopped
+
+    # Network configuration
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+
+    # Volume mounts
+    volumes:
+      # Configuration (mount production config)
+      - ../../config/dnsmasq/production.conf:/etc/dnsmasq/dnsmasq.conf:ro
+      # Logs
+      - dnsmasq-logs:/var/log/dnsmasq
+
+    # Environment variables
+    environment:
+      - ENVIRONMENT=production
+      - PROJECT=aura
+      - TZ=UTC
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+    # Health check using dig (bind-tools installed in image)
+    healthcheck:
+      test: ["CMD", "dig", "@127.0.0.1", "google.com", "+short"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Security
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+
+    # Labels
+    labels:
+      com.project.name: "aura"
+      com.project.component: "dnsmasq"
+      com.project.environment: "production"
+      com.project.description: "DNS caching and service discovery with DNSSEC"
+
+  # ============================================================================
+  # DNSMASQ DEVELOPMENT (uses same image, different config/ports)
+  # ============================================================================
+  dnsmasq-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aura/dnsmasq:v1.1.0
+    container_name: aura-dnsmasq-dev
+    hostname: dnsmasq-dev
+    restart: "no"
+
+    # Use different ports to avoid conflicts with production/system DNS
+    ports:
+      - "5353:5353/tcp"
+      - "5353:5353/udp"
+
+    # Override command to use port 5353
+    command: ["--keep-in-foreground", "--conf-file=/etc/dnsmasq/dnsmasq.conf", "--log-queries"]
+
+    volumes:
+      - ../../config/dnsmasq/development.conf:/etc/dnsmasq/dnsmasq.conf:ro
+      - dnsmasq-dev-logs:/var/log/dnsmasq
+
+    environment:
+      - ENVIRONMENT=development
+      - PROJECT=aura
+      - TZ=UTC
+      - LOG_LEVEL=debug
+
+    # Allow privileged operations for debugging
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - NET_BIND_SERVICE
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    labels:
+      com.project.name: "aura"
+      com.project.component: "dnsmasq"
+      com.project.environment: "development"
+
+    # Keep container running for interactive debugging
+    tty: true
+    stdin_open: true
+
+  # ============================================================================
+  # SANDBOX NETWORK SERVICE (V2.0 HITL feature)
+  # ============================================================================
+  sandbox-dnsmasq:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aura/dnsmasq:v1.1.0-sandbox
+    container_name: aura-sandbox-dnsmasq
+    hostname: sandbox-dns
+    restart: "no"
+
+    # Sandbox-specific ports
+    ports:
+      - "10053:53/tcp"
+      - "10053:53/udp"
+
+    volumes:
+      # Sandbox uses custom generated config
+      - sandbox-config:/etc/dnsmasq:ro
+      - sandbox-logs:/var/log/dnsmasq
+
+    environment:
+      - ENVIRONMENT=sandbox
+      - PROJECT=aura
+      - SANDBOX_ID=${SANDBOX_ID:-sandbox-001}
+      - TZ=UTC
+
+    # Network isolation for sandbox testing
+    networks:
+      - sandbox-network
+
+    labels:
+      com.project.name: "aura"
+      com.project.component: "sandbox-dnsmasq"
+      com.project.environment: "sandbox"
+      com.project.sandbox-id: "${SANDBOX_ID:-sandbox-001}"
+
+  # ============================================================================
+  # TEST CLIENT (for testing DNS queries)
+  # ============================================================================
+  dns-test-client:
+    image: alpine:3.19
+    container_name: aura-dns-test-client
+    command: sleep infinity
+    depends_on:
+      - dnsmasq
+    volumes:
+      - ./scripts:/scripts:ro
+    environment:
+      - DNS_SERVER=dnsmasq
+      - DNS_PORT=53
+    networks:
+      - default
+    labels:
+      com.project.name: "aura"
+      com.project.component: "test-client"
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  default:
+    name: aura-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+  sandbox-network:
+    name: aura-sandbox-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+    internal: true  # Isolated network for sandbox testing
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+volumes:
+  # Production volumes
+  dnsmasq-logs:
+    name: aura-dnsmasq-logs
+    driver: local
+
+  dnsmasq-leases:
+    name: aura-dnsmasq-leases
+    driver: local
+
+  # Development volumes
+  dnsmasq-dev-logs:
+    name: aura-dnsmasq-dev-logs
+    driver: local
+
+  # Sandbox volumes
+  sandbox-config:
+    name: aura-sandbox-config
+    driver: local
+
+  sandbox-logs:
+    name: aura-sandbox-logs
+    driver: local
+
+# ============================================================================
+# USAGE EXAMPLES
+# ============================================================================
+#
+# Per ADR-049, Podman is the primary container runtime for local development.
+# All examples use `podman compose` (preferred). For Docker, replace with `docker compose`.
+#
+# Start production dnsmasq:
+#   podman compose up -d dnsmasq
+#
+# Start development dnsmasq:
+#   podman compose up -d dnsmasq-dev
+#
+# Test DNS resolution from client:
+#   podman compose exec dns-test-client nslookup google.com dnsmasq
+#   podman compose exec dns-test-client dig @dnsmasq neptune.aura.local
+#
+# View logs:
+#   podman compose logs -f dnsmasq
+#   podman exec aura-dnsmasq-prod tail -f /var/log/dnsmasq/dnsmasq.log
+#
+# Restart service:
+#   podman compose restart dnsmasq
+#
+# Stop all services:
+#   podman compose down
+#
+# Remove all volumes (WARNING: deletes all data):
+#   podman compose down -v
+#
+# Build and start fresh:
+#   podman compose build --no-cache
+#   podman compose up -d
+#
+# Execute shell in container:
+#   podman compose exec dnsmasq sh
+#
+# Run sandbox instance:
+#   SANDBOX_ID=sandbox-test-001 podman compose up -d sandbox-dnsmasq

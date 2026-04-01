@@ -1,0 +1,297 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.16 - Supply Chain Security (ADR-076 SBOM & Attestation Tables)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # SBOM Documents Table - stores SBOM metadata and references
+  SBOMDocumentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-sbom-documents-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sbom_id
+          AttributeType: S
+        - AttributeName: repository_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: format
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sbom_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: repository-created_at-index
+          KeySchema:
+            - AttributeName: repository_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: format-created_at-index
+          KeySchema:
+            - AttributeName: format
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-sbom-documents-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-076
+
+  # Attestations Table - stores SBOM attestations and signatures
+  AttestationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-attestations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: attestation_id
+          AttributeType: S
+        - AttributeName: sbom_id
+          AttributeType: S
+        - AttributeName: subject_digest
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: signing_method
+          AttributeType: S
+      KeySchema:
+        - AttributeName: attestation_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: sbom_id-index
+          KeySchema:
+            - AttributeName: sbom_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: subject_digest-index
+          KeySchema:
+            - AttributeName: subject_digest
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: signing_method-created_at-index
+          KeySchema:
+            - AttributeName: signing_method
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-attestations-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-076
+
+  # License Violations Table - tracks license compliance violations
+  LicenseViolationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-license-violations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: violation_id
+          AttributeType: S
+        - AttributeName: repository_id
+          AttributeType: S
+        - AttributeName: detected_at
+          AttributeType: S
+        - AttributeName: severity
+          AttributeType: S
+      KeySchema:
+        - AttributeName: violation_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: repository-detected_at-index
+          KeySchema:
+            - AttributeName: repository_id
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: severity-detected_at-index
+          KeySchema:
+            - AttributeName: severity
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-license-violations-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-076
+
+  # Dependency Confusion Results Table - tracks confusion detection results
+  ConfusionResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-confusion-results-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: result_id
+          AttributeType: S
+        - AttributeName: sbom_id
+          AttributeType: S
+        - AttributeName: detected_at
+          AttributeType: S
+        - AttributeName: risk_level
+          AttributeType: S
+      KeySchema:
+        - AttributeName: result_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: sbom_id-index
+          KeySchema:
+            - AttributeName: sbom_id
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: risk_level-detected_at-index
+          KeySchema:
+            - AttributeName: risk_level
+              KeyType: HASH
+            - AttributeName: detected_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-confusion-results-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-076
+
+Outputs:
+  SBOMDocumentsTableName:
+    Description: SBOM documents table name
+    Value: !Ref SBOMDocumentsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SBOMDocumentsTableName'
+
+  SBOMDocumentsTableArn:
+    Description: SBOM documents table ARN
+    Value: !GetAtt SBOMDocumentsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SBOMDocumentsTableArn'
+
+  SBOMDocumentsTableStreamArn:
+    Description: SBOM documents table stream ARN
+    Value: !GetAtt SBOMDocumentsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-SBOMDocumentsTableStreamArn'
+
+  AttestationsTableName:
+    Description: Attestations table name
+    Value: !Ref AttestationsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AttestationsTableName'
+
+  AttestationsTableArn:
+    Description: Attestations table ARN
+    Value: !GetAtt AttestationsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AttestationsTableArn'
+
+  AttestationsTableStreamArn:
+    Description: Attestations table stream ARN
+    Value: !GetAtt AttestationsTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-AttestationsTableStreamArn'
+
+  LicenseViolationsTableName:
+    Description: License violations table name
+    Value: !Ref LicenseViolationsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-LicenseViolationsTableName'
+
+  LicenseViolationsTableArn:
+    Description: License violations table ARN
+    Value: !GetAtt LicenseViolationsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LicenseViolationsTableArn'
+
+  ConfusionResultsTableName:
+    Description: Confusion detection results table name
+    Value: !Ref ConfusionResultsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ConfusionResultsTableName'
+
+  ConfusionResultsTableArn:
+    Description: Confusion detection results table ARN
+    Value: !GetAtt ConfusionResultsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ConfusionResultsTableArn'

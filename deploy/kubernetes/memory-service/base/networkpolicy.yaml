@@ -1,0 +1,96 @@
+# Project Aura - Neural Memory Service Network Policy
+# Restricts network access to/from the memory service for security
+#
+# Allows:
+# - Ingress: gRPC from aura-api pods, health checks from kubelet, Prometheus scraping
+# - Egress: S3, DynamoDB, CloudWatch via VPC endpoints, DNS
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aura-memory-service-network-policy
+  namespace: default
+  labels:
+    app: aura-memory-service
+    component: neural-memory
+    environment: dev
+spec:
+  podSelector:
+    matchLabels:
+      app: aura-memory-service
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow gRPC from aura-api pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: aura-api
+      ports:
+        - protocol: TCP
+          port: 50051
+
+    # Allow gRPC from meta-orchestrator pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: meta-orchestrator
+      ports:
+        - protocol: TCP
+          port: 50051
+
+    # Allow health checks from kubelet (any node)
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow Prometheus metrics scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow metrics from prometheus in default namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Allow access to VPC endpoints for AWS services
+    # S3 VPC endpoint (gateway endpoint - routes through VPC)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Allow DynamoDB via VPC endpoint (gateway endpoint)
+    # Note: Gateway endpoints don't have specific IPs, traffic is routed via VPC
+
+    # Allow CloudWatch via VPC endpoint (interface endpoint)
+    # Uses HTTPS on port 443

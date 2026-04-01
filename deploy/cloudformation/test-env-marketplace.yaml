@@ -1,0 +1,341 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.10 - Template Marketplace (User-Contributed Templates)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  MarketplaceRoleArn:
+    Type: String
+    Description: ARN of the marketplace Lambda role
+
+  HITLApprovalsTopicArn:
+    Type: String
+    Default: ''
+    Description: ARN of the HITL approvals SNS topic
+
+  ApprovalStateMachineArn:
+    Type: String
+    Default: ''
+    Description: ARN of the test environment approval Step Functions state machine
+
+  ServiceCatalogPortfolioId:
+    Type: String
+    Default: ''
+    Description: ID of the Service Catalog portfolio for template products
+
+  ArtifactsBucket:
+    Type: String
+    Description: Name of the artifacts S3 bucket for template storage
+
+Conditions:
+  HasHITLTopic: !Not [!Equals [!Ref HITLApprovalsTopicArn, '']]
+  HasApprovalStateMachine: !Not [!Equals [!Ref ApprovalStateMachineArn, '']]
+  HasPortfolio: !Not [!Equals [!Ref ServiceCatalogPortfolioId, '']]
+
+Resources:
+  # ==========================================================================
+  # DynamoDB Table for Template Metadata
+  # ==========================================================================
+  TemplatesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-test-env-templates-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: template_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+        - AttributeName: author_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: template_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-created_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: category-created_at-index
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: author-created_at-index
+          KeySchema:
+            - AttributeName: author_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-templates-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: test-environments
+        - Key: Layer
+          Value: '7.10'
+
+  # ==========================================================================
+  # CloudWatch Log Groups for Lambda Functions
+  # ==========================================================================
+  SubmitLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-test-env-marketplace-submit-${Environment}'
+      RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  ApproveLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-test-env-marketplace-approve-${Environment}'
+      RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Lambda Function - Template Submission Handler
+  # ==========================================================================
+  SubmitFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-test-env-marketplace-submit-${Environment}'
+      Description: 'Handles user template submissions to the marketplace'
+      Runtime: python3.11
+      Handler: marketplace_handler.submit_handler
+      Role: !Ref MarketplaceRoleArn
+      MemorySize: 256
+      Timeout: 60
+      Code:
+        ZipFile: |
+          """
+          Placeholder for marketplace_handler.py
+          Actual code will be deployed via CI/CD pipeline
+          """
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def submit_handler(event, context):
+              logger.info("Marketplace submit placeholder - deploy actual code via CI/CD")
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({'message': 'Placeholder - deploy actual code'})
+              }
+      Environment:
+        Variables:
+          TEMPLATES_TABLE: !Ref TemplatesTable
+          ARTIFACTS_BUCKET: !Ref ArtifactsBucket
+          PENDING_PREFIX: 'marketplace/pending/'
+          APPROVED_PREFIX: 'marketplace/approved/'
+          HITL_TOPIC: !If [HasHITLTopic, !Ref HITLApprovalsTopicArn, '']
+          APPROVAL_STATE_MACHINE: !If [HasApprovalStateMachine, !Ref ApprovalStateMachineArn, '']
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          METRICS_NAMESPACE: !Sub '${ProjectName}/TestEnvironments'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-marketplace-submit-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: test-environments
+        - Key: Layer
+          Value: '7.10'
+
+  # ==========================================================================
+  # Lambda Function - Template Approval Handler (HITL Callback)
+  # ==========================================================================
+  ApproveFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-test-env-marketplace-approve-${Environment}'
+      Description: 'Handles admin approval/rejection of marketplace templates'
+      Runtime: python3.11
+      Handler: marketplace_handler.approve_handler
+      Role: !Ref MarketplaceRoleArn
+      MemorySize: 256
+      Timeout: 60
+      Code:
+        ZipFile: |
+          """
+          Placeholder for marketplace_handler.py
+          Actual code will be deployed via CI/CD pipeline
+          """
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def approve_handler(event, context):
+              logger.info("Marketplace approve placeholder - deploy actual code via CI/CD")
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({'message': 'Placeholder - deploy actual code'})
+              }
+      Environment:
+        Variables:
+          TEMPLATES_TABLE: !Ref TemplatesTable
+          ARTIFACTS_BUCKET: !Ref ArtifactsBucket
+          PENDING_PREFIX: 'marketplace/pending/'
+          APPROVED_PREFIX: 'marketplace/approved/'
+          PORTFOLIO_ID: !If [HasPortfolio, !Ref ServiceCatalogPortfolioId, '']
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          METRICS_NAMESPACE: !Sub '${ProjectName}/TestEnvironments'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-marketplace-approve-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: test-environments
+        - Key: Layer
+          Value: '7.10'
+
+  # ==========================================================================
+  # Lambda Permission for SNS (HITL Approval Callback)
+  # ==========================================================================
+  ApprovePermissionSNS:
+    Type: AWS::Lambda::Permission
+    Condition: HasHITLTopic
+    Properties:
+      FunctionName: !Ref ApproveFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref HITLApprovalsTopicArn
+
+  # ==========================================================================
+  # CloudWatch Alarm - Submission Errors
+  # ==========================================================================
+  SubmitErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-marketplace-submit-errors-${Environment}'
+      AlarmDescription: 'High number of template submission errors'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SubmitFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # CloudWatch Alarm - Approval Errors
+  # ==========================================================================
+  ApproveErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-marketplace-approve-errors-${Environment}'
+      AlarmDescription: 'High number of template approval errors'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApproveFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  TemplatesTableName:
+    Description: Name of the templates DynamoDB table
+    Value: !Ref TemplatesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TemplatesTableName'
+
+  TemplatesTableArn:
+    Description: ARN of the templates DynamoDB table
+    Value: !GetAtt TemplatesTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TemplatesTableArn'
+
+  SubmitFunctionArn:
+    Description: ARN of the submit Lambda function
+    Value: !GetAtt SubmitFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SubmitFunctionArn'
+
+  ApproveFunctionArn:
+    Description: ARN of the approve Lambda function
+    Value: !GetAtt ApproveFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ApproveFunctionArn'
+
+  MarketplacePendingPath:
+    Description: S3 path for pending template submissions
+    Value: !Sub 's3://${ArtifactsBucket}/marketplace/pending/'
+    Export:
+      Name: !Sub '${AWS::StackName}-PendingPath'
+
+  MarketplaceApprovedPath:
+    Description: S3 path for approved templates
+    Value: !Sub 's3://${ArtifactsBucket}/marketplace/approved/'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApprovedPath'

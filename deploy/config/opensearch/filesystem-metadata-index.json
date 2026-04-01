@@ -1,0 +1,138 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1,
+      "refresh_interval": "30s",
+      "max_result_window": 10000
+    },
+    "analysis": {
+      "analyzer": {
+        "path_analyzer": {
+          "type": "custom",
+          "tokenizer": "path_tokenizer",
+          "filter": ["lowercase"]
+        }
+      },
+      "tokenizer": {
+        "path_tokenizer": {
+          "type": "path_hierarchy",
+          "delimiter": "/"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "file_path": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "hierarchy": {
+            "type": "text",
+            "analyzer": "path_analyzer"
+          }
+        }
+      },
+      "file_name": {
+        "type": "keyword"
+      },
+      "file_extension": {
+        "type": "keyword"
+      },
+      "directory": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "file_size": {
+        "type": "long"
+      },
+      "num_lines": {
+        "type": "integer"
+      },
+      "language": {
+        "type": "keyword"
+      },
+      "last_modified": {
+        "type": "date",
+        "format": "strict_date_optional_time||epoch_millis"
+      },
+      "created_at": {
+        "type": "date",
+        "format": "strict_date_optional_time||epoch_millis"
+      },
+      "last_author": {
+        "type": "keyword"
+      },
+      "last_commit_hash": {
+        "type": "keyword"
+      },
+      "last_commit_message": {
+        "type": "text"
+      },
+      "num_contributors": {
+        "type": "integer"
+      },
+      "is_test_file": {
+        "type": "boolean"
+      },
+      "is_config_file": {
+        "type": "boolean"
+      },
+      "path_embedding": {
+        "type": "knn_vector",
+        "dimension": 1536,
+        "method": {
+          "name": "hnsw",
+          "space_type": "cosinesimil",
+          "engine": "nmslib",
+          "parameters": {
+            "ef_construction": 128,
+            "m": 16
+          }
+        }
+      },
+      "docstring": {
+        "type": "text"
+      },
+      "docstring_embedding": {
+        "type": "knn_vector",
+        "dimension": 1536,
+        "method": {
+          "name": "hnsw",
+          "space_type": "cosinesimil",
+          "engine": "nmslib",
+          "parameters": {
+            "ef_construction": 128,
+            "m": 16
+          }
+        }
+      },
+      "imports": {
+        "type": "keyword"
+      },
+      "exported_functions": {
+        "type": "keyword"
+      },
+      "exported_classes": {
+        "type": "keyword"
+      },
+      "tags": {
+        "type": "keyword"
+      },
+      "complexity_score": {
+        "type": "float"
+      },
+      "indexed_at": {
+        "type": "date",
+        "format": "strict_date_optional_time||epoch_millis"
+      }
+    }
+  }
+}

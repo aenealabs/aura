@@ -1,0 +1,21 @@
+{{- if .Values.orchestrator.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aura.fullname" . }}-orchestrator
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "orchestrator" "context" .) | nindent 4 }}
+  {{- with .Values.orchestrator.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.orchestrator.service.type }}
+  ports:
+    - port: {{ .Values.orchestrator.service.port }}
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    {{- include "aura.componentSelectorLabels" (dict "component" "orchestrator" "context" .) | nindent 4 }}
+{{- end }}

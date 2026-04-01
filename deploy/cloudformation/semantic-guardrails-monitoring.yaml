@@ -1,0 +1,510 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.6 - Semantic Guardrails Monitoring'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for alert notifications (leave empty to skip subscription)
+
+  HighThreatRateThreshold:
+    Type: Number
+    Default: 10
+    Description: Threshold for high threat rate alarm (threats per minute)
+
+  LatencyP95Threshold:
+    Type: Number
+    Default: 300
+    Description: P95 latency threshold in milliseconds
+
+  FalsePositiveRateThreshold:
+    Type: Number
+    Default: 5
+    Description: False positive rate threshold (percentage)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'prod']
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # =============================================================================
+  # SNS Topics
+  # =============================================================================
+
+  # Guardrails Alert Topic
+  GuardrailsAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-guardrails-alerts-${Environment}'
+      DisplayName: Semantic Guardrails Alerts
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: semantic-guardrails
+
+  # Email subscription for alert topic (created only if AlertEmail is provided)
+  GuardrailsAlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref GuardrailsAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # Critical Threat Topic (for immediate escalation)
+  CriticalThreatTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-guardrails-critical-${Environment}'
+      DisplayName: Critical Threat Alerts
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: semantic-guardrails
+
+  # Email subscription for critical topic (created only if AlertEmail is provided)
+  CriticalThreatEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref CriticalThreatTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # =============================================================================
+  # CloudWatch Alarms
+  # =============================================================================
+
+  # High Threat Rate Alarm
+  HighThreatRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-guardrails-high-threat-rate-${Environment}'
+      AlarmDescription: High rate of threat detections (possible attack in progress)
+      MetricName: ThreatDetected
+      Namespace: Aura/SemanticGuardrails
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: !Ref HighThreatRateThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref GuardrailsAlertTopic
+      OKActions:
+        - !Ref GuardrailsAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Critical Threat Alarm
+  CriticalThreatAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-guardrails-critical-threat-${Environment}'
+      AlarmDescription: Critical threat detected requiring immediate attention
+      MetricName: ThreatDetected
+      Namespace: Aura/SemanticGuardrails
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: ThreatLevel
+          Value: CRITICAL
+      AlarmActions:
+        - !Ref CriticalThreatTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # High Latency Alarm
+  HighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-guardrails-high-latency-${Environment}'
+      AlarmDescription: Semantic guardrails processing latency exceeds SLA
+      MetricName: ProcessingLatencyMs
+      Namespace: Aura/SemanticGuardrails
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: !Ref LatencyP95Threshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref GuardrailsAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # HITL Escalation Rate Alarm
+  HITLEscalationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-guardrails-hitl-escalation-${Environment}'
+      AlarmDescription: High rate of HITL escalations
+      MetricName: InterventionRequired
+      Namespace: Aura/SemanticGuardrails
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref GuardrailsAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Session Escalation Alarm
+  SessionEscalationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-guardrails-session-escalation-${Environment}'
+      AlarmDescription: Multi-turn session escalation triggered
+      MetricName: SessionEscalation
+      Namespace: Aura/SemanticGuardrails
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref GuardrailsAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # DLQ Message Alarm
+  DLQMessageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-guardrails-dlq-messages-${Environment}'
+      AlarmDescription: Messages in guardrails audit DLQ
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: QueueName
+          Value: !Sub '${ProjectName}-guardrails-audit-dlq-${Environment}'
+      AlarmActions:
+        - !Ref GuardrailsAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # False Positive Rate Alarm
+  FalsePositiveRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-guardrails-false-positive-rate-${Environment}'
+      AlarmDescription: High false positive rate reported
+      MetricName: FalsePositiveReported
+      Namespace: Aura/SemanticGuardrails
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: !Ref FalsePositiveRateThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref GuardrailsAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # =============================================================================
+  # CloudWatch Dashboard
+  # =============================================================================
+
+  GuardrailsDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-guardrails-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 1,
+              "properties": {
+                "markdown": "# Semantic Guardrails Dashboard (ADR-065)\nMonitoring threat detection, latency, and system health for the 6-layer guardrails engine."
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 1,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "ThreatDetected", "ThreatLevel", "SAFE", {"color": "#2ca02c", "label": "Safe"}],
+                  ["...", "LOW", {"color": "#98df8a", "label": "Low"}],
+                  ["...", "MEDIUM", {"color": "#ffbb78", "label": "Medium"}],
+                  ["...", "HIGH", {"color": "#ff7f0e", "label": "High"}],
+                  ["...", "CRITICAL", {"color": "#d62728", "label": "Critical"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Threat Detections by Level",
+                "stacked": true
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 1,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "ThreatByCategory", "Category", "jailbreak", {"label": "Jailbreak"}],
+                  ["...", "prompt_injection", {"label": "Prompt Injection"}],
+                  ["...", "role_confusion", {"label": "Role Confusion"}],
+                  ["...", "data_exfiltration", {"label": "Data Exfiltration"}],
+                  ["...", "multi_turn_attack", {"label": "Multi-Turn Attack"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Threats by Category"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 1,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "ThreatDetected", "Action", "allow", {"color": "#2ca02c", "label": "Allow"}],
+                  ["...", "sanitize", {"color": "#ffbb78", "label": "Sanitize"}],
+                  ["...", "block", {"color": "#d62728", "label": "Block"}],
+                  ["...", "escalate_hitl", {"color": "#9467bd", "label": "Escalate HITL"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Actions Taken",
+                "stacked": true
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 7,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "ProcessingLatencyMs", {"stat": "p50", "label": "P50"}],
+                  ["...", {"stat": "p95", "label": "P95"}],
+                  ["...", {"stat": "p99", "label": "P99"}]
+                ],
+                "period": 60,
+                "region": "${AWS::Region}",
+                "title": "Processing Latency (ms)",
+                "annotations": {
+                  "horizontal": [
+                    {"value": 150, "label": "P50 Target (150ms)", "color": "#2ca02c"},
+                    {"value": 300, "label": "P95 Target (300ms)", "color": "#ff7f0e"},
+                    {"value": 500, "label": "P99 Target (500ms)", "color": "#d62728"}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 7,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "LayerLatencyMs", "Layer", "normalization", {"label": "L1: Normalization"}],
+                  ["...", "pattern_matcher", {"label": "L2: Pattern Match"}],
+                  ["...", "embedding_detector", {"label": "L3: Embedding"}],
+                  ["...", "intent_classifier", {"label": "L4: Intent"}],
+                  ["...", "session_tracker", {"label": "L5: Session"}],
+                  ["...", "decision_engine", {"label": "L6: Decision"}]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "Layer Latency Breakdown (ms)"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 13,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "CacheAccess", "Result", "Hit", {"color": "#2ca02c", "label": "Cache Hits"}],
+                  ["...", "Miss", {"color": "#d62728", "label": "Cache Misses"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Cache Performance"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 13,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "CorpusQuery", "Result", "Match", {"color": "#ff7f0e", "label": "Corpus Matches"}],
+                  ["...", "NoMatch", {"color": "#2ca02c", "label": "No Match"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Embedding Corpus Queries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 13,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "AssessmentConfidence", {"stat": "Average", "label": "Avg Confidence"}],
+                  ["...", {"stat": "Minimum", "label": "Min Confidence"}]
+                ],
+                "period": 300,
+                "region": "${AWS::Region}",
+                "title": "Assessment Confidence"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 19,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "SessionEscalation", {"color": "#9467bd", "label": "Session Escalations"}],
+                  [".", "InterventionRequired", {"color": "#d62728", "label": "Interventions Required"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "HITL Escalations"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 19,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Aura/SemanticGuardrails", "FalsePositiveReported", {"color": "#ff7f0e", "label": "False Positives"}]
+                ],
+                "period": 3600,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Reported False Positives (Hourly)"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 19,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${ProjectName}-guardrails-audit-${Environment}", {"label": "Audit Queue Depth"}],
+                  ["...", "${ProjectName}-guardrails-high-priority-${Environment}", {"label": "High Priority Queue"}],
+                  ["...", "${ProjectName}-guardrails-audit-dlq-${Environment}", {"color": "#d62728", "label": "DLQ Depth"}]
+                ],
+                "period": 60,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "Queue Depths"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  AlertTopicArn:
+    Description: ARN of the guardrails alert SNS topic
+    Value: !Ref GuardrailsAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-alert-topic-arn'
+
+  CriticalThreatTopicArn:
+    Description: ARN of the critical threat SNS topic
+    Value: !Ref CriticalThreatTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-critical-topic-arn'
+
+  DashboardName:
+    Description: Name of the CloudWatch dashboard
+    Value: !Ref GuardrailsDashboard
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-guardrails-dashboard-name'

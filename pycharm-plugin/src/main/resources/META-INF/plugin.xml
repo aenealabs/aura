@@ -1,0 +1,170 @@
+<!--
+  Aura Code Intelligence PyCharm Plugin
+
+  Provides autonomous vulnerability detection, GraphRAG code context,
+  and AI-powered security patching for PyCharm.
+
+  ADR-048 Phase 3: PyCharm Plugin
+-->
+<idea-plugin>
+    <id>com.aenealabs.aura</id>
+    <name>Aura Code Intelligence</name>
+    <version>2.0.0</version>
+    <vendor email="support@aenealabs.com" url="https://aenealabs.com">Aenea Labs</vendor>
+
+    <description><![CDATA[
+        <h2>Aura Code Intelligence</h2>
+        <p>Autonomous vulnerability detection, GraphRAG code context visualization,
+        and AI-powered security patching for PyCharm.</p>
+
+        <h3>Features:</h3>
+        <ul>
+            <li><strong>Real-Time Security Scanning</strong> - Detect vulnerabilities as you code</li>
+            <li><strong>GraphRAG Code Context</strong> - Visualize code relationships (Neptune-powered)</li>
+            <li><strong>AI-Powered Fixes</strong> - Generate and apply security patches</li>
+            <li><strong>HITL Approval Workflow</strong> - Human-in-the-loop for critical changes</li>
+            <li><strong>Secrets Detection</strong> - Prevent credentials from being committed</li>
+        </ul>
+
+        <h3>Supported Languages:</h3>
+        <p>Python, JavaScript, TypeScript, Java, Go, Rust, Kotlin, C, C++, C#</p>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <h3>2.0.0</h3>
+        <ul>
+            <li>GraphRAG Code Context Panel (P0 Key Differentiator)</li>
+            <li>Secrets Detection Integration</li>
+            <li>Fix Preview with Side Effects Analysis</li>
+            <li>Enhanced API Client with Retry Logic</li>
+        </ul>
+    ]]></change-notes>
+
+    <!-- Compatibility with IntelliJ IDEA 2023.2+ -->
+    <idea-version since-build="232" until-build="251.*"/>
+
+    <!-- Required plugins -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Tool Window for Findings -->
+        <toolWindow id="Aura Findings"
+                    anchor="bottom"
+                    factoryClass="com.aenealabs.aura.panels.FindingsToolWindowFactory"
+                    icon="/icons/aura-icon.svg"/>
+
+        <!-- Tool Window for GraphRAG Context (P0 Key Differentiator) -->
+        <toolWindow id="Aura Code Context"
+                    anchor="right"
+                    factoryClass="com.aenealabs.aura.panels.GraphContextToolWindowFactory"
+                    icon="/icons/graph-icon.svg"/>
+
+        <!-- Annotator for inline findings display -->
+        <externalAnnotator implementationClass="com.aenealabs.aura.providers.AuraExternalAnnotator"
+                           language=""/>
+
+        <!-- Inspection provider -->
+        <inspectionToolProvider implementation="com.aenealabs.aura.providers.AuraInspectionProvider"/>
+
+        <!-- Intention actions for quick fixes -->
+        <intentionAction>
+            <className>com.aenealabs.aura.actions.PreviewFixIntention</className>
+            <category>Security</category>
+        </intentionAction>
+        <intentionAction>
+            <className>com.aenealabs.aura.actions.GeneratePatchIntention</className>
+            <category>Security</category>
+        </intentionAction>
+
+        <!-- Settings page -->
+        <applicationConfigurable parentId="tools"
+                                 instance="com.aenealabs.aura.settings.AuraSettingsConfigurable"
+                                 id="com.aenealabs.aura.settings"
+                                 displayName="Aura Code Intelligence"/>
+
+        <!-- Persistent settings -->
+        <applicationService serviceImplementation="com.aenealabs.aura.settings.AuraSettings"/>
+
+        <!-- Application-level services -->
+        <applicationService serviceImplementation="com.aenealabs.aura.services.AuraApiService"/>
+
+        <!-- Project-level services -->
+        <projectService serviceImplementation="com.aenealabs.aura.services.FindingsService"/>
+        <projectService serviceImplementation="com.aenealabs.aura.services.GraphContextService"/>
+
+        <!-- Editor notification for secrets detection -->
+        <editorNotificationProvider implementation="com.aenealabs.aura.providers.SecretsNotificationProvider"/>
+
+        <!-- Status bar widget -->
+        <statusBarWidgetFactory implementation="com.aenealabs.aura.panels.AuraStatusBarWidgetFactory"/>
+
+        <!-- Post-startup activity -->
+        <postStartupActivity implementation="com.aenealabs.aura.AuraStartupActivity"/>
+    </extensions>
+
+    <actions>
+        <!-- Scan Actions -->
+        <group id="Aura.MainMenu" text="Aura" description="Aura Code Intelligence">
+            <add-to-group group-id="ToolsMenu" anchor="first"/>
+
+            <action id="Aura.ScanFile"
+                    class="com.aenealabs.aura.actions.ScanFileAction"
+                    text="Scan Current File"
+                    description="Scan the current file for vulnerabilities"
+                    icon="/icons/scan-icon.svg">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt S"/>
+            </action>
+
+            <action id="Aura.ScanProject"
+                    class="com.aenealabs.aura.actions.ScanProjectAction"
+                    text="Scan Entire Project"
+                    description="Scan all files in the project">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift S"/>
+            </action>
+
+            <separator/>
+
+            <action id="Aura.ShowGraphContext"
+                    class="com.aenealabs.aura.actions.ShowGraphContextAction"
+                    text="Show Code Context"
+                    description="Show GraphRAG code context for current file"
+                    icon="/icons/graph-icon.svg">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt G"/>
+            </action>
+
+            <action id="Aura.CheckSecrets"
+                    class="com.aenealabs.aura.actions.CheckSecretsAction"
+                    text="Check for Secrets"
+                    description="Check current file for secrets"
+                    icon="/icons/key-icon.svg"/>
+
+            <separator/>
+
+            <action id="Aura.ShowFindings"
+                    class="com.aenealabs.aura.actions.ShowFindingsAction"
+                    text="Show Findings"
+                    description="Show vulnerability findings panel"/>
+
+            <action id="Aura.ShowApprovals"
+                    class="com.aenealabs.aura.actions.ShowApprovalsAction"
+                    text="Show HITL Approvals"
+                    description="Show pending HITL approvals"/>
+        </group>
+
+        <!-- Editor popup actions -->
+        <group id="Aura.EditorPopup">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+
+            <action id="Aura.PreviewFix"
+                    class="com.aenealabs.aura.actions.PreviewFixAction"
+                    text="Preview Aura Fix"
+                    description="Preview AI-generated fix for this finding"/>
+
+            <action id="Aura.GeneratePatch"
+                    class="com.aenealabs.aura.actions.GeneratePatchAction"
+                    text="Generate Aura Patch"
+                    description="Generate a security patch for this finding"/>
+        </group>
+    </actions>
+</idea-plugin>

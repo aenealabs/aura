@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.8 - Environment Validator IRSA Role'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+  OIDCProviderArn:
+    Type: String
+    Description: ARN of the EKS OIDC provider
+
+  OIDCProviderURL:
+    Type: String
+    Description: URL of the EKS OIDC provider (without https://)
+
+  ServiceAccountNamespace:
+    Type: String
+    Default: aura-system
+    Description: Kubernetes namespace for the env-validator service account
+
+  ServiceAccountName:
+    Type: String
+    Default: env-validator
+    Description: Kubernetes service account name
+
+Resources:
+  # IAM Policy for env-validator with least-privilege permissions (per ADR-062)
+  EnvValidatorPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-env-validator-policy-${Environment}'
+      Description: !Sub 'Permissions for ${ProjectName}-env-validator service in ${Environment}'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # AWS Resource Validation (describe only - read-only access)
+          # AWS Resource Validation (describe only - read-only access)
+          # Note: Neptune uses rds:DescribeDBClusters for cluster-level operations
+          - Sid: DescribeResources
+            Effect: Allow
+            Action:
+              - dynamodb:DescribeTable
+              - dynamodb:ListTables
+              - rds:DescribeDBClusters
+              - es:DescribeDomain
+              - ecr:DescribeRepositories
+              - sns:GetTopicAttributes
+              - sqs:GetQueueAttributes
+              - secretsmanager:ListSecrets
+              - ssm:GetParameter
+              - ssm:GetParameters
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:cluster:${ProjectName}-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+              - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/*'
+
+          # CloudWatch Metrics (required wildcard per ADR-041)
+          - Sid: CloudWatchMetrics
+            Effect: Allow
+            Action: cloudwatch:PutMetricData
+            Resource: '*'
+            Condition:
+              StringEquals:
+                cloudwatch:namespace: 'Aura/EnvValidator'
+
+          # DynamoDB for validation history and baselines
+          - Sid: ValidationHistory
+            Effect: Allow
+            Action:
+              - dynamodb:PutItem
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:UpdateItem
+              - dynamodb:BatchWriteItem
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-env-validation-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-env-validation-${Environment}/index/*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-env-baseline-${Environment}'
+
+          # CloudWatch Logs (for application logging)
+          - Sid: CloudWatchLogsAccess
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/eks/${ProjectName}-cluster-${Environment}/*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/${Environment}/env-validator/*'
+
+          # Explicit deny for destructive operations (defense-in-depth per ADR-062)
+          # Note: Neptune uses rds:* actions for cluster-level operations
+          - Sid: ExplicitDenyWrites
+            Effect: Deny
+            Action:
+              - dynamodb:DeleteTable
+              - rds:ModifyDBCluster
+              - rds:DeleteDBCluster
+              - ecr:DeleteRepository
+              - sns:DeleteTopic
+              - sqs:DeleteQueue
+            Resource: '*'
+
+  # IAM Role for IRSA with OIDC trust policy
+  EnvValidatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-env-validator-irsa-role-${Environment}'
+      Description: !Sub 'IRSA role for ${ProjectName}-env-validator Kubernetes service account'
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCUrl}:aud": "sts.amazonaws.com",
+                      "${OIDCUrl}:sub": "system:serviceaccount:${Namespace}:${SA}"
+                    }
+                  }
+                }
+              ]
+            }
+          - OIDCArn: !Ref OIDCProviderArn
+            OIDCUrl: !Ref OIDCProviderURL
+            Namespace: !Ref ServiceAccountNamespace
+            SA: !Ref ServiceAccountName
+      ManagedPolicyArns:
+        - !Ref EnvValidatorPolicy
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: IRSA
+        - Key: ServiceAccount
+          Value: !Sub '${ServiceAccountNamespace}/${ServiceAccountName}'
+        - Key: Component
+          Value: env-validator
+
+Outputs:
+  RoleArn:
+    Description: ARN of the IRSA role for env-validator
+    Value: !GetAtt EnvValidatorRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-env-validator-irsa-role-arn-${Environment}'
+
+  PolicyArn:
+    Description: ARN of the IAM policy for env-validator
+    Value: !Ref EnvValidatorPolicy
+    Export:
+      Name: !Sub '${ProjectName}-env-validator-policy-arn-${Environment}'
+
+  ServiceAccountAnnotation:
+    Description: Annotation to add to Kubernetes service account
+    Value: !Sub 'eks.amazonaws.com/role-arn: ${EnvValidatorRole.Arn}'

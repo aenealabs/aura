@@ -1,0 +1,76 @@
+# Project Aura - Frontend Dockerfile
+# Multi-stage build: Node.js for build, nginx for serving
+#
+# Prerequisites:
+#   - ECR Base Images stack deployed (aura-ecr-base-images-{env})
+#   - Bootstrap script run to populate base images
+#   - See: ./deploy/scripts/bootstrap-base-images.sh
+#
+# Usage (Podman - primary per ADR-049):
+#   podman build --platform linux/amd64 -t aura-frontend:dev -f Dockerfile.frontend .
+#
+# Usage (Docker - CI/CD fallback):
+#   docker build -t aura-frontend:dev -f Dockerfile.frontend .
+#
+# Usage (CodeBuild - private ECR URIs set automatically):
+#   podman build --platform linux/amd64 \
+#     --build-arg NODE_BASE_IMAGE_URI=${NODE_ECR_URI}:20-alpine \
+#     --build-arg NGINX_BASE_IMAGE_URI=${NGINX_ECR_URI}:1.25-alpine \
+#     -t aura-frontend:v1.0.0 -f Dockerfile.frontend .
+
+# Base images from private ECR (controlled supply chain)
+# Fallback to public ECR Gallery if ARG not provided (for local dev without bootstrap)
+ARG NODE_BASE_IMAGE_URI=public.ecr.aws/docker/library/node:20-alpine
+ARG NGINX_BASE_IMAGE_URI=public.ecr.aws/docker/library/nginx:1.28-alpine
+
+# Stage 1: Build the React app
+FROM ${NODE_BASE_IMAGE_URI} AS builder
+
+# Apply security patches
+RUN apk upgrade --no-cache
+
+WORKDIR /app
+
+# Copy package files first for better layer caching
+COPY frontend/package.json frontend/package-lock.json ./
+
+# Install dependencies
+RUN npm ci --silent
+
+# Copy source files
+COPY frontend/ ./
+
+# Build for production
+RUN npm run build
+
+# Stage 2: Serve with nginx
+FROM ${NGINX_BASE_IMAGE_URI}
+
+# Install curl for health checks and apply security patches
+RUN apk upgrade --no-cache && \
+    apk add --no-cache curl
+
+# Copy custom nginx config
+COPY deploy/docker/frontend/nginx.conf /etc/nginx/nginx.conf
+
+# Copy built assets from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Create non-root user for security
+RUN adduser -D -u 1001 appuser && \
+    chown -R appuser:appuser /usr/share/nginx/html && \
+    chown -R appuser:appuser /var/cache/nginx && \
+    touch /var/run/nginx.pid && \
+    chown -R appuser:appuser /var/run/nginx.pid
+
+# Expose port 8080 (non-privileged)
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Run as non-root user
+USER appuser
+
+CMD ["nginx", "-g", "daemon off;"]

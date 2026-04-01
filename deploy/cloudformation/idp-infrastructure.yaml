@@ -1,0 +1,529 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.5 - Identity Provider Infrastructure (Multi-IdP Authentication)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # IdP Configuration Table
+  # ===========================================================================
+  # Stores identity provider configurations per organization
+  # Supports multiple IdPs per org with priority-based routing
+  IdPConfigurationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-idp-configurations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: idp_id
+          AttributeType: S
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: priority
+          AttributeType: N
+        - AttributeName: email_domain
+          AttributeType: S
+      KeySchema:
+        - AttributeName: idp_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Query all IdPs for an organization, ordered by priority
+        - IndexName: organization-priority-index
+          KeySchema:
+            - AttributeName: organization_id
+              KeyType: HASH
+            - AttributeName: priority
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Route authentication based on email domain
+        - IndexName: email-domain-index
+          KeySchema:
+            - AttributeName: email_domain
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-idp-configurations-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: identity
+
+  # ===========================================================================
+  # IdP Audit Log Table
+  # ===========================================================================
+  # Audit trail for IdP configuration changes and authentication events
+  IdPAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-idp-audit-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: audit_id
+          AttributeType: S
+        - AttributeName: idp_id
+          AttributeType: S
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: action_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: audit_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Query audit logs for specific IdP
+        - IndexName: idp-timestamp-index
+          KeySchema:
+            - AttributeName: idp_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query audit logs for organization
+        - IndexName: organization-timestamp-index
+          KeySchema:
+            - AttributeName: organization_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query by action type (config_change, auth_success, auth_failure)
+        - IndexName: action-timestamp-index
+          KeySchema:
+            - AttributeName: action_type
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-idp-audit-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: identity
+
+  # ===========================================================================
+  # Auth Sessions Table
+  # ===========================================================================
+  # Tracks active authentication sessions for token refresh and revocation
+  AuthSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-auth-sessions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+        - AttributeName: user_sub
+          AttributeType: S
+        - AttributeName: refresh_token_jti
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Query sessions by user for listing/revocation
+        - IndexName: user-sub-index
+          KeySchema:
+            - AttributeName: user_sub
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        # Lookup by refresh token JTI for validation
+        - IndexName: refresh-token-index
+          KeySchema:
+            - AttributeName: refresh_token_jti
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-auth-sessions-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: identity
+
+  # ===========================================================================
+  # SAML State Table
+  # ===========================================================================
+  # Tracks SAML request state for SP-initiated SSO
+  SAMLStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-saml-state-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: request_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: request_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-saml-state-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # OIDC State Table
+  # ===========================================================================
+  # Tracks OIDC authorization state and PKCE verifiers
+  OIDCStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-oidc-state-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: state
+          AttributeType: S
+      KeySchema:
+        - AttributeName: state
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-oidc-state-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # Secrets Manager - JWT Signing Key
+  # ===========================================================================
+  JWTSigningKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}/${Environment}/identity/jwt-signing-key'
+      Description: RSA private key for signing Aura JWTs (generate RSA-2048 key manually)
+      SecretString: '{"private_key": "GENERATE_RSA_KEY_AND_UPDATE", "public_key": "GENERATE_RSA_KEY_AND_UPDATE"}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: identity
+        - Key: Rotation
+          Value: annual
+
+  # ===========================================================================
+  # Secrets Manager - IdP Credentials Template
+  # ===========================================================================
+  # Template secret for LDAP bind credentials
+  LDAPCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}/${Environment}/identity/ldap-credentials'
+      Description: Template for LDAP service account credentials
+      SecretString: '{"bind_dn": "", "bind_password": ""}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: identity
+        - Key: IdPType
+          Value: ldap
+
+  # Template secret for OIDC client credentials
+  OIDCCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}/${Environment}/identity/oidc-credentials'
+      Description: Template for OIDC client credentials
+      SecretString: '{"client_id": "", "client_secret": ""}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: identity
+        - Key: IdPType
+          Value: oidc
+
+  # Template secret for SAML SP private key
+  SAMLCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}/${Environment}/identity/saml-sp-credentials'
+      Description: SAML Service Provider private key and certificate
+      SecretString: '{"private_key": "", "certificate": ""}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: identity
+        - Key: IdPType
+          Value: saml
+
+  # Template secret for PingID credentials
+  PingIDCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}/${Environment}/identity/pingid-credentials'
+      Description: Template for PingID/PingFederate credentials
+      SecretString: '{"client_id": "", "client_secret": "", "connection_id": ""}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: identity
+        - Key: IdPType
+          Value: pingid
+
+  # ===========================================================================
+  # KMS Key for Identity Services
+  # ===========================================================================
+  IdentityKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for Identity Provider service encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+          - Sid: Allow Identity Service Access
+            Effect: Allow
+            Principal:
+              Service:
+                - secretsmanager.amazonaws.com
+                - dynamodb.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-identity-kms-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  IdentityKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-identity-${Environment}'
+      TargetKeyId: !Ref IdentityKMSKey
+
+  # ===========================================================================
+  # SSM Parameters for Service Discovery
+  # ===========================================================================
+  IdPConfigTableParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/identity/idp-config-table'
+      Type: String
+      Value: !Ref IdPConfigurationsTable
+      Description: DynamoDB table name for IdP configurations
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  IdPAuditTableParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/identity/audit-table'
+      Type: String
+      Value: !Ref IdPAuditTable
+      Description: DynamoDB table name for IdP audit logs
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  AuthSessionsTableParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/identity/sessions-table'
+      Type: String
+      Value: !Ref AuthSessionsTable
+      Description: DynamoDB table name for auth sessions
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  JWTSigningKeyArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/identity/jwt-signing-key-arn'
+      Type: String
+      Value: !Ref JWTSigningKeySecret
+      Description: Secrets Manager ARN for JWT signing key
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+# =============================================================================
+# Outputs
+# =============================================================================
+Outputs:
+  IdPConfigurationsTableName:
+    Description: IdP configurations table name
+    Value: !Ref IdPConfigurationsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-IdPConfigurationsTableName'
+
+  IdPConfigurationsTableArn:
+    Description: IdP configurations table ARN
+    Value: !GetAtt IdPConfigurationsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-IdPConfigurationsTableArn'
+
+  IdPAuditTableName:
+    Description: IdP audit table name
+    Value: !Ref IdPAuditTable
+    Export:
+      Name: !Sub '${AWS::StackName}-IdPAuditTableName'
+
+  IdPAuditTableArn:
+    Description: IdP audit table ARN
+    Value: !GetAtt IdPAuditTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-IdPAuditTableArn'
+
+  AuthSessionsTableName:
+    Description: Auth sessions table name
+    Value: !Ref AuthSessionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AuthSessionsTableName'
+
+  AuthSessionsTableArn:
+    Description: Auth sessions table ARN
+    Value: !GetAtt AuthSessionsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AuthSessionsTableArn'
+
+  SAMLStateTableName:
+    Description: SAML state table name
+    Value: !Ref SAMLStateTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SAMLStateTableName'
+
+  OIDCStateTableName:
+    Description: OIDC state table name
+    Value: !Ref OIDCStateTable
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCStateTableName'
+
+  JWTSigningKeySecretArn:
+    Description: JWT signing key secret ARN
+    Value: !Ref JWTSigningKeySecret
+    Export:
+      Name: !Sub '${AWS::StackName}-JWTSigningKeySecretArn'
+
+  LDAPCredentialsSecretArn:
+    Description: LDAP credentials template secret ARN
+    Value: !Ref LDAPCredentialsSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-LDAPCredentialsSecretArn'
+
+  OIDCCredentialsSecretArn:
+    Description: OIDC credentials template secret ARN
+    Value: !Ref OIDCCredentialsSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCCredentialsSecretArn'
+
+  SAMLCredentialsSecretArn:
+    Description: SAML SP credentials secret ARN
+    Value: !Ref SAMLCredentialsSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-SAMLCredentialsSecretArn'
+
+  PingIDCredentialsSecretArn:
+    Description: PingID credentials template secret ARN
+    Value: !Ref PingIDCredentialsSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-PingIDCredentialsSecretArn'
+
+  IdentityKMSKeyArn:
+    Description: Identity services KMS key ARN
+    Value: !GetAtt IdentityKMSKey.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-IdentityKMSKeyArn'
+
+  IdentityKMSKeyId:
+    Description: Identity services KMS key ID
+    Value: !Ref IdentityKMSKey
+    Export:
+      Name: !Sub '${AWS::StackName}-IdentityKMSKeyId'

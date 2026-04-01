@@ -1,0 +1,1138 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.4 - Test Environment IAM (Self-Service Provisioning)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+Resources:
+  # ==========================================================================
+  # Permission Boundary - Maximum privilege ceiling for all test env roles
+  # IAM Remediation: Scoped resources to test environment patterns (architecture review Dec 2025)
+  # ==========================================================================
+  TestEnvPermissionBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-test-env-permission-boundary-${Environment}'
+      Description: 'Permission boundary for test environment roles - prevents privilege escalation'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # ALLOW: S3 operations on test environment buckets only
+          - Sid: AllowS3TestEnv
+            Effect: Allow
+            Action:
+              - s3:*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-testenv-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-testenv-*-${Environment}/*'
+
+          # ALLOW: DynamoDB operations on test environment tables only
+          - Sid: AllowDynamoDBTestEnv
+            Effect: Allow
+            Action:
+              - dynamodb:*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-testenv-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-testenv-*-${Environment}/index/*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-*-${Environment}/index/*'
+
+          # ALLOW: ECS operations on test environment cluster/tasks only
+          - Sid: AllowECSTestEnv
+            Effect: Allow
+            Action:
+              - ecs:*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-testenvs-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ProjectName}-testenvs-${Environment}/*'
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${ProjectName}-testenvs-${Environment}/*'
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ProjectName}-testenv-*:*'
+
+          # ALLOW: CloudWatch Logs on test environment log groups only
+          - Sid: AllowLogsTestEnv
+            Effect: Allow
+            Action:
+              - logs:*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/testenv/*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/testenv/*:*'
+
+          # ALLOW: CloudWatch metrics with namespace condition
+          - Sid: AllowCloudWatchMetrics
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricData
+              - cloudwatch:GetMetricData
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:ListMetrics
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'cloudwatch:namespace': !Sub '${ProjectName}/TestEnvironments'
+
+          # ALLOW: Lambda operations on test environment functions only
+          - Sid: AllowLambdaTestEnv
+            Effect: Allow
+            Action:
+              - lambda:*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-testenv-*'
+              - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-test-env-*'
+
+          # ALLOW: Step Functions on test environment state machines only
+          - Sid: AllowStepFunctionsTestEnv
+            Effect: Allow
+            Action:
+              - states:*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-test-env-*-${Environment}'
+
+          # ALLOW: SNS on test environment topics only
+          - Sid: AllowSNSTestEnv
+            Effect: Allow
+            Action:
+              - sns:*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-testenv-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-*-${Environment}'
+
+          # ALLOW: SQS on test environment queues only
+          - Sid: AllowSQSTestEnv
+            Effect: Allow
+            Action:
+              - sqs:*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-testenv-*-${Environment}'
+
+          # ALLOW: Service Catalog (AWS requires Resource: * for these API calls)
+          - Sid: AllowServiceCatalog
+            Effect: Allow
+            Action:
+              - servicecatalog:ProvisionProduct
+              - servicecatalog:TerminateProvisionedProduct
+              - servicecatalog:DescribeProduct
+              - servicecatalog:DescribeProvisionedProduct
+              - servicecatalog:ListProvisioningArtifacts
+              - servicecatalog:DescribeProvisioningArtifact
+              - servicecatalog:DescribeProvisioningParameters
+            Resource: '*'
+
+          # ALLOW: ECR read-only for image pulls
+          - Sid: AllowECRRead
+            Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+            Resource: '*'
+
+          # ALLOW: EKS Describe and API access (for namespace management)
+          - Sid: AllowEKSDescribe
+            Effect: Allow
+            Action:
+              - eks:Describe*
+              - eks:List*
+              - eks:AccessKubernetesApi
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-*'
+
+          # ALLOW: IAM PassRole to test environment roles only
+          - Sid: AllowPassRoleTestEnv
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-testenv-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-test-env-*'
+            Condition:
+              StringEquals:
+                'iam:PassedToService':
+                  - ecs-tasks.amazonaws.com
+                  - lambda.amazonaws.com
+                  - states.amazonaws.com
+
+          # DENY: Production Resources (Critical - protects prod data)
+          - Sid: DenyProductionResources
+            Effect: Deny
+            Action: '*'
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-prod'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-prod/*'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-prod'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-prod/*'
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/prod/*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:cluster:${ProjectName}-neptune-prod*'
+              - !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-opensearch-prod*'
+
+          # DENY: IAM Privilege Escalation
+          - Sid: DenyIAMEscalation
+            Effect: Deny
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:CreateUser
+              - iam:DeleteUser
+              - iam:CreateAccessKey
+              - iam:UpdateAssumeRolePolicy
+              - iam:PutRolePermissionsBoundary
+            Resource: '*'
+
+          # DENY: VPC Modification (Network Isolation)
+          - Sid: DenyVPCModification
+            Effect: Deny
+            Action:
+              - ec2:CreateVpc
+              - ec2:DeleteVpc
+              - ec2:CreateSubnet
+              - ec2:DeleteSubnet
+              - ec2:CreateInternetGateway
+              - ec2:DeleteInternetGateway
+              - ec2:CreateNatGateway
+              - ec2:DeleteNatGateway
+              - ec2:CreateVpcPeeringConnection
+            Resource: '*'
+
+          # DENY: Cross-Region Operations
+          - Sid: DenyCrossRegion
+            Effect: Deny
+            Action: '*'
+            Resource: '*'
+            Condition:
+              StringNotEquals:
+                'aws:RequestedRegion': !Ref AWS::Region
+
+  # ==========================================================================
+  # Provisioner Lambda Role - Creates and manages test environments
+  # ==========================================================================
+  TestEnvProvisionerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-provisioner-role-${Environment}'
+      Description: 'Role for test environment provisioning Lambda'
+      PermissionsBoundary: !Ref TestEnvPermissionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: TestEnvProvisionerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB access for environment state and autonomy policies
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-state-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-state-${Environment}/index/*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-autonomy-policies-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-platform-settings-${Environment}'
+
+              # Service Catalog for product provisioning
+              - Sid: ServiceCatalogAccess
+                Effect: Allow
+                Action:
+                  - servicecatalog:ProvisionProduct
+                  - servicecatalog:TerminateProvisionedProduct
+                  - servicecatalog:DescribeProduct
+                  - servicecatalog:DescribeProvisionedProduct
+                  - servicecatalog:ListProvisioningArtifacts
+                  - servicecatalog:DescribeProvisioningArtifact
+                  - servicecatalog:DescribeProvisioningParameters
+                Resource: '*'
+
+              # Step Functions for HITL approval workflow
+              - Sid: StepFunctionsAccess
+                Effect: Allow
+                Action:
+                  - states:StartExecution
+                  - states:DescribeExecution
+                  - states:StopExecution
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-test-env-approval-${Environment}'
+
+              # SNS for notifications
+              - Sid: SNSAccess
+                Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-notifications-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-approvals-${Environment}'
+
+              # CloudWatch metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': !Sub '${ProjectName}/TestEnvironments'
+
+              # Secrets Manager for test env secrets
+              - Sid: SecretsManagerAccess
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/test-envs/*'
+
+              # ECS for quick test namespaces
+              - Sid: ECSAccess
+                Effect: Allow
+                Action:
+                  - ecs:RunTask
+                  - ecs:StopTask
+                  - ecs:DescribeTasks
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                  - ecs:DeregisterTaskDefinition
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-testenvs-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ProjectName}-testenv-*'
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${ProjectName}-testenvs-${Environment}/*'
+
+              # Pass role to ECS tasks
+              - Sid: PassRole
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt TestEnvECSTaskRole.Arn
+                  - !GetAtt TestEnvECSExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    'iam:PassedToService': ecs-tasks.amazonaws.com
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-provisioner-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Cleanup Lambda Role - Handles TTL expiry and resource cleanup
+  # ==========================================================================
+  TestEnvCleanupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-cleanup-role-${Environment}'
+      Description: 'Role for test environment cleanup Lambda'
+      PermissionsBoundary: !Ref TestEnvPermissionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: TestEnvCleanupPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB for environment state
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-state-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-state-${Environment}/index/*'
+
+              # Service Catalog for termination
+              - Sid: ServiceCatalogTerminate
+                Effect: Allow
+                Action:
+                  - servicecatalog:TerminateProvisionedProduct
+                  - servicecatalog:DescribeProvisionedProduct
+                Resource: '*'
+
+              # ECS for task cleanup
+              - Sid: ECSCleanup
+                Effect: Allow
+                Action:
+                  - ecs:StopTask
+                  - ecs:DescribeTasks
+                  - ecs:ListTasks
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-testenvs-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${ProjectName}-testenvs-${Environment}/*'
+
+              # S3 for bucket cleanup
+              - Sid: S3Cleanup
+                Effect: Allow
+                Action:
+                  - s3:DeleteBucket
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                  - s3:DeleteObjectVersion
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-testenv-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-testenv-*-${Environment}/*'
+
+              # DynamoDB table cleanup for test environments
+              - Sid: DynamoDBCleanup
+                Effect: Allow
+                Action:
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-testenv-*-${Environment}'
+
+              # CloudWatch Logs cleanup
+              - Sid: LogsCleanup
+                Effect: Allow
+                Action:
+                  - logs:DeleteLogGroup
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/testenv/*'
+
+              # CloudWatch metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': !Sub '${ProjectName}/TestEnvironments'
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-cleanup-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Service Catalog Launch Role - Used by Service Catalog to provision products
+  # ==========================================================================
+  TestEnvCatalogLaunchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-catalog-launch-role-${Environment}'
+      Description: 'Role assumed by Service Catalog when deploying test environment products'
+      PermissionsBoundary: !Ref TestEnvPermissionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: servicecatalog.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ServiceCatalogLaunchPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudFormation for stack management
+              - Sid: CloudFormationAccess
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ListStackResources
+                  - cloudformation:SetStackPolicy
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-testenv-*/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/SC-*/*'
+
+              # ECS for test environment tasks
+              - Sid: ECSAccess
+                Effect: Allow
+                Action:
+                  - ecs:CreateService
+                  - ecs:DeleteService
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                  - ecs:RunTask
+                  - ecs:StopTask
+                  - ecs:DescribeTasks
+                  - ecs:RegisterTaskDefinition
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:DescribeTaskDefinition
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-testenvs-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ProjectName}-testenvs-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ProjectName}-testenv-*:*'
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${ProjectName}-testenvs-${Environment}/*'
+
+              # S3 for test environment buckets
+              - Sid: S3Access
+                Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:PutBucketPolicy
+                  - s3:DeleteBucketPolicy
+                  - s3:GetBucketPolicy
+                  - s3:PutBucketTagging
+                  - s3:GetBucketTagging
+                  - s3:PutEncryptionConfiguration
+                  - s3:GetEncryptionConfiguration
+                  - s3:PutBucketVersioning
+                  - s3:GetBucketVersioning
+                  - s3:PutLifecycleConfiguration
+                  - s3:GetLifecycleConfiguration
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-testenv-*-${Environment}'
+
+              # DynamoDB for test environment tables
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                  - dynamodb:UpdateTimeToLive
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-testenv-*-${Environment}'
+
+              # Lambda for test environment functions
+              - Sid: LambdaAccess
+                Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-testenv-*'
+
+              # CloudWatch Logs
+              - Sid: CloudWatchLogsAccess
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:TagLogGroup
+                  - logs:UntagLogGroup
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/testenv/*'
+
+              # IAM PassRole
+              - Sid: PassRole
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt TestEnvECSTaskRole.Arn
+                  - !GetAtt TestEnvECSExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    'iam:PassedToService':
+                      - ecs-tasks.amazonaws.com
+                      - lambda.amazonaws.com
+
+              # SNS for notifications
+              - Sid: SNSAccess
+                Effect: Allow
+                Action:
+                  - sns:CreateTopic
+                  - sns:DeleteTopic
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-testenv-*-${Environment}'
+
+              # SQS for queues
+              - Sid: SQSAccess
+                Effect: Allow
+                Action:
+                  - sqs:CreateQueue
+                  - sqs:DeleteQueue
+                  - sqs:SetQueueAttributes
+                  - sqs:GetQueueAttributes
+                  - sqs:TagQueue
+                  - sqs:UntagQueue
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-testenv-*-${Environment}'
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-catalog-launch-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # ECS Task Execution Role - Pulls images and writes logs
+  # ==========================================================================
+  TestEnvECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-ecs-execution-role-${Environment}'
+      Description: 'ECS task execution role for test environments'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: TestEnvSecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SecretsAccess
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/test-envs/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-ecs-execution-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # ECS Task Role - Runtime permissions for test environment workloads
+  # ==========================================================================
+  TestEnvECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-ecs-task-role-${Environment}'
+      Description: 'Runtime permissions for test environment ECS tasks'
+      PermissionsBoundary: !Ref TestEnvPermissionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # Allow test environment resources
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-testenv-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-testenv-*-${Environment}/*'
+
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-testenv-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-testenv-*-${Environment}/index/*'
+
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-testenv-*-${Environment}'
+
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/testenv/*:*'
+
+        # CRITICAL: Explicit deny for production
+        - PolicyName: DenyProductionAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Deny
+                Action:
+                  - dynamodb:*
+                  - s3:*
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-prod'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-prod/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-prod'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-prod/*'
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/prod/*'
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-ecs-task-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Step Functions Role - For HITL approval workflow
+  # Also used by Lambda functions in the approval workflow
+  # ==========================================================================
+  TestEnvStepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-stepfunctions-role-${Environment}'
+      Description: 'Role for test environment HITL approval Step Functions and Lambda functions'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Lambda basic execution for CloudWatch Logs
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: StepFunctionsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Lambda invocation
+              - Sid: LambdaInvoke
+                Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-test-env-*-${Environment}'
+
+              # SNS for notifications
+              - Sid: SNSPublish
+                Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-approvals-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-notifications-${Environment}'
+
+              # DynamoDB for state tracking
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-state-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-hitl-approvals-${Environment}'
+
+              # CloudWatch Logs
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: '*'
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-stepfunctions-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Phase 4: Scheduler Lambda Role - Processes one-time scheduled provisioning
+  # ==========================================================================
+  TestEnvSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-scheduler-role-${Environment}'
+      Description: 'Role for test environment scheduled provisioning Lambda'
+      PermissionsBoundary: !Ref TestEnvPermissionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: TestEnvSchedulerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB access for schedule table
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-schedule-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-schedule-${Environment}/index/*'
+
+              # Lambda invoke for provisioner
+              - Sid: LambdaInvoke
+                Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-test-env-provision-${Environment}'
+
+              # SNS for notifications
+              - Sid: SNSPublish
+                Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-notifications-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-alerts-${Environment}'
+
+              # CloudWatch metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': !Sub '${ProjectName}/TestEnvironments'
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-scheduler-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Phase 4: Namespace Controller Lambda Role - Manages EKS namespaces
+  # ==========================================================================
+  TestEnvNamespaceControllerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-namespace-role-${Environment}'
+      Description: 'Role for test environment EKS namespace controller Lambda'
+      PermissionsBoundary: !Ref TestEnvPermissionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: TestEnvNamespaceControllerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # EKS cluster access for kubectl operations
+              - Sid: EKSAccess
+                Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                  - eks:AccessKubernetesApi
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-*'
+
+              # DynamoDB for environment state tracking
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-state-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-state-${Environment}/index/*'
+
+              # SNS for notifications
+              - Sid: SNSPublish
+                Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-notifications-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-alerts-${Environment}'
+
+              # CloudWatch metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': !Sub '${ProjectName}/TestEnvironments'
+
+              # STS for kubeconfig generation
+              - Sid: STSGetCallerIdentity
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: '*'
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-namespace-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Phase 4: Marketplace Lambda Role - Manages template submissions and approvals
+  # ==========================================================================
+  TestEnvMarketplaceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-test-env-marketplace-role-${Environment}'
+      Description: 'Role for test environment template marketplace Lambda'
+      PermissionsBoundary: !Ref TestEnvPermissionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: TestEnvMarketplacePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB for templates table
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-templates-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-test-env-templates-${Environment}/index/*'
+
+              # S3 for template uploads (pending and approved)
+              # Note: Copy operations use GetObject (source) + PutObject (destination)
+              - Sid: S3Access
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-artifacts-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-artifacts-${AWS::AccountId}-${Environment}/marketplace/*'
+
+              # Service Catalog for product management
+              - Sid: ServiceCatalogAccess
+                Effect: Allow
+                Action:
+                  - servicecatalog:CreateProduct
+                  - servicecatalog:UpdateProduct
+                  - servicecatalog:DescribeProduct
+                  - servicecatalog:CreateProvisioningArtifact
+                  - servicecatalog:DeleteProvisioningArtifact
+                  - servicecatalog:AssociateProductWithPortfolio
+                Resource: '*'
+
+              # Step Functions for HITL approval
+              - Sid: StepFunctionsAccess
+                Effect: Allow
+                Action:
+                  - states:StartExecution
+                  - states:DescribeExecution
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-test-env-approval-${Environment}'
+
+              # SNS for notifications
+              - Sid: SNSPublish
+                Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-notifications-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-approvals-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-test-env-alerts-${Environment}'
+
+              # CloudWatch metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': !Sub '${ProjectName}/TestEnvironments'
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-marketplace-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  PermissionBoundaryArn:
+    Description: Permission boundary ARN for test environment roles
+    Value: !Ref TestEnvPermissionBoundary
+    Export:
+      Name: !Sub '${AWS::StackName}-PermissionBoundaryArn'
+
+  ProvisionerRoleArn:
+    Description: Provisioner Lambda role ARN
+    Value: !GetAtt TestEnvProvisionerRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ProvisionerRoleArn'
+
+  CleanupRoleArn:
+    Description: Cleanup Lambda role ARN
+    Value: !GetAtt TestEnvCleanupRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CleanupRoleArn'
+
+  CatalogLaunchRoleArn:
+    Description: Service Catalog launch role ARN
+    Value: !GetAtt TestEnvCatalogLaunchRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CatalogLaunchRoleArn'
+
+  ECSExecutionRoleArn:
+    Description: ECS task execution role ARN
+    Value: !GetAtt TestEnvECSExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ECSExecutionRoleArn'
+
+  ECSTaskRoleArn:
+    Description: ECS task role ARN
+    Value: !GetAtt TestEnvECSTaskRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ECSTaskRoleArn'
+
+  StepFunctionsRoleArn:
+    Description: Step Functions role ARN
+    Value: !GetAtt TestEnvStepFunctionsRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-StepFunctionsRoleArn'
+
+  # Phase 4 Role ARNs
+  SchedulerRoleArn:
+    Description: Scheduler Lambda role ARN
+    Value: !GetAtt TestEnvSchedulerRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SchedulerRoleArn'
+
+  NamespaceControllerRoleArn:
+    Description: EKS Namespace Controller Lambda role ARN
+    Value: !GetAtt TestEnvNamespaceControllerRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-NamespaceControllerRoleArn'
+
+  MarketplaceRoleArn:
+    Description: Template Marketplace Lambda role ARN
+    Value: !GetAtt TestEnvMarketplaceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-MarketplaceRoleArn'

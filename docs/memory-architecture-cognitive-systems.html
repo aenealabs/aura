@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Aura - Memory Architecture &amp; Cognitive Systems</title>
+<style>
+  :root {
+    --brand: #3B82F6;
+    --brand-dark: #2563EB;
+    --critical: #DC2626;
+    --high: #EA580C;
+    --medium: #F59E0B;
+    --success: #10B981;
+    --info: #3B82F6;
+    --bg: #F8FAFC;
+    --surface: #FFFFFF;
+    --border: #E2E8F0;
+    --text: #1E293B;
+    --text-secondary: #64748B;
+    --code-bg: #F1F5F9;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .header {
+    background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+    color: white;
+    padding: 48px 0;
+    text-align: center;
+  }
+  .header h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+  .header .subtitle { font-size: 16px; color: #94A3B8; max-width: 720px; margin: 0 auto; }
+  .header .meta { margin-top: 16px; font-size: 13px; color: #64748B; }
+  .header .meta span { margin: 0 12px; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 32px;
+    margin-bottom: 32px;
+  }
+  .toc h2 { font-size: 18px; margin-bottom: 12px; color: var(--brand); }
+  .toc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 24px; }
+  .toc a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 4px 0;
+    display: block;
+  }
+  .toc a:hover { color: var(--brand); }
+  .toc a .num { color: var(--text-secondary); margin-right: 6px; }
+  section { margin-bottom: 32px; }
+  section h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--brand);
+    margin-bottom: 16px;
+  }
+  section h3 { font-size: 16px; font-weight: 600; margin: 16px 0 8px; color: var(--text); }
+  section h4 { font-size: 14px; font-weight: 600; margin: 12px 0 6px; color: var(--text-secondary); }
+  p, li { font-size: 14px; line-height: 1.7; }
+  p { margin-bottom: 12px; }
+  ul, ol { padding-left: 24px; margin-bottom: 12px; }
+  li { margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13px; }
+  th {
+    background: #F1F5F9;
+    text-align: left;
+    padding: 10px 12px;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+    white-space: nowrap;
+  }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: #F8FAFC; }
+  pre {
+    background: #0F172A;
+    color: #E2E8F0;
+    padding: 16px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    margin: 12px 0 16px;
+  }
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12.5px;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  pre code { background: none; padding: 0; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin: 16px 0; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    transition: box-shadow 0.2s;
+  }
+  .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .card h4 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+  .card p { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+  .card .stats { font-size: 12px; color: var(--text-secondary); }
+  .card .stats span { margin-right: 12px; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-deployed { background: #D1FAE5; color: #065F46; }
+  .badge-phase1 { background: #DBEAFE; color: #1E40AF; }
+  .badge-critical { background: #FEE2E2; color: #991B1B; }
+  .badge-high { background: #FFEDD5; color: #9A3412; }
+  .badge-medium { background: #FEF3C7; color: #92400E; }
+  .badge-brand { background: #DBEAFE; color: #1E40AF; }
+  .badge-enabled { background: #D1FAE5; color: #065F46; }
+  .flow-diagram {
+    background: #0F172A;
+    color: #94A3B8;
+    padding: 20px 24px;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 12px 0 16px;
+    white-space: pre;
+  }
+  .flow-diagram .hl { color: #60A5FA; }
+  .flow-diagram .hl-green { color: #34D399; }
+  .flow-diagram .hl-yellow { color: #FBBF24; }
+  .flow-diagram .hl-red { color: #F87171; }
+  .flow-diagram .hl-purple { color: #C084FC; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin: 16px 0; }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: var(--brand); }
+  .stat-card .label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  .callout {
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin: 12px 0 16px;
+    font-size: 13px;
+  }
+  .callout-info { background: #EFF6FF; border-left: 4px solid var(--brand); }
+  .callout-warning { background: #FFFBEB; border-left: 4px solid var(--medium); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .tier-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0; }
+  .tier {
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    border: 1px solid var(--border);
+  }
+  .tier h4 { margin-bottom: 6px; }
+  .tier p { font-size: 12px; margin-bottom: 0; }
+  .tier-1 { background: #F0FDF4; border-color: #BBF7D0; }
+  .tier-2 { background: #DBEAFE; border-color: #BFDBFE; }
+  .tier-3 { background: #FEF3C7; border-color: #FDE68A; }
+  .tier-4 { background: #FEE2E2; border-color: #FECACA; }
+  .tier-5 { background: #F3E8FF; border-color: #DDD6FE; }
+  .memory-type {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 10px;
+  }
+  .memory-type .icon { font-size: 24px; width: 40px; text-align: center; flex-shrink: 0; }
+  .memory-type .info { flex: 1; }
+  .memory-type .info strong { font-size: 14px; display: block; margin-bottom: 2px; }
+  .memory-type .info p { font-size: 12px; color: var(--text-secondary); margin: 0; }
+  .layer-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 16px 0;
+  }
+  .layer-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .layer-item .priority { font-weight: 700; width: 28px; flex-shrink: 0; }
+  .layer-item .name { font-weight: 600; width: 200px; flex-shrink: 0; }
+  .layer-item .budget { color: var(--text-secondary); width: 120px; flex-shrink: 0; }
+  .layer-item .desc { color: var(--text-secondary); flex: 1; }
+  .pressure-bar { display: flex; height: 24px; border-radius: 6px; overflow: hidden; margin: 8px 0 16px; }
+  .pressure-bar .segment { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: white; }
+  @media (max-width: 768px) {
+    .card-grid, .tier-grid, .stat-grid, .two-col, .three-col, .toc-grid { grid-template-columns: 1fr; }
+    .header { padding: 32px 16px; }
+    .header h1 { font-size: 24px; }
+    pre, .flow-diagram { font-size: 11px; }
+    .layer-item { flex-wrap: wrap; }
+  }
+  .footer {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Memory Architecture &amp; Cognitive Systems</h1>
+  <div class="subtitle">Five-tier cognitive memory with Titan Neural Memory, Evo-Memory evolution framework, 7-service context engineering pipeline, and recursive 100x context scaling</div>
+  <div class="meta">
+    <span>Project Aura</span>
+    <span>|</span>
+    <span>Aenea Labs</span>
+    <span>|</span>
+    <span>February 2026</span>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- Table of Contents -->
+<div class="toc">
+  <h2>Contents</h2>
+  <div class="toc-grid">
+    <a href="#overview"><span class="num">1.</span> Architecture Overview</a>
+    <a href="#five-tier"><span class="num">2.</span> Five-Tier Cognitive Memory</a>
+    <a href="#titan"><span class="num">3.</span> Titan Neural Memory (ADR-024)</a>
+    <a href="#deep-mlp"><span class="num">4.</span> Deep MLP Memory Model</a>
+    <a href="#consolidation"><span class="num">5.</span> Memory Consolidation &amp; Pressure</a>
+    <a href="#evo-memory"><span class="num">6.</span> Evo-Memory Framework (ADR-080)</a>
+    <a href="#remem"><span class="num">7.</span> ReMem Action Framework</a>
+    <a href="#multi-agent-sharing"><span class="num">8.</span> Multi-Agent Memory Sharing</a>
+    <a href="#cognitive"><span class="num">9.</span> Cognitive Memory Service</a>
+    <a href="#confidence"><span class="num">10.</span> Confidence Estimation &amp; Strategy</a>
+    <a href="#context-engineering"><span class="num">11.</span> Context Engineering Pipeline (ADR-034)</a>
+    <a href="#context-stack"><span class="num">12.</span> 6-Layer Context Stack</a>
+    <a href="#three-way"><span class="num">13.</span> Three-Way Retrieval Fusion</a>
+    <a href="#hoprag"><span class="num">14.</span> HopRAG Multi-Hop Retrieval</a>
+    <a href="#community"><span class="num">15.</span> Community Summarization</a>
+    <a href="#semantic-cache"><span class="num">16.</span> Semantic Caching (ADR-029)</a>
+    <a href="#rlm"><span class="num">17.</span> Recursive Context Engine (ADR-051)</a>
+    <a href="#jepa"><span class="num">18.</span> VL-JEPA Embedding Predictor (ADR-051)</a>
+    <a href="#provenance"><span class="num">19.</span> Context Provenance &amp; Integrity (ADR-067)</a>
+    <a href="#agent-lifecycle"><span class="num">20.</span> Agent Memory Lifecycle</a>
+    <a href="#infrastructure"><span class="num">21.</span> Infrastructure &amp; Storage</a>
+    <a href="#audit"><span class="num">22.</span> Neural Memory Audit &amp; Compliance</a>
+    <a href="#adrs"><span class="num">23.</span> Architecture Decision Records</a>
+    <a href="#stats"><span class="num">24.</span> Key Statistics</a>
+  </div>
+</div>
+
+<!-- 1. Architecture Overview -->
+<section id="overview">
+  <h2>1. Architecture Overview</h2>
+  <p>Project Aura's memory architecture implements a neuroscience-inspired cognitive system where agents learn, remember, and evolve through five distinct memory types. The Titan Neural Memory provides sub-symbolic learning via deep MLP with test-time training, while the Evo-Memory Framework enables continuous memory evolution through 7 discrete operations. A 7-service context engineering pipeline ensures agents receive optimal, relevant code context for every task.</p>
+
+  <div class="flow-diagram"><span class="hl">                    ┌──────────────────────────────────────────────────┐</span>
+<span class="hl">                    │              AGENT EXECUTION LAYER               │</span>
+<span class="hl">                    │   Orchestrator &rarr; Coder &rarr; Reviewer &rarr; Validator    │</span>
+<span class="hl">                    └─────────────┬────────────────────┬───────────────┘</span>
+                                  │ load/store         │ retrieve
+                    ┌─────────────▼────────┐  ┌───────▼──────────────┐
+<span class="hl-purple">                    │  COGNITIVE MEMORY    │  │  CONTEXT ENGINEERING  │</span>
+<span class="hl-purple">                    │  SERVICE (2,828 LOC) │  │  PIPELINE (7 services)│</span>
+<span class="hl-purple">                    └──┬──┬──┬──┬──┬──────┘  └──┬──┬──┬──┬──┬──────┘</span>
+                       │  │  │  │  │             │  │  │  │  │
+          ┌────────────┘  │  │  │  └────┐   ┌───┘  │  │  │  └─────┐
+          ▼               ▼  ▼  ▼       ▼   ▼      ▼  ▼  ▼        ▼
+<span class="hl-green">  ┌───────────┐ ┌────────┐┌──┐┌──┐┌────────┐┌────┐┌────┐┌────┐┌────┐┌──────┐</span>
+<span class="hl-green">  │ Episodic  │ │Semantic││Pr││Wk││ Titan  ││Scor││3Way││Hop ││Comm││ Tool │</span>
+<span class="hl-green">  │ Memory    │ │ Memory ││oc││ng││ Neural ││ing ││Retr││RAG ││Summ││ Reg. │</span>
+<span class="hl-green">  │ (1,168)   │ │        ││ed││  ││ (989)  ││    ││    ││    ││    ││      │</span>
+<span class="hl-green">  └─────┬─────┘ └────┬───┘└┬─┘└┬─┘└───┬────┘└──┬─┘└──┬─┘└──┬─┘└──┬─┘└──┬───┘</span>
+        │            │     │   │      │         │     │     │     │     │
+<span class="hl-yellow">  ┌─────┴────────────┴─────┴───┴──────┴─────────┴─────┴─────┴─────┴─────┴───┐</span>
+<span class="hl-yellow">  │                        EVO-MEMORY FRAMEWORK (ADR-080)                    │</span>
+<span class="hl-yellow">  │  CONSOLIDATE │ PRUNE │ REINFORCE │ ABSTRACT │ LINK │ CORRECT │ ROLLBACK  │</span>
+<span class="hl-yellow">  └──────────────────────────────┬───────────────────────────────────────────┘</span>
+                                │
+<span class="hl-red">  ┌─────────────────────────────┴────────────────────────────────────────────┐</span>
+<span class="hl-red">  │                        DATA &amp; STORAGE LAYER                             │</span>
+<span class="hl-red">  │  DynamoDB (Episodes)  │  Neptune (Graph/Links)  │  OpenSearch (Vectors)  │</span>
+<span class="hl-red">  │  S3 (Artifacts)       │  KMS (Encryption)       │  CloudWatch (Metrics)  │</span>
+<span class="hl-red">  └─────────────────────────────────────────────────────────────────────────┘</span></div>
+</section>
+
+<!-- 2. Five-Tier Cognitive Memory -->
+<section id="five-tier">
+  <h2>2. Five-Tier Cognitive Memory</h2>
+  <p>Inspired by human cognitive neuroscience, Aura implements five distinct memory types that work together to give agents persistent learning, contextual awareness, and adaptive behavior.</p>
+
+  <div class="memory-type" style="border-left: 4px solid #F59E0B;">
+    <div class="icon">&#x1F4AD;</div>
+    <div class="info">
+      <strong>Working Memory</strong>
+      <p>Active task context held during execution. Capacity-limited to Miller's Law (7&plusmn;2 items). Manages attention, token budgets, and intermediate results. Evicts lowest-salience items when full. Cleared on task completion.</p>
+    </div>
+  </div>
+  <div class="memory-type" style="border-left: 4px solid #3B82F6;">
+    <div class="icon">&#x1F4D6;</div>
+    <div class="info">
+      <strong>Episodic Memory</strong>
+      <p>Full context snapshots of past problem-solving instances. Records task description, input context, decision, reasoning, confidence, and outcome (SUCCESS/FAILURE/PARTIAL/ESCALATED). 30-day default TTL with importance-weighted retention.</p>
+    </div>
+  </div>
+  <div class="memory-type" style="border-left: 4px solid #10B981;">
+    <div class="icon">&#x1F4DA;</div>
+    <div class="info">
+      <strong>Semantic Memory</strong>
+      <p>Generalized knowledge extracted from episodes: guardrails, patterns, schemas, concepts, and anti-patterns. Severity-ranked (CRITICAL/HIGH/MEDIUM/LOW). Auto-extracted when 3+ episodes show consistent patterns with 85% validation accuracy.</p>
+    </div>
+  </div>
+  <div class="memory-type" style="border-left: 4px solid #8B5CF6;">
+    <div class="icon">&#x2699;&#xFE0F;</div>
+    <div class="info">
+      <strong>Procedural Memory</strong>
+      <p>Action sequences and workflows with per-step success tracking. Records conditions, actions, and validation logic. Domain-scoped with success rate metrics. Enables agents to replicate successful remediation patterns.</p>
+    </div>
+  </div>
+  <div class="memory-type" style="border-left: 4px solid #EC4899;">
+    <div class="icon">&#x1F52E;</div>
+    <div class="info">
+      <strong>Neural Memory (Titan)</strong>
+      <p>Deep MLP with test-time training (TTT) and MIRAS configuration. Provides sub-symbolic pattern generalization that complements the symbolic memory types. Surprise-driven selective memorization based on gradient magnitude.</p>
+    </div>
+  </div>
+
+  <h3>Memory Importance Levels</h3>
+  <table>
+    <tr><th>Level</th><th>Weight</th><th>TTL Behavior</th><th>Example</th></tr>
+    <tr><td><span class="badge badge-critical">CRITICAL</span></td><td>1.0</td><td>Never expires</td><td>Security guardrails, compliance rules</td></tr>
+    <tr><td><span class="badge badge-high">HIGH</span></td><td>0.8</td><td>Extended retention</td><td>Successful remediation patterns</td></tr>
+    <tr><td><span class="badge badge-medium">MEDIUM</span></td><td>0.5</td><td>Standard 30-day TTL</td><td>General task outcomes</td></tr>
+    <tr><td><span class="badge badge-brand">LOW</span></td><td>0.3</td><td>Shortened TTL</td><td>Routine code analysis results</td></tr>
+    <tr><td><span class="badge badge-brand">TRIVIAL</span></td><td>0.1</td><td>Quickly forgotten</td><td>Intermediate computations</td></tr>
+  </table>
+</section>
+
+<!-- 3. Titan Neural Memory -->
+<section id="titan">
+  <h2>3. Titan Neural Memory (ADR-024)</h2>
+  <p>The Titan Neural Memory implements a deep MLP memory model with test-time training (TTT), enabling agents to learn at inference time via gradient descent. Surprise-driven selective memorization ensures only novel, important information is retained.</p>
+
+  <h3>Three-Tier Compute Strategy</h3>
+  <div class="three-col">
+    <div class="card" style="border-top: 3px solid var(--success);">
+      <h4>Retrieval Path</h4>
+      <p>AWS Inferentia2 (inf2) instances for optimized, low-latency inference operations.</p>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--brand);">
+      <h4>TTT Path</h4>
+      <p>GPU (g5) instances for gradient computation during test-time training updates.</p>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--medium);">
+      <h4>Development</h4>
+      <p>CPU fallback (t3) instances for cost-effective iteration and testing.</p>
+    </div>
+  </div>
+
+  <h3>Core Configuration</h3>
+  <pre><code>@dataclass
+class TitanMemoryServiceConfig:
+    # Memory architecture
+    memory_dim: int = 512              # Embedding dimension
+    memory_depth: int = 3              # Number of MLP layers
+    hidden_multiplier: int = 4         # Hidden layer sizing (512 * 4 = 2048)
+    persistent_memory_size: int = 64   # Fixed learnable memory slots
+
+    # MIRAS settings (Multi-layer Instance-Attention Selection)
+    miras_preset: str = "enterprise_standard"
+    miras_config: Optional[MIRASConfig] = None
+
+    # Test-time training
+    enable_ttt: bool = True
+    ttt_learning_rate: float = 0.001
+    max_ttt_steps: int = 3
+
+    # Surprise-driven memorization
+    memorization_threshold: float = 0.7  # Only memorize if surprise > 0.7
+    surprise_momentum: float = 0.9       # Exponential moving average
+
+    # Safety limits
+    max_memory_size_mb: float = 100.0
+    enable_size_limit_enforcement: bool = True</code></pre>
+
+  <h3>MIRAS Organization Presets</h3>
+  <table>
+    <tr><th>Preset</th><th>TTT Enabled</th><th>Audit Level</th><th>Memory Depth</th><th>Target</th></tr>
+    <tr><td><code>defense_contractor</code></td><td>Disabled</td><td>All updates</td><td>2</td><td>GovCloud, CMMC Level 3+</td></tr>
+    <tr><td><code>enterprise_standard</code></td><td>Enabled</td><td>Balanced</td><td>3</td><td>Standard enterprise workloads</td></tr>
+    <tr><td><code>research_lab</code></td><td>Enabled (aggressive)</td><td>Minimal</td><td>5</td><td>Deeper memory, more learning</td></tr>
+  </table>
+
+  <h3>Key Methods</h3>
+  <table>
+    <tr><th>Method</th><th>Purpose</th></tr>
+    <tr><td><code>retrieve(query)</code></td><td>DeepMLP memory retrieval with confidence scoring</td></tr>
+    <tr><td><code>update(key, value)</code></td><td>Test-time training &mdash; gradient-based weight update</td></tr>
+    <tr><td><code>compute_surprise(query)</code></td><td>Gradient magnitude for selective memorization</td></tr>
+    <tr><td><code>consolidate(strategy)</code></td><td>Memory consolidation (pruning, reset, slot reduction)</td></tr>
+    <tr><td><code>freeze_persistent_memory()</code></td><td>Lock persistent memory slots for safety</td></tr>
+    <tr><td><code>get_memory_pressure()</code></td><td>Monitor utilization levels (NORMAL/WARNING/HIGH/CRITICAL)</td></tr>
+    <tr><td><code>save_checkpoint(path)</code></td><td>Persist to disk/S3 for durability</td></tr>
+  </table>
+
+  <h3>Service Components</h3>
+  <table>
+    <tr><th>Component</th><th>File</th><th>LOC</th><th>Purpose</th></tr>
+    <tr><td>Titan Memory Service</td><td><code>titan_memory_service.py</code></td><td>989</td><td>Main orchestrator with TTT and surprise-driven memorization</td></tr>
+    <tr><td>Cognitive Integration</td><td><code>titan_cognitive_integration.py</code></td><td>1,225</td><td>Bridge between Titan and cognitive memory types</td></tr>
+    <tr><td>Titan Embedding Service</td><td><code>titan_embedding_service.py</code></td><td>715</td><td>Embedding generation for memory operations</td></tr>
+    <tr><td>Memory Backends</td><td><code>memory_backends/</code></td><td>1,730</td><td>CPU, GPU, Inferentia2 backends + benchmarking</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">237 tests | 5 phases deployed | CloudWatch metrics: Aura/NeuralMemory namespace</div>
+</section>
+
+<!-- 4. Deep MLP Memory Model -->
+<section id="deep-mlp">
+  <h2>4. Deep MLP Memory Model</h2>
+  <p>The neural storage module implements a 3-layer Deep MLP with residual connections, persistent memory slots, and configurable activation functions.</p>
+
+  <div class="flow-diagram"><span class="hl">Input Query Embedding</span> (512-dim)
+         &darr;
+<span class="hl-green">┌─────────────────────────────────────────┐</span>
+<span class="hl-green">│  MLP Block 1                            │</span>
+<span class="hl-green">│  Linear(512, 2048) &rarr; GELU &rarr; LayerNorm  │</span>
+<span class="hl-green">│  + Residual Connection                  │</span>
+<span class="hl-green">│  + Dropout (regularization)             │</span>
+<span class="hl-green">└────────────────┬────────────────────────┘</span>
+                 &darr;
+<span class="hl-yellow">┌─────────────────────────────────────────┐</span>
+<span class="hl-yellow">│  MLP Block 2 (same architecture)        │</span>
+<span class="hl-yellow">└────────────────┬────────────────────────┘</span>
+                 &darr;
+<span class="hl-purple">┌─────────────────────────────────────────┐</span>
+<span class="hl-purple">│  MLP Block 3 (same architecture)        │</span>
+<span class="hl-purple">└────────────────┬────────────────────────┘</span>
+                 &darr;
+<span class="hl-red">┌─────────────────────────────────────────┐</span>
+<span class="hl-red">│  Persistent Memory (64 learnable slots) │</span>
+<span class="hl-red">│  Attention over fixed knowledge         │</span>
+<span class="hl-red">└────────────────┬────────────────────────┘</span>
+                 &darr;
+<span class="hl">Output: Retrieved Memory + Confidence Score</span></div>
+
+  <h3>Model Configuration</h3>
+  <pre><code>@dataclass
+class MemoryConfig:
+    memory_dim: int = 512          # Embedding dimension
+    memory_depth: int = 3          # Number of MLP layers
+    hidden_multiplier: int = 4     # Hidden = memory_dim * multiplier
+    persistent_memory_size: int = 64  # Fixed memory slots
+    use_layer_norm: bool = True    # Normalization after each layer
+    use_residual: bool = True      # Skip connections for gradient flow</code></pre>
+
+  <h3>MIRAS Loss Functions</h3>
+  <div class="two-col">
+    <div>
+      <h4>Attentional Bias Options</h4>
+      <table>
+        <tr><th>Loss</th><th>Behavior</th></tr>
+        <tr><td><code>l2</code></td><td>Mean squared error (default)</td></tr>
+        <tr><td><code>l1</code></td><td>Mean absolute error (sparse)</td></tr>
+        <tr><td><code>huber</code></td><td>Smooth L1 (robust to outliers)</td></tr>
+        <tr><td><code>cosine</code></td><td>Cosine similarity loss</td></tr>
+      </table>
+    </div>
+    <div>
+      <h4>Retention Gate Options</h4>
+      <table>
+        <tr><th>Gate</th><th>Behavior</th></tr>
+        <tr><td><code>weight_decay</code></td><td>Gradual forgetting (default)</td></tr>
+        <tr><td><code>exponential</code></td><td>Exponential decay rate</td></tr>
+        <tr><td><code>adaptive</code></td><td>Learns retention per memory</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 5. Memory Consolidation -->
+<section id="consolidation">
+  <h2>5. Memory Consolidation &amp; Pressure Management</h2>
+  <p>The Memory Consolidation Manager (639 LOC) implements automated memory maintenance with pressure-aware strategies to prevent unbounded growth while preserving critical knowledge.</p>
+
+  <h3>Memory Pressure Levels</h3>
+  <div class="pressure-bar">
+    <div class="segment" style="background: #10B981; width: 70%;">NORMAL (&lt;70%)</div>
+    <div class="segment" style="background: #F59E0B; width: 15%;">WARNING</div>
+    <div class="segment" style="background: #EA580C; width: 10%;">HIGH</div>
+    <div class="segment" style="background: #DC2626; width: 5%;">CRIT</div>
+  </div>
+
+  <h3>Consolidation Strategies</h3>
+  <table>
+    <tr><th>Strategy</th><th>Action</th><th>Trigger</th><th>Impact</th></tr>
+    <tr><td><code>WARN_ONLY</code></td><td>Alert without action</td><td>70% utilization</td><td>None &mdash; monitoring only</td></tr>
+    <tr><td><code>WEIGHT_PRUNING</code></td><td>Scale down weights by 10%</td><td>85% utilization</td><td>Gradual forgetting of weak patterns</td></tr>
+    <tr><td><code>SLOT_REDUCTION</code></td><td>Remove 25% of persistent slots</td><td>85% utilization</td><td>Reduce fixed memory capacity</td></tr>
+    <tr><td><code>LAYER_RESET</code></td><td>Reinitialize least important layers</td><td>95% utilization</td><td>Reset specific MLP blocks</td></tr>
+    <tr><td><code>FULL_RESET</code></td><td>Reset to initial state</td><td>Emergency only</td><td>Complete memory wipe</td></tr>
+  </table>
+
+  <h3>Configuration</h3>
+  <pre><code>@dataclass
+class ConsolidationConfig:
+    warning_threshold: float = 0.70    # 70% utilization
+    high_threshold: float = 0.85       # 85% utilization
+    critical_threshold: float = 0.95   # 95% utilization
+    auto_consolidate: bool = True      # Automatic consolidation
+    weight_prune_ratio: float = 0.10   # 10% weight reduction
+    slot_reduction_ratio: float = 0.25 # 25% slot removal</code></pre>
+</section>
+
+<!-- 6. Evo-Memory Framework -->
+<section id="evo-memory">
+  <h2>6. Evo-Memory Framework (ADR-080)</h2>
+  <p>The Evo-Memory Enhancement Framework provides continuous memory evolution through 7 discrete refinement operations executed in a ReAct (Reason-Act) loop. Each operation transforms the memory state, enabling agents to learn, correct mistakes, and share knowledge across the multi-agent system.</p>
+
+  <h3>Evolution Pipeline</h3>
+  <div class="flow-diagram"><span class="hl-green">Agent completes task</span>
+         &darr;
+<span class="hl-yellow">Store episode to episodic memory</span>
+         &darr;
+<span class="hl">ReAct Loop (Reason &rarr; Act &rarr; Observe):</span>
+  &darr;
+  ├── <span class="hl-green">CONSOLIDATE</span> &mdash; Merge 3+ similar episodes into one
+  ├── <span class="hl-green">PRUNE</span>       &mdash; Remove low-value memories below threshold
+  ├── <span class="hl-yellow">REINFORCE</span>   &mdash; Strengthen patterns via Titan TTT
+  ├── <span class="hl-yellow">ABSTRACT</span>    &mdash; Extract generalizable strategy (LLM)
+  ├── <span class="hl-purple">LINK</span>        &mdash; Create cross-memory associations (Neptune)
+  ├── <span class="hl-purple">CORRECT</span>     &mdash; Fix incorrect memories (LLM verification)
+  └── <span class="hl-red">ROLLBACK</span>    &mdash; Restore from DynamoDB Streams snapshot
+  &darr;
+<span class="hl">Observe outcome &rarr; Loop or complete</span>
+         &darr;
+<span class="hl-green">Publish metrics to CloudWatch (Aura/MemoryEvolution)</span></div>
+
+  <h3>Service Components</h3>
+  <table>
+    <tr><th>Component</th><th>LOC</th><th>Purpose</th></tr>
+    <tr><td>Memory Refiner</td><td>652</td><td>Core ReAct loop orchestrating all 7 operations</td></tr>
+    <tr><td>Advanced Operations</td><td>1,187</td><td>LINK, CORRECT, ROLLBACK implementations</td></tr>
+    <tr><td>Abstract Operation</td><td>958</td><td>LLM-based strategy extraction from episodes</td></tr>
+    <tr><td>Multi-Agent Sharing</td><td>1,000</td><td>Cross-agent memory propagation</td></tr>
+    <tr><td>Evolution Benchmark</td><td>1,451</td><td>Performance benchmarking (p50/p95/p99 latency)</td></tr>
+    <tr><td>Titan Integration</td><td>471</td><td>REINFORCE operation via Titan TTT</td></tr>
+    <tr><td>Audit Integration</td><td>402</td><td>Compliance audit trail for all operations</td></tr>
+    <tr><td>Metrics Publisher</td><td>461</td><td>CloudWatch metrics for operation counts and quality</td></tr>
+    <tr><td>Contracts</td><td>429</td><td>Data structures: RefineAction, RefineStatus</td></tr>
+    <tr><td>Config</td><td>309</td><td>Evolution configuration and thresholds</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">336 tests | 14 test files | All 5 phases deployed</div>
+</section>
+
+<!-- 7. ReMem Action Framework -->
+<section id="remem">
+  <h2>7. ReMem Action Framework</h2>
+  <p>The 7 ReMem operations provide a comprehensive toolkit for memory evolution, from basic maintenance (consolidate, prune) to advanced learning (abstract, link) and safety (correct, rollback).</p>
+
+  <div class="card-grid">
+    <div class="card" style="border-left: 4px solid #10B981;">
+      <h4>CONSOLIDATE <span class="badge badge-deployed">Phase 1a</span></h4>
+      <p>Merges similar experiences using cosine, Jaccard, Levenshtein, and semantic similarity metrics. Clustering parameters configurable per domain.</p>
+      <div class="stats"><span>Low latency</span> <span>|</span> <span>Reduces memory redundancy</span></div>
+    </div>
+    <div class="card" style="border-left: 4px solid #10B981;">
+      <h4>PRUNE <span class="badge badge-deployed">Phase 1a</span></h4>
+      <p>Removes low-value memories based on access frequency, age, and relevance score. Retention policies: recency-weighted or importance-based.</p>
+      <div class="stats"><span>Low latency</span> <span>|</span> <span>Prevents memory bloat</span></div>
+    </div>
+    <div class="card" style="border-left: 4px solid #F59E0B;">
+      <h4>REINFORCE <span class="badge badge-deployed">Phase 1b</span></h4>
+      <p>Strengthens successful patterns via Titan test-time training. Updates persistent memory weights and tracks success rates and confidence.</p>
+      <div class="stats"><span>Titan TTT integration</span> <span>|</span> <span>Adaptive learning</span></div>
+    </div>
+    <div class="card" style="border-left: 4px solid #F59E0B;">
+      <h4>ABSTRACT <span class="badge badge-deployed">Phase 3</span></h4>
+      <p>Uses LLM to extract generalizable strategies from specific episodes. Creates domain-specific schemas and patterns from experience.</p>
+      <div class="stats"><span>LLM-powered</span> <span>|</span> <span>Knowledge generalization</span></div>
+    </div>
+    <div class="card" style="border-left: 4px solid #8B5CF6;">
+      <h4>LINK <span class="badge badge-deployed">Phase 5</span></h4>
+      <p>Creates cross-memory associations as Neptune graph edges. 7 link types: STRATEGY_DERIVED_FROM, REINFORCES, CONTRADICTS, SUPERSEDES, RELATED_TO, DEPENDS_ON, SIMILAR_TO. Confidence-scored 0.0&ndash;1.0.</p>
+      <div class="stats"><span>Neptune graph</span> <span>|</span> <span>Associative memory</span></div>
+    </div>
+    <div class="card" style="border-left: 4px solid #8B5CF6;">
+      <h4>CORRECT <span class="badge badge-deployed">Phase 5</span></h4>
+      <p>Fixes incorrect memories with LLM verification. 6 correction reasons: factual error, outdated info, misattribution, strategy failure, user feedback, LLM verification. Human review flag for uncertain corrections.</p>
+      <div class="stats"><span>LLM-verified</span> <span>|</span> <span>Error correction</span></div>
+    </div>
+    <div class="card" style="border-left: 4px solid #DC2626;">
+      <h4>ROLLBACK <span class="badge badge-deployed">Phase 5</span></h4>
+      <p>Restores memories from DynamoDB Streams snapshots. 4 snapshot sources: DYNAMODB_STREAMS, POINT_IN_TIME (PITR), MANUAL_BACKUP, PRE_OPERATION. Full point-in-time recovery support.</p>
+      <div class="stats"><span>DynamoDB Streams</span> <span>|</span> <span>Safety net</span></div>
+    </div>
+  </div>
+
+  <h3>Refine Action Data Structure</h3>
+  <pre><code>@dataclass
+class RefineAction:
+    operation: RefineOperation       # Which of the 7 operations
+    target_memory_ids: list[str]     # Memory IDs to refine
+    reasoning: str                   # Why (encrypted at rest)
+    confidence: float                # 0.0 to 1.0
+    tenant_id: TenantId             # Multi-tenant isolation
+    security_domain: SecurityDomain  # Domain boundary enforcement
+    agent_id: Optional[AgentId]      # Originating agent
+    metadata: dict[str, Any]         # Operation-specific data
+
+class RefineStatus(Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ROLLED_BACK = "rolled_back"</code></pre>
+</section>
+
+<!-- 8. Multi-Agent Memory Sharing -->
+<section id="multi-agent-sharing">
+  <h2>8. Multi-Agent Memory Sharing</h2>
+  <p>The Multi-Agent Memory Sharing Service (1,000 LOC) enables agents to share learned patterns, propagate successful strategies, and pool experiences while maintaining tenant and security domain boundaries.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>Cross-Agent Discovery</h4>
+      <p>Agents discover and subscribe to relevant memory streams from other agents based on capability overlap and domain relevance.</p>
+    </div>
+    <div class="card">
+      <h4>Pattern Propagation</h4>
+      <p>When one agent learns a successful pattern (via ABSTRACT or REINFORCE), it can be propagated to agents with similar capabilities.</p>
+    </div>
+    <div class="card">
+      <h4>Experience Pooling</h4>
+      <p>Multiple agents' episodes are pooled for more robust pattern extraction, reducing the number of episodes needed for generalization.</p>
+    </div>
+    <div class="card">
+      <h4>Conflict Resolution</h4>
+      <p>When agents develop contradictory patterns, the sharing service detects and resolves conflicts using confidence scoring and success rates.</p>
+    </div>
+  </div>
+
+  <div class="callout callout-info">
+    <strong>Security Boundaries:</strong> Memory sharing respects tenant isolation (<code>tenant_id</code>) and security domain boundaries (<code>security_domain</code>). Cross-tenant sharing is never permitted. Cross-domain sharing requires explicit policy configuration.
+  </div>
+</section>
+
+<!-- 9. Cognitive Memory Service -->
+<section id="cognitive">
+  <h2>9. Cognitive Memory Service</h2>
+  <p>The Cognitive Memory Service (2,828 LOC) provides a unified interface coordinating all five memory types. It implements neuroscience-inspired subsystems including pattern completion retrieval, automatic consolidation, and a dual-mode agent architecture (System 1 fast / System 2 deliberate).</p>
+
+  <h3>Subsystems</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>Pattern Completion Retriever</h4>
+      <p>Retrieves memories based on partial or incomplete context using cosine similarity, weighted by recency. Merges candidates from all memory types, ranked by relevance.</p>
+    </div>
+    <div class="card">
+      <h4>Consolidation Pipeline</h4>
+      <p>Automatically converts episodes into semantic patterns: (1) Cluster similar episodes, (2) Find common keywords/decisions, (3) Validate with test episodes at 85% accuracy threshold, (4) Create semantic memory.</p>
+    </div>
+    <div class="card">
+      <h4>Confidence Estimator</h4>
+      <p>Estimates agent confidence from 5 weighted factors: memory coverage, memory agreement, recency, outcome history, and schema match. Maps to recommended actions.</p>
+    </div>
+    <div class="card">
+      <h4>Strategy Selector</h4>
+      <p>Selects problem-solving strategy based on confidence level and available memories. 5 strategies from PROCEDURAL_EXECUTION (high confidence) to HUMAN_GUIDANCE (escalation).</p>
+    </div>
+  </div>
+
+  <h3>Agent Modes</h3>
+  <table>
+    <tr><th>Mode</th><th>Architecture</th><th>Behavior</th><th>Use Case</th></tr>
+    <tr><td><code>SINGLE</code></td><td>MemoryAgent only</td><td>Fast System 1 &mdash; lower cost, quick decisions</td><td>Low-risk routine tasks</td></tr>
+    <tr><td><code>DUAL</code></td><td>MemoryAgent + CriticAgent</td><td>Deliberate System 2 &mdash; thorough, prevents overconfidence</td><td>High-risk security decisions</td></tr>
+    <tr><td><code>AUTO</code></td><td>Adaptive selection</td><td>Selects mode based on risk level and complexity</td><td>Default for all agents</td></tr>
+  </table>
+</section>
+
+<!-- 10. Confidence Estimation -->
+<section id="confidence">
+  <h2>10. Confidence Estimation &amp; Strategy Selection</h2>
+  <p>The confidence system maps multi-factor analysis into actionable recommendations, ensuring agents escalate to humans when uncertainty is high.</p>
+
+  <h3>Confidence Factors (Weighted)</h3>
+  <table>
+    <tr><th>Factor</th><th>Description</th><th>Signal</th></tr>
+    <tr><td>Memory Coverage</td><td>How many relevant memories were found</td><td>High coverage = more confidence</td></tr>
+    <tr><td>Memory Agreement</td><td>Consistency across retrieved memories</td><td>Contradictions lower confidence</td></tr>
+    <tr><td>Recency</td><td>Freshness of relevant memories</td><td>Recent memories preferred</td></tr>
+    <tr><td>Outcome History</td><td>Success rate for similar tasks</td><td>Past success raises confidence</td></tr>
+    <tr><td>Schema Match</td><td>Existing procedures fit the task</td><td>Good fit = higher confidence</td></tr>
+  </table>
+
+  <h3>Recommended Actions</h3>
+  <div class="tier-grid">
+    <div class="tier tier-1">
+      <h4>&ge;0.85</h4>
+      <p>PROCEED_AUTONOMOUS<br>Full autonomy</p>
+    </div>
+    <div class="tier tier-2">
+      <h4>&ge;0.70</h4>
+      <p>PROCEED_WITH_LOGGING<br>Autonomous + audit</p>
+    </div>
+    <div class="tier tier-3">
+      <h4>&ge;0.50</h4>
+      <p>REQUEST_REVIEW<br>Request human review</p>
+    </div>
+    <div class="tier tier-4">
+      <h4>&lt;0.50</h4>
+      <p>ESCALATE_TO_HUMAN<br>Mandatory HITL</p>
+    </div>
+  </div>
+
+  <h3>Strategy Selection</h3>
+  <table>
+    <tr><th>Strategy</th><th>Condition</th><th>Behavior</th></tr>
+    <tr><td><code>PROCEDURAL_EXECUTION</code></td><td>High confidence, existing procedure</td><td>Execute known workflow</td></tr>
+    <tr><td><code>SCHEMA_GUIDED</code></td><td>Medium confidence, schema available</td><td>Follow schema with flexibility</td></tr>
+    <tr><td><code>ACTIVE_LEARNING</code></td><td>Low confidence, experimental</td><td>Try new approaches, learn from outcome</td></tr>
+    <tr><td><code>CAUTIOUS_EXPLORATION</code></td><td>Default / uncertain</td><td>Conservative exploration with rollback</td></tr>
+    <tr><td><code>HUMAN_GUIDANCE</code></td><td>Very low confidence</td><td>Escalate to human for direction</td></tr>
+  </table>
+</section>
+
+<!-- 11. Context Engineering Pipeline -->
+<section id="context-engineering">
+  <h2>11. Context Engineering Pipeline (ADR-034)</h2>
+  <p>The Context Engineering system deploys 7 services that work together to ensure every agent receives the most relevant, accurately scored code context within a 100,000-token budget.</p>
+
+  <div class="flow-diagram"><span class="hl">Agent Task / User Query</span>
+         &darr;
+<span class="hl-yellow">Context Scoring Service</span> (427 LOC)
+  Relevance scoring: (relevance &times; 0.5) + (recency &times; 0.3) + (density &times; 0.2)
+  Prune below MIN_SCORE_THRESHOLD (0.3)
+         &darr;
+<span class="hl-green">Three-Way Retrieval Service</span> (527 LOC)
+  Dense (OpenSearch k-NN) + Sparse (BM25) + Graph (Neptune Gremlin)
+  Reciprocal Rank Fusion with sparse_boost = 1.2
+  Result: <span class="hl-green">+22-25% MRR improvement</span>
+         &darr;
+<span class="hl-purple">HopRAG Service</span> (712 LOC)
+  Multi-hop retrieval via pseudo-query edges
+  Retrieve &rarr; Reason &rarr; Prune cycle (max 3 hops)
+  Result: <span class="hl-purple">+65% F1 on complex queries</span>
+         &darr;
+<span class="hl-yellow">Community Summarization Service</span> (725 LOC)
+  Leiden/Louvain clustering &rarr; LLM summaries
+  5-level hierarchy: file &rarr; module &rarr; package &rarr; domain &rarr; system
+         &darr;
+<span class="hl-green">Hierarchical Tool Registry</span> (642 LOC)
+  Level 1: ~20 atomic tools (always available)
+  Level 2: Domain-specific (loaded on-demand)
+  Level 3: Expert tools (complex tasks only)
+         &darr;
+<span class="hl-purple">MCP Context Manager</span> (474 LOC)
+  Multi-agent context isolation &amp; schema validation
+         &darr;
+<span class="hl">Context Stack Manager</span> (593 LOC)
+  6-layer explicit stack with priority-based budget enforcement
+  Total budget: <span class="hl">100,000 tokens</span></div>
+
+  <h3>Performance Improvements</h3>
+  <div class="three-col">
+    <div class="stat-card" style="border-left: 4px solid var(--success);">
+      <div class="value">+22-25%</div>
+      <div class="label">Retrieval accuracy (Three-Way Hybrid)</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--brand);">
+      <div class="value">+65%</div>
+      <div class="label">Complex query F1 (HopRAG)</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid #8B5CF6;">
+      <div class="value">30-50%</div>
+      <div class="label">Token reduction (Chain of Draft)</div>
+    </div>
+  </div>
+</section>
+
+<!-- 12. 6-Layer Context Stack -->
+<section id="context-stack">
+  <h2>12. 6-Layer Context Stack</h2>
+  <p>The Context Stack Manager (593 LOC) explicitly manages six context layers with priority-based budget enforcement. Higher-priority layers are preserved during pruning.</p>
+
+  <div class="layer-stack">
+    <div class="layer-item" style="background: #FEE2E2;">
+      <span class="priority">1</span>
+      <span class="name">SYSTEM_INSTRUCTIONS</span>
+      <span class="budget">2,000 tokens</span>
+      <span class="desc">Core agent instructions, cached across requests</span>
+    </div>
+    <div class="layer-item" style="background: #F3E8FF;">
+      <span class="priority">2</span>
+      <span class="name">LONG_TERM_MEMORY</span>
+      <span class="budget">10,000 tokens</span>
+      <span class="desc">Retrieved from Titan neural memory and semantic store</span>
+    </div>
+    <div class="layer-item" style="background: #DBEAFE;">
+      <span class="priority">3</span>
+      <span class="name">RETRIEVED_DOCUMENTS</span>
+      <span class="budget">50,000 tokens</span>
+      <span class="desc">Code context from GraphRAG hybrid retrieval</span>
+    </div>
+    <div class="layer-item" style="background: #FEF3C7;">
+      <span class="priority">4</span>
+      <span class="name">TOOL_DEFINITIONS</span>
+      <span class="budget">3,000 tokens</span>
+      <span class="desc">Hierarchical tool registry (atomic + domain-specific)</span>
+    </div>
+    <div class="layer-item" style="background: #D1FAE5;">
+      <span class="priority">5</span>
+      <span class="name">CONVERSATION_HISTORY</span>
+      <span class="budget">20,000 tokens</span>
+      <span class="desc">Summarized if long, recent turns prioritized</span>
+    </div>
+    <div class="layer-item" style="background: #F0FDF4;">
+      <span class="priority">6</span>
+      <span class="name">CURRENT_TASK</span>
+      <span class="budget">15,000 tokens</span>
+      <span class="desc">Always fresh &mdash; current task description and parameters</span>
+    </div>
+  </div>
+
+  <div class="callout callout-info">
+    <strong>Total Budget:</strong> 100,000 tokens (configurable). When budget is exceeded, lower-priority layers are pruned first. SYSTEM_INSTRUCTIONS and CURRENT_TASK are never pruned.
+  </div>
+</section>
+
+<!-- 13. Three-Way Retrieval Fusion -->
+<section id="three-way">
+  <h2>13. Three-Way Retrieval Fusion</h2>
+  <p>The Three-Way Retrieval Service (527 LOC) combines three retrieval strategies using Reciprocal Rank Fusion (RRF) with a sparse boost factor, achieving +22-25% MRR improvement over single-strategy approaches.</p>
+
+  <div class="flow-diagram"><span class="hl">Query: "Find JWT authentication validation code"</span>
+         &darr;
+    ┌────────────────┬────────────────┬────────────────┐
+    ▼                ▼                ▼
+<span class="hl-green">Dense Retrieval</span>   <span class="hl-yellow">Sparse Retrieval</span>  <span class="hl-purple">Graph Retrieval</span>
+OpenSearch k-NN   BM25 (OpenSearch)  Neptune Gremlin
+Embedding sim.    Term matching      Structural walk
+    │                │                │
+    ▼                ▼                ▼
+Top-K semantic    Top-K keyword     CALL_GRAPH
+results           results           DEPENDENCIES
+                                    INHERITANCE
+                                    REFERENCES
+                                    RELATED
+    │                │                │
+    └────────────────┴────────────────┘
+                     &darr;
+<span class="hl">Reciprocal Rank Fusion (RRF)</span>
+  score = &Sigma; 1/(k + rank_i)
+  sparse_boost = 1.2 (boost BM25 results)
+                     &darr;
+<span class="hl-green">Merged, deduplicated, ranked results</span></div>
+</section>
+
+<!-- 14. HopRAG -->
+<section id="hoprag">
+  <h2>14. HopRAG Multi-Hop Retrieval</h2>
+  <p>The HopRAG Service (712 LOC) implements multi-hop reasoning across code relationships using pseudo-query edges, achieving +65% F1 improvement on complex queries that require traversing multiple code relationships.</p>
+
+  <h3>Multi-Hop Pipeline</h3>
+  <div class="flow-diagram"><span class="hl">Query: "What security checks protect the payment endpoint?"</span>
+         &darr;
+<span class="hl-green">Hop 1: Retrieve</span> &mdash; Find payment endpoint via pseudo-query edges
+  Pseudo-query: "What functions handle payment processing?"
+  Result: payment_handler.py
+         &darr;
+<span class="hl-yellow">Hop 1: Reason</span> &mdash; LLM selects best neighbor node
+  "payment_handler calls validate_request and check_auth"
+         &darr;
+<span class="hl-red">Hop 1: Prune</span> &mdash; Confidence check (above 0.5 threshold? Continue)
+         &darr;
+<span class="hl-green">Hop 2: Retrieve</span> &mdash; Follow edge to check_auth
+  Pseudo-query: "What security validations does check_auth perform?"
+  Result: auth_middleware.py, jwt_validator.py
+         &darr;
+<span class="hl-yellow">Hop 2: Reason</span> &mdash; LLM synthesizes findings
+         &darr;
+<span class="hl-purple">Hop 3: Retrieve</span> &mdash; Follow to RBAC policy check
+         &darr;
+<span class="hl">Final: Aggregated answer with full reasoning chain</span></div>
+
+  <h3>Configuration</h3>
+  <table>
+    <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>max_hops</code></td><td>3</td><td>Maximum traversal depth</td></tr>
+    <tr><td><code>prune_threshold</code></td><td>0.5</td><td>Stop if confidence drops below</td></tr>
+    <tr><td><code>similarity_threshold</code></td><td>0.5</td><td>Minimum edge relevance for traversal</td></tr>
+    <tr><td><code>max_neighbors</code></td><td>10</td><td>Neighbors considered per hop</td></tr>
+    <tr><td><code>embedding_cache_size</code></td><td>1,000</td><td>In-memory embedding cache</td></tr>
+  </table>
+
+  <h3>Research Results</h3>
+  <div class="two-col">
+    <div class="stat-card" style="border-left: 4px solid var(--success);">
+      <div class="value">+65.07%</div>
+      <div class="label">Retrieval F1 improvement</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--brand);">
+      <div class="value">+76.78%</div>
+      <div class="label">Answer accuracy on complex queries</div>
+    </div>
+  </div>
+</section>
+
+<!-- 15. Community Summarization -->
+<section id="community">
+  <h2>15. Community Summarization</h2>
+  <p>The Community Summarization Service (725 LOC) creates hierarchical summaries of the codebase using Leiden/Louvain graph clustering and LLM-generated summaries, enabling whole-codebase understanding queries.</p>
+
+  <h3>5-Level Hierarchy</h3>
+  <table>
+    <tr><th>Level</th><th>Name</th><th>Scope</th><th>Example</th></tr>
+    <tr><td>0</td><td>File</td><td>Individual code files</td><td><code>titan_memory_service.py</code></td></tr>
+    <tr><td>1</td><td>Module</td><td>Related files grouped</td><td>Memory backends (CPU, GPU, benchmark)</td></tr>
+    <tr><td>2</td><td>Package</td><td>Larger organizational units</td><td><code>src/services/memory_evolution/</code></td></tr>
+    <tr><td>3</td><td>Domain</td><td>High-level functional areas</td><td>Memory &amp; Cognitive Systems</td></tr>
+    <tr><td>4</td><td>System</td><td>Entire codebase summary</td><td>Project Aura platform overview</td></tr>
+  </table>
+
+  <h3>Configuration</h3>
+  <pre><code>batch_size: 10                  # LLM calls batched for efficiency
+max_levels: 4                   # Maximum hierarchy depth
+max_members_for_summary: 20     # Summary generation threshold
+min_community_size: 2           # Minimum community member count
+summary_max_length: 500         # Character limit per summary</code></pre>
+
+  <div class="callout callout-info">
+    <strong>Use Case:</strong> Enables "Explain the entire architecture" style global queries. Community summaries are searched first, then relevant communities guide entity-level retrieval for detailed answers.
+  </div>
+</section>
+
+<!-- 16. Semantic Caching -->
+<section id="semantic-cache">
+  <h2>16. Semantic Caching (ADR-029 Phase 1.3)</h2>
+  <p>The Semantic Cache Service (900+ LOC) caches LLM responses for semantically identical prompts, reducing API costs by 30-40% while maintaining 97%+ accuracy. Enabled by default for all agents.</p>
+
+  <h3>Cache Architecture</h3>
+  <div class="flow-diagram"><span class="hl">Agent submits LLM prompt</span>
+         &darr;
+<span class="hl-yellow">SHA256 hash</span> of query text
+         &darr;
+<span class="hl-green">Exact match check</span> (hash lookup, &lt;1ms)
+  &darr; miss
+<span class="hl-purple">Semantic similarity check</span> (OpenSearch vector search, ~10ms)
+  Embedding cosine similarity &gt; threshold
+  &darr; miss
+<span class="hl-red">LLM API call</span> (Bedrock, 200-500ms)
+  &darr;
+<span class="hl">Store in cache:</span>
+  cache_id, query_hash, query_embedding,
+  response, model_id, model_version,
+  hit_count, last_hit_at, expires_at
+         &darr;
+<span class="hl-green">Return response</span></div>
+
+  <h3>Cache Modes</h3>
+  <table>
+    <tr><th>Mode</th><th>Read</th><th>Write</th><th>Use Case</th></tr>
+    <tr><td><code>DISABLED</code></td><td>No</td><td>No</td><td>Testing, debugging</td></tr>
+    <tr><td><code>WRITE_ONLY</code></td><td>No</td><td>Yes</td><td>Cache warming</td></tr>
+    <tr><td><code>READ_WRITE</code></td><td>Yes</td><td>Yes</td><td>Production (default)</td></tr>
+    <tr><td><code>READ_ONLY</code></td><td>Yes</td><td>No</td><td>Stable deployments</td></tr>
+  </table>
+
+  <h3>Supported Query Types</h3>
+  <p><code>CODE_REVIEW</code>, <code>CODE_GENERATION</code>, <code>VULNERABILITY_ANALYSIS</code>, <code>QUERY_PLANNING</code>, <code>VALIDATION</code>, <code>GENERAL</code>, <code>CONSTITUTIONAL_CRITIQUE</code>, <code>CONSTITUTIONAL_REVISION</code></p>
+
+  <div class="callout callout-info">
+    <strong>Constitutional AI Integration:</strong> Critique results are cached separately, providing an additional 30-40% savings on the constitutional pipeline. Combined with batched critique, total Constitutional AI cost is reduced by 85% (from $12-15K/month to $1.5-2K/month).
+  </div>
+</section>
+
+<!-- 17. Recursive Context Engine -->
+<section id="rlm">
+  <h2>17. Recursive Context Engine (ADR-051 &mdash; RLM)</h2>
+  <p>The Recursive Context Engine (779 LOC) enables 100x context scaling by having the LLM generate Python code to decompose and analyze massive inputs, treating long prompts as external variables in a sandboxed REPL.</p>
+
+  <div class="flow-diagram"><span class="hl">Input: 10M+ token codebase</span>
+         &darr;
+<span class="hl-yellow">Size check:</span> Under 100K chars? &rarr; Process directly
+  Over 100K? &rarr; Decomposition mode
+         &darr;
+<span class="hl-green">LLM generates Python analysis code:</span>
+  def analyze(context):
+      jwt_files = context_search("jwt|authentication")
+      analysis = [recursive_call(m.text, "Analyze auth") for m in jwt_files]
+      return aggregate_results(analysis)
+         &darr;
+<span class="hl-purple">REPLSecurityGuard validates code</span> (AST-based, no imports/exec/eval)
+         &darr;
+<span class="hl-yellow">Execute in sandboxed REPL</span> (30s timeout)
+  Helper functions available:
+  &bull; context_search(pattern) &rarr; List[Match]   (regex search)
+  &bull; context_chunk(start, end) &rarr; str          (slice by position)
+  &bull; recursive_call(sub_context, sub_task) &rarr; str (recursive decompose)
+  &bull; aggregate_results(results) &rarr; str          (synthesis)
+         &darr;
+<span class="hl">RLMResult:</span> success, result, recursion_depth, total_subcalls,
+           execution_time_ms, generated_code, code_validation</div>
+
+  <h3>Configuration</h3>
+  <pre><code>@dataclass
+class RLMConfig:
+    base_context_size: int = 100_000      # Direct processing threshold
+    max_context_size: int = 50_000_000    # 50MB absolute max
+    max_recursion_depth: int = 10         # Max decomposition depth
+    max_total_subcalls: int = 50          # Max recursive calls
+    max_code_length: int = 10_000         # Max generated code size
+    execution_timeout_seconds: float = 30.0
+    temperature: float = 0.0              # Deterministic code generation</code></pre>
+
+  <h3>Security Components</h3>
+  <table>
+    <tr><th>Component</th><th>LOC</th><th>Purpose</th></tr>
+    <tr><td>REPLSecurityGuard</td><td>720</td><td>AST-based code validation, runtime limits, subcall tracking</td></tr>
+    <tr><td>InputSanitizer</td><td>447</td><td>Pattern-based filtering (SQL/command injection), size enforcement, safe Unicode</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">119 tests | ~2,000 LOC | 100x context scaling (200K &rarr; 10M+ tokens)</div>
+</section>
+
+<!-- 18. VL-JEPA Embedding Predictor -->
+<section id="jepa">
+  <h2>18. VL-JEPA Embedding Predictor (ADR-051)</h2>
+  <p>The VL-JEPA Embedding Predictor (1,077 LOC) achieves 2.85x inference efficiency by predicting embeddings instead of generating tokens. For non-generative tasks (classification, retrieval, routing), the decoder is skipped entirely.</p>
+
+  <div class="flow-diagram"><span class="hl">Input Text / Code</span>
+         &darr;
+<span class="hl-green">X-Encoder</span> (encode input with 75% block masking)
+         &darr;
+<span class="hl-yellow">Predictor</span> (6-layer transformer, predict Y-embeddings)
+         &darr;
+<span class="hl-purple">Task Router</span> (classify task type)
+         &darr;
+    ┌──────────────────────┬──────────────────────┐
+    ▼                      ▼
+<span class="hl-green">Non-Generative</span>         <span class="hl-yellow">Generative</span>
+CLASSIFICATION          GENERATION
+RETRIEVAL               EXPLANATION
+SIMILARITY              CODE_GENERATION
+ROUTING                        &darr;
+    &darr;                   <span class="hl-red">Y-Decoder</span> (2-layer lightweight)
+<span class="hl-green">Return embedding</span>              &darr;
+<span class="hl-green">(2.85x faster)</span>         <span class="hl-yellow">Return text + embedding</span></div>
+
+  <h3>Configuration</h3>
+  <pre><code>@dataclass
+class JEPAConfig:
+    embed_dim: int = 768                # BERT-like dimension
+    predictor_depth: int = 6            # Transformer layers in predictor
+    decoder_depth: int = 2              # Lightweight decoder layers
+    num_heads: int = 12                 # Attention heads
+    temperature: float = 0.07           # InfoNCE loss temperature
+    mask_ratio: float = 0.75            # I-JEPA block masking (high)
+    num_negatives: int = 64             # Contrastive negatives
+    use_ema_encoder: bool = True        # Exponential moving average Y-encoder
+    ema_decay: float = 0.999            # EMA decay rate
+    max_sequence_length: int = 8192     # Max input tokens</code></pre>
+
+  <h3>Efficiency Gains by Agent Type</h3>
+  <table>
+    <tr><th>Agent</th><th>Primary Task Type</th><th>Decoder Needed?</th><th>Efficiency</th></tr>
+    <tr><td>Query Planner</td><td>ROUTING</td><td>No</td><td>2.85x faster</td></tr>
+    <tr><td>Security Reviewer</td><td>CLASSIFICATION</td><td>No</td><td>2.85x faster</td></tr>
+    <tr><td>Context Retrieval</td><td>RETRIEVAL / SIMILARITY</td><td>No</td><td>2.85x faster</td></tr>
+    <tr><td>Coder Agent</td><td>CODE_GENERATION</td><td>Yes</td><td>1x (full pipeline)</td></tr>
+    <tr><td>Explainability</td><td>EXPLANATION</td><td>Yes</td><td>1x (full pipeline)</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">48 tests | 1,077 LOC | 50% fewer trainable parameters</div>
+</section>
+
+<!-- 19. Context Provenance & Integrity -->
+<section id="provenance">
+  <h2>19. Context Provenance &amp; Integrity (ADR-067)</h2>
+  <p>The Context Provenance system defends against GraphRAG context poisoning &mdash; where malicious code is injected into Neptune/OpenSearch before reaching the LLM. It implements index-time provenance capture, trust scoring, anomaly detection, and quarantine capabilities.</p>
+
+  <h3>6-Layer Verification Pipeline</h3>
+  <div class="flow-diagram"><span class="hl">Code indexed into Neptune/OpenSearch</span>
+         &darr;
+<span class="hl-green">Layer 1: Index-Time Provenance</span>
+  Capture git metadata (author, commit, timestamp, signature)
+         &darr;
+<span class="hl-yellow">Layer 2: Author Trust Scoring</span>
+  Reputation score per author/source (AuthorTrustTable)
+         &darr;
+<span class="hl-purple">Layer 3: Anomaly Detection</span>
+  Statistical deviation detection on content patterns
+         &darr;
+<span class="hl-red">Layer 4: Context Quarantine</span>
+  Suspicious content flagged for human review (QuarantineTable)
+         &darr;
+<span class="hl-yellow">Layer 5: Audit Logging</span>
+  Complete event trail (ProvenanceAuditTable with PITR)
+         &darr;
+<span class="hl-green">Layer 6: Recovery Path</span>
+  Rollback to last known-good version if poisoning confirmed</div>
+
+  <h3>DynamoDB Tables</h3>
+  <table>
+    <tr><th>Table</th><th>Purpose</th><th>Key Schema</th></tr>
+    <tr><td>QuarantineTable</td><td>Suspicious content holding</td><td>PK: chunk_id, SK: quarantined_at. GSI: review-status-index</td></tr>
+    <tr><td>ProvenanceAuditTable</td><td>Complete event trail</td><td>PK: audit_id, SK: timestamp. GSI: chunk-id, event-type. PITR enabled</td></tr>
+    <tr><td>AuthorTrustTable</td><td>Trust scores per author</td><td>Reputation scores, anomaly detection baselines</td></tr>
+  </table>
+  <div class="stats" style="text-align:center; margin-top:8px; color:var(--text-secondary); font-size:13px;">275 tests | ~3,400 LOC | CloudFormation: context-provenance.yaml (Layer 2.8)</div>
+</section>
+
+<!-- 20. Agent Memory Lifecycle -->
+<section id="agent-lifecycle">
+  <h2>20. Agent Memory Lifecycle</h2>
+  <p>Every agent follows a structured memory lifecycle during task execution, loading relevant memories before work begins and persisting learnings after completion.</p>
+
+  <div class="flow-diagram"><span class="hl-green">1. INIT</span> &mdash; Agent initialized with task parameters
+         &darr;
+<span class="hl-purple">2. MEMORY_LOAD</span> &mdash; Load from all memory tiers:
+   &bull; Episodic: Recent similar task outcomes
+   &bull; Semantic: Relevant guardrails, patterns, schemas
+   &bull; Procedural: Known workflows for this task type
+   &bull; Neural (Titan): Sub-symbolic pattern retrieval
+   &bull; Working: Initialize with 7&plusmn;2 capacity
+         &darr;
+<span class="hl-yellow">3. CONTEXT_RETRIEVAL</span> &mdash; Hybrid GraphRAG via Context Engineering
+   Three-Way Retrieval &rarr; HopRAG &rarr; Context Scoring &rarr; Stack Assembly
+         &darr;
+<span class="hl">4. EXECUTION</span> &mdash; Agent performs task (CODE_GENERATION, SECURITY_REVIEW, etc.)
+   Working memory updated with intermediate results
+   Confidence estimated continuously from memory factors
+         &darr;
+<span class="hl-green">5. MEMORY_STORE</span> &mdash; Persist learnings:
+   &bull; Store episode to DynamoDB (full context snapshot)
+   &bull; Update Titan Neural Memory (test-time training if novel)
+   &bull; Trigger Evo-Memory evolution (consolidate, abstract, link)
+   &bull; Extract patterns if 3+ similar episodes exist
+         &darr;
+<span class="hl-yellow">6. CONSOLIDATION</span> &mdash; Post-task maintenance:
+   &bull; Memory pressure check and consolidation if needed
+   &bull; Metrics published to CloudWatch
+   &bull; Audit trail written for compliance</div>
+
+  <h3>Checkpoint Architecture</h3>
+  <p>The Agent Orchestrator (2,260 LOC) implements checkpoint/resume for long-running workflows. Each phase produces a serializable <code>AgentCheckpoint</code> containing workflow state, hybrid context data, and intermediate outputs, enabling recovery from failures at any phase.</p>
+</section>
+
+<!-- 21. Infrastructure & Storage -->
+<section id="infrastructure">
+  <h2>21. Infrastructure &amp; Storage</h2>
+  <p>Memory systems are backed by purpose-selected AWS services with customer-managed KMS encryption, automated scaling, and compliance-ready configuration.</p>
+
+  <h3>Memory-Specific CloudFormation Templates</h3>
+  <table>
+    <tr><th>Template</th><th>Layer</th><th>Resources</th></tr>
+    <tr><td><code>memory-evolution-dynamodb.yaml</code></td><td>2.20</td><td>MemoryEvolutionTable with agent_id, task indexes, DynamoDB Streams, KMS</td></tr>
+    <tr><td><code>context-provenance.yaml</code></td><td>2.8</td><td>QuarantineTable, ProvenanceAuditTable, AuthorTrustTable</td></tr>
+    <tr><td><code>checkpoint-dynamodb.yaml</code></td><td>6.11</td><td>CheckpointsTable, ConnectionsTable, EventBridge EventBus</td></tr>
+    <tr><td><code>constitutional-ai-evaluation.yaml</code></td><td>&mdash;</td><td>ConstitutionalAuditTable, ConstitutionalMetricsTable</td></tr>
+    <tr><td><code>semantic-guardrails.yaml</code></td><td>&mdash;</td><td>GuardrailAuditTable, ThreatScoringTable</td></tr>
+    <tr><td><code>capability-governance-monitoring.yaml</code></td><td>&mdash;</td><td>PolicyVersionTable, PolicyAuditTable</td></tr>
+    <tr><td><code>irsa-memory-service.yaml</code></td><td>&mdash;</td><td>Memory service IRSA (DynamoDB/Neptune/S3 permissions)</td></tr>
+    <tr><td><code>ecr-memory-service.yaml</code></td><td>&mdash;</td><td>Memory service ECR container repository</td></tr>
+  </table>
+
+  <h3>Storage Architecture</h3>
+  <table>
+    <tr><th>Service</th><th>Purpose</th><th>Memory Use Case</th></tr>
+    <tr><td>DynamoDB</td><td>Key-value store</td><td>Episodes, policies, audit records, checkpoints, evolution state</td></tr>
+    <tr><td>Neptune</td><td>Graph database</td><td>Memory links (LINK operation), code relationships, capability graph</td></tr>
+    <tr><td>OpenSearch</td><td>Vector search</td><td>Semantic cache, embedding retrieval, context scoring</td></tr>
+    <tr><td>S3</td><td>Object storage</td><td>Neural memory checkpoints, training artifacts, large context blobs</td></tr>
+    <tr><td>KMS</td><td>Encryption</td><td>Customer-managed keys for all persistent memory (auto-rotation)</td></tr>
+    <tr><td>CloudWatch</td><td>Monitoring</td><td>Aura/NeuralMemory and Aura/MemoryEvolution metric namespaces</td></tr>
+  </table>
+
+  <div class="callout callout-warning">
+    <strong>DynamoDB Configuration:</strong> All memory tables use PAY_PER_REQUEST billing (adaptive scaling), KMS customer-managed encryption with auto-rotation, TTL for automatic expiration, and Point-in-Time Recovery (PITR) for production environments. DeletionPolicy: Retain protects against accidental deletion.
+  </div>
+</section>
+
+<!-- 22. Neural Memory Audit -->
+<section id="audit">
+  <h2>22. Neural Memory Audit &amp; Compliance</h2>
+  <p>The Neural Memory Audit Logger (778 LOC) provides compliance-ready audit trails for all memory operations, supporting NIST 800-53, SOX, and CMMC requirements.</p>
+
+  <h3>Audit Event Types</h3>
+  <table>
+    <tr><th>Event Type</th><th>Description</th><th>Severity</th></tr>
+    <tr><td><code>MEMORY_UPDATE</code></td><td>Test-time training weight update</td><td>INFO</td></tr>
+    <tr><td><code>MEMORY_RETRIEVE</code></td><td>Memory retrieval operation</td><td>DEBUG</td></tr>
+    <tr><td><code>MEMORY_CONSOLIDATION</code></td><td>Consolidation strategy executed</td><td>WARNING</td></tr>
+    <tr><td><code>TTT_TRAINING</code></td><td>Test-time training step</td><td>INFO</td></tr>
+    <tr><td><code>SIZE_LIMIT_WARNING</code></td><td>Approaching memory capacity</td><td>WARNING</td></tr>
+    <tr><td><code>SIZE_LIMIT_EXCEEDED</code></td><td>Memory capacity exceeded</td><td>CRITICAL</td></tr>
+    <tr><td><code>CHECKPOINT_SAVE/LOAD</code></td><td>Persistence operations</td><td>INFO</td></tr>
+    <tr><td><code>CONFIG_CHANGE</code></td><td>Configuration modification</td><td>WARNING</td></tr>
+    <tr><td><code>ERROR</code></td><td>Operation failure</td><td>ERROR</td></tr>
+  </table>
+
+  <h3>Audit Record Fields</h3>
+  <pre><code>@dataclass
+class AuditRecord:
+    event_id: str                # Unique identifier
+    timestamp: datetime          # ISO 8601
+    event_type: AuditEventType   # Event classification
+    severity: Severity           # DEBUG/INFO/WARNING/ERROR/CRITICAL
+    service_name: str            # Originating service
+    operation: str               # Specific operation
+    actor: str                   # Agent or user ID
+    resource: str                # Memory resource affected
+    memory_size_mb: float        # Current memory size
+    surprise_score: float        # Surprise for memorization decisions
+    was_memorized: bool          # Whether content was memorized
+    ttt_steps: int               # TTT steps taken
+    latency_ms: float            # Operation duration
+    correlation_id: str          # Cross-service tracing
+    checksum: str                # SHA256 integrity verification</code></pre>
+
+  <h3>Storage Backends</h3>
+  <table>
+    <tr><th>Backend</th><th>Capacity</th><th>Use Case</th></tr>
+    <tr><td>InMemoryAuditStorage</td><td>10,000 records</td><td>Development and testing</td></tr>
+    <tr><td>FileAuditStorage</td><td>Disk-based</td><td>Local deployment</td></tr>
+    <tr><td>DynamoDB</td><td>Unlimited</td><td>Production (7-year SOX retention)</td></tr>
+  </table>
+
+  <h3>CloudWatch Metrics (Aura/NeuralMemory)</h3>
+  <p><code>SurpriseScore</code>, <code>RetrievalLatency</code>, <code>UpdateLatency</code>, <code>TTTSteps</code>, <code>MemorizationDecisions</code>, <code>ConfidenceScore</code>, <code>DecisionLatency</code>, <code>EscalationCount</code></p>
+</section>
+
+<!-- 23. ADRs -->
+<section id="adrs">
+  <h2>23. Architecture Decision Records</h2>
+  <p>Five ADRs define the architectural foundation for Aura's memory and cognitive systems:</p>
+
+  <table>
+    <tr><th>ADR</th><th>Title</th><th>Status</th><th>Tests</th><th>Key Innovation</th></tr>
+    <tr><td>024</td><td>Titan Neural Memory</td><td><span class="badge badge-deployed">Deployed</span></td><td>237</td><td>Deep MLP + test-time training + MIRAS + surprise-driven memorization</td></tr>
+    <tr><td>029</td><td>Agent Optimization (Phase 1.3)</td><td><span class="badge badge-enabled">Enabled</span></td><td>187</td><td>Semantic caching with 60-70% hit rate, 97%+ accuracy</td></tr>
+    <tr><td>034</td><td>Context Engineering</td><td><span class="badge badge-deployed">Deployed</span></td><td>400+</td><td>7 services, 3-way retrieval (+22-25%), HopRAG (+65% F1)</td></tr>
+    <tr><td>051</td><td>Recursive Context &amp; Embedding</td><td><span class="badge badge-deployed">Deployed</span></td><td>167</td><td>RLM 100x context scaling + VL-JEPA 2.85x efficiency</td></tr>
+    <tr><td>067</td><td>Context Provenance &amp; Integrity</td><td><span class="badge badge-deployed">Deployed</span></td><td>275</td><td>6-layer verification, trust scoring, quarantine</td></tr>
+    <tr><td>080</td><td>Evo-Memory Enhancements</td><td><span class="badge badge-deployed">Deployed</span></td><td>336</td><td>7 ReMem operations, multi-agent sharing, ReAct loop</td></tr>
+  </table>
+</section>
+
+<!-- 24. Key Statistics -->
+<section id="stats">
+  <h2>24. Key Statistics</h2>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="value">5</div>
+      <div class="label">Memory Types</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">7</div>
+      <div class="label">ReMem Operations</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">7</div>
+      <div class="label">Context Services</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">6</div>
+      <div class="label">ADRs</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">100x</div>
+      <div class="label">Context Scaling (RLM)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">2.85x</div>
+      <div class="label">Inference Efficiency (JEPA)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">+65%</div>
+      <div class="label">F1 Improvement (HopRAG)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">+22-25%</div>
+      <div class="label">MRR (Three-Way Retrieval)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">100K</div>
+      <div class="label">Token Budget (Context Stack)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">6</div>
+      <div class="label">Context Stack Layers</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">5</div>
+      <div class="label">Community Hierarchy Levels</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">85%</div>
+      <div class="label">Cost Savings (Semantic Cache)</div>
+    </div>
+  </div>
+
+  <h3>Test Coverage by Component</h3>
+  <table>
+    <tr><th>Component</th><th>Tests</th><th>ADR</th></tr>
+    <tr><td>Context Engineering (7 services)</td><td>400+</td><td>ADR-034</td></tr>
+    <tr><td>Evo-Memory Framework (7 operations)</td><td>336</td><td>ADR-080</td></tr>
+    <tr><td>Context Provenance &amp; Integrity</td><td>275</td><td>ADR-067</td></tr>
+    <tr><td>Titan Neural Memory (5 phases)</td><td>237</td><td>ADR-024</td></tr>
+    <tr><td>Agent Optimization (Semantic Cache)</td><td>187</td><td>ADR-029</td></tr>
+    <tr><td>Recursive Context &amp; Embedding</td><td>167</td><td>ADR-051</td></tr>
+    <tr><td>Cognitive Memory Service</td><td>150+</td><td>&mdash;</td></tr>
+    <tr><td><strong>Total Memory-Related Tests</strong></td><td><strong>1,752+</strong></td><td>&mdash;</td></tr>
+  </table>
+
+  <h3>Code Distribution</h3>
+  <table>
+    <tr><th>Category</th><th>LOC</th><th>Components</th></tr>
+    <tr><td>Titan Neural Memory</td><td>~4,660</td><td>Service, cognitive integration, embedding, backends</td></tr>
+    <tr><td>Evo-Memory Framework</td><td>~9,060</td><td>14 service modules (refiner, operations, sharing, metrics)</td></tr>
+    <tr><td>Cognitive Memory Service</td><td>~4,000</td><td>Unified interface, episodic, pattern completion, confidence</td></tr>
+    <tr><td>Context Engineering Pipeline</td><td>~5,040</td><td>7 services (scoring, 3-way, HopRAG, summarization, tools, MCP, stack)</td></tr>
+    <tr><td>Recursive Context (RLM)</td><td>~2,000</td><td>Engine, security guard, input sanitizer</td></tr>
+    <tr><td>VL-JEPA Embedding Predictor</td><td>~1,130</td><td>Predictor, masking strategy, task router</td></tr>
+    <tr><td>Context Provenance</td><td>~3,400</td><td>Trust scoring, quarantine, audit, anomaly detection</td></tr>
+    <tr><td>Semantic Cache Service</td><td>~900</td><td>Cache lookup, storage, metrics</td></tr>
+    <tr><td>Neural Memory Audit</td><td>778</td><td>Audit logger, storage backends, compliance</td></tr>
+    <tr><td>Memory Consolidation</td><td>639</td><td>Pressure management, strategies</td></tr>
+    <tr><td><strong>Total Memory Architecture</strong></td><td><strong>~31,600</strong></td><td>&mdash;</td></tr>
+  </table>
+</section>
+
+</div>
+
+<div class="footer">
+  <p>Project Aura &mdash; Memory Architecture &amp; Cognitive Systems Reference &mdash; Aenea Labs &mdash; February 2026</p>
+</div>
+
+</body>
+</html>

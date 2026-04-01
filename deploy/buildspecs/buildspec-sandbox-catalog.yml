@@ -1,0 +1,147 @@
+version: 0.2
+
+# Sandbox Layer Sub-BuildSpec: Service Catalog & Monitoring (Layer 7.4-7.7)
+# Deploys Service Catalog, Approval Workflow, Monitoring, and Budgets.
+# Called by buildspec-sandbox.yml or Step Functions.
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters.
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - pip3 install cfn-lint --quiet
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Sandbox Service Catalog & Monitoring (Layer 7.4-7.7)"
+      - echo "=========================================="
+      - source deploy/scripts/cfn-deploy-helpers.sh
+      - source deploy/scripts/validate-dependencies.sh
+      - validate_aws_credentials
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+      # Validate templates
+      - cfn-lint deploy/cloudformation/test-environment-catalog.yaml --ignore-checks W3002,W1020,W2001,W1031 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-approval.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-monitoring.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-budgets.yaml --ignore-checks W3002,W1020 || echo "warnings (non-blocking)"
+
+      # Get IAM role ARNs from prerequisite stack
+      - |
+        IAM_STACK="${PROJECT_NAME}-test-env-iam-${ENVIRONMENT}"
+        CATALOG_LAUNCH_ROLE_ARN=$(cfn_get_stack_output "$IAM_STACK" "CatalogLaunchRoleArn" "")
+        STEP_FUNCTIONS_ROLE_ARN=$(cfn_get_stack_output "$IAM_STACK" "StepFunctionsRoleArn" "")
+        echo "Catalog Launch Role: ${CATALOG_LAUNCH_ROLE_ARN:-not found}"
+        echo "Step Functions Role: ${STEP_FUNCTIONS_ROLE_ARN:-not found}"
+
+      # Get state table name
+      - |
+        STATE_STACK="${PROJECT_NAME}-test-env-state-${ENVIRONMENT}"
+        STATE_TABLE_NAME=$(cfn_get_stack_output "$STATE_STACK" "TestEnvStateTableName" "")
+        echo "State Table: ${STATE_TABLE_NAME:-not found}"
+
+      # Get sandbox outputs
+      - |
+        SANDBOX_STACK="${PROJECT_NAME}-sandbox-${ENVIRONMENT}"
+        HITL_APPROVALS_TOPIC_ARN=$(cfn_get_stack_output "$SANDBOX_STACK" "HITLNotificationTopicArn" "")
+        echo "HITL Approvals Topic: ${HITL_APPROVALS_TOPIC_ARN:-not found}"
+
+  build:
+    commands:
+      # Upload Service Catalog product templates to S3
+      - |
+        echo "Uploading Service Catalog product templates to S3..."
+        ARTIFACTS_BUCKET="${PROJECT_NAME}-sandbox-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+        if aws s3 ls "s3://${ARTIFACTS_BUCKET}" 2>/dev/null; then
+          aws s3 sync deploy/service-catalog/products/ "s3://${ARTIFACTS_BUCKET}/service-catalog/products/" \
+            --sse AES256 --delete --region $AWS_DEFAULT_REGION
+          echo "Product templates uploaded"
+        else
+          echo "WARNING: Artifacts bucket not found"
+        fi
+
+      # Service Catalog (Layer 7.4)
+      - |
+        echo "Deploying Test Environment Service Catalog..."
+        if [ -z "$CATALOG_LAUNCH_ROLE_ARN" ] || [ "$CATALOG_LAUNCH_ROLE_ARN" = "None" ]; then
+          echo "ERROR: CatalogLaunchRoleArn required"
+          exit 1
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-test-env-catalog-${ENVIRONMENT}" \
+          "deploy/cloudformation/test-environment-catalog.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME} CatalogLaunchRoleArn=${CATALOG_LAUNCH_ROLE_ARN}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.4 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Get catalog outputs
+      - |
+        CATALOG_STACK="${PROJECT_NAME}-test-env-catalog-${ENVIRONMENT}"
+        NOTIFICATIONS_TOPIC_ARN=$(cfn_get_stack_output "$CATALOG_STACK" "NotificationsTopicArn" "")
+
+      # Approval Workflow (Layer 7.5)
+      - |
+        echo "Deploying Test Environment Approval Workflow..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$NOTIFICATIONS_TOPIC_ARN" ] && [ "$NOTIFICATIONS_TOPIC_ARN" != "None" ]; then
+          PARAMS="$PARAMS NotificationsTopicArn=${NOTIFICATIONS_TOPIC_ARN}"
+        fi
+        if [ -n "$STATE_TABLE_NAME" ] && [ "$STATE_TABLE_NAME" != "None" ]; then
+          PARAMS="$PARAMS TestEnvStateTableName=${STATE_TABLE_NAME}"
+        fi
+        if [ -n "$STEP_FUNCTIONS_ROLE_ARN" ] && [ "$STEP_FUNCTIONS_ROLE_ARN" != "None" ]; then
+          PARAMS="$PARAMS StepFunctionsRoleArn=${STEP_FUNCTIONS_ROLE_ARN}"
+        fi
+        if [ -n "$HITL_APPROVALS_TOPIC_ARN" ] && [ "$HITL_APPROVALS_TOPIC_ARN" != "None" ]; then
+          PARAMS="$PARAMS HITLApprovalsTopicArn=${HITL_APPROVALS_TOPIC_ARN}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-test-env-approval-${ENVIRONMENT}" \
+          "deploy/cloudformation/test-env-approval.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.5 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+      # Monitoring (Layer 7.6)
+      - |
+        echo "Deploying Test Environment Monitoring..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
+          PARAMS="$PARAMS AlertEmail=${ALERT_EMAIL}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-test-env-monitoring-${ENVIRONMENT}" \
+          "deploy/cloudformation/test-env-monitoring.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.6 DeployTimestamp=${DEPLOY_TIMESTAMP}" \
+          ""
+
+      # Budgets (Layer 7.7)
+      - |
+        echo "Deploying Test Environment Budgets..."
+        PARAMS="Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}"
+        if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
+          PARAMS="$PARAMS AlertEmail=${ALERT_EMAIL}"
+        fi
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-test-env-budgets-${ENVIRONMENT}" \
+          "deploy/cloudformation/test-env-budgets.yaml" \
+          "$PARAMS" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.7 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
+  post_build:
+    commands:
+      - echo "Sandbox catalog and monitoring deployment complete"
+      - |
+        echo "Service Catalog Portfolio:"
+        cfn_get_stack_output "${PROJECT_NAME}-test-env-catalog-${ENVIRONMENT}" "TestEnvPortfolioId" || echo "Not available"

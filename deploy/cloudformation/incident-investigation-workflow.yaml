@@ -1,0 +1,635 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.10 - Incident Investigation (Step Functions)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-12-12'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  VpcId:
+    Type: String
+    Description: VPC ID for ECS tasks
+    Default: ''
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: Private subnet IDs for ECS tasks (comma-separated)
+    Default: ''
+
+  ECSClusterName:
+    Type: String
+    Description: ECS cluster name for running investigation tasks
+    Default: ''
+
+  RuntimeIncidentAgentImage:
+    Type: String
+    Description: Docker image URI for RuntimeIncidentAgent
+    Default: ''
+
+  DomainName:
+    Type: String
+    Description: Base domain name for application URLs (e.g., aenealabs.com). Retrieved from SSM at deployment.
+    Default: ''
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasDockerImage: !Not [!Equals [!Ref RuntimeIncidentAgentImage, '']]
+  HasDomainName: !Not [!Equals [!Ref DomainName, '']]
+
+Resources:
+  # ==========================================================================
+  # Security Group Configuration
+  # ==========================================================================
+  # NOTE: This stack no longer creates its own ECS task security group.
+  # Instead, it uses the centralized ECSWorkloadSecurityGroup exported from
+  # the security.yaml (Layer 1) stack. This approach:
+  #
+  # 1. Eliminates circular dependencies between Foundation and Serverless layers
+  # 2. Enables identity-based VPC endpoint access via SG references (CMMC L3)
+  # 3. Provides consistent network segmentation across all ECS workloads
+  # 4. Prevents sandbox escape by explicitly excluding sandbox SG from VPC endpoints
+  #
+  # The ECSWorkloadSecurityGroup is imported via:
+  #   !ImportValue !Sub '${ProjectName}-ecs-workload-sg-${Environment}'
+  # ==========================================================================
+
+  # ==========================================================================
+  # IAM Roles
+  # ==========================================================================
+
+  # Step Functions execution role
+  StateMachineExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-incident-sfn-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: StateMachineExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # ECS RunTask permissions
+              - Effect: Allow
+                Action:
+                  - 'ecs:RunTask'
+                  - 'ecs:StopTask'
+                  - 'ecs:DescribeTasks'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ProjectName}-runtime-incident-*'
+              - Effect: Allow
+                Action:
+                  - 'ecs:RunTask'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/*'
+                Condition:
+                  ArnLike:
+                    'ecs:cluster': !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-*'
+              # Pass role to ECS tasks
+              - Effect: Allow
+                Action:
+                  - 'iam:PassRole'
+                Resource:
+                  - !GetAtt ECSTaskExecutionRole.Arn
+                  - !GetAtt ECSTaskRole.Arn
+              # DynamoDB access
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:UpdateItem'
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:Query'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-incident-investigations-${Environment}'
+              # KMS access for DynamoDB table encryption
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                  - 'kms:GenerateDataKey'
+                Resource:
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-incident-response-kms-arn-${Environment}'
+                Condition:
+                  StringEquals:
+                    'kms:ViaService':
+                      - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+              # SNS publish
+              - Effect: Allow
+                Action:
+                  - 'sns:Publish'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-incident-alerts-${Environment}'
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogDelivery'
+                  - 'logs:GetLogDelivery'
+                  - 'logs:UpdateLogDelivery'
+                  - 'logs:DeleteLogDelivery'
+                  - 'logs:ListLogDeliveries'
+                  - 'logs:PutResourcePolicy'
+                  - 'logs:DescribeResourcePolicies'
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:PutLogEvents'
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                Resource: '*'
+              # EventBridge (for managed rules)
+              - Effect: Allow
+                Action:
+                  - 'events:PutRule'
+                  - 'events:DeleteRule'
+                  - 'events:DescribeRule'
+                  - 'events:PutTargets'
+                  - 'events:RemoveTargets'
+                Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-incident-sfn-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ECS Task Execution Role (for pulling images, logging)
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-incident-task-exec-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-incident-task-exec-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ECS Task Role (for agent AWS API calls)
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-incident-task-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: IncidentAgentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB access (deployments, investigations tables)
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:Query'
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:UpdateItem'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-deployments-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-deployments-${Environment}/index/*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-incident-investigations-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-incident-investigations-${Environment}/index/*'
+              # KMS access for DynamoDB table encryption
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                  - 'kms:GenerateDataKey'
+                Resource:
+                  - !ImportValue
+                    Fn::Sub: '${ProjectName}-incident-response-kms-arn-${Environment}'
+                Condition:
+                  StringEquals:
+                    'kms:ViaService':
+                      - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+              # CloudWatch Logs (query logs for incident window)
+              - Effect: Allow
+                Action:
+                  - 'logs:FilterLogEvents'
+                  - 'logs:GetLogEvents'
+                  - 'logs:DescribeLogStreams'
+                  - 'logs:DescribeLogGroups'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-*:log-stream:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/ecs/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/ecs/${ProjectName}-*:log-stream:*'
+              # Bedrock (LLM calls for RCA generation)
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                Resource:
+                  # Foundation models (direct invocation)
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+                  # Inference profiles (cross-region invocation for Claude 4.x models)
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.anthropic.claude-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/global.anthropic.claude-*'
+              # Bedrock Guardrails (content filtering for LLM responses)
+              - Effect: Allow
+                Action:
+                  - 'bedrock:ApplyGuardrail'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/*'
+              # Neptune (code graph queries)
+              - Effect: Allow
+                Action:
+                  - 'neptune-db:*'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:neptune-db:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*/*'
+              # OpenSearch (semantic search)
+              - Effect: Allow
+                Action:
+                  - 'es:ESHttpGet'
+                  - 'es:ESHttpPost'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-*/*'
+              # SSM Parameter Store (guardrails config)
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/*'
+              # Secrets Manager (bedrock config)
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/*'
+              # DynamoDB (LLM cost tracking)
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:Query'
+                  - 'dynamodb:PutItem'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ddb-${Environment}-llm-costs'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ddb-${Environment}-llm-costs/index/*'
+              # CloudWatch Metrics (cost and performance tracking)
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': !Sub 'Aura/${Environment}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-incident-task-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # EventBridge rule execution role
+  EventBridgeInvokeStepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-eventbridge-sfn-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: InvokeStateMachine
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'states:StartExecution'
+                Resource:
+                  - !GetAtt IncidentInvestigationStateMachine.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-eventbridge-sfn-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # ECS Task Definition
+  # ==========================================================================
+
+  RuntimeIncidentAgentTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ProjectName}-runtime-incident-${Environment}'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '512'  # 0.5 vCPU
+      Memory: '1024'  # 1 GB
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: runtime-incident-agent
+          Image: !If
+            - HasDockerImage
+            - !Ref RuntimeIncidentAgentImage
+            - !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ProjectName}-runtime-incident-agent:latest'
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RuntimeIncidentAgentLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: investigation
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+            - Name: LOG_LEVEL
+              Value: INFO
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-runtime-incident-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  RuntimeIncidentAgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}-runtime-incident-${Environment}'
+      RetentionInDays: !If [IsProduction, 365, 90]
+
+  # ==========================================================================
+  # Step Functions State Machine
+  # ==========================================================================
+
+  IncidentInvestigationStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ProjectName}-incident-investigation-${Environment}'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      LoggingConfiguration:
+        Level: ALL
+        IncludeExecutionData: true
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogGroup.Arn
+      DefinitionSubstitutions:
+        ECSClusterName: !Ref ECSClusterName
+        TaskDefinitionArn: !Ref RuntimeIncidentAgentTaskDefinition
+        PrivateSubnetId1: !Select [0, !Ref PrivateSubnetIds]
+        PrivateSubnetId2: !Select [1, !Ref PrivateSubnetIds]
+        # Use centralized ECSWorkloadSecurityGroup from security.yaml (Layer 1)
+        # This enables identity-based VPC endpoint access via SG references (CMMC L3)
+        ECSSecurityGroupId: !ImportValue
+          Fn::Sub: '${ProjectName}-ecs-workload-sg-${Environment}'
+        InvestigationsTableName: !Sub '${ProjectName}-incident-investigations-${Environment}'
+        SNSTopicArn: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-incident-alerts-${Environment}'
+        DashboardBaseUrl: !If
+          - HasDomainName
+          - !Sub 'https://${ProjectName}.${DomainName}'
+          - !Sub 'https://${ProjectName}.aura.local'
+      DefinitionString: |
+        {
+          "Comment": "RuntimeIncidentAgent investigation workflow (ADR-025)",
+          "StartAt": "ParseIncidentEvent",
+          "States": {
+            "ParseIncidentEvent": {
+              "Type": "Pass",
+              "Comment": "Extract incident ID and prepare input for ECS task",
+              "Parameters": {
+                "incident_id.$": "$.id",
+                "incident_event.$": "$",
+                "timestamp.$": "$$.State.EnteredTime"
+              },
+              "Next": "InvokeRuntimeIncidentAgent"
+            },
+            "InvokeRuntimeIncidentAgent": {
+              "Type": "Task",
+              "Comment": "Run RuntimeIncidentAgent as ECS Fargate task",
+              "Resource": "arn:aws:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${ECSClusterName}",
+                "TaskDefinition": "${TaskDefinitionArn}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "Subnets": ["${PrivateSubnetId1}", "${PrivateSubnetId2}"],
+                    "SecurityGroups": ["${ECSSecurityGroupId}"],
+                    "AssignPublicIp": "DISABLED"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [{
+                    "Name": "runtime-incident-agent",
+                    "Environment": [
+                      {
+                        "Name": "INCIDENT_ID",
+                        "Value.$": "$.incident_id"
+                      },
+                      {
+                        "Name": "INCIDENT_EVENT",
+                        "Value.$": "States.JsonToString($.incident_event)"
+                      }
+                    ]
+                  }]
+                }
+              },
+              "ResultPath": "$.ecs_result",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.error",
+                  "Next": "InvestigationFailed"
+                }
+              ],
+              "Next": "GetInvestigationResults"
+            },
+            "GetInvestigationResults": {
+              "Type": "Task",
+              "Comment": "Query investigation results from DynamoDB (latest by timestamp)",
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:query",
+              "Parameters": {
+                "TableName": "${InvestigationsTableName}",
+                "KeyConditionExpression": "incident_id = :id",
+                "ExpressionAttributeValues": {
+                  ":id": {
+                    "S.$": "$.incident_id"
+                  }
+                },
+                "ScanIndexForward": false,
+                "Limit": 1
+              },
+              "ResultPath": "$.investigation",
+              "Next": "SendHITLNotification"
+            },
+            "SendHITLNotification": {
+              "Type": "Task",
+              "Comment": "Notify approvers that investigation is ready for review",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${SNSTopicArn}",
+                "Subject": "HITL Required: Incident Investigation Complete",
+                "Message.$": "States.Format('Investigation {} complete.\n\nConfidence: {}%\nHypothesis: {}\n\nReview at: ${DashboardBaseUrl}/incidents/{}', $.incident_id, $.investigation.Items[0].confidence_score.N, $.investigation.Items[0].rca_hypothesis.S, $.incident_id)"
+              },
+              "End": true
+            },
+            "InvestigationFailed": {
+              "Type": "Task",
+              "Comment": "Notify that investigation failed",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${SNSTopicArn}",
+                "Subject": "Investigation Failed",
+                "Message.$": "States.Format('Investigation {} failed.\n\nError: {}\n\nCheck CloudWatch Logs for details.', $.incident_id, $.error.Cause)"
+              },
+              "Next": "Fail"
+            },
+            "Fail": {
+              "Type": "Fail",
+              "Cause": "Investigation execution failed"
+            }
+          }
+        }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-incident-investigation-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  StateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/states/${ProjectName}-incident-investigation-${Environment}'
+      RetentionInDays: !If [IsProduction, 365, 90]
+
+  # ==========================================================================
+  # EventBridge Rules
+  # ==========================================================================
+
+  # Rule: CloudWatch Alarms → Step Functions
+  CloudWatchAlarmRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-cloudwatch-alarms-${Environment}'
+      Description: Triggers incident investigation for CloudWatch alarms
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.cloudwatch
+        detail-type:
+          - 'CloudWatch Alarm State Change'
+        detail:
+          state:
+            value:
+              - ALARM
+          alarmName:
+            - prefix: !Sub '${ProjectName}-'
+      Targets:
+        - Id: incident-investigation
+          Arn: !GetAtt IncidentInvestigationStateMachine.Arn
+          RoleArn: !GetAtt EventBridgeInvokeStepFunctionsRole.Arn
+
+  # Rule: PagerDuty Webhooks → Step Functions
+  # Note: PagerDuty must be configured to send webhooks to EventBridge
+  PagerDutyIncidentRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-pagerduty-incidents-${Environment}'
+      Description: Triggers incident investigation for PagerDuty incidents
+      State: ENABLED
+      EventBusName: !Sub '${ProjectName}-incident-events-${Environment}'
+      EventPattern:
+        source:
+          - pagerduty
+        detail-type:
+          - 'PagerDuty Incident Triggered'
+      Targets:
+        - Id: incident-investigation
+          Arn: !GetAtt IncidentInvestigationStateMachine.Arn
+          RoleArn: !GetAtt EventBridgeInvokeStepFunctionsRole.Arn
+
+Outputs:
+  StateMachineArn:
+    Description: ARN of incident investigation state machine
+    Value: !GetAtt IncidentInvestigationStateMachine.Arn
+    Export:
+      Name: !Sub '${ProjectName}-incident-sfn-arn-${Environment}'
+
+  StateMachineName:
+    Description: Name of incident investigation state machine
+    Value: !Ref IncidentInvestigationStateMachine
+    Export:
+      Name: !Sub '${ProjectName}-incident-sfn-name-${Environment}'
+
+  ECSTaskDefinitionArn:
+    Description: ARN of RuntimeIncidentAgent task definition
+    Value: !Ref RuntimeIncidentAgentTaskDefinition
+    Export:
+      Name: !Sub '${ProjectName}-runtime-incident-task-${Environment}'
+
+  ECSTaskRoleArn:
+    Description: ARN of ECS task role
+    Value: !GetAtt ECSTaskRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-incident-task-role-${Environment}'
+
+  CloudWatchAlarmRuleName:
+    Description: Name of CloudWatch alarm EventBridge rule
+    Value: !Ref CloudWatchAlarmRule
+    Export:
+      Name: !Sub '${ProjectName}-cloudwatch-alarm-rule-${Environment}'
+
+  PagerDutyIncidentRuleName:
+    Description: Name of PagerDuty incident EventBridge rule
+    Value: !Ref PagerDutyIncidentRule
+    Export:
+      Name: !Sub '${ProjectName}-pagerduty-rule-${Environment}'
+
+  # NOTE: ECSTaskSecurityGroupId output removed.
+  # This stack now uses the centralized ECSWorkloadSecurityGroup from security.yaml.
+  # Import via: !ImportValue !Sub '${ProjectName}-ecs-workload-sg-${Environment}'

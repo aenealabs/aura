@@ -1,0 +1,31 @@
+# Project Aura - Agent Orchestrator Service (Warm Pool Mode)
+# ClusterIP service for internal access to orchestrator HTTP server
+#
+# Endpoints:
+#   /health/live    - Kubernetes liveness probe
+#   /health/ready   - Kubernetes readiness probe (queue consumer active)
+#   /health/startup - Kubernetes startup probe
+#   /status         - Current job processing status
+#   /metrics        - Prometheus-compatible metrics
+#
+# Usage:
+#   kubectl port-forward svc/aura-agent-orchestrator 8081:8080
+#   curl http://localhost:8081/health/ready
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: aura-agent-orchestrator
+  namespace: default
+  labels:
+    app: aura-agent-orchestrator
+    component: agents
+spec:
+  type: ClusterIP
+  selector:
+    app: aura-agent-orchestrator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

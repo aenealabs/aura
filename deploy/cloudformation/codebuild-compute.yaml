@@ -1,0 +1,641 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Compute Layer CodeBuild Project (Layer 3: EKS, Node Groups, ECR, IRSA)'
+
+Mappings:
+  # Mapping for GovCloud partition support
+  # AWS Commercial: aws, AWS GovCloud: aws-us-gov
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    AllowedValues:
+      - main
+      - develop
+    Description: GitHub branch to build from
+
+  DevAccountId:
+    Type: String
+    Description: Dev account ID (owns Route 53 hosted zone for cross-account ACM validation). Retrieved from SSM at deployment.
+
+  HostedZoneId:
+    Type: String
+    Description: Route 53 Hosted Zone ID in dev account for ACM DNS validation. Retrieved from SSM at deployment.
+
+Resources:
+  # S3 Bucket for Compute Layer Artifacts
+  ComputeArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-compute-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldComputeArtifacts
+            Status: Enabled
+            ExpirationInDays: 30  # Compute changes frequently
+            NoncurrentVersionExpirationInDays: 7
+          - Id: TransitionToIntelligentTiering
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 0
+                StorageClass: INTELLIGENT_TIERING
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: compute
+        - Key: CostCenter
+          Value: Platform-Team
+
+  # CloudWatch Log Group for Compute Builds
+  ComputeBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-compute-deploy-${Environment}'
+      RetentionInDays: 30
+
+  # IAM Role for Compute Layer CodeBuild
+  ComputeCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-compute-codebuild-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/ReadOnlyAccess'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+      Policies:
+        - PolicyName: ComputeDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:PutRetentionPolicy
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-compute-*:*'
+
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/CICD/Compute'
+
+              # S3 - Compute artifacts bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ComputeArtifactsBucket.Arn
+                  - !Sub '${ComputeArtifactsBucket.Arn}/*'
+
+              # CloudFormation - Compute stacks (EKS, Node Groups, ACM Certificate, ALB Controller, Neural Memory GPU)
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:GetTemplateSummary
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-eks-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-nodegroup-general-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-nodegroup-memory-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-nodegroup-gpu-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-acm-certificate-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-alb-controller-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-neural-memory-gpu-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-cluster-autoscaler-irsa-${Environment}/*'
+
+              # EKS Cluster Management
+              - Effect: Allow
+                Action:
+                  - eks:CreateCluster
+                  - eks:UpdateClusterConfig
+                  - eks:UpdateClusterVersion
+                  - eks:DeleteCluster
+                  - eks:DescribeCluster
+                  - eks:ListClusters
+                  - eks:TagResource
+                  - eks:UntagResource
+                  - eks:CreateNodegroup
+                  - eks:UpdateNodegroupConfig
+                  - eks:UpdateNodegroupVersion
+                  - eks:DeleteNodegroup
+                  - eks:DescribeNodegroup
+                  - eks:ListNodegroups
+                  - eks:CreateAddon
+                  - eks:UpdateAddon
+                  - eks:DeleteAddon
+                  - eks:DescribeAddon
+                  - eks:ListAddons
+                  - eks:CreateAccessEntry
+                  - eks:DeleteAccessEntry
+                  - eks:DescribeAccessEntry
+                  - eks:ListAccessEntries
+                  - eks:AssociateAccessPolicy
+                  - eks:DisassociateAccessPolicy
+                  - eks:ListAssociatedAccessPolicies
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:nodegroup/${ProjectName}-cluster-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:addon/${ProjectName}-cluster-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:access-entry/${ProjectName}-cluster-${Environment}/*'
+
+              # EC2 for EKS Node Groups and Neural Memory GPU Instances
+              - Effect: Allow
+                Action:
+                  - ec2:CreateLaunchTemplate
+                  - ec2:CreateLaunchTemplateVersion
+                  - ec2:DeleteLaunchTemplate
+                  - ec2:DescribeLaunchTemplates
+                  - ec2:DescribeLaunchTemplateVersions
+                  - ec2:RunInstances
+                  - ec2:TerminateInstances
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceTypes
+                  - ec2:DescribeImages
+                  - ec2:DescribeVolumes
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                  - ec2:DescribeTags
+                  - ec2:DescribeSecurityGroups
+                Resource: '*'
+
+              # EC2 - Security Group creation (Neural Memory)
+              - Effect: Allow
+                Action:
+                  - ec2:CreateSecurityGroup
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*'
+
+              # EC2 - Security Group modification (Neural Memory)
+              - Effect: Allow
+                Action:
+                  - ec2:DeleteSecurityGroup
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupEgress
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+
+              # Auto Scaling for EKS Node Groups and Neural Memory GPU
+              - Effect: Allow
+                Action:
+                  - autoscaling:CreateAutoScalingGroup
+                  - autoscaling:UpdateAutoScalingGroup
+                  - autoscaling:DeleteAutoScalingGroup
+                  - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:DescribeLaunchConfigurations
+                  - autoscaling:DescribeScalingActivities
+                  - autoscaling:SetDesiredCapacity
+                  - autoscaling:TerminateInstanceInAutoScalingGroup
+                  - autoscaling:CreateOrUpdateTags
+                  - autoscaling:DeleteTags
+                  # Scaling policies for Neural Memory GPU auto-scaling
+                  - autoscaling:PutScalingPolicy
+                  - autoscaling:DeletePolicy
+                  - autoscaling:DescribePolicies
+                Resource: '*'
+
+              # IAM CreateServiceLinkedRole (required for EKS first-time setup)
+              - Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/*'
+                Condition:
+                  StringLike:
+                    iam:AWSServiceName:
+                      - eks.amazonaws.com
+                      - eks-nodegroup.amazonaws.com
+                      - autoscaling.amazonaws.com
+                      - elasticloadbalancing.amazonaws.com
+
+              # IAM Pass Role (for EKS service roles and Neural Memory instances)
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-eks-cluster-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-eks-node-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cloudwatch-observability-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-neural-memory-role-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService:
+                      - eks.amazonaws.com
+                      - ec2.amazonaws.com
+                      - autoscaling.amazonaws.com
+
+              # IAM Role Management for CloudWatch Observability (IRSA)
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:GetRole
+                  - iam:DeleteRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cloudwatch-observability-${Environment}'
+
+              # IAM Role Management for AWS Load Balancer Controller (IRSA)
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:GetRole
+                  - iam:DeleteRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-alb-controller-role-${Environment}'
+
+              # IAM Managed Policy for AWS Load Balancer Controller
+              - Effect: Allow
+                Action:
+                  - iam:CreatePolicy
+                  - iam:GetPolicy
+                  - iam:DeletePolicy
+                  - iam:GetPolicyVersion
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicyVersion
+                  - iam:ListPolicyVersions
+                  - iam:TagPolicy
+                  - iam:UntagPolicy
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-alb-controller-policy-${Environment}'
+
+              # IAM Role Management for Cluster Autoscaler (IRSA)
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:GetRole
+                  - iam:DeleteRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cluster-autoscaler-role-${Environment}'
+
+              # IAM Managed Policy for Cluster Autoscaler
+              - Effect: Allow
+                Action:
+                  - iam:CreatePolicy
+                  - iam:GetPolicy
+                  - iam:DeletePolicy
+                  - iam:GetPolicyVersion
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicyVersion
+                  - iam:ListPolicyVersions
+                  - iam:TagPolicy
+                  - iam:UntagPolicy
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-cluster-autoscaler-policy-${Environment}'
+
+              # IAM Role Management for Neural Memory GPU instances
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:GetRole
+                  - iam:DeleteRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-neural-memory-role-${Environment}'
+
+              # IAM Instance Profile for Neural Memory GPU instances
+              - Effect: Allow
+                Action:
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:TagInstanceProfile
+                  - iam:UntagInstanceProfile
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/${ProjectName}-neural-memory-profile-${Environment}'
+
+              # IAM OIDC Provider (for EKS service accounts)
+              - Effect: Allow
+                Action:
+                  - iam:CreateOpenIDConnectProvider
+                  - iam:GetOpenIDConnectProvider
+                  - iam:DeleteOpenIDConnectProvider
+                  - iam:TagOpenIDConnectProvider
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/oidc.eks.${AWS::Region}.amazonaws.com/*'
+
+              # SSM Parameter Store (for storing EKS config)
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:PutParameter
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+
+              # Secrets Manager (for EKS secrets)
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+
+              # CodeConnections (for GitHub access)
+              - Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codeconnections:GetConnectionToken
+                Resource:
+                  - '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+              # ACM Certificate Management (for HTTPS/TLS)
+              - Effect: Allow
+                Action:
+                  - acm:RequestCertificate
+                  - acm:DeleteCertificate
+                  - acm:DescribeCertificate
+                  - acm:ListCertificates
+                  - acm:AddTagsToCertificate
+                  - acm:RemoveTagsFromCertificate
+                  - acm:ListTagsForCertificate
+                Resource: '*'
+
+              # Route 53 - Same-account access (for dev environment)
+              - Effect: Allow
+                Action:
+                  - route53:GetHostedZone
+                  - route53:ChangeResourceRecordSets
+                  - route53:ListResourceRecordSets
+                  - route53:GetChange
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:route53:::hostedzone/${HostedZoneId}'
+                  - !Sub 'arn:${AWS::Partition}:route53:::change/*'
+
+              # STS - Cross-account role assumption (for QA/prod ACM DNS validation)
+              # QA/prod accounts assume role in dev account to create DNS records
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${DevAccountId}:role/${ProjectName}-route53-cross-account-role'
+
+              # Elastic Load Balancing v2 (Network Load Balancer for Neural Memory gRPC)
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:CreateLoadBalancer
+                  - elasticloadbalancing:DeleteLoadBalancer
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - elasticloadbalancing:DescribeLoadBalancerAttributes
+                  - elasticloadbalancing:ModifyLoadBalancerAttributes
+                  - elasticloadbalancing:SetSubnets
+                  - elasticloadbalancing:SetSecurityGroups
+                  - elasticloadbalancing:CreateTargetGroup
+                  - elasticloadbalancing:DeleteTargetGroup
+                  - elasticloadbalancing:DescribeTargetGroups
+                  - elasticloadbalancing:ModifyTargetGroup
+                  - elasticloadbalancing:ModifyTargetGroupAttributes
+                  - elasticloadbalancing:DescribeTargetGroupAttributes
+                  - elasticloadbalancing:RegisterTargets
+                  - elasticloadbalancing:DeregisterTargets
+                  - elasticloadbalancing:DescribeTargetHealth
+                  - elasticloadbalancing:CreateListener
+                  - elasticloadbalancing:DeleteListener
+                  - elasticloadbalancing:DescribeListeners
+                  - elasticloadbalancing:ModifyListener
+                  - elasticloadbalancing:AddTags
+                  - elasticloadbalancing:RemoveTags
+                  - elasticloadbalancing:DescribeTags
+                Resource: '*'
+
+              # CloudWatch Alarms for Neural Memory GPU monitoring
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:EnableAlarmActions
+                  - cloudwatch:DisableAlarmActions
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-neural-memory-*-${Environment}'
+
+  # CodeBuild Project for Compute Layer
+  ComputeCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-compute-deploy-${Environment}'
+      Description: 'Project Aura - Compute Layer CodeBuild Project (Layer 3: EKS, Node Groups, ECR, IRSA)'
+      ServiceRole: !GetAtt ComputeCodeBuildRole.Arn
+      Artifacts:
+        Type: S3
+        Location: !Ref ComputeArtifactsBucket
+        Name: compute-artifacts
+        Packaging: ZIP
+        EncryptionDisabled: false
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM  # 7 GB RAM, 4 vCPUs (EKS needs more resources)
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: LAYER
+            Value: compute
+          - Name: DEV_ACCOUNT_ID
+            Value: !Ref DevAccountId
+          - Name: HOSTED_ZONE_ID
+            Value: !Ref HostedZoneId
+          - Name: ROUTE53_CROSS_ACCOUNT_ROLE
+            Value: !Sub 'arn:${AWS::Partition}:iam::${DevAccountId}:role/${ProjectName}-route53-cross-account-role'
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-compute.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref ComputeBuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_SOURCE_CACHE
+      TimeoutInMinutes: 60  # EKS deployment can take 30-45 minutes
+      QueuedTimeoutInMinutes: 480
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: compute
+        - Key: CostCenter
+          Value: Platform-Team
+
+  # CloudWatch Alarm - Compute Build Failures
+  ComputeBuildFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-compute-build-failures-${Environment}'
+      AlarmDescription: 'Alert when Compute Layer has 2+ failures in 1 hour'
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref ComputeCodeBuildProject
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # CloudWatch Alarm - Compute Build Duration
+  ComputeBuildDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-compute-build-slow-${Environment}'
+      AlarmDescription: 'Alert when Compute Layer build takes longer than 45 minutes'
+      MetricName: Duration
+      Namespace: AWS/CodeBuild
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref ComputeCodeBuildProject
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2700000  # 45 minutes in milliseconds
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ComputeCodeBuildProjectName:
+    Description: Compute Layer CodeBuild project name
+    Value: !Ref ComputeCodeBuildProject
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectName'
+
+  ComputeCodeBuildProjectArn:
+    Description: Compute Layer CodeBuild project ARN
+    Value: !GetAtt ComputeCodeBuildProject.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectArn'
+
+  ComputeArtifactsBucketName:
+    Description: Compute Layer artifacts bucket name
+    Value: !Ref ComputeArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
+
+  ComputeBuildLogGroupName:
+    Description: Compute Layer build log group name
+    Value: !Ref ComputeBuildLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroup'

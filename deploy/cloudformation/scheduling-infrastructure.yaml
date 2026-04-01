@@ -1,0 +1,473 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.11 - Scheduling Infrastructure'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, staging, prod]
+    Description: Deployment environment
+
+  KMSKeyArn:
+    Type: String
+    Description: KMS key ARN for encryption
+    Default: ''
+
+Conditions:
+  UseKMSKey: !Not [!Equals [!Ref KMSKeyArn, '']]
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # DynamoDB Table for Scheduled Jobs
+  ScheduledJobsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-scheduled-jobs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: !If [UseKMSKey, 'KMS', !Ref 'AWS::NoValue']
+        KMSMasterKeyId: !If [UseKMSKey, !Ref KMSKeyArn, !Ref 'AWS::NoValue']
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: schedule_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: scheduled_at
+          AttributeType: S
+        - AttributeName: created_by
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: organization_id
+          KeyType: HASH
+        - AttributeName: schedule_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # Query pending jobs by scheduled time (for dispatcher)
+        - IndexName: status-scheduled_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: scheduled_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query jobs by creator
+        - IndexName: created_by-created_at-index
+          KeySchema:
+            - AttributeName: created_by
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: scheduling
+
+  # DynamoDB Table for Recurring Tasks (ADR-055 Phase 3)
+  RecurringTasksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-recurring-tasks-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: !If [UseKMSKey, 'KMS', !Ref 'AWS::NoValue']
+        KMSMasterKeyId: !If [UseKMSKey, !Ref KMSKeyArn, !Ref 'AWS::NoValue']
+      AttributeDefinitions:
+        - AttributeName: task_id
+          AttributeType: S
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: enabled
+          AttributeType: S
+        - AttributeName: next_run
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: task_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Query tasks by organization
+        - IndexName: organization-created_at-index
+          KeySchema:
+            - AttributeName: organization_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query enabled tasks by next run time (for dispatcher)
+        - IndexName: enabled-next_run-index
+          KeySchema:
+            - AttributeName: enabled
+              KeyType: HASH
+            - AttributeName: next_run
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: scheduling
+
+  # Lambda execution role for scheduler dispatcher
+  SchedulerDispatcherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-scheduler-dispatcher-${Environment}'
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: SchedulerDispatcherPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB access for scheduled jobs table
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt ScheduledJobsTable.Arn
+                  - !Sub '${ScheduledJobsTable.Arn}/index/*'
+              # DynamoDB access for recurring tasks table
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Scan
+                  - dynamodb:PutItem
+                Resource:
+                  - !GetAtt RecurringTasksTable.Arn
+                  - !Sub '${RecurringTasksTable.Arn}/index/*'
+              # Access to orchestrator jobs table for job submission
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-orchestrator-jobs-${Environment}'
+              # SQS access for job queue
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:GetQueueUrl
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*-${Environment}'
+              # CloudWatch metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub '${ProjectName}/Scheduling'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Lambda function for scheduler dispatcher
+  SchedulerDispatcherFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-scheduler-dispatcher-${Environment}'
+      Description: Dispatches due scheduled jobs to the orchestration queue
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt SchedulerDispatcherRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SCHEDULED_JOBS_TABLE: !Ref ScheduledJobsTable
+          RECURRING_TASKS_TABLE: !Ref RecurringTasksTable
+          PROJECT_NAME: !Ref ProjectName
+      Code:
+        ZipFile: |
+          """
+          Scheduler Dispatcher Lambda
+
+          Dispatches due scheduled jobs to the orchestration queue.
+          Runs every minute via EventBridge.
+          """
+          import boto3
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone
+          from decimal import Decimal
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          dynamodb = boto3.resource('dynamodb')
+          cloudwatch = boto3.client('cloudwatch')
+
+          ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
+          SCHEDULED_JOBS_TABLE = os.environ.get('SCHEDULED_JOBS_TABLE')
+          PROJECT_NAME = os.environ.get('PROJECT_NAME', 'aura')
+
+
+          def handler(event, context):
+              """Main handler for scheduler dispatcher."""
+              logger.info("Starting scheduler dispatcher")
+
+              table = dynamodb.Table(SCHEDULED_JOBS_TABLE)
+              now = datetime.now(timezone.utc)
+              dispatched_count = 0
+              failed_count = 0
+
+              try:
+                  # Query pending jobs that are due
+                  response = table.query(
+                      IndexName='status-scheduled_at-index',
+                      KeyConditionExpression='#status = :status AND scheduled_at <= :now',
+                      ExpressionAttributeNames={'#status': 'status'},
+                      ExpressionAttributeValues={
+                          ':status': 'PENDING',
+                          ':now': now.isoformat(),
+                      },
+                      Limit=100,
+                  )
+
+                  jobs = response.get('Items', [])
+                  logger.info(f"Found {len(jobs)} due jobs")
+
+                  for job in jobs:
+                      try:
+                          # Dispatch the job (simplified - would call orchestration service)
+                          job_id = dispatch_job(job)
+
+                          # Update status to DISPATCHED
+                          table.update_item(
+                              Key={
+                                  'organization_id': job['organization_id'],
+                                  'schedule_id': job['schedule_id'],
+                              },
+                              UpdateExpression='SET #status = :status, dispatched_at = :dispatched_at, dispatched_job_id = :job_id',
+                              ExpressionAttributeNames={'#status': 'status'},
+                              ExpressionAttributeValues={
+                                  ':status': 'DISPATCHED',
+                                  ':dispatched_at': now.isoformat(),
+                                  ':job_id': job_id,
+                              },
+                          )
+
+                          dispatched_count += 1
+                          logger.info(f"Dispatched job {job['schedule_id']} -> {job_id}")
+
+                      except Exception as e:
+                          logger.error(f"Failed to dispatch job {job.get('schedule_id')}: {e}")
+                          failed_count += 1
+
+                          # Mark as failed
+                          table.update_item(
+                              Key={
+                                  'organization_id': job['organization_id'],
+                                  'schedule_id': job['schedule_id'],
+                              },
+                              UpdateExpression='SET #status = :status, error_message = :error',
+                              ExpressionAttributeNames={'#status': 'status'},
+                              ExpressionAttributeValues={
+                                  ':status': 'FAILED',
+                                  ':error': str(e)[:500],
+                              },
+                          )
+
+                  # Publish metrics
+                  cloudwatch.put_metric_data(
+                      Namespace=f'{PROJECT_NAME}/Scheduling',
+                      MetricData=[
+                          {
+                              'MetricName': 'JobsDispatched',
+                              'Value': dispatched_count,
+                              'Unit': 'Count',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': ENVIRONMENT},
+                              ],
+                          },
+                          {
+                              'MetricName': 'JobsFailedToDispatch',
+                              'Value': failed_count,
+                              'Unit': 'Count',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': ENVIRONMENT},
+                              ],
+                          },
+                      ],
+                  )
+
+              except Exception as e:
+                  logger.error(f"Scheduler dispatcher error: {e}")
+                  raise
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'dispatched': dispatched_count,
+                      'failed': failed_count,
+                  }),
+              }
+
+
+          def dispatch_job(job):
+              """
+              Dispatch a job to the orchestration service.
+
+              In production, this would call the orchestration service API
+              or send a message to the orchestration SQS queue.
+              """
+              import uuid
+
+              # Generate a job ID
+              job_id = str(uuid.uuid4())
+
+              # Get the orchestrator jobs table
+              jobs_table = dynamodb.Table(f'{PROJECT_NAME}-orchestrator-jobs-{ENVIRONMENT}')
+
+              # Create the job record
+              now = datetime.now(timezone.utc)
+              jobs_table.put_item(
+                  Item={
+                      'job_id': job_id,
+                      'organization_id': job['organization_id'],
+                      'job_type': job['job_type'],
+                      'status': 'QUEUED',
+                      'priority': job.get('priority', 'NORMAL'),
+                      'parameters': job.get('parameters', {}),
+                      'user_id': job['created_by'],
+                      'repository_id': job.get('repository_id'),
+                      'created_at': now.isoformat(),
+                      'scheduled_job_id': job['schedule_id'],
+                      'ttl': int((now.timestamp()) + (7 * 24 * 60 * 60)),  # 7 days
+                  }
+              )
+
+              return job_id
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # EventBridge rule to trigger dispatcher every 15 minutes (cost optimized from 5 minutes)
+  SchedulerDispatcherRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-scheduler-dispatcher-${Environment}'
+      Description: Triggers scheduler dispatcher every 15 minutes (cost optimized from 5 minutes)
+      ScheduleExpression: 'rate(15 minutes)'
+      State: ENABLED
+      Targets:
+        - Id: SchedulerDispatcherTarget
+          Arn: !GetAtt SchedulerDispatcherFunction.Arn
+
+  # Permission for EventBridge to invoke Lambda
+  SchedulerDispatcherPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SchedulerDispatcherFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SchedulerDispatcherRule.Arn
+
+  # CloudWatch alarm for dispatcher failures
+  DispatcherFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-scheduler-dispatcher-failures-${Environment}'
+      AlarmDescription: Alert when scheduler dispatcher has failures
+      MetricName: JobsFailedToDispatch
+      Namespace: !Sub '${ProjectName}/Scheduling'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ScheduledJobsTableName:
+    Description: Name of the scheduled jobs DynamoDB table
+    Value: !Ref ScheduledJobsTable
+    Export:
+      Name: !Sub '${ProjectName}-scheduled-jobs-table-${Environment}'
+
+  ScheduledJobsTableArn:
+    Description: ARN of the scheduled jobs DynamoDB table
+    Value: !GetAtt ScheduledJobsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-scheduled-jobs-table-arn-${Environment}'
+
+  RecurringTasksTableName:
+    Description: Name of the recurring tasks DynamoDB table
+    Value: !Ref RecurringTasksTable
+    Export:
+      Name: !Sub '${ProjectName}-recurring-tasks-table-${Environment}'
+
+  RecurringTasksTableArn:
+    Description: ARN of the recurring tasks DynamoDB table
+    Value: !GetAtt RecurringTasksTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-recurring-tasks-table-arn-${Environment}'
+
+  SchedulerDispatcherFunctionArn:
+    Description: ARN of the scheduler dispatcher Lambda function
+    Value: !GetAtt SchedulerDispatcherFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-scheduler-dispatcher-arn-${Environment}'
+
+  SchedulerDispatcherRoleArn:
+    Description: ARN of the scheduler dispatcher IAM role
+    Value: !GetAtt SchedulerDispatcherRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-scheduler-dispatcher-role-arn-${Environment}'

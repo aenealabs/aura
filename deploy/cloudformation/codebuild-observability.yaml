@@ -1,0 +1,688 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Observability Layer CodeBuild Project (Layer 5: Secrets, Monitoring, Cost Alerts)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    AllowedValues:
+      - main
+      - develop
+    Description: GitHub branch to build from
+
+Resources:
+  # S3 Bucket for Observability Layer Artifacts
+  ObservabilityArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-observability-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldObservabilityArtifacts
+            Status: Enabled
+            ExpirationInDays: 90  # Observability config changes infrequently
+            NoncurrentVersionExpirationInDays: 30
+          - Id: TransitionToIntelligentTiering
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 0
+                StorageClass: INTELLIGENT_TIERING
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: observability
+        - Key: CostCenter
+          Value: Platform-Team
+
+  # CloudWatch Log Group for Observability Builds
+  ObservabilityBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-observability-deploy-${Environment}'
+      RetentionInDays: 30
+
+  # IAM Role for Observability Layer CodeBuild
+  # Managed Policy for Cost Explorer - separated to stay under 10KB inline policy limit
+  CostExplorerManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-observability-cost-explorer-${Environment}'
+      Description: Cost Explorer permissions for observability CodeBuild (separated for policy size limit)
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Cost Explorer - Anomaly Detection (for org-cost-monitoring.yaml)
+          # Reference: https://docs.aws.amazon.com/cost-management/latest/userguide/accesscontrol-ad.html
+          - Effect: Allow
+            Action: [ce:CreateAnomalyMonitor, ce:DeleteAnomalyMonitor, ce:UpdateAnomalyMonitor, ce:GetAnomalyMonitors, ce:CreateAnomalySubscription, ce:DeleteAnomalySubscription, ce:UpdateAnomalySubscription, ce:GetAnomalySubscriptions, ce:TagResource, ce:UntagResource]
+            Resource: [!Sub 'arn:${AWS::Partition}:ce::${AWS::AccountId}:anomalymonitor/*', !Sub 'arn:${AWS::Partition}:ce::${AWS::AccountId}:anomalysubscription/*']
+
+  # Managed Policy for IAM permissions - separated to stay under 10KB inline policy limit
+  IAMPermissionsManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-observability-iam-perms-${Environment}'
+      Description: IAM role management permissions for observability CodeBuild (separated for policy size limit)
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # IAM Role Management (for observability stack roles)
+          - Effect: Allow
+            Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:TagRole, iam:UntagRole]
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-secret-rotation-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cost-alerts-${Environment}-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-monitoring-${Environment}-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-orchestrator-trigger-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-anomaly-detector-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-realtime-monitoring-${Environment}-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-log-retention-lambda-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-org-cost-monitoring-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cost-aggregator-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-qa-scaler-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-qa-scheduler-exec-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-dev-cost-scaler-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-dev-scheduler-exec-${Environment}'
+          # IAM Pass Role
+          - Effect: Allow
+            Action: iam:PassRole
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cloudwatch-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-eventbridge-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-secret-rotation-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cost-alerts-${Environment}-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-orchestrator-trigger-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-anomaly-detector-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-realtime-monitoring-${Environment}-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-log-retention-lambda-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-org-cost-monitoring-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cost-aggregator-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-qa-scaler-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-qa-scheduler-exec-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-dev-cost-scaler-role-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-dev-scheduler-exec-${Environment}'
+            Condition:
+              StringEquals:
+                iam:PassedToService: [lambda.amazonaws.com, cloudwatch.amazonaws.com, events.amazonaws.com, secretsmanager.amazonaws.com, scheduler.amazonaws.com]
+
+  ObservabilityCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-observability-codebuild-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - !Ref CostExplorerManagedPolicy
+        - !Ref IAMPermissionsManagedPolicy
+      Policies:
+        - PolicyName: ObservabilityDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:PutRetentionPolicy
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-observability-*:*'
+
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/CICD/Observability'
+
+              # S3 - Observability artifacts bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ObservabilityArtifactsBucket.Arn
+                  - !Sub '${ObservabilityArtifactsBucket.Arn}/*'
+
+              # CloudFormation - Observability stacks only (Secrets, Monitoring, Cost Alerts, Real-Time Monitoring, Disaster Recovery, OTel, Log Retention, Alignment)
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:GetTemplateSummary
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-secrets-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-monitoring-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-cost-alerts-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-realtime-monitoring-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-disaster-recovery-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-otel-collector-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-log-retention-sync-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-alignment-alerts-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-gpu-monitoring-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-org-cost-monitoring-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-qa-cost-scheduler-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-dev-cost-scheduler-${Environment}/*'
+
+              # Secrets Manager (for creating/updating secrets)
+              - Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:UpdateSecret
+                  - secretsmanager:DeleteSecret
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:TagResource
+                  - secretsmanager:UntagResource
+                  - secretsmanager:GetRandomPassword
+                Resource:
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+
+              # GetRandomPassword is a service-level action (generates random strings)
+              # AWS requires Resource: '*' - no resource ARN exists for this action
+              # This is safe because it only generates random passwords, not accessing secrets
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetRandomPassword
+                Resource: '*'
+
+              # CloudWatch - Dashboards, Alarms, Metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutDashboard
+                  - cloudwatch:DeleteDashboards
+                  - cloudwatch:GetDashboard
+                  - cloudwatch:ListDashboards
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:EnableAlarmActions
+                  - cloudwatch:DisableAlarmActions
+                  - cloudwatch:SetAlarmState
+                  - cloudwatch:PutCompositeAlarm
+                  - cloudwatch:TagResource
+                  - cloudwatch:UntagResource
+                Resource:
+                  - !Sub 'arn:aws:cloudwatch::${AWS::AccountId}:dashboard/${ProjectName}-*'
+                  - !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-*'
+
+              # CloudWatch Logs (for creating log groups, metric filters)
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:PutMetricFilter
+                  - logs:DeleteMetricFilter
+                  - logs:DescribeLogGroups
+                  - logs:DescribeMetricFilters
+                  - logs:TagLogGroup
+                  - logs:UntagLogGroup
+                  - logs:TagResource
+                  - logs:UntagResource
+                Resource:
+                  # Log groups (for TagResource on log group itself)
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*'
+                  # Real-time monitoring log groups (without /aws/ prefix)
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/${Environment}/*'
+                  # Log streams (for operations on streams within groups)
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/*:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/${Environment}/*:*'
+
+              # CloudWatch Logs Resource Policy (account-level, required for EventBridge → CloudWatch Logs)
+              - Effect: Allow
+                Action:
+                  - logs:PutResourcePolicy
+                  - logs:DeleteResourcePolicy
+                  - logs:DescribeResourcePolicies
+                Resource: '*'
+
+              # SNS (for alert topics)
+              - Effect: Allow
+                Action:
+                  - sns:CreateTopic
+                  - sns:DeleteTopic
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                  - sns:SetTopicAttributes
+                  - sns:GetTopicAttributes
+                  - sns:ListTopics
+                  - sns:ListSubscriptionsByTopic
+                  - sns:Publish
+                  - sns:TagResource
+                  - sns:UntagResource
+                Resource:
+                  - !Sub 'arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+              # Lambda (for cost-alerts custom resources and budget enforcement)
+              - Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:InvokeFunction
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-*'
+
+              # EventBridge (for event rules, patterns, and custom event buses)
+              - Effect: Allow
+                Action:
+                  - events:PutRule
+                  - events:DeleteRule
+                  - events:DescribeRule
+                  - events:EnableRule
+                  - events:DisableRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                  - events:ListTargetsByRule
+                  - events:ListRules
+                  - events:TagResource
+                  - events:UntagResource
+                Resource:
+                  - !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*'
+                  # Rules on custom event bus
+                  - !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-anomaly-events-${Environment}/*'
+
+              # EventBridge Custom Event Bus (for real-time monitoring and security events)
+              - Effect: Allow
+                Action:
+                  - events:CreateEventBus
+                  - events:DeleteEventBus
+                  - events:DescribeEventBus
+                  - events:PutPermission
+                  - events:RemovePermission
+                  - events:TagResource
+                  - events:UntagResource
+                Resource:
+                  - !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-anomaly-events-${Environment}'
+                  - !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-security-events-${Environment}'
+
+              # EventBridge Scheduler (for cost-scheduler scheduled scaling)
+              - Effect: Allow
+                Action:
+                  - scheduler:CreateSchedule
+                  - scheduler:DeleteSchedule
+                  - scheduler:GetSchedule
+                  - scheduler:UpdateSchedule
+                  - scheduler:ListSchedules
+                  - scheduler:TagResource
+                  - scheduler:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/default/${ProjectName}-qa-*'
+                  - !Sub 'arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/default/${ProjectName}-dev-*'
+
+              # EventBridge Scheduler Schedule Group (required for schedule creation)
+              - Effect: Allow
+                Action:
+                  - scheduler:GetScheduleGroup
+                  - scheduler:ListScheduleGroups
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule-group/default'
+
+              # SQS (for orchestrator task queues)
+              - Effect: Allow
+                Action:
+                  - sqs:CreateQueue
+                  - sqs:DeleteQueue
+                  - sqs:SetQueueAttributes
+                  - sqs:GetQueueAttributes
+                  - sqs:GetQueueUrl
+                  - sqs:TagQueue
+                  - sqs:UntagQueue
+                  - sqs:ListQueueTags
+                Resource:
+                  - !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-orchestrator-*'
+
+              # Budgets (for cost alerts)
+              - Effect: Allow
+                Action:
+                  - budgets:CreateBudget
+                  - budgets:UpdateBudget
+                  - budgets:DeleteBudget
+                  - budgets:ModifyBudget
+                  - budgets:DescribeBudget
+                  - budgets:DescribeBudgets
+                  - budgets:CreateBudgetAction
+                  - budgets:UpdateBudgetAction
+                  - budgets:DeleteBudgetAction
+                  - budgets:TagResource
+                  - budgets:UntagResource
+                Resource:
+                  - !Sub 'arn:aws:budgets::${AWS::AccountId}:budget/${ProjectName}-*'
+
+              # DynamoDB (for org-cost-monitoring cost aggregation table)
+              - Effect: Allow
+                Action: [dynamodb:CreateTable, dynamodb:DeleteTable, dynamodb:DescribeTable, dynamodb:UpdateTable, dynamodb:TagResource, dynamodb:UntagResource, dynamodb:DescribeTimeToLive, dynamodb:UpdateTimeToLive, dynamodb:DescribeContinuousBackups, dynamodb:UpdateContinuousBackups]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-org-cost-*'
+
+              # SSM Parameter Store (for observability config)
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                  - ssm:AddTagsToResource
+                  - ssm:RemoveTagsFromResource
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+
+              # CodeConnections (for GitHub source access)
+              - Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codeconnections:GetConnectionToken
+                Resource:
+                  - '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+              # AWS Backup (for disaster-recovery stack)
+              - Effect: Allow
+                Action:
+                  - backup:CreateBackupVault
+                  - backup:DeleteBackupVault
+                  - backup:DescribeBackupVault
+                  - backup:PutBackupVaultNotifications
+                  - backup:DeleteBackupVaultNotifications
+                  - backup:CreateBackupPlan
+                  - backup:DeleteBackupPlan
+                  - backup:UpdateBackupPlan
+                  - backup:GetBackupPlan
+                  - backup:CreateBackupSelection
+                  - backup:DeleteBackupSelection
+                  - backup:GetBackupSelection
+                  - backup:TagResource
+                  - backup:UntagResource
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-plan:*'
+
+              # Backup Storage (required for vault creation)
+              # AWS Backup vault creation requires backup-storage:MountCapsule
+              # Reference: https://repost.aws/knowledge-center/backup-vault-access-denied
+              # These are service-level actions that require Resource: '*'
+              - Effect: Allow
+                Action:
+                  - backup-storage:MountCapsule
+                  - backup-storage:MountBackupStorage
+                  - backup-storage:StartObject
+                  - backup-storage:PutObject
+                  - backup-storage:GetChunk
+                  - backup-storage:ListChunks
+                  - backup-storage:GetObjectMetadata
+                  - backup-storage:NotifyObjectComplete
+                Resource: '*'
+
+              # KMS - Use existing keys from foundation kms.yaml stack
+              # Note: kms:CreateKey removed - keys are pre-created in foundation layer
+              # Access control is enforced via KMS key policies in kms.yaml
+              # kms:RetireGrant required for backup vault creation
+              # Reference: https://repost.aws/knowledge-center/backup-vault-access-denied
+              - Effect: Allow
+                Action:
+                  - kms:DescribeKey
+                  - kms:GenerateDataKey
+                  - kms:GenerateDataKeyWithoutPlaintext
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:RetireGrant
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  StringEquals:
+                    'kms:CallerAccount': !Ref AWS::AccountId
+
+              # KMS - Grant operations for AWS Backup
+              # GrantIsForAWSResource ensures grants only created for AWS service use
+              - Effect: Allow
+                Action:
+                  - kms:CreateGrant
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  Bool:
+                    'kms:GrantIsForAWSResource': 'true'
+                  StringEquals:
+                    'kms:CallerAccount': !Ref AWS::AccountId
+
+              # Service-Linked Role for AWS Backup
+              # Required for AWS Backup to create its service-linked role if not exists
+              - Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/backup.amazonaws.com/AWSServiceRoleForBackup'
+                Condition:
+                  StringEquals:
+                    iam:AWSServiceName: backup.amazonaws.com
+
+              # IAM Role for AWS Backup service (disaster-recovery stack) and OTel Collector
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-backup-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-otel-collector-role-${Environment}'
+
+              # IAM Managed Policy for OTel Collector (otel-collector.yaml)
+              - Effect: Allow
+                Action:
+                  - iam:CreatePolicy
+                  - iam:DeletePolicy
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                  - iam:ListPolicyVersions
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicyVersion
+                  - iam:TagPolicy
+                  - iam:UntagPolicy
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-otel-collector-policy-${Environment}'
+
+              # IAM Pass Role for AWS Backup
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-backup-role-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: backup.amazonaws.com
+
+  # CodeBuild Project for Observability Layer
+  ObservabilityCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-observability-deploy-${Environment}'
+      Description: 'Project Aura - Observability Layer CodeBuild Project (Layer 5: Secrets, Monitoring, Cost Alerts)'
+      ServiceRole: !GetAtt ObservabilityCodeBuildRole.Arn
+      Artifacts:
+        Type: S3
+        Location: !Ref ObservabilityArtifactsBucket
+        Name: observability-artifacts
+        Packaging: ZIP
+        EncryptionDisabled: false
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL  # 3 GB RAM, 2 vCPUs (observability config is lightweight)
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: LAYER
+            Value: observability
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-observability.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref ObservabilityBuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_SOURCE_CACHE
+      TimeoutInMinutes: 20  # Observability deployment is fast (config-only)
+      QueuedTimeoutInMinutes: 480
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: observability
+        - Key: CostCenter
+          Value: Platform-Team
+
+  # CloudWatch Alarm - Observability Build Failures
+  ObservabilityBuildFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-observability-build-failures-${Environment}'
+      AlarmDescription: 'Alert when Observability Layer has 2+ failures in 1 hour'
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref ObservabilityCodeBuildProject
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # CloudWatch Alarm - Observability Build Duration
+  ObservabilityBuildDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-observability-build-slow-${Environment}'
+      AlarmDescription: 'Alert when Observability Layer build takes longer than 15 minutes'
+      MetricName: Duration
+      Namespace: AWS/CodeBuild
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref ObservabilityCodeBuildProject
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 900000  # 15 minutes in milliseconds
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ObservabilityCodeBuildProjectName:
+    Description: Observability Layer CodeBuild project name
+    Value: !Ref ObservabilityCodeBuildProject
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectName'
+
+  ObservabilityCodeBuildProjectArn:
+    Description: Observability Layer CodeBuild project ARN
+    Value: !GetAtt ObservabilityCodeBuildProject.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ProjectArn'
+
+  ObservabilityArtifactsBucketName:
+    Description: Observability Layer artifacts bucket name
+    Value: !Ref ObservabilityArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
+
+  ObservabilityBuildLogGroupName:
+    Description: Observability Layer build log group name
+    Value: !Ref ObservabilityBuildLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroup'

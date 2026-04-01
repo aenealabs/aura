@@ -1,0 +1,30 @@
+Category,Service,Monthly Cost
+Compute,Eks Control Plane,$72.00
+Compute,Ec2 T3 Medium,$170.06
+Database,Neptune,$569.05
+Database,Opensearch,$424.33
+Storage,S3 Storage,$11.50
+Storage,S3 Get Requests,$0.00
+Storage,S3 Put Requests,$0.01
+Storage,Ebs,$12.00
+Storage,Dynamodb,$1.00
+Caching,Elasticache,$246.92
+Networking,Nat Gateway Hourly,$65.70
+Networking,Nat Gateway Data,$0.45
+Networking,Alb Hourly,$16.43
+Networking,Alb Lcu,$11.68
+Networking,Data Transfer Out,$0.90
+Monitoring,Cloudwatch Logs Ingestion,$2.50
+Monitoring,Cloudwatch Logs Storage,$0.15
+Monitoring,Cloudwatch Metrics,$6.00
+Monitoring,Cloudwatch Alarms,$1.00
+Monitoring,Secrets Manager,$0.80
+Monitoring,Cloudtrail,$2.00
+Monitoring,Aws Config,$10.00
+Bedrock,Bedrock Input,$270.00
+Bedrock,Bedrock Output,$675.00
+Bedrock,Bedrock Total,$945.00
+
+TOTAL,Infrastructure,$1624.47
+TOTAL,Bedrock API,$945.00
+TOTAL,Grand Total,$2569.47

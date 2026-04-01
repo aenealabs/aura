@@ -1,0 +1,374 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.1 - Threat Intel Scheduler (CVE/CISA Feeds)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ScheduleExpression:
+    Type: String
+    Default: 'cron(0 6 * * ? *)'
+    Description: CloudWatch Events schedule expression (default daily at 6 AM UTC)
+
+  SeverityThreshold:
+    Type: String
+    Default: MEDIUM
+    AllowedValues:
+      - CRITICAL
+      - HIGH
+      - MEDIUM
+      - LOW
+    Description: Minimum severity level to report
+
+  MaxCVEAgeDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    MaxValue: 365
+    Description: Maximum age of CVEs to fetch (days)
+
+  NVDApiKey:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: NVD API key for higher rate limits (optional)
+
+  GitHubToken:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: GitHub token for advisory access (optional)
+
+  SNSTopicArn:
+    Type: String
+    Default: ''
+    Description: SNS topic ARN for notifications (leave empty for default)
+
+  LambdaS3Bucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+
+  LambdaS3Key:
+    Type: String
+    Description: S3 key for Lambda deployment package
+
+  LambdaMemorySize:
+    Type: Number
+    Default: 512
+    MinValue: 128
+    MaxValue: 1024
+    Description: Lambda function memory in MB
+
+  LambdaTimeout:
+    Type: Number
+    Default: 300
+    MinValue: 60
+    MaxValue: 900
+    Description: Lambda function timeout in seconds
+
+Conditions:
+  HasNVDApiKey: !Not [!Equals [!Ref NVDApiKey, '']]
+  HasGitHubToken: !Not [!Equals [!Ref GitHubToken, '']]
+  HasCustomSNSTopic: !Not [!Equals [!Ref SNSTopicArn, '']]
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # IAM Role for Lambda execution
+  ThreatIntelProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-threat-intel-processor-role-${Environment}
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !If
+                    - HasCustomSNSTopic
+                    - !Ref SNSTopicArn
+                    - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*-${Environment}
+        - PolicyName: SESAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: !Sub ${ProjectName}-noreply@${ProjectName}.local
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-*-${Environment}*
+        - PolicyName: CloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub ${ProjectName}/ThreatIntel
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Lambda Function
+  ThreatIntelProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-threat-intel-processor-${Environment}
+      Description: Daily threat intelligence pipeline - gathers CVE/CISA/GitHub advisories
+      Runtime: python3.11
+      Handler: src.lambda.threat_intelligence_processor.handler
+      Role: !GetAtt ThreatIntelProcessorRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          SEVERITY_THRESHOLD: !Ref SeverityThreshold
+          MAX_CVE_AGE_DAYS: !Ref MaxCVEAgeDays
+          NVD_API_KEY: !If [HasNVDApiKey, !Ref NVDApiKey, '']
+          GITHUB_TOKEN: !If [HasGitHubToken, !Ref GitHubToken, '']
+          SNS_TOPIC_ARN: !If
+            - HasCustomSNSTopic
+            - !Ref SNSTopicArn
+            - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}
+          USE_MOCK: 'false'
+      # Note: ReservedConcurrentExecutions removed - account quota insufficient
+      # The EventBridge scheduler ensures only one execution at a time anyway
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Component
+          Value: ThreatIntelPipeline
+
+  # CloudWatch Events Rule (EventBridge) - Daily Schedule
+  ThreatIntelScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-threat-intel-pipeline-schedule-${Environment}
+      Description: Triggers threat intelligence pipeline daily at 6 AM UTC
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Targets:
+        - Id: ThreatIntelProcessorTarget
+          Arn: !GetAtt ThreatIntelProcessorFunction.Arn
+
+  # Permission for EventBridge to invoke Lambda
+  ThreatIntelSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ThreatIntelProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ThreatIntelScheduleRule.Arn
+
+  # CloudWatch Alarm for Lambda errors
+  ThreatIntelProcessorErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ProjectName}-threat-intel-processor-errors-${Environment}
+      AlarmDescription: Alert when threat intel processor Lambda encounters errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ThreatIntelProcessorFunction
+      TreatMissingData: notBreaching
+      # AlarmActions configured separately via monitoring stack
+
+  # CloudWatch Alarm for Critical Threats Found
+  CriticalThreatsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ProjectName}-critical-threats-detected-${Environment}
+      AlarmDescription: Alert when critical security threats are detected
+      MetricName: CriticalThreatsFound
+      Namespace: !Sub ${ProjectName}/ThreatIntel
+      Statistic: Sum
+      Period: 86400  # 24 hours
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      # AlarmActions configured separately via monitoring stack
+
+  # CloudWatch Log Group with retention
+  ThreatIntelProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-threat-intel-processor-${Environment}
+      RetentionInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Dashboard Widget (optional - can be added to main dashboard)
+  ThreatIntelDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Condition: IsProd
+    Properties:
+      DashboardName: !Sub ${ProjectName}-threat-intel-${Environment}
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Threats by Severity",
+                "metrics": [
+                  ["${ProjectName}/ThreatIntel", "CriticalThreatsFound", {"color": "#d13212"}],
+                  [".", "HighThreatsFound", {"color": "#ff9900"}],
+                  [".", "MediumThreatsFound", {"color": "#f7e10b"}],
+                  [".", "LowThreatsFound", {"color": "#2ca02c"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "period": 86400,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Pipeline Execution",
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${ProjectName}-threat-intel-processor-${Environment}"],
+                  [".", "Errors", ".", "."],
+                  [".", "Duration", ".", ".", {"stat": "Average"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "period": 86400
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Notifications Sent",
+                "metrics": [
+                  ["${ProjectName}/ThreatIntel", "NotificationsSent"]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "period": 86400,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "ADR Triggers Identified",
+                "metrics": [
+                  ["${ProjectName}/ThreatIntel", "ADRTriggersIdentified"]
+                ],
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "period": 86400,
+                "stat": "Sum"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  FunctionArn:
+    Description: Threat Intel Processor Lambda ARN
+    Value: !GetAtt ThreatIntelProcessorFunction.Arn
+    Export:
+      Name: !Sub ${ProjectName}-threat-intel-processor-arn-${Environment}
+
+  FunctionName:
+    Description: Threat Intel Processor Lambda function name
+    Value: !Ref ThreatIntelProcessorFunction
+
+  RoleArn:
+    Description: Lambda execution role ARN
+    Value: !GetAtt ThreatIntelProcessorRole.Arn
+
+  ScheduleRuleArn:
+    Description: CloudWatch Events Rule ARN
+    Value: !GetAtt ThreatIntelScheduleRule.Arn
+
+  LogGroupName:
+    Description: CloudWatch Log Group name
+    Value: !Ref ThreatIntelProcessorLogGroup
+
+  ScheduleExpression:
+    Description: Schedule expression for pipeline execution
+    Value: !Ref ScheduleExpression

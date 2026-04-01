@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 3.2 - ACM Certificate (HTTPS TLS)'
+
+# =============================================================================
+# ACM Certificate for Project Aura
+# =============================================================================
+# Creates an SSL/TLS certificate for:
+# - *.aenealabs.com (wildcard for all subdomains)
+# - aenealabs.com (apex domain)
+#
+# Uses DNS validation via Route 53 for automatic renewal.
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  DomainName:
+    Type: String
+    Default: aenealabs.com
+    Description: Root domain name
+
+  HostedZoneId:
+    Type: String
+    Description: Route 53 Hosted Zone ID for DNS validation. Retrieved from SSM at deployment.
+
+Resources:
+  # ===========================================================================
+  # ACM Certificate with DNS Validation
+  # ===========================================================================
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub '*.${DomainName}'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+        - DomainName: !Sub '*.${DomainName}'
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-certificate-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  CertificateArn:
+    Description: ARN of the ACM certificate
+    Value: !Ref Certificate
+    Export:
+      Name: !Sub '${ProjectName}-certificate-arn-${Environment}'
+
+  DomainName:
+    Description: Primary domain name
+    Value: !Ref DomainName
+    Export:
+      Name: !Sub '${ProjectName}-domain-name-${Environment}'

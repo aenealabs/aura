@@ -1,0 +1,229 @@
+%% ============================================================================
+%% Constraint Geometry Engine (CGE) - Architecture Diagrams
+%% Project Aura - Deterministic Cortical Discrimination Layer
+%% ============================================================================
+%% Two diagrams defined sequentially. Render each in its own Mermaid instance.
+%% Diagram 1: Pipeline Flow (top-down)
+%% Diagram 2: CGE Internal Architecture with AWS Services (left-to-right)
+%% ============================================================================
+
+
+%% =========================================================================
+%% DIAGRAM 1: Agent Execution Pipeline - Probabilistic vs Deterministic Flow
+%% =========================================================================
+%% Render this block independently as: graph TD
+%%
+%% Design rationale:
+%%   - Vertical flow matches temporal execution order (top = earliest)
+%%   - Subgraphs partition probabilistic / deterministic / output zones
+%%   - Three terminal nodes fan out from the CGE action determination step
+%%   - Color classes: prob (blue), det (green), cge (purple), infra (orange)
+%% =========================================================================
+
+graph TD
+    %% --- Style classes ---
+    classDef userNode fill:#F8FAFC,stroke:#1E293B,stroke-width:2px,color:#1E293B,font-weight:bold
+    classDef prob fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A5F,font-weight:bold
+    classDef det fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#064E3B,font-weight:bold
+    classDef cge fill:#EDE9FE,stroke:#7C3AED,stroke-width:3px,color:#3B0764,font-weight:bold
+    classDef autoExec fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#064E3B,font-weight:bold
+    classDef review fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#78350F,font-weight:bold
+    classDef reject fill:#FEE2E2,stroke:#DC2626,stroke-width:2px,color:#7F1D1D,font-weight:bold
+    classDef infra fill:#FFF7ED,stroke:#EA580C,stroke-width:1px,color:#7C2D12
+
+    %% --- Entry ---
+    REQ["User Request"]:::userNode
+
+    %% --- Probabilistic Input Zone ---
+    subgraph PROB_IN ["PROBABILISTIC - Input Filtering"]
+        direction TB
+        SG["ADR-065: Semantic Guardrails<br/>6-Layer Threat Detection"]:::prob
+    end
+
+    %% --- Agent Execution Zone ---
+    subgraph AGENT_EXEC ["PROBABILISTIC - Agent Execution"]
+        direction TB
+        BEDROCK["AWS Bedrock<br/>Claude 3.5 Sonnet"]:::infra
+        AGENTS["Agent Orchestrator<br/>Coder + Reviewer + Validator"]:::prob
+        BEDROCK --> AGENTS
+    end
+
+    %% --- Probabilistic Output Zone ---
+    subgraph PROB_OUT ["PROBABILISTIC - Output Refinement"]
+        direction TB
+        CAI["ADR-063: Constitutional AI<br/>16 Principles / Critique-Revision"]:::prob
+    end
+
+    %% --- CGE: Deterministic Discrimination ---
+    subgraph CGE_ZONE ["DETERMINISTIC - Constraint Geometry Engine"]
+        direction TB
+        STEP_A["Step A: Constraint Resolution<br/>Neptune Graph Traversal<br/>RELAXES / TIGHTENS / SUPERSEDES edges"]:::cge
+        STEP_B["Step B: Coherence Computation<br/>Cosine Similarity vs Frozen Centroids<br/>7-Axis Constraint Space"]:::cge
+        STEP_C["Step C: Action Determination<br/>Threshold Comparison<br/>Policy Profile Selection"]:::cge
+        STEP_A --> STEP_B --> STEP_C
+    end
+
+    %% --- Output Paths ---
+    AUTO["Auto-Execute<br/>CCS >= threshold"]:::autoExec
+    HITL["Human Review<br/>CCS in review band<br/>HITL via ADR-032"]:::review
+    ESC["Escalate / Reject<br/>CCS < threshold"]:::reject
+
+    %% --- Flow edges ---
+    REQ --> PROB_IN
+    SG --> AGENT_EXEC
+    AGENTS --> PROB_OUT
+    CAI --> CGE_ZONE
+    STEP_C -->|"CCS >= T"| AUTO
+    STEP_C -->|"T_low <= CCS < T"| HITL
+    STEP_C -->|"CCS < T_low"| ESC
+
+    %% --- Annotations via invisible nodes ---
+    NOTE_P["All layers above this line<br/>are PROBABILISTIC:<br/>same input may yield<br/>different outputs"]:::prob
+    NOTE_D["The CGE is the ONLY<br/>DETERMINISTIC layer:<br/>same input always yields<br/>the same score"]:::det
+    NOTE_P ~~~ PROB_OUT
+    NOTE_D ~~~ CGE_ZONE
+
+
+%% =========================================================================
+%% DIAGRAM 2: CGE Internal Architecture with AWS Services
+%% =========================================================================
+%% Render this block independently as: graph LR
+%%
+%% Design rationale:
+%%   - Left-to-right flow mirrors data movement through the three steps
+%%   - AWS services radiate from the processing spine
+%%   - Cache decision diamond creates explicit hit/miss branching
+%%   - Constraint axes grouped in a subgraph cluster (7 axes)
+%%   - Provenance trust and policy profile feed as lateral inputs
+%%   - Air-gap bundle shown as an export path from S3
+%% =========================================================================
+
+graph LR
+    %% --- Style classes ---
+    classDef cgeStep fill:#EDE9FE,stroke:#7C3AED,stroke-width:3px,color:#3B0764,font-weight:bold
+    classDef aws fill:#FFF7ED,stroke:#EA580C,stroke-width:2px,color:#7C2D12,font-weight:bold
+    classDef axis fill:#F0F9FF,stroke:#0284C7,stroke-width:1px,color:#0C4A6E
+    classDef cache fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#78350F,font-weight:bold
+    classDef external fill:#F1F5F9,stroke:#475569,stroke-width:1px,color:#1E293B
+    classDef output fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#064E3B,font-weight:bold
+    classDef prov fill:#FCE7F3,stroke:#DB2777,stroke-width:2px,color:#831843,font-weight:bold
+
+    %% --- Input ---
+    INPUT["Agent Output<br/>from Constitutional AI"]:::external
+
+    %% --- Constraint Axes ---
+    subgraph AXES ["7 Constraint Axes"]
+        direction TB
+        C1["C1: Syntactic Validity"]:::axis
+        C2["C2: Semantic Correctness"]:::axis
+        C3["C3: Security Policy<br/>NIST 800-53"]:::axis
+        C4["C4: Operational Bounds"]:::axis
+        C5["C5: Domain Compliance"]:::axis
+        C6["C6: Provenance Trust"]:::axis
+        C7["C7: Temporal Validity"]:::axis
+    end
+
+    %% --- Step A: Constraint Resolution ---
+    subgraph STEP_A_BOX ["Step A: Constraint Resolution"]
+        RESOLVE["Resolve Applicable<br/>Constraints and<br/>Edge Traversal"]:::cgeStep
+    end
+
+    %% --- AWS Neptune ---
+    NEPTUNE[("Neptune<br/>Constraint Graph<br/>ConstraintAxis / ConstraintRule /<br/>PolicyProfile vertices<br/>RELAXES / TIGHTENS /<br/>SUPERSEDES / REQUIRES edges")]:::aws
+
+    %% --- Provenance Trust ---
+    PROV["ADR-067<br/>Provenance Trust Score<br/>Dynamic Weight Adjustment"]:::prov
+
+    %% --- Policy Profile ---
+    POLICY["Policy Profile<br/>DoD-IL5 / Developer Sandbox /<br/>SOX-Compliant / Custom"]:::external
+
+    %% --- Step B: Coherence Computation ---
+    subgraph STEP_B_BOX ["Step B: Coherence Computation"]
+        direction TB
+        HASH["SHA-256 Hash<br/>Input Fingerprint"]:::cgeStep
+        CACHE_CHECK{"ElastiCache<br/>Redis Lookup"}:::cache
+        EMBED_HIT["Cache Hit<br/>Retrieve Embeddings<br/>~13ms P50"]:::output
+        EMBED_MISS["Cache Miss<br/>Bedrock Titan Embeddings<br/>Compute + Store"]:::aws
+        COSINE["Cosine Similarity<br/>vs Frozen Positive /<br/>Negative Centroids<br/>NumPy Arithmetic"]:::cgeStep
+        HASH --> CACHE_CHECK
+        CACHE_CHECK -->|"HIT"| EMBED_HIT
+        CACHE_CHECK -->|"MISS"| EMBED_MISS
+        EMBED_HIT --> COSINE
+        EMBED_MISS --> COSINE
+    end
+
+    %% --- AWS OpenSearch ---
+    OPENSEARCH[("OpenSearch<br/>Frozen Constraint<br/>Embeddings<br/>Positive + Negative<br/>Centroids per Axis")]:::aws
+
+    %% --- ElastiCache ---
+    REDIS[("ElastiCache Redis<br/>Embedding Cache<br/>SHA-256 Hash Keys")]:::aws
+
+    %% --- Step C: Action Determination ---
+    subgraph STEP_C_BOX ["Step C: Action Determination"]
+        CCS["Constraint Coherence<br/>Score (CCS)<br/>Weighted 7-Axis Aggregate"]:::cgeStep
+        THRESHOLD["Deterministic<br/>Threshold Comparison<br/>Per-Profile Boundaries"]:::cgeStep
+        CCS --> THRESHOLD
+    end
+
+    %% --- Outputs ---
+    OUT_AUTO["Auto-Execute"]:::output
+    OUT_HITL["Human Review<br/>ADR-032 HITL"]:::cache
+    OUT_ESC["Escalate / Reject"]:::external
+
+    %% --- Audit & Observability ---
+    DYNAMO[("DynamoDB<br/>Coherence Audit<br/>Records")]:::aws
+    SQS["SQS<br/>Async Audit<br/>Dispatch"]:::aws
+    CW["CloudWatch<br/>CCS Metrics /<br/>Latency / Alarms"]:::aws
+    S3[("S3<br/>Versioned Constraint<br/>Bundles")]:::aws
+    AIRGAP["Air-Gap Export<br/>Constraint Bundle<br/>ADR-078"]:::external
+
+    %% --- EKS Pod ---
+    EKS["EKS Pod<br/>CGE Service<br/>Alongside Agent<br/>Orchestrator"]:::aws
+
+    %% ===== EDGES =====
+
+    %% Input to Step A
+    INPUT --> RESOLVE
+
+    %% Axes inform constraint resolution
+    AXES --> RESOLVE
+
+    %% Neptune feeds Step A
+    NEPTUNE --> RESOLVE
+
+    %% Provenance trust feeds axis weighting
+    PROV --> COSINE
+
+    %% Policy profile feeds threshold selection
+    POLICY --> THRESHOLD
+
+    %% Step A output to Step B
+    RESOLVE --> HASH
+
+    %% OpenSearch feeds cosine computation
+    OPENSEARCH --> COSINE
+
+    %% Redis is the cache backend
+    REDIS --- CACHE_CHECK
+
+    %% Step B output to Step C
+    COSINE --> CCS
+
+    %% Output paths from threshold
+    THRESHOLD -->|"CCS >= T"| OUT_AUTO
+    THRESHOLD -->|"T_low <= CCS < T"| OUT_HITL
+    THRESHOLD -->|"CCS < T_low"| OUT_ESC
+
+    %% Audit path
+    CCS --> SQS --> DYNAMO
+    CCS --> CW
+
+    %% S3 constraint bundles feed Neptune and OpenSearch
+    S3 --> NEPTUNE
+    S3 --> OPENSEARCH
+    S3 --> AIRGAP
+
+    %% EKS hosts the CGE
+    EKS -.- RESOLVE
+    EKS -.- COSINE
+    EKS -.- THRESHOLD

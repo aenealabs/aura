@@ -1,0 +1,47 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gpu-workloads-network-policy
+  namespace: aura-gpu-workloads
+  labels:
+    app: gpu-scheduler
+    app.kubernetes.io/part-of: aura
+spec:
+  # Apply to all pods in namespace
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS resolution (required for service discovery)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow communication with aura-system namespace (internal services)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: aura-system
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow communication with default namespace (aura-api)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow AWS services via VPC endpoints (S3, DynamoDB, CloudWatch, SQS)
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443

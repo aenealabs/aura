@@ -1,0 +1,38 @@
+# Project Aura - Service Configuration (Base)
+# Shared service configuration for URLs, contact information, and branding
+#
+# IMPORTANT: This is the base ConfigMap with development defaults.
+# Environment-specific values are set via Kustomize overlays.
+#
+# This ConfigMap is used by multiple services:
+#   - aura-api
+#   - aura-cli
+#   - gpu-scheduler
+#   - licensing-service
+#   - a2a-gateway
+#
+# For secrets (API keys, credentials), use Kubernetes Secrets or AWS Secrets Manager.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aura-service-config
+  namespace: default
+  labels:
+    app.kubernetes.io/name: aura-service-config
+    app.kubernetes.io/component: config
+    app.kubernetes.io/part-of: aura
+data:
+  # Contact Information
+  # Default uses *.aura.local for local development/service discovery
+  SUPPORT_EMAIL: "support@aura.local"
+
+  # Service URLs
+  # These defaults use the service discovery pattern for local development
+  PRICING_PAGE_URL: "https://app.aura.local/pricing"
+  LICENSE_RENEWAL_URL: "https://app.aura.local/renew"
+  GPU_DASHBOARD_BASE_URL: "https://app.aura.local"
+
+  # Platform Branding (static, does not change per environment)
+  PLATFORM_NAME: "Aura"
+  COMPANY_NAME: "Aenea Labs"

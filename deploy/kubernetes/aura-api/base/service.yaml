@@ -1,0 +1,24 @@
+# Project Aura - API Service (Base)
+# ClusterIP service for internal access and kubectl port-forward
+#
+# Usage:
+#   kubectl port-forward svc/aura-api 8080:8080
+#   curl http://localhost:8080/health
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: aura-api
+  namespace: default
+  labels:
+    app: aura-api
+    component: api
+spec:
+  type: ClusterIP
+  selector:
+    app: aura-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

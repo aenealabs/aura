@@ -1,0 +1,1911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building Human-in-the-Loop Governance for AI Systems</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* ================================================================
+       DESIGN TOKENS
+       ================================================================ */
+    :root {
+      --brand: #3B82F6;
+      --brand-dark: #2563EB;
+      --brand-light: #DBEAFE;
+      --brand-bg: #EFF6FF;
+      --critical: #DC2626;
+      --critical-bg: #FEF2F2;
+      --critical-border: #FEE2E2;
+      --high: #EA580C;
+      --high-bg: #FFF7ED;
+      --high-border: #FFEDD5;
+      --medium: #F59E0B;
+      --medium-bg: #FFFBEB;
+      --medium-border: #FEF3C7;
+      --success: #10B981;
+      --success-bg: #F0FDF4;
+      --success-border: #DCFCE7;
+      --purple: #7C3AED;
+      --purple-bg: #FAF5FF;
+      --purple-border: #F3E8FF;
+      --teal: #0D9488;
+      --teal-bg: #F0FDFA;
+      --teal-border: #CCFBF1;
+      --indigo: #4F46E5;
+      --indigo-bg: #EEF2FF;
+      --indigo-border: #E0E7FF;
+      --bg: #F8FAFC;
+      --surface: #FFFFFF;
+      --border: #E2E8F0;
+      --border-light: #F1F5F9;
+      --text: #1E293B;
+      --text-secondary: #64748B;
+      --text-muted: #94A3B8;
+      --code-bg: #0F172A;
+      --code-text: #E2E8F0;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.08);
+      --radius: 10px;
+      --radius-sm: 6px;
+    }
+
+    /* ================================================================
+       RESET & BASE
+       ================================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ================================================================
+       HEADER
+       ================================================================ */
+    .site-header {
+      background: linear-gradient(135deg, #0F172A 0%, #1E3A5F 40%, var(--brand-dark) 100%);
+      color: #fff;
+      padding: 64px 0 56px;
+      border-bottom: 4px solid var(--brand);
+      position: relative;
+      overflow: hidden;
+    }
+    .site-header::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -10%;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    .site-header::after {
+      content: '';
+      position: absolute;
+      bottom: -30%;
+      left: -5%;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    .site-header .container { position: relative; z-index: 1; }
+    .site-header .label {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 16px;
+    }
+    .site-header h1 {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -0.75px;
+      line-height: 1.2;
+      margin-bottom: 16px;
+      max-width: 760px;
+    }
+    .site-header .subtitle {
+      font-size: 17px;
+      font-weight: 400;
+      opacity: 0.8;
+      max-width: 700px;
+      line-height: 1.6;
+    }
+    .header-meta {
+      display: flex;
+      gap: 24px;
+      margin-top: 28px;
+      font-size: 13px;
+      opacity: 0.5;
+      flex-wrap: wrap;
+    }
+    .header-meta span { white-space: nowrap; }
+
+    /* ================================================================
+       LAYOUT
+       ================================================================ */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 28px;
+    }
+    .page-body { padding: 48px 0 80px; }
+
+    /* ================================================================
+       TABLE OF CONTENTS
+       ================================================================ */
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 32px;
+      margin-bottom: 48px;
+      box-shadow: var(--shadow-sm);
+    }
+    .toc h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 6px 32px;
+    }
+    .toc a {
+      color: var(--text);
+      text-decoration: none;
+      font-size: 14px;
+      padding: 6px 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: color 0.15s;
+    }
+    .toc a:hover { color: var(--brand); }
+    .toc a .n {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--brand-bg);
+      color: var(--brand);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    /* ================================================================
+       STEP SECTIONS
+       ================================================================ */
+    .step {
+      margin-bottom: 56px;
+      padding-top: 8px;
+    }
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--border);
+    }
+    .step-badge {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      color: #fff;
+    }
+    .step-badge .num {
+      display: block;
+      font-size: 20px;
+      line-height: 1;
+    }
+    .step-badge .lbl {
+      display: block;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      opacity: 0.85;
+      margin-top: 2px;
+    }
+    .sb-1 { background: var(--brand); }
+    .sb-2 { background: var(--critical); }
+    .sb-3 { background: var(--purple); }
+    .sb-4 { background: var(--teal); }
+    .sb-5 { background: var(--high); }
+    .sb-6 { background: var(--medium); }
+    .sb-7 { background: var(--indigo); }
+    .sb-8 { background: #6366F1; }
+    .sb-9 { background: var(--success); }
+    .step-header h2 {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+    .step-intro {
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      max-width: 800px;
+      line-height: 1.7;
+    }
+
+    /* ================================================================
+       CARDS
+       ================================================================ */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 16px;
+      transition: box-shadow 0.2s;
+    }
+    .card:hover { box-shadow: var(--shadow-md); }
+    .card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+      margin-bottom: 8px;
+    }
+    .card p:last-child { margin-bottom: 0; }
+
+    /* Accent border cards */
+    .card-accent-blue { border-left: 4px solid var(--brand); }
+    .card-accent-red { border-left: 4px solid var(--critical); }
+    .card-accent-green { border-left: 4px solid var(--success); }
+    .card-accent-amber { border-left: 4px solid var(--medium); }
+    .card-accent-purple { border-left: 4px solid var(--purple); }
+    .card-accent-teal { border-left: 4px solid var(--teal); }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .card-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    /* Level indicator badges */
+    .level-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 4px;
+      letter-spacing: 0.3px;
+      margin-bottom: 8px;
+    }
+    .lt-1 { background: var(--critical-bg); color: var(--critical); border: 1px solid var(--critical-border); }
+    .lt-2 { background: var(--high-bg); color: var(--high); border: 1px solid var(--high-border); }
+    .lt-3 { background: var(--medium-bg); color: var(--medium); border: 1px solid var(--medium-border); }
+    .lt-4 { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+
+    /* ================================================================
+       TABLES
+       ================================================================ */
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    thead { background: var(--border-light); }
+    th {
+      padding: 12px 18px;
+      text-align: left;
+      font-weight: 700;
+      color: var(--text-secondary);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #FAFBFD; }
+    td code, p code, li code {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      background: var(--border-light);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--text);
+    }
+    .cell-approve { color: var(--success); font-weight: 600; }
+    .cell-block { color: var(--critical); font-weight: 600; }
+    .cell-auto { color: var(--brand); font-weight: 600; }
+    .cell-log { color: var(--medium); font-weight: 600; }
+
+    /* ================================================================
+       CODE BLOCKS
+       ================================================================ */
+    .code-block {
+      background: var(--code-bg);
+      border-radius: var(--radius);
+      margin-bottom: 20px;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      background: rgba(255,255,255,0.06);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .code-lang {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.45);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .code-filename {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: rgba(255,255,255,0.35);
+    }
+    .code-block pre {
+      padding: 20px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.65;
+      color: var(--code-text);
+      white-space: pre;
+    }
+    /* Syntax highlighting tokens */
+    .ck { color: #7DD3FC; }         /* keyword */
+    .cs { color: #86EFAC; }         /* string */
+    .cc { color: #94A3B8; }         /* comment */
+    .cn { color: #FCA5A5; }         /* number / constant */
+    .cf { color: #C4B5FD; }         /* function */
+    .ct { color: #FDBA74; }         /* type */
+    .cp { color: #F9A8D4; }         /* property */
+    .co { color: #67E8F9; }         /* operator */
+    .cv { color: #E2E8F0; }         /* variable (default text) */
+
+    /* ================================================================
+       CALLOUTS
+       ================================================================ */
+    .callout {
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      line-height: 1.65;
+      position: relative;
+      padding-left: 28px;
+    }
+    .callout::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      border-radius: var(--radius) 0 0 var(--radius);
+    }
+    .callout-blue {
+      background: var(--brand-bg);
+      border: 1px solid var(--brand-light);
+      color: #1E40AF;
+    }
+    .callout-blue::before { background: var(--brand); }
+    .callout-amber {
+      background: var(--medium-bg);
+      border: 1px solid var(--medium-border);
+      color: #92400E;
+    }
+    .callout-amber::before { background: var(--medium); }
+    .callout-red {
+      background: var(--critical-bg);
+      border: 1px solid var(--critical-border);
+      color: #991B1B;
+    }
+    .callout-red::before { background: var(--critical); }
+    .callout-green {
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+      color: #065F46;
+    }
+    .callout-green::before { background: var(--success); }
+    .callout strong { display: block; margin-bottom: 6px; font-weight: 700; }
+
+    /* ================================================================
+       DIAGRAMS (styled pre blocks)
+       ================================================================ */
+    .diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow-sm);
+      overflow-x: auto;
+    }
+    .diagram-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 16px;
+    }
+    .diagram pre {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--text);
+      white-space: pre;
+    }
+    .diagram .d-blue { color: var(--brand); font-weight: 600; }
+    .diagram .d-red { color: var(--critical); font-weight: 600; }
+    .diagram .d-green { color: var(--success); font-weight: 600; }
+    .diagram .d-amber { color: #B45309; font-weight: 600; }
+    .diagram .d-purple { color: var(--purple); font-weight: 600; }
+    .diagram .d-teal { color: var(--teal); font-weight: 600; }
+    .diagram .d-muted { color: var(--text-muted); }
+    .diagram .d-bold { font-weight: 700; color: var(--text); }
+
+    /* ================================================================
+       SPECTRUM / VISUAL BAR
+       ================================================================ */
+    .spectrum {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+    .spectrum-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 20px;
+    }
+    .spectrum-bar {
+      height: 12px;
+      border-radius: 6px;
+      background: linear-gradient(to right, var(--critical), var(--high), var(--medium), var(--success));
+      margin-bottom: 12px;
+      position: relative;
+    }
+    .spectrum-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+    .spectrum-labels .sl-left { color: var(--critical); }
+    .spectrum-labels .sl-right { color: var(--success); }
+    .spectrum-ticks {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .spectrum-tick {
+      text-align: center;
+      padding: 12px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+    }
+    .spectrum-tick .st-level {
+      font-weight: 700;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .spectrum-tick .st-example {
+      color: var(--text-secondary);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .st-1 { background: var(--critical-bg); }
+    .st-1 .st-level { color: var(--critical); }
+    .st-2 { background: var(--high-bg); }
+    .st-2 .st-level { color: var(--high); }
+    .st-3 { background: var(--medium-bg); }
+    .st-3 .st-level { color: #92400E; }
+    .st-4 { background: var(--success-bg); }
+    .st-4 .st-level { color: var(--success); }
+
+    /* ================================================================
+       TAKEAWAY CARDS
+       ================================================================ */
+    .takeaway-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .takeaway-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      box-shadow: var(--shadow-sm);
+      text-align: center;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .takeaway-card:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+    .takeaway-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--brand-bg);
+      color: var(--brand);
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+    .takeaway-card h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      line-height: 1.35;
+    }
+    .takeaway-card p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+
+    /* ================================================================
+       LISTS
+       ================================================================ */
+    .styled-list {
+      list-style: none;
+      margin: 0 0 16px 0;
+      padding: 0;
+    }
+    .styled-list li {
+      position: relative;
+      padding: 6px 0 6px 24px;
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+    .styled-list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 14px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--brand);
+      opacity: 0.5;
+    }
+    .styled-list li strong { color: var(--text); }
+
+    /* ================================================================
+       FOOTER
+       ================================================================ */
+    .site-footer {
+      background: var(--code-bg);
+      color: var(--text-muted);
+      padding: 36px 0;
+      font-size: 13px;
+      text-align: center;
+      line-height: 1.8;
+    }
+    .site-footer strong { color: var(--code-text); }
+    .site-footer a { color: var(--brand); text-decoration: none; }
+    .site-footer a:hover { text-decoration: underline; }
+
+    /* ================================================================
+       RESPONSIVE
+       ================================================================ */
+    @media (max-width: 768px) {
+      .site-header h1 { font-size: 26px; }
+      .site-header .subtitle { font-size: 15px; }
+      .card-grid { grid-template-columns: 1fr; }
+      .card-grid-2 { grid-template-columns: 1fr; }
+      .toc-grid { grid-template-columns: 1fr; }
+      .spectrum-ticks { grid-template-columns: repeat(2, 1fr); }
+      .takeaway-grid { grid-template-columns: repeat(2, 1fr); }
+      .step-header h2 { font-size: 20px; }
+      .step-badge { width: 44px; height: 44px; }
+      .step-badge .num { font-size: 17px; }
+    }
+    @media (max-width: 480px) {
+      .container { padding: 0 16px; }
+      .spectrum-ticks { grid-template-columns: 1fr; }
+      .takeaway-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ================================================================
+       PRINT
+       ================================================================ */
+    @media print {
+      .step, .diagram, .table-wrap, .code-block { break-inside: avoid; }
+      .site-header { background: #1E293B !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ================================================================
+     HEADER
+     ================================================================ -->
+<header class="site-header">
+  <div class="container">
+    <div class="label">Engineering Runbook</div>
+    <h1>Building Human-in-the-Loop Governance for AI Systems</h1>
+    <p class="subtitle">
+      A practical engineering runbook for implementing configurable autonomy controls,
+      approval workflows, and compliance-ready audit trails.
+    </p>
+    <div class="header-meta">
+      <span>Aenea Labs Engineering</span>
+      <span>February 2026</span>
+      <span>9 Implementation Steps</span>
+    </div>
+  </div>
+</header>
+
+<main class="page-body">
+  <div class="container">
+
+    <!-- ============================================================
+         TABLE OF CONTENTS
+         ============================================================ -->
+    <nav class="toc">
+      <h2>Contents</h2>
+      <div class="toc-grid">
+        <a href="#step-1"><span class="n">1</span> Define Your Autonomy Levels</a>
+        <a href="#step-2"><span class="n">2</span> Implement Non-Bypassable Guardrails</a>
+        <a href="#step-3"><span class="n">3</span> Build Industry Policy Presets</a>
+        <a href="#step-4"><span class="n">4</span> Design the Policy Resolution Hierarchy</a>
+        <a href="#step-5"><span class="n">5</span> Build the Approval Workflow Pipeline</a>
+        <a href="#step-6"><span class="n">6</span> Implement Timeout and Escalation</a>
+        <a href="#step-7"><span class="n">7</span> Build the Audit Trail</a>
+        <a href="#step-8"><span class="n">8</span> Choose Your Technology Stack</a>
+        <a href="#step-9"><span class="n">9</span> Key Takeaways</a>
+      </div>
+    </nav>
+
+    <!-- ============================================================
+         STEP 1: AUTONOMY LEVELS
+         ============================================================ -->
+    <section id="step-1" class="step">
+      <div class="step-header">
+        <div class="step-badge sb-1">
+          <span class="num">1</span>
+          <span class="lbl">Step</span>
+        </div>
+        <h2>Define Your Autonomy Levels</h2>
+      </div>
+      <p class="step-intro">
+        The foundation of any HITL system is a configurable autonomy spectrum. Rather than
+        building a binary "always-approve" gate, define discrete levels that map to your
+        organization's risk tolerance, regulatory posture, and operational maturity. This
+        lets you tune oversight per-team, per-environment, or per-repository without
+        rewriting control logic.
+      </p>
+
+      <div class="card-grid">
+        <div class="card card-accent-red">
+          <span class="level-tag lt-1">Level 1</span>
+          <h3>FULL_HITL</h3>
+          <p>
+            Human approval required for <strong>all operations</strong> regardless of severity.
+            Every AI-generated patch, recommendation, or automated action is held until a
+            designated reviewer explicitly approves it.
+          </p>
+          <p><strong>Best for:</strong> Defense contractors, healthcare systems, government agencies.
+          Regulatory frameworks like CMMC, ITAR, and HIPAA often mandate this level.</p>
+        </div>
+        <div class="card card-accent-amber">
+          <span class="level-tag lt-2">Level 2</span>
+          <h3>CRITICAL_HITL</h3>
+          <p>
+            Human approval for <strong>HIGH and CRITICAL severity only</strong>. Medium and low
+            severity operations proceed automatically with full audit logging. Balances velocity
+            with oversight.
+          </p>
+          <p><strong>Best for:</strong> Financial services, enterprise SaaS, large engineering
+          organizations with SOC 2 or SOX compliance requirements.</p>
+        </div>
+        <div class="card card-accent-blue">
+          <span class="level-tag lt-3">Level 3</span>
+          <h3>AUDIT_ONLY</h3>
+          <p>
+            All operations auto-proceed, but <strong>every decision is logged</strong> with full
+            context: what was detected, what action was taken, confidence score, and reasoning.
+            Post-hoc review replaces pre-execution approval.
+          </p>
+          <p><strong>Best for:</strong> Internal tools, staging environments, low-risk
+          repositories where speed matters more than pre-approval.</p>
+        </div>
+        <div class="card card-accent-green">
+          <span class="level-tag lt-4">Level 4</span>
+          <h3>FULL_AUTONOMOUS</h3>
+          <p>
+            Fully automated except for <strong>non-bypassable guardrails</strong> (Step 2).
+            Minimal logging overhead. The system operates independently with guardrails as
+            the only hard stops.
+          </p>
+          <p><strong>Best for:</strong> Development/test environments, startups with high risk
+          tolerance, internal experimentation platforms.</p>
+        </div>
+      </div>
+
+      <!-- Comparison Table -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Severity / Level</th>
+              <th>FULL_HITL</th>
+              <th>CRITICAL_HITL</th>
+              <th>AUDIT_ONLY</th>
+              <th>FULL_AUTONOMOUS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>CRITICAL</strong></td>
+              <td class="cell-block">Requires Approval</td>
+              <td class="cell-block">Requires Approval</td>
+              <td class="cell-log">Auto + Logged</td>
+              <td class="cell-auto">Auto-proceed</td>
+            </tr>
+            <tr>
+              <td><strong>HIGH</strong></td>
+              <td class="cell-block">Requires Approval</td>
+              <td class="cell-block">Requires Approval</td>
+              <td class="cell-log">Auto + Logged</td>
+              <td class="cell-auto">Auto-proceed</td>
+            </tr>
+            <tr>
+              <td><strong>MEDIUM</strong></td>
+              <td class="cell-block">Requires Approval</td>
+              <td class="cell-auto">Auto-proceed</td>
+              <td class="cell-log">Auto + Logged</td>
+              <td class="cell-auto">Auto-proceed</td>
+            </tr>
+            <tr>
+              <td><strong>LOW</strong></td>
+              <td class="cell-block">Requires Approval</td>
+              <td class="cell-auto">Auto-proceed</td>
+              <td class="cell-log">Auto + Logged</td>
+              <td class="cell-auto">Auto-proceed</td>
+            </tr>
+            <tr>
+              <td><strong>Guardrail Operations</strong></td>
+              <td class="cell-block">Requires Approval</td>
+              <td class="cell-block">Requires Approval</td>
+              <td class="cell-block">Requires Approval</td>
+              <td class="cell-block">Requires Approval</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Trust Spectrum -->
+      <div class="spectrum">
+        <div class="spectrum-label">Trust Spectrum</div>
+        <div class="spectrum-bar"></div>
+        <div class="spectrum-labels">
+          <span class="sl-left">Maximum Oversight</span>
+          <span class="sl-right">Maximum Autonomy</span>
+        </div>
+        <div class="spectrum-ticks">
+          <div class="spectrum-tick st-1">
+            <span class="st-level">FULL_HITL</span>
+            <span class="st-example">Defense, Government,<br>Healthcare (HIPAA)</span>
+          </div>
+          <div class="spectrum-tick st-2">
+            <span class="st-level">CRITICAL_HITL</span>
+            <span class="st-example">Financial Services,<br>Enterprise (SOX/SOC 2)</span>
+          </div>
+          <div class="spectrum-tick st-3">
+            <span class="st-level">AUDIT_ONLY</span>
+            <span class="st-example">Internal Tools,<br>Staging Environments</span>
+          </div>
+          <div class="spectrum-tick st-4">
+            <span class="st-level">FULL_AUTONOMOUS</span>
+            <span class="st-example">Dev/Test, Startups,<br>Low-Risk Repos</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         STEP 2: GUARDRAILS
+         ============================================================ -->
+    <section id="step-2" class="step">
+      <div class="step-header">
+        <div class="step-badge sb-2">
+          <span class="num">2</span>
+          <span class="lbl">Step</span>
+        </div>
+        <h2>Implement Non-Bypassable Guardrails</h2>
+      </div>
+      <p class="step-intro">
+        Regardless of which autonomy level an organization selects, certain operations
+        must <em>always</em> require human approval. These guardrails are checked before
+        any policy evaluation occurs. They cannot be disabled by configuration, overrides,
+        or even the master HITL toggle. This is the safety net beneath all other controls.
+      </p>
+
+      <div class="card-grid">
+        <div class="card card-accent-red">
+          <h3>Production Deployments</h3>
+          <p>Any change pushed to a production environment. Blast radius is maximum; rollback
+          is costly. A human must verify the change is intentional and tested.</p>
+        </div>
+        <div class="card card-accent-red">
+          <h3>Credential / Secret Modifications</h3>
+          <p>API keys, database passwords, service account tokens. Unauthorized changes here
+          can compromise entire systems. Rotation must be deliberate.</p>
+        </div>
+        <div class="card card-accent-red">
+          <h3>Access Control / IAM Changes</h3>
+          <p>Role assignments, permission grants, policy attachments. Privilege escalation is
+          the top attack vector. Every IAM change needs a human eye.</p>
+        </div>
+        <div class="card card-accent-red">
+          <h3>Database Schema Migrations</h3>
+          <p>Column drops, type changes, index modifications on production data. These operations
+          are often irreversible and can cause data loss or extended downtime.</p>
+        </div>
+        <div class="card card-accent-red">
+          <h3>Infrastructure Modifications</h3>
+          <p>Cloud resource provisioning, network configuration, security group changes.
+          Misconfigured infrastructure can expose systems to the public internet.</p>
+        </div>
+      </div>
+
+      <!-- Python code example -->
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Python</span>
+          <span class="code-filename">guardrails.py</span>
+        </div>
+        <pre><span class="cc"># Non-bypassable guardrail operations.</span>
+<span class="cc"># These are checked BEFORE any policy evaluation.</span>
+<span class="cc"># Using frozenset to prevent runtime modification.</span>
+
+<span class="cv">NON_BYPASSABLE_GUARDRAILS</span> <span class="co">=</span> <span class="cf">frozenset</span>({
+    <span class="cs">"production_deployment"</span>,
+    <span class="cs">"credential_modification"</span>,
+    <span class="cs">"access_control_change"</span>,
+    <span class="cs">"database_migration"</span>,
+    <span class="cs">"infrastructure_change"</span>,
+})
+
+
+<span class="ck">def</span> <span class="cf">requires_approval</span>(
+    operation: <span class="ct">str</span>,
+    severity: <span class="ct">str</span>,
+    policy: <span class="ct">AutonomyPolicy</span>,
+) <span class="co">-></span> <span class="ct">bool</span>:
+    <span class="cs">"""
+    Determine if an operation requires human approval.
+
+    Guardrails are evaluated FIRST and cannot be bypassed
+    by any policy configuration or override.
+    """</span>
+    <span class="cc"># Step 1: Check guardrails (highest priority)</span>
+    <span class="ck">if</span> operation <span class="ck">in</span> NON_BYPASSABLE_GUARDRAILS:
+        <span class="ck">return</span> <span class="cn">True</span>  <span class="cc"># Always requires approval</span>
+
+    <span class="cc"># Step 2: Check master toggle</span>
+    <span class="ck">if not</span> policy.hitl_enabled:
+        <span class="ck">return</span> <span class="cn">False</span>
+
+    <span class="cc"># Step 3: Evaluate policy hierarchy</span>
+    level <span class="co">=</span> policy.<span class="cf">get_autonomy_level</span>(severity, operation)
+
+    <span class="ck">if</span> level <span class="co">==</span> AutonomyLevel.<span class="cv">FULL_HITL</span>:
+        <span class="ck">return</span> <span class="cn">True</span>
+
+    <span class="ck">if</span> level <span class="co">==</span> AutonomyLevel.<span class="cv">CRITICAL_HITL</span>:
+        <span class="ck">return</span> severity.<span class="cf">upper</span>() <span class="ck">in</span> (<span class="cs">"HIGH"</span>, <span class="cs">"CRITICAL"</span>)
+
+    <span class="cc"># AUDIT_ONLY and FULL_AUTONOMOUS: no approval needed</span>
+    <span class="ck">return</span> <span class="cn">False</span></pre>
+      </div>
+
+      <div class="callout callout-red">
+        <strong>Why These Are Non-Negotiable</strong>
+        These five operations share common characteristics that make automated execution
+        unacceptable in any environment:
+        <strong style="margin-top: 10px;">Regulatory requirements</strong> mandate human authorization for production changes (SOX Section 404, PCI-DSS Requirement 6).
+        <strong>Liability exposure</strong> means the organization, not the AI, bears legal responsibility for consequences.
+        <strong>Irreversibility</strong> -- dropped database columns, rotated credentials, and deleted IAM roles cannot be undone with a rollback button.
+        <strong>Blast radius</strong> -- each operation can affect an entire system, all users, or all downstream services simultaneously.
+        <strong>Security boundary</strong> -- these operations cross trust boundaries where automated systems should not have unilateral authority.
+      </div>
+    </section>
+
+    <!-- ============================================================
+         STEP 3: POLICY PRESETS
+         ============================================================ -->
+    <section id="step-3" class="step">
+      <div class="step-header">
+        <div class="step-badge sb-3">
+          <span class="num">3</span>
+          <span class="lbl">Step</span>
+        </div>
+        <h2>Build Industry Policy Presets</h2>
+      </div>
+      <p class="step-intro">
+        Organizations should not have to build their HITL policy from scratch. Provide
+        pre-configured presets that encode industry compliance requirements, standard
+        timeout windows, and approval workflows. Teams can select a preset and then
+        customize specific overrides for their needs.
+      </p>
+
+      <div class="card-grid-2">
+        <div class="card card-accent-red">
+          <span class="level-tag lt-1">FULL_HITL</span>
+          <h3>Defense Contractor</h3>
+          <p><strong>Compliance:</strong> CMMC Level 3+, ITAR, NIST 800-171</p>
+          <p><strong>Approval:</strong> Dual approver required for CRITICAL/HIGH severity. All operations require at least one reviewer.</p>
+          <p><strong>Timeouts:</strong> CRITICAL: 12hr, HIGH: 24hr, MEDIUM: 48hr, LOW: 72hr</p>
+          <p><strong>Special:</strong> GovCloud-only deployment, classified repository segregation, security clearance verification for reviewers.</p>
+        </div>
+        <div class="card card-accent-red">
+          <span class="level-tag lt-1">FULL_HITL</span>
+          <h3>Financial Services</h3>
+          <p><strong>Compliance:</strong> SOX Section 404, PCI-DSS 4.0, GLBA</p>
+          <p><strong>Approval:</strong> Change ticket integration required. Single approver with manager escalation for CRITICAL.</p>
+          <p><strong>Timeouts:</strong> CRITICAL: 4hr, HIGH: 12hr, MEDIUM: 24hr, LOW: 48hr</p>
+          <p><strong>Special:</strong> Segregation of duties enforced -- the person who wrote the code cannot approve it.</p>
+        </div>
+        <div class="card card-accent-red">
+          <span class="level-tag lt-1">FULL_HITL</span>
+          <h3>Healthcare</h3>
+          <p><strong>Compliance:</strong> HIPAA, HITECH, FDA 21 CFR Part 11</p>
+          <p><strong>Approval:</strong> Dual approval for PHI-touching changes and encryption modifications. Privacy officer sign-off required.</p>
+          <p><strong>Timeouts:</strong> CRITICAL: 8hr, HIGH: 24hr, MEDIUM: 48hr, LOW: 72hr</p>
+          <p><strong>Special:</strong> Automatic PHI detection in patch content, anonymization verification before sandbox testing.</p>
+        </div>
+        <div class="card card-accent-amber">
+          <span class="level-tag lt-2">CRITICAL_HITL</span>
+          <h3>Enterprise Standard</h3>
+          <p><strong>Compliance:</strong> SOC 2 Type II, ISO 27001</p>
+          <p><strong>Approval:</strong> Single approver. Severity overrides allow LOW/MEDIUM to auto-proceed with audit logging.</p>
+          <p><strong>Timeouts:</strong> CRITICAL: 24hr, HIGH: 24hr, MEDIUM: 48hr, LOW: 72hr</p>
+          <p><strong>Special:</strong> Repository-level overrides for payment and auth services.</p>
+        </div>
+      </div>
+
+      <!-- JSON config examples -->
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">JSON</span>
+          <span class="code-filename">presets/defense_contractor.json</span>
+        </div>
+        <pre>{
+  <span class="cp">"preset_name"</span>: <span class="cs">"defense_contractor"</span>,
+  <span class="cp">"display_name"</span>: <span class="cs">"Defense Contractor Policy"</span>,
+  <span class="cp">"description"</span>: <span class="cs">"Maximum oversight for CMMC Level 3+ compliance"</span>,
+  <span class="cp">"hitl_enabled"</span>: <span class="cn">true</span>,
+  <span class="cp">"default_level"</span>: <span class="cs">"full_hitl"</span>,
+  <span class="cp">"compliance_frameworks"</span>: [<span class="cs">"CMMC_L3"</span>, <span class="cs">"NIST_800_171"</span>, <span class="cs">"ITAR"</span>],
+  <span class="cp">"severity_overrides"</span>: {
+    <span class="cp">"LOW"</span>: <span class="cs">"critical_hitl"</span>
+  },
+  <span class="cp">"approval_config"</span>: {
+    <span class="cp">"dual_approver_severities"</span>: [<span class="cs">"CRITICAL"</span>, <span class="cs">"HIGH"</span>],
+    <span class="cp">"require_clearance_verification"</span>: <span class="cn">true</span>,
+    <span class="cp">"segregation_of_duties"</span>: <span class="cn">true</span>
+  },
+  <span class="cp">"timeout_hours"</span>: {
+    <span class="cp">"CRITICAL"</span>: <span class="cn">12</span>,
+    <span class="cp">"HIGH"</span>: <span class="cn">24</span>,
+    <span class="cp">"MEDIUM"</span>: <span class="cn">48</span>,
+    <span class="cp">"LOW"</span>: <span class="cn">72</span>
+  },
+  <span class="cp">"guardrails"</span>: [
+    <span class="cs">"production_deployment"</span>,
+    <span class="cs">"credential_modification"</span>,
+    <span class="cs">"access_control_change"</span>,
+    <span class="cs">"database_migration"</span>,
+    <span class="cs">"infrastructure_change"</span>
+  ]
+}</pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">JSON</span>
+          <span class="code-filename">presets/enterprise_standard.json</span>
+        </div>
+        <pre>{
+  <span class="cp">"preset_name"</span>: <span class="cs">"enterprise_standard"</span>,
+  <span class="cp">"display_name"</span>: <span class="cs">"Enterprise Standard Policy"</span>,
+  <span class="cp">"description"</span>: <span class="cs">"Standard enterprise autonomy with oversight for critical"</span>,
+  <span class="cp">"hitl_enabled"</span>: <span class="cn">true</span>,
+  <span class="cp">"default_level"</span>: <span class="cs">"critical_hitl"</span>,
+  <span class="cp">"compliance_frameworks"</span>: [<span class="cs">"SOC2_TYPE_II"</span>, <span class="cs">"ISO_27001"</span>],
+  <span class="cp">"severity_overrides"</span>: {
+    <span class="cp">"LOW"</span>: <span class="cs">"full_autonomous"</span>,
+    <span class="cp">"MEDIUM"</span>: <span class="cs">"audit_only"</span>
+  },
+  <span class="cp">"repository_overrides"</span>: {
+    <span class="cp">"payment-gateway"</span>: <span class="cs">"full_hitl"</span>,
+    <span class="cp">"auth-service"</span>: <span class="cs">"full_hitl"</span>
+  },
+  <span class="cp">"approval_config"</span>: {
+    <span class="cp">"dual_approver_severities"</span>: [],
+    <span class="cp">"require_clearance_verification"</span>: <span class="cn">false</span>,
+    <span class="cp">"segregation_of_duties"</span>: <span class="cn">true</span>
+  },
+  <span class="cp">"timeout_hours"</span>: {
+    <span class="cp">"CRITICAL"</span>: <span class="cn">24</span>,
+    <span class="cp">"HIGH"</span>: <span class="cn">24</span>,
+    <span class="cp">"MEDIUM"</span>: <span class="cn">48</span>,
+    <span class="cp">"LOW"</span>: <span class="cn">72</span>
+  },
+  <span class="cp">"guardrails"</span>: [
+    <span class="cs">"production_deployment"</span>,
+    <span class="cs">"credential_modification"</span>,
+    <span class="cs">"access_control_change"</span>,
+    <span class="cs">"database_migration"</span>,
+    <span class="cs">"infrastructure_change"</span>
+  ]
+}</pre>
+      </div>
+
+      <div class="callout callout-blue">
+        <strong>Design Principle: Presets Are Starting Points</strong>
+        Presets should encode industry best practices, but every field should be overridable.
+        A healthcare company might start with the healthcare preset but add repository-level
+        overrides for their internal documentation tooling. The preset gives them 90% of the
+        configuration; they customize the last 10%.
+      </div>
+    </section>
+
+    <!-- ============================================================
+         STEP 4: POLICY RESOLUTION
+         ============================================================ -->
+    <section id="step-4" class="step">
+      <div class="step-header">
+        <div class="step-badge sb-4">
+          <span class="num">4</span>
+          <span class="lbl">Step</span>
+        </div>
+        <h2>Design the Policy Resolution Hierarchy</h2>
+      </div>
+      <p class="step-intro">
+        When your system receives an operation request, it must resolve which autonomy
+        level applies. With guardrails, repository overrides, operation overrides, severity
+        overrides, and a default level all in play, you need a deterministic priority order.
+        The first matching rule wins.
+      </p>
+
+      <!-- Priority diagram -->
+      <div class="diagram">
+        <div class="diagram-label">Resolution Priority (Highest to Lowest)</div>
+        <pre>
+  <span class="d-bold">Priority 1</span>  <span class="d-red">GUARDRAILS</span>                 <span class="d-muted">Always enforced. Cannot be overridden.</span>
+     <span class="d-muted">|</span>        <span class="d-muted">Is the operation in the guardrail set?</span>
+     <span class="d-muted">|</span>        <span class="d-muted">YES --> FULL_HITL (stop evaluation)</span>
+     <span class="d-muted">v</span>
+  <span class="d-bold">Priority 2</span>  <span class="d-purple">REPOSITORY OVERRIDES</span>       <span class="d-muted">Per-repo policies for sensitive codebases.</span>
+     <span class="d-muted">|</span>        <span class="d-muted">Does the target repo have an override?</span>
+     <span class="d-muted">|</span>        <span class="d-muted">YES --> Use repo-specific level (stop)</span>
+     <span class="d-muted">v</span>
+  <span class="d-bold">Priority 3</span>  <span class="d-blue">OPERATION OVERRIDES</span>        <span class="d-muted">Per-operation-type policies.</span>
+     <span class="d-muted">|</span>        <span class="d-muted">Does the operation type have an override?</span>
+     <span class="d-muted">|</span>        <span class="d-muted">YES --> Use operation-specific level (stop)</span>
+     <span class="d-muted">v</span>
+  <span class="d-bold">Priority 4</span>  <span class="d-amber">SEVERITY OVERRIDES</span>         <span class="d-muted">Per-severity policies.</span>
+     <span class="d-muted">|</span>        <span class="d-muted">Does the severity level have an override?</span>
+     <span class="d-muted">|</span>        <span class="d-muted">YES --> Use severity-specific level (stop)</span>
+     <span class="d-muted">v</span>
+  <span class="d-bold">Priority 5</span>  <span class="d-green">DEFAULT LEVEL</span>              <span class="d-muted">Fallback when no overrides match.</span>
+             <span class="d-muted">Use the policy's default autonomy level.</span></pre>
+      </div>
+
+      <!-- Resolution Examples -->
+      <h3 style="font-size:16px; font-weight:700; margin-bottom:16px; color:var(--text);">Resolution Examples</h3>
+
+      <div class="card-grid-2">
+        <div class="card card-accent-purple">
+          <h3>Example A: Payment Gateway, MEDIUM Severity</h3>
+          <p><strong>Context:</strong> A MEDIUM-severity dependency update in the <code>payment-gateway</code> repository.</p>
+          <p><strong>Policy:</strong> Enterprise Standard preset (default: CRITICAL_HITL, MEDIUM override: AUDIT_ONLY).</p>
+          <p style="margin-top:12px;">
+            <strong>Resolution path:</strong><br>
+            1. Guardrails? No, this is a <code>dependency_update</code> operation.<br>
+            2. Repository override for <code>payment-gateway</code>? <strong style="color:var(--critical);">Yes -- FULL_HITL.</strong><br>
+            3. <strong>Result: Requires human approval.</strong>
+          </p>
+          <p>
+            Even though the severity is only MEDIUM and the severity override would allow AUDIT_ONLY,
+            the repository override takes priority because <code>payment-gateway</code> handles
+            financial transactions.
+          </p>
+        </div>
+        <div class="card card-accent-teal">
+          <h3>Example B: Main App, LOW Severity</h3>
+          <p><strong>Context:</strong> A LOW-severity code style fix in the <code>main-app</code> repository.</p>
+          <p><strong>Policy:</strong> Enterprise Standard preset (default: CRITICAL_HITL, LOW override: FULL_AUTONOMOUS).</p>
+          <p style="margin-top:12px;">
+            <strong>Resolution path:</strong><br>
+            1. Guardrails? No, this is a <code>code_style_fix</code> operation.<br>
+            2. Repository override for <code>main-app</code>? No override configured.<br>
+            3. Operation override? No override for <code>code_style_fix</code>.<br>
+            4. Severity override for LOW? <strong style="color:var(--success);">Yes -- FULL_AUTONOMOUS.</strong><br>
+            5. <strong>Result: Auto-proceed, no approval required.</strong>
+          </p>
+          <p>
+            No guardrail, no repo override, no operation override. The severity override
+            for LOW maps to FULL_AUTONOMOUS, so the system proceeds automatically.
+          </p>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Python</span>
+          <span class="code-filename">policy_resolver.py</span>
+        </div>
+        <pre><span class="ck">def</span> <span class="cf">get_autonomy_level</span>(
+    <span class="cv">self</span>,
+    severity: <span class="ct">str</span>,
+    operation: <span class="ct">str</span>,
+    repository: <span class="ct">str</span> <span class="co">=</span> <span class="cs">""</span>,
+) <span class="co">-></span> <span class="ct">AutonomyLevel</span>:
+    <span class="cs">"""
+    Resolve autonomy level using the 5-level priority hierarchy.
+    First matching rule wins.
+    """</span>
+    <span class="cc"># Priority 1: Guardrails (always FULL_HITL)</span>
+    <span class="ck">if</span> operation <span class="ck">in</span> <span class="cv">self</span>.guardrails:
+        <span class="ck">return</span> AutonomyLevel.<span class="cv">FULL_HITL</span>
+
+    <span class="cc"># Priority 2: Repository-specific override</span>
+    <span class="ck">if</span> repository <span class="ck">and</span> repository <span class="ck">in</span> <span class="cv">self</span>.repository_overrides:
+        <span class="ck">return</span> <span class="cv">self</span>.repository_overrides[repository]
+
+    <span class="cc"># Priority 3: Operation-specific override</span>
+    <span class="ck">if</span> operation <span class="ck">in</span> <span class="cv">self</span>.operation_overrides:
+        <span class="ck">return</span> <span class="cv">self</span>.operation_overrides[operation]
+
+    <span class="cc"># Priority 4: Severity-specific override</span>
+    <span class="ck">if</span> severity.<span class="cf">upper</span>() <span class="ck">in</span> <span class="cv">self</span>.severity_overrides:
+        <span class="ck">return</span> <span class="cv">self</span>.severity_overrides[severity.<span class="cf">upper</span>()]
+
+    <span class="cc"># Priority 5: Default level</span>
+    <span class="ck">return</span> <span class="cv">self</span>.default_level</pre>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         STEP 5: APPROVAL WORKFLOW
+         ============================================================ -->
+    <section id="step-5" class="step">
+      <div class="step-header">
+        <div class="step-badge sb-5">
+          <span class="num">5</span>
+          <span class="lbl">Step</span>
+        </div>
+        <h2>Build the Approval Workflow Pipeline</h2>
+      </div>
+      <p class="step-intro">
+        The approval workflow is a 5-stage pipeline that takes an AI-generated action from
+        detection through human review to deployment. Each stage has clear entry/exit
+        criteria, and the system must handle both the happy path (approval) and rejection
+        gracefully.
+      </p>
+
+      <!-- Pipeline diagram -->
+      <div class="diagram">
+        <div class="diagram-label">5-Stage Approval Pipeline</div>
+        <pre>
+  <span class="d-blue">STAGE 1</span>              <span class="d-teal">STAGE 2</span>              <span class="d-purple">STAGE 3</span>              <span class="d-amber">STAGE 4</span>              <span class="d-green">STAGE 5</span>
+  <span class="d-blue">Detection &</span>          <span class="d-teal">Sandbox</span>              <span class="d-purple">Approval</span>             <span class="d-amber">Human</span>               <span class="d-green">Deployment /</span>
+  <span class="d-blue">Generation</span>           <span class="d-teal">Validation</span>           <span class="d-purple">Request</span>              <span class="d-amber">Review</span>              <span class="d-green">Closure</span>
+
+  +-------------+      +-------------+      +-------------+      +-------------+      +-------------+
+  |             |      |             |      |             |      |             |      |             |
+  | AI detects  | ---> | Isolated    | ---> | Create HITL | ---> | Reviewer    | ---> | Deploy with |
+  | vuln and    |      | environment |      | request     |      | examines    |      | 24hr        |
+  | generates   |      | tests the   |      | + notify    |      | evidence    |      | monitoring  |
+  | patch       |      | patch       |      | reviewers   |      |             |      |             |
+  |             |      |             |      |             |      |             |      |             |
+  +-------------+      +-------------+      +-------------+      +------+------+      +-------------+
+                                                                        |
+                                                              +---------+---------+
+                                                              |         |         |
+                                                          <span class="d-green">APPROVE</span>   <span class="d-red">REJECT</span>   <span class="d-amber">CHANGES</span>
+                                                              |         |         |
+                                                          Deploy    Log reason  Return to
+                                                          + monitor  + feedback  Stage 1
+                                                          + audit    + cleanup   with notes</pre>
+      </div>
+
+      <div class="card-grid">
+        <div class="card card-accent-blue">
+          <h3>Stage 1: Detection and Generation</h3>
+          <p>The AI agent scans the codebase, identifies a vulnerability (CVE match, SAST finding,
+          dependency alert), and generates a remediation patch. The output includes the original
+          vulnerable code, the proposed fix, a confidence score, and the reasoning chain.</p>
+        </div>
+        <div class="card card-accent-teal">
+          <h3>Stage 2: Sandbox Validation</h3>
+          <p>The patch is applied in an isolated environment (no network egress, ephemeral compute).
+          Automated checks run: syntax validation, existing unit tests, security scan of the patch
+          itself, and basic performance regression tests. Results are attached to the approval request.</p>
+        </div>
+        <div class="card card-accent-purple">
+          <h3>Stage 3: Approval Request</h3>
+          <p>The HITL service creates a structured approval request with all context. The notification
+          service dispatches alerts to designated reviewers via configured channels: email, Slack,
+          dashboard notification, or PagerDuty for CRITICAL severity.</p>
+        </div>
+        <div class="card card-accent-amber">
+          <h3>Stage 4: Human Review</h3>
+          <p>The reviewer sees a unified view: original code, AI patch (diff), sandbox results,
+          confidence score, and reasoning. Three decisions are available: APPROVE (proceed to
+          deployment), REJECT (log reason, feed back to AI), or REQUEST_CHANGES (return to Stage 1
+          with reviewer notes).</p>
+        </div>
+        <div class="card card-accent-green">
+          <h3>Stage 5: Deployment or Closure</h3>
+          <p>If approved: the patch is deployed through the standard CI/CD pipeline with 24-hour
+          enhanced monitoring. If rejected: the reason is logged, the AI receives the feedback for
+          learning, and all sandbox resources are cleaned up.</p>
+        </div>
+      </div>
+
+      <!-- Approval request content -->
+      <h3 style="font-size:16px; font-weight:700; margin: 24px 0 16px; color:var(--text);">What the Reviewer Sees</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">JSON</span>
+          <span class="code-filename">approval_request_example.json</span>
+        </div>
+        <pre>{
+  <span class="cp">"approval_id"</span>: <span class="cs">"apr-8f3a2b1c"</span>,
+  <span class="cp">"status"</span>: <span class="cs">"PENDING"</span>,
+  <span class="cp">"created_at"</span>: <span class="cs">"2026-02-26T14:30:00Z"</span>,
+  <span class="cp">"expires_at"</span>: <span class="cs">"2026-02-27T14:30:00Z"</span>,
+  <span class="cp">"severity"</span>: <span class="cs">"HIGH"</span>,
+
+  <span class="cp">"vulnerability"</span>: {
+    <span class="cp">"cve_id"</span>: <span class="cs">"CVE-2026-1234"</span>,
+    <span class="cp">"title"</span>: <span class="cs">"SQL Injection in user query handler"</span>,
+    <span class="cp">"cvss_score"</span>: <span class="cn">8.6</span>,
+    <span class="cp">"affected_file"</span>: <span class="cs">"src/api/users.py"</span>,
+    <span class="cp">"affected_lines"</span>: [<span class="cn">142</span>, <span class="cn">158</span>]
+  },
+
+  <span class="cp">"original_code"</span>: <span class="cs">"query = f\"SELECT * FROM users WHERE id = {user_id}\""</span>,
+  <span class="cp">"proposed_patch"</span>: <span class="cs">"query = \"SELECT * FROM users WHERE id = %s\"\ncursor.execute(query, (user_id,))"</span>,
+
+  <span class="cp">"ai_analysis"</span>: {
+    <span class="cp">"confidence_score"</span>: <span class="cn">0.94</span>,
+    <span class="cp">"reasoning"</span>: <span class="cs">"Direct string interpolation in SQL query allows injection. Parameterized query eliminates the attack vector while preserving identical functionality."</span>,
+    <span class="cp">"risk_assessment"</span>: <span class="cs">"Low regression risk. Change is isolated to query construction. All existing tests pass."</span>
+  },
+
+  <span class="cp">"sandbox_results"</span>: {
+    <span class="cp">"syntax_check"</span>: <span class="cs">"PASS"</span>,
+    <span class="cp">"unit_tests"</span>: <span class="cs">"142/142 passed"</span>,
+    <span class="cp">"security_scan"</span>: <span class="cs">"PASS - no new vulnerabilities introduced"</span>,
+    <span class="cp">"performance"</span>: <span class="cs">"No regression detected (p95 latency unchanged)"</span>
+  },
+
+  <span class="cp">"reviewer"</span>: <span class="cs">"security-team@company.com"</span>,
+  <span class="cp">"decisions_available"</span>: [<span class="cs">"APPROVE"</span>, <span class="cs">"REJECT"</span>, <span class="cs">"REQUEST_CHANGES"</span>]
+}</pre>
+      </div>
+
+      <div class="callout callout-blue">
+        <strong>Design Principle: Evidence-Based Review</strong>
+        The approval request should contain everything a reviewer needs to make a decision
+        without leaving the review interface. If reviewers consistently need to open their IDE
+        or check external systems, your approval request is missing context. Include the original
+        code, the diff, the test results, and the AI's reasoning in a single view.
+      </div>
+    </section>
+
+    <!-- ============================================================
+         STEP 6: TIMEOUT AND ESCALATION
+         ============================================================ -->
+    <section id="step-6" class="step">
+      <div class="step-header">
+        <div class="step-badge sb-6">
+          <span class="num">6</span>
+          <span class="lbl">Step</span>
+        </div>
+        <h2>Implement Timeout and Escalation</h2>
+      </div>
+      <p class="step-intro">
+        Approval requests cannot sit indefinitely. Unreviewed requests create security
+        exposure windows and block remediation pipelines. Implement a timeout system with
+        severity-based windows, early warnings, and escalation paths that prevent bottlenecks
+        without bypassing human oversight.
+      </p>
+
+      <!-- Timeout table -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Timeout Window</th>
+              <th>Warning At</th>
+              <th>Escalation Action</th>
+              <th>Max Escalations</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong style="color:var(--critical);">CRITICAL</strong></td>
+              <td>24 hours</td>
+              <td>18 hours (75%)</td>
+              <td>Escalate to backup reviewer</td>
+              <td>2</td>
+            </tr>
+            <tr>
+              <td><strong style="color:var(--high);">HIGH</strong></td>
+              <td>24 hours</td>
+              <td>18 hours (75%)</td>
+              <td>Escalate to backup reviewer</td>
+              <td>2</td>
+            </tr>
+            <tr>
+              <td><strong style="color:var(--medium);">MEDIUM</strong></td>
+              <td>48 hours</td>
+              <td>36 hours (75%)</td>
+              <td>Expire and re-queue</td>
+              <td>N/A</td>
+            </tr>
+            <tr>
+              <td><strong style="color:var(--success);">LOW</strong></td>
+              <td>72 hours</td>
+              <td>54 hours (75%)</td>
+              <td>Expire and re-queue</td>
+              <td>N/A</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Escalation flow -->
+      <div class="diagram">
+        <div class="diagram-label">Escalation Processing Flow</div>
+        <pre>
+  Approval Request Created
+       |
+       v
+  +--------------------+
+  |  Timer Running     |
+  |  (severity-based)  |
+  +--------------------+
+       |
+       |  At 75% of timeout
+       v
+  +--------------------+
+  |  <span class="d-amber">Send Warning</span>       |-----> Notification to assigned reviewer
+  |  "Review needed"   |       "Approval apr-8f3a2b expires in 6 hours"
+  +--------------------+
+       |
+       |  At 100% of timeout
+       v
+  +--------------------+
+  |  <span class="d-bold">Evaluate Severity</span>  |
+  +--------+-----------+
+           |
+     +-----+-----+
+     |           |
+  <span class="d-red">CRITICAL</span>    <span class="d-amber">MEDIUM</span>
+  <span class="d-red">or HIGH</span>     <span class="d-amber">or LOW</span>
+     |           |
+     v           v
+  <span class="d-red">ESCALATE</span>     <span class="d-amber">EXPIRE</span>
+     |           |
+     v           v
+  Reassign    Mark EXPIRED
+  to backup   Re-queue with
+  reviewer    fresh timeout
+  (up to 2x)
+     |
+     v
+  Still no response
+  after 2 escalations?
+     |
+     v
+  <span class="d-red">EXPIRE</span> + alert
+  management channel</pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">JSON</span>
+          <span class="code-filename">escalation_config.json</span>
+        </div>
+        <pre>{
+  <span class="cp">"escalation_policy"</span>: {
+    <span class="cp">"warning_threshold_percent"</span>: <span class="cn">75</span>,
+    <span class="cp">"max_escalations"</span>: <span class="cn">2</span>,
+    <span class="cp">"escalation_behaviors"</span>: {
+      <span class="cp">"CRITICAL"</span>: <span class="cs">"escalate"</span>,
+      <span class="cp">"HIGH"</span>: <span class="cs">"escalate"</span>,
+      <span class="cp">"MEDIUM"</span>: <span class="cs">"expire_and_requeue"</span>,
+      <span class="cp">"LOW"</span>: <span class="cs">"expire_and_requeue"</span>
+    },
+    <span class="cp">"backup_reviewers"</span>: {
+      <span class="cp">"escalation_1"</span>: <span class="cs">"senior-security-team@company.com"</span>,
+      <span class="cp">"escalation_2"</span>: <span class="cs">"engineering-directors@company.com"</span>
+    },
+    <span class="cp">"management_alert_channel"</span>: <span class="cs">"#security-escalations"</span>
+  }
+}</pre>
+      </div>
+
+      <div class="callout callout-amber">
+        <strong>Critical Design Decision: Never Auto-Approve on Timeout</strong>
+        A common anti-pattern is to auto-approve operations when the timeout expires. This
+        defeats the purpose of HITL entirely. Instead, escalate high-severity items to backup
+        reviewers and expire-and-requeue lower-severity items. The goal is to get a human
+        decision, not to bypass the human decision.
+      </div>
+    </section>
+
+    <!-- ============================================================
+         STEP 7: AUDIT TRAIL
+         ============================================================ -->
+    <section id="step-7" class="step">
+      <div class="step-header">
+        <div class="step-badge sb-7">
+          <span class="num">7</span>
+          <span class="lbl">Step</span>
+        </div>
+        <h2>Build the Audit Trail</h2>
+      </div>
+      <p class="step-intro">
+        Every HITL decision must produce a compliance-grade audit record. Auditors need to
+        answer three questions: who made the decision, what evidence did they see, and when
+        did it happen. Your audit trail must be immutable, retained for regulatory periods,
+        and linked to the specific policy configuration that was active at decision time.
+      </p>
+
+      <!-- Events to log -->
+      <h3 style="font-size:16px; font-weight:700; margin-bottom:16px; color:var(--text);">Events to Log</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Event Type</th>
+              <th>Trigger</th>
+              <th>Critical Fields</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>approval_request_created</code></td>
+              <td>AI generates a patch that requires HITL review</td>
+              <td>Vulnerability details, severity, assigned reviewer, policy snapshot</td>
+            </tr>
+            <tr>
+              <td><code>notification_sent</code></td>
+              <td>Reviewer is notified of pending approval</td>
+              <td>Channel (email, Slack, dashboard), recipient, delivery confirmation</td>
+            </tr>
+            <tr>
+              <td><code>human_decision</code></td>
+              <td>Reviewer approves, rejects, or requests changes</td>
+              <td>Decision, reviewer identity, reasoning, time spent reviewing</td>
+            </tr>
+            <tr>
+              <td><code>escalation_triggered</code></td>
+              <td>Timeout threshold reached, escalation executed</td>
+              <td>Original reviewer, escalation level, backup reviewer assigned</td>
+            </tr>
+            <tr>
+              <td><code>deployment_executed</code></td>
+              <td>Approved patch deployed to target environment</td>
+              <td>Commit SHA, environment, deployment method, monitoring config</td>
+            </tr>
+            <tr>
+              <td><code>request_expired</code></td>
+              <td>Timeout reached without decision</td>
+              <td>Total escalations attempted, re-queue status, final disposition</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Audit log format -->
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">JSON</span>
+          <span class="code-filename">audit_event_schema.json</span>
+        </div>
+        <pre>{
+  <span class="cp">"event_id"</span>: <span class="cs">"evt-a1b2c3d4-e5f6-7890-abcd-ef1234567890"</span>,
+  <span class="cp">"event_type"</span>: <span class="cs">"human_decision"</span>,
+  <span class="cp">"timestamp"</span>: <span class="cs">"2026-02-26T15:42:18.003Z"</span>,
+  <span class="cp">"version"</span>: <span class="cs">"1.0"</span>,
+
+  <span class="cp">"actor"</span>: {
+    <span class="cp">"email"</span>: <span class="cs">"j.smith@company.com"</span>,
+    <span class="cp">"role"</span>: <span class="cs">"senior_security_engineer"</span>,
+    <span class="cp">"ip_address"</span>: <span class="cs">"10.0.45.12"</span>,
+    <span class="cp">"user_agent"</span>: <span class="cs">"Mozilla/5.0 (dashboard-v3.2)"</span>,
+    <span class="cp">"session_id"</span>: <span class="cs">"sess-9f8e7d6c"</span>
+  },
+
+  <span class="cp">"decision"</span>: {
+    <span class="cp">"action"</span>: <span class="cs">"APPROVED"</span>,
+    <span class="cp">"reasoning"</span>: <span class="cs">"Parameterized query is correct fix. Test coverage adequate."</span>,
+    <span class="cp">"time_to_decision_seconds"</span>: <span class="cn">847</span>,
+    <span class="cp">"review_checklist_completed"</span>: <span class="cn">true</span>
+  },
+
+  <span class="cp">"vulnerability"</span>: {
+    <span class="cp">"cve_id"</span>: <span class="cs">"CVE-2026-1234"</span>,
+    <span class="cp">"severity"</span>: <span class="cs">"HIGH"</span>,
+    <span class="cp">"cvss_score"</span>: <span class="cn">8.6</span>,
+    <span class="cp">"repository"</span>: <span class="cs">"org/main-app"</span>,
+    <span class="cp">"affected_file"</span>: <span class="cs">"src/api/users.py"</span>
+  },
+
+  <span class="cp">"policy_context"</span>: {
+    <span class="cp">"policy_id"</span>: <span class="cs">"policy-abc123"</span>,
+    <span class="cp">"policy_name"</span>: <span class="cs">"Enterprise Standard Policy"</span>,
+    <span class="cp">"autonomy_level_applied"</span>: <span class="cs">"critical_hitl"</span>,
+    <span class="cp">"resolution_path"</span>: <span class="cs">"default_level"</span>,
+    <span class="cp">"guardrail_triggered"</span>: <span class="cn">false</span>
+  },
+
+  <span class="cp">"compliance_tags"</span>: [<span class="cs">"SOC2-CC6.1"</span>, <span class="cs">"ISO27001-A.12.6.1"</span>, <span class="cs">"NIST-SI-2"</span>],
+
+  <span class="cp">"immutable_hash"</span>: <span class="cs">"sha256:a3f2b8c1d4e5f67890abcdef1234567890abcdef1234567890abcdef12345678"</span>,
+  <span class="cp">"previous_event_hash"</span>: <span class="cs">"sha256:b4c3d9e2f5a6b78901cdefab2345678901cdefab2345678901cdefab23456789"</span>
+}</pre>
+      </div>
+
+      <div class="callout callout-blue">
+        <strong>Immutable Hash Chain</strong>
+        Each audit event includes a SHA-256 hash of its contents and a reference to the
+        previous event's hash. This creates a tamper-evident chain similar to a blockchain
+        ledger. If any event is modified after the fact, the hash chain breaks and the
+        tampering is detectable. Store events in append-only storage (S3 with Object Lock,
+        CloudWatch Logs with retention policies) and replicate to a separate AWS account
+        for defense in depth.
+      </div>
+
+      <!-- Compliance mapping -->
+      <h3 style="font-size:16px; font-weight:700; margin: 24px 0 16px; color:var(--text);">Compliance Framework Mapping</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Framework</th>
+              <th>Requirement</th>
+              <th>HITL Capability That Satisfies It</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>SOX Section 404</strong></td>
+              <td>Internal controls over financial reporting</td>
+              <td>Approval workflow with segregation of duties, immutable audit trail, policy presets</td>
+            </tr>
+            <tr>
+              <td><strong>CMMC Level 3</strong></td>
+              <td>Access control, audit and accountability</td>
+              <td>Dual-approver enforcement, 7-year audit retention, guardrail-protected operations</td>
+            </tr>
+            <tr>
+              <td><strong>HIPAA</strong></td>
+              <td>Administrative, physical, and technical safeguards</td>
+              <td>PHI-aware approval routing, privacy officer sign-off, encryption change guardrails</td>
+            </tr>
+            <tr>
+              <td><strong>PCI-DSS 4.0</strong></td>
+              <td>Requirement 6: Secure development</td>
+              <td>Code change approval workflow, sandbox validation, deployment audit trail</td>
+            </tr>
+            <tr>
+              <td><strong>NIST 800-53</strong></td>
+              <td>SI-2 (Flaw Remediation), CM-3 (Change Control)</td>
+              <td>Full remediation pipeline with approval gates, policy-based change management</td>
+            </tr>
+            <tr>
+              <td><strong>FedRAMP</strong></td>
+              <td>Continuous monitoring, change management</td>
+              <td>Real-time escalation, audit hash chain, configurable autonomy per environment</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout callout-amber">
+        <strong>Retention Requirements</strong>
+        SOX requires 7 years of audit records. HIPAA requires 6 years. PCI-DSS requires
+        1 year of immediately accessible logs plus archival. Design your audit storage with
+        the longest applicable retention period: 7 years. Use tiered storage (hot/warm/cold)
+        to manage cost -- recent events in DynamoDB or CloudWatch, older events in S3 Glacier.
+      </div>
+    </section>
+
+    <!-- ============================================================
+         STEP 8: TECHNOLOGY STACK
+         ============================================================ -->
+    <section id="step-8" class="step">
+      <div class="step-header">
+        <div class="step-badge sb-8">
+          <span class="num">8</span>
+          <span class="lbl">Step</span>
+        </div>
+        <h2>Choose Your Technology Stack</h2>
+      </div>
+      <p class="step-intro">
+        Each component of the HITL system maps to specific infrastructure services.
+        The table below provides both AWS-native and open-source alternatives for each
+        component, so you can build on whatever platform your team operates.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Purpose</th>
+              <th>AWS-Native</th>
+              <th>Open-Source / Multi-Cloud</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Approval State Machine</strong></td>
+              <td>Orchestrate the 5-stage workflow with branching logic</td>
+              <td>AWS Step Functions</td>
+              <td>Temporal.io, Apache Airflow</td>
+            </tr>
+            <tr>
+              <td><strong>Approval State Store</strong></td>
+              <td>Persist approval request status, metadata, history</td>
+              <td>DynamoDB</td>
+              <td>PostgreSQL, CockroachDB</td>
+            </tr>
+            <tr>
+              <td><strong>Notification Dispatch</strong></td>
+              <td>Alert reviewers via email, Slack, PagerDuty</td>
+              <td>SNS + SES</td>
+              <td>Slack Webhooks, SendGrid, NATS</td>
+            </tr>
+            <tr>
+              <td><strong>Sandbox Environment</strong></td>
+              <td>Isolated compute for patch validation</td>
+              <td>ECS Fargate (isolated VPC)</td>
+              <td>Kubernetes Jobs, Firecracker VMs</td>
+            </tr>
+            <tr>
+              <td><strong>Audit Storage</strong></td>
+              <td>Immutable, long-retention event log</td>
+              <td>CloudWatch Logs + S3 Object Lock</td>
+              <td>OpenSearch, Loki + MinIO</td>
+            </tr>
+            <tr>
+              <td><strong>Dashboard</strong></td>
+              <td>Reviewer interface for approval decisions</td>
+              <td>React + API Gateway</td>
+              <td>Next.js, Vue.js, Retool</td>
+            </tr>
+            <tr>
+              <td><strong>Escalation Timer</strong></td>
+              <td>Trigger warnings and escalations on schedule</td>
+              <td>EventBridge Scheduled Rules</td>
+              <td>Cron (systemd), Celery Beat</td>
+            </tr>
+            <tr>
+              <td><strong>Policy Store</strong></td>
+              <td>Persist and version autonomy policies</td>
+              <td>DynamoDB + S3 versioning</td>
+              <td>PostgreSQL, etcd, Consul KV</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card-grid-2">
+        <div class="card card-accent-blue">
+          <h3>AWS-Native Approach</h3>
+          <p><strong>Best for:</strong> Teams already on AWS with compliance requirements that benefit from managed services and native encryption.</p>
+          <p>
+            <strong>Advantages:</strong> Managed scaling, built-in encryption at rest, native IAM integration,
+            CloudTrail audit coverage, GovCloud availability.
+          </p>
+          <p>
+            <strong>Trade-offs:</strong> Vendor lock-in, higher cost at scale, limited customization of
+            managed service behavior.
+          </p>
+        </div>
+        <div class="card card-accent-green">
+          <h3>Open-Source / Multi-Cloud Approach</h3>
+          <p><strong>Best for:</strong> Teams that need portability, operate across clouds, or want full control over every component.</p>
+          <p>
+            <strong>Advantages:</strong> No vendor lock-in, full customization, lower per-unit cost at
+            high scale, community-driven improvements.
+          </p>
+          <p>
+            <strong>Trade-offs:</strong> Operational overhead for self-hosted services, must implement
+            encryption and access control manually, no single-vendor support.
+          </p>
+        </div>
+      </div>
+
+      <div class="callout callout-blue">
+        <strong>Architecture Recommendation: Start with Managed, Extract When Needed</strong>
+        Begin with managed services (Step Functions + DynamoDB + SNS) to validate your
+        workflow logic quickly. Once the approval patterns stabilize, evaluate whether
+        the managed service costs or limitations justify migrating specific components
+        to self-hosted alternatives. The policy resolution logic (Step 4) and guardrail
+        enforcement (Step 2) are pure application code and remain portable regardless
+        of infrastructure choice.
+      </div>
+    </section>
+
+    <!-- ============================================================
+         STEP 9: KEY TAKEAWAYS
+         ============================================================ -->
+    <section id="step-9" class="step">
+      <div class="step-header">
+        <div class="step-badge sb-9">
+          <span class="num">9</span>
+          <span class="lbl">Step</span>
+        </div>
+        <h2>Key Takeaways</h2>
+      </div>
+      <p class="step-intro">
+        Building a production-grade HITL system comes down to five principles. If you
+        internalize these, the implementation details follow naturally.
+      </p>
+
+      <div class="takeaway-grid">
+        <div class="takeaway-card">
+          <div class="takeaway-num">1</div>
+          <h3>HITL Is Configurable, Not Fixed</h3>
+          <p>
+            Do not hardcode a single approval mode. Build a spectrum of autonomy levels
+            and let organizations choose where they sit based on their risk tolerance
+            and regulatory requirements.
+          </p>
+        </div>
+        <div class="takeaway-card">
+          <div class="takeaway-num">2</div>
+          <h3>Guardrails Are Absolute</h3>
+          <p>
+            Certain operations must always require human approval, regardless of policy
+            configuration. These guardrails are the non-negotiable safety net that
+            protects against catastrophic automated actions.
+          </p>
+        </div>
+        <div class="takeaway-card">
+          <div class="takeaway-num">3</div>
+          <h3>Presets Simplify Compliance</h3>
+          <p>
+            Industry presets encode regulatory best practices into ready-to-use
+            configurations. Teams get compliant faster and customize only what they
+            need to diverge from the standard.
+          </p>
+        </div>
+        <div class="takeaway-card">
+          <div class="takeaway-num">4</div>
+          <h3>Every Decision Is Audited</h3>
+          <p>
+            The audit trail is not optional. Every approval, rejection, escalation, and
+            auto-proceed must produce an immutable record with actor identity, evidence,
+            timestamp, and policy context.
+          </p>
+        </div>
+        <div class="takeaway-card">
+          <div class="takeaway-num">5</div>
+          <h3>Escalation Prevents Bottlenecks</h3>
+          <p>
+            Without escalation, a single unresponsive reviewer blocks the entire
+            remediation pipeline. Timeout-based escalation ensures that human oversight
+            scales beyond any individual reviewer's availability.
+          </p>
+        </div>
+      </div>
+
+      <div class="callout callout-green" style="margin-top: 24px;">
+        <strong>From Blueprint to Production</strong>
+        This runbook provides the architectural blueprint. The implementation details -- table
+        schemas, API contracts, IAM policies, CloudFormation templates -- will vary based on
+        your technology choices from Step 8. Start with the guardrails (Step 2) and policy
+        resolution (Step 4) as your first sprint. These are pure application logic with
+        zero infrastructure dependencies and can be tested with unit tests before you
+        provision any cloud resources.
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<!-- ================================================================
+     FOOTER
+     ================================================================ -->
+<footer class="site-footer">
+  <div class="container">
+    <strong>Aenea Labs Engineering</strong> -- February 2026<br>
+    <a href="https://aenealabs.com">aenealabs.com</a>
+  </div>
+</footer>
+
+</body>
+</html>

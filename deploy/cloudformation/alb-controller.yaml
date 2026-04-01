@@ -1,0 +1,260 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 3.3 - ALB Controller (IAM Resources)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  OIDCProviderArn:
+    Type: String
+    Description: EKS OIDC Provider ARN for IRSA
+
+  OIDCProviderURL:
+    Type: String
+    Description: EKS OIDC Provider URL (without https://)
+
+  ClusterName:
+    Type: String
+    Description: EKS cluster name
+
+  VpcId:
+    Type: String
+    Description: VPC ID for ALB
+
+Resources:
+  # IAM Policy for AWS Load Balancer Controller
+  # Based on: https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
+  ALBControllerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-alb-controller-policy-${Environment}'
+      Description: IAM policy for AWS Load Balancer Controller
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - iam:CreateServiceLinkedRole
+            Resource: '*'
+            Condition:
+              StringEquals:
+                iam:AWSServiceName: elasticloadbalancing.amazonaws.com
+          - Effect: Allow
+            Action:
+              - ec2:DescribeAccountAttributes
+              - ec2:DescribeAddresses
+              - ec2:DescribeAvailabilityZones
+              - ec2:DescribeInternetGateways
+              - ec2:DescribeVpcs
+              - ec2:DescribeVpcPeeringConnections
+              - ec2:DescribeSubnets
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeInstances
+              - ec2:DescribeNetworkInterfaces
+              - ec2:DescribeTags
+              - ec2:GetCoipPoolUsage
+              - ec2:DescribeCoipPools
+              - elasticloadbalancing:DescribeLoadBalancers
+              - elasticloadbalancing:DescribeLoadBalancerAttributes
+              - elasticloadbalancing:DescribeListeners
+              - elasticloadbalancing:DescribeListenerAttributes
+              - elasticloadbalancing:DescribeListenerCertificates
+              - elasticloadbalancing:DescribeSSLPolicies
+              - elasticloadbalancing:DescribeRules
+              - elasticloadbalancing:DescribeTargetGroups
+              - elasticloadbalancing:DescribeTargetGroupAttributes
+              - elasticloadbalancing:DescribeTargetHealth
+              - elasticloadbalancing:DescribeTags
+              - elasticloadbalancing:DescribeTrustStores
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - cognito-idp:DescribeUserPoolClient
+              - acm:ListCertificates
+              - acm:DescribeCertificate
+              - iam:ListServerCertificates
+              - iam:GetServerCertificate
+              - waf-regional:GetWebACL
+              - waf-regional:GetWebACLForResource
+              - waf-regional:AssociateWebACL
+              - waf-regional:DisassociateWebACL
+              - wafv2:GetWebACL
+              - wafv2:GetWebACLForResource
+              - wafv2:AssociateWebACL
+              - wafv2:DisassociateWebACL
+              - shield:GetSubscriptionState
+              - shield:DescribeProtection
+              - shield:CreateProtection
+              - shield:DeleteProtection
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:RevokeSecurityGroupIngress
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - ec2:CreateSecurityGroup
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - ec2:CreateTags
+            Resource: !Sub 'arn:${AWS::Partition}:ec2:*:*:security-group/*'
+            Condition:
+              StringEquals:
+                ec2:CreateAction: CreateSecurityGroup
+              'Null':
+                aws:RequestTag/elbv2.k8s.aws/cluster: 'false'
+          - Effect: Allow
+            Action:
+              - ec2:CreateTags
+              - ec2:DeleteTags
+            Resource: !Sub 'arn:${AWS::Partition}:ec2:*:*:security-group/*'
+            Condition:
+              'Null':
+                aws:RequestTag/elbv2.k8s.aws/cluster: 'true'
+                aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+          - Effect: Allow
+            Action:
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:RevokeSecurityGroupIngress
+              - ec2:DeleteSecurityGroup
+            Resource: '*'
+            Condition:
+              'Null':
+                aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:CreateLoadBalancer
+              - elasticloadbalancing:CreateTargetGroup
+            Resource: '*'
+            Condition:
+              'Null':
+                aws:RequestTag/elbv2.k8s.aws/cluster: 'false'
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:CreateListener
+              - elasticloadbalancing:DeleteListener
+              - elasticloadbalancing:CreateRule
+              - elasticloadbalancing:DeleteRule
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:AddTags
+              - elasticloadbalancing:RemoveTags
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:targetgroup/*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:loadbalancer/net/*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:loadbalancer/app/*/*'
+            Condition:
+              'Null':
+                aws:RequestTag/elbv2.k8s.aws/cluster: 'true'
+                aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:AddTags
+              - elasticloadbalancing:RemoveTags
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:listener/net/*/*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:listener/app/*/*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:listener-rule/net/*/*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:listener-rule/app/*/*/*'
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:ModifyLoadBalancerAttributes
+              - elasticloadbalancing:SetIpAddressType
+              - elasticloadbalancing:SetSecurityGroups
+              - elasticloadbalancing:SetSubnets
+              - elasticloadbalancing:DeleteLoadBalancer
+              - elasticloadbalancing:ModifyTargetGroup
+              - elasticloadbalancing:ModifyTargetGroupAttributes
+              - elasticloadbalancing:DeleteTargetGroup
+            Resource: '*'
+            Condition:
+              'Null':
+                aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:AddTags
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:targetgroup/*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:loadbalancer/net/*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:loadbalancer/app/*/*'
+            Condition:
+              StringEquals:
+                elasticloadbalancing:CreateAction:
+                  - CreateTargetGroup
+                  - CreateLoadBalancer
+              'Null':
+                aws:RequestTag/elbv2.k8s.aws/cluster: 'false'
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:RegisterTargets
+              - elasticloadbalancing:DeregisterTargets
+            Resource: !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:*:targetgroup/*/*'
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:SetWebAcl
+              - elasticloadbalancing:ModifyListener
+              - elasticloadbalancing:AddListenerCertificates
+              - elasticloadbalancing:RemoveListenerCertificates
+              - elasticloadbalancing:ModifyRule
+            Resource: '*'
+
+  # IAM Role for AWS Load Balancer Controller (IRSA)
+  ALBControllerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-alb-controller-role-${Environment}'
+      Description: !Sub 'IRSA role for AWS Load Balancer Controller in ${Environment}'
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCUrl}:aud": "sts.amazonaws.com",
+                      "${OIDCUrl}:sub": "system:serviceaccount:kube-system:aws-load-balancer-controller"
+                    }
+                  }
+                }
+              ]
+            }
+          - OIDCArn: !Ref OIDCProviderArn
+            OIDCUrl: !Ref OIDCProviderURL
+      ManagedPolicyArns:
+        - !Ref ALBControllerPolicy
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ALBControllerRoleArn:
+    Description: ARN of the IAM role for AWS Load Balancer Controller
+    Value: !GetAtt ALBControllerRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-alb-controller-role-arn-${Environment}'
+
+  ALBControllerPolicyArn:
+    Description: ARN of the IAM policy for AWS Load Balancer Controller
+    Value: !Ref ALBControllerPolicy
+    Export:
+      Name: !Sub '${ProjectName}-alb-controller-policy-arn-${Environment}'

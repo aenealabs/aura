@@ -1,0 +1,372 @@
+# Project Aura - Monitoring Services NetworkPolicy
+#
+# Network policies for observability stack:
+#   - Prometheus (metrics collection)
+#   - Grafana (dashboards)
+#   - Alertmanager (alerting)
+#   - OpenTelemetry Collector (traces)
+#
+# ADR-049 Phase 0 - Self-Hosted Deployment
+#
+---
+# Prometheus
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-network-policy
+  namespace: aura-monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow Grafana to query Prometheus
+    - from:
+        - podSelector:
+            matchLabels:
+              app: grafana
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow Alertmanager callbacks
+    - from:
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow access from aura namespace (for debug/admin)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+          podSelector:
+            matchLabels:
+              app: aura-api
+      ports:
+        - protocol: TCP
+          port: 9090
+  egress:
+    # Scrape metrics from aura namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 8080  # API metrics
+        - protocol: TCP
+          port: 9090  # Prometheus metrics port
+        - protocol: TCP
+          port: 50051  # gRPC metrics
+
+    # Scrape metrics from aura-data namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+      ports:
+        - protocol: TCP
+          port: 9187  # postgres_exporter
+        - protocol: TCP
+          port: 9121  # redis_exporter
+        - protocol: TCP
+          port: 9200  # opensearch
+        - protocol: TCP
+          port: 2004  # neo4j metrics
+
+    # Scrape metrics from aura-llm namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-llm
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8080
+
+    # Scrape node-exporter on nodes
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 9100  # node-exporter
+
+    # Send alerts to Alertmanager
+    - to:
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9093
+
+    # Scrape kube-state-metrics
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8443
+
+---
+# Grafana
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-network-policy
+  namespace: aura-monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+
+    # Allow access from aura namespace (embedded dashboards)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 3000
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    # Query Prometheus
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Query PostgreSQL (for Grafana state)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+          podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# Alertmanager
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager-network-policy
+  namespace: aura-monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app: alertmanager
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow alerts from Prometheus
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9093
+
+    # Allow Grafana to query silences/alerts
+    - from:
+        - podSelector:
+            matchLabels:
+              app: grafana
+      ports:
+        - protocol: TCP
+          port: 9093
+
+    # Allow cluster communication (for HA)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9094  # Cluster port
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 9093
+  egress:
+    # Send notifications via HTTPS (Slack, PagerDuty, etc.)
+    # For air-gapped: remove this and use local notification systems
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Cluster communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9094
+
+---
+# OpenTelemetry Collector
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector-network-policy
+  namespace: aura-monitoring
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app: otel-collector
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Receive traces from aura namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura
+      ports:
+        - protocol: TCP
+          port: 4317  # OTLP gRPC
+        - protocol: TCP
+          port: 4318  # OTLP HTTP
+
+    # Receive traces from aura-data namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-data
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+
+    # Receive traces from aura-llm namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aura-llm
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+
+    # Allow health checks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 13133  # Health check
+  egress:
+    # Export to Prometheus (metrics)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Export to Jaeger (traces) - if self-hosted
+    - to:
+        - podSelector:
+            matchLabels:
+              app: jaeger
+      ports:
+        - protocol: TCP
+          port: 14250  # gRPC
+
+    # Export to external backends (Grafana Cloud, etc.)
+    # Remove for air-gapped deployments
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 443

@@ -1,0 +1,42 @@
+# Project Aura - Agent Orchestrator Configuration (Base)
+# SQS, DynamoDB, and orchestration configuration
+#
+# IMPORTANT: This is the base ConfigMap. Environment-specific values
+# (AWS_ACCOUNT_ID, AWS_REGION, SQS_QUEUE_URL, etc.) are set via Kustomize overlays.
+#
+# These values are injected as environment variables into the orchestrator pod.
+# For secrets (API keys), use Kubernetes Secrets or AWS Secrets Manager.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aura-agent-orchestrator-config
+  namespace: default
+  labels:
+    app: aura-agent-orchestrator
+    component: config
+data:
+  # Project Configuration (shared across environments)
+  PROJECT_NAME: "aura"
+
+  # Orchestrator Configuration
+  USE_MOCK_LLM: "false"
+  ENABLE_MCP: "false"
+  ENABLE_TITAN_MEMORY: "false"
+
+  # SQS Configuration (warm pool job consumption)
+  SQS_POLL_INTERVAL: "5"
+  SQS_VISIBILITY_TIMEOUT: "1800"
+  SQS_MAX_MESSAGES: "1"
+
+  # Neptune Graph Database (via dnsmasq service discovery)
+  NEPTUNE_ENDPOINT: "neptune.aura.local"
+  NEPTUNE_PORT: "8182"
+
+  # OpenSearch Vector Store (via dnsmasq service discovery)
+  OPENSEARCH_ENDPOINT: "opensearch.aura.local"
+  OPENSEARCH_PORT: "9200"
+
+  # Application Configuration
+  LOG_LEVEL: "INFO"
+  PORT: "8080"

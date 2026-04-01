@@ -1,0 +1,296 @@
+# Project Aura - Grafana Helm Values
+#
+# Unified observability dashboards for EKS, Neptune, OpenSearch, and application metrics.
+#
+# Issue: #18 - Grafana dashboards for observability
+#
+# Installation:
+#   helm repo add grafana https://grafana.github.io/helm-charts
+#   helm install grafana grafana/grafana -f values.yaml -n monitoring --create-namespace
+
+# =============================================================================
+# Grafana Configuration
+# =============================================================================
+
+replicas: 2
+
+image:
+  repository: grafana/grafana
+  tag: "10.2.3"
+  pullPolicy: IfNotPresent
+
+# Resources
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+# Persistence
+persistence:
+  enabled: true
+  storageClassName: gp3
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+
+# Service
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3000"
+
+# Ingress (via ALB Controller)
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: ${CERTIFICATE_ARN}
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+  hosts:
+    - grafana.aura.internal
+  path: /
+  pathType: Prefix
+
+# =============================================================================
+# Authentication
+# =============================================================================
+
+# Admin credentials (override via secrets in production)
+adminUser: admin
+# adminPassword is set via existingSecret
+
+# Use existing secret for admin password
+admin:
+  existingSecret: grafana-admin-credentials
+  userKey: admin-user
+  passwordKey: admin-password
+
+# Grafana.ini configuration
+grafana.ini:
+  server:
+    root_url: https://grafana.aura.internal
+    serve_from_sub_path: false
+
+  auth:
+    disable_login_form: false
+    disable_signout_menu: false
+
+  # AWS Cognito OIDC (uncomment when ready)
+  # auth.generic_oauth:
+  #   enabled: true
+  #   name: AWS Cognito
+  #   allow_sign_up: true
+  #   client_id: ${COGNITO_CLIENT_ID}
+  #   client_secret: ${COGNITO_CLIENT_SECRET}
+  #   scopes: openid profile email
+  #   auth_url: https://${COGNITO_DOMAIN}.auth.${AWS_REGION}.amazoncognito.com/oauth2/authorize
+  #   token_url: https://${COGNITO_DOMAIN}.auth.${AWS_REGION}.amazoncognito.com/oauth2/token
+  #   api_url: https://${COGNITO_DOMAIN}.auth.${AWS_REGION}.amazoncognito.com/oauth2/userInfo
+  #   role_attribute_path: contains(cognito:groups[*], 'admins') && 'Admin' || 'Viewer'
+
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+
+  security:
+    admin_user: admin
+    disable_gravatar: true
+    cookie_secure: true
+    strict_transport_security: true
+
+  users:
+    auto_assign_org: true
+    auto_assign_org_role: Viewer
+
+  alerting:
+    enabled: true
+
+  unified_alerting:
+    enabled: true
+
+# =============================================================================
+# Data Sources
+# =============================================================================
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      # CloudWatch for AWS metrics
+      - name: CloudWatch
+        type: cloudwatch
+        access: proxy
+        uid: cloudwatch
+        jsonData:
+          authType: default  # Uses IRSA
+          defaultRegion: us-east-1
+          customMetricsNamespaces: "Aura,Aura/API,Aura/Agents,Aura/HITL"
+        isDefault: false
+
+      # Prometheus for container and custom metrics
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        uid: prometheus
+        url: http://prometheus-server.monitoring.svc.cluster.local:80
+        isDefault: true
+        jsonData:
+          timeInterval: "15s"
+          httpMethod: POST
+
+      # CloudWatch Logs for log queries
+      - name: CloudWatch Logs
+        type: cloudwatch
+        access: proxy
+        uid: cloudwatch-logs
+        jsonData:
+          authType: default
+          defaultRegion: us-east-1
+          logsTimeout: "30m"
+
+# =============================================================================
+# Dashboard Provisioning
+# =============================================================================
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: 'aura-dashboards'
+        orgId: 1
+        folder: 'Aura'
+        type: file
+        disableDeletion: true
+        editable: false
+        options:
+          path: /var/lib/grafana/dashboards/aura
+      - name: 'kubernetes-dashboards'
+        orgId: 1
+        folder: 'Kubernetes'
+        type: file
+        disableDeletion: true
+        editable: false
+        options:
+          path: /var/lib/grafana/dashboards/kubernetes
+
+# Dashboard ConfigMaps to mount
+dashboardsConfigMaps:
+  aura: grafana-dashboards-aura
+  kubernetes: grafana-dashboards-kubernetes
+
+# =============================================================================
+# Alerting
+# =============================================================================
+
+alerting:
+  contactpoints.yaml:
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: sns-alerts
+        receivers:
+          - uid: sns-critical
+            type: sns
+            settings:
+              authProvider: default
+              topicArn: arn:aws:sns:us-east-1:${AWS_ACCOUNT_ID}:aura-critical-alerts
+          - uid: sns-warnings
+            type: sns
+            settings:
+              authProvider: default
+              topicArn: arn:aws:sns:us-east-1:${AWS_ACCOUNT_ID}:aura-warning-alerts
+
+  policies.yaml:
+    apiVersion: 1
+    policies:
+      - orgId: 1
+        receiver: sns-alerts
+        group_by: ['alertname', 'severity']
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        routes:
+          - receiver: sns-alerts
+            matchers:
+              - severity = critical
+            continue: false
+          - receiver: sns-alerts
+            matchers:
+              - severity = warning
+            continue: false
+
+# =============================================================================
+# Service Account (for IRSA)
+# =============================================================================
+
+serviceAccount:
+  create: true
+  name: grafana
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/aura-grafana-role
+
+# =============================================================================
+# Pod Configuration
+# =============================================================================
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - grafana
+          topologyKey: kubernetes.io/hostname
+
+tolerations: []
+
+nodeSelector:
+  kubernetes.io/os: linux
+
+# =============================================================================
+# Sidecar for Dashboard Auto-Discovery
+# =============================================================================
+
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    folder: /tmp/dashboards
+    searchNamespace: ALL
+  datasources:
+    enabled: true
+    label: grafana_datasource
+    labelValue: "1"
+    searchNamespace: ALL
+
+# =============================================================================
+# Extra ConfigMaps to Mount
+# =============================================================================
+
+extraConfigmapMounts:
+  - name: grafana-dashboards-aura
+    mountPath: /var/lib/grafana/dashboards/aura
+    configMap: grafana-dashboards-aura
+    readOnly: true
+  - name: grafana-dashboards-kubernetes
+    mountPath: /var/lib/grafana/dashboards/kubernetes
+    configMap: grafana-dashboards-kubernetes
+    readOnly: true

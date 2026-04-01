@@ -1,0 +1,1789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Aura — Architecture Decision Records (ADRs)</title>
+<style>
+  :root {
+    --brand: #3B82F6;
+    --brand-dark: #1E40AF;
+    --critical: #DC2626;
+    --high: #EA580C;
+    --medium: #F59E0B;
+    --success: #10B981;
+    --info: #3B82F6;
+    --bg: #F8FAFC;
+    --surface: #FFFFFF;
+    --border: #E2E8F0;
+    --text: #1E293B;
+    --text-secondary: #64748B;
+    --text-muted: #94A3B8;
+    --purple: #7C3AED;
+    --purple-light: #EDE9FE;
+    --teal: #0D9488;
+    --teal-light: #CCFBF1;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 50%, #60A5FA 100%);
+    color: #fff;
+    padding: 48px 32px;
+    text-align: center;
+  }
+  .header h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; }
+  .header .subtitle { font-size: 18px; opacity: 0.9; margin-bottom: 24px; }
+  .header .meta { font-size: 13px; opacity: 0.75; }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    flex-wrap: wrap;
+    padding: 24px 32px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .stat { text-align: center; }
+  .stat .number { font-size: 28px; font-weight: 800; color: var(--brand); }
+  .stat .label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Navigation */
+  .nav-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 32px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .nav-bar a {
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    background: #F1F5F9;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .nav-bar a:hover { background: var(--brand); color: #fff; }
+
+  /* Main content */
+  .container { max-width: 1280px; margin: 0 auto; padding: 32px; }
+
+  /* Section */
+  section { margin-bottom: 48px; }
+  section > h2 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--brand-dark);
+    border-bottom: 3px solid var(--brand);
+    padding-bottom: 8px;
+    margin-bottom: 24px;
+  }
+  section > p.section-desc {
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    max-width: 800px;
+  }
+
+  /* Layer group */
+  .layer-group { margin-bottom: 32px; }
+  .layer-group h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .layer-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 9999px;
+    color: #fff;
+  }
+  .layer-1 { background: #6366F1; }
+  .layer-2 { background: #8B5CF6; }
+  .layer-3 { background: #A855F7; }
+  .layer-4 { background: #D946EF; }
+  .layer-5 { background: #EC4899; }
+  .layer-6 { background: #F43F5E; }
+  .layer-7 { background: #F97316; }
+  .layer-8 { background: #EF4444; }
+  .layer-agent { background: var(--teal); }
+  .layer-ai { background: var(--purple); }
+  .layer-ui { background: #0EA5E9; }
+  .layer-integration { background: #F59E0B; }
+  .layer-governance { background: #10B981; }
+
+  /* ADR card */
+  .adr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
+  .adr-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    transition: box-shadow 0.15s, border-color 0.15s;
+    display: flex;
+    flex-direction: column;
+  }
+  .adr-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: var(--brand); }
+  .adr-card .adr-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .adr-card .adr-number { font-size: 13px; font-weight: 800; color: var(--brand); }
+  .adr-card .adr-status {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .status-deployed { background: #D1FAE5; color: #065F46; }
+  .status-accepted { background: #DBEAFE; color: #1E40AF; }
+  .status-proposed { background: #FEF3C7; color: #92400E; }
+  .adr-card .adr-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 8px; line-height: 1.4; }
+  .adr-card .adr-summary { font-size: 13px; color: var(--text-secondary); line-height: 1.5; flex: 1; }
+  .adr-card .adr-meta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .adr-card .adr-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #F1F5F9;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+  .adr-card .adr-stats {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .adr-card .adr-stats strong { color: var(--text); }
+
+  /* Full table */
+  .table-wrapper { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    background: var(--brand-dark);
+    color: #fff;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+  }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: #F8FAFC; }
+  td:first-child { font-weight: 700; color: var(--brand); white-space: nowrap; }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 32px; }
+  .timeline::before { content: ''; position: absolute; left: 12px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .timeline-item { position: relative; margin-bottom: 20px; }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -24px;
+    top: 6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--brand);
+    border: 2px solid var(--surface);
+  }
+  .timeline-item .date { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+  .timeline-item .content { font-size: 13px; color: var(--text-secondary); }
+
+  /* Dependency graph text representation */
+  .dep-graph {
+    background: #1E293B;
+    color: #E2E8F0;
+    border-radius: 8px;
+    padding: 24px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  /* Print */
+  @media print {
+    .nav-bar { display: none; }
+    .header { padding: 24px; }
+    .adr-card { break-inside: avoid; }
+  }
+  @media (max-width: 768px) {
+    .header h1 { font-size: 24px; }
+    .stats-bar { gap: 16px; }
+    .adr-grid { grid-template-columns: 1fr; }
+    .container { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<div class="header">
+  <h1>Architecture Decision Records</h1>
+  <div class="subtitle">Project Aura — Complete ADR Catalog</div>
+  <div class="meta">Aenea Labs &middot; 83 ADRs &middot; All Deployed &middot; Updated February 2026</div>
+</div>
+
+<!-- ===== STATS BAR ===== -->
+<div class="stats-bar">
+  <div class="stat"><div class="number">83</div><div class="label">Total ADRs</div></div>
+  <div class="stat"><div class="number">83</div><div class="label">Deployed / Accepted</div></div>
+  <div class="stat"><div class="number">0</div><div class="label">Proposed</div></div>
+  <div class="stat"><div class="number">8</div><div class="label">Infrastructure Layers</div></div>
+  <div class="stat"><div class="number">23,165+</div><div class="label">Total Tests</div></div>
+  <div class="stat"><div class="number">439K+</div><div class="label">Lines of Code</div></div>
+</div>
+
+<!-- ===== NAVIGATION ===== -->
+<div class="nav-bar">
+  <a href="#foundation">Foundation</a>
+  <a href="#data">Data</a>
+  <a href="#compute">Compute</a>
+  <a href="#agents">Agents &amp; Orchestration</a>
+  <a href="#ai-ml">AI / ML</a>
+  <a href="#security">Security &amp; Compliance</a>
+  <a href="#hitl">HITL &amp; Autonomy</a>
+  <a href="#cicd">CI/CD &amp; Deployment</a>
+  <a href="#ui">UI &amp; Onboarding</a>
+  <a href="#integrations">Integrations</a>
+  <a href="#governance">Governance &amp; Guardrails</a>
+  <a href="#full-index">Full Index</a>
+  <a href="#dependencies">Dependencies</a>
+</div>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<!-- SECTION 1: Foundation & Networking (Layer 1)                  -->
+<!-- ============================================================ -->
+<section id="foundation">
+  <h2>Foundation &amp; Networking</h2>
+  <p class="section-desc">Core infrastructure decisions — VPC, networking, DNS, service discovery, and access patterns that underpin all higher layers.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-002</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">VPC Endpoints over NAT Gateways</div>
+      <div class="adr-summary">Hybrid VPC endpoint strategy for AWS service connectivity. Commercial uses endpoints for cost savings; GovCloud uses exclusively for CMMC compliance and zero internet egress.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">VPC Endpoints</span>
+        <span class="adr-tag">GovCloud</span>
+        <span class="adr-tag">CMMC</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-006</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Three-Tier dnsmasq Integration for Service Discovery</div>
+      <div class="adr-summary">Tier 1: EKS DaemonSet for local caching. Tier 2: ECS Fargate for VPC-wide DNS. Tier 3: Ephemeral sandbox DNS. DNSSEC validation and network isolation.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">dnsmasq</span>
+        <span class="adr-tag">DNSSEC</span>
+        <span class="adr-tag">ECS Fargate</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-011</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">VPC Resource Access via EKS Deployment</div>
+      <div class="adr-summary">kubectl port-forward for VPC access at $0 incremental cost. Zero additional attack surface. CMMC Level 3 compliant. Rejected SSM, EC2 bastion, Client VPN alternatives.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">kubectl</span>
+        <span class="adr-tag">Zero Cost</span>
+        <span class="adr-tag">CMMC</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-026</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Bootstrap Once, Update Forever — Security Group Pattern</div>
+      <div class="adr-summary">State machine for security group lifecycle: CREATE → UPDATE → ENI check before DELETE. Prevents orphaned security groups. Recovery scripts for import/restore.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Security Groups</span>
+        <span class="adr-tag">CloudFormation</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-027</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Security Group Management for Zero-Downtime Updates</div>
+      <div class="adr-summary">Separate Ingress/Egress as individual CloudFormation resources (not inline). Comprehensive state handling and recovery guidance for all stack states.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Zero-Downtime</span>
+        <span class="adr-tag">CloudFormation</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-040</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Configurable Compliance Settings (KMS &amp; Log Retention)</div>
+      <div class="adr-summary">Environment-specific KMS encryption and log retention policies. Production enforces customer-managed KMS keys and 365-day retention; dev/qa use AWS-managed keys with shorter retention.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">KMS</span>
+        <span class="adr-tag">Log Retention</span>
+        <span class="adr-tag">Compliance</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-041</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">AWS-Required Wildcards with Defense-in-Depth Controls</div>
+      <div class="adr-summary">Documents AWS APIs requiring Resource: '*' wildcards (ecr:GetAuthorizationToken, cloudwatch:PutMetricData). Compensating controls: restrictive conditions, audit logging, least privilege.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">IAM</span>
+        <span class="adr-tag">Defense-in-Depth</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-059</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">AWS Organization Account Restructure</div>
+      <div class="adr-summary">Multi-account strategy for development, QA, staging, and production environments. OU-based guardrails, SCPs, and cross-account role patterns.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">AWS Organizations</span>
+        <span class="adr-tag">Multi-Account</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 2: Data Layer (Layer 2)                               -->
+<!-- ============================================================ -->
+<section id="data">
+  <h2>Data Layer</h2>
+  <p class="section-desc">Database architecture, storage patterns, and data access decisions for Neptune, OpenSearch, DynamoDB, and S3.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-001</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Separate DynamoDB Tables for Job Types</div>
+      <div class="adr-summary">Separate DynamoDB tables for code generation jobs and repository ingestion jobs. Domain separation, schema independence, and independent scaling with TTL and Global Secondary Indexes.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">DynamoDB</span>
+        <span class="adr-tag">GSI</span>
+        <span class="adr-tag">TTL</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-012</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">OpenSearch IAM Master User Authentication</div>
+      <div class="adr-summary">IAM Master User (IRSA role) over internal username/password for OpenSearch. SigV4 signing, full CloudTrail audit trail, zero password management overhead.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">OpenSearch</span>
+        <span class="adr-tag">IRSA</span>
+        <span class="adr-tag">SigV4</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-031</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Neptune Deployment Mode Configuration</div>
+      <div class="adr-summary">Provisioned Neptune instances for GovCloud compatibility (serverless not available). Environment-specific instance sizing with read replicas for production workloads.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Neptune</span>
+        <span class="adr-tag">GovCloud</span>
+        <span class="adr-tag">Provisioned</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-034</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Context Engineering Implementation Plan</div>
+      <div class="adr-summary">7 services deployed: scoring, registry, stack, retrieval, hoprag, mcp, and summarization. Hybrid GraphRAG query engine combining graph structural and vector semantic search.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">GraphRAG</span>
+        <span class="adr-tag">Context Engineering</span>
+        <span class="adr-tag">7 Services</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-067</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Context Provenance &amp; Integrity for GraphRAG</div>
+      <div class="adr-summary">Index-time provenance tracking, trust scoring (repository, author, verification, age components), anomaly detection, and quarantine for compromised context.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Provenance</span>
+        <span class="adr-tag">Trust Scoring</span>
+        <span class="adr-tag">Quarantine</span>
+      </div>
+      <div class="adr-stats"><span><strong>3.4K</strong> lines</span><span><strong>275</strong> tests</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: Compute Layer (Layer 3)                            -->
+<!-- ============================================================ -->
+<section id="compute">
+  <h2>Compute &amp; Container Infrastructure</h2>
+  <p class="section-desc">EKS cluster architecture, container strategy, GPU scheduling, and multi-platform build decisions.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-003</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">EKS EC2 Managed Node Groups for GovCloud</div>
+      <div class="adr-summary">3-tier EKS architecture: System nodes (cluster infra), Application nodes (agent workloads), Sandbox nodes (ephemeral testing). EC2 Managed Node Groups for GovCloud Fargate limitations.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">EKS</span>
+        <span class="adr-tag">EC2</span>
+        <span class="adr-tag">3-Tier</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-020</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Private ECR Base Images for Supply Chain Security</div>
+      <div class="adr-summary">Bootstrap-once pattern: pull from ECR Public Gallery, push to private ECR with vulnerability scanning. All CI/CD builds use private images. CMMC controlled supply chain compliance.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">ECR</span>
+        <span class="adr-tag">Supply Chain</span>
+        <span class="adr-tag">CMMC</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-036</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Multi-Platform Container Build Strategy</div>
+      <div class="adr-summary">Cross-platform builds for linux/amd64 targets from ARM (Apple Silicon) development machines. Buildx and QEMU emulation for consistent CI/CD artifacts.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Multi-Platform</span>
+        <span class="adr-tag">Buildx</span>
+        <span class="adr-tag">ARM/AMD64</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-058</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">EKS Multi-Node Group Architecture</div>
+      <div class="adr-summary">Specialized node groups for different workloads: general compute, memory-optimized, GPU-accelerated. Taints, tolerations, and affinity rules for workload placement.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">EKS</span>
+        <span class="adr-tag">Node Groups</span>
+        <span class="adr-tag">GPU</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-061</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">GPU Workload Scheduler</div>
+      <div class="adr-summary">Self-service GPU job submission with queue management and cost controls. Supports Inferentia2, g5.xlarge, and p3 instance types with priority scheduling.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">GPU</span>
+        <span class="adr-tag">Queue Management</span>
+        <span class="adr-tag">Cost Controls</span>
+      </div>
+      <div class="adr-stats"><span><strong>391</strong> tests</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: Agents & Orchestration                             -->
+<!-- ============================================================ -->
+<section id="agents">
+  <h2>Agents &amp; Orchestration</h2>
+  <p class="section-desc">Multi-agent architecture, orchestrator design, dynamic spawning, task decomposition, and inter-agent communication.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-013</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Service Adapter &amp; Factory Pattern</div>
+      <div class="adr-summary">Adapter Pattern + Factory Functions for zero-code-change deployment switching between mock and production services. Environment variables control backend selection.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Adapter Pattern</span>
+        <span class="adr-tag">Factory</span>
+        <span class="adr-tag">Testability</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-018</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">MetaOrchestrator with Dynamic Agent Spawning</div>
+      <div class="adr-summary">AgentRegistry for dynamic spawning. Recursive task decomposition (max depth 4). Configurable autonomy levels. DAG execution engine for parallel agent coordination.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">MetaOrchestrator</span>
+        <span class="adr-tag">DAG Execution</span>
+        <span class="adr-tag">Dynamic Spawning</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-019</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Market Intelligence Agent</div>
+      <div class="adr-summary">Autonomous competitive research: CompetitorWatch, TrendAnalysis, and DocAggregator sub-agents monitor AWS, Azure, and GCP. Findings disseminated to other agents via knowledge base.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Competitive Intel</span>
+        <span class="adr-tag">Sub-Agents</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-025</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">RuntimeIncidentAgent for Code-Aware Incident Response</div>
+      <div class="adr-summary">Correlates CloudWatch/Datadog events with code paths via Neptune graph. Maps exceptions to functions, identifies deployments, generates RCA hypotheses using code context.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Incident Response</span>
+        <span class="adr-tag">GraphRAG</span>
+        <span class="adr-tag">RCA</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-033</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Runbook Agent for Automated Incident Documentation</div>
+      <div class="adr-summary">Automated runbook generation from incident patterns. Playbook templates with step-by-step remediation procedures linked to GraphRAG context.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Runbook</span>
+        <span class="adr-tag">Incident Docs</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-037</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">AWS Agent Capability Replication</div>
+      <div class="adr-summary">27 services achieving parity with AWS native agent capabilities across AgentCore, Security, DevOps, Transform, and Phase 2 domains.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">27 Services</span>
+        <span class="adr-tag">AWS Parity</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-050</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Self-Play SWE-RL for Agent Training</div>
+      <div class="adr-summary">Dual-role self-play training pipeline: bug artifact infrastructure, training data generation, and reinforcement learning for agent improvement.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Self-Play</span>
+        <span class="adr-tag">RL Training</span>
+      </div>
+      <div class="adr-stats"><span><strong>15.9K</strong> lines</span><span><strong>354</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-056</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Documentation Agent for Architecture Discovery</div>
+      <div class="adr-summary">Automated architecture discovery and diagram generation agent. Scans codebases to produce up-to-date system diagrams and documentation artifacts.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Doc Generation</span>
+        <span class="adr-tag">Diagram Agent</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-062</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Environment Validator Agent</div>
+      <div class="adr-summary">Cross-environment validation, drift detection, and HITL remediation. Compares dev/qa/prod configurations and alerts on divergence with auto-fix proposals.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Drift Detection</span>
+        <span class="adr-tag">Cross-Env</span>
+      </div>
+      <div class="adr-stats"><span><strong>165</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-071</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Cross-Agent Capability Graph Analysis</div>
+      <div class="adr-summary">Neptune graph analysis of agent capabilities: escalation path detection, coverage gap identification, and filter UI for capability exploration.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Capability Graph</span>
+        <span class="adr-tag">Neptune</span>
+      </div>
+      <div class="adr-stats"><span><strong>2.4K</strong> lines</span><span><strong>179</strong> tests</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: AI / ML                                            -->
+<!-- ============================================================ -->
+<section id="ai-ml">
+  <h2>AI &amp; Machine Learning</h2>
+  <p class="section-desc">LLM integration, neural memory, context scaling, cost optimization, and ML-based detection systems.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-008</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Comprehensive Cost Controls for Bedrock LLM</div>
+      <div class="adr-summary">Multi-layer cost controls: hard budget cap with Lambda disablement, per-agent rate limiting, per-request token budgets, tiered model routing, response caching (24h TTL), and CloudWatch dashboards.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Bedrock</span>
+        <span class="adr-tag">Cost Controls</span>
+        <span class="adr-tag">Rate Limiting</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-014</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">LLM-Enhanced Agent Search and Ranking</div>
+      <div class="adr-summary">Three-tier search: Tier 1 (embedding-only, fast), Tier 2 (LLM-enhanced ranking), Tier 3 (hybrid orchestrator-controlled). Graceful degradation when LLM unavailable.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">LLM Ranking</span>
+        <span class="adr-tag">Embeddings</span>
+        <span class="adr-tag">3-Tier</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-015</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Tiered LLM Model Strategy</div>
+      <div class="adr-summary">Task-based model selection: Haiku (~$1.50/1M tokens, 40%), Sonnet (~$18/1M, 55%), Opus (~$75/1M, 5%). Reduces costs 60-70% vs single-model approach.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Haiku/Sonnet/Opus</span>
+        <span class="adr-tag">60-70% Savings</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-024</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Titan Neural Memory Architecture</div>
+      <div class="adr-summary">Hybrid memory: DeepMLPMemory (3-layer MLP with residual connections) + MIRAS configuration + surprise-driven consolidation. Test-time training optional. Achieves 2M+ token effective context.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Neural Memory</span>
+        <span class="adr-tag">2M+ Tokens</span>
+        <span class="adr-tag">PyTorch</span>
+      </div>
+      <div class="adr-stats"><span><strong>237</strong> tests</span><span><strong>5</strong> phases</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-029</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Agent Optimization — Advanced AI Innovations</div>
+      <div class="adr-summary">Semantic caching (Phase 1.3), self-reflection (Phase 2.2), and A2AS security (Phase 2.3) ENABLED BY DEFAULT. 187 integration tests passing.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Semantic Cache</span>
+        <span class="adr-tag">Self-Reflection</span>
+        <span class="adr-tag">A2AS</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-030</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Chat Assistant Architecture</div>
+      <div class="adr-summary">Lambda-based 24/7 support chat using Bedrock Claude 3.5 Sonnet. 8 tools (metrics, docs, reports, GraphRAG, incidents, sandbox status). ~$550/month for 100 users.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Chat Assistant</span>
+        <span class="adr-tag">Lambda</span>
+        <span class="adr-tag">8 Tools</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-051</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Recursive Context &amp; Embedding Prediction</div>
+      <div class="adr-summary">RLM provides 100x context scaling; VL-JEPA delivers 2.85x embedding inference efficiency. Based on MIT CSAIL + Meta FAIR Dec 2025 research.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">100x Context</span>
+        <span class="adr-tag">2.85x Efficiency</span>
+        <span class="adr-tag">MIT/FAIR</span>
+      </div>
+      <div class="adr-stats"><span><strong>167</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-060</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Enterprise Diagram Generation with Multi-Provider Routing</div>
+      <div class="adr-summary">Multi-provider model routing for diagram generation. Supports multiple output formats (SVG, PNG, draw.io XML, DOT) with automatic provider selection based on diagram complexity.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Diagram Gen</span>
+        <span class="adr-tag">Multi-Provider</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-072</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">ML-Based Anomaly Detection for Agent Behavior</div>
+      <div class="adr-summary">Statistical anomaly detector, honeypot capabilities for adversary detection, and anomaly explainer for transparent alerting on unusual agent behavior patterns.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Anomaly Detection</span>
+        <span class="adr-tag">Honeypot</span>
+        <span class="adr-tag">ML</span>
+      </div>
+      <div class="adr-stats"><span><strong>1.4K</strong> lines</span><span><strong>113</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-080</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Evo-Memory Enhancements</div>
+      <div class="adr-summary">ReMem Action Framework with 7 operations: CONSOLIDATE, PRUNE, REINFORCE, ABSTRACT, LINK, CORRECT, ROLLBACK. Multi-agent memory sharing for collective learning.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">7 ReMem Ops</span>
+        <span class="adr-tag">Multi-Agent</span>
+      </div>
+      <div class="adr-stats"><span><strong>10K</strong> lines</span><span><strong>336</strong> tests</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: Security & Compliance                              -->
+<!-- ============================================================ -->
+<section id="security">
+  <h2>Security &amp; Compliance</h2>
+  <p class="section-desc">Runtime security, supply chain protection, AI model security, red team simulation, and compliance frameworks.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-009</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Dual-Layer Drift Protection</div>
+      <div class="adr-summary">Layer 1: CloudFormation drift detection Lambda (every 6 hours). Layer 2: AWS Config with 18 managed rules for CMMC/NIST/DoD compliance monitoring.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Drift Detection</span>
+        <span class="adr-tag">AWS Config</span>
+        <span class="adr-tag">18 Rules</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-010</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Autonomous ADR Generation Pipeline</div>
+      <div class="adr-summary">Four-agent pipeline: ThreatIntelligenceAgent (CVE/CISA), AdaptiveIntelligenceAgent (risk scoring), ArchitectureReviewAgent (pattern detection), ADRGeneratorAgent (template hydration + git).</div>
+      <div class="adr-meta">
+        <span class="adr-tag">4-Agent Pipeline</span>
+        <span class="adr-tag">CVE/CISA</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-053</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Enterprise Security Integrations</div>
+      <div class="adr-summary">Zscaler (zero-trust network), Saviynt (identity governance), and AuditBoard (compliance management) integrations for enterprise security workflows.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Zscaler</span>
+        <span class="adr-tag">Saviynt</span>
+        <span class="adr-tag">AuditBoard</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-076</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">SBOM Attestation &amp; Supply Chain Security</div>
+      <div class="adr-summary">CycloneDX/SPDX SBOM generation, Sigstore cryptographic signing, dependency confusion detection, and license compliance validation.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">SBOM</span>
+        <span class="adr-tag">Sigstore</span>
+        <span class="adr-tag">CycloneDX</span>
+      </div>
+      <div class="adr-stats"><span><strong>4.5K</strong> lines</span><span><strong>168</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-077</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Cloud Runtime Security Integration</div>
+      <div class="adr-summary">Kubernetes admission control, container escape detection, and runtime-to-code correlation via GraphRAG for immediate vulnerability attribution.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">K8s Admission</span>
+        <span class="adr-tag">Container Escape</span>
+        <span class="adr-tag">GraphRAG</span>
+      </div>
+      <div class="adr-stats"><span><strong>3.2K</strong> lines</span><span><strong>155</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-079</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Scale &amp; AI Model Security</div>
+      <div class="adr-summary">Streaming analysis at scale, model weight protection against tampering, and training data poisoning detection for AI supply chain integrity.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Model Security</span>
+        <span class="adr-tag">Poisoning Detection</span>
+      </div>
+      <div class="adr-stats"><span><strong>2.8K</strong> lines</span><span><strong>86</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-083</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Runtime Agent Security Platform</div>
+      <div class="adr-summary">Traffic interception, shadow agent detection, behavioral baselines, AURA-ATT&CK red team (75 techniques), runtime-to-code correlation via GraphRAG, E2E pipeline, 7 dashboard widgets.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Red Team</span>
+        <span class="adr-tag">75 ATT&CK</span>
+        <span class="adr-tag">Shadow Detection</span>
+      </div>
+      <div class="adr-stats"><span><strong>10.3K</strong> lines</span><span><strong>848</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-084</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Native Vulnerability Scanning Engine</div>
+      <div class="adr-summary">GraphRAG-enhanced LLM analysis, 3-phase adversarial verification, 4-layer isolation, closed-loop remediation, Titan Memory integration. 20 dashboard widgets, 3 pages.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Vuln Scanner</span>
+        <span class="adr-tag">Adversarial</span>
+        <span class="adr-tag">Titan Memory</span>
+      </div>
+      <div class="adr-stats"><span><strong>~17K</strong> lines</span><span><strong>980</strong> tests planned</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 7: HITL & Autonomy                                    -->
+<!-- ============================================================ -->
+<section id="hitl">
+  <h2>HITL &amp; Autonomy Framework</h2>
+  <p class="section-desc">Human-in-the-loop approval, configurable autonomy levels, sandbox testing, and real-time agent intervention.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-005</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">HITL Sandbox Testing for Autonomous Remediation</div>
+      <div class="adr-summary">Mandatory HITL approval with isolated sandbox testing. 24-hour approval timeout with auto-reject. Compliance audit trails for SOX and CMMC requirements.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">HITL</span>
+        <span class="adr-tag">Sandbox</span>
+        <span class="adr-tag">SOX/CMMC</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-016</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">HITL Approval Auto-Escalation</div>
+      <div class="adr-summary">Severity-based escalation: CRITICAL/HIGH escalate to backup reviewers, MEDIUM/LOW auto-reject + re-queue. Proactive warning at 75% timeout. Max 2 escalations.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Auto-Escalation</span>
+        <span class="adr-tag">Severity-Based</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-017</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Dynamic Sandbox Resource Allocation</div>
+      <div class="adr-summary">Agents specify sandbox resources at runtime (CPU 256-4096, memory 512MB-30GB, timeout). IAM policy guardrails + Fargate limits enforce bounds.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Dynamic Resources</span>
+        <span class="adr-tag">Fargate</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-032</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Configurable Autonomy Framework</div>
+      <div class="adr-summary">4 autonomy levels (FULL_HITL → FULL_AUTONOMOUS) with 7 industry presets (defense_contractor, fintech, healthcare, etc.). Organization, repository, and severity-specific overrides.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">4 Levels</span>
+        <span class="adr-tag">7 Presets</span>
+        <span class="adr-tag">Non-Bypassable</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-039</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Self-Service Test Environment Provisioning</div>
+      <div class="adr-summary">On-demand ephemeral test environments with budget controls and monitoring. 4 phases deployed with automated cleanup and cost tracking.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Ephemeral Envs</span>
+        <span class="adr-tag">Self-Service</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-042</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Real-Time Agent Intervention Architecture</div>
+      <div class="adr-summary">CloudTrail monitoring, IAM Security Alerting, and Checkpoint infrastructure for real-time human intervention in agent activities via WebSocket.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Real-Time</span>
+        <span class="adr-tag">Checkpoints</span>
+        <span class="adr-tag">WebSocket</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 8: CI/CD & Deployment                                 -->
+<!-- ============================================================ -->
+<section id="cicd">
+  <h2>CI/CD &amp; Deployment</h2>
+  <p class="section-desc">Build pipelines, deployment strategies, GitOps, container builds, and multi-environment management.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-007</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Modular CI/CD with Layer-Based Deployment</div>
+      <div class="adr-summary">8 infrastructure layers with 14+ CodeBuild projects. 15 buildspecs manage 155 CloudFormation templates. Parallel deployments within layers.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">8 Layers</span>
+        <span class="adr-tag">155 Templates</span>
+        <span class="adr-tag">CodeBuild</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-022</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">GitOps for Kubernetes with ArgoCD</div>
+      <div class="adr-summary">Separated CI (CodeBuild) from CD (ArgoCD). Git as single source of truth. Progressive delivery via Argo Rollouts with automatic rollback.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">ArgoCD</span>
+        <span class="adr-tag">GitOps</span>
+        <span class="adr-tag">Argo Rollouts</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-035</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Dedicated Docker-Podman Build CodeBuild Project</div>
+      <div class="adr-summary">Separate CodeBuild project for container image builds. Supports both Docker (CI/CD) and Podman (local dev) with consistent build arguments.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">CodeBuild</span>
+        <span class="adr-tag">Docker/Podman</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-038</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">CodeBuild Caching Optimization</div>
+      <div class="adr-summary">S3-based caching strategy for CodeBuild projects. Shared dependency caches across builds reduce build times and costs.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">S3 Cache</span>
+        <span class="adr-tag">Build Optimization</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-049</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Self-Hosted Deployment Strategy</div>
+      <div class="adr-summary">Podman-first approach (avoids Docker Desktop licensing). Hybrid LLM strategy. Windows/Linux/macOS support across all 5 deployment phases.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Podman-First</span>
+        <span class="adr-tag">Self-Hosted</span>
+        <span class="adr-tag">Cross-Platform</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-078</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Air-Gapped &amp; Edge Deployment</div>
+      <div class="adr-summary">Offline model bundles, egress validation, firmware analysis, and edge runtime for disconnected or bandwidth-constrained environments.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Air-Gap</span>
+        <span class="adr-tag">Edge</span>
+        <span class="adr-tag">Offline</span>
+      </div>
+      <div class="adr-stats"><span><strong>4K</strong> lines</span><span><strong>200</strong> tests</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 9: UI & Onboarding                                    -->
+<!-- ============================================================ -->
+<section id="ui">
+  <h2>UI, Onboarding &amp; Developer Experience</h2>
+  <p class="section-desc">Dashboard customization, customer/repository onboarding, developer tool integrations, and public portal.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-043</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Repository Onboarding UI Wizard</div>
+      <div class="adr-summary">5-step wizard: OAuth GitHub/GitLab authentication, repository selection, language detection, initial scan, and dashboard setup. 3 DynamoDB tables, ~8K lines.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">5-Step Wizard</span>
+        <span class="adr-tag">OAuth</span>
+        <span class="adr-tag">~8K Lines</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-044</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Enhanced Node Detail Panel for GraphRAG Explorer</div>
+      <div class="adr-summary">Rich node detail panel showing code context, relationships, vulnerability associations, and dependency graphs within the GraphRAG visual explorer.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">GraphRAG UI</span>
+        <span class="adr-tag">Node Details</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-045</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">External Documentation Links for Knowledge Graph</div>
+      <div class="adr-summary">Linking external documentation (API docs, RFCs, standards) to knowledge graph nodes for contextual reference during code analysis.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Knowledge Graph</span>
+        <span class="adr-tag">External Docs</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-047</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Customer Onboarding Features</div>
+      <div class="adr-summary">Welcome Modal, Checklist, Interactive Tour, Tooltips, Videos, and Team Invitations. Progressive disclosure for new users.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Welcome Flow</span>
+        <span class="adr-tag">Tour</span>
+        <span class="adr-tag">Team Invites</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-048</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Developer Tools &amp; Data Platform Integrations</div>
+      <div class="adr-summary">VSCode, PyCharm, JupyterLab, Dataiku, and Fivetran connectors enabling developer workflows within existing toolchains. ~7.7K lines.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">VSCode</span>
+        <span class="adr-tag">PyCharm</span>
+        <span class="adr-tag">Jupyter</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-055</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Agent Scheduling View &amp; Job Queue Management</div>
+      <div class="adr-summary">Visual agent scheduling dashboard with job queue management, status tracking, and priority-based ordering for agent task execution.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Scheduling UI</span>
+        <span class="adr-tag">Job Queue</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-057</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Public Documentation Portal &amp; Marketing Animations</div>
+      <div class="adr-summary">Public-facing documentation site with interactive animations showcasing platform capabilities for marketing and developer relations.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Public Portal</span>
+        <span class="adr-tag">Animations</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-064</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Customizable Dashboard Widgets</div>
+      <div class="adr-summary">25 widgets across 5 categories with drag-drop editor, role-based defaults, and sharing. 7 additional ADR-083 runtime security widgets.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">25+ Widgets</span>
+        <span class="adr-tag">Drag-Drop</span>
+        <span class="adr-tag">Role Defaults</span>
+      </div>
+      <div class="adr-stats"><span><strong>16.3K</strong> lines</span><span><strong>83</strong> tests</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 10: Integrations                                      -->
+<!-- ============================================================ -->
+<section id="integrations">
+  <h2>Integrations &amp; Multi-Cloud</h2>
+  <p class="section-desc">Cloud abstraction, enterprise connectors, Palantir AIP, AgentCore, authentication, and third-party platforms.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-004</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Cloud Abstraction Layer for Multi-Cloud</div>
+      <div class="adr-summary">Provider-agnostic service abstractions via Protocol classes and factory functions. AWS-first with Azure Government extensibility. 5 service adapters, 46 tests.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Multi-Cloud</span>
+        <span class="adr-tag">AWS/Azure</span>
+        <span class="adr-tag">Adapters</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-023</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">AgentCore Gateway — Dual-Track Architecture</div>
+      <div class="adr-summary">Defense track (no external deps, GovCloud-ready, FULL_HITL) vs Enterprise track (AgentCore MCP-compatible, OAuth, A2A protocol). Configuration-driven via IntegrationMode.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">AgentCore</span>
+        <span class="adr-tag">MCP</span>
+        <span class="adr-tag">Dual-Track</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-028</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Microsoft Foundry Capability Adoption Plan</div>
+      <div class="adr-summary">8-phase plan closing capability gaps vs Microsoft Foundry: OpenTelemetry, Model Router, VS Code extension, TypeScript SDK, A2A protocol, red-teaming, connectors.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Foundry Parity</span>
+        <span class="adr-tag">8 Phases</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-046</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Support Ticketing Connectors</div>
+      <div class="adr-summary">Integration architecture for Jira, ServiceNow, and Zendesk. Bi-directional sync of vulnerability tickets with approval workflow integration.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Jira</span>
+        <span class="adr-tag">ServiceNow</span>
+        <span class="adr-tag">Zendesk</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-054</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Multi-Identity Provider Authentication</div>
+      <div class="adr-summary">Support for multiple identity providers: SAML, OIDC, Active Directory, and Cognito. Federated authentication with role mapping.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">SAML/OIDC</span>
+        <span class="adr-tag">Multi-IdP</span>
+        <span class="adr-tag">Cognito</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-074</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Palantir AIP Integration</div>
+      <div class="adr-summary">Enterprise adapter abstraction, Ontology Bridge sync, event publisher, and circuit breaker for Palantir's AIP data-informed code security platform.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Palantir</span>
+        <span class="adr-tag">Ontology Bridge</span>
+        <span class="adr-tag">Circuit Breaker</span>
+      </div>
+      <div class="adr-stats"><span><strong>2.5K</strong> lines</span><span><strong>197</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-075</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Palantir AIP UI Enhancements</div>
+      <div class="adr-summary">8 dashboard widgets, usePalantirSync React hook, 5-step configuration wizard, and IntegrationHub wiring for Palantir AIP data visualization.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">8 Widgets</span>
+        <span class="adr-tag">Config Wizard</span>
+        <span class="adr-tag">React Hooks</span>
+      </div>
+      <div class="adr-stats"><span><strong>8K</strong> lines</span><span><strong>103</strong> tests</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 11: Governance & Guardrails                           -->
+<!-- ============================================================ -->
+<section id="governance">
+  <h2>Governance, Guardrails &amp; Alignment</h2>
+  <p class="section-desc">AI alignment principles, guardrail engines, constitutional AI, capability governance, policy-as-code, and access control.</p>
+
+  <div class="adr-grid">
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-021</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Guardrails Cognitive Architecture</div>
+      <div class="adr-summary">Neuroscience-inspired 3-tier memory: Static Guardrails (GUARDRAILS.md + semantic index), Dynamic Context (attention gating, confidence), Learning Loop (consolidation → HITL approval).</div>
+      <div class="adr-meta">
+        <span class="adr-tag">3-Tier Memory</span>
+        <span class="adr-tag">Neuroscience</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-052</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">AI Alignment Principles &amp; Human-Machine Collaboration</div>
+      <div class="adr-summary">Foundational alignment framework defining ethical boundaries, transparency requirements, and human-machine collaboration patterns for all agent operations.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">AI Alignment</span>
+        <span class="adr-tag">Ethics</span>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-063</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Constitutional AI Integration</div>
+      <div class="adr-summary">16 constitutional principles with critique-revision pipeline and tiered critique (minor/moderate/major/critical). Ensures agent outputs conform to organizational values.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">16 Principles</span>
+        <span class="adr-tag">Critique-Revision</span>
+      </div>
+      <div class="adr-stats"><span><strong>463</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-065</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Semantic Guardrails Engine</div>
+      <div class="adr-summary">6-layer threat detection pipeline: normalize → pattern match → embedding similarity → LLM intent analysis → session tracking → decision. Embedding similarity + LLM-as-judge.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">6 Layers</span>
+        <span class="adr-tag">LLM-as-Judge</span>
+      </div>
+      <div class="adr-stats"><span><strong>12K</strong> lines</span><span><strong>793</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-066</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Agent Capability Governance</div>
+      <div class="adr-summary">4-tier tool classification (SAFE → MONITORING → DANGEROUS → CRITICAL) with runtime enforcement middleware and dynamic capability grants via HITL.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">4-Tier Tools</span>
+        <span class="adr-tag">Runtime Enforcement</span>
+      </div>
+      <div class="adr-stats"><span><strong>5.4K</strong> lines</span><span><strong>322</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-068</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Universal Explainability Framework</div>
+      <div class="adr-summary">Reasoning chain generation, alternatives disclosure, and confidence calibration. Provides transparent explanations for all agent decisions.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Explainability</span>
+        <span class="adr-tag">Reasoning Chains</span>
+      </div>
+      <div class="adr-stats"><span><strong>8.2K</strong> lines</span><span><strong>227</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-069</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Guardrail Configuration UI</div>
+      <div class="adr-summary">Compliance profiles, configuration service, and validation for guardrail customization. Organization-specific compliance posture management.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">Config UI</span>
+        <span class="adr-tag">Compliance</span>
+      </div>
+      <div class="adr-stats"><span><strong>1.5K</strong> lines</span><span><strong>128</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-070</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Policy-as-Code GitOps</div>
+      <div class="adr-summary">PolicyValidator and PolicySimulator with OPA Rego validation. Git-managed policies with simulation before enforcement.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">OPA/Rego</span>
+        <span class="adr-tag">Policy Simulator</span>
+      </div>
+      <div class="adr-stats"><span><strong>1.2K</strong> lines</span><span><strong>98</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-073</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Attribute-Based Access Control (ABAC)</div>
+      <div class="adr-summary">ABAC authorization with clearance levels and multi-tenant isolation. Attribute-based policies beyond traditional RBAC for fine-grained access control.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">ABAC</span>
+        <span class="adr-tag">Clearance Levels</span>
+        <span class="adr-tag">Multi-Tenant</span>
+      </div>
+      <div class="adr-stats"><span><strong>1.3K</strong> lines</span><span><strong>115</strong> tests</span></div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-number">ADR-081</span>
+        <span class="adr-status status-deployed">Deployed</span>
+      </div>
+      <div class="adr-title">Constraint Geometry Engine</div>
+      <div class="adr-summary">Deterministic cortical discrimination with 7-axis constraint space (C1-C7), coherence scoring, provenance-aware weighting, and 4 policy profiles for agent output validation.</div>
+      <div class="adr-meta">
+        <span class="adr-tag">7-Axis</span>
+        <span class="adr-tag">Deterministic</span>
+        <span class="adr-tag">4 Profiles</span>
+      </div>
+      <div class="adr-stats"><span><strong>4.5K</strong> lines</span><span><strong>358</strong> tests</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 12: Full Index                                        -->
+<!-- ============================================================ -->
+<section id="full-index">
+  <h2>Complete ADR Index</h2>
+  <p class="section-desc">All 83 Architecture Decision Records listed in numerical order with status and category.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>ADR</th>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Category</th>
+          <th>Key Metrics</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>001</td><td>Separate DynamoDB Tables for Job Types</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Data</td><td>DynamoDB, GSI, TTL</td></tr>
+        <tr><td>002</td><td>VPC Endpoints over NAT Gateways</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Foundation</td><td>Zero egress (GovCloud)</td></tr>
+        <tr><td>003</td><td>EKS EC2 Managed Node Groups</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Compute</td><td>3-tier architecture</td></tr>
+        <tr><td>004</td><td>Cloud Abstraction Layer</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Integration</td><td>46 tests</td></tr>
+        <tr><td>005</td><td>HITL Sandbox Testing</td><td><span class="adr-status status-deployed">Deployed</span></td><td>HITL</td><td>24h timeout, SOX/CMMC</td></tr>
+        <tr><td>006</td><td>Three-Tier dnsmasq Service Discovery</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Foundation</td><td>DNSSEC, 3-tier</td></tr>
+        <tr><td>007</td><td>Modular CI/CD Layer-Based Deployment</td><td><span class="adr-status status-deployed">Deployed</span></td><td>CI/CD</td><td>155 templates, 8 layers</td></tr>
+        <tr><td>008</td><td>Bedrock LLM Cost Controls</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>Multi-layer controls</td></tr>
+        <tr><td>009</td><td>Dual-Layer Drift Protection</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Security</td><td>18 Config rules</td></tr>
+        <tr><td>010</td><td>Autonomous ADR Generation Pipeline</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Security</td><td>4-agent pipeline</td></tr>
+        <tr><td>011</td><td>VPC Resource Access via EKS</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Foundation</td><td>$0 cost, CMMC</td></tr>
+        <tr><td>012</td><td>OpenSearch IAM Authentication</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Data</td><td>IRSA, SigV4</td></tr>
+        <tr><td>013</td><td>Service Adapter &amp; Factory Pattern</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>Zero-code switching</td></tr>
+        <tr><td>014</td><td>LLM-Enhanced Search &amp; Ranking</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>3-tier search</td></tr>
+        <tr><td>015</td><td>Tiered LLM Model Strategy</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>60-70% savings</td></tr>
+        <tr><td>016</td><td>HITL Auto-Escalation</td><td><span class="adr-status status-deployed">Deployed</span></td><td>HITL</td><td>Severity-based</td></tr>
+        <tr><td>017</td><td>Dynamic Sandbox Resource Allocation</td><td><span class="adr-status status-deployed">Deployed</span></td><td>HITL</td><td>CPU 256-4096</td></tr>
+        <tr><td>018</td><td>MetaOrchestrator Dynamic Agent Spawning</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>DAG execution</td></tr>
+        <tr><td>019</td><td>Market Intelligence Agent</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>3 sub-agents</td></tr>
+        <tr><td>020</td><td>Private ECR Base Images</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Compute</td><td>Supply chain</td></tr>
+        <tr><td>021</td><td>Guardrails Cognitive Architecture</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>3-tier memory</td></tr>
+        <tr><td>022</td><td>GitOps with ArgoCD</td><td><span class="adr-status status-deployed">Deployed</span></td><td>CI/CD</td><td>Argo Rollouts</td></tr>
+        <tr><td>023</td><td>AgentCore Gateway Dual-Track</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Integration</td><td>MCP, A2A</td></tr>
+        <tr><td>024</td><td>Titan Neural Memory</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>237 tests, 2M+ tokens</td></tr>
+        <tr><td>025</td><td>RuntimeIncidentAgent</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>GraphRAG RCA</td></tr>
+        <tr><td>026</td><td>Bootstrap Once Security Groups</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Foundation</td><td>State machine</td></tr>
+        <tr><td>027</td><td>Security Group Zero-Downtime</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Foundation</td><td>Ingress/Egress split</td></tr>
+        <tr><td>028</td><td>Microsoft Foundry Adoption Plan</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Integration</td><td>8 phases</td></tr>
+        <tr><td>029</td><td>Agent Optimization Roadmap</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>187 tests, enabled</td></tr>
+        <tr><td>030</td><td>Chat Assistant Architecture</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>8 tools, ~$550/mo</td></tr>
+        <tr><td>031</td><td>Neptune Deployment Mode</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Data</td><td>Provisioned</td></tr>
+        <tr><td>032</td><td>Configurable Autonomy Framework</td><td><span class="adr-status status-deployed">Deployed</span></td><td>HITL</td><td>4 levels, 7 presets</td></tr>
+        <tr><td>033</td><td>Runbook Agent</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>Incident docs</td></tr>
+        <tr><td>034</td><td>Context Engineering</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Data</td><td>7 services</td></tr>
+        <tr><td>035</td><td>Docker-Podman Build Project</td><td><span class="adr-status status-deployed">Deployed</span></td><td>CI/CD</td><td>CodeBuild</td></tr>
+        <tr><td>036</td><td>Multi-Platform Container Build</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Compute</td><td>ARM/AMD64</td></tr>
+        <tr><td>037</td><td>AWS Agent Capability Replication</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>27 services</td></tr>
+        <tr><td>038</td><td>CodeBuild Caching Optimization</td><td><span class="adr-status status-deployed">Deployed</span></td><td>CI/CD</td><td>S3 cache</td></tr>
+        <tr><td>039</td><td>Self-Service Test Environments</td><td><span class="adr-status status-deployed">Deployed</span></td><td>HITL</td><td>4 phases</td></tr>
+        <tr><td>040</td><td>Configurable Compliance Settings</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Foundation</td><td>KMS, retention</td></tr>
+        <tr><td>041</td><td>AWS-Required Wildcards</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Foundation</td><td>Defense-in-depth</td></tr>
+        <tr><td>042</td><td>Real-Time Agent Intervention</td><td><span class="adr-status status-deployed">Deployed</span></td><td>HITL</td><td>CloudTrail, WebSocket</td></tr>
+        <tr><td>043</td><td>Repository Onboarding Wizard</td><td><span class="adr-status status-deployed">Deployed</span></td><td>UI</td><td>5-step, ~8K lines</td></tr>
+        <tr><td>044</td><td>GraphRAG Node Detail Panel</td><td><span class="adr-status status-deployed">Deployed</span></td><td>UI</td><td>Explorer enhancement</td></tr>
+        <tr><td>045</td><td>External Doc Links for Knowledge Graph</td><td><span class="adr-status status-deployed">Deployed</span></td><td>UI</td><td>Contextual refs</td></tr>
+        <tr><td>046</td><td>Support Ticketing Connectors</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Integration</td><td>Jira, ServiceNow</td></tr>
+        <tr><td>047</td><td>Customer Onboarding Features</td><td><span class="adr-status status-deployed">Deployed</span></td><td>UI</td><td>Welcome, Tour</td></tr>
+        <tr><td>048</td><td>Developer Tools &amp; Data Platform</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Integration</td><td>~7.7K lines</td></tr>
+        <tr><td>049</td><td>Self-Hosted Deployment</td><td><span class="adr-status status-deployed">Deployed</span></td><td>CI/CD</td><td>Podman-first</td></tr>
+        <tr><td>050</td><td>Self-Play SWE-RL</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>354 tests, ~15.9K lines</td></tr>
+        <tr><td>051</td><td>Recursive Context &amp; Embedding</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>167 tests, 100x</td></tr>
+        <tr><td>052</td><td>AI Alignment Principles</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>Ethical framework</td></tr>
+        <tr><td>053</td><td>Enterprise Security Integrations</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Security</td><td>Zscaler, Saviynt</td></tr>
+        <tr><td>054</td><td>Multi-IdP Authentication</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Integration</td><td>SAML/OIDC</td></tr>
+        <tr><td>055</td><td>Agent Scheduling View</td><td><span class="adr-status status-deployed">Deployed</span></td><td>UI</td><td>Job queue</td></tr>
+        <tr><td>056</td><td>Documentation Agent</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>Diagram generation</td></tr>
+        <tr><td>057</td><td>Public Doc Portal &amp; Animations</td><td><span class="adr-status status-deployed">Deployed</span></td><td>UI</td><td>Marketing site</td></tr>
+        <tr><td>058</td><td>EKS Multi-Node Group</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Compute</td><td>Workload placement</td></tr>
+        <tr><td>059</td><td>AWS Organization Restructure</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Foundation</td><td>Multi-account</td></tr>
+        <tr><td>060</td><td>Enterprise Diagram Generation</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>Multi-provider</td></tr>
+        <tr><td>061</td><td>GPU Workload Scheduler</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Compute</td><td>391 tests</td></tr>
+        <tr><td>062</td><td>Environment Validator Agent</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>165 tests</td></tr>
+        <tr><td>063</td><td>Constitutional AI Integration</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>463 tests, 16 principles</td></tr>
+        <tr><td>064</td><td>Customizable Dashboard Widgets</td><td><span class="adr-status status-deployed">Deployed</span></td><td>UI</td><td>25+ widgets, ~16.3K lines</td></tr>
+        <tr><td>065</td><td>Semantic Guardrails Engine</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>793 tests, 6 layers</td></tr>
+        <tr><td>066</td><td>Agent Capability Governance</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>322 tests, 4-tier</td></tr>
+        <tr><td>067</td><td>Context Provenance &amp; Integrity</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Data</td><td>275 tests</td></tr>
+        <tr><td>068</td><td>Universal Explainability</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>227 tests</td></tr>
+        <tr><td>069</td><td>Guardrail Configuration UI</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>128 tests</td></tr>
+        <tr><td>070</td><td>Policy-as-Code GitOps</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>98 tests, OPA/Rego</td></tr>
+        <tr><td>071</td><td>Cross-Agent Capability Graph</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Agents</td><td>179 tests</td></tr>
+        <tr><td>072</td><td>ML-Based Anomaly Detection</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>113 tests</td></tr>
+        <tr><td>073</td><td>Attribute-Based Access Control</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>115 tests</td></tr>
+        <tr><td>074</td><td>Palantir AIP Integration</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Integration</td><td>197 tests</td></tr>
+        <tr><td>075</td><td>Palantir AIP UI Enhancements</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Integration</td><td>103 tests</td></tr>
+        <tr><td>076</td><td>SBOM Attestation &amp; Supply Chain</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Security</td><td>168 tests</td></tr>
+        <tr><td>077</td><td>Cloud Runtime Security</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Security</td><td>155 tests</td></tr>
+        <tr><td>078</td><td>Air-Gapped &amp; Edge Deployment</td><td><span class="adr-status status-deployed">Deployed</span></td><td>CI/CD</td><td>200 tests</td></tr>
+        <tr><td>079</td><td>Scale &amp; AI Model Security</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Security</td><td>86 tests</td></tr>
+        <tr><td>080</td><td>Evo-Memory Enhancements</td><td><span class="adr-status status-deployed">Deployed</span></td><td>AI/ML</td><td>336 tests, 7 ops</td></tr>
+        <tr><td>081</td><td>Constraint Geometry Engine</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Governance</td><td>358 tests, 7-axis</td></tr>
+        <tr style="background:#FEF2F2;"><td colspan="5" style="text-align:center; color:var(--text-muted); font-style:italic;">ADR-082 — Intentionally skipped (numbering gap)</td></tr>
+        <tr><td>083</td><td>Runtime Agent Security Platform</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Security</td><td>848 tests, 75 ATT&CK</td></tr>
+        <tr><td>084</td><td>Native Vulnerability Scanning Engine</td><td><span class="adr-status status-deployed">Deployed</span></td><td>Security</td><td>980 tests planned</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 13: Dependency Graph                                  -->
+<!-- ============================================================ -->
+<section id="dependencies">
+  <h2>ADR Dependency Relationships</h2>
+  <p class="section-desc">Key architectural dependencies between ADRs showing how foundational decisions enable higher-level capabilities.</p>
+
+  <div class="dep-graph">
+FOUNDATION LAYER
+├── ADR-002 (VPC Endpoints) ──────────┬── ADR-005 (HITL Sandbox)
+├── ADR-003 (EKS Node Groups) ───────┤   ├── ADR-016 (Auto-Escalation)
+├── ADR-006 (dnsmasq DNS) ───────────┤   ├── ADR-017 (Dynamic Resources)
+└── ADR-011 (VPC Access) ────────────┘   └── ADR-032 (Autonomy Framework)
+                                              └── ADR-042 (Real-Time Intervention)
+
+DATA LAYER
+├── ADR-001 (DynamoDB Tables)
+├── ADR-012 (OpenSearch IAM) ─── ADR-034 (Context Engineering)
+├── ADR-031 (Neptune Config)      ├── ADR-067 (Provenance)
+└── ADR-034 (Context Eng) ────── └── ADR-051 (Recursive Context)
+
+AI / ML PIPELINE
+├── ADR-008 (Cost Controls) ──── ADR-015 (Tiered Models) ──── ADR-029 (Optimization)
+├── ADR-014 (LLM Search) ───────────────────────────────────┘
+├── ADR-024 (Titan Neural Memory) ── ADR-080 (Evo-Memory)
+│                                  └── ADR-084 (Vuln Scanner)
+└── ADR-051 (RLM + JEPA)
+
+AGENT ORCHESTRATION
+├── ADR-013 (Adapter Pattern) ── ADR-018 (MetaOrchestrator) ── ADR-037 (AWS Parity)
+│                               ├── ADR-019 (Market Intel)
+│                               ├── ADR-025 (RuntimeIncident)
+│                               └── ADR-050 (Self-Play SWE-RL)
+└── ADR-071 (Capability Graph)
+
+SECURITY &amp; GOVERNANCE
+├── ADR-009 (Drift Protection) ── ADR-062 (Env Validator)
+├── ADR-020 (ECR Images) ──────── ADR-076 (SBOM)
+├── ADR-021 (Guardrails) ──────── ADR-065 (Semantic Guardrails) ── ADR-069 (Config UI)
+│                               ├── ADR-063 (Constitutional AI)
+│                               └── ADR-081 (Constraint Geometry)
+├── ADR-066 (Capability Gov) ──── ADR-070 (Policy-as-Code)
+├── ADR-077 (Cloud Runtime) ───── ADR-083 (Runtime Security Platform)
+└── ADR-073 (ABAC) ────────────── ADR-079 (AI Model Security)
+
+CI/CD &amp; DEPLOYMENT
+├── ADR-007 (Modular CI/CD) ──── ADR-022 (GitOps/ArgoCD) ──── ADR-035 (Docker Build)
+│                               └── ADR-038 (Caching)
+├── ADR-036 (Multi-Platform)
+├── ADR-049 (Self-Hosted) ──────── ADR-078 (Air-Gapped)
+└── ADR-039 (Test Environments)
+
+INTEGRATIONS
+├── ADR-004 (Cloud Abstraction)
+├── ADR-023 (AgentCore Gateway) ── ADR-028 (Foundry Adoption)
+├── ADR-046 (Ticketing Connectors)
+├── ADR-054 (Multi-IdP Auth)
+└── ADR-074 (Palantir AIP) ──────── ADR-075 (Palantir UI)
+
+UI &amp; ONBOARDING
+├── ADR-043 (Repo Onboarding) ── ADR-047 (Customer Onboarding)
+├── ADR-044 (GraphRAG Panel) ── ADR-045 (External Doc Links)
+├── ADR-055 (Agent Scheduling)
+├── ADR-057 (Public Portal)
+├── ADR-064 (Dashboard Widgets) ── ADR-083 (+7 Security Widgets)
+│                               └── ADR-084 (+20 Scanner Widgets)
+└── ADR-048 (Developer Tools)
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 14: Summary                                           -->
+<!-- ============================================================ -->
+<section>
+  <h2>Summary</h2>
+
+  <div class="adr-grid">
+    <div class="adr-card" style="border-left: 4px solid var(--brand);">
+      <div class="adr-title">By Category</div>
+      <div class="adr-summary">
+        <strong>Foundation &amp; Networking:</strong> 8 ADRs<br>
+        <strong>Data Layer:</strong> 5 ADRs<br>
+        <strong>Compute &amp; Containers:</strong> 5 ADRs<br>
+        <strong>Agents &amp; Orchestration:</strong> 10 ADRs<br>
+        <strong>AI / ML:</strong> 10 ADRs<br>
+        <strong>Security &amp; Compliance:</strong> 8 ADRs<br>
+        <strong>HITL &amp; Autonomy:</strong> 6 ADRs<br>
+        <strong>CI/CD &amp; Deployment:</strong> 6 ADRs<br>
+        <strong>UI &amp; Onboarding:</strong> 8 ADRs<br>
+        <strong>Integrations:</strong> 7 ADRs<br>
+        <strong>Governance &amp; Guardrails:</strong> 10 ADRs
+      </div>
+    </div>
+
+    <div class="adr-card" style="border-left: 4px solid var(--success);">
+      <div class="adr-title">Key Outcomes</div>
+      <div class="adr-summary">
+        <strong>100% Deployed</strong> — All 83 ADRs are in production<br>
+        <strong>23,165+ Tests</strong> — Comprehensive validation across all services<br>
+        <strong>439K+ Lines</strong> — Production codebase (193K Python, 142K Tests)<br>
+        <strong>155 CloudFormation Templates</strong> — Full infrastructure-as-code<br>
+        <strong>GovCloud Ready</strong> — 19/19 services compatible<br>
+        <strong>NIST 800-53 Aligned</strong> — Technical controls deployed<br>
+        <strong>Zero Failed Tests</strong> — Clean test suite, 0 failures
+      </div>
+    </div>
+
+    <div class="adr-card" style="border-left: 4px solid var(--purple);">
+      <div class="adr-title">Innovation Highlights</div>
+      <div class="adr-summary">
+        <strong>Titan Neural Memory:</strong> 2M+ token effective context<br>
+        <strong>Recursive Context:</strong> 100x context scaling (MIT CSAIL)<br>
+        <strong>VL-JEPA:</strong> 2.85x embedding efficiency (Meta FAIR)<br>
+        <strong>Constraint Geometry:</strong> 7-axis deterministic validation<br>
+        <strong>AURA-ATT&CK:</strong> 75-technique red team framework<br>
+        <strong>6-Layer Guardrails:</strong> Multi-stage threat detection<br>
+        <strong>Evo-Memory:</strong> 7 memory evolution operations
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- /container -->
+
+<!-- ===== FOOTER ===== -->
+<div style="text-align:center; padding:32px; color:var(--text-muted); font-size:12px; border-top:1px solid var(--border);">
+  Project Aura &middot; Aenea Labs &middot; Architecture Decision Records &middot; 83 ADRs &middot; February 2026
+</div>
+
+</body>
+</html>

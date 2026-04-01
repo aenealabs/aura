@@ -1,0 +1,116 @@
+# Project Aura - MetaOrchestrator Network Policy
+#
+# Defines network isolation for MetaOrchestrator jobs.
+# Allows necessary egress to AWS services while restricting unnecessary traffic.
+#
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: meta-orchestrator-network-policy
+  namespace: aura
+  labels:
+    app: meta-orchestrator
+    app.kubernetes.io/name: meta-orchestrator
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: aura
+spec:
+  podSelector:
+    matchLabels:
+      app: meta-orchestrator
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # Ingress: Allow Prometheus scraping and health checks
+  ingress:
+    # Allow Prometheus to scrape metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow health checks from within cluster
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+
+  # Egress: Allow access to required services
+  egress:
+    # Allow DNS resolution (CoreDNS and dnsmasq)
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Allow access to dnsmasq for service discovery
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dnsmasq
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Allow HTTPS to AWS services (via VPC endpoints)
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8  # VPC CIDR - adjust as needed
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Allow Neptune access
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8182
+
+    # Allow OpenSearch access
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 9200
+
+    # Allow communication with other aura services
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: aura
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow egress to Kubernetes API for job/pod management
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Block metadata service (security hardening)
+    # Note: This is handled by the explicit allow rules above
+    # 169.254.169.254 is not in the allowed CIDRs

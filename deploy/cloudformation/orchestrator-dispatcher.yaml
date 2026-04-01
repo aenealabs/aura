@@ -1,0 +1,625 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.5 - Orchestrator Dispatcher (SQS to EKS)'
+
+# This template creates the hybrid Lambda + EKS architecture for autonomous
+# MetaOrchestrator task execution. Lambda handles SQS consumption and dispatch,
+# while EKS handles long-running orchestrator execution.
+#
+# Architecture:
+#   OrchestratorTaskQueue (from realtime-monitoring.yaml)
+#       -> OrchestratorDispatcherFunction (this template)
+#           -> DynamoDB (job state tracking)
+#           -> EKS Kubernetes Jobs (MetaOrchestrator execution)
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  EKSClusterName:
+    Type: String
+    Default: ''
+    Description: EKS cluster name (defaults to aura-cluster-{environment})
+
+  OrchestratorImage:
+    Type: String
+    Default: ''
+    Description: MetaOrchestrator container image (defaults to ECR image)
+
+  OIDCProviderArn:
+    Type: String
+    Default: ''
+    Description: OIDC Provider ARN for IRSA (optional, skips IRSA role if empty)
+
+  OIDCProviderURL:
+    Type: String
+    Default: ''
+    Description: OIDC Provider URL for IRSA (optional)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasCustomClusterName: !Not [!Equals [!Ref EKSClusterName, '']]
+  HasCustomImage: !Not [!Equals [!Ref OrchestratorImage, '']]
+  HasOIDCProvider: !Not [!Equals [!Ref OIDCProviderArn, '']]
+
+Resources:
+  # ==========================================================================
+  # DynamoDB Table: Orchestrator Job State
+  # ==========================================================================
+
+  OrchestratorJobsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-orchestrator-jobs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: alias/aws/dynamodb
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+        - AttributeName: task_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Query jobs by task_id
+        - IndexName: by-task-id
+          KeySchema:
+            - AttributeName: task_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query jobs by status for monitoring
+        - IndexName: by-status
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: KEYS_ONLY
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-jobs-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '6'
+        - Key: Purpose
+          Value: 'MetaOrchestrator job state tracking'
+
+  # ==========================================================================
+  # Lambda Function: Orchestrator Dispatcher
+  # ==========================================================================
+
+  OrchestratorDispatcherFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-orchestrator-dispatcher-${Environment}'
+      Description: Dispatches SQS messages to EKS MetaOrchestrator Jobs
+      Runtime: python3.11
+      Handler: orchestrator_dispatcher.lambda_handler
+      Role: !GetAtt OrchestratorDispatcherRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      # ReservedConcurrentExecutions: 10  # Disabled - account quota insufficient (10 total)
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref DispatcherSecurityGroup
+        SubnetIds:
+          - !ImportValue
+            Fn::Sub: '${ProjectName}-networking-${Environment}-PrivateSubnet1Id'
+          - !ImportValue
+            Fn::Sub: '${ProjectName}-networking-${Environment}-PrivateSubnet2Id'
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          EKS_CLUSTER_NAME: !If
+            - HasCustomClusterName
+            - !Ref EKSClusterName
+            - !Sub '${ProjectName}-cluster-${Environment}'
+          JOB_STATE_TABLE: !Ref OrchestratorJobsTable
+          ORCHESTRATOR_NAMESPACE: aura
+          ORCHESTRATOR_IMAGE: !If
+            - HasCustomImage
+            - !Ref OrchestratorImage
+            - !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ProjectName}-meta-orchestrator-${Environment}:latest'
+          AWS_ACCOUNT_ID: !Ref AWS::AccountId
+          PLATFORM_SETTINGS_TABLE: !Sub '${ProjectName}-platform-settings-${Environment}'
+      Code:
+        S3Bucket: !Sub '${ProjectName}-serverless-artifacts-${AWS::AccountId}-${Environment}'
+        S3Key: lambda/orchestrator-dispatcher-latest.zip
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-dispatcher-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Security Group for Lambda in VPC
+  DispatcherSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-orchestrator-dispatcher-sg-${Environment}'
+      GroupDescription: Security group for Orchestrator Dispatcher Lambda
+      VpcId: !ImportValue
+        Fn::Sub: '${ProjectName}-networking-${Environment}-VpcId'
+      SecurityGroupEgress:
+        # Allow HTTPS to AWS services
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS to AWS services
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-dispatcher-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SQS Event Source Mapping
+  SQSEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !ImportValue
+        Fn::Sub: '${ProjectName}-realtime-monitoring-${Environment}-OrchestratorTaskQueueArn'
+      FunctionName: !Ref OrchestratorDispatcherFunction
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+      FunctionResponseTypes:
+        - ReportBatchItemFailures
+      Enabled: true
+
+  # ==========================================================================
+  # IAM Role for Lambda
+  # ==========================================================================
+
+  OrchestratorDispatcherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-orchestrator-dispatcher-role-${Environment}'
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Policies:
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SQSReceiveDelete
+                Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                Resource: !ImportValue
+                  Fn::Sub: '${ProjectName}-realtime-monitoring-${Environment}-OrchestratorTaskQueueArn'
+
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDBReadWrite
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt OrchestratorJobsTable.Arn
+                  - !Sub '${OrchestratorJobsTable.Arn}/index/*'
+
+        - PolicyName: EKSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: EKSDescribeCluster
+                Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                Resource: !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
+
+        - PolicyName: CloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: PutMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub 'Aura/Orchestrator'
+
+        # Platform Settings Read Access (for orchestrator mode lookup)
+        # Security: LeadingKeys condition restricts to orchestrator settings only
+        - PolicyName: PlatformSettingsReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadOrchestratorSettings
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-platform-settings-${Environment}'
+                Condition:
+                  ForAllValues:StringEquals:
+                    dynamodb:LeadingKeys:
+                      - 'orchestrator'
+                      - 'platform'
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-dispatcher-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # IRSA Role for MetaOrchestrator EKS Jobs
+  # ==========================================================================
+
+  MetaOrchestratorIRSARole:
+    Type: AWS::IAM::Role
+    Condition: HasOIDCProvider
+    Properties:
+      RoleName: !Sub '${ProjectName}-meta-orchestrator-irsa-${Environment}'
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCUrl}:aud": "sts.amazonaws.com",
+                      "${OIDCUrl}:sub": "system:serviceaccount:aura:meta-orchestrator"
+                    }
+                  }
+                }
+              ]
+            }
+          - OIDCArn: !Ref OIDCProviderArn
+            OIDCUrl: !Ref OIDCProviderURL
+      Policies:
+        # Neptune access
+        - PolicyName: NeptuneAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - neptune-db:*
+                Resource: !Sub 'arn:${AWS::Partition}:neptune-db:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+        # OpenSearch access
+        - PolicyName: OpenSearchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - es:ESHttp*
+                Resource: !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-*'
+
+        # Bedrock access - scoped to approved model families
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  # Anthropic Claude models (approved for Project Aura)
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-opus*'
+                  # Amazon Titan models (for embeddings)
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed*'
+
+        # DynamoDB access for job state updates
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt OrchestratorJobsTable.Arn
+                  - !Sub '${OrchestratorJobsTable.Arn}/index/*'
+
+        # Step Functions for HITL workflow
+        - PolicyName: StepFunctionsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                  - states:DescribeExecution
+                Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-*'
+
+        # SNS for notifications
+        - PolicyName: SNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+        # CloudWatch for metrics and logs
+        - PolicyName: CloudWatchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+        # Secrets Manager for credentials
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-*'
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-meta-orchestrator-irsa-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # CloudWatch Alarms
+  # ==========================================================================
+
+  DispatcherErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-orchestrator-dispatcher-errors-${Environment}'
+      AlarmDescription: Alert when dispatcher Lambda has errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref OrchestratorDispatcherFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-realtime-monitoring-${Environment}-CriticalAnomalySNSTopicArn'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-dispatcher-errors-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  DLQDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-orchestrator-dlq-depth-${Environment}'
+      AlarmDescription: Alert when DLQ has messages (failed dispatches)
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !Sub '${ProjectName}-orchestrator-tasks-dlq-${Environment}'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-realtime-monitoring-${Environment}-CriticalAnomalySNSTopicArn'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-dlq-depth-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Mode Thrashing Detection Alarms
+  # ==========================================================================
+
+  # Alarm: Too many mode changes in a short period
+  # Mode thrashing indicates configuration issues or unstable workloads
+  ModeThrashingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-orchestrator-mode-thrashing-${Environment}'
+      AlarmDescription: |
+        Alert when orchestrator deployment mode changes too frequently.
+        More than 5 mode changes in 30 minutes indicates thrashing.
+        Review mode change cooldown settings and workload patterns.
+      Namespace: Aura/Orchestrator
+      MetricName: OrchestratorModeChange
+      Dimensions:
+        - Name: EventType
+          Value: mode_switched
+      Statistic: Sum
+      Period: 1800  # 30 minutes
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-realtime-monitoring-${Environment}-CriticalAnomalySNSTopicArn'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-mode-thrashing-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Warm pool not ready when enabled
+  WarmPoolNotReadyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-orchestrator-warmpool-not-ready-${Environment}'
+      AlarmDescription: |
+        Alert when warm pool is enabled but no replicas are ready.
+        This may cause jobs to be routed to non-existent pods.
+        Check EKS deployment status and node availability.
+      Namespace: Aura/Orchestrator
+      MetricName: WarmPoolReplicasReady
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-realtime-monitoring-${Environment}-CriticalAnomalySNSTopicArn'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-warmpool-not-ready-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Alarm: Hybrid mode burst jobs overload
+  HybridBurstOverloadAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-orchestrator-burst-overload-${Environment}'
+      AlarmDescription: |
+        Alert when hybrid mode is creating too many burst jobs.
+        This indicates warm pool cannot handle the workload.
+        Consider increasing warm pool replicas or queue depth threshold.
+      Namespace: Aura/Orchestrator
+      MetricName: BurstJobsCreated
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 20  # More than 20 burst jobs in 10 minutes
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-realtime-monitoring-${Environment}-CriticalAnomalySNSTopicArn'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-orchestrator-burst-overload-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  OrchestratorJobsTableName:
+    Description: Name of the orchestrator jobs DynamoDB table
+    Value: !Ref OrchestratorJobsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorJobsTableName'
+
+  OrchestratorJobsTableArn:
+    Description: ARN of the orchestrator jobs DynamoDB table
+    Value: !GetAtt OrchestratorJobsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorJobsTableArn'
+
+  OrchestratorDispatcherFunctionArn:
+    Description: ARN of the orchestrator dispatcher Lambda function
+    Value: !GetAtt OrchestratorDispatcherFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorDispatcherFunctionArn'
+
+  MetaOrchestratorIRSARoleArn:
+    Condition: HasOIDCProvider
+    Description: ARN of the IRSA role for MetaOrchestrator EKS jobs
+    Value: !GetAtt MetaOrchestratorIRSARole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-MetaOrchestratorIRSARoleArn'

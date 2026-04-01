@@ -1,0 +1,526 @@
+version: 0.2
+
+# Foundation Layer: Networking, Security Groups, IAM Roles
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Foundation Layer Deployment"
+      - echo "=========================================="
+      - echo "Environment - $ENVIRONMENT"
+      - echo "Region - $AWS_DEFAULT_REGION"
+
+      # Validate templates
+      - echo "Validating foundation templates..."
+      - cfn-lint deploy/cloudformation/ssm-common-parameters.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/networking.yaml --ignore-checks W3002
+      - cfn-lint deploy/cloudformation/security.yaml --ignore-checks W3002
+      - cfn-lint deploy/cloudformation/iam.yaml --ignore-checks W3002,W3037 || echo "iam.yaml validation warning (W3037 is expected for new Bedrock actions)"
+      - cfn-lint deploy/cloudformation/kms.yaml --ignore-checks W3002
+      - cfn-lint deploy/cloudformation/vpc-endpoints.yaml --ignore-checks W3002
+      - cfn-lint deploy/cloudformation/ecr-base-images.yaml --ignore-checks W3002
+      # CI/CD infrastructure templates
+      - cfn-lint deploy/cloudformation/codebuild-serverless.yaml --ignore-checks W3002,W1020 || echo "codebuild-serverless validation warning"
+
+      # AWS CloudFormation validation
+      - |
+        for template in networking security iam kms vpc-endpoints ecr-base-images; do
+          echo "Validating ${template}.yaml..."
+          aws cloudformation validate-template \
+            --template-body file://deploy/cloudformation/${template}.yaml \
+            --region $AWS_DEFAULT_REGION
+        done
+
+  build:
+    commands:
+      # Generate deployment timestamp for forcing stack updates
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # Deploy SSM Common Parameters Stack (Layer 1.0 - must be first)
+      - |
+        echo "Deploying SSM Common Parameters Stack..."
+        SSM_PARAMS_STACK="${PROJECT_NAME}-ssm-common-parameters-${ENVIRONMENT}"
+        aws cloudformation deploy \
+          --stack-name $SSM_PARAMS_STACK \
+          --template-file deploy/cloudformation/ssm-common-parameters.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=foundation DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+        echo "SSM Common Parameters Stack deployment complete"
+
+      # Deploy Networking Stack
+      - |
+        echo "Deploying Networking Stack..."
+        NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+
+        # Check stack status - handle ROLLBACK_COMPLETE/ROLLBACK_FAILED by deleting first
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+        if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+          echo "Stack in $STACK_STATUS state - deleting before recreating..."
+          aws cloudformation delete-stack --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION
+          aws cloudformation wait stack-delete-complete --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        elif [ "$STACK_STATUS" = "DOES_NOT_EXIST" ]; then
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        else
+          OPERATION="update-stack"
+          WAIT_CONDITION="stack-update-complete"
+        fi
+
+        CFN_OUTPUT=$(aws cloudformation $OPERATION \
+          --stack-name $NETWORKING_STACK \
+          --template-body file://deploy/cloudformation/networking.yaml \
+          --parameters \
+            ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+            ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+            ParameterKey=VpcCIDR,ParameterValue=10.0.0.0/16 \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=foundation Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-cli-pager 2>&1) || true
+
+        if echo "$CFN_OUTPUT" | grep -q "No updates are to be performed"; then
+          echo "No updates needed for networking stack"
+        else
+          echo "Waiting for networking stack..."
+          aws cloudformation wait $WAIT_CONDITION --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+      # Deploy Security Stack
+      # =============================================================================
+      # CRITICAL: "Bootstrap Once, Update Forever" Pattern
+      # =============================================================================
+      # Security groups cannot be deleted while in use by EKS/Neptune/OpenSearch due
+      # to ENI (Elastic Network Interface) dependencies. This deployment uses
+      # 'aws cloudformation deploy' for in-place updates to avoid triggering security
+      # group replacement. Never delete this stack while services are running.
+      #
+      # State Machine:
+      #   DOES_NOT_EXIST      -> Create new stack (initial bootstrap)
+      #   ROLLBACK_COMPLETE   -> Check ENI dependencies before deletion
+      #                          - If ENIs exist: EXIT with error + recovery guidance
+      #                          - If no ENIs: Safe to delete and recreate
+      #   ROLLBACK_FAILED     -> Same as ROLLBACK_COMPLETE
+      #   *_COMPLETE states   -> Update via deploy (normal path)
+      #   *_IN_PROGRESS       -> EXIT with error (operation in flight)
+      #   DELETE_*            -> EXIT with error (stuck state, manual intervention)
+      # =============================================================================
+      - |
+        echo "Deploying Security Stack..."
+        NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+        SECURITY_STACK="${PROJECT_NAME}-security-${ENVIRONMENT}"
+        VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+
+        # Check stack status and handle various failure states
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $SECURITY_STACK --region $AWS_DEFAULT_REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+        echo "Current stack status: $STACK_STATUS"
+
+        # -------------------------------------------------------------------------
+        # State Machine: Handle each possible CloudFormation state
+        # -------------------------------------------------------------------------
+
+        # BLOCKED STATES: Operations in progress - cannot deploy
+        if [ "$STACK_STATUS" = "CREATE_IN_PROGRESS" ] || \
+           [ "$STACK_STATUS" = "UPDATE_IN_PROGRESS" ] || \
+           [ "$STACK_STATUS" = "UPDATE_ROLLBACK_IN_PROGRESS" ] || \
+           [ "$STACK_STATUS" = "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS" ]; then
+          echo "=========================================="
+          echo "ERROR: Stack operation already in progress"
+          echo "=========================================="
+          echo "Status: $STACK_STATUS"
+          echo ""
+          echo "Another deployment is currently running. Wait for it to complete."
+          echo "Monitor progress:"
+          echo "  aws cloudformation describe-stack-events --stack-name $SECURITY_STACK --max-items 10"
+          exit 1
+        fi
+
+        # STUCK DELETE STATES: Manual intervention required
+        if [ "$STACK_STATUS" = "DELETE_IN_PROGRESS" ]; then
+          echo "=========================================="
+          echo "ERROR: Stack deletion in progress"
+          echo "=========================================="
+          echo "This typically means security groups have active ENI dependencies."
+          echo ""
+          echo "Resolution options:"
+          echo "  1. Wait for deletion to complete (may take 30+ minutes)"
+          echo "  2. If deletion is stuck, identify dependent resources:"
+          echo "     aws ec2 describe-network-interfaces \\"
+          echo "       --filters 'Name=group-name,Values=${PROJECT_NAME}-*-sg-${ENVIRONMENT}' \\"
+          echo "       --query 'NetworkInterfaces[*].[NetworkInterfaceId,Description,Status]'"
+          echo "  3. Delete dependent services (EKS, Neptune, OpenSearch) first"
+          exit 1
+        fi
+
+        if [ "$STACK_STATUS" = "DELETE_FAILED" ]; then
+          echo "=========================================="
+          echo "ERROR: Stack deletion failed - manual intervention required"
+          echo "=========================================="
+          echo "Security groups likely have ENI dependencies preventing deletion."
+          echo ""
+          echo "Check ENI dependencies:"
+          echo "  aws ec2 describe-network-interfaces \\"
+          echo "    --filters 'Name=group-name,Values=${PROJECT_NAME}-*-sg-${ENVIRONMENT}' \\"
+          echo "    --query 'NetworkInterfaces[*].[NetworkInterfaceId,Description,Status]'"
+          echo ""
+          echo "Recovery options:"
+          echo "  1. Import orphaned SGs: ./deploy/scripts/import-security-groups.sh"
+          echo "  2. Or delete dependent services first, then:"
+          echo "     aws cloudformation delete-stack --stack-name $SECURITY_STACK"
+          exit 1
+        fi
+
+        # ROLLBACK STATES: Check for ENI dependencies before attempting deletion
+        if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+          echo "Stack in $STACK_STATUS state - checking for ENI dependencies before deletion..."
+
+          # Check if any security groups from this stack have ENI attachments
+          ENI_COUNT=$(aws ec2 describe-network-interfaces \
+            --filters "Name=group-name,Values=${PROJECT_NAME}-*-sg-${ENVIRONMENT}" \
+            --query 'length(NetworkInterfaces)' \
+            --output text \
+            --region $AWS_DEFAULT_REGION 2>/dev/null || echo "0")
+
+          echo "ENI dependencies found: $ENI_COUNT"
+
+          if [ "$ENI_COUNT" != "0" ] && [ "$ENI_COUNT" != "None" ] && [ -n "$ENI_COUNT" ]; then
+            echo "=========================================="
+            echo "ERROR: Cannot delete stack - ENI dependencies exist"
+            echo "=========================================="
+            echo "Found $ENI_COUNT ENIs attached to security groups from this stack."
+            echo "These are likely from EKS nodes, Neptune, or OpenSearch."
+            echo ""
+            echo "Dependent ENIs:"
+            aws ec2 describe-network-interfaces \
+              --filters "Name=group-name,Values=${PROJECT_NAME}-*-sg-${ENVIRONMENT}" \
+              --query 'NetworkInterfaces[*].[NetworkInterfaceId,Description,Groups[0].GroupName]' \
+              --output table \
+              --region $AWS_DEFAULT_REGION 2>/dev/null || true
+            echo ""
+            echo "Recovery options:"
+            echo "  1. RECOMMENDED: Import orphaned security groups into new stack:"
+            echo "     ./deploy/scripts/import-security-groups.sh"
+            echo ""
+            echo "  2. DESTRUCTIVE: Delete dependent services first (EKS, Neptune, OpenSearch),"
+            echo "     then delete the stack and redeploy everything."
+            exit 1
+          fi
+
+          # No ENI dependencies - safe to delete and recreate
+          echo "No ENI dependencies found - safe to delete stack..."
+          aws cloudformation delete-stack --stack-name $SECURITY_STACK --region $AWS_DEFAULT_REGION
+          echo "Waiting for stack deletion..."
+          aws cloudformation wait stack-delete-complete --stack-name $SECURITY_STACK --region $AWS_DEFAULT_REGION
+          echo "Stack deleted successfully."
+          STACK_STATUS="DOES_NOT_EXIST"
+        fi
+
+        # UPDATE_ROLLBACK_COMPLETE is a valid deployable state - treat as existing stack
+        if [ "$STACK_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+          echo "Stack in UPDATE_ROLLBACK_COMPLETE state - previous update failed but stack is deployable."
+          echo "Proceeding with new deployment..."
+        fi
+
+        # -------------------------------------------------------------------------
+        # Deploy using aws cloudformation deploy (handles create/update automatically)
+        # -------------------------------------------------------------------------
+        echo ""
+        echo "Deploying security stack using aws cloudformation deploy..."
+        aws cloudformation deploy \
+          --stack-name $SECURITY_STACK \
+          --template-file deploy/cloudformation/security.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            VpcId=$VPC_ID \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=foundation DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+        echo "Security stack deployment complete."
+
+      # Deploy IAM Stack
+      - |
+        echo "Deploying IAM Stack..."
+        IAM_STACK="${PROJECT_NAME}-iam-${ENVIRONMENT}"
+
+        # Check stack status - handle ROLLBACK_COMPLETE/ROLLBACK_FAILED by deleting first
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $IAM_STACK --region $AWS_DEFAULT_REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+        if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+          echo "Stack in $STACK_STATUS state - deleting before recreating..."
+          aws cloudformation delete-stack --stack-name $IAM_STACK --region $AWS_DEFAULT_REGION
+          aws cloudformation wait stack-delete-complete --stack-name $IAM_STACK --region $AWS_DEFAULT_REGION
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        elif [ "$STACK_STATUS" = "DOES_NOT_EXIST" ]; then
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        else
+          OPERATION="update-stack"
+          WAIT_CONDITION="stack-update-complete"
+        fi
+
+        CFN_OUTPUT=$(aws cloudformation $OPERATION \
+          --stack-name $IAM_STACK \
+          --template-body file://deploy/cloudformation/iam.yaml \
+          --parameters \
+            ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+            ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=foundation Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-cli-pager 2>&1) || true
+
+        if echo "$CFN_OUTPUT" | grep -q "No updates are to be performed"; then
+          echo "No updates needed for IAM stack"
+        else
+          echo "Waiting for IAM stack..."
+          aws cloudformation wait $WAIT_CONDITION --stack-name $IAM_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+      # Deploy KMS Stack (centralized encryption keys)
+      # Must deploy after IAM (roles referenced in key policies) but before other stacks
+      - |
+        echo "Deploying KMS Stack..."
+        KMS_STACK="${PROJECT_NAME}-kms-${ENVIRONMENT}"
+
+        # Check stack status
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $KMS_STACK --region $AWS_DEFAULT_REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+        if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+          echo "Stack in $STACK_STATUS state - deleting before recreating..."
+          aws cloudformation delete-stack --stack-name $KMS_STACK --region $AWS_DEFAULT_REGION
+          aws cloudformation wait stack-delete-complete --stack-name $KMS_STACK --region $AWS_DEFAULT_REGION
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        elif [ "$STACK_STATUS" = "DOES_NOT_EXIST" ]; then
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        else
+          OPERATION="update-stack"
+          WAIT_CONDITION="stack-update-complete"
+        fi
+
+        CFN_OUTPUT=$(aws cloudformation $OPERATION \
+          --stack-name $KMS_STACK \
+          --template-body file://deploy/cloudformation/kms.yaml \
+          --parameters \
+            ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+            ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+          --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=foundation Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-cli-pager 2>&1) || true
+
+        if echo "$CFN_OUTPUT" | grep -q "No updates are to be performed"; then
+          echo "No updates needed for KMS stack"
+        else
+          echo "Waiting for KMS stack..."
+          aws cloudformation wait $WAIT_CONDITION --stack-name $KMS_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+      # Deploy VPC Endpoints Stack
+      - |
+        echo "Deploying VPC Endpoints Stack..."
+        NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+        SECURITY_STACK="${PROJECT_NAME}-security-${ENVIRONMENT}"
+        ENDPOINTS_STACK="${PROJECT_NAME}-vpc-endpoints-${ENVIRONMENT}"
+
+        # Get VPC and subnet information from Networking stack
+        VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+        PRIVATE_SUBNET_IDS=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnetIds`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+
+        # Get VPC endpoint security group from Security stack
+        VPCE_SG_ID=$(aws cloudformation describe-stacks --stack-name $SECURITY_STACK --query 'Stacks[0].Outputs[?OutputKey==`VPCEndpointSecurityGroupId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+
+        # Get private route tables from VPC
+        PRIVATE_RT_1=$(aws ec2 describe-route-tables --filters "Name=tag:Name,Values=${PROJECT_NAME}-private-rt-1-${ENVIRONMENT}" --query 'RouteTables[0].RouteTableId' --output text --region $AWS_DEFAULT_REGION)
+        PRIVATE_RT_2=$(aws ec2 describe-route-tables --filters "Name=tag:Name,Values=${PROJECT_NAME}-private-rt-2-${ENVIRONMENT}" --query 'RouteTables[0].RouteTableId' --output text --region $AWS_DEFAULT_REGION)
+        PRIVATE_ROUTE_TABLE_IDS="${PRIVATE_RT_1},${PRIVATE_RT_2}"
+
+        echo "VPC ID: $VPC_ID"
+        echo "Private Subnets: $PRIVATE_SUBNET_IDS"
+        echo "VPC Endpoint Security Group: $VPCE_SG_ID"
+        echo "Private Route Tables: $PRIVATE_ROUTE_TABLE_IDS"
+
+        # Check stack status
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $ENDPOINTS_STACK --region $AWS_DEFAULT_REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+        if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+          echo "Stack in $STACK_STATUS state - deleting before recreating..."
+          aws cloudformation delete-stack --stack-name $ENDPOINTS_STACK --region $AWS_DEFAULT_REGION
+          aws cloudformation wait stack-delete-complete --stack-name $ENDPOINTS_STACK --region $AWS_DEFAULT_REGION
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        elif [ "$STACK_STATUS" = "DOES_NOT_EXIST" ]; then
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        else
+          OPERATION="update-stack"
+          WAIT_CONDITION="stack-update-complete"
+        fi
+
+        CFN_OUTPUT=$(aws cloudformation $OPERATION \
+          --stack-name $ENDPOINTS_STACK \
+          --template-body file://deploy/cloudformation/vpc-endpoints.yaml \
+          --parameters \
+            ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+            ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+            ParameterKey=VpcId,ParameterValue=$VPC_ID \
+            ParameterKey=PrivateSubnetIds,ParameterValue=\"${PRIVATE_SUBNET_IDS}\" \
+            ParameterKey=PrivateRouteTableIds,ParameterValue=\"${PRIVATE_ROUTE_TABLE_IDS}\" \
+            ParameterKey=VPCEndpointSecurityGroupId,ParameterValue=$VPCE_SG_ID \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=foundation Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-cli-pager 2>&1) || true
+
+        if echo "$CFN_OUTPUT" | grep -q "No updates are to be performed"; then
+          echo "No updates needed for VPC Endpoints stack"
+        else
+          echo "Waiting for VPC Endpoints stack (may take 2-5 minutes)..."
+          aws cloudformation wait $WAIT_CONDITION --stack-name $ENDPOINTS_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+      # Deploy ECR Base Images Stack
+      - |
+        echo "Deploying ECR Base Images Stack..."
+        BASE_IMAGES_STACK="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
+
+        # Check stack status
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $BASE_IMAGES_STACK --region $AWS_DEFAULT_REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+        if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+          echo "Stack in $STACK_STATUS state - deleting before recreating..."
+          aws cloudformation delete-stack --stack-name $BASE_IMAGES_STACK --region $AWS_DEFAULT_REGION
+          aws cloudformation wait stack-delete-complete --stack-name $BASE_IMAGES_STACK --region $AWS_DEFAULT_REGION
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        elif [ "$STACK_STATUS" = "DOES_NOT_EXIST" ]; then
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        else
+          OPERATION="update-stack"
+          WAIT_CONDITION="stack-update-complete"
+        fi
+
+        echo "Running: aws cloudformation $OPERATION --stack-name $BASE_IMAGES_STACK"
+        CFN_OUTPUT=$(aws cloudformation $OPERATION \
+          --stack-name $BASE_IMAGES_STACK \
+          --template-body file://deploy/cloudformation/ecr-base-images.yaml \
+          --parameters \
+            ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+            ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+          --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=foundation Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-cli-pager 2>&1) || true
+
+        echo "CloudFormation output: $CFN_OUTPUT"
+
+        if echo "$CFN_OUTPUT" | grep -q "No updates are to be performed"; then
+          echo "No updates needed for ECR Base Images stack"
+        elif echo "$CFN_OUTPUT" | grep -qi "error\|failed\|exception"; then
+          echo "ERROR: ECR Base Images stack deployment failed"
+          echo "$CFN_OUTPUT"
+          exit 1
+        else
+          echo "Waiting for ECR Base Images stack..."
+          aws cloudformation wait $WAIT_CONDITION --stack-name $BASE_IMAGES_STACK --region $AWS_DEFAULT_REGION
+        fi
+
+      # ========================================
+      # NOTE: CodeBuild projects are now deployed by Bootstrap Layer (Layer 0)
+      # See: deploy/buildspecs/buildspec-bootstrap.yml
+      # See: deploy/cloudformation/codebuild-bootstrap.yaml
+      # ========================================
+      - |
+        echo ""
+        echo "=========================================="
+        echo "Foundation Infrastructure Deployment Complete"
+        echo "=========================================="
+        echo ""
+        echo "NOTE: CodeBuild projects are deployed by the Bootstrap layer (Layer 0)."
+        echo "If you need to deploy/update CodeBuild projects, run:"
+        echo "  aws codebuild start-build --project-name ${PROJECT_NAME}-bootstrap-deploy-${ENVIRONMENT}"
+
+  post_build:
+    commands:
+      - |
+        echo "Foundation layer deployment completed!"
+
+        # Define stack names (variables from build phase don't persist across phases)
+        NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+        SECURITY_STACK="${PROJECT_NAME}-security-${ENVIRONMENT}"
+        IAM_STACK="${PROJECT_NAME}-iam-${ENVIRONMENT}"
+        KMS_STACK="${PROJECT_NAME}-kms-${ENVIRONMENT}"
+        ENDPOINTS_STACK="${PROJECT_NAME}-vpc-endpoints-${ENVIRONMENT}"
+        BASE_IMAGES_STACK="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
+
+        echo "Networking Stack Outputs:"
+        aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table
+
+        echo "Security Stack Outputs:"
+        aws cloudformation describe-stacks --stack-name $SECURITY_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table
+
+        echo "IAM Stack Outputs:"
+        aws cloudformation describe-stacks --stack-name $IAM_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table
+
+        echo "KMS Stack Outputs:"
+        aws cloudformation describe-stacks --stack-name $KMS_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "KMS stack not yet deployed"
+
+        echo "VPC Endpoints Stack Outputs:"
+        aws cloudformation describe-stacks --stack-name $ENDPOINTS_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "VPC Endpoints stack not yet deployed"
+
+        echo "ECR Base Images Stack Outputs:"
+        aws cloudformation describe-stacks --stack-name $BASE_IMAGES_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "ECR Base Images stack not yet deployed"
+
+        echo "VPC Endpoints Summary:"
+        aws ec2 describe-vpc-endpoints --filters "Name=vpc-id,Values=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)" --query 'VpcEndpoints[*].[ServiceName,State,VpcEndpointType]' --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No VPC endpoints found"
+
+        echo ""
+        echo "=========================================="
+        echo "IMPORTANT: Bootstrap Required for Base Images"
+        echo "=========================================="
+        echo "Run the following command to populate the Alpine base image:"
+        echo "  ./deploy/scripts/bootstrap-base-images.sh"
+        echo ""
+
+artifacts:
+  files:
+    - deploy/cloudformation/ssm-common-parameters.yaml
+    - deploy/cloudformation/networking.yaml
+    - deploy/cloudformation/security.yaml
+    - deploy/cloudformation/iam.yaml
+    - deploy/cloudformation/kms.yaml
+    - deploy/cloudformation/vpc-endpoints.yaml
+    - deploy/cloudformation/ecr-base-images.yaml
+  name: foundation-layer-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

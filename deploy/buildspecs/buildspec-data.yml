@@ -1,0 +1,232 @@
+version: 0.2
+
+# Data Layer: Neptune, OpenSearch, DynamoDB, S3
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Data Layer Deployment"
+      - echo "=========================================="
+      - echo "Installing dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install --quiet cfn-lint boto3
+
+      - echo "Retrieving Foundation layer outputs..."
+      - export VPC_ID=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-networking-${ENVIRONMENT} --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+      - export PRIVATE_SUBNET_IDS=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-networking-${ENVIRONMENT} --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnetIds`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+      - export NEPTUNE_SG=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-security-${ENVIRONMENT} --query 'Stacks[0].Outputs[?OutputKey==`NeptuneSecurityGroupId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+      - export OPENSEARCH_SG=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-security-${ENVIRONMENT} --query 'Stacks[0].Outputs[?OutputKey==`OpenSearchSecurityGroupId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+      - echo "✓ VPC ID - $VPC_ID"
+      - echo "✓ Private Subnets - $PRIVATE_SUBNET_IDS"
+      - echo "✓ Neptune SG - $NEPTUNE_SG"
+      - echo "✓ OpenSearch SG - $OPENSEARCH_SG"
+
+      - echo "Validating templates..."
+      - cfn-lint deploy/cloudformation/neptune-simplified.yaml --ignore-checks W2001,W3002,W3005 || echo "Neptune simplified template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/opensearch.yaml --ignore-checks W2001,W3002,W3005 || echo "OpenSearch template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "DynamoDB template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/repository-tables.yaml --ignore-checks W2001,W3002,W3005 || echo "Repository tables template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/s3.yaml --ignore-checks W2001,W3002,W3005 || echo "S3 template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/elasticache.yaml --ignore-checks W2001,W3002,W3005 || echo "ElastiCache template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/dashboard-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Dashboard DynamoDB template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/supply-chain-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Supply Chain DynamoDB template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/runtime-security-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Runtime Security DynamoDB template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/ai-security-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "AI Security DynamoDB template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/memory-evolution-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Memory Evolution DynamoDB template has warnings (non-blocking)"
+      - echo "✓ Template validation complete"
+
+  build:
+    commands:
+      # Generate deployment timestamp for forcing stack updates
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      - echo "Deploying DynamoDB..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying Repository Tables..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-repository-tables-${ENVIRONMENT} --template-file deploy/cloudformation/repository-tables.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying Context Provenance..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-context-provenance-${ENVIRONMENT} --template-file deploy/cloudformation/context-provenance.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying Dashboard DynamoDB (ADR-064)..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-dashboard-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/dashboard-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying S3..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-s3-${ENVIRONMENT} --template-file deploy/cloudformation/s3.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying Neptune with simplified template (bypassing parameter group issue)..."
+      - |
+        # Clean up any failed Neptune stacks first
+        FAILED_NEPTUNE=$(aws cloudformation list-stacks \
+          --stack-status-filter ROLLBACK_COMPLETE CREATE_FAILED \
+          --query "StackSummaries[?contains(StackName, 'neptune')].[StackName]" \
+          --output text --region $AWS_DEFAULT_REGION)
+        if [ ! -z "$FAILED_NEPTUNE" ]; then
+          echo "Cleaning up failed Neptune stacks..."
+          echo "$FAILED_NEPTUNE" | while read stack; do
+            aws cloudformation delete-stack --stack-name "$stack" --region $AWS_DEFAULT_REGION || true
+          done
+          sleep 30
+        fi
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-neptune-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/neptune-simplified.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            PrivateSubnetIds=$PRIVATE_SUBNET_IDS \
+            NeptuneSecurityGroupId=$NEPTUNE_SG \
+            NeptuneMode=provisioned \
+            InstanceType=db.t3.medium \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset
+
+      - echo "Deploying OpenSearch (this will take ~15 minutes)..."
+      - |
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-opensearch-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/opensearch.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            VpcId=$VPC_ID \
+            PrivateSubnetIds=$PRIVATE_SUBNET_IDS \
+            OpenSearchSecurityGroupId=$OPENSEARCH_SG \
+            InstanceType=t3.small.search \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset
+
+      - echo "Deploying ElastiCache Redis (ADR-056 caching)..."
+      - |
+        # Clean up any failed ElastiCache stacks first
+        FAILED_ELASTICACHE=$(aws cloudformation list-stacks \
+          --stack-status-filter ROLLBACK_COMPLETE CREATE_FAILED ROLLBACK_FAILED \
+          --query "StackSummaries[?contains(StackName, 'elasticache')].[StackName]" \
+          --output text --region $AWS_DEFAULT_REGION)
+        if [ ! -z "$FAILED_ELASTICACHE" ]; then
+          echo "Cleaning up failed ElastiCache stacks..."
+          echo "$FAILED_ELASTICACHE" | while read stack; do
+            aws cloudformation delete-stack --stack-name "$stack" --region $AWS_DEFAULT_REGION || true
+          done
+          echo "Waiting for stack deletion..."
+          sleep 30
+        fi
+      - |
+        # Get application security group from EKS nodes for ElastiCache access
+        export APP_SG=$(aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-eks-node-groups-${ENVIRONMENT} --query 'Stacks[0].Outputs[?OutputKey==`NodeSecurityGroupId`].OutputValue' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        if [ -z "$APP_SG" ] || [ "$APP_SG" = "None" ]; then
+          echo "Application security group not found, using Neptune SG as fallback"
+          APP_SG=$NEPTUNE_SG
+        fi
+        aws cloudformation deploy \
+          --stack-name ${PROJECT_NAME}-elasticache-${ENVIRONMENT} \
+          --template-file deploy/cloudformation/elasticache.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            VpcId=$VPC_ID \
+            PrivateSubnetIds=$PRIVATE_SUBNET_IDS \
+            ApplicationSecurityGroupId=$APP_SG \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset
+
+      - echo "Deploying Supply Chain DynamoDB (ADR-076)..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-supply-chain-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/supply-chain-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-076 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying Runtime Security DynamoDB (ADR-077)..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-runtime-security-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/runtime-security-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-077 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying AI Security DynamoDB (ADR-079)..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-ai-security-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/ai-security-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-079 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying Memory Evolution DynamoDB (ADR-080)..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-memory-evolution-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/memory-evolution-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-080 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+  post_build:
+    commands:
+      - echo "✓ Data Layer deployment complete!"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-dynamodb-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "DynamoDB stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-repository-tables-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "Repository tables stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-neptune-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "Neptune stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-opensearch-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "OpenSearch stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-elasticache-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "ElastiCache stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-dashboard-dynamodb-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "Dashboard DynamoDB stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-context-provenance-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "Context Provenance stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-supply-chain-dynamodb-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "Supply Chain DynamoDB stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-runtime-security-dynamodb-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "Runtime Security DynamoDB stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-ai-security-dynamodb-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "AI Security DynamoDB stack not deployed"
+      - aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-memory-evolution-dynamodb-${ENVIRONMENT} --query 'Stacks[0].Outputs' --output table || echo "Memory Evolution DynamoDB stack not deployed"
+
+      # ========================================================================
+      # Store Data Layer endpoints in SSM for Kubernetes consumption
+      # This enables dynamic configuration without hardcoded values in manifests
+      # ========================================================================
+      - |
+        echo "Storing Data Layer endpoints in SSM Parameter Store..."
+
+        # Neptune endpoint
+        NEPTUNE_ENDPOINT=$(aws cloudformation describe-stacks \
+          --stack-name ${PROJECT_NAME}-neptune-${ENVIRONMENT} \
+          --query 'Stacks[0].Outputs[?OutputKey==`ClusterEndpoint`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        if [ -n "$NEPTUNE_ENDPOINT" ] && [ "$NEPTUNE_ENDPOINT" != "None" ]; then
+          aws ssm put-parameter \
+            --name "/${PROJECT_NAME}/${ENVIRONMENT}/neptune-endpoint" \
+            --value "${NEPTUNE_ENDPOINT}" \
+            --type String \
+            --overwrite \
+            --region $AWS_DEFAULT_REGION
+          echo "✓ Stored Neptune endpoint in SSM: /${PROJECT_NAME}/${ENVIRONMENT}/neptune-endpoint"
+        fi
+
+        # OpenSearch endpoint
+        OPENSEARCH_ENDPOINT=$(aws cloudformation describe-stacks \
+          --stack-name ${PROJECT_NAME}-opensearch-${ENVIRONMENT} \
+          --query 'Stacks[0].Outputs[?OutputKey==`DomainEndpoint`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        if [ -n "$OPENSEARCH_ENDPOINT" ] && [ "$OPENSEARCH_ENDPOINT" != "None" ]; then
+          aws ssm put-parameter \
+            --name "/${PROJECT_NAME}/${ENVIRONMENT}/opensearch-endpoint" \
+            --value "${OPENSEARCH_ENDPOINT}" \
+            --type String \
+            --overwrite \
+            --region $AWS_DEFAULT_REGION
+          echo "✓ Stored OpenSearch endpoint in SSM: /${PROJECT_NAME}/${ENVIRONMENT}/opensearch-endpoint"
+        fi
+
+        # ElastiCache Redis endpoint
+        REDIS_ENDPOINT=$(aws cloudformation describe-stacks \
+          --stack-name ${PROJECT_NAME}-elasticache-${ENVIRONMENT} \
+          --query 'Stacks[0].Outputs[?OutputKey==`RedisEndpoint`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        if [ -n "$REDIS_ENDPOINT" ] && [ "$REDIS_ENDPOINT" != "None" ]; then
+          aws ssm put-parameter \
+            --name "/${PROJECT_NAME}/${ENVIRONMENT}/redis-endpoint" \
+            --value "${REDIS_ENDPOINT}" \
+            --type String \
+            --overwrite \
+            --region $AWS_DEFAULT_REGION
+          echo "✓ Stored Redis endpoint in SSM: /${PROJECT_NAME}/${ENVIRONMENT}/redis-endpoint"
+        fi
+
+        echo "✓ SSM parameter storage complete"
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

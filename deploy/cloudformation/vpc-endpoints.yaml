@@ -1,0 +1,278 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.5 - VPC Endpoints (Private AWS Connectivity)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  VpcId:
+    Type: String
+    Description: VPC ID from networking stack
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: Private subnet IDs for interface endpoints
+
+  PrivateRouteTableIds:
+    Type: CommaDelimitedList
+    Description: Private route table IDs for gateway endpoints
+
+  VPCEndpointSecurityGroupId:
+    Type: String
+    Description: Security group ID for VPC endpoints (from security stack)
+
+Resources:
+  # ============================================================================
+  # Gateway Endpoints (FREE)
+  # ============================================================================
+
+  # S3 Gateway Endpoint - Required for ECR layer downloads
+  # IAM Remediation: Scoped to project buckets + ECR/EKS system buckets (architecture review Dec 2025)
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      RouteTableIds: !Ref PrivateRouteTableIds
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow project bucket operations
+          - Sid: AllowProjectBuckets
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:ListBucket
+              - s3:GetBucketLocation
+              - s3:GetObjectVersion
+              - s3:GetObjectTagging
+              - s3:PutObjectTagging
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*/*'
+          # Allow ECR layer downloads (required for container image pulls)
+          - Sid: AllowECRLayerDownloads
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+              - s3:GetBucketLocation
+            Resource:
+              - 'arn:aws:s3:::prod-*-starport-layer-bucket'
+              - 'arn:aws:s3:::prod-*-starport-layer-bucket/*'
+          # Allow EKS add-on downloads
+          - Sid: AllowEKSAddons
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+              - s3:GetBucketLocation
+            Resource:
+              - 'arn:aws:s3:::amazon-eks-*'
+              - 'arn:aws:s3:::amazon-eks-*/*'
+
+  # DynamoDB Gateway Endpoint - Required for HITL approval tables
+  # IAM Remediation: Scoped to project tables with explicit actions (architecture review Dec 2025)
+  DynamoDBGatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcEndpointType: Gateway
+      RouteTableIds: !Ref PrivateRouteTableIds
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowProjectTables
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:DescribeTable
+              - dynamodb:ConditionCheckItem
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*/index/*'
+
+  # ============================================================================
+  # Interface Endpoints (Charged)
+  # ============================================================================
+
+  # ECR API Endpoint - Required for ECR API calls (docker login, describe)
+  ECRApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
+      VpcEndpointType: Interface
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroupId
+      PrivateDnsEnabled: true
+
+  # ECR DKR Endpoint - Required for Docker registry operations (push/pull)
+  ECRDkrEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
+      VpcEndpointType: Interface
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroupId
+      PrivateDnsEnabled: true
+
+  # CloudWatch Logs Endpoint - Required for ECS task logging
+  CloudWatchLogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      VpcEndpointType: Interface
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroupId
+      PrivateDnsEnabled: true
+
+  # Bedrock Runtime Endpoint - Required for LLM model invocations (ADR-025)
+  BedrockRuntimeEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.bedrock-runtime'
+      VpcEndpointType: Interface
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroupId
+      PrivateDnsEnabled: true
+
+  # Secrets Manager Endpoint - Required for BedrockLLMService config loading
+  SecretsManagerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.secretsmanager'
+      VpcEndpointType: Interface
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroupId
+      PrivateDnsEnabled: true
+
+  # CloudWatch Monitoring Endpoint - Required for publishing custom metrics
+  CloudWatchMonitoringEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.monitoring'
+      VpcEndpointType: Interface
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroupId
+      PrivateDnsEnabled: true
+
+  # STS Endpoint - Required for IAM role credential refresh in long-running tasks
+  STSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.sts'
+      VpcEndpointType: Interface
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroupId
+      PrivateDnsEnabled: true
+
+  # SSM Endpoint - Required for Bedrock guardrails config and parameter lookup
+  SSMEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+      VpcEndpointType: Interface
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroupId
+      PrivateDnsEnabled: true
+
+Outputs:
+  S3EndpointId:
+    Description: S3 Gateway Endpoint ID
+    Value: !Ref S3GatewayEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-s3-vpce-${Environment}'
+
+  DynamoDBEndpointId:
+    Description: DynamoDB Gateway Endpoint ID
+    Value: !Ref DynamoDBGatewayEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-dynamodb-vpce-${Environment}'
+
+  ECRApiEndpointId:
+    Description: ECR API Interface Endpoint ID
+    Value: !Ref ECRApiEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-ecr-api-vpce-${Environment}'
+
+  ECRDkrEndpointId:
+    Description: ECR DKR Interface Endpoint ID
+    Value: !Ref ECRDkrEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-ecr-dkr-vpce-${Environment}'
+
+  CloudWatchLogsEndpointId:
+    Description: CloudWatch Logs Interface Endpoint ID
+    Value: !Ref CloudWatchLogsEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-logs-vpce-${Environment}'
+
+  BedrockRuntimeEndpointId:
+    Description: Bedrock Runtime Interface Endpoint ID (for LLM model invocations)
+    Value: !Ref BedrockRuntimeEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-bedrock-runtime-vpce-${Environment}'
+
+  SecretsManagerEndpointId:
+    Description: Secrets Manager Interface Endpoint ID
+    Value: !Ref SecretsManagerEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-secretsmanager-vpce-${Environment}'
+
+  CloudWatchMonitoringEndpointId:
+    Description: CloudWatch Monitoring Interface Endpoint ID
+    Value: !Ref CloudWatchMonitoringEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-monitoring-vpce-${Environment}'
+
+  STSEndpointId:
+    Description: STS Interface Endpoint ID
+    Value: !Ref STSEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-sts-vpce-${Environment}'
+
+  SSMEndpointId:
+    Description: SSM Interface Endpoint ID (for guardrails config)
+    Value: !Ref SSMEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-ssm-vpce-${Environment}'

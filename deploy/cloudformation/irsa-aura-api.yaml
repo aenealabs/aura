@@ -1,0 +1,241 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.6 - IRSA (Service Account Roles)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+  OIDCProviderArn:
+    Type: String
+    Description: ARN of the EKS OIDC provider
+
+  OIDCProviderURL:
+    Type: String
+    Description: URL of the EKS OIDC provider (without https://)
+
+  ServiceAccountNamespace:
+    Type: String
+    Default: default
+    Description: Kubernetes namespace for the service account
+
+  ServiceAccountName:
+    Type: String
+    Default: aura-api
+    Description: Kubernetes service account name
+
+Resources:
+  # IAM Policy for aura-api with least-privilege permissions
+  AuraApiPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-api-policy-${Environment}'
+      Description: !Sub 'Permissions for ${ProjectName}-api service in ${Environment}'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Neptune Graph Database Access
+          - Sid: NeptuneAccess
+            Effect: Allow
+            Action:
+              - neptune-db:connect
+              - neptune-db:ReadDataViaQuery
+              - neptune-db:WriteDataViaQuery
+              - neptune-db:DeleteDataViaQuery
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:neptune-db:${AWS::Region}:${AWS::AccountId}:${ProjectName}-neptune-${Environment}/*'
+
+          # OpenSearch Vector Database Access
+          - Sid: OpenSearchAccess
+            Effect: Allow
+            Action:
+              - es:ESHttpGet
+              - es:ESHttpPost
+              - es:ESHttpPut
+              - es:ESHttpDelete
+              - es:ESHttpHead
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-${Environment}/*'
+
+          # DynamoDB Access (all aura tables)
+          - Sid: DynamoDBAccess
+            Effect: Allow
+            Action:
+              - dynamodb:DescribeTable
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+            Resource:
+              # All aura tables for this environment
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-${Environment}/index/*'
+              # Legacy table naming pattern (aura-ddb-dev-*)
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ddb-${Environment}-*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ddb-${Environment}-*/index/*'
+
+          # Bedrock LLM Access (Claude 3.5 Sonnet, Claude 3 Haiku, Titan Embeddings)
+          - Sid: BedrockModelAccess
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource:
+              # Claude 3.5 Sonnet (primary model for staging/production)
+              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-*'
+              # Claude 3 Haiku (fallback, cost-effective for dev)
+              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-*'
+              # Claude 3 Sonnet (legacy support)
+              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-sonnet-*'
+              # Titan Embeddings
+              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-*'
+
+          # Secrets Manager Access (for API keys, credentials)
+          # Secrets follow path-based naming: aura/{env}/secret-name
+          - Sid: SecretsManagerAccess
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+
+          # CloudWatch Logs (for application logging)
+          - Sid: CloudWatchLogsAccess
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/eks/${ProjectName}-cluster-${Environment}/*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/${Environment}/*'
+
+          # CloudWatch Metrics (for anomaly detection metrics)
+          - Sid: CloudWatchMetricsAccess
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricData
+            Resource: '*'
+            Condition:
+              StringEquals:
+                cloudwatch:namespace:
+                  - 'Aura/Anomalies'
+                  - 'Aura/Security'
+                  - 'Aura/Orchestrator'
+                  - 'Aura/HITL'
+                  - 'Aura/API'
+
+          # EventBridge (for anomaly and security event publishing)
+          - Sid: EventBridgeAccess
+            Effect: Allow
+            Action:
+              - events:PutEvents
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-anomaly-events-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-security-events-${Environment}'
+
+          # SNS (for security alerts and HITL notifications)
+          - Sid: SNSSecurityAlerts
+            Effect: Allow
+            Action:
+              - sns:Publish
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-critical-anomalies-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-approvals-${Environment}'
+
+          # SQS (for orchestrator task queue consumption)
+          - Sid: SQSOrchestratorQueue
+            Effect: Allow
+            Action:
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-orchestrator-tasks-${Environment}'
+
+          # SQS (for GPU scheduler job queue - ADR-061)
+          - Sid: SQSGPUSchedulerQueue
+            Effect: Allow
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-gpu-jobs-queue-${Environment}.fifo'
+
+  # IAM Role for IRSA with OIDC trust policy
+  AuraApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-api-irsa-role-${Environment}'
+      Description: !Sub 'IRSA role for ${ProjectName}-api Kubernetes service account'
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCUrl}:aud": "sts.amazonaws.com",
+                      "${OIDCUrl}:sub": "system:serviceaccount:${Namespace}:${SA}"
+                    }
+                  }
+                }
+              ]
+            }
+          - OIDCArn: !Ref OIDCProviderArn
+            OIDCUrl: !Ref OIDCProviderURL
+            Namespace: !Ref ServiceAccountNamespace
+            SA: !Ref ServiceAccountName
+      ManagedPolicyArns:
+        - !Ref AuraApiPolicy
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: IRSA
+        - Key: ServiceAccount
+          Value: !Sub '${ServiceAccountNamespace}/${ServiceAccountName}'
+
+Outputs:
+  RoleArn:
+    Description: ARN of the IRSA role for aura-api
+    Value: !GetAtt AuraApiRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-api-irsa-role-arn-${Environment}'
+
+  PolicyArn:
+    Description: ARN of the IAM policy for aura-api
+    Value: !Ref AuraApiPolicy
+    Export:
+      Name: !Sub '${ProjectName}-api-policy-arn-${Environment}'
+
+  ServiceAccountAnnotation:
+    Description: Annotation to add to Kubernetes service account
+    Value: !Sub 'eks.amazonaws.com/role-arn: ${AuraApiRole.Arn}'

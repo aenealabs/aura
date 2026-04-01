@@ -1,0 +1,226 @@
+# Project Aura - Self-Hosted Default-Deny NetworkPolicy
+#
+# CRITICAL: This file implements namespace-level default-deny policies.
+# All traffic is blocked by default; explicit allow rules are required.
+#
+# ADR-049 Phase 0 Prerequisite - Security Requirement P0
+#
+# Apply order:
+#   1. Apply this file FIRST to establish default-deny baseline
+#   2. Apply service-specific policies to allow necessary traffic
+#
+# Usage:
+#   kubectl apply -f 00-namespace-defaults.yaml
+#   kubectl apply -f 01-aura-api.yaml
+#   kubectl apply -f 02-agent-orchestrator.yaml
+#   ... (remaining service policies)
+#
+---
+# Namespace: aura (main application namespace)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: default-deny
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: default-deny
+  annotations:
+    description: "Block all ingress and egress by default in aura namespace"
+spec:
+  podSelector: {}  # Applies to ALL pods in namespace
+  policyTypes:
+    - Ingress
+    - Egress
+  # Empty ingress/egress = deny all
+  ingress: []
+  egress: []
+
+---
+# Namespace: aura-data (database services)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: aura-data
+  labels:
+    app.kubernetes.io/name: default-deny
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: default-deny
+  annotations:
+    description: "Block all ingress and egress by default in aura-data namespace"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+
+---
+# Namespace: aura-llm (LLM inference services)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: default-deny
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: default-deny
+  annotations:
+    description: "Block all ingress and egress by default in aura-llm namespace"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+
+---
+# Namespace: aura-monitoring (observability stack)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: aura-monitoring
+  labels:
+    app.kubernetes.io/name: default-deny
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: default-deny
+  annotations:
+    description: "Block all ingress and egress by default in aura-monitoring namespace"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+
+---
+# Allow DNS resolution for all namespaces
+# This is a common requirement - without DNS, pods cannot resolve service names
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: aura
+  labels:
+    app.kubernetes.io/name: allow-dns
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: baseline-allow
+  annotations:
+    description: "Allow DNS resolution to CoreDNS"
+spec:
+  podSelector: {}  # Applies to all pods
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS to kube-dns/CoreDNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: aura-data
+  labels:
+    app.kubernetes.io/name: allow-dns
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: baseline-allow
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: aura-llm
+  labels:
+    app.kubernetes.io/name: allow-dns
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: baseline-allow
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: aura-monitoring
+  labels:
+    app.kubernetes.io/name: allow-dns
+    app.kubernetes.io/component: network-security
+    app.kubernetes.io/part-of: aura
+    security.aura.io/policy-type: baseline-allow
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

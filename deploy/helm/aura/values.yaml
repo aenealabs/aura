@@ -1,0 +1,783 @@
+# Project Aura Helm Chart - Default Values
+# See ADR-049: Self-Hosted Deployment Strategy
+
+# Global settings applied to all components
+global:
+  # Deployment mode: saas, self_hosted, air_gapped
+  deploymentMode: self_hosted
+
+  # Edition: community, enterprise, enterprise_plus
+  edition: community
+
+  # Container registry configuration
+  imageRegistry: docker.io/aenealabs
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+  # Storage class for persistent volumes
+  storageClass: ""
+
+  # TLS Configuration (required for production)
+  tls:
+    enabled: true
+    # Use cert-manager for automatic certificate management
+    certManager:
+      enabled: true
+      issuer: letsencrypt-prod
+      clusterIssuer: true
+    # Or provide existing TLS secret
+    existingSecret: ""
+
+  # Pod Security Standards
+  podSecurityStandards:
+    # Enforce restricted PSS for all pods
+    enforce: restricted
+
+  # Common labels applied to all resources
+  labels: {}
+
+  # Common annotations applied to all resources
+  annotations: {}
+
+# License Configuration
+license:
+  # License key (AURA-{edition}-{org}-{signature} format)
+  key: ""
+  # Use existing secret for license key
+  existingSecret: ""
+  existingSecretKey: "license-key"
+  # Enable offline license validation (for air-gapped)
+  offlineValidation: false
+
+# Namespace configuration
+namespace:
+  create: true
+  name: aura
+
+# ============================================================================
+# CORE SERVICES
+# ============================================================================
+
+# API Service - FastAPI backend
+api:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    repository: aura-api
+    tag: ""  # Defaults to Chart.appVersion
+    pullPolicy: ""  # Defaults to global.imagePullPolicy
+
+  # Resource requests and limits
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  # Horizontal Pod Autoscaler
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+
+  # Ingress configuration
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    hosts:
+      - host: api.aura.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: aura-api-tls
+        hosts:
+          - api.aura.local
+
+  # Health checks (HTTPS required per ADR-049)
+  healthChecks:
+    liveness:
+      path: /healthz
+      port: 8080
+      scheme: HTTPS
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readiness:
+      path: /readyz
+      port: 8080
+      scheme: HTTPS
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+
+  # Environment variables
+  env: []
+
+  # Extra volumes
+  extraVolumes: []
+  extraVolumeMounts: []
+
+  # Pod security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  # Container security context
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Affinity rules
+  affinity: {}
+
+# Frontend Service - React/Next.js
+frontend:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    repository: aura-frontend
+    tag: ""
+    pullPolicy: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  service:
+    type: ClusterIP
+    port: 3000
+    annotations: {}
+
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: aura.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: aura-frontend-tls
+        hosts:
+          - aura.local
+
+  healthChecks:
+    liveness:
+      path: /health
+      port: 3000
+      scheme: HTTPS
+      initialDelaySeconds: 15
+      periodSeconds: 10
+    readiness:
+      path: /health
+      port: 3000
+      scheme: HTTPS
+      initialDelaySeconds: 5
+      periodSeconds: 5
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Agent Orchestrator Service
+orchestrator:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: aura-orchestrator
+    tag: ""
+    pullPolicy: ""
+
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+
+  autoscaling:
+    enabled: false  # Orchestrator typically runs as singleton
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+
+  healthChecks:
+    liveness:
+      path: /healthz
+      port: 8080
+      scheme: HTTPS
+      initialDelaySeconds: 60
+      periodSeconds: 30
+    readiness:
+      path: /readyz
+      port: 8080
+      scheme: HTTPS
+      initialDelaySeconds: 30
+      periodSeconds: 10
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ============================================================================
+# DATABASE LAYER
+# ============================================================================
+
+databases:
+  # Graph Database
+  graph:
+    # Provider: neo4j (self-hosted), neptune (SaaS only)
+    provider: neo4j
+
+    neo4j:
+      enabled: true
+      # Neo4j edition: community or enterprise
+      edition: community
+
+      # Authentication
+      password: ""  # Required - set via --set or secret
+      existingPasswordSecret: ""
+      existingPasswordSecretKey: "neo4j-password"
+
+      # TLS Configuration (HTTPS required)
+      tls:
+        enabled: true
+        httpsPort: 7473
+        boltPort: 7687
+        existingSecret: ""
+
+      # Persistence
+      persistence:
+        enabled: true
+        size: 50Gi
+        storageClass: ""
+        accessMode: ReadWriteOnce
+
+      # Resources
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 4Gi
+        limits:
+          cpu: 4000m
+          memory: 8Gi
+
+      # Pod Disruption Budget
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+
+  # Vector Database
+  vector:
+    # Provider: opensearch, milvus
+    provider: opensearch
+
+    opensearch:
+      enabled: true
+      replicas: 1
+
+      # TLS Configuration
+      tls:
+        enabled: true
+        existingSecret: ""
+
+      # Authentication
+      adminPassword: ""
+      existingPasswordSecret: ""
+
+      # Persistence
+      persistence:
+        enabled: true
+        size: 100Gi
+        storageClass: ""
+
+      # Resources
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 4Gi
+        limits:
+          cpu: 4000m
+          memory: 8Gi
+
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+
+  # Document Store
+  document:
+    # Provider: postgres (self-hosted), dynamodb (SaaS only)
+    provider: postgres
+
+    postgres:
+      enabled: true
+
+      # Authentication
+      username: aura
+      password: ""
+      database: aura
+      existingPasswordSecret: ""
+
+      # TLS Configuration
+      tls:
+        enabled: true
+        existingSecret: ""
+
+      # Persistence
+      persistence:
+        enabled: true
+        size: 50Gi
+        storageClass: ""
+
+      # Resources
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+
+# ============================================================================
+# LLM LAYER
+# ============================================================================
+
+llm:
+  # Provider: bedrock, azure_openai, openai, vllm, tgi, ollama
+  provider: bedrock
+
+  # AWS Bedrock (SaaS mode or PrivateLink)
+  bedrock:
+    enabled: false
+    region: us-east-1
+    # Use existing AWS credentials secret
+    existingSecret: ""
+    # Models to enable
+    models:
+      - anthropic.claude-3-5-sonnet-20241022-v2:0
+      - amazon.titan-embed-text-v2:0
+
+  # vLLM for local LLM inference
+  vllm:
+    enabled: false
+    replicaCount: 1
+
+    image:
+      repository: vllm/vllm-openai
+      tag: latest
+
+    # Model configuration
+    model: mistralai/Mistral-7B-Instruct-v0.2
+
+    # GPU Resources
+    resources:
+      requests:
+        cpu: 4000m
+        memory: 16Gi
+        nvidia.com/gpu: 1
+      limits:
+        cpu: 8000m
+        memory: 32Gi
+        nvidia.com/gpu: 1
+
+    # Service configuration
+    service:
+      type: ClusterIP
+      port: 8000
+
+    # Model storage
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClass: ""
+
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+
+  # Text Generation Inference (Hugging Face)
+  tgi:
+    enabled: false
+    replicaCount: 1
+
+    image:
+      repository: ghcr.io/huggingface/text-generation-inference
+      tag: "2.0"
+
+    model: mistralai/Mistral-7B-Instruct-v0.2
+
+    resources:
+      requests:
+        cpu: 4000m
+        memory: 16Gi
+        nvidia.com/gpu: 1
+      limits:
+        cpu: 8000m
+        memory: 32Gi
+        nvidia.com/gpu: 1
+
+    service:
+      type: ClusterIP
+      port: 8080
+
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClass: ""
+
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+
+  # Ollama for lightweight local inference
+  ollama:
+    enabled: false
+
+    image:
+      repository: ollama/ollama
+      tag: latest
+
+    # Pre-pull models on startup
+    models:
+      - mistral
+      - nomic-embed-text
+
+    resources:
+      requests:
+        cpu: 2000m
+        memory: 8Gi
+      limits:
+        cpu: 4000m
+        memory: 16Gi
+
+    service:
+      type: ClusterIP
+      port: 11434
+
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: ""
+
+# ============================================================================
+# SUPPORTING SERVICES
+# ============================================================================
+
+# Redis for caching and session storage
+redis:
+  enabled: true
+
+  architecture: standalone
+
+  auth:
+    enabled: true
+    password: ""
+    existingSecret: ""
+
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# MinIO for object storage (S3-compatible)
+storage:
+  minio:
+    enabled: true
+
+    rootUser: aura
+    rootPassword: ""
+    existingSecret: ""
+
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClass: ""
+
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+    # Default buckets to create
+    buckets:
+      - name: aura-artifacts
+      - name: aura-embeddings
+      - name: aura-models
+
+# ============================================================================
+# SECURITY
+# ============================================================================
+
+# Network Policies - Default deny with explicit allow
+networkPolicy:
+  enabled: true
+
+  # Deny all ingress/egress by default
+  defaultDeny: true
+
+  # Allow DNS resolution
+  allowDns: true
+
+  # Allow metrics scraping from Prometheus
+  allowMetrics: true
+  metricsNamespace: monitoring
+
+  # Additional ingress rules
+  additionalIngressRules: []
+
+  # Additional egress rules
+  additionalEgressRules: []
+
+# RBAC configuration
+rbac:
+  create: true
+
+  # Create ClusterRole for cross-namespace access
+  clusterRole:
+    create: false
+    rules: []
+
+  # Service Account
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+
+# Pod Security
+podSecurity:
+  # Enforce restricted Pod Security Standards
+  enforceRestrictedPSS: true
+
+  # Security contexts applied to all pods
+  defaultSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+# External Secrets Operator integration
+externalSecrets:
+  enabled: false
+
+  # Secret store type: vault, aws, azure, gcp
+  provider: vault
+
+  # Vault configuration
+  vault:
+    server: ""
+    path: secret/data/aura
+    auth:
+      method: kubernetes
+      role: aura
+
+  # AWS Secrets Manager configuration
+  aws:
+    region: us-east-1
+    role: ""
+
+  # Secrets to sync
+  secrets:
+    - name: database-credentials
+      remoteRef: aura/databases
+    - name: llm-api-keys
+      remoteRef: aura/llm
+
+# ============================================================================
+# OBSERVABILITY
+# ============================================================================
+
+# Metrics and monitoring
+monitoring:
+  enabled: true
+
+  # ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+
+  # Grafana dashboards
+  grafanaDashboards:
+    enabled: true
+    labels:
+      grafana_dashboard: "1"
+
+# Logging configuration
+logging:
+  # Log level: debug, info, warning, error
+  level: info
+
+  # JSON structured logging
+  json: true
+
+  # Include request IDs in logs
+  requestId: true
+
+# Tracing configuration
+tracing:
+  enabled: false
+
+  # OTLP endpoint for traces
+  otlpEndpoint: ""
+
+  # Sample rate (0.0 - 1.0)
+  sampleRate: 0.1
+
+# ============================================================================
+# SUPPORT BUNDLE
+# ============================================================================
+
+# Support bundle generator for diagnostics
+supportBundle:
+  enabled: true
+
+  # Components to include in bundle
+  collectors:
+    - logs
+    - events
+    - resources
+    - metrics
+    - networkPolicy
+
+  # Redact sensitive data
+  redactSecrets: true
+
+  # Max age of logs to collect
+  logMaxAge: 24h
+
+# ============================================================================
+# MIGRATION
+# ============================================================================
+
+# Migration job for initial data migration from SaaS
+migration:
+  enabled: false
+
+  # Source configuration (AWS)
+  source:
+    region: us-east-1
+    neptune:
+      endpoint: ""
+    dynamodb:
+      tablePrefix: aura_
+    s3:
+      bucket: ""
+    secretsManager:
+      prefix: aura/
+
+  # Migration options
+  options:
+    batchSize: 100
+    concurrency: 5
+    dryRun: false
+    verify: true

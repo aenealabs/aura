@@ -1,0 +1,37 @@
+# Project Aura - Neural Memory Service Base Kustomization
+# Base configuration for memory-service, used by environment overlays.
+#
+# Usage (via overlay):
+#   kubectl apply -k deploy/kubernetes/memory-service/overlays/dev/
+#   kubectl apply -k deploy/kubernetes/memory-service/overlays/qa/
+#   kubectl apply -k deploy/kubernetes/memory-service/overlays/prod/
+#
+# Prerequisites:
+#   - GPU-enabled node group (g5.xlarge or larger) - optional for CPU mode
+#   - NVIDIA device plugin installed on cluster - optional
+#   - ECR repository for the target environment
+#   - IRSA role for the target environment
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: aura-memory-service-base
+
+namespace: default
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: memory-service
+      app.kubernetes.io/part-of: project-aura
+      app.kubernetes.io/component: neural-memory
+      app.kubernetes.io/managed-by: kustomize
+      project: aura
+    includeSelectors: false
+
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml

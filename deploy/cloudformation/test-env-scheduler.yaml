@@ -1,0 +1,263 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.8 - Test Environment Scheduler (One-Time Scheduled Provisioning)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  SchedulerRoleArn:
+    Type: String
+    Description: ARN of the scheduler Lambda role
+
+  ProvisionerFunctionArn:
+    Type: String
+    Default: ''
+    Description: ARN of the provisioner Lambda function (optional - for invoke permissions)
+
+  NotificationTopicArn:
+    Type: String
+    Default: ''
+    Description: ARN of the SNS topic for notifications (optional)
+
+  # ADR-040: Configurable Compliance Settings
+  UseCustomerManagedKMS:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Use customer-managed KMS key for DynamoDB encryption (CMMC L2 requirement)
+
+  LogRetentionDays:
+    Type: Number
+    Default: 90
+    AllowedValues:
+      - 30
+      - 60
+      - 90
+      - 120
+      - 150
+      - 180
+      - 365
+    Description: CloudWatch log retention in days (CMMC L2 requires 90+)
+
+  DataKMSKeyArn:
+    Type: String
+    Default: ''
+    Description: ARN of customer-managed KMS key (required if UseCustomerManagedKMS=true)
+
+Conditions:
+  HasProvisionerFunction: !Not [!Equals [!Ref ProvisionerFunctionArn, '']]
+  HasNotificationTopic: !Not [!Equals [!Ref NotificationTopicArn, '']]
+  UseCustomerKMS: !Equals [!Ref UseCustomerManagedKMS, 'true']
+
+Resources:
+  # ==========================================================================
+  # DynamoDB Table for Scheduled Jobs
+  # ==========================================================================
+  ScheduleTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-test-env-schedule-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: schedule_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: scheduled_at
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: schedule_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-scheduled_at-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: scheduled_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-scheduled_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: scheduled_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: !If [UseCustomerKMS, 'KMS', !Ref 'AWS::NoValue']
+        KMSMasterKeyId: !If [UseCustomerKMS, !Ref DataKMSKeyArn, !Ref 'AWS::NoValue']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-schedule-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: test-environments
+        - Key: Layer
+          Value: '7.8'
+
+  # ==========================================================================
+  # CloudWatch Log Group for Scheduler Lambda
+  # ==========================================================================
+  SchedulerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-test-env-scheduler-processor-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Lambda Function - Scheduled Provisioning Processor
+  # ==========================================================================
+  SchedulerProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-test-env-scheduler-processor-${Environment}'
+      Description: 'Processes scheduled test environment provisioning requests'
+      Runtime: python3.11
+      Handler: scheduled_provisioner.handler
+      Role: !Ref SchedulerRoleArn
+      MemorySize: 256
+      Timeout: 60
+      Code:
+        ZipFile: |
+          """
+          Placeholder for scheduled_provisioner.py
+          Actual code will be deployed via CI/CD pipeline
+          """
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info("Scheduled provisioner placeholder - deploy actual code via CI/CD")
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({'message': 'Placeholder - deploy actual code'})
+              }
+      Environment:
+        Variables:
+          SCHEDULE_TABLE: !Ref ScheduleTable
+          PROVISIONER_FUNCTION: !If [HasProvisionerFunction, !Ref ProvisionerFunctionArn, '']
+          SNS_TOPIC: !If [HasNotificationTopic, !Ref NotificationTopicArn, '']
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          METRICS_NAMESPACE: !Sub '${ProjectName}/TestEnvironments'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-scheduler-processor-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: test-environments
+        - Key: Layer
+          Value: '7.8'
+
+  # ==========================================================================
+  # EventBridge Rule - Trigger Scheduler Every 15 Minutes (cost optimized)
+  # ==========================================================================
+  SchedulerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-test-env-scheduler-trigger-${Environment}'
+      Description: 'Triggers test environment scheduler processor every hour (cost optimized from 15 minutes)'
+      ScheduleExpression: 'rate(1 hour)'
+      State: ENABLED
+      Targets:
+        - Id: SchedulerProcessor
+          Arn: !GetAtt SchedulerProcessorFunction.Arn
+
+  # ==========================================================================
+  # Lambda Permission for EventBridge
+  # ==========================================================================
+  SchedulerEventPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SchedulerProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SchedulerEventRule.Arn
+
+  # ==========================================================================
+  # CloudWatch Alarm - Scheduler Errors
+  # ==========================================================================
+  SchedulerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-scheduler-errors-${Environment}'
+      AlarmDescription: 'High number of scheduler Lambda errors'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SchedulerProcessorFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ScheduleTableName:
+    Description: Name of the schedule DynamoDB table
+    Value: !Ref ScheduleTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ScheduleTableName'
+
+  ScheduleTableArn:
+    Description: ARN of the schedule DynamoDB table
+    Value: !GetAtt ScheduleTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ScheduleTableArn'
+
+  SchedulerFunctionArn:
+    Description: ARN of the scheduler processor Lambda function
+    Value: !GetAtt SchedulerProcessorFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SchedulerFunctionArn'
+
+  SchedulerEventRuleArn:
+    Description: ARN of the EventBridge trigger rule
+    Value: !GetAtt SchedulerEventRule.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SchedulerEventRuleArn'

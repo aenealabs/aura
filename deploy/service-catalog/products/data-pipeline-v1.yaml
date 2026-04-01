@@ -1,0 +1,231 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Data Pipeline Environment - Step Functions with Lambda and storage (7 day TTL)'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Name for this test environment
+    AllowedPattern: '[a-z0-9-]+'
+    MaxLength: 32
+
+  OwnerEmail:
+    Type: String
+    Description: Email of the environment owner
+
+  TTLHours:
+    Type: Number
+    Default: 168
+    MinValue: 24
+    MaxValue: 336
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aura/test-env/${EnvironmentName}'
+      RetentionInDays: 14
+
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'aura-test-${EnvironmentName}-pipeline-state'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: execution_id
+          AttributeType: S
+        - AttributeName: step_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: execution_id
+          KeyType: HASH
+        - AttributeName: step_id
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'aura-test-${EnvironmentName}-pipeline-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AutoExpire
+            Status: Enabled
+            ExpirationInDays: 14
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'aura-test-${EnvironmentName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: PipelineAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource: !GetAtt StateTable.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt DataBucket.Arn
+                  - !Sub '${DataBucket.Arn}/*'
+
+  ProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'aura-test-${EnvironmentName}-processor'
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref StateTable
+          DATA_BUCKET: !Ref DataBucket
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from datetime import datetime
+          dynamodb = boto3.resource('dynamodb')
+          def handler(event, context):
+              table = dynamodb.Table(os.environ['STATE_TABLE'])
+              execution_id = event.get('execution_id', context.aws_request_id)
+              step = event.get('step', 'process')
+              table.put_item(Item={
+                  'execution_id': execution_id,
+                  'step_id': f"{step}-{datetime.utcnow().isoformat()}",
+                  'status': 'completed',
+                  'timestamp': datetime.utcnow().isoformat()
+              })
+              return {'statusCode': 200, 'execution_id': execution_id, 'step': step, 'status': 'success'}
+
+  ValidatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'aura-test-${EnvironmentName}-validator'
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref StateTable
+      Code:
+        ZipFile: |
+          import os
+          import boto3
+          dynamodb = boto3.resource('dynamodb')
+          def handler(event, context):
+              table = dynamodb.Table(os.environ['STATE_TABLE'])
+              execution_id = event.get('execution_id')
+              response = table.query(
+                  KeyConditionExpression='execution_id = :eid',
+                  ExpressionAttributeValues={':eid': execution_id}
+              )
+              steps_completed = len(response.get('Items', []))
+              return {'statusCode': 200, 'execution_id': execution_id, 'steps_completed': steps_completed, 'valid': steps_completed > 0}
+
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'aura-test-${EnvironmentName}-sfn-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt ProcessorFunction.Arn
+                  - !GetAtt ValidatorFunction.Arn
+
+  PipelineStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub 'aura-test-${EnvironmentName}-pipeline'
+      RoleArn: !GetAtt StateMachineRole.Arn
+      Definition:
+        Comment: !Sub 'Data pipeline for ${EnvironmentName}'
+        StartAt: Initialize
+        States:
+          Initialize:
+            Type: Pass
+            Result:
+              step: initialize
+            ResultPath: $.metadata
+            Next: Process
+          Process:
+            Type: Task
+            Resource: !GetAtt ProcessorFunction.Arn
+            Parameters:
+              execution_id.$: $$.Execution.Id
+              step: process
+              data.$: $.input
+            ResultPath: $.process_result
+            Next: Validate
+          Validate:
+            Type: Task
+            Resource: !GetAtt ValidatorFunction.Arn
+            Parameters:
+              execution_id.$: $$.Execution.Id
+            ResultPath: $.validation_result
+            Next: CheckValidation
+          CheckValidation:
+            Type: Choice
+            Choices:
+              - Variable: $.validation_result.valid
+                BooleanEquals: true
+                Next: Success
+            Default: Failed
+          Success:
+            Type: Succeed
+          Failed:
+            Type: Fail
+            Error: ValidationFailed
+            Cause: Pipeline validation failed
+
+Outputs:
+  EnvironmentName:
+    Value: !Ref EnvironmentName
+  StateMachineArn:
+    Value: !Ref PipelineStateMachine
+  StateTableName:
+    Value: !Ref StateTable
+  DataBucketName:
+    Value: !Ref DataBucket

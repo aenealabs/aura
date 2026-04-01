@@ -1,0 +1,59 @@
+# Ignore system-level files
+.DS_Store
+*.pyc
+__pycache__/
+
+# Critical Security: Ignore environment variables and secrets
+.env
+.env.local
+.env*.local
+*.key
+*.pem
+*.secret
+
+# IDE and Editor files
+.vscode/
+.idea/
+.claude/
+
+# Proprietary files excluded from open source
+private/
+
+# Python testing and coverage
+.coverage
+coverage.json
+.pytest_cache/
+htmlcov/
+*.cover
+.hypothesis/
+
+# Load testing results (k6)
+tests/load/results/*.json
+!tests/load/results/.gitkeep
+
+# Python linter/type checker caches
+.ruff_cache/
+.mypy_cache/
+
+# Node.js dependencies (regenerate with npm install)
+node_modules/
+package-lock.json
+# But keep lock files for reproducible builds
+!frontend/package-lock.json
+!marketing/site/package-lock.json
+
+# Astro build artifacts (marketing site)
+.astro/
+**/env.d.ts
+
+# Large binaries/Outputs
+/output/
+/data/
+
+# Local assets (not tracked in repo)
+assets/aws-icons/
+docs/diagrams/
+design-prototypes/
+
+# Generated PDFs (regenerate from HTML source)
+docs/business/*.pdf

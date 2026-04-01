@@ -1,0 +1,421 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 9.1 - Vuln Scan Infrastructure (DynamoDB, S3, KMS, SNS)'
+
+# =============================================================================
+# Foundation infrastructure for ADR-084 Native Vulnerability Scanning Engine.
+# All resources are serverless/on-demand and unaffected by the DEV cost scheduler.
+#
+# Resources:
+# - KMS key for scan data encryption
+# - DynamoDB tables: scan-jobs (pipeline state), scan-findings (results)
+# - S3 buckets: scan-artifacts (repo clones), scan-reports (SARIF output)
+# - SNS topic: scan alerts and finding notifications
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Optional email for scan alert notifications
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ===========================================================================
+  # KMS Key - Scan Data Encryption
+  # ===========================================================================
+  ScanDataKMSKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} vulnerability scan data encryption key'
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+          - Sid: AllowCodeBuildKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Create*, kms:Describe*, kms:Enable*, kms:List*, kms:Put*, kms:Update*, kms:Revoke*, kms:Disable*, kms:Get*, kms:Delete*, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+          - Sid: AllowDynamoDBEncryption
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action: [kms:Encrypt, kms:Decrypt, kms:ReEncrypt*, kms:GenerateDataKey*, kms:DescribeKey, kms:CreateGrant]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+          - Sid: AllowS3Encryption
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: [kms:Decrypt, kms:GenerateDataKey*]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vuln-scan-key-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  ScanDataKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-vuln-scan-${Environment}'
+      TargetKeyId: !Ref ScanDataKMSKey
+
+  # ===========================================================================
+  # DynamoDB - Scan Jobs Table (Pipeline State + Audit Trail)
+  # ===========================================================================
+  # Schema: PK=job_id, SK=updated_at (append-only for audit)
+  # GSI1: tenant_id (PK) + status (SK) - list tenant scans
+  # GSI2: scan_id (PK) + updated_at (SK) - scan history
+  ScanJobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-scan-jobs-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+        - AttributeName: updated_at
+          AttributeType: S
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: scan_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+        - AttributeName: updated_at
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: TenantStatusIndex
+          KeySchema:
+            - AttributeName: tenant_id
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: ScanHistoryIndex
+          KeySchema:
+            - AttributeName: scan_id
+              KeyType: HASH
+            - AttributeName: updated_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref ScanDataKMSKey
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-scan-jobs-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # DynamoDB - Scan Findings Table (Vulnerability Results)
+  # ===========================================================================
+  # Schema: PK=finding_id, SK=scan_id
+  # GSI1: tenant_id (PK) + severity (SK) - tenant findings by severity
+  # GSI2: cwe_id (PK) + created_at (SK) - findings by CWE pattern
+  ScanFindingsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-scan-findings-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: finding_id
+          AttributeType: S
+        - AttributeName: scan_id
+          AttributeType: S
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: severity
+          AttributeType: S
+        - AttributeName: cwe_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: finding_id
+          KeyType: HASH
+        - AttributeName: scan_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: TenantSeverityIndex
+          KeySchema:
+            - AttributeName: tenant_id
+              KeyType: HASH
+            - AttributeName: severity
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: CWEIndex
+          KeySchema:
+            - AttributeName: cwe_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: KEYS_ONLY
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref ScanDataKMSKey
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-scan-findings-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # S3 - Scan Artifacts Bucket (Cloned Repositories, Parsed ASTs)
+  # ===========================================================================
+  ScanArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-scan-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref ScanDataKMSKey
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireScanArtifacts
+            Status: Enabled
+            ExpirationInDays: !If [IsProduction, 30, 7]
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 7
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-scan-artifacts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # S3 - Scan Reports Bucket (SARIF Output, PDF Reports)
+  # ===========================================================================
+  ScanReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-scan-reports-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref ScanDataKMSKey
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: RetainReports
+            Status: Enabled
+            ExpirationInDays: !If [IsProduction, 730, 90]
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+          - Id: TransitionToGlacier
+            Status: !If [IsProduction, Enabled, Disabled]
+            Transitions:
+              - TransitionInDays: 180
+                StorageClass: GLACIER
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-scan-reports-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # SNS - Scan Alerts Topic
+  # ===========================================================================
+  ScanAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-scan-alerts-${Environment}'
+      DisplayName: Aura Vulnerability Scan Alerts
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-scan-alerts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  ScanAlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref ScanAlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+Outputs:
+  ScanDataKMSKeyId:
+    Description: KMS key ID for scan data encryption
+    Value: !Ref ScanDataKMSKey
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-kms-key-id-${Environment}'
+
+  ScanDataKMSKeyArn:
+    Description: KMS key ARN for scan data encryption
+    Value: !GetAtt ScanDataKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-kms-key-arn-${Environment}'
+
+  ScanJobsTableName:
+    Description: Scan jobs DynamoDB table name
+    Value: !Ref ScanJobsTable
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-jobs-table-${Environment}'
+
+  ScanJobsTableArn:
+    Description: Scan jobs DynamoDB table ARN
+    Value: !GetAtt ScanJobsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-jobs-table-arn-${Environment}'
+
+  ScanJobsTableStreamArn:
+    Description: Scan jobs DynamoDB stream ARN
+    Value: !GetAtt ScanJobsTable.StreamArn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-jobs-stream-arn-${Environment}'
+
+  ScanFindingsTableName:
+    Description: Scan findings DynamoDB table name
+    Value: !Ref ScanFindingsTable
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-findings-table-${Environment}'
+
+  ScanFindingsTableArn:
+    Description: Scan findings DynamoDB table ARN
+    Value: !GetAtt ScanFindingsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-findings-table-arn-${Environment}'
+
+  ScanFindingsTableStreamArn:
+    Description: Scan findings DynamoDB stream ARN
+    Value: !GetAtt ScanFindingsTable.StreamArn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-findings-stream-arn-${Environment}'
+
+  ScanArtifactsBucketName:
+    Description: S3 bucket for scan artifacts
+    Value: !Ref ScanArtifactsBucket
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-artifacts-bucket-${Environment}'
+
+  ScanArtifactsBucketArn:
+    Description: S3 bucket ARN for scan artifacts
+    Value: !GetAtt ScanArtifactsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-artifacts-bucket-arn-${Environment}'
+
+  ScanReportsBucketName:
+    Description: S3 bucket for scan reports
+    Value: !Ref ScanReportsBucket
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-reports-bucket-${Environment}'
+
+  ScanReportsBucketArn:
+    Description: S3 bucket ARN for scan reports
+    Value: !GetAtt ScanReportsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-reports-bucket-arn-${Environment}'
+
+  ScanAlertsTopicArn:
+    Description: SNS topic ARN for scan alerts
+    Value: !Ref ScanAlertsTopic
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'

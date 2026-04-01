@@ -1,0 +1,58 @@
+{
+  "ProjectName": "aura",
+  "Environment": "prod",
+  "DeploymentSize": "enterprise",
+  "VpcCIDR": "10.0.0.0/16",
+
+  "NeptuneInstanceType": "db.r6g.xlarge",
+  "NeptuneBackupRetention": "35",
+  "OpenSearchInstanceType": "r6g.xlarge.search",
+  "OpenSearchVolumeSize": "100",
+  "OpenSearchInstanceCount": "3",
+
+  "EKSNodeInstanceType": "r6i.xlarge",
+  "EKSNodeMinSize": "6",
+  "EKSNodeMaxSize": "20",
+  "NodeVolumeSize": "200",
+
+  "KubernetesVersion": "1.32",
+  "EnableDeletionProtection": "true",
+
+  "EnableBedrock": "true",
+  "PrimaryModel": "anthropic.claude-3-5-sonnet-20241022-v1:0",
+  "EmbeddingModel": "amazon.titan-embed-text-v2:0",
+
+  "_metadata": {
+    "description": "GovCloud deployment configuration for defense and federal workloads",
+    "estimated_monthly_cost": "$4,000-7,000",
+    "recommended_for": "DoD contractors, federal agencies, FedRAMP High workloads",
+    "region": "us-gov-west-1",
+    "neptune_mode": "provisioned",
+    "high_availability": true,
+    "multi_az": true,
+    "compliance": [
+      "CMMC Level 2/3",
+      "FedRAMP High",
+      "NIST 800-53",
+      "ITAR compatible"
+    ],
+    "govcloud_notes": [
+      "Neptune Serverless is NOT available in GovCloud - use provisioned mode",
+      "Bedrock is available in us-gov-west-1 only",
+      "EKS version may lag commercial AWS by 1-2 minor versions",
+      "Use AWS::Partition for ARN compatibility",
+      "Extended backup retention (35 days) for compliance",
+      "All encryption uses customer-managed KMS keys"
+    ],
+    "features": [
+      "Multi-AZ deployment across us-gov-west-1 AZs",
+      "Read replicas for Neptune",
+      "Dedicated master nodes for OpenSearch",
+      "35-day backup retention for CMMC compliance",
+      "FIPS 140-2 validated endpoints",
+      "Audit logging to CloudWatch with 365-day retention",
+      "VPC Flow Logs enabled",
+      "WAF with DoD SRG compliant rules"
+    ]
+  }
+}

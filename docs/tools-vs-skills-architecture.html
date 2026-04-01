@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Aura — Tools vs Skills: Architectural Trade-offs</title>
+  <style>
+    :root {
+      --blue-50: #EFF6FF; --blue-100: #DBEAFE; --blue-200: #BFDBFE; --blue-600: #3B82F6; --blue-700: #2563EB; --blue-800: #1E40AF; --blue-900: #1E3A8A;
+      --slate-50: #F8FAFC; --slate-100: #F1F5F9; --slate-200: #E2E8F0; --slate-300: #CBD5E1; --slate-400: #94A3B8;
+      --slate-500: #64748B; --slate-600: #475569; --slate-700: #334155; --slate-800: #1E293B; --slate-900: #0F172A;
+      --green-50: #F0FDF4; --green-100: #DCFCE7; --green-600: #16A34A; --green-700: #15803D; --green-800: #166534;
+      --red-50: #FEF2F2; --red-100: #FEE2E2; --red-600: #DC2626; --red-700: #B91C1C; --red-800: #991B1B;
+      --amber-50: #FFFBEB; --amber-100: #FEF3C7; --amber-600: #D97706; --amber-700: #B45309;
+      --purple-50: #FAF5FF; --purple-100: #F3E8FF; --purple-600: #9333EA; --purple-700: #7C3AED;
+      --teal-50: #F0FDFA; --teal-100: #CCFBF1; --teal-600: #0D9488; --teal-700: #0F766E;
+      --indigo-50: #EEF2FF; --indigo-100: #E0E7FF; --indigo-600: #4F46E5;
+      --cyan-50: #ECFEFF; --cyan-600: #0891B2;
+      --orange-50: #FFF7ED; --orange-100: #FFEDD5; --orange-600: #EA580C;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-sans); background: var(--slate-50); color: var(--slate-800); line-height: 1.6; font-size: 14px; }
+
+    /* ── Header ── */
+    .site-header {
+      background: linear-gradient(135deg, var(--slate-900) 0%, var(--blue-900) 60%, var(--purple-700) 100%);
+      color: #fff; padding: 56px 0 48px; border-bottom: 4px solid var(--blue-600);
+    }
+    .site-header .container { max-width: 1100px; margin: 0 auto; padding: 0 32px; }
+    .site-header h1 { font-size: 36px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 12px; line-height: 1.2; }
+    .site-header .subtitle { font-size: 17px; opacity: 0.85; max-width: 740px; line-height: 1.55; }
+    .header-meta { display: flex; gap: 24px; margin-top: 24px; font-size: 13px; opacity: 0.65; flex-wrap: wrap; }
+    .header-badge {
+      display: inline-block; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 600; letter-spacing: 0.3px;
+    }
+
+    /* ── Layout ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 32px; }
+    .page-body { padding: 48px 0 80px; }
+
+    /* ── Section ── */
+    .section { margin-bottom: 56px; }
+    .section-header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+    .section-icon {
+      width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center;
+      justify-content: center; font-size: 20px; flex-shrink: 0;
+    }
+    .section-header h2 { font-size: 22px; font-weight: 700; color: var(--slate-900); }
+    .section-intro { font-size: 15px; color: var(--slate-600); margin-bottom: 24px; max-width: 820px; line-height: 1.6; }
+
+    /* ── Icon colors ── */
+    .icon-blue   { background: var(--blue-50);   color: var(--blue-600); }
+    .icon-green  { background: var(--green-50);  color: var(--green-600); }
+    .icon-red    { background: var(--red-50);    color: var(--red-600); }
+    .icon-amber  { background: var(--amber-50);  color: var(--amber-600); }
+    .icon-purple { background: var(--purple-50); color: var(--purple-600); }
+    .icon-teal   { background: var(--teal-50);   color: var(--teal-600); }
+    .icon-indigo { background: var(--indigo-50); color: var(--indigo-600); }
+    .icon-orange { background: var(--orange-50); color: var(--orange-600); }
+
+    /* ── Executive Summary ── */
+    .exec-summary {
+      background: linear-gradient(135deg, var(--blue-50) 0%, var(--indigo-50) 100%);
+      border: 1px solid var(--blue-200); border-radius: 14px; padding: 32px 36px;
+      margin-bottom: 48px; position: relative; overflow: hidden;
+    }
+    .exec-summary::before {
+      content: ''; position: absolute; top: 0; left: 0; width: 5px; height: 100%;
+      background: linear-gradient(180deg, var(--blue-600), var(--purple-600));
+    }
+    .exec-summary h2 { font-size: 18px; color: var(--blue-800); margin-bottom: 12px; }
+    .exec-summary p { font-size: 15px; color: var(--slate-700); line-height: 1.65; max-width: 820px; }
+    .exec-summary .highlight {
+      background: rgba(59,130,246,0.1); padding: 2px 8px; border-radius: 4px;
+      font-weight: 600; color: var(--blue-800);
+    }
+
+    /* ── Comparison Layout ── */
+    .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+    @media (max-width: 768px) { .comparison { grid-template-columns: 1fr; } }
+    .comparison-col { border-radius: 12px; padding: 28px; }
+    .col-advantage { background: var(--green-50); border: 1px solid var(--green-100); }
+    .col-disadvantage { background: var(--red-50); border: 1px solid var(--red-100); }
+    .comparison-col h3 {
+      font-size: 16px; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;
+    }
+    .col-advantage h3 { color: var(--green-800); }
+    .col-disadvantage h3 { color: var(--red-800); }
+
+    /* ── Trade-off Item ── */
+    .tradeoff {
+      background: #fff; border-radius: 10px; padding: 18px 20px; margin-bottom: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.04);
+    }
+    .tradeoff:last-child { margin-bottom: 0; }
+    .tradeoff-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: 50%; font-size: 12px; font-weight: 700;
+      margin-right: 10px; flex-shrink: 0; float: left; margin-top: 1px;
+    }
+    .num-green { background: var(--green-100); color: var(--green-700); }
+    .num-red { background: var(--red-100); color: var(--red-700); }
+    .tradeoff h4 { font-size: 14px; font-weight: 700; color: var(--slate-900); margin-bottom: 6px; }
+    .tradeoff p { font-size: 13px; color: var(--slate-600); line-height: 1.55; }
+    .tradeoff code {
+      font-family: var(--font-mono); font-size: 12px; background: var(--slate-100);
+      padding: 1px 5px; border-radius: 3px; color: var(--slate-700);
+    }
+
+    /* ── Diagram ── */
+    .diagram {
+      background: #fff; border: 1px solid var(--slate-200); border-radius: 12px;
+      padding: 28px 32px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow-x: auto;
+    }
+    .diagram-title {
+      font-size: 12px; font-weight: 600; color: var(--slate-500); text-transform: uppercase;
+      letter-spacing: 0.6px; margin-bottom: 14px;
+    }
+    .diagram pre {
+      font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: var(--slate-700); white-space: pre;
+    }
+
+    /* ── Tables ── */
+    .tw {
+      background: #fff; border: 1px solid var(--slate-200); border-radius: 12px;
+      overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 24px; overflow-x: auto;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead { background: var(--slate-100); }
+    th {
+      padding: 12px 18px; text-align: left; font-weight: 600; color: var(--slate-700);
+      font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px;
+      border-bottom: 1px solid var(--slate-200); white-space: nowrap;
+    }
+    td { padding: 12px 18px; border-bottom: 1px solid var(--slate-100); color: var(--slate-700); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--slate-50); }
+    td code {
+      font-family: var(--font-mono); font-size: 12px; background: var(--slate-100);
+      padding: 1px 5px; border-radius: 3px; color: var(--slate-700);
+    }
+
+    /* ── Tier badges ── */
+    .tier {
+      display: inline-flex; align-items: center; gap: 4px; font-size: 11px;
+      font-weight: 700; padding: 3px 10px; border-radius: 6px; white-space: nowrap;
+    }
+    .tier-1 { background: var(--green-100); color: var(--green-700); }
+    .tier-2 { background: var(--blue-100); color: var(--blue-700); }
+    .tier-3 { background: var(--amber-100); color: var(--amber-700); }
+    .tier-4 { background: var(--red-100); color: var(--red-700); }
+
+    /* ── Callout ── */
+    .callout {
+      border-radius: 12px; padding: 20px 24px; margin-bottom: 24px;
+      font-size: 14px; line-height: 1.6; position: relative; overflow: hidden;
+    }
+    .callout::before {
+      content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
+    }
+    .callout-blue { background: var(--blue-50); border: 1px solid var(--blue-100); color: var(--blue-800); }
+    .callout-blue::before { background: var(--blue-600); }
+    .callout-green { background: var(--green-50); border: 1px solid var(--green-100); color: var(--green-800); }
+    .callout-green::before { background: var(--green-600); }
+    .callout-amber { background: var(--amber-50); border: 1px solid var(--amber-100); color: var(--amber-700); }
+    .callout-amber::before { background: var(--amber-600); }
+    .callout-purple { background: var(--purple-50); border: 1px solid var(--purple-100); color: var(--purple-700); }
+    .callout-purple::before { background: var(--purple-600); }
+    .callout strong { display: block; margin-bottom: 6px; font-size: 14px; }
+
+    /* ── Verdict Card ── */
+    .verdict {
+      background: linear-gradient(135deg, var(--slate-900) 0%, var(--blue-900) 100%);
+      border-radius: 14px; padding: 36px 40px; color: #fff; margin-bottom: 24px;
+    }
+    .verdict h3 { font-size: 20px; font-weight: 700; margin-bottom: 14px; }
+    .verdict p { font-size: 15px; opacity: 0.9; line-height: 1.65; max-width: 780px; }
+    .verdict .verdict-highlight {
+      display: inline; background: rgba(59,130,246,0.25); padding: 2px 8px;
+      border-radius: 4px; font-weight: 600; color: #fff;
+    }
+
+    /* ── Mitigation cards ── */
+    .mit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .mit-card {
+      background: #fff; border: 1px solid var(--slate-200); border-radius: 10px;
+      padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .mit-card h4 { font-size: 14px; font-weight: 600; color: var(--slate-900); margin-bottom: 6px; }
+    .mit-card p { font-size: 13px; color: var(--slate-600); line-height: 1.55; }
+    .mit-card .mit-tag {
+      display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px;
+      border-radius: 4px; margin-top: 10px; background: var(--teal-50); color: var(--teal-700);
+    }
+
+    /* ── Footer ── */
+    .site-footer {
+      background: var(--slate-900); color: var(--slate-400); padding: 32px 0;
+      font-size: 13px; text-align: center;
+    }
+    .site-footer strong { color: var(--slate-200); }
+
+    /* ── Print ── */
+    @media print {
+      .site-header { padding: 24px 0; }
+      .comparison { break-inside: avoid; }
+      .diagram { break-inside: avoid; }
+      .verdict { break-inside: avoid; color: #000; background: var(--slate-100); }
+      .verdict .verdict-highlight { background: var(--blue-100); color: var(--blue-900); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═════════════════════════ HEADER ═════════════════════════ -->
+<header class="site-header">
+  <div class="container">
+    <h1>Tools vs Skills</h1>
+    <p class="subtitle">
+      Why Project Aura chose a tool-based agent architecture over a skills abstraction &mdash;
+      and how it manages the trade-offs for enterprise security and compliance.
+    </p>
+    <div class="header-meta">
+      <span>Project Aura &mdash; Aenea Labs</span>
+      <span class="header-badge">Architectural Trade-off Analysis</span>
+      <span>February 2026</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═════════════════════════ BODY ═════════════════════════ -->
+<main class="page-body">
+  <div class="container">
+
+    <!-- ── Executive Summary ── -->
+    <div class="exec-summary">
+      <h2>Executive Summary</h2>
+      <p>
+        Aura's agent system models every action as a <span class="highlight">tool invocation</span>
+        governed by a 4-tier risk classification, rather than higher-level "skills."
+        This design makes <span class="highlight">security governance and auditability</span>
+        first-class concerns &mdash; every operation is individually classified, permission-checked,
+        and logged &mdash; at the cost of additional orchestration complexity. Aura absorbs that cost
+        through <span class="highlight">6 specialized orchestrators</span> and a
+        <span class="highlight">hierarchical tool registry</span> that caps agent-visible tools
+        at 20&ndash;30 to prevent cognitive overload.
+      </p>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  CONCEPTS                                                  -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-icon icon-blue">&#x1F4D6;</div>
+        <h2>Key Concepts</h2>
+      </div>
+      <p class="section-intro">
+        Before diving into trade-offs, it helps to define what "tools" and "skills" mean
+        in the context of autonomous agent architectures.
+      </p>
+
+      <div class="comparison">
+        <div class="callout callout-blue" style="margin-bottom:0;">
+          <strong>Tool (Aura's Approach)</strong>
+          A discrete, atomic operation with an explicit risk tier, audit requirement, and
+          MCP-compatible interface. Examples: <code>semantic_search</code>, <code>provision_sandbox</code>,
+          <code>deploy_to_production</code>. Each tool is independently governed.
+        </div>
+        <div class="callout callout-purple" style="margin-bottom:0;">
+          <strong>Skill (Alternative Approach)</strong>
+          A higher-level abstraction that bundles multiple operations into a single named action.
+          Example: a "Fix Vulnerability" skill internally calls scan, triage, patch, test, and deploy.
+          Governance applies to the skill as a whole, not individual steps.
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  HOW TOOLS WORK IN AURA                                    -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-icon icon-purple">&#x1F527;</div>
+        <h2>How Tools Work in Aura</h2>
+      </div>
+      <p class="section-intro">
+        Every agent action passes through a <code>CapabilityEnforcementMiddleware</code> that
+        evaluates identity, risk tier, execution context, and dynamic grants before rendering
+        one of four decisions.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">Tool Invocation Flow</div>
+        <pre>
+  Agent Code
+      |
+      v
+  invoke_tool("tool_name", {params})
+      |
+      v
+  +---------------------------------------------------------------+
+  |  CapabilityEnforcementMiddleware                              |
+  |  |-- Extract: agent_id, agent_type, context                  |
+  |  |-- Resolve: base policy + overrides + dynamic grants       |
+  |  |-- Evaluate: policy.can_invoke(tool, action, context)      |
+  |  '-- Decision:                                               |
+  |        ALLOW ---------> Execute tool                         |
+  |        DENY ----------> Return error                         |
+  |        ESCALATE ------> Queue for HITL approval              |
+  |        AUDIT_ONLY ----> Execute + flag for review            |
+  +---------------------------------------------------------------+
+      |
+      |---> Internal tools ---> MCP Tool Server (Neptune, OpenSearch, Sandbox)
+      |---> External tools ---> MCP Gateway Client (AgentCore)
+      '---> Native agents ----> Adapter (Enterprise mode)
+      |
+      v
+  Audit Service ---> DynamoDB + CloudWatch</pre>
+      </div>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Tier</th><th>Risk Level</th><th>Default</th><th>Audit Rate</th><th>Example Tools</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tier tier-1">Level 1</span></td>
+              <td>SAFE</td><td>ALLOW</td><td>10% sample</td>
+              <td><code>semantic_search</code> &middot; <code>describe_tool</code> &middot; <code>list_tools</code></td>
+            </tr>
+            <tr>
+              <td><span class="tier tier-2">Level 2</span></td>
+              <td>MONITORING</td><td>ALLOW</td><td>100%</td>
+              <td><code>query_code_graph</code> &middot; <code>get_code_dependencies</code> &middot; <code>query_audit_logs</code></td>
+            </tr>
+            <tr>
+              <td><span class="tier tier-3">Level 3</span></td>
+              <td>DANGEROUS</td><td>DENY</td><td>100%</td>
+              <td><code>destroy_sandbox</code> &middot; <code>write_config</code> &middot; <code>commit_changes</code></td>
+            </tr>
+            <tr>
+              <td><span class="tier tier-4">Level 4</span></td>
+              <td>CRITICAL</td><td>DENY + HITL</td><td>100%</td>
+              <td><code>deploy_to_production</code> &middot; <code>rotate_credentials</code> &middot; <code>modify_iam_policy</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  TRADE-OFF ANALYSIS                                        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-icon icon-amber">&#x2696;</div>
+        <h2>Trade-off Analysis</h2>
+      </div>
+      <p class="section-intro">
+        Five advantages explain <em>why</em> Aura chose tools; five disadvantages explain
+        <em>what it costs</em> &mdash; and how the architecture mitigates each one.
+      </p>
+
+      <div class="comparison">
+        <!-- ── Advantages ── -->
+        <div class="comparison-col col-advantage">
+          <h3>&#x2705; Advantages of Tools</h3>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-green">1</span>
+            <h4>Security-First Governance</h4>
+            <p>
+              Tools are discrete, auditable operations with explicit risk tiers.
+              Every invocation passes through <code>CapabilityEnforcementMiddleware</code>
+              with <code>ALLOW / DENY / ESCALATE / AUDIT_ONLY</code> decisions.
+              A "skills" abstraction would hide this granularity and make it harder
+              to enforce least-privilege.
+            </p>
+          </div>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-green">2</span>
+            <h4>MCP Standardization</h4>
+            <p>
+              Tools map directly to the <strong>Model Context Protocol</strong>, giving Aura
+              interoperability with the broader LLM ecosystem (AgentCore Gateway, external MCP
+              clients). Skills are typically framework-specific and non-portable.
+            </p>
+          </div>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-green">3</span>
+            <h4>Fine-Grained Access Control</h4>
+            <p>
+              The 4-tier classification allows per-tool, per-agent, per-context permissions.
+              A skill like "fix vulnerability" might internally call 5 tools at different risk
+              levels &mdash; bundling them obscures which operation actually needs HITL approval.
+            </p>
+          </div>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-green">4</span>
+            <h4>Dynamic Capability Grants</h4>
+            <p>
+              Time-bounded, single-use, or session-scoped grants work cleanly at the tool level.
+              Granting a "skill" temporarily is ambiguous &mdash; which sub-operations are elevated?
+            </p>
+          </div>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-green">5</span>
+            <h4>Observability &amp; Compliance</h4>
+            <p>
+              Every tool call is independently auditable in DynamoDB / CloudWatch. This produces
+              a precise forensic trail for compliance frameworks
+              (<strong>NIST 800-53</strong>, <strong>SOX</strong>).
+            </p>
+          </div>
+        </div>
+
+        <!-- ── Disadvantages ── -->
+        <div class="comparison-col col-disadvantage">
+          <h3>&#x26A0; Disadvantages of Tools</h3>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-red">1</span>
+            <h4>Higher Cognitive Load for Agents</h4>
+            <p>
+              The Manus pattern (20&ndash;30 tools max) exists specifically because LLMs struggle
+              with large tool inventories (context confusion, hallucinated parameters). A skills
+              layer would present fewer, higher-level actions, reducing this risk.
+            </p>
+          </div>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-red">2</span>
+            <h4>More Complex Orchestration</h4>
+            <p>
+              A "skill" encapsulates multi-step workflows (scan, triage, patch, test, deploy).
+              Without skills, orchestrators must explicitly chain tool calls &mdash; which is why
+              Aura needs <strong>6 orchestrators</strong>.
+            </p>
+          </div>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-red">3</span>
+            <h4>Verbose Agent Prompts</h4>
+            <p>
+              Agents must reason about individual tool calls rather than declaring intent at a
+              higher level. This costs more tokens and can lead to sub-optimal tool sequencing
+              (hence the <code>TOOL_SEQUENCE_OPTIMALITY</code> evaluator).
+            </p>
+          </div>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-red">4</span>
+            <h4>Harder to Compose for End Users</h4>
+            <p>
+              Skills are user-friendly abstractions ("run security scan") while tools are
+              developer-facing primitives (<code>vuln_scan({target, depth, profile})</code>).
+              Aura mitigates this with <code>SemanticToolSearch</code> (natural language &rarr; tool
+              discovery), but it adds latency.
+            </p>
+          </div>
+
+          <div class="tradeoff">
+            <span class="tradeoff-num num-red">5</span>
+            <h4>Duplication Risk</h4>
+            <p>
+              Without a skills layer, similar tool-call sequences may be reimplemented across
+              orchestrators. Aura addresses this with the <code>HierarchicalToolRegistry</code>
+              (DOMAIN tools as pre-composed bundles) &mdash; effectively a lightweight skills layer
+              by another name.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  SIDE-BY-SIDE SCENARIO                                     -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-icon icon-indigo">&#x1F50D;</div>
+        <h2>Scenario: "Fix a Critical Vulnerability"</h2>
+      </div>
+      <p class="section-intro">
+        Comparing how the same high-stakes workflow looks under each approach illustrates
+        where the governance difference matters most.
+      </p>
+
+      <div class="comparison">
+        <div class="diagram" style="margin-bottom:0;">
+          <div class="diagram-title">Tool-Based (Aura's Approach)</div>
+          <pre>
+  1. semantic_search(cve_id)        <span style="color:var(--green-600);">Level 1 SAFE  - auto ALLOW</span>
+  2. query_code_graph(affected)     <span style="color:var(--blue-600);">Level 2 MONITOR - ALLOW + audit</span>
+  3. generate_code(patch)           <span style="color:var(--blue-600);">Level 2 MONITOR - ALLOW + audit</span>
+  4. provision_sandbox(test)        <span style="color:var(--red-600);">Level 4 CRITICAL - HITL required</span>
+     [ Human approves sandbox ]
+  5. execute_in_sandbox(tests)      <span style="color:var(--amber-600);">Level 3 DANGER  - explicit grant</span>
+  6. destroy_sandbox(cleanup)       <span style="color:var(--amber-600);">Level 3 DANGER  - explicit grant</span>
+  7. deploy_to_production(patch)    <span style="color:var(--red-600);">Level 4 CRITICAL - HITL required</span>
+     [ Human approves deploy ]
+
+  Result: 7 individually governed steps
+          2 human checkpoints
+          7 audit records</pre>
+        </div>
+
+        <div class="diagram" style="margin-bottom:0;">
+          <div class="diagram-title">Skill-Based (Alternative)</div>
+          <pre>
+  1. fix_vulnerability(cve_id)      <span style="color:var(--purple-600);">Skill - approved as a unit</span>
+     [ Human approves "fix" ]
+
+     Internally:
+       a. search for affected code
+       b. query graph for context
+       c. generate patch
+       d. provision sandbox
+       e. run tests
+       f. tear down sandbox
+       g. deploy to production
+
+  Result: 1 governed action
+          1 human checkpoint
+          1 audit record
+          <span style="color:var(--red-600);">Sub-steps d and g (CRITICAL)
+          invisible to governance</span></pre>
+        </div>
+      </div>
+
+      <div class="callout callout-amber">
+        <strong>Key Insight for Decision-Makers</strong>
+        In the skills model, approving "fix vulnerability" implicitly grants <code>provision_sandbox</code>
+        and <code>deploy_to_production</code> without separate human checkpoints. For an enterprise platform
+        handling credential rotation and production deployments, this is an unacceptable
+        governance gap. Aura's tool-based approach ensures that every CRITICAL operation
+        gets its own approval gate.
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  MITIGATIONS                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-icon icon-teal">&#x1F6E0;</div>
+        <h2>How Aura Mitigates the Downsides</h2>
+      </div>
+      <p class="section-intro">
+        Each disadvantage of the tool-based approach has a targeted architectural countermeasure
+        already deployed in production.
+      </p>
+
+      <div class="mit-grid">
+        <div class="mit-card">
+          <h4>Cognitive Load &rarr; Hierarchical Registry</h4>
+          <p>
+            The Manus pattern caps agent-visible tools at 20&ndash;30. ~20 ATOMIC tools always
+            loaded; DOMAIN and EXPERT tools surface only when the task context requires them.
+          </p>
+          <span class="mit-tag">HierarchicalToolRegistry</span>
+        </div>
+
+        <div class="mit-card">
+          <h4>Orchestration Complexity &rarr; 6 Orchestrators</h4>
+          <p>
+            Domain-specific orchestrators (Security, DevOps, Transform, Vuln-Scan, Self-Play)
+            encapsulate multi-step workflows. MetaOrchestrator handles dynamic spawning and
+            recursive decomposition.
+          </p>
+          <span class="mit-tag">MetaOrchestrator + 5 Domain Orchestrators</span>
+        </div>
+
+        <div class="mit-card">
+          <h4>Verbose Prompts &rarr; Chain of Draft</h4>
+          <p>
+            Chain of Draft prompting (ADR-029) achieves 92% token reduction. Semantic caching
+            (68% hit rate) eliminates redundant LLM calls entirely.
+          </p>
+          <span class="mit-tag">ADR-029 Phase 1.2 + 1.3</span>
+        </div>
+
+        <div class="mit-card">
+          <h4>User Composability &rarr; Semantic Tool Search</h4>
+          <p>
+            Natural language queries discover the right tools automatically. Users say "scan for
+            SQL injection" and the system resolves it to the correct tool invocation.
+          </p>
+          <span class="mit-tag">SemanticToolSearch</span>
+        </div>
+
+        <div class="mit-card">
+          <h4>Duplication Risk &rarr; DOMAIN Tool Bundles</h4>
+          <p>
+            The DOMAIN tier of the hierarchical registry groups frequently co-invoked tools
+            into pre-composed bundles &mdash; effectively a lightweight, governed skills layer.
+          </p>
+          <span class="mit-tag">HierarchicalToolRegistry DOMAIN tier</span>
+        </div>
+
+        <div class="mit-card">
+          <h4>Sequencing Errors &rarr; Evaluator Feedback</h4>
+          <p>
+            The <code>TOOL_SEQUENCE_OPTIMALITY</code> evaluator scores tool ordering efficiency.
+            Sub-optimal sequences are flagged, enabling continuous improvement.
+          </p>
+          <span class="mit-tag">AgentEvaluationService (13 evaluators)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  COMPARISON TABLE                                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-icon icon-blue">&#x1F4CA;</div>
+        <h2>Head-to-Head Comparison</h2>
+      </div>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Dimension</th><th>Tool-Based (Aura)</th><th>Skill-Based (Alternative)</th><th>Winner</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Security Governance</strong></td>
+              <td>Per-operation ALLOW/DENY/ESCALATE</td>
+              <td>Per-skill approval (sub-ops hidden)</td>
+              <td><span class="tier tier-1">Tools</span></td>
+            </tr>
+            <tr>
+              <td><strong>Audit Granularity</strong></td>
+              <td>Every tool call logged individually</td>
+              <td>Skill-level logging only</td>
+              <td><span class="tier tier-1">Tools</span></td>
+            </tr>
+            <tr>
+              <td><strong>Ecosystem Interop</strong></td>
+              <td>Native MCP compatibility</td>
+              <td>Framework-specific, non-portable</td>
+              <td><span class="tier tier-1">Tools</span></td>
+            </tr>
+            <tr>
+              <td><strong>Capability Grants</strong></td>
+              <td>Precise: single tool + action + context</td>
+              <td>Coarse: entire skill (all sub-ops)</td>
+              <td><span class="tier tier-1">Tools</span></td>
+            </tr>
+            <tr>
+              <td><strong>Compliance Mapping</strong></td>
+              <td>1:1 tool &rarr; NIST control mapping</td>
+              <td>N:1 skill &rarr; control mapping (lossy)</td>
+              <td><span class="tier tier-1">Tools</span></td>
+            </tr>
+            <tr>
+              <td><strong>Agent Cognitive Load</strong></td>
+              <td>20&ndash;30 tools (Manus pattern needed)</td>
+              <td>5&ndash;10 skills (natural fit for LLMs)</td>
+              <td><span class="tier tier-3">Skills</span></td>
+            </tr>
+            <tr>
+              <td><strong>Orchestration Simplicity</strong></td>
+              <td>6 orchestrators required</td>
+              <td>Skills encapsulate workflows</td>
+              <td><span class="tier tier-3">Skills</span></td>
+            </tr>
+            <tr>
+              <td><strong>Token Efficiency</strong></td>
+              <td>Verbose (mitigated by CoD + caching)</td>
+              <td>Compact high-level intent</td>
+              <td><span class="tier tier-3">Skills</span></td>
+            </tr>
+            <tr>
+              <td><strong>End-User Simplicity</strong></td>
+              <td>Requires SemanticToolSearch layer</td>
+              <td>Natural-language-friendly names</td>
+              <td><span class="tier tier-3">Skills</span></td>
+            </tr>
+            <tr>
+              <td><strong>Code Reuse</strong></td>
+              <td>DOMAIN bundles mitigate duplication</td>
+              <td>Skills are inherently reusable</td>
+              <td><span class="tier tier-2">Tie</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  VERDICT                                                   -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-icon icon-green">&#x1F3C1;</div>
+        <h2>The Verdict</h2>
+      </div>
+
+      <div class="verdict">
+        <h3>Why Aura Chose Tools Over Skills</h3>
+        <p>
+          Aura chose tools because
+          <span class="verdict-highlight">security governance and auditability are non-negotiable</span>
+          for an enterprise platform handling production deployments and credential rotation.
+          Every CRITICAL operation &mdash; provisioning sandboxes, rotating secrets, deploying patches &mdash;
+          demands its own human approval gate and its own audit record.
+        </p>
+        <p style="margin-top: 14px;">
+          The cost is orchestrator complexity, which Aura absorbs through its
+          <span class="verdict-highlight">6-orchestrator architecture</span>,
+          <span class="verdict-highlight">hierarchical tool registry</span> (Manus pattern),
+          <span class="verdict-highlight">Chain of Draft prompting</span> (92% token reduction), and
+          <span class="verdict-highlight">semantic caching</span> (68% hit rate).
+          These mitigations transform the disadvantages from blockers into manageable engineering trade-offs.
+        </p>
+      </div>
+
+      <div class="callout callout-green">
+        <strong>For Technical Audiences</strong>
+        The tool-based approach gives you 1:1 mapping from MCP tool invocations to NIST 800-53 controls,
+        per-operation audit records in DynamoDB, and the ability to grant <code>SINGLE_USE</code> or
+        <code>SESSION</code>-scoped capabilities at the individual tool level. The DOMAIN tier of the
+        hierarchical registry provides skill-like convenience where workflow composition is needed,
+        without sacrificing governance granularity.
+      </div>
+
+      <div class="callout callout-blue">
+        <strong>For Business Audiences</strong>
+        Every action an AI agent takes in Aura is individually tracked, permission-checked, and logged &mdash;
+        the same way a bank tracks every transaction, not just account-level summaries.
+        This means compliance teams get precise audit trails, security teams get fine-grained controls,
+        and human approvers see exactly what they are approving &mdash; not a bundled black box.
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<!-- ═════════════════════════ FOOTER ═════════════════════════ -->
+<footer class="site-footer">
+  <div class="container">
+    <strong>Project Aura</strong> &mdash; Aenea Labs &middot; Tools vs Skills Architectural Trade-off Analysis
+  </div>
+</footer>
+
+</body>
+</html>

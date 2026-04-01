@@ -1,0 +1,298 @@
+name: Aura CI Auto-Fix
+
+on:
+  workflow_run:
+    workflows: ["Code Quality Checks"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Workflow run ID to analyze for fixes'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+  actions: read
+
+env:
+  AURA_API_URL: ${{ vars.AURA_API_URL || 'http://localhost:8080' }}
+
+jobs:
+  analyze-failure:
+    name: Analyze CI Failure
+    runs-on: ubuntu-latest
+    # Only run if the triggering workflow failed
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event_name == 'workflow_dispatch' }}
+    outputs:
+      has_fixes: ${{ steps.analyze.outputs.has_fixes }}
+      fix_type: ${{ steps.analyze.outputs.fix_type }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install black flake8 requests
+
+      - name: Get failed workflow logs
+        id: get-logs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the workflow run ID
+          RUN_ID="${{ github.event.workflow_run.id || inputs.run_id }}"
+
+          if [ -z "$RUN_ID" ]; then
+            echo "No workflow run ID provided"
+            echo "has_logs=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Download logs using GitHub API
+          echo "Downloading logs for run $RUN_ID"
+          curl -L \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/$RUN_ID/logs" \
+            -o workflow_logs.zip || true
+
+          if [ -f workflow_logs.zip ]; then
+            unzip -o workflow_logs.zip -d logs/ || true
+            echo "has_logs=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_logs=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Analyze failures
+        id: analyze
+        run: |
+          python3 << 'EOF'
+          import os
+          import re
+          import glob
+          import subprocess
+          import json
+
+          fixes = []
+          fix_commands = []
+
+          # Check for Black formatting issues
+          black_result = subprocess.run(
+              ['black', '--check', '--diff', 'src/', 'tests/'],
+              capture_output=True, text=True
+          )
+          if black_result.returncode != 0:
+              fixes.append('formatting')
+              fix_commands.append('black src/ tests/')
+              print("Detected: Black formatting issues")
+              # Get specific files needing formatting
+              for line in black_result.stdout.split('\n'):
+                  if line.startswith('---') or line.startswith('+++'):
+                      file_match = re.search(r'[ab]/(.+\.py)', line)
+                      if file_match:
+                          print(f"  - {file_match.group(1)}")
+
+          # Check for flake8 issues
+          flake8_result = subprocess.run(
+              ['flake8', 'src/', 'tests/', '--count', '--select=E9,F63,F7,F82', '--show-source'],
+              capture_output=True, text=True
+          )
+          if flake8_result.returncode != 0 or flake8_result.stdout.strip():
+              critical_errors = flake8_result.stdout.strip()
+              if critical_errors:
+                  fixes.append('syntax')
+                  print("Detected: Critical syntax errors")
+                  print(critical_errors[:500])
+
+          # Check for import issues
+          flake8_imports = subprocess.run(
+              ['flake8', 'src/', '--select=F401,E402', '--count'],
+              capture_output=True, text=True
+          )
+          # The --count flag adds total count on the last line of stdout
+          if flake8_imports.stdout.strip():
+              lines = flake8_imports.stdout.strip().split('\n')
+              # Last line contains the count (e.g., "5")
+              try:
+                  import_count = int(lines[-1].strip()) if lines else 0
+              except ValueError:
+                  # If last line isn't a number, count non-empty lines as errors
+                  import_count = len([l for l in lines if l.strip()])
+              if import_count > 0:
+                  fixes.append('imports')
+                  print(f"Detected: {import_count} unused imports or import order issues")
+
+          # Output results
+          has_fixes = len(fixes) > 0
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"has_fixes={'true' if has_fixes else 'false'}\n")
+              f.write(f"fix_type={','.join(fixes)}\n")
+              f.write(f"fix_commands={';'.join(fix_commands)}\n")
+
+          # Save analysis for later steps
+          analysis = {
+              'fixes': fixes,
+              'fix_commands': fix_commands,
+              'black_output': black_result.stdout[:2000] if black_result.stdout else '',
+              'flake8_output': flake8_result.stdout[:2000] if flake8_result.stdout else ''
+          }
+          with open('ci_analysis.json', 'w') as f:
+              json.dump(analysis, f, indent=2)
+
+          if has_fixes:
+              print(f"\n✅ Found {len(fixes)} auto-fixable issue(s): {', '.join(fixes)}")
+          else:
+              print("\n❌ No auto-fixable issues detected")
+          EOF
+
+      - name: Upload analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-failure-analysis
+          path: |
+            ci_analysis.json
+            logs/
+          retention-days: 7
+
+  apply-fixes:
+    name: Apply Auto-Fixes
+    runs-on: ubuntu-latest
+    needs: analyze-failure
+    if: needs.analyze-failure.outputs.has_fixes == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install black isort autoflake
+
+      - name: Apply formatting fixes
+        if: contains(needs.analyze-failure.outputs.fix_type, 'formatting')
+        run: |
+          echo "Applying Black formatting..."
+          black src/ tests/
+
+          echo "Applying isort import sorting..."
+          isort src/ tests/ --profile black
+
+      - name: Apply import fixes
+        if: contains(needs.analyze-failure.outputs.fix_type, 'imports')
+        run: |
+          echo "Removing unused imports..."
+          autoflake --in-place --remove-all-unused-imports --recursive src/ tests/
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes to commit"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Changes detected:"
+            git diff --stat
+          fi
+
+      - name: Create fix commit
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "fix: auto-fix CI issues (formatting, imports)
+
+          Applied automatic fixes for:
+          - ${{ needs.analyze-failure.outputs.fix_type }}
+
+          Triggered by: ${{ github.event.workflow_run.html_url || 'manual' }}"
+
+          git push
+
+      - name: Post success comment
+        if: steps.changes.outputs.has_changes == 'true' && github.event.workflow_run.pull_requests[0]
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.workflow_run?.pull_requests?.[0]?.number;
+            if (!prNumber) return;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `## Aura CI Auto-Fix Applied
+
+            Automatic fixes have been applied for the following issues:
+            - **${{ needs.analyze-failure.outputs.fix_type }}**
+
+            Please review the changes and re-run CI.
+
+            *This fix was applied automatically by the Aura CI Auto-Fix workflow.*`
+            });
+
+  notify-unfixable:
+    name: Notify Unfixable Issues
+    runs-on: ubuntu-latest
+    needs: analyze-failure
+    if: needs.analyze-failure.outputs.has_fixes == 'false' && github.event.workflow_run.conclusion == 'failure'
+
+    steps:
+      - name: Post comment about manual fix needed
+        if: github.event.workflow_run.pull_requests[0]
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.workflow_run?.pull_requests?.[0]?.number;
+            if (!prNumber) return;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `## Aura CI Failure Analysis
+
+            CI failed but no automatic fixes could be applied.
+
+            **Next steps:**
+            1. Check the [failed workflow run](${{ github.event.workflow_run.html_url }})
+            2. Review test failures and lint errors
+            3. Fix issues manually
+
+            Common issues:
+            - Test failures (require manual review)
+            - Type errors (run \`mypy src/\`)
+            - Complex lint issues
+
+            *If you need help, Aura's coder agent can assist with suggestions.*`
+            });

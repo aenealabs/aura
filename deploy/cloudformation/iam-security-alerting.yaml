@@ -1,0 +1,441 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.6 - IAM Security Alerting (Real-Time Monitoring)'
+
+# ============================================================================
+# SECURITY CONTROL: IAM Change Alerting
+#
+# Purpose: Real-time alerting on IAM modifications to detect potential
+# privilege escalation, unauthorized changes, or compromise.
+#
+# Architecture: Uses EventBridge rules to detect CloudTrail events. Works with
+# Organization CloudTrail (ADR-059) since CloudTrail delivers events to
+# EventBridge in ALL organization accounts regardless of where the trail
+# is configured.
+#
+# Reference: Security Assessment, NIST 800-53 AU-6, CMMC AC.L2-3.1.7
+# ============================================================================
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for security alerts (optional - uses existing SNS topic if empty)
+
+Conditions:
+  CreateAlertTopic: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # SNS Topic for IAM Security Alerts (if not using existing)
+  IAMSecurityAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateAlertTopic
+    Properties:
+      TopicName: !Sub '${ProjectName}-iam-security-alerts-${Environment}'
+      DisplayName: !Sub '${ProjectName} IAM Security Alerts'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: SecurityControl
+          Value: IAMMonitoring
+
+  IAMSecurityAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: CreateAlertTopic
+    Properties:
+      TopicArn: !Ref IAMSecurityAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================
+  # EventBridge Rules for IAM Change Detection
+  # ============================================================
+
+  # Rule 1: IAM Role Changes (Create, Delete, Modify)
+  IAMRoleChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-iam-role-changes-${Environment}'
+      Description: Alerts on IAM role creation, modification, or deletion
+      EventPattern:
+        source:
+          - aws.iam
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+          eventName:
+            - CreateRole
+            - DeleteRole
+            - AttachRolePolicy
+            - DetachRolePolicy
+            - PutRolePolicy
+            - DeleteRolePolicy
+            - UpdateAssumeRolePolicy
+            - PutRolePermissionsBoundary
+            - DeleteRolePermissionsBoundary
+      State: ENABLED
+      Targets:
+        - Id: iam-role-alert
+          Arn: !If
+            - CreateAlertTopic
+            - !Ref IAMSecurityAlertTopic
+            - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              eventName: $.detail.eventName
+              roleName: $.detail.requestParameters.roleName
+              userIdentity: $.detail.userIdentity.arn
+              sourceIP: $.detail.sourceIPAddress
+              eventTime: $.detail.eventTime
+              userAgent: $.detail.userAgent
+              errorCode: $.detail.errorCode
+            InputTemplate: |
+              "IAM ROLE CHANGE DETECTED"
+              ""
+              "Action: <eventName>"
+              "Role: <roleName>"
+              "Performed By: <userIdentity>"
+              "Source IP: <sourceIP>"
+              "Time: <eventTime>"
+              "User Agent: <userAgent>"
+              "Error (if any): <errorCode>"
+              ""
+              "Review this change in CloudTrail immediately."
+              "If unexpected, this may indicate a security incident."
+
+  # Rule 2: IAM User Changes (High Priority)
+  IAMUserChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-iam-user-changes-${Environment}'
+      Description: Alerts on IAM user creation or modification
+      EventPattern:
+        source:
+          - aws.iam
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+          eventName:
+            - CreateUser
+            - DeleteUser
+            - CreateAccessKey
+            - DeleteAccessKey
+            - UpdateAccessKey
+            - AttachUserPolicy
+            - DetachUserPolicy
+            - PutUserPolicy
+            - DeleteUserPolicy
+            - CreateLoginProfile
+            - DeleteLoginProfile
+            - UpdateLoginProfile
+            - EnableMFADevice
+            - DeactivateMFADevice
+      State: ENABLED
+      Targets:
+        - Id: iam-user-alert
+          Arn: !If
+            - CreateAlertTopic
+            - !Ref IAMSecurityAlertTopic
+            - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              eventName: $.detail.eventName
+              userName: $.detail.requestParameters.userName
+              userIdentity: $.detail.userIdentity.arn
+              sourceIP: $.detail.sourceIPAddress
+              eventTime: $.detail.eventTime
+            InputTemplate: |
+              "CRITICAL: IAM USER CHANGE DETECTED"
+              ""
+              "Action: <eventName>"
+              "Target User: <userName>"
+              "Performed By: <userIdentity>"
+              "Source IP: <sourceIP>"
+              "Time: <eventTime>"
+              ""
+              "IAM user changes require immediate review."
+              "This may indicate credential compromise or unauthorized access."
+
+  # Rule 3: IAM Policy Changes
+  IAMPolicyChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-sec-iam-policy-changes-${Environment}'
+      Description: Alerts on IAM policy creation or modification
+      EventPattern:
+        source:
+          - aws.iam
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+          eventName:
+            - CreatePolicy
+            - DeletePolicy
+            - CreatePolicyVersion
+            - DeletePolicyVersion
+            - SetDefaultPolicyVersion
+      State: ENABLED
+      Targets:
+        - Id: iam-policy-alert
+          Arn: !If
+            - CreateAlertTopic
+            - !Ref IAMSecurityAlertTopic
+            - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              eventName: $.detail.eventName
+              policyArn: $.detail.requestParameters.policyArn
+              userIdentity: $.detail.userIdentity.arn
+              sourceIP: $.detail.sourceIPAddress
+              eventTime: $.detail.eventTime
+            InputTemplate: |
+              "IAM POLICY CHANGE DETECTED"
+              ""
+              "Action: <eventName>"
+              "Policy: <policyArn>"
+              "Performed By: <userIdentity>"
+              "Source IP: <sourceIP>"
+              "Time: <eventTime>"
+              ""
+              "Review policy changes for potential privilege escalation."
+
+  # Rule 4: Suspicious IAM Activity (Failed Attempts)
+  IAMSuspiciousActivityRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-iam-suspicious-activity-${Environment}'
+      Description: Alerts on failed IAM operations that may indicate attack attempts
+      EventPattern:
+        source:
+          - aws.iam
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+          errorCode:
+            - AccessDenied
+            - UnauthorizedAccess
+            - InvalidIdentityToken
+      State: ENABLED
+      Targets:
+        - Id: iam-suspicious-alert
+          Arn: !If
+            - CreateAlertTopic
+            - !Ref IAMSecurityAlertTopic
+            - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              eventName: $.detail.eventName
+              errorCode: $.detail.errorCode
+              errorMessage: $.detail.errorMessage
+              userIdentity: $.detail.userIdentity.arn
+              sourceIP: $.detail.sourceIPAddress
+              eventTime: $.detail.eventTime
+            InputTemplate: |
+              "SUSPICIOUS IAM ACTIVITY DETECTED"
+              ""
+              "Attempted Action: <eventName>"
+              "Error: <errorCode>"
+              "Message: <errorMessage>"
+              "Attempted By: <userIdentity>"
+              "Source IP: <sourceIP>"
+              "Time: <eventTime>"
+              ""
+              "Multiple failed attempts may indicate an attack."
+              "Consider blocking the source IP if pattern continues."
+
+  # Rule 5: STS AssumeRole from External Accounts
+  CrossAccountAssumeRoleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-cross-account-assume-role-${Environment}'
+      Description: Alerts on cross-account role assumptions
+      EventPattern:
+        source:
+          - aws.sts
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - sts.amazonaws.com
+          eventName:
+            - AssumeRole
+            - AssumeRoleWithSAML
+            - AssumeRoleWithWebIdentity
+      State: ENABLED
+      Targets:
+        - Id: cross-account-alert
+          Arn: !If
+            - CreateAlertTopic
+            - !Ref IAMSecurityAlertTopic
+            - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              eventName: $.detail.eventName
+              roleArn: $.detail.requestParameters.roleArn
+              userIdentity: $.detail.userIdentity.arn
+              sourceIP: $.detail.sourceIPAddress
+              eventTime: $.detail.eventTime
+              principalId: $.detail.userIdentity.principalId
+            InputTemplate: |
+              "ROLE ASSUMPTION DETECTED"
+              ""
+              "Action: <eventName>"
+              "Role Assumed: <roleArn>"
+              "Assumed By: <userIdentity>"
+              "Principal ID: <principalId>"
+              "Source IP: <sourceIP>"
+              "Time: <eventTime>"
+              ""
+              "Review if this assumption is expected."
+
+  # ============================================================
+  # Additional EventBridge Rules for High-Risk Operations
+  # ============================================================
+  # Note: Metric filters removed in favor of EventBridge rules per ADR-059.
+  # Organization CloudTrail delivers events to EventBridge in all accounts,
+  # so EventBridge rules work without account-level CloudTrail log groups.
+
+  # Rule 6: Manual IAM Role Creation (outside CloudFormation/IaC)
+  # Detects roles created directly via console/CLI rather than IaC
+  ManualIAMRoleCreationRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-manual-iam-role-creation-${Environment}'
+      Description: Alerts when IAM roles are created outside CloudFormation
+      EventPattern:
+        source:
+          - aws.iam
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+          eventName:
+            - CreateRole
+          userIdentity:
+            invokedBy:
+              - anything-but: cloudformation.amazonaws.com
+      State: ENABLED
+      Targets:
+        - Id: manual-role-creation-alert
+          Arn: !If
+            - CreateAlertTopic
+            - !Ref IAMSecurityAlertTopic
+            - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              eventName: $.detail.eventName
+              roleName: $.detail.requestParameters.roleName
+              userIdentity: $.detail.userIdentity.arn
+              sourceIP: $.detail.sourceIPAddress
+              eventTime: $.detail.eventTime
+              invokedBy: $.detail.userIdentity.invokedBy
+            InputTemplate: |
+              "MANUAL IAM ROLE CREATION DETECTED"
+              ""
+              "Action: <eventName>"
+              "Role: <roleName>"
+              "Created By: <userIdentity>"
+              "Invoked By: <invokedBy>"
+              "Source IP: <sourceIP>"
+              "Time: <eventTime>"
+              ""
+              "IAM roles should be created via CloudFormation/IaC."
+              "Manual role creation may indicate policy bypass or unauthorized access."
+
+  # Rule 7: High-Risk IAM Operations (Critical Alert)
+  # Covers CreateAccessKey, CreateUser, UpdateAssumeRolePolicy
+  HighRiskIAMOperationsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-high-risk-iam-operations-${Environment}'
+      Description: Alerts on high-risk IAM operations requiring immediate review
+      EventPattern:
+        source:
+          - aws.iam
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+          eventName:
+            - CreateAccessKey
+            - CreateUser
+            - UpdateAssumeRolePolicy
+      State: ENABLED
+      Targets:
+        - Id: high-risk-iam-alert
+          Arn: !If
+            - CreateAlertTopic
+            - !Ref IAMSecurityAlertTopic
+            - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              eventName: $.detail.eventName
+              userName: $.detail.requestParameters.userName
+              roleName: $.detail.requestParameters.roleName
+              userIdentity: $.detail.userIdentity.arn
+              sourceIP: $.detail.sourceIPAddress
+              eventTime: $.detail.eventTime
+            InputTemplate: |
+              "HIGH-RISK IAM OPERATION DETECTED"
+              ""
+              "Action: <eventName>"
+              "Target User: <userName>"
+              "Target Role: <roleName>"
+              "Performed By: <userIdentity>"
+              "Source IP: <sourceIP>"
+              "Time: <eventTime>"
+              ""
+              "This operation requires immediate security review."
+              "CreateAccessKey, CreateUser, and UpdateAssumeRolePolicy are high-risk."
+
+Outputs:
+  IAMSecurityAlertTopicArn:
+    Condition: CreateAlertTopic
+    Description: ARN of the IAM security alerts SNS topic
+    Value: !Ref IAMSecurityAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-iam-security-alerts-topic-${Environment}'
+
+  IAMRoleChangeRuleArn:
+    Description: ARN of the IAM role change detection rule
+    Value: !GetAtt IAMRoleChangeRule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-iam-role-change-rule-${Environment}'
+
+  IAMUserChangeRuleArn:
+    Description: ARN of the IAM user change detection rule
+    Value: !GetAtt IAMUserChangeRule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-iam-user-change-rule-${Environment}'
+
+  ManualIAMRoleCreationRuleArn:
+    Description: ARN of the manual IAM role creation detection rule
+    Value: !GetAtt ManualIAMRoleCreationRule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-manual-iam-role-creation-rule-${Environment}'
+
+  HighRiskIAMOperationsRuleArn:
+    Description: ARN of the high-risk IAM operations detection rule
+    Value: !GetAtt HighRiskIAMOperationsRule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-high-risk-iam-operations-rule-${Environment}'

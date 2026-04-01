@@ -1,0 +1,515 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.9 - Incident Response (Event-Driven RCA)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-12-12'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for incident alerts (optional)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ==========================================================================
+  # KMS Key for DynamoDB Encryption
+  # ==========================================================================
+
+  IncidentResponseKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'KMS key for ${ProjectName} incident response tables (${Environment})'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow DynamoDB Service
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - 'kms:Decrypt'
+              - 'kms:DescribeKey'
+              - 'kms:CreateGrant'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService':
+                  - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+          - Sid: Allow Lambda Service
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - 'kms:Decrypt'
+              - 'kms:GenerateDataKey'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService':
+                  - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-incident-response-kms-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  IncidentResponseKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-incident-response-${Environment}'
+      TargetKeyId: !Ref IncidentResponseKMSKey
+
+  # ==========================================================================
+  # DynamoDB Table: Deployment Events
+  # ==========================================================================
+
+  DeploymentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-deployments-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref IncidentResponseKMSKey
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      AttributeDefinitions:
+        - AttributeName: deployment_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: application_name
+          AttributeType: S
+      KeySchema:
+        - AttributeName: deployment_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: by-application
+          KeySchema:
+            - AttributeName: application_name
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-deployments-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '6'
+        - Key: Purpose
+          Value: 'Deployment correlation for incident response'
+
+  # ==========================================================================
+  # DynamoDB Table: Incident Investigations
+  # ==========================================================================
+
+  InvestigationsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-incident-investigations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref IncidentResponseKMSKey
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      AttributeDefinitions:
+        - AttributeName: incident_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: hitl_status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: incident_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: by-hitl-status
+          KeySchema:
+            - AttributeName: hitl_status
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-incident-investigations-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '6'
+        - Key: Purpose
+          Value: 'RCA investigations with HITL approval tracking'
+
+  # ==========================================================================
+  # EventBridge Event Bus for Incident Events
+  # ==========================================================================
+
+  IncidentEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub '${ProjectName}-incident-events-${Environment}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-incident-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # EventBridge Rule: ArgoCD Deployment Events
+  # ==========================================================================
+
+  ArgoDeploymentEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-argocd-deployments-${Environment}'
+      Description: Captures ArgoCD deployment events for correlation
+      EventBusName: !Ref IncidentEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - argocd
+          - aws.codebuild
+        detail-type:
+          - 'ArgoCD Sync Completed'
+          - 'CodeBuild Build State Change'
+        detail:
+          build-status:
+            - SUCCEEDED
+      Targets:
+        - Id: deployment-recorder
+          Arn: !GetAtt DeploymentRecorderFunction.Arn
+
+  # ==========================================================================
+  # Lambda Function: Deployment Recorder
+  # ==========================================================================
+
+  DeploymentRecorderFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-deployment-recorder-${Environment}'
+      Description: Records ArgoCD deployment events to DynamoDB
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt DeploymentRecorderRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          DEPLOYMENTS_TABLE: !Ref DeploymentsTable
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import boto3
+          from datetime import datetime, timedelta
+          from typing import Dict, Any
+
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table(os.environ['DEPLOYMENTS_TABLE'])
+
+          def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+              """
+              Record deployment events from ArgoCD or CodeBuild to DynamoDB.
+
+              Event sources:
+              - ArgoCD Sync Completed (custom EventBridge events)
+              - CodeBuild Build State Change (AWS native events)
+              """
+              print(f"Received event: {json.dumps(event)}")
+
+              source = event.get('source', '')
+              detail_type = event.get('detail-type', '')
+              detail = event.get('detail', {})
+
+              # Parse deployment data based on source
+              if source == 'argocd':
+                  deployment_data = parse_argocd_event(detail, event.get('time'))
+              elif source == 'aws.codebuild':
+                  deployment_data = parse_codebuild_event(detail, event.get('time'))
+              else:
+                  print(f"Unsupported event source: {source}")
+                  return {'statusCode': 400, 'body': 'Unsupported event source'}
+
+              # Calculate TTL (90 days for dev/qa, 365 days for prod)
+              environment = os.environ.get('ENVIRONMENT', 'dev')
+              ttl_days = 365 if environment == 'prod' else 90
+              ttl_timestamp = int((datetime.utcnow() + timedelta(days=ttl_days)).timestamp())
+
+              deployment_data['ttl'] = ttl_timestamp
+
+              # Write to DynamoDB
+              try:
+                  table.put_item(Item=deployment_data)
+                  print(f"Recorded deployment: {deployment_data['deployment_id']}")
+                  return {'statusCode': 200, 'body': 'Deployment recorded'}
+              except Exception as e:
+                  print(f"Error writing to DynamoDB: {str(e)}")
+                  raise
+
+          def parse_argocd_event(detail: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
+              """Parse ArgoCD sync event."""
+              return {
+                  'deployment_id': detail.get('deployment_id', f"argocd-{timestamp}"),
+                  'timestamp': timestamp or datetime.utcnow().isoformat(),
+                  'application_name': detail.get('application', {}).get('metadata', {}).get('name', 'unknown'),
+                  'commit_sha': detail.get('revision', {}).get('revision', 'unknown'),
+                  'commit_message': detail.get('revision', {}).get('message', ''),
+                  'argocd_sync_status': detail.get('status', {}).get('sync', {}).get('status', 'Unknown'),
+                  'rollout_status': detail.get('status', {}).get('health', {}).get('status', 'Unknown'),
+                  'image_tag': detail.get('images', [{}])[0].get('tag', 'unknown') if detail.get('images') else 'unknown',
+                  'deployed_by': 'argocd',
+                  'source': 'argocd'
+              }
+
+          def parse_codebuild_event(detail: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
+              """Parse CodeBuild build state change event."""
+              project_name = detail.get('project-name', 'unknown')
+              build_id = detail.get('build-id', '').split('/')[-1]
+
+              return {
+                  'deployment_id': f"codebuild-{build_id}",
+                  'timestamp': timestamp or datetime.utcnow().isoformat(),
+                  'application_name': extract_application_from_project(project_name),
+                  'commit_sha': detail.get('additional-information', {}).get('source-version', 'unknown'),
+                  'commit_message': '',
+                  'argocd_sync_status': 'N/A',
+                  'rollout_status': detail.get('build-status', 'Unknown'),
+                  'image_tag': f"build-{build_id}",
+                  'deployed_by': 'codebuild',
+                  'source': 'codebuild'
+              }
+
+          def extract_application_from_project(project_name: str) -> str:
+              """Extract application name from CodeBuild project name."""
+              # Example: "aura-service-api-deploy-dev" -> "aura-api"
+              parts = project_name.split('-')
+              if 'service' in parts:
+                  service_idx = parts.index('service')
+                  if len(parts) > service_idx + 1:
+                      return f"{parts[0]}-{parts[service_idx + 1]}"
+              return project_name
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-deployment-recorder-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  DeploymentRecorderLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${DeploymentRecorderFunction}'
+      RetentionInDays: !If [IsProduction, 365, 90]
+
+  DeploymentRecorderPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeploymentRecorderFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ArgoDeploymentEventRule.Arn
+
+  # ==========================================================================
+  # IAM Role for Deployment Recorder Lambda
+  # ==========================================================================
+
+  DeploymentRecorderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-deployment-recorder-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:UpdateItem'
+                Resource:
+                  - !GetAtt DeploymentsTable.Arn
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                  - 'kms:GenerateDataKey'
+                Resource:
+                  - !GetAtt IncidentResponseKMSKey.Arn
+                Condition:
+                  StringEquals:
+                    'kms:ViaService':
+                      - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-deployment-recorder-role-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # SNS Topic for Incident Alerts
+  # ==========================================================================
+
+  IncidentAlertsSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-incident-alerts-${Environment}'
+      DisplayName: Aura Incident Investigation Alerts
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-incident-alerts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  IncidentAlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref IncidentAlertsSNSTopic
+      Endpoint: !Ref AlertEmail
+
+  # ==========================================================================
+  # CloudWatch Log Groups for Incident Events
+  # ==========================================================================
+
+  IncidentEventLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/events/${ProjectName}-incidents-${Environment}'
+      RetentionInDays: !If [IsProduction, 365, 90]
+
+Outputs:
+  DeploymentsTableName:
+    Description: DynamoDB table for deployment correlation
+    Value: !Ref DeploymentsTable
+    Export:
+      Name: !Sub '${ProjectName}-deployments-table-${Environment}'
+
+  DeploymentsTableArn:
+    Description: ARN of deployments table
+    Value: !GetAtt DeploymentsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-deployments-table-arn-${Environment}'
+
+  InvestigationsTableName:
+    Description: DynamoDB table for incident investigations
+    Value: !Ref InvestigationsTable
+    Export:
+      Name: !Sub '${ProjectName}-investigations-table-${Environment}'
+
+  InvestigationsTableArn:
+    Description: ARN of investigations table
+    Value: !GetAtt InvestigationsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-investigations-table-arn-${Environment}'
+
+  IncidentEventBusName:
+    Description: EventBridge event bus for incident events
+    Value: !Ref IncidentEventBus
+    Export:
+      Name: !Sub '${ProjectName}-incident-event-bus-${Environment}'
+
+  IncidentEventBusArn:
+    Description: ARN of incident event bus
+    Value: !GetAtt IncidentEventBus.Arn
+    Export:
+      Name: !Sub '${ProjectName}-incident-event-bus-arn-${Environment}'
+
+  DeploymentRecorderFunctionArn:
+    Description: ARN of deployment recorder Lambda
+    Value: !GetAtt DeploymentRecorderFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-deployment-recorder-arn-${Environment}'
+
+  IncidentAlertsSNSTopicArn:
+    Description: SNS topic for incident alerts
+    Value: !Ref IncidentAlertsSNSTopic
+    Export:
+      Name: !Sub '${ProjectName}-incident-alerts-topic-${Environment}'
+
+  IncidentResponseKMSKeyId:
+    Description: KMS key for incident response encryption
+    Value: !Ref IncidentResponseKMSKey
+    Export:
+      Name: !Sub '${ProjectName}-incident-response-kms-${Environment}'
+
+  IncidentResponseKMSKeyArn:
+    Description: ARN of incident response KMS key
+    Value: !GetAtt IncidentResponseKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-incident-response-kms-arn-${Environment}'

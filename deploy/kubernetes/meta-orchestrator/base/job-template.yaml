@@ -1,0 +1,230 @@
+# Project Aura - MetaOrchestrator Job Template
+#
+# This template defines the Kubernetes Job specification for MetaOrchestrator
+# autonomous task execution. Jobs are created by the orchestrator-dispatcher
+# Lambda when critical security events are detected.
+#
+# Architecture:
+#   EventBridge -> Lambda -> SQS -> Dispatcher Lambda -> This Job
+#
+# Execution time: 5-30 minutes (activeDeadlineSeconds: 1800)
+# Retry policy: 2 retries on failure (backoffLimit: 2)
+# Cleanup: Automatic after 1 hour (ttlSecondsAfterFinished: 3600)
+#
+# Variables to substitute (done by dispatcher Lambda):
+#   ${JOB_ID} - Unique job identifier
+#   ${TASK_ID} - Original task identifier from SQS
+#   ${TASK_PAYLOAD_B64} - Base64-encoded task payload
+#   ${ENVIRONMENT} - dev/qa/prod
+#   ${IMAGE_TAG} - Container image tag
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_ID}
+  namespace: aura
+  labels:
+    app: meta-orchestrator
+    app.kubernetes.io/name: meta-orchestrator
+    app.kubernetes.io/component: job
+    app.kubernetes.io/part-of: aura
+    job-id: ${JOB_ID}
+    task-id: ${TASK_ID}
+    environment: ${ENVIRONMENT}
+    auto-triggered: "true"
+  annotations:
+    aura.io/task-id: ${TASK_ID}
+    aura.io/dispatched-by: orchestrator-dispatcher-lambda
+    aura.io/dispatched-at: ${DISPATCHED_AT}
+spec:
+  # Cleanup completed jobs after 1 hour
+  ttlSecondsAfterFinished: 3600
+
+  # Retry twice on failure before giving up
+  backoffLimit: 2
+
+  # Maximum execution time: 30 minutes
+  # MetaOrchestrator tasks typically run 5-15 minutes
+  activeDeadlineSeconds: 1800
+
+  # Parallelism settings (one pod per job)
+  parallelism: 1
+  completions: 1
+
+  template:
+    metadata:
+      labels:
+        app: meta-orchestrator
+        app.kubernetes.io/name: meta-orchestrator
+        job-id: ${JOB_ID}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Use IRSA-enabled service account for AWS access
+      serviceAccountName: meta-orchestrator
+
+      # Never restart - let Kubernetes Job handle retries
+      restartPolicy: Never
+
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: orchestrator
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/aura-meta-orchestrator-${ENVIRONMENT}:${IMAGE_TAG}
+          imagePullPolicy: Always
+
+          # Resource requests and limits
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+
+          # Container security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # Environment variables
+          env:
+            # Job identification
+            - name: JOB_ID
+              value: ${JOB_ID}
+            - name: TASK_ID
+              value: ${TASK_ID}
+            - name: TASK_PAYLOAD_B64
+              value: ${TASK_PAYLOAD_B64}
+
+            # Environment configuration
+            - name: ENVIRONMENT
+              value: ${ENVIRONMENT}
+            - name: PROJECT_NAME
+              value: aura
+            - name: LOG_LEVEL
+              value: INFO
+
+            # Service discovery endpoints (via dnsmasq)
+            - name: NEPTUNE_ENDPOINT
+              value: neptune.aura.local:8182
+            - name: OPENSEARCH_ENDPOINT
+              value: opensearch.aura.local:9200
+            - name: BEDROCK_REGION
+              value: ${AWS_REGION}
+
+            # State tracking
+            - name: JOB_STATE_TABLE
+              value: aura-orchestrator-jobs-${ENVIRONMENT}
+
+            # AWS region from downward API
+            - name: AWS_REGION
+              value: ${AWS_REGION}
+            - name: AWS_DEFAULT_REGION
+              value: ${AWS_REGION}
+
+            # Pod metadata via downward API
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+
+          # Load secrets from Kubernetes secret
+          envFrom:
+            - secretRef:
+                name: aura-orchestrator-secrets
+                optional: true
+
+          # Volume mounts
+          volumeMounts:
+            # Temporary directory for scratch space
+            - name: tmp
+              mountPath: /tmp
+            # Cache directory for model artifacts
+            - name: cache
+              mountPath: /home/aura/.cache
+
+          # Health probes (for long-running tasks, use longer intervals)
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30  # Allow 5 minutes for startup
+
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 10
+
+      # Volumes
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: cache
+          emptyDir:
+            sizeLimit: 2Gi
+
+      # Node selection
+      nodeSelector:
+        kubernetes.io/os: linux
+        kubernetes.io/arch: amd64
+
+      # Tolerations for dedicated compute nodes
+      tolerations:
+        - key: workload-type
+          operator: Equal
+          value: compute-intensive
+          effect: NoSchedule
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 300
+
+      # Pod affinity - prefer spreading across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: meta-orchestrator
+                topologyKey: kubernetes.io/hostname
+
+      # Termination grace period (allow cleanup)
+      terminationGracePeriodSeconds: 60
+
+      # DNS configuration for service discovery
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "2"
+          - name: single-request-reopen

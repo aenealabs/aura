@@ -1,0 +1,32 @@
+#!/bin/bash
+# Aura CLI post-installation script
+
+set -e
+
+case "$1" in
+    configure)
+        # Verify installation
+        if /usr/bin/aura --version > /dev/null 2>&1; then
+            echo "Aura CLI installed successfully!"
+            /usr/bin/aura --version
+        fi
+
+        # Create system-wide config directory
+        mkdir -p /etc/aura
+
+        # Set up shell completions
+        if [ -d /etc/bash_completion.d ] && [ -f /usr/share/bash-completion/completions/aura ]; then
+            ln -sf /usr/share/bash-completion/completions/aura /etc/bash_completion.d/aura 2>/dev/null || true
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

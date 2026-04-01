@@ -1,0 +1,243 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.9 - EKS Namespace Controller (Quick Test Environments)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  NamespaceControllerRoleArn:
+    Type: String
+    Description: ARN of the namespace controller Lambda role
+
+  EKSClusterName:
+    Type: String
+    Description: Name of the EKS cluster
+
+  StateTableName:
+    Type: String
+    Description: Name of the test environment state DynamoDB table
+
+  NotificationTopicArn:
+    Type: String
+    Default: ''
+    Description: ARN of the SNS topic for notifications (optional)
+
+  KubectlLayerS3Bucket:
+    Type: String
+    Default: ''
+    Description: S3 bucket containing kubectl layer (leave empty to skip layer creation)
+
+  KubectlLayerS3Key:
+    Type: String
+    Default: 'layers/kubectl-layer.zip'
+    Description: S3 key for kubectl layer zip file
+
+Conditions:
+  HasNotificationTopic: !Not [!Equals [!Ref NotificationTopicArn, '']]
+  CreateKubectlLayer: !Not [!Equals [!Ref KubectlLayerS3Bucket, '']]
+
+Resources:
+  # ==========================================================================
+  # CloudWatch Log Group for Namespace Controller Lambda
+  # ==========================================================================
+  NamespaceControllerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-test-env-namespace-controller-${Environment}'
+      RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Lambda Layer - kubectl binary (conditional)
+  # ==========================================================================
+  KubectlLayer:
+    Type: AWS::Lambda::LayerVersion
+    Condition: CreateKubectlLayer
+    Properties:
+      LayerName: !Sub '${ProjectName}-kubectl-${Environment}'
+      Description: 'kubectl binary for EKS namespace management'
+      Content:
+        S3Bucket: !Ref KubectlLayerS3Bucket
+        S3Key: !Ref KubectlLayerS3Key
+      CompatibleRuntimes:
+        - python3.11
+        - python3.10
+      CompatibleArchitectures:
+        - x86_64
+
+  # ==========================================================================
+  # Lambda Function - EKS Namespace Controller
+  # ==========================================================================
+  NamespaceControllerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-test-env-namespace-controller-${Environment}'
+      Description: 'Manages EKS namespaces for quick test environments'
+      Runtime: python3.11
+      Handler: namespace_controller.handler
+      Role: !Ref NamespaceControllerRoleArn
+      MemorySize: 512
+      Timeout: 120
+      Layers: !If
+        - CreateKubectlLayer
+        - - !Ref KubectlLayer
+        - !Ref AWS::NoValue
+      Code:
+        ZipFile: |
+          """
+          Placeholder for namespace_controller.py
+          Actual code will be deployed via CI/CD pipeline
+          """
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info("Namespace controller placeholder - deploy actual code via CI/CD")
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({'message': 'Placeholder - deploy actual code'})
+              }
+      Environment:
+        Variables:
+          EKS_CLUSTER_NAME: !Ref EKSClusterName
+          STATE_TABLE: !Ref StateTableName
+          SNS_TOPIC: !If [HasNotificationTopic, !Ref NotificationTopicArn, '']
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          METRICS_NAMESPACE: !Sub '${ProjectName}/TestEnvironments'
+          # Default resource quotas for test namespaces
+          DEFAULT_CPU_QUOTA: '2'
+          DEFAULT_MEMORY_QUOTA: '4Gi'
+          DEFAULT_POD_QUOTA: '10'
+          DEFAULT_TTL_HOURS: '4'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-namespace-controller-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: test-environments
+        - Key: Layer
+          Value: '7.9'
+
+  # ==========================================================================
+  # EKS Access Entry for Namespace Controller Role
+  # Allows Lambda to access EKS API via kubectl
+  # ==========================================================================
+  NamespaceControllerAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    Properties:
+      ClusterName: !Ref EKSClusterName
+      PrincipalArn: !Ref NamespaceControllerRoleArn
+      Type: STANDARD
+      AccessPolicies:
+        - PolicyArn: !Sub 'arn:${AWS::Partition}:eks::aws:cluster-access-policy/AmazonEKSEditPolicy'
+          AccessScope:
+            Type: namespace
+            Namespaces:
+              # Allow access to all test environment namespaces (testenv-*)
+              - 'testenv-*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-test-env-namespace-access-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # CloudWatch Alarm - Namespace Controller Errors
+  # ==========================================================================
+  NamespaceControllerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-namespace-errors-${Environment}'
+      AlarmDescription: 'High number of namespace controller Lambda errors'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref NamespaceControllerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # CloudWatch Alarm - Namespace Controller Duration
+  # ==========================================================================
+  NamespaceControllerDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-test-env-namespace-duration-${Environment}'
+      AlarmDescription: 'Namespace controller taking too long (approaching timeout)'
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref NamespaceControllerFunction
+      ExtendedStatistic: p90
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 90000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  NamespaceControllerFunctionArn:
+    Description: ARN of the namespace controller Lambda function
+    Value: !GetAtt NamespaceControllerFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-NamespaceControllerFunctionArn'
+
+  NamespaceControllerFunctionName:
+    Description: Name of the namespace controller Lambda function
+    Value: !Ref NamespaceControllerFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-NamespaceControllerFunctionName'
+
+  KubectlLayerArn:
+    Condition: CreateKubectlLayer
+    Description: ARN of the kubectl Lambda layer
+    Value: !Ref KubectlLayer
+    Export:
+      Name: !Sub '${AWS::StackName}-KubectlLayerArn'
+
+  AccessEntryArn:
+    Description: ARN of the EKS access entry
+    Value: !GetAtt NamespaceControllerAccessEntry.AccessEntryArn
+    Export:
+      Name: !Sub '${AWS::StackName}-AccessEntryArn'

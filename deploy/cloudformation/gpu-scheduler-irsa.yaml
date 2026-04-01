@@ -1,0 +1,172 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.7 - GPU Scheduler IRSA Role'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+  OIDCProviderArn:
+    Type: String
+    Description: ARN of the EKS OIDC provider
+
+  OIDCProviderURL:
+    Type: String
+    Description: URL of the EKS OIDC provider (without https://)
+
+  ServiceAccountNamespace:
+    Type: String
+    Default: aura-gpu-workloads
+    Description: Kubernetes namespace for the GPU scheduler service account
+
+  ServiceAccountName:
+    Type: String
+    Default: gpu-scheduler
+    Description: Kubernetes service account name
+
+Resources:
+  # IAM Policy for gpu-scheduler with least-privilege permissions
+  GPUSchedulerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-gpu-scheduler-policy-${Environment}'
+      Description: !Sub 'Permissions for ${ProjectName}-gpu-scheduler service in ${Environment}'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # SQS FIFO Queue Access (GPU jobs queue)
+          - Sid: SQSGPUJobsQueue
+            Effect: Allow
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:ChangeMessageVisibility
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-gpu-jobs-queue-${Environment}.fifo'
+              - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-gpu-jobs-dlq-${Environment}.fifo'
+
+          # DynamoDB Access (GPU jobs and quotas tables)
+          - Sid: DynamoDBGPUTables
+            Effect: Allow
+            Action:
+              - dynamodb:DescribeTable
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-gpu-jobs-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-gpu-jobs-${Environment}/index/*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-gpu-quotas-${Environment}'
+
+          # S3 Checkpoints Bucket Access
+          - Sid: S3CheckpointsBucket
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:ListBucket
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-gpu-checkpoints-${AWS::AccountId}-${Environment}'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-gpu-checkpoints-${AWS::AccountId}-${Environment}/*'
+
+          # CloudWatch Metrics (for GPU scheduler metrics)
+          - Sid: CloudWatchMetricsAccess
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricData
+            Resource: '*'
+            Condition:
+              StringEquals:
+                cloudwatch:namespace:
+                  - 'Aura/GPUScheduler'
+                  - 'Aura/GPUJobs'
+
+          # CloudWatch Logs (for application logging)
+          - Sid: CloudWatchLogsAccess
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/eks/${ProjectName}-cluster-${Environment}/*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/${Environment}/gpu-scheduler/*'
+
+  # IAM Role for IRSA with OIDC trust policy
+  GPUSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-gpu-scheduler-irsa-role-${Environment}'
+      Description: !Sub 'IRSA role for ${ProjectName}-gpu-scheduler Kubernetes service account'
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCUrl}:aud": "sts.amazonaws.com",
+                      "${OIDCUrl}:sub": "system:serviceaccount:${Namespace}:${SA}"
+                    }
+                  }
+                }
+              ]
+            }
+          - OIDCArn: !Ref OIDCProviderArn
+            OIDCUrl: !Ref OIDCProviderURL
+            Namespace: !Ref ServiceAccountNamespace
+            SA: !Ref ServiceAccountName
+      ManagedPolicyArns:
+        - !Ref GPUSchedulerPolicy
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: IRSA
+        - Key: ServiceAccount
+          Value: !Sub '${ServiceAccountNamespace}/${ServiceAccountName}'
+        - Key: Component
+          Value: gpu-scheduler
+
+Outputs:
+  RoleArn:
+    Description: ARN of the IRSA role for gpu-scheduler
+    Value: !GetAtt GPUSchedulerRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-scheduler-irsa-role-arn-${Environment}'
+
+  PolicyArn:
+    Description: ARN of the IAM policy for gpu-scheduler
+    Value: !Ref GPUSchedulerPolicy
+    Export:
+      Name: !Sub '${ProjectName}-gpu-scheduler-policy-arn-${Environment}'
+
+  ServiceAccountAnnotation:
+    Description: Annotation to add to Kubernetes service account
+    Value: !Sub 'eks.amazonaws.com/role-arn: ${GPUSchedulerRole.Arn}'

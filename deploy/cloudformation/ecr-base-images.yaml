@@ -1,0 +1,378 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.6 - ECR Base Images (Controlled Supply Chain)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Deployment environment
+
+  ImageRetentionCount:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    MaxValue: 100
+    Description: Number of images to retain per tag prefix
+
+Resources:
+  # Alpine base image - used by dnsmasq and other lightweight services
+  AlpineBaseRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-base-images/alpine'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageTagMutability: IMMUTABLE
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCodeBuildPull
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      LifecyclePolicy:
+        LifecyclePolicyText: !Sub |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last ${ImageRetentionCount} images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["3."],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": ${ImageRetentionCount}
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Remove untagged images after 7 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 7
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-base-images-alpine'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: foundation
+        - Key: Purpose
+          Value: base-images
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Node.js base image - used for frontend build stage
+  NodeBaseRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-base-images/node'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageTagMutability: IMMUTABLE
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCodeBuildPull
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      LifecyclePolicy:
+        LifecyclePolicyText: !Sub |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last ${ImageRetentionCount} images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["20-", "22-"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": ${ImageRetentionCount}
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Remove untagged images after 7 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 7
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-base-images-node'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: foundation
+        - Key: Purpose
+          Value: base-images
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Python base image - used for API, agents, and backend services
+  PythonBaseRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-base-images/python'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageTagMutability: IMMUTABLE
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCodeBuildPull
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      LifecyclePolicy:
+        LifecyclePolicyText: !Sub |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last ${ImageRetentionCount} images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["3.11-", "3.12-"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": ${ImageRetentionCount}
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Remove untagged images after 7 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 7
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-base-images-python'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: foundation
+        - Key: Purpose
+          Value: base-images
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Nginx base image - used for frontend runtime stage
+  NginxBaseRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-base-images/nginx'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageTagMutability: IMMUTABLE
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCodeBuildPull
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      LifecyclePolicy:
+        LifecyclePolicyText: !Sub |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last ${ImageRetentionCount} images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["1."],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": ${ImageRetentionCount}
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Remove untagged images after 7 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 7
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-base-images-nginx'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: foundation
+        - Key: Purpose
+          Value: base-images
+        - Key: ManagedBy
+          Value: CloudFormation
+
+Outputs:
+  AlpineRepositoryUri:
+    Description: URI of the Alpine base images repository
+    Value: !GetAtt AlpineBaseRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-AlpineRepositoryUri'
+
+  AlpineRepositoryArn:
+    Description: ARN of the Alpine base images repository
+    Value: !GetAtt AlpineBaseRepository.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AlpineRepositoryArn'
+
+  AlpineRepositoryName:
+    Description: Name of the Alpine base images repository
+    Value: !Sub '${ProjectName}-base-images/alpine'
+    Export:
+      Name: !Sub '${AWS::StackName}-AlpineRepositoryName'
+
+  NodeRepositoryUri:
+    Description: URI of the Node.js base images repository
+    Value: !GetAtt NodeBaseRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-NodeRepositoryUri'
+
+  NodeRepositoryArn:
+    Description: ARN of the Node.js base images repository
+    Value: !GetAtt NodeBaseRepository.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-NodeRepositoryArn'
+
+  NodeRepositoryName:
+    Description: Name of the Node.js base images repository
+    Value: !Sub '${ProjectName}-base-images/node'
+    Export:
+      Name: !Sub '${AWS::StackName}-NodeRepositoryName'
+
+  PythonRepositoryUri:
+    Description: URI of the Python base images repository
+    Value: !GetAtt PythonBaseRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonRepositoryUri'
+
+  PythonRepositoryArn:
+    Description: ARN of the Python base images repository
+    Value: !GetAtt PythonBaseRepository.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonRepositoryArn'
+
+  PythonRepositoryName:
+    Description: Name of the Python base images repository
+    Value: !Sub '${ProjectName}-base-images/python'
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonRepositoryName'
+
+  NginxRepositoryUri:
+    Description: URI of the Nginx base images repository
+    Value: !GetAtt NginxBaseRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-NginxRepositoryUri'
+
+  NginxRepositoryArn:
+    Description: ARN of the Nginx base images repository
+    Value: !GetAtt NginxBaseRepository.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-NginxRepositoryArn'
+
+  NginxRepositoryName:
+    Description: Name of the Nginx base images repository
+    Value: !Sub '${ProjectName}-base-images/nginx'
+    Export:
+      Name: !Sub '${AWS::StackName}-NginxRepositoryName'

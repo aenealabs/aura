@@ -1,0 +1,265 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.3 - Diagram Service IAM Role'
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, qa, staging, prod]
+    Description: Deployment environment
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: aws
+      URLSuffix: amazonaws.com
+    aws-us-gov:
+      Partition: aws-us-gov
+      URLSuffix: amazonaws-us-gov.com
+
+Conditions:
+  IsGovCloud: !Or
+    - !Equals [!Ref 'AWS::Region', 'us-gov-west-1']
+    - !Equals [!Ref 'AWS::Region', 'us-gov-east-1']
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  DiagramServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-diagram-service-${Environment}'
+      Description: IAM role for Enterprise Diagram Generation service (ADR-060)
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: !Sub 'ecs-tasks.${AWS::URLSuffix}'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+      MaxSessionDuration: 3600
+      Policies:
+        - PolicyName: DiagramServicePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Bedrock access - scoped to specific Claude models
+              - Sid: BedrockInvoke
+                Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-opus*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-instant*'
+
+              # SSM Parameter Store for provider API keys and configuration
+              - Sid: SSMParameterAccess
+                Effect: Allow
+                Action: [ssm:GetParameter, ssm:GetParameters, ssm:GetParametersByPath]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/providers/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/diagrams/*'
+
+              # KMS for SSM SecureString decryption
+              - Sid: KMSDecrypt
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  StringEquals:
+                    'kms:ViaService': !Sub 'ssm.${AWS::Region}.${AWS::URLSuffix}'
+
+              # CloudWatch metrics for observability
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': 'Aura/DiagramGeneration'
+
+              # CloudWatch Logs for service logging
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/ecs/${ProjectName}-diagram-service-${Environment}:*'
+
+              # S3 for diagram storage (if enabled)
+              - Sid: S3DiagramStorage
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-diagrams-${Environment}/*'
+                Condition:
+                  StringEquals:
+                    's3:x-amz-acl': 'private'
+
+              # S3 list for diagram browsing
+              - Sid: S3DiagramList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-diagrams-${Environment}'
+                Condition:
+                  StringLike:
+                    's3:prefix':
+                      - 'diagrams/*'
+                      - 'icons/*'
+
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: diagram-generation
+        - Key: CostCenter
+          Value: !Sub '${ProjectName}-${Environment}'
+
+  # SSM Parameters for provider configuration
+  OpenAIEnabledParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/providers/openai/enabled'
+      Type: String
+      Value: 'false'
+      Description: Enable OpenAI provider for diagram generation (disabled in GovCloud)
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  VertexEnabledParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/providers/vertex/enabled'
+      Type: String
+      Value: 'false'
+      Description: Enable Vertex AI provider for diagram generation (disabled in GovCloud)
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # Icon library configuration
+  IconColorModeParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/diagrams/icon-color-mode'
+      Type: String
+      Value: 'native'
+      Description: Default icon color mode (native, aura, monochrome)
+      AllowedPattern: '^(native|aura|monochrome)$'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  DefaultThemeParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/aura/${Environment}/diagrams/default-theme'
+      Type: String
+      Value: 'light'
+      Description: Default diagram theme (light, dark)
+      AllowedPattern: '^(light|dark)$'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # CloudWatch Log Group
+  DiagramServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecs/${ProjectName}-diagram-service-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: diagram-generation
+
+  # CloudWatch Alarms
+  DiagramErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-diagram-error-rate-${Environment}'
+      AlarmDescription: High error rate in diagram generation service
+      MetricName: ProviderFailures
+      Namespace: Aura/DiagramGeneration
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  DiagramLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-diagram-latency-${Environment}'
+      AlarmDescription: High latency in diagram generation
+      MetricName: GenerationLatency
+      Namespace: Aura/DiagramGeneration
+      ExtendedStatistic: p99
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 30000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  DiagramDailyCostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-diagram-daily-cost-${Environment}'
+      AlarmDescription: Daily AI provider cost threshold exceeded
+      MetricName: ProviderCost
+      Namespace: Aura/DiagramGeneration
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !If [IsProd, 500, 100]
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+Outputs:
+  DiagramServiceRoleArn:
+    Description: Diagram service IAM role ARN
+    Value: !GetAtt DiagramServiceRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-diagram-service-role-${Environment}'
+
+  DiagramServiceRoleName:
+    Description: Diagram service IAM role name
+    Value: !Ref DiagramServiceRole
+    Export:
+      Name: !Sub '${ProjectName}-diagram-service-role-name-${Environment}'
+
+  LogGroupName:
+    Description: CloudWatch Log Group name
+    Value: !Ref DiagramServiceLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-diagram-service-logs-${Environment}'
+
+  OpenAIEnabledParamName:
+    Description: SSM parameter for OpenAI enabled flag
+    Value: !Ref OpenAIEnabledParam
+
+  VertexEnabledParamName:
+    Description: SSM parameter for Vertex AI enabled flag
+    Value: !Ref VertexEnabledParam

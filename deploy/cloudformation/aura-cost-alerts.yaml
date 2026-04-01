@@ -1,0 +1,533 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.3 - Cost Alerts (Budgets)'
+
+Mappings:
+  # Mapping for GovCloud partition support
+  # AWS Commercial: aws, AWS GovCloud: aws-us-gov
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name (dev, qa, prod)
+
+  AlertEmail:
+    Type: String
+    Description: Email address for cost alerts
+    AllowedPattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+  DailyBudget:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    MaxValue: 10000
+    Description: Daily spending budget in USD
+
+  MonthlyBudget:
+    Type: Number
+    Default: 300
+    MinValue: 10
+    MaxValue: 100000
+    Description: Monthly spending budget in USD
+
+  EnableBudgetEnforcement:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: 'Enable automatic shutdown when budget exceeded (WARNING: Disruptive)'
+
+Conditions:
+  EnableEnforcement: !Equals [!Ref EnableBudgetEnforcement, 'true']
+
+Resources:
+  # SNS Topic for Cost Alerts
+  CostAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'aura-cost-alerts-${Environment}'
+      DisplayName: Aura Cost Alerts
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+      Tags:
+        - Key: Project
+          Value: Aura
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # SNS Topic Policy
+  CostAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref CostAlertTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowBudgetPublish
+            Effect: Allow
+            Principal:
+              Service: budgets.amazonaws.com
+            Action:
+              - SNS:Publish
+            Resource: !Ref CostAlertTopic
+          - Sid: AllowCloudWatchPublish
+            Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action:
+              - SNS:Publish
+            Resource: !Ref CostAlertTopic
+
+  # AWS Budget - Daily
+  # Note: DAILY budgets only support ACTUAL notifications (not FORECASTED)
+  DailyBudgetResource:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub 'aura-daily-budget-${Environment}'
+        BudgetType: COST
+        TimeUnit: DAILY
+        BudgetLimit:
+          Amount: !Ref DailyBudget
+          Unit: USD
+        CostFilters:
+          TagKeyValue:
+            - !Sub 'user:Project$Aura'
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 70
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref CostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 90
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref CostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref CostAlertTopic
+
+  # AWS Budget - Monthly
+  MonthlyBudgetResource:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub 'aura-monthly-budget-${Environment}'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudget
+          Unit: USD
+        CostFilters:
+          TagKeyValue:
+            - !Sub 'user:Project$Aura'
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 50
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref CostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref CostAlertTopic
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref CostAlertTopic
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref CostAlertTopic
+
+  # CloudWatch Alarm - Bedrock API Costs (Daily)
+  BedrockDailyCostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'aura-bedrock-daily-cost-${Environment}'
+      AlarmDescription: Alert when Bedrock API costs exceed daily budget (cost optimized to weekly eval)
+      MetricName: CostUSD
+      Namespace: Aura/LLM
+      Statistic: Sum
+      Period: 86400  # 1 day in seconds
+      EvaluationPeriods: 7
+      Threshold: !Ref DailyBudget
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref CostAlertTopic
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+
+  # CloudWatch Alarm - Bedrock API Costs (Weekly, approximating monthly)
+  # Note: AWS limits alarms to EvaluationPeriods * Period <= 604800 (1 week)
+  # Using weekly period with 4 evaluation periods is not allowed for long periods
+  # Using daily period (86400) with 7 evaluation periods (1 week window)
+  BedrockMonthlyCostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'aura-bedrock-weekly-cost-${Environment}'
+      AlarmDescription: Alert when weekly Bedrock API costs exceed threshold (monitors for monthly budget pacing)
+      MetricName: CostUSD
+      Namespace: Aura/LLM
+      Statistic: Sum
+      Period: 86400  # 1 day in seconds
+      EvaluationPeriods: 7  # 7-day rolling window
+      Threshold: !GetAtt MonthlyBudgetThreshold.Threshold90
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref CostAlertTopic
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+
+  # Custom resource to calculate 90% threshold
+  MonthlyBudgetThreshold:
+    Type: Custom::CalculateThreshold
+    Properties:
+      ServiceToken: !GetAtt CalculateThresholdFunction.Arn
+      Budget: !Ref MonthlyBudget
+      Percentage: 90
+
+  # Lambda function to calculate threshold
+  CalculateThresholdFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'aura-calculate-threshold-${Environment}'
+      Description: Calculates budget threshold percentages for AWS cost alert notifications
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt CalculateThresholdRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+
+                  budget = float(event['ResourceProperties']['Budget'])
+                  percentage = float(event['ResourceProperties']['Percentage'])
+                  threshold = budget * (percentage / 100)
+
+                  response_data = {
+                      'Threshold90': threshold,
+                      'Threshold80': budget * 0.8,
+                      'Threshold70': budget * 0.7
+                  }
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+
+  CalculateThresholdRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+
+  # CloudWatch Dashboard for Cost Monitoring
+  CostMonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub 'aura-costs-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["Aura/LLM", "CostUSD", {"stat": "Sum", "label": "Total Cost"}]
+                ],
+                "period": 86400,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Daily Bedrock Costs",
+                "yAxis": {
+                  "left": {
+                    "label": "Cost (USD)"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["Aura/LLM", "TokensUsed", {"stat": "Sum"}]
+                ],
+                "period": 3600,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Hourly Token Usage"
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["Aura/LLM", "CostUSD", "Agent", "CoderAgent"],
+                  ["...", "ReviewerAgent"],
+                  ["...", "PlannerAgent"],
+                  ["...", "ValidatorAgent"]
+                ],
+                "period": 86400,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Cost by Agent",
+                "yAxis": {
+                  "left": {
+                    "label": "Cost (USD)"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/Budgets", "ActualCost", "BudgetName", "aura-daily-budget-${Environment}"],
+                  ["...", "aura-monthly-budget-${Environment}"]
+                ],
+                "period": 86400,
+                "stat": "Maximum",
+                "region": "${AWS::Region}",
+                "title": "Budget vs Actual"
+              }
+            }
+          ]
+        }
+
+  # Budget Enforcement Lambda (Optional - Dangerous!)
+  BudgetEnforcementFunction:
+    Type: AWS::Lambda::Function
+    Condition: EnableEnforcement
+    Properties:
+      FunctionName: !Sub 'aura-budget-enforcement-${Environment}'
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt BudgetEnforcementRole.Arn
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          ALERT_TOPIC_ARN: !Ref CostAlertTopic
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import boto3
+
+          sns = boto3.client('sns')
+          ecs = boto3.client('ecs')
+          ec2 = boto3.client('ec2')
+
+          def handler(event, context):
+              """
+              Emergency budget enforcement - stops ECS tasks and scales down EC2.
+              WARNING: This is disruptive! Only enable in non-production.
+              """
+              environment = os.environ['ENVIRONMENT']
+              topic_arn = os.environ['ALERT_TOPIC_ARN']
+
+              # Parse CloudWatch alarm
+              message = json.loads(event['Records'][0]['Sns']['Message'])
+              alarm_name = message['AlarmName']
+
+              if 'monthly' in alarm_name.lower():
+                  # Stop ECS tasks
+                  clusters = ecs.list_clusters()
+                  for cluster_arn in clusters.get('clusterArns', []):
+                      if 'aura' in cluster_arn.lower():
+                          tasks = ecs.list_tasks(cluster=cluster_arn)
+                          for task_arn in tasks.get('taskArns', []):
+                              ecs.stop_task(cluster=cluster_arn, task=task_arn, reason='Budget exceeded')
+
+                  # Scale down EC2 Auto Scaling Groups
+                  asg = boto3.client('autoscaling')
+                  groups = asg.describe_auto_scaling_groups()
+                  for group in groups['AutoScalingGroups']:
+                      if 'aura' in group['AutoScalingGroupName'].lower():
+                          asg.update_auto_scaling_group(
+                              AutoScalingGroupName=group['AutoScalingGroupName'],
+                              MinSize=0,
+                              DesiredCapacity=0
+                          )
+
+                  # Send critical alert
+                  sns.publish(
+                      TopicArn=topic_arn,
+                      Subject=f'CRITICAL: Aura Budget Enforcement Triggered ({environment})',
+                      Message=f"""BUDGET EXCEEDED - EMERGENCY SHUTDOWN
+
+          Environment: {environment}
+          Alarm: {alarm_name}
+          Timestamp: {message['StateChangeTime']}
+
+          Actions Taken:
+          - Stopped all ECS tasks
+          - Scaled down EC2 Auto Scaling Groups to 0
+
+          To resume operations:
+          1. Investigate cost spike
+          2. Increase budget limits
+          3. Manually restart services
+          4. Consider disabling budget enforcement for production
+
+          This is an automated response to prevent runaway costs.
+          """
+                  )
+
+              return {'statusCode': 200, 'body': 'Budget enforcement executed'}
+
+  BudgetEnforcementRole:
+    Type: AWS::IAM::Role
+    Condition: EnableEnforcement
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+      Policies:
+        - PolicyName: BudgetEnforcementPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # List operations require '*' - AWS does not support resource-level permissions
+              - Effect: Allow
+                Action:
+                  - ecs:ListClusters
+                  - ecs:ListTasks
+                  - autoscaling:DescribeAutoScalingGroups
+                Resource: '*'
+              # Scoped ECS actions to Aura clusters only
+              - Effect: Allow
+                Action:
+                  - ecs:StopTask
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/aura-*/*'
+              # Scoped AutoScaling actions to Aura groups only
+              - Effect: Allow
+                Action:
+                  - autoscaling:UpdateAutoScalingGroup
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/aura-*'
+              # SNS publish scoped to cost alert topic only
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Ref CostAlertTopic
+
+  # SNS Subscription for Budget Enforcement Lambda
+  BudgetEnforcementSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: EnableEnforcement
+    Properties:
+      Protocol: lambda
+      TopicArn: !Ref CostAlertTopic
+      Endpoint: !GetAtt BudgetEnforcementFunction.Arn
+
+  # Lambda Permission for SNS to invoke
+  BudgetEnforcementInvokePermission:
+    Type: AWS::Lambda::Permission
+    Condition: EnableEnforcement
+    Properties:
+      FunctionName: !Ref BudgetEnforcementFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref CostAlertTopic
+
+Outputs:
+  CostAlertTopicArn:
+    Description: SNS Topic ARN for cost alerts
+    Value: !Ref CostAlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-CostAlertTopic'
+
+  DailyBudgetName:
+    Description: Daily budget name
+    Value: !Sub 'aura-daily-budget-${Environment}'
+
+  MonthlyBudgetName:
+    Description: Monthly budget name
+    Value: !Sub 'aura-monthly-budget-${Environment}'
+
+  CostDashboardURL:
+    Description: CloudWatch Dashboard URL
+    Value: !Sub 'https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=aura-costs-${Environment}'
+
+  BudgetEnforcementEnabled:
+    Description: Whether budget enforcement is enabled
+    Value: !If [EnableEnforcement, 'true', 'false']

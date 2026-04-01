@@ -1,0 +1,658 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.3 - Bedrock (LLM Integration)'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Environment Configuration"
+        Parameters:
+          - Environment
+          - Owner
+          - CostCenter
+      - Label:
+          default: "Budget Configuration"
+        Parameters:
+          - AlertEmail
+          - DailyBudgetUSD
+          - DailyBudget70Percent
+          - DailyBudget90Percent
+          - MonthlyBudgetUSD
+          - MonthlyBudget80Percent
+    ParameterLabels:
+      Environment:
+        default: "Environment (dev/staging/prod)"
+      Owner:
+        default: "Resource Owner Email"
+      CostCenter:
+        default: "Cost Center"
+      AlertEmail:
+        default: "Email for Budget Alerts"
+      DailyBudgetUSD:
+        default: "Daily Budget (USD)"
+      DailyBudget70Percent:
+        default: "70% Daily Budget Threshold"
+      DailyBudget90Percent:
+        default: "90% Daily Budget Threshold"
+      MonthlyBudgetUSD:
+        default: "Monthly Budget (USD)"
+      MonthlyBudget80Percent:
+        default: "80% Monthly Budget Threshold"
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # DailyBudgetUSD is used for documentation and manual threshold calculation
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Deployment environment (affects naming and tagging)
+
+  Owner:
+    Type: String
+    Default: security-team@company.com
+    Description: Email of team/person responsible for these resources
+
+  CostCenter:
+    Type: String
+    Default: r-and-d
+    AllowedValues:
+      - r-and-d
+      - security
+      - engineering
+      - operations
+    Description: Cost center for billing/chargeback
+
+  AlertEmail:
+    Type: String
+    Description: Email address to receive budget alerts
+    AllowedPattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    ConstraintDescription: Must be a valid email address
+
+  DailyBudgetUSD:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: Daily LLM API budget in USD
+
+  MonthlyBudgetUSD:
+    Type: Number
+    Default: 100
+    MinValue: 1
+    Description: Monthly LLM API budget in USD
+
+  # Calculated threshold parameters (CloudFormation doesn't support math expressions)
+  DailyBudget70Percent:
+    Type: Number
+    Default: 7
+    Description: 70% of daily budget (for warning alarm) - update this when changing DailyBudgetUSD
+
+  DailyBudget90Percent:
+    Type: Number
+    Default: 9
+    Description: 90% of daily budget (for critical alarm) - update this when changing DailyBudgetUSD
+
+  MonthlyBudget80Percent:
+    Type: Number
+    Default: 80
+    Description: 80% of monthly budget (for warning alarm) - update this when changing MonthlyBudgetUSD
+
+Mappings:
+  EnvironmentConfig:
+    dev:
+      ShortName: dev
+      LogRetentionDays: 7
+      ModelPrimary: anthropic.claude-3-haiku-20240307-v1:0
+      Schedule: business-hours
+      Monitoring: standard
+    qa:
+      ShortName: qa
+      LogRetentionDays: 30
+      ModelPrimary: anthropic.claude-3-5-sonnet-20241022-v1:0
+      Schedule: business-hours-plus
+      Monitoring: standard
+    prod:
+      ShortName: prod
+      LogRetentionDays: 90
+      ModelPrimary: anthropic.claude-3-5-sonnet-20241022-v1:0
+      Schedule: 24x7
+      Monitoring: critical
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ============================================================================
+  # IAM Role for Aura Service
+  # ============================================================================
+
+  AuraServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      # Naming: aura-role-{env}-bedrock-service
+      RoleName:
+        Fn::Sub:
+          - 'aura-role-${EnvShort}-bedrock-service'
+          - EnvShort:
+              Fn::FindInMap:
+                - EnvironmentConfig
+                - Ref: Environment
+                - ShortName
+      Description: !Sub 'Service role for Project Aura Bedrock integration (${Environment})'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ecs-tasks.amazonaws.com
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Tags:
+        # Mandatory tags
+        - Key: Name
+          Value: !Sub 'aura-bedrock-service-role-${Environment}'
+        - Key: Project
+          Value: Aura
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: ManagedBy
+          Value: CloudFormation
+        # Recommended tags
+        - Key: Application
+          Value: bedrock-service
+        - Key: Compliance
+          Value: !If [IsProduction, 'SOX-CMMC', 'Internal']
+        - Key: DataClassification
+          Value: internal
+
+  AuraServicePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      # Naming: aura-policy-{env}-bedrock
+      PolicyName:
+        Fn::Sub:
+          - 'aura-policy-${EnvShort}-bedrock'
+          - EnvShort:
+              Fn::FindInMap:
+                - EnvironmentConfig
+                - Ref: Environment
+                - ShortName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: BedrockInvokeModel
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource:
+              - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v1:0'
+              - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0'
+          - Sid: SecretsManagerRead
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+            Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:aura/${Environment}/*'
+          - Sid: DynamoDBCostTracking
+            Effect: Allow
+            Action:
+              - dynamodb:PutItem
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !GetAtt LLMCostTable.Arn
+              - !Sub '${LLMCostTable.Arn}/index/*'
+          - Sid: CloudWatchMetrics
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricData
+            Resource: '*'
+            Condition:
+              StringEquals:
+                cloudwatch:namespace: Aura/LLM
+          - Sid: CloudWatchLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/aura/*'
+      Roles:
+        - !Ref AuraServiceRole
+
+  AuraInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      # Naming: aura-profile-{env}-ecs
+      InstanceProfileName:
+        Fn::Sub:
+          - 'aura-profile-${EnvShort}-ecs'
+          - EnvShort:
+              Fn::FindInMap:
+                - EnvironmentConfig
+                - Ref: Environment
+                - ShortName
+      Roles:
+        - !Ref AuraServiceRole
+
+  # ============================================================================
+  # DynamoDB Table for Cost Tracking
+  # ============================================================================
+
+  LLMCostTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      # Naming: aura-ddb-{env}-llm-costs
+      TableName:
+        Fn::Sub:
+          - 'aura-ddb-${EnvShort}-llm-costs'
+          - EnvShort:
+              Fn::FindInMap:
+                - EnvironmentConfig
+                - Ref: Environment
+                - ShortName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: request_id
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+        - AttributeName: month
+          AttributeType: S
+      KeySchema:
+        - AttributeName: request_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: date-index
+          KeySchema:
+            - AttributeName: date
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: month-index
+          KeySchema:
+            - AttributeName: month
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        # Mandatory tags
+        - Key: Name
+          Value: !Sub 'aura-llm-cost-tracking-${Environment}'
+        - Key: Project
+          Value: Aura
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: ManagedBy
+          Value: CloudFormation
+        # Recommended tags
+        - Key: Application
+          Value: cost-tracking
+        - Key: BackupPolicy
+          Value: point-in-time-recovery
+        - Key: DataClassification
+          Value: internal
+        - Key: Compliance
+          Value: !If [IsProduction, 'SOX', 'Internal']
+
+  # ============================================================================
+  # Secrets Manager for Configuration
+  # ============================================================================
+
+  BedrockConfigSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      # Naming: aura/{environment}/bedrock
+      Name: !Sub 'aura/${Environment}/bedrock'
+      Description: !Sub 'Bedrock configuration for Project Aura ${Environment} environment'
+      SecretString:
+        Fn::Sub:
+          - |
+            {
+              "model_id_primary": "${ModelPrimary}",
+              "model_id_fallback": "anthropic.claude-3-haiku-20240307-v1:0",
+              "max_tokens_default": 4096,
+              "temperature_default": 0.7
+            }
+          - ModelPrimary:
+              Fn::FindInMap:
+                - EnvironmentConfig
+                - Ref: Environment
+                - ModelPrimary
+      Tags:
+        # Mandatory tags
+        - Key: Name
+          Value: !Sub 'aura-bedrock-config-${Environment}'
+        - Key: Project
+          Value: Aura
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: ManagedBy
+          Value: CloudFormation
+        # Recommended tags
+        - Key: Application
+          Value: bedrock-service
+        - Key: DataClassification
+          Value: confidential
+
+  # ============================================================================
+  # SNS Topic for Budget Alerts
+  # ============================================================================
+
+  BudgetAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      # Naming: aura-sns-{env}-budget-alerts
+      TopicName:
+        Fn::Sub:
+          - 'aura-sns-${EnvShort}-budget-alerts'
+          - EnvShort:
+              Fn::FindInMap:
+                - EnvironmentConfig
+                - Ref: Environment
+                - ShortName
+      DisplayName: !Sub 'Aura LLM Budget Alerts (${Environment})'
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+      Tags:
+        # Mandatory tags
+        - Key: Name
+          Value: !Sub 'aura-budget-alert-topic-${Environment}'
+        - Key: Project
+          Value: Aura
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: ManagedBy
+          Value: CloudFormation
+        # Recommended tags
+        - Key: Application
+          Value: monitoring
+        - Key: Contact
+          Value: !Ref AlertEmail
+
+  # ============================================================================
+  # CloudWatch Alarms for Budget Monitoring
+  # ============================================================================
+
+  DailyBudgetWarningAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      # Naming: aura-alarm-{env}-daily-budget-warning
+      AlarmName:
+        Fn::Sub:
+          - 'aura-alarm-${EnvShort}-daily-budget-warning'
+          - EnvShort:
+              Fn::FindInMap:
+                - EnvironmentConfig
+                - Ref: Environment
+                - ShortName
+      AlarmDescription: !Sub 'Daily LLM costs exceeded 70% of budget (${Environment})'
+      MetricName: CostUSD
+      Namespace: Aura/LLM
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !Ref DailyBudget70Percent
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref BudgetAlertTopic
+      TreatMissingData: notBreaching
+
+  DailyBudgetCriticalAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      # Naming: aura-alarm-{env}-daily-budget-critical
+      AlarmName:
+        Fn::Sub:
+          - 'aura-alarm-${EnvShort}-daily-budget-critical'
+          - EnvShort:
+              Fn::FindInMap:
+                - EnvironmentConfig
+                - Ref: Environment
+                - ShortName
+      AlarmDescription: !Sub 'Daily LLM costs exceeded 90% of budget (${Environment})'
+      MetricName: CostUSD
+      Namespace: Aura/LLM
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !Ref DailyBudget90Percent
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref BudgetAlertTopic
+      TreatMissingData: notBreaching
+
+  MonthlyBudgetWarningAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      # Naming: aura-alarm-{env}-weekly-budget-warning
+      AlarmName:
+        Fn::Sub:
+          - 'aura-alarm-${EnvShort}-weekly-budget-warning'
+          - EnvShort:
+              Fn::FindInMap:
+                - EnvironmentConfig
+                - Ref: Environment
+                - ShortName
+      AlarmDescription: !Sub 'Weekly LLM costs exceeded 80% of budget pro-rata (${Environment})'
+      MetricName: CostUSD
+      Namespace: Aura/LLM
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 7
+      Threshold: !Ref MonthlyBudget80Percent
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref BudgetAlertTopic
+      TreatMissingData: notBreaching
+
+  # ============================================================================
+  # CloudWatch Log Group
+  # ============================================================================
+
+  AuraLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      # Naming: /aws/aura/{env}
+      LogGroupName: !Sub '/aws/aura/${Environment}'
+      RetentionInDays:
+        Fn::FindInMap:
+          - EnvironmentConfig
+          - Ref: Environment
+          - LogRetentionDays
+      Tags:
+        # Mandatory tags (note: CloudWatch Logs has limited tag support)
+        - Key: Name
+          Value: !Sub 'aura-application-logs-${Environment}'
+        - Key: Project
+          Value: Aura
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Application
+          Value: orchestrator
+        - Key: DataClassification
+          Value: internal
+
+  # ============================================================================
+  # AWS Budgets
+  # ============================================================================
+
+  BedrockBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        # Naming: aura-budget-{env}-bedrock
+        BudgetName:
+          Fn::Sub:
+            - 'aura-budget-${EnvShort}-bedrock'
+            - EnvShort:
+                Fn::FindInMap:
+                  - EnvironmentConfig
+                  - Ref: Environment
+                  - ShortName
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUSD
+          Unit: USD
+        TimeUnit: MONTHLY
+        BudgetType: COST
+        CostFilters:
+          Service:
+            - Amazon Bedrock
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+Outputs:
+  StackName:
+    Description: Name of this CloudFormation stack
+    Value: !Ref AWS::StackName
+    Export:
+      Name: !Sub '${AWS::StackName}-StackName'
+
+  Environment:
+    Description: Environment name
+    Value: !Ref Environment
+    Export:
+      Name: !Sub '${AWS::StackName}-Environment'
+
+  ServiceRoleArn:
+    Description: ARN of the Aura service role
+    Value: !GetAtt AuraServiceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ServiceRoleArn'
+
+  ServiceRoleName:
+    Description: Name of the Aura service role
+    Value: !Ref AuraServiceRole
+    Export:
+      Name: !Sub '${AWS::StackName}-ServiceRoleName'
+
+  InstanceProfileArn:
+    Description: ARN of the instance profile for EC2 instances
+    Value: !GetAtt AuraInstanceProfile.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceProfileArn'
+
+  DynamoDBTableName:
+    Description: Name of the DynamoDB cost tracking table
+    Value: !Ref LLMCostTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTableName'
+
+  DynamoDBTableArn:
+    Description: ARN of the DynamoDB cost tracking table
+    Value: !GetAtt LLMCostTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTableArn'
+
+  SecretArn:
+    Description: ARN of the Bedrock configuration secret
+    Value: !Ref BedrockConfigSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-SecretArn'
+
+  SecretName:
+    Description: Name of the Bedrock configuration secret
+    Value: !Sub 'aura/${Environment}/bedrock'
+    Export:
+      Name: !Sub '${AWS::StackName}-SecretName'
+
+  SNSTopicArn:
+    Description: ARN of the budget alerts SNS topic
+    Value: !Ref BudgetAlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-SNSTopicArn'
+
+  LogGroupName:
+    Description: Name of the CloudWatch log group
+    Value: !Ref AuraLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroupName'
+
+  Region:
+    Description: AWS region where resources are deployed
+    Value: !Ref AWS::Region
+
+  AccountId:
+    Description: AWS account ID
+    Value: !Ref AWS::AccountId
+
+  # Summary of all resource names (for easy reference)
+  ResourceNames:
+    Description: Summary of all created resource names
+    Value:
+      Fn::Sub:
+        - |
+          IAM Role: aura-role-${EnvShort}-bedrock-service
+          IAM Policy: aura-policy-${EnvShort}-bedrock
+          Instance Profile: aura-profile-${EnvShort}-ecs
+          DynamoDB Table: aura-ddb-${EnvShort}-llm-costs
+          Secret: aura/${Environment}/bedrock
+          SNS Topic: aura-sns-${EnvShort}-budget-alerts
+          Log Group: /aws/aura/${Environment}
+        - EnvShort:
+            Fn::FindInMap:
+              - EnvironmentConfig
+              - Ref: Environment
+              - ShortName

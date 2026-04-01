@@ -1,0 +1,193 @@
+# Project Aura - Minimal Values
+# Use this file for development, testing, or resource-constrained environments
+#
+# Usage:
+#   helm install aura ./deploy/helm/aura -f ./deploy/helm/aura/values-minimal.yaml
+
+global:
+  deploymentMode: self_hosted
+  edition: community
+  imageRegistry: docker.io/aenealabs
+  imagePullPolicy: IfNotPresent
+
+  tls:
+    enabled: false  # Disable TLS for local development
+
+# License (optional for community)
+license:
+  key: ""
+
+# Core Services (minimal replicas)
+api:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  autoscaling:
+    enabled: false
+  podDisruptionBudget:
+    enabled: false
+  healthChecks:
+    liveness:
+      scheme: HTTP  # No TLS
+    readiness:
+      scheme: HTTP
+
+frontend:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  autoscaling:
+    enabled: false
+  podDisruptionBudget:
+    enabled: false
+  healthChecks:
+    liveness:
+      scheme: HTTP
+    readiness:
+      scheme: HTTP
+
+orchestrator:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  autoscaling:
+    enabled: false
+  podDisruptionBudget:
+    enabled: false
+  healthChecks:
+    liveness:
+      scheme: HTTP
+    readiness:
+      scheme: HTTP
+
+# Minimal databases
+databases:
+  graph:
+    provider: neo4j
+    neo4j:
+      enabled: true
+      edition: community  # Free edition
+      tls:
+        enabled: false
+      persistence:
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+      podDisruptionBudget:
+        enabled: false
+
+  vector:
+    provider: opensearch
+    opensearch:
+      enabled: true
+      replicas: 1
+      tls:
+        enabled: false
+      persistence:
+        size: 20Gi
+      resources:
+        requests:
+          cpu: 500m
+          memory: 2Gi
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+      podDisruptionBudget:
+        enabled: false
+
+  document:
+    provider: postgres
+    postgres:
+      enabled: true
+      tls:
+        enabled: false
+      persistence:
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 250m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      podDisruptionBudget:
+        enabled: false
+
+# Lightweight LLM for testing
+llm:
+  provider: ollama
+  bedrock:
+    enabled: false
+  vllm:
+    enabled: false
+  tgi:
+    enabled: false
+  ollama:
+    enabled: true
+    image:
+      repository: ollama/ollama
+      tag: latest
+    models:
+      - mistral  # Smaller model for testing
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 4Gi
+      limits:
+        cpu: 4000m
+        memory: 8Gi
+    persistence:
+      enabled: true
+      size: 20Gi
+
+# Supporting services
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false  # Simpler for dev
+
+storage:
+  minio:
+    enabled: true
+    persistence:
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# Security (relaxed for dev)
+networkPolicy:
+  enabled: false
+
+# Monitoring (disabled for minimal footprint)
+monitoring:
+  enabled: false
+
+logging:
+  level: debug  # Verbose for development
+  json: false   # Human-readable logs

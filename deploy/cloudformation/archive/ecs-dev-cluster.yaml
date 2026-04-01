@@ -1,0 +1,343 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECS Fargate cluster for Project Aura dev environment'
+
+Parameters:
+  VpcId:
+    Type: String
+    Default: vpc-0123456789abcdef0
+    Description: VPC ID for ECS cluster
+
+  PrivateSubnet1:
+    Type: String
+    Description: First private subnet for Fargate tasks
+
+  PrivateSubnet2:
+    Type: String
+    Description: Second private subnet for Fargate tasks
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name (dev, qa, prod)
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+Resources:
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub aura-${Environment}-cluster
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 4
+          Base: 0
+        - CapacityProvider: FARGATE
+          Weight: 1
+          Base: 0
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # CloudWatch Log Group for all services
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/aura-${Environment}
+      RetentionInDays: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # Service Discovery Namespace
+  ServiceDiscoveryNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub ${Environment}.aura.local
+      Vpc: !Ref VpcId
+      Description: !Sub Service discovery for ${Environment} environment
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # Security Group for Agent Services
+  AgentSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub sg-${Environment}-agents
+      GroupDescription: !Sub Security group for ${Environment} agent tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref AgentSecurityGroup
+          Description: Inter-agent communication
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS for LLM APIs (Bedrock)
+        - IpProtocol: tcp
+          FromPort: 8182
+          ToPort: 8182
+          CidrIp: 10.0.0.0/16
+          Description: Neptune graph database (placeholder - update with actual SG)
+        - IpProtocol: tcp
+          FromPort: 9200
+          ToPort: 9200
+          CidrIp: 10.0.0.0/16
+          Description: OpenSearch vector database (placeholder - update with actual SG)
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          SourceSecurityGroupId: !Ref DNSSecurityGroup
+          Description: DNS queries to dnsmasq
+      Tags:
+        - Key: Name
+          Value: !Sub sg-${Environment}-agents
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # Security Group for DNS Service
+  DNSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub sg-${Environment}-dns
+      GroupDescription: !Sub Security group for ${Environment} dnsmasq service
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 10.0.0.0/16
+          Description: DNS queries from VPC
+        - IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 10.0.0.0/16
+          Description: DNS queries from VPC (TCP)
+      SecurityGroupEgress:
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: Upstream DNS resolution
+        - IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: Upstream DNS resolution (TCP)
+      Tags:
+        - Key: Name
+          Value: !Sub sg-${Environment}-dns
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # Security Group for Sandbox Tasks
+  SandboxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub sg-${Environment}-sandbox-isolated
+      GroupDescription: !Sub Security group for isolated ${Environment} sandbox tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: []  # No inbound connections
+      SecurityGroupEgress:
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          SourceSecurityGroupId: !Ref DNSSecurityGroup
+          Description: DNS resolution for internal services only
+        - IpProtocol: tcp
+          FromPort: 8182
+          ToPort: 8182
+          CidrIp: 10.0.0.0/16
+          Description: Neptune mock endpoint (for testing)
+        - IpProtocol: tcp
+          FromPort: 9200
+          ToPort: 9200
+          CidrIp: 10.0.0.0/16
+          Description: OpenSearch mock endpoint (for testing)
+      Tags:
+        - Key: Name
+          Value: !Sub sg-${Environment}-sandbox-isolated
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # ECS Task Execution Role (used by ECS agent to pull images, write logs)
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ecsTaskExecutionRole-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt ECSLogGroup.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # ECS Task Role (used by application code inside containers)
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ecsTaskRole-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  # Claude models (Anthropic)
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+                  # GPT models (if using cross-region inference)
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-*'
+        - PolicyName: NeptuneAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - neptune-db:connect
+                  - neptune-db:ReadDataViaQuery
+                  - neptune-db:WriteDataViaQuery
+                  - neptune-db:DeleteDataViaQuery
+                  - neptune-db:GetQueryStatus
+                  - neptune-db:CancelQuery
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:neptune-db:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*/*'
+        - PolicyName: OpenSearchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - es:ESHttpGet
+                  - es:ESHttpPut
+                  - es:ESHttpPost
+                  - es:ESHttpDelete
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-*/*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+Outputs:
+  ClusterName:
+    Description: ECS cluster name
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterName
+
+  ClusterArn:
+    Description: ECS cluster ARN
+    Value: !GetAtt ECSCluster.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterArn
+
+  ServiceDiscoveryNamespaceId:
+    Description: Service discovery namespace ID
+    Value: !GetAtt ServiceDiscoveryNamespace.Id
+    Export:
+      Name: !Sub ${AWS::StackName}-NamespaceId
+
+  ServiceDiscoveryNamespaceName:
+    Description: Service discovery namespace name
+    Value: !Sub ${Environment}.aura.local
+    Export:
+      Name: !Sub ${AWS::StackName}-NamespaceName
+
+  AgentSecurityGroupId:
+    Description: Security group ID for agent tasks
+    Value: !Ref AgentSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-AgentSecurityGroup
+
+  DNSSecurityGroupId:
+    Description: Security group ID for DNS tasks
+    Value: !Ref DNSSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-DNSSecurityGroup
+
+  SandboxSecurityGroupId:
+    Description: Security group ID for sandbox tasks
+    Value: !Ref SandboxSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-SandboxSecurityGroup
+
+  ECSTaskExecutionRoleArn:
+    Description: ECS task execution role ARN
+    Value: !GetAtt ECSTaskExecutionRole.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-TaskExecutionRoleArn
+
+  ECSTaskRoleArn:
+    Description: ECS task role ARN
+    Value: !GetAtt ECSTaskRole.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-TaskRoleArn
+
+  LogGroupName:
+    Description: CloudWatch log group name
+    Value: !Ref ECSLogGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-LogGroupName

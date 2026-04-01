@@ -1,0 +1,53 @@
+// Configuration for markdownlint-cli2
+{
+  "config": {
+    "default": true,
+    // Disable line length check (often too strict for technical docs)
+    "MD013": false,
+
+    // MD022: Headers should be surrounded by blank lines
+    "MD022": {
+      "lines_above": 1,
+      "lines_below": 1
+    },
+
+    // MD029: Ordered list item prefix (consistent numbering)
+    "MD029": {
+      "style": "ordered"
+    },
+
+    // MD032: Lists should be surrounded by blank lines
+    "MD032": {
+      "style": "consistent"
+    },
+
+    // MD036: Emphasis used instead of a heading
+    "MD036": {
+      "punctuation": ".,;:!?。，；：！？"
+    },
+
+    // MD041: First line in file should be a top level heading
+    "MD041": false,
+
+    // MD033: Allow inline HTML (useful for technical docs)
+    "MD033": false,
+
+    // MD034: Allow bare URLs
+    "MD034": false
+  },
+
+  // Files to lint
+  "globs": [
+    "**/*.md"
+  ],
+
+  // Files/directories to ignore
+  "ignores": [
+    "node_modules/**",
+    ".git/**",
+    "vendor/**"
+  ],
+
+  // Fix issues automatically when possible
+  "fix": false
+}

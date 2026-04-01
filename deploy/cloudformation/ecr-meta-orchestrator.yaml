@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.6 - ECR Meta Orchestrator (Pipeline Job Coordinator Registry)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  MetaOrchestratorRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-meta-orchestrator-${Environment}'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      # MUTABLE allows :latest tag updates (common for dev/qa)
+      # Consider IMMUTABLE for production with semantic versioning
+      ImageTagMutability: MUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 20 tagged images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["v", "latest", "dev", "qa", "prod"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Delete untagged images older than 14 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 14
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: meta-orchestrator
+        - Key: Layer
+          Value: '4'
+
+Outputs:
+  RepositoryUri:
+    Description: ECR Repository URI for Meta Orchestrator image
+    Value: !GetAtt MetaOrchestratorRepository.RepositoryUri
+    Export:
+      Name: !Sub '${ProjectName}-ecr-meta-orchestrator-${Environment}-RepositoryUri'
+
+  RepositoryArn:
+    Description: ECR Repository ARN
+    Value: !GetAtt MetaOrchestratorRepository.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ecr-meta-orchestrator-${Environment}-RepositoryArn'
+
+  RepositoryName:
+    Description: ECR Repository Name
+    Value: !Ref MetaOrchestratorRepository
+    Export:
+      Name: !Sub '${ProjectName}-ecr-meta-orchestrator-${Environment}-RepositoryName'

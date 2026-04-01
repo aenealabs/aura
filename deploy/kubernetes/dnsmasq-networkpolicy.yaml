@@ -1,0 +1,268 @@
+---
+# Project Aura - dnsmasq NetworkPolicy
+#
+# Restricts network access to/from dnsmasq pods for security
+#
+# Security benefits:
+#   - Limits ingress to DNS ports only
+#   - Restricts egress to upstream DNS servers
+#   - Prevents lateral movement in case of compromise
+#
+# To deploy:
+#   kubectl apply -f dnsmasq-networkpolicy.yaml
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dnsmasq-network-policy
+  namespace: aura-network-services
+  labels:
+    app: dnsmasq
+    component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: dnsmasq
+  policyTypes:
+  - Ingress
+  - Egress
+
+  # Ingress rules: Allow DNS queries from anywhere in cluster
+  ingress:
+  # Allow DNS queries (TCP)
+  - from:
+    - namespaceSelector: {}  # Allow from all namespaces
+    ports:
+    - protocol: TCP
+      port: 5353
+
+  # Allow DNS queries (UDP)
+  - from:
+    - namespaceSelector: {}  # Allow from all namespaces
+    ports:
+    - protocol: UDP
+      port: 5353
+
+  # Allow Prometheus metrics scraping
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 9153
+
+  # Egress rules: Allow upstream DNS and required services
+  egress:
+  # Allow DNS queries to upstream servers (UDP/TCP port 53)
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # Allow queries to AWS VPC DNS (10.0.0.0/16)
+  - to:
+    - ipBlock:
+        cidr: 10.0.0.0/16
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # Allow queries to Cloudflare DNS (1.1.1.1, 1.0.0.1)
+  - to:
+    - ipBlock:
+        cidr: 1.1.1.1/32
+    - ipBlock:
+        cidr: 1.0.0.1/32
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # Allow queries to Google DNS (8.8.8.8, 8.8.4.4)
+  - to:
+    - ipBlock:
+        cidr: 8.8.8.8/32
+    - ipBlock:
+        cidr: 8.8.4.4/32
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # Allow queries to Quad9 DNS (9.9.9.9)
+  - to:
+    - ipBlock:
+        cidr: 9.9.9.9/32
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # Allow Kubernetes CoreDNS queries
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    - podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # Allow HTTPS for DNSSEC (port 443)
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 169.254.169.254/32  # Block AWS metadata service
+        - 10.0.0.0/8           # Block private networks
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 443
+
+---
+# Stricter NetworkPolicy for production (optional)
+# This version only allows ingress from specific namespaces
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dnsmasq-strict-network-policy
+  namespace: aura-network-services
+  labels:
+    app: dnsmasq
+    component: security
+    environment: production
+spec:
+  podSelector:
+    matchLabels:
+      app: dnsmasq
+  policyTypes:
+  - Ingress
+  - Egress
+
+  # Stricter ingress: Only from aura application namespaces
+  ingress:
+  # Allow DNS from aura-agents namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: aura-agents
+    ports:
+    - protocol: TCP
+      port: 5353
+    - protocol: UDP
+      port: 5353
+
+  # Allow DNS from aura-services namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: aura-services
+    ports:
+    - protocol: TCP
+      port: 5353
+    - protocol: UDP
+      port: 5353
+
+  # Allow DNS from default namespace (if needed)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: default
+    ports:
+    - protocol: TCP
+      port: 5353
+    - protocol: UDP
+      port: 5353
+
+  # Allow metrics from monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9153
+
+  # Egress rules (same as above)
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 10.0.0.0/16
+    - ipBlock:
+        cidr: 1.1.1.1/32
+    - ipBlock:
+        cidr: 1.0.0.1/32
+    - ipBlock:
+        cidr: 8.8.8.8/32
+    - ipBlock:
+        cidr: 8.8.4.4/32
+    - ipBlock:
+        cidr: 9.9.9.9/32
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+    - protocol: TCP
+      port: 443
+
+  # Allow Kubernetes DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+# Usage Instructions:
+#
+# 1. Deploy standard NetworkPolicy (permissive - allows from all namespaces):
+#    kubectl apply -f dnsmasq-networkpolicy.yaml
+#    kubectl get networkpolicy -n aura-network-services dnsmasq-network-policy
+#
+# 2. For production, use strict policy (requires namespace labels):
+#    # First, label your namespaces:
+#    kubectl label namespace aura-agents name=aura-agents
+#    kubectl label namespace aura-services name=aura-services
+#    kubectl label namespace monitoring name=monitoring
+#
+#    # Then apply strict policy:
+#    kubectl apply -f dnsmasq-networkpolicy.yaml
+#    kubectl get networkpolicy -n aura-network-services dnsmasq-strict-network-policy
+#
+# 3. Test DNS access:
+#    # From allowed namespace:
+#    kubectl run test -it --rm --image=alpine --namespace=aura-agents -- \
+#      nslookup -port=5353 google.com <dnsmasq-pod-ip>
+#
+#    # From denied namespace (should fail with strict policy):
+#    kubectl run test -it --rm --image=alpine --namespace=unauthorized -- \
+#      nslookup -port=5353 google.com <dnsmasq-pod-ip>
+#
+# 4. View NetworkPolicy details:
+#    kubectl describe networkpolicy dnsmasq-network-policy -n aura-network-services
+#
+# 5. Monitor policy violations (requires CNI plugin support):
+#    kubectl logs -n kube-system -l component=cilium --tail=100 | grep -i "denied"

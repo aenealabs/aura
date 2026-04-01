@@ -1,0 +1,324 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Documentation Agent CodeBuild Project (Layer 6.12: Cloud Discovery, Calibration Pipeline)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    AllowedValues: [main, develop]
+    Description: GitHub branch to build from
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Resources:
+  # S3 Bucket for Documentation Artifacts
+  DocumentationArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-documentation-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 90
+            NoncurrentVersionExpirationInDays: 30
+          - Id: TransitionToIntelligentTiering
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 0
+                StorageClass: INTELLIGENT_TIERING
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: documentation
+
+  # CloudWatch Log Group for Documentation Builds
+  DocumentationBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-documentation-deploy-${Environment}'
+      RetentionInDays: 30
+
+  # IAM Role for Documentation CodeBuild
+  DocumentationCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-documentation-codebuild-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/ReadOnlyAccess'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+      Policies:
+        - PolicyName: DocumentationDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:PutRetentionPolicy, logs:TagResource, logs:DeleteLogGroup]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-documentation-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-documentation-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-calibration-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-calibration-*:*'
+
+              # CloudWatch Metrics
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/CICD/Serverless'
+
+              # CloudWatch Alarms
+              - Effect: Allow
+                Action: [cloudwatch:PutMetricAlarm, cloudwatch:DeleteAlarms, cloudwatch:DescribeAlarms]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-calibration-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-discovery-*'
+
+              # CloudWatch Dashboards
+              - Effect: Allow
+                Action: [cloudwatch:PutDashboard, cloudwatch:DeleteDashboards, cloudwatch:GetDashboard]
+                Resource: !Sub 'arn:${AWS::Partition}:cloudwatch::${AWS::AccountId}:dashboard/${ProjectName}-*'
+
+              # S3 - Documentation artifacts bucket
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject, s3:ListBucket]
+                Resource:
+                  - !GetAtt DocumentationArtifactsBucket.Arn
+                  - !Sub '${DocumentationArtifactsBucket.Arn}/*'
+
+              # S3 - Calibration bucket (created by calibration-pipeline.yaml)
+              - Effect: Allow
+                Action: [s3:CreateBucket, s3:DeleteBucket, s3:GetBucketPolicy, s3:PutBucketPolicy, s3:DeleteBucketPolicy, s3:GetBucketVersioning, s3:PutBucketVersioning, s3:GetBucketEncryption, s3:PutBucketEncryption, s3:PutEncryptionConfiguration, s3:GetLifecycleConfiguration, s3:PutLifecycleConfiguration, s3:PutBucketPublicAccessBlock, s3:GetBucketPublicAccessBlock, s3:GetBucketTagging, s3:PutBucketTagging, s3:GetObject, s3:PutObject, s3:DeleteObject, s3:ListBucket]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-calibration-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-calibration-${Environment}/*'
+
+              # CloudFormation - Documentation stacks
+              - Effect: Allow
+                Action: [cloudformation:CreateStack, cloudformation:UpdateStack, cloudformation:DeleteStack, cloudformation:CreateChangeSet, cloudformation:ExecuteChangeSet, cloudformation:DeleteChangeSet, cloudformation:DescribeChangeSet, cloudformation:DescribeStacks, cloudformation:DescribeStackEvents, cloudformation:DescribeStackResources, cloudformation:GetTemplate, cloudformation:ValidateTemplate, cloudformation:GetTemplateSummary]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-cloud-discovery-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-calibration-pipeline-${Environment}/*'
+
+              # DynamoDB - All documentation tables (cloud-discovery + calibration)
+              - Effect: Allow
+                Action: [dynamodb:CreateTable, dynamodb:DeleteTable, dynamodb:DescribeTable, dynamodb:UpdateTable, dynamodb:UpdateTimeToLive, dynamodb:DescribeTimeToLive, dynamodb:TagResource, dynamodb:UntagResource, dynamodb:DescribeContinuousBackups, dynamodb:UpdateContinuousBackups, dynamodb:CreateGlobalSecondaryIndex, dynamodb:DeleteGlobalSecondaryIndex, dynamodb:UpdateGlobalSecondaryIndex]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-cloud-discovery-results-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-cloud-discovery-results-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-cloud-credentials-config-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-cloud-credentials-config-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-documentation-feedback-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-documentation-feedback-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-calibration-history-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-calibration-history-${Environment}/*'
+
+              # Lambda - Calibration functions
+              - Effect: Allow
+                Action: [lambda:CreateFunction, lambda:DeleteFunction, lambda:GetFunction, lambda:GetFunctionConfiguration, lambda:UpdateFunctionCode, lambda:UpdateFunctionConfiguration, lambda:AddPermission, lambda:RemovePermission, lambda:TagResource, lambda:UntagResource, lambda:PutFunctionConcurrency, lambda:DeleteFunctionConcurrency]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-calibration-*'
+
+              # EventBridge - Calibration scheduler
+              - Effect: Allow
+                Action: [events:PutRule, events:DeleteRule, events:DescribeRule, events:PutTargets, events:RemoveTargets, events:EnableRule, events:DisableRule, events:ListTargetsByRule, events:TagResource, events:UntagResource]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-calibration-*'
+
+              # SNS - Calibration notifications
+              - Effect: Allow
+                Action: [sns:CreateTopic, sns:DeleteTopic, sns:GetTopicAttributes, sns:SetTopicAttributes, sns:Subscribe, sns:Unsubscribe, sns:TagResource, sns:UntagResource, sns:ListTagsForResource]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-calibration-*'
+
+              # IAM Role Management (for Lambda and cloud-discovery roles)
+              - Effect: Allow
+                Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:TagRole, iam:UntagRole, iam:ListAttachedRolePolicies, iam:ListRolePolicies]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-calibration-lambda-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cloud-discovery-service-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-discovery-target-${Environment}'
+
+              # IAM Pass Role (for Lambda and EKS)
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-calibration-lambda-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cloud-discovery-service-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-discovery-target-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: [lambda.amazonaws.com, eks.amazonaws.com]
+
+              # KMS - Read key info for encryption and grant creation for DynamoDB
+              - Effect: Allow
+                Action: [kms:DescribeKey, kms:GenerateDataKey, kms:Decrypt, kms:CreateGrant]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+
+              # SSM Parameter Store
+              - Effect: Allow
+                Action: [ssm:GetParameter, ssm:GetParameters]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/global/*'
+
+              # CodeConnections (for GitHub source access)
+              - Effect: Allow
+                Action: [codeconnections:UseConnection, codeconnections:GetConnectionToken]
+                Resource:
+                  - '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+  # CodeBuild Project for Documentation Agent
+  DocumentationCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    DependsOn: DocumentationCodeBuildRole
+    Properties:
+      Name: !Sub '${ProjectName}-documentation-deploy-${Environment}'
+      Description: 'Project Aura - Documentation Agent CodeBuild Project (Layer 6.12: Cloud Discovery, Calibration Pipeline)'
+      ServiceRole: !GetAtt DocumentationCodeBuildRole.Arn
+      Artifacts:
+        Type: S3
+        Location: !Ref DocumentationArtifactsBucket
+        Name: documentation-artifacts
+        Packaging: ZIP
+        EncryptionDisabled: false
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: LAYER
+            Value: documentation
+          - Name: DOCUMENTATION_ARTIFACTS_BUCKET
+            Value: !Ref DocumentationArtifactsBucket
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-serverless-documentation.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref DocumentationBuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_SOURCE_CACHE
+          - LOCAL_CUSTOM_CACHE
+      TimeoutInMinutes: 20
+      QueuedTimeoutInMinutes: 480
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: documentation
+
+  # CloudWatch Alarm - Documentation Build Failures
+  DocumentationBuildFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-documentation-build-failures-${Environment}'
+      AlarmDescription: 'Alert when Documentation Agent has 2+ failures in 1 hour'
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref DocumentationCodeBuildProject
+      TreatMissingData: notBreaching
+
+Outputs:
+  CodeBuildProjectName:
+    Description: CodeBuild Project Name
+    Value: !Ref DocumentationCodeBuildProject
+    Export:
+      Name: !Sub '${ProjectName}-documentation-codebuild-project-${Environment}'
+
+  CodeBuildProjectArn:
+    Description: CodeBuild Project ARN
+    Value: !GetAtt DocumentationCodeBuildProject.Arn
+    Export:
+      Name: !Sub '${ProjectName}-documentation-codebuild-arn-${Environment}'
+
+  ArtifactsBucketName:
+    Description: S3 Bucket for documentation artifacts
+    Value: !Ref DocumentationArtifactsBucket
+    Export:
+      Name: !Sub '${ProjectName}-documentation-artifacts-bucket-${Environment}'
+
+  CodeBuildRoleArn:
+    Description: IAM Role ARN for CodeBuild
+    Value: !GetAtt DocumentationCodeBuildRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-documentation-codebuild-role-arn-${Environment}'

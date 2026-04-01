@@ -1,0 +1,114 @@
+# Project Aura - API Kustomization (Production Environment)
+# Applies prod-specific configuration to the Aura API
+#
+# Usage:
+#   kubectl apply -k deploy/kubernetes/aura-api/overlays/prod/
+#
+# Prerequisites:
+#   - Update AWS_ACCOUNT_ID with Production account (GovCloud)
+#   - Update AWS_REGION with Production region (us-gov-west-1 or us-gov-east-1)
+#   - Update all endpoint values with Production resources
+#   - Update images.newName with Production ECR repository
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+
+# Environment-specific labels
+labels:
+  - pairs:
+      environment: prod
+      project: aura
+    includeSelectors: false
+
+# Image override for prod environment
+# TODO: Replace with Production AWS Account ID and GovCloud region
+images:
+  - name: aura-api
+    newName: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/aura-api-prod
+    newTag: latest
+
+# Patch ConfigMap with prod-specific values
+# TODO: Replace placeholder values with actual Production environment values
+patches:
+  - target:
+      kind: ConfigMap
+      name: aura-api-config
+    patch: |-
+      - op: add
+        path: /data/ENVIRONMENT
+        value: "prod"
+      - op: add
+        path: /data/AWS_REGION
+        value: "${AWS_REGION}"
+      - op: add
+        path: /data/NEPTUNE_ENDPOINT
+        value: "${NEPTUNE_ENDPOINT}"
+      - op: add
+        path: /data/NEPTUNE_PORT
+        value: "8182"
+      - op: add
+        path: /data/OPENSEARCH_ENDPOINT
+        value: "${OPENSEARCH_ENDPOINT}"
+      - op: add
+        path: /data/OPENSEARCH_PORT
+        value: "443"
+      - op: add
+        path: /data/HITL_SNS_TOPIC_ARN
+        value: "arn:aws-us-gov:sns:${AWS_REGION}:${AWS_ACCOUNT_ID}:aura-hitl-notifications-prod"
+      - op: add
+        path: /data/HITL_DASHBOARD_URL
+        value: "https://aura.aenealabs.com/approvals"
+      - op: add
+        path: /data/APPROVAL_TABLE_NAME
+        value: "aura-approval-requests-prod"
+      - op: add
+        path: /data/WORKFLOW_TABLE_NAME
+        value: "aura-patch-workflows-prod"
+      - op: replace
+        path: /data/LOG_LEVEL
+        value: "WARNING"
+      - op: replace
+        path: /data/DEBUG
+        value: "false"
+  - target:
+      kind: ServiceAccount
+      name: aura-api
+    patch: |-
+      - op: add
+        path: /metadata/annotations/eks.amazonaws.com~1role-arn
+        value: "arn:aws-us-gov:iam::${AWS_ACCOUNT_ID}:role/aura-api-irsa-role-prod"
+      - op: add
+        path: /metadata/labels/environment
+        value: "prod"
+  - target:
+      kind: Rollout
+      name: aura-api
+    patch: |-
+      - op: add
+        path: /metadata/labels/environment
+        value: "prod"
+      - op: add
+        path: /spec/template/metadata/labels/environment
+        value: "prod"
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: Service
+      name: aura-api
+    patch: |-
+      - op: add
+        path: /metadata/labels/environment
+        value: "prod"
+  - target:
+      kind: Service
+      name: aura-api-canary
+    patch: |-
+      - op: add
+        path: /metadata/labels/environment
+        value: "prod"

@@ -1,0 +1,603 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Project Aura - Network Services Stack (dnsmasq)
+
+  Deploys VPC-wide DNS and DHCP services using dnsmasq on AWS Fargate.
+  Provides centralized DNS caching, conditional forwarding, and security filtering
+  for the entire Project Aura VPC.
+
+  Features:
+    - DNS caching and forwarding
+    - Custom .aura.local domain resolution
+    - DNSSEC validation
+    - DNS-based security filtering
+    - Integration with VPC DHCP options
+    - High availability across multiple AZs
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Environment Configuration"
+        Parameters:
+          - Environment
+          - ProjectName
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - PrivateSubnet1Id
+          - PrivateSubnet2Id
+          - VpcCidr
+      - Label:
+          default: "Security Configuration"
+        Parameters:
+          - AllowedCidr
+      - Label:
+          default: "DNS Configuration"
+        Parameters:
+          - DnsPort
+          - CacheSize
+          - UpstreamDnsServers
+      - Label:
+          default: "ECS Configuration"
+        Parameters:
+          - EcsClusterName
+          - TaskCpu
+          - TaskMemory
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name (dev, qa, prod)
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Default: dev
+
+  ProjectName:
+    Type: String
+    Description: Project name used for resource naming
+    Default: aura
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID where network services will be deployed
+
+  PrivateSubnet1Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet 1 ID (AZ-1a)
+
+  PrivateSubnet2Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet 2 ID (AZ-1b)
+
+  VpcCidr:
+    Type: String
+    Description: VPC CIDR block for security group rules
+    Default: 10.0.0.0/16
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  AllowedCidr:
+    Type: String
+    Description: CIDR block allowed to access DNS services (typically VPC CIDR)
+    Default: 10.0.0.0/16
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  DnsPort:
+    Type: Number
+    Description: DNS service port
+    Default: 53
+    MinValue: 1
+    MaxValue: 65535
+
+  CacheSize:
+    Type: Number
+    Description: DNS cache size (number of entries)
+    Default: 10000
+    MinValue: 100
+    MaxValue: 100000
+
+  UpstreamDnsServers:
+    Type: CommaDelimitedList
+    Description: Comma-separated list of upstream DNS servers
+    Default: "1.1.1.1,1.0.0.1,8.8.8.8,8.8.4.4"
+
+  EcsClusterName:
+    Type: String
+    Description: ECS cluster name (leave empty to create new cluster)
+    Default: ""
+
+  TaskCpu:
+    Type: String
+    Description: Fargate task CPU units (256, 512, 1024, 2048, 4096)
+    Default: "512"
+    AllowedValues:
+      - "256"
+      - "512"
+      - "1024"
+      - "2048"
+      - "4096"
+
+  TaskMemory:
+    Type: String
+    Description: Fargate task memory (MB) - must be compatible with CPU
+    Default: "1024"
+    AllowedValues:
+      - "512"
+      - "1024"
+      - "2048"
+      - "4096"
+      - "8192"
+
+Conditions:
+  CreateEcsCluster: !Equals [!Ref EcsClusterName, ""]
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ============================================================================
+  # ECS CLUSTER (if not provided)
+  # ============================================================================
+
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Condition: CreateEcsCluster
+    Properties:
+      ClusterName: !Sub "${ProjectName}-network-services-${Environment}"
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+          Base: 1
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-network-services-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Component
+          Value: network-services
+
+  # ============================================================================
+  # SECURITY GROUP
+  # ============================================================================
+
+  NetworkServicesSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${ProjectName}-network-services-sg-${Environment}"
+      GroupDescription: Security group for dnsmasq network services
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # DNS TCP
+        - IpProtocol: tcp
+          FromPort: !Ref DnsPort
+          ToPort: !Ref DnsPort
+          CidrIp: !Ref AllowedCidr
+          Description: DNS TCP queries from VPC
+        # DNS UDP
+        - IpProtocol: udp
+          FromPort: !Ref DnsPort
+          ToPort: !Ref DnsPort
+          CidrIp: !Ref AllowedCidr
+          Description: DNS UDP queries from VPC
+        # DHCP (optional - disabled by default)
+        # - IpProtocol: udp
+        #   FromPort: 67
+        #   ToPort: 68
+        #   CidrIp: !Ref AllowedCidr
+        #   Description: DHCP requests from VPC
+      SecurityGroupEgress:
+        # Allow all outbound (for upstream DNS queries)
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-network-services-sg-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ============================================================================
+  # IAM ROLE FOR ECS TASK EXECUTION
+  # ============================================================================
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-network-services-execution-role-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt LogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-network-services-execution-role-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # IAM ROLE FOR ECS TASK (application permissions)
+  # ============================================================================
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-network-services-task-role-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchMetricsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: !Sub "${ProjectName}/NetworkServices"
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-network-services-task-role-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # CLOUDWATCH LOG GROUP
+  # ============================================================================
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/ecs/${ProjectName}-network-services-${Environment}"
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-network-services-logs-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # ECS TASK DEFINITION
+  # ============================================================================
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${ProjectName}-network-services-${Environment}"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: dnsmasq
+          # Using official dnsmasq image
+          # For production, replace with custom ECR image built from Rust implementation
+          Image: andyshinn/dnsmasq:2.85
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref DnsPort
+              Protocol: tcp
+              Name: dns-tcp
+            - ContainerPort: !Ref DnsPort
+              Protocol: udp
+              Name: dns-udp
+          Command:
+            - --no-daemon
+            - --keep-in-foreground
+            - --log-queries
+            - !Sub "--cache-size=${CacheSize}"
+            - !Sub "--port=${DnsPort}"
+            - --no-resolv
+            - --server=1.1.1.1
+            - --server=1.0.0.1
+            - --server=8.8.8.8
+            - --server=8.8.4.4
+            - !Sub "--server=${VpcCidr}/10.0.0.2"  # AWS VPC DNS
+            - --local=/aura.local/
+            - --domain=aura.local
+            - --expand-hosts
+            - --dnssec
+            - --stop-dns-rebind
+            - --rebind-localhost-ok
+            - --bogus-priv
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: dnsmasq
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - !Sub "nslookup -port=${DnsPort} google.com 127.0.0.1 || exit 1"
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: PROJECT
+              Value: !Ref ProjectName
+            - Name: VPC_CIDR
+              Value: !Ref VpcCidr
+          # Security: run as non-root user
+          User: "nobody"
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-network-services-task-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # ECS SERVICE
+  # ============================================================================
+
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "${ProjectName}-network-services-${Environment}"
+      Cluster: !If [CreateEcsCluster, !Ref EcsCluster, !Ref EcsClusterName]
+      TaskDefinition: !Ref TaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: 2  # High availability: 2 tasks across 2 AZs
+      HealthCheckGracePeriodSeconds: 60
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref NetworkServicesSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet1Id
+            - !Ref PrivateSubnet2Id
+      # Service discovery integration (optional)
+      # ServiceRegistries:
+      #   - RegistryArn: !GetAtt ServiceDiscoveryService.Arn
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      EnableECSManagedTags: true
+      PropagateTags: TASK_DEFINITION
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-network-services-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # NETWORK LOAD BALANCER (for static DNS endpoint)
+  # ============================================================================
+
+  NetworkLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-dns-nlb-${Environment}"
+      Type: network
+      Scheme: internal
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-dns-nlb-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # DNS TCP Target Group
+  DnsTcpTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-dns-tcp-tg-${Environment}"
+      Port: !Ref DnsPort
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !Ref VpcId
+      HealthCheckEnabled: true
+      HealthCheckProtocol: TCP
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-dns-tcp-tg-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # DNS UDP Target Group
+  DnsUdpTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-dns-udp-tg-${Environment}"
+      Port: !Ref DnsPort
+      Protocol: UDP
+      TargetType: ip
+      VpcId: !Ref VpcId
+      HealthCheckEnabled: true
+      HealthCheckProtocol: TCP
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-dns-udp-tg-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # TCP Listener
+  DnsTcpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Port: !Ref DnsPort
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref DnsTcpTargetGroup
+
+  # UDP Listener
+  DnsUdpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Port: !Ref DnsPort
+      Protocol: UDP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref DnsUdpTargetGroup
+
+  # Auto-attach ECS tasks to target groups
+  EcsServiceTcpTargetGroupAttachment:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - DnsTcpListener
+      - DnsUdpListener
+    Properties:
+      ServiceName: !Sub "${ProjectName}-network-services-${Environment}"
+      Cluster: !If [CreateEcsCluster, !Ref EcsCluster, !Ref EcsClusterName]
+      TaskDefinition: !Ref TaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: 2
+      LoadBalancers:
+        - ContainerName: dnsmasq
+          ContainerPort: !Ref DnsPort
+          TargetGroupArn: !Ref DnsTcpTargetGroup
+        - ContainerName: dnsmasq
+          ContainerPort: !Ref DnsPort
+          TargetGroupArn: !Ref DnsUdpTargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref NetworkServicesSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet1Id
+            - !Ref PrivateSubnet2Id
+
+  # ============================================================================
+  # CLOUDWATCH ALARMS
+  # ============================================================================
+
+  HighCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-network-services-high-cpu-${Environment}"
+      AlarmDescription: Alert when DNS service CPU exceeds 80%
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !If [CreateEcsCluster, !Ref EcsCluster, !Ref EcsClusterName]
+        - Name: ServiceName
+          Value: !GetAtt EcsService.Name
+      TreatMissingData: notBreaching
+
+  HighMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-network-services-high-memory-${Environment}"
+      AlarmDescription: Alert when DNS service memory exceeds 80%
+      MetricName: MemoryUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !If [CreateEcsCluster, !Ref EcsCluster, !Ref EcsClusterName]
+        - Name: ServiceName
+          Value: !GetAtt EcsService.Name
+      TreatMissingData: notBreaching
+
+# ============================================================================
+# OUTPUTS
+# ============================================================================
+
+Outputs:
+  EcsClusterArn:
+    Description: ECS Cluster ARN
+    Value: !If [CreateEcsCluster, !GetAtt EcsCluster.Arn, !Ref EcsClusterName]
+    Export:
+      Name: !Sub "${ProjectName}-network-services-cluster-arn-${Environment}"
+
+  EcsServiceName:
+    Description: ECS Service Name
+    Value: !GetAtt EcsService.Name
+    Export:
+      Name: !Sub "${ProjectName}-network-services-service-name-${Environment}"
+
+  SecurityGroupId:
+    Description: Security Group ID for network services
+    Value: !Ref NetworkServicesSecurityGroup
+    Export:
+      Name: !Sub "${ProjectName}-network-services-sg-id-${Environment}"
+
+  LoadBalancerDnsName:
+    Description: Network Load Balancer DNS name (use as DNS server)
+    Value: !GetAtt NetworkLoadBalancer.DNSName
+    Export:
+      Name: !Sub "${ProjectName}-dns-server-endpoint-${Environment}"
+
+  LoadBalancerArn:
+    Description: Network Load Balancer ARN
+    Value: !Ref NetworkLoadBalancer
+    Export:
+      Name: !Sub "${ProjectName}-dns-nlb-arn-${Environment}"
+
+  LogGroupName:
+    Description: CloudWatch Log Group name
+    Value: !Ref LogGroup
+    Export:
+      Name: !Sub "${ProjectName}-network-services-log-group-${Environment}"
+
+  DnsPort:
+    Description: DNS service port
+    Value: !Ref DnsPort
+    Export:
+      Name: !Sub "${ProjectName}-dns-port-${Environment}"

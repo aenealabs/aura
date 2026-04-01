@@ -1,0 +1,9 @@
+# Project Aura - Argo Rollouts Namespace
+# Part of Progressive Delivery implementation (ADR-022 Phase 3)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argo-rollouts
+  labels:
+    project: aura
+    purpose: progressive-delivery

@@ -1,0 +1,289 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Scheduled auto-scaling for ECS dev environment (scale to zero after hours)'
+
+Parameters:
+  ClusterStackName:
+    Type: String
+    Default: aura-ecs-dev-cluster
+    Description: Name of the cluster stack
+
+  ServicesStackName:
+    Type: String
+    Default: aura-ecs-dev-services
+    Description: Name of the services stack
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name
+
+  ScaleDownSchedule:
+    Type: String
+    Default: 'cron(0 18 ? * MON-FRI *)'
+    Description: Schedule to scale down (weekday off-hours)
+
+  ScaleUpSchedule:
+    Type: String
+    Default: 'cron(0 8 ? * MON-FRI *)'
+    Description: Schedule to scale up (weekday business hours)
+
+  WeekendScaleDownSchedule:
+    Type: String
+    Default: 'cron(0 18 ? * FRI *)'
+    Description: Schedule to scale down for weekend (6pm Friday)
+
+Resources:
+  # IAM Role for EventBridge Scheduler to modify ECS services
+  SchedulerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ecs-scheduler-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ECSUpdateServicePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                Resource: '*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+  # ========================================
+  # Scale DOWN Schedules (6pm Weekdays)
+  # ========================================
+
+  DnsmasqScaleDownSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-dnsmasq-scale-down
+      Description: Scale dnsmasq to 0 tasks at 6pm weekdays
+      ScheduleExpression: !Ref ScaleDownSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "${SandboxECSCluster}",
+            "Service": "dnsmasq-${Environment}",
+            "DesiredCount": 0
+          }
+
+  OrchestratorScaleDownSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-orchestrator-scale-down
+      Description: Scale orchestrator to 0 tasks at 6pm weekdays
+      ScheduleExpression: !Ref ScaleDownSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "aura-${Environment}-cluster",
+            "Service": "orchestrator-${Environment}",
+            "DesiredCount": 0
+          }
+
+  CoderAgentScaleDownSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-coder-agent-scale-down
+      Description: Scale coder-agent to 0 tasks at 6pm weekdays
+      ScheduleExpression: !Ref ScaleDownSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "aura-${Environment}-cluster",
+            "Service": "coder-agent-${Environment}",
+            "DesiredCount": 0
+          }
+
+  ReviewerAgentScaleDownSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-reviewer-agent-scale-down
+      Description: Scale reviewer-agent to 0 tasks at 6pm weekdays
+      ScheduleExpression: !Ref ScaleDownSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "aura-${Environment}-cluster",
+            "Service": "reviewer-agent-${Environment}",
+            "DesiredCount": 0
+          }
+
+  ValidatorAgentScaleDownSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-validator-agent-scale-down
+      Description: Scale validator-agent to 0 tasks at 6pm weekdays
+      ScheduleExpression: !Ref ScaleDownSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "aura-${Environment}-cluster",
+            "Service": "validator-agent-${Environment}",
+            "DesiredCount": 0
+          }
+
+  # ========================================
+  # Scale UP Schedules (8am Weekdays)
+  # ========================================
+
+  DnsmasqScaleUpSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-dnsmasq-scale-up
+      Description: Scale dnsmasq to 2 tasks at 8am weekdays
+      ScheduleExpression: !Ref ScaleUpSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "aura-${Environment}-cluster",
+            "Service": "dnsmasq-${Environment}",
+            "DesiredCount": 2
+          }
+
+  OrchestratorScaleUpSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-orchestrator-scale-up
+      Description: Scale orchestrator to 2 tasks at 8am weekdays
+      ScheduleExpression: !Ref ScaleUpSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "aura-${Environment}-cluster",
+            "Service": "orchestrator-${Environment}",
+            "DesiredCount": 2
+          }
+
+  CoderAgentScaleUpSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-coder-agent-scale-up
+      Description: Scale coder-agent to 2 tasks at 8am weekdays
+      ScheduleExpression: !Ref ScaleUpSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "aura-${Environment}-cluster",
+            "Service": "coder-agent-${Environment}",
+            "DesiredCount": 2
+          }
+
+  ReviewerAgentScaleUpSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-reviewer-agent-scale-up
+      Description: Scale reviewer-agent to 2 tasks at 8am weekdays
+      ScheduleExpression: !Ref ScaleUpSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "aura-${Environment}-cluster",
+            "Service": "reviewer-agent-${Environment}",
+            "DesiredCount": 2
+          }
+
+  ValidatorAgentScaleUpSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Environment}-validator-agent-scale-up
+      Description: Scale validator-agent to 2 tasks at 8am weekdays
+      ScheduleExpression: !Ref ScaleUpSchedule
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ecs:updateService
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {
+            "Cluster": "aura-${Environment}-cluster",
+            "Service": "validator-agent-${Environment}",
+            "DesiredCount": 2
+          }
+
+  # ========================================
+  # CloudWatch Alarms for Cost Monitoring
+  # ========================================
+
+  UnexpectedTasksRunningAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${Environment}-unexpected-tasks-after-hours
+      AlarmDescription: Alert if ECS tasks are running after 7pm on weekdays
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Sub aura-${Environment}-cluster
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: ProjectAura
+
+Outputs:
+  SchedulerRoleArn:
+    Description: IAM role ARN for EventBridge Scheduler
+    Value: !GetAtt SchedulerExecutionRole.Arn
+
+  ScaleDownTime:
+    Description: Time when services scale down
+    Value: !Ref ScaleDownSchedule
+
+  ScaleUpTime:
+    Description: Time when services scale up
+    Value: !Ref ScaleUpSchedule

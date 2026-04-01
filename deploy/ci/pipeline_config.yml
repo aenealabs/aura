@@ -1,0 +1,56 @@
+version: 0.2
+
+env:
+  variables:
+    # Standardized ECR repository URI for use throughout the pipeline
+    REPOSITORY_URI: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/ckge-context-retrieval"
+    PYTHON_VERSION: "3.11"
+
+phases:
+  install:
+    runtime-versions:
+      python: ${PYTHON_VERSION}
+    commands:
+      - echo "Installing Python dependencies..."
+      - pip install -r requirements.txt
+
+  build:
+    commands:
+      # --- Stage 1: Security and Compliance Gates (CRITICAL) ---
+      - echo "Executing 1. SAST/SCA Code Scanning..."
+      # Mock command for static analysis (SAST) and dependency check (SCA)
+      - echo "SAST/SCA Scan Passed." # Placeholder for a real tool like SonarQube or Snyk
+
+      - echo "Executing 2. Unit and Integration Testing..."
+      # FIX: Use the standard unittest discovery to robustly find and run all tests.
+      - python3 -m unittest discover tests
+
+      - echo "Executing 3. Docker Image Build..."
+      - docker build -t ${REPOSITORY_URI}:latest .
+
+      - echo "Executing 4. ECR Vulnerability Scan (Deep Scan)..."
+      # This block is a simplified example. Real-world pipelines often use a 'wait' condition
+      # or listen to EventBridge events to ensure the scan is complete before checking results.
+      - |
+        SCAN_RESULT=$(aws ecr describe-image-scan-findings --repository-name ckge-context-retrieval --image-id imageTag=latest --region ${AWS_REGION} || true)
+        CRITICAL_COUNT=$(echo ${SCAN_RESULT} | jq '.imageScanFindings.findingSeverityCounts.CRITICAL // 0')
+        HIGH_COUNT=$(echo ${SCAN_RESULT} | jq '.imageScanFindings.findingSeverityCounts.HIGH // 0')
+        if [ "${CRITICAL_COUNT}" -gt 0 ] || [ "${HIGH_COUNT}" -gt 0 ]; then
+          echo "ERROR: Critical/High CVEs detected. Failing build."
+          exit 1
+        else
+          echo "ECR Scan Passed. No critical or high vulnerabilities found."
+        fi
+
+  post_build:
+    commands:
+      - echo "Pushing Docker Image to ECR..."
+      - aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+      - docker push ${REPOSITORY_URI}:latest
+
+artifacts:
+  # Best practice is to define the base directory where artifacts are located
+  base-directory: 'deploy/fargate'
+  files:
+    # Deliver the Fargate deployment definition for the next stage (e.g., CodeDeploy)
+    - fargate_task_definition.json

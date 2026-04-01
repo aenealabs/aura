@@ -1,0 +1,130 @@
+version: 0.2
+
+# Network Services Layer (Layer 1.5): VPC-wide DNS via ECS Fargate
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing build dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint setuptools wheel
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Network Services Layer Deployment"
+      - echo "=========================================="
+      - echo "Environment $ENVIRONMENT | Project $PROJECT_NAME | Region $AWS_DEFAULT_REGION"
+
+      # Validate templates
+      - echo "Validating network services templates..."
+      - cfn-lint deploy/cloudformation/network-services.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - echo "Template validation complete"
+
+      # Retrieve dependency outputs from Foundation layer
+      - echo "Retrieving dependency outputs..."
+      - NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          VPC_CIDR=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`VpcCidr`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          PRIVATE_SUBNET_1=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnet1Id`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          PRIVATE_SUBNET_2=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnet2Id`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "VPC ID: $VPC_ID"
+          echo "VPC CIDR: $VPC_CIDR"
+          echo "Private Subnet 1: $PRIVATE_SUBNET_1"
+          echo "Private Subnet 2: $PRIVATE_SUBNET_2"
+        else
+          echo "Error: Networking stack not found"
+          exit 1
+        fi
+
+      # Default VPC CIDR if not exported
+      - |
+        if [ -z "$VPC_CIDR" ] || [ "$VPC_CIDR" = "None" ]; then
+          VPC_CIDR="10.0.0.0/16"
+          echo "Using default VPC CIDR: $VPC_CIDR"
+        fi
+
+  build:
+    commands:
+      # Generate deployment timestamp for forcing stack updates
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # Deploy Network Services stack (dnsmasq via ECS Fargate)
+      - echo "=========================================="
+      - echo "Deploying Network Services Stack"
+      - echo "=========================================="
+      - NETWORK_SVC_STACK="${PROJECT_NAME}-network-services-${ENVIRONMENT}"
+      - |
+        aws cloudformation deploy \
+          --stack-name $NETWORK_SVC_STACK \
+          --template-file deploy/cloudformation/network-services.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            VpcId=$VPC_ID \
+            PrivateSubnet1Id=$PRIVATE_SUBNET_1 \
+            PrivateSubnet2Id=$PRIVATE_SUBNET_2 \
+            VpcCidr=$VPC_CIDR \
+            AllowedCidr=$VPC_CIDR \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=network-services DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+      - echo "Network Services stack deployment complete"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Network Services Layer Deployment Complete"
+      - echo "=========================================="
+
+      - echo "=== Network Services Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $NETWORK_SVC_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Stack not available"
+
+      - echo "=== ECS Cluster Status ==="
+      - aws ecs describe-clusters --clusters ${PROJECT_NAME}-network-services-${ENVIRONMENT} --query 'clusters[0].{Name:clusterName,Status:status,Services:activeServicesCount,Tasks:runningTasksCount}' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Cluster not found"
+
+      - echo "=== ECS Service Status ==="
+      - aws ecs list-services --cluster ${PROJECT_NAME}-network-services-${ENVIRONMENT} --query 'serviceArns' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "No services found"
+
+      - echo "=== NLB Status ==="
+      - aws elbv2 describe-load-balancers --names ${PROJECT_NAME}-dnsmasq-nlb-${ENVIRONMENT} --query 'LoadBalancers[0].{Name:LoadBalancerName,State:State.Code,DNSName:DNSName}' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "NLB not found"
+
+      # Publish build metrics
+      - echo "Publishing build metrics..."
+      - |
+        aws cloudwatch put-metric-data \
+          --namespace "Aura/CICD/NetworkServices" \
+          --metric-name "SuccessfulDeployments" \
+          --value 1 \
+          --unit Count \
+          --dimensions Environment=$ENVIRONMENT \
+          --region $AWS_DEFAULT_REGION || echo "Failed to publish metrics"
+
+artifacts:
+  files:
+    - deploy/cloudformation/network-services.yaml
+  name: network-services-layer-artifacts
+  discard-paths: no
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

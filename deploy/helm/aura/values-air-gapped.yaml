@@ -1,0 +1,175 @@
+# Project Aura - Air-Gapped Values
+# Use this file for deployments without internet access (defense, classified)
+#
+# Prerequisites:
+# - All container images pre-loaded in private registry
+# - LLM model weights pre-downloaded
+# - No external API calls permitted
+#
+# Usage:
+#   helm install aura ./deploy/helm/aura -f ./deploy/helm/aura/values-air-gapped.yaml \
+#     --set global.imageRegistry=your-private-registry.local
+
+global:
+  deploymentMode: air_gapped
+  edition: enterprise_plus
+  imageRegistry: registry.local/aenealabs  # Private registry required
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets:
+    - name: registry-credentials
+
+  tls:
+    enabled: true
+    certManager:
+      enabled: false  # Use pre-provisioned certificates
+    existingSecret: aura-tls  # Pre-created TLS secret
+
+# License (offline validation)
+license:
+  key: ""  # Hardware-locked offline license
+  offlineValidation: true
+
+# Core Services (high availability)
+api:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 4Gi
+    limits:
+      cpu: 8000m
+      memory: 16Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+
+frontend:
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 6
+
+orchestrator:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 4000m
+      memory: 8Gi
+    limits:
+      cpu: 16000m
+      memory: 32Gi
+
+# Self-hosted databases (all enabled)
+databases:
+  graph:
+    provider: neo4j
+    neo4j:
+      enabled: true
+      edition: enterprise
+      persistence:
+        size: 200Gi
+      resources:
+        requests:
+          cpu: 4000m
+          memory: 16Gi
+        limits:
+          cpu: 16000m
+          memory: 32Gi
+
+  vector:
+    provider: opensearch
+    opensearch:
+      enabled: true
+      replicas: 3
+      persistence:
+        size: 500Gi
+      resources:
+        requests:
+          cpu: 4000m
+          memory: 16Gi
+        limits:
+          cpu: 16000m
+          memory: 32Gi
+
+  document:
+    provider: postgres
+    postgres:
+      enabled: true
+      persistence:
+        size: 200Gi
+      resources:
+        requests:
+          cpu: 2000m
+          memory: 4Gi
+        limits:
+          cpu: 8000m
+          memory: 16Gi
+
+# Local LLM (required for air-gapped)
+llm:
+  provider: vllm
+  bedrock:
+    enabled: false  # No cloud access
+  vllm:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: registry.local/vllm/vllm-openai
+      tag: "0.4.0"
+    model: /models/Mistral-7B-Instruct-v0.2  # Pre-loaded model path
+    resources:
+      requests:
+        cpu: 8000m
+        memory: 32Gi
+        nvidia.com/gpu: 1
+      limits:
+        cpu: 16000m
+        memory: 64Gi
+        nvidia.com/gpu: 1
+    persistence:
+      enabled: true
+      size: 200Gi
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+  tgi:
+    enabled: false
+  ollama:
+    enabled: false
+
+# Supporting services
+redis:
+  enabled: true
+  architecture: replication  # HA mode
+  auth:
+    enabled: true
+
+storage:
+  minio:
+    enabled: true
+    persistence:
+      size: 1Ti  # Large storage for air-gapped
+
+# Security (maximum)
+networkPolicy:
+  enabled: true
+  defaultDeny: true
+
+# No external egress allowed
+externalSecrets:
+  enabled: false  # No external secret stores in air-gap
+
+# Monitoring (local only)
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+
+# No external tracing
+tracing:
+  enabled: false
+
+logging:
+  level: info
+  json: true

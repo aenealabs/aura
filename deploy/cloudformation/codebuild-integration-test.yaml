@@ -1,0 +1,165 @@
+# Project Aura - Integration Tests CodeBuild Project (Layer 3.6: EKS Service Testing)
+#
+# Runs integration tests against deployed Kubernetes services.
+# Called by Step Functions deployment pipeline after K8s deployment.
+#
+# Usage:
+#   aws cloudformation deploy \
+#     --template-file deploy/cloudformation/codebuild-integration-test.yaml \
+#     --stack-name aura-codebuild-integration-test-qa \
+#     --parameter-overrides Environment=qa \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Integration Tests CodeBuild Project (Layer 3.6: EKS Service Testing)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used for resource naming
+
+  Environment:
+    Type: String
+    AllowedValues: [dev, qa, prod]
+    Description: Deployment environment
+
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+    Description: GitHub repository URL
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: GitHub branch to build from
+
+Resources:
+  # =============================================================================
+  # IAM Role for CodeBuild
+  # =============================================================================
+  IntegrationTestRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-integration-test-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeConnectionsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: codestar-connections:UseConnection
+                Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-integration-test-${Environment}*'
+        - PolicyName: EKSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                  - eks:ListClusters
+                Resource: !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
+        - PolicyName: SSMAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:PutParameter
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+        - PolicyName: STSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:GetCallerIdentity
+                Resource: '*'
+        - PolicyName: CodeBuildReports
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:CreateReportGroup
+                  - codebuild:CreateReport
+                  - codebuild:UpdateReport
+                  - codebuild:BatchPutTestCases
+                  - codebuild:BatchPutCodeCoverages
+                Resource: !Sub 'arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/${ProjectName}-integration-test-${Environment}-*'
+
+  # =============================================================================
+  # CodeBuild Project
+  # =============================================================================
+  IntegrationTestProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-integration-test-${Environment}'
+      Description: 'Project Aura - Integration Tests CodeBuild Project (Layer 3.6: EKS Service Testing)'
+      # Use Foundation role to avoid IAM eventual consistency issues (see ADR-035)
+      # The IntegrationTestRole created in this stack doesn't propagate fast enough
+      ServiceRole: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-foundation-codebuild-role-${Environment}'
+      TimeoutInMinutes: 20
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-integration-test.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_REGION
+            Value: !Ref AWS::Region
+      Artifacts:
+        Type: NO_ARTIFACTS
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub '/aws/codebuild/${ProjectName}-integration-test-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '3.6'
+
+Outputs:
+  ProjectName:
+    Description: Name of the CodeBuild project
+    Value: !Ref IntegrationTestProject
+
+  ProjectArn:
+    Description: ARN of the CodeBuild project
+    Value: !GetAtt IntegrationTestProject.Arn
+
+  RoleArn:
+    Description: ARN of the CodeBuild service role
+    Value: !GetAtt IntegrationTestRole.Arn

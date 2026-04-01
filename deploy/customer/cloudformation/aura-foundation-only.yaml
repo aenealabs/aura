@@ -1,0 +1,500 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Foundation Layer (VPC, IAM, Security Groups)'
+
+# =============================================================================
+# Project Aura Foundation Layer Template
+# =============================================================================
+# Deploys the foundation infrastructure for customers with existing VPCs
+# who want to integrate Aura into their network architecture.
+#
+# This template creates:
+# - VPC with public/private subnets (or integrates with existing)
+# - Security groups for all Aura services
+# - IAM roles for EKS, Neptune, and application access
+# - VPC endpoints for private access to AWS services
+#
+# Use this template when:
+# - You need to customize network integration
+# - You have existing VPC peering or Transit Gateway
+# - You want to deploy layers independently
+#
+# After deploying this template, deploy:
+# - aura-data-layer.yaml (Neptune, OpenSearch)
+# - aura-application.yaml (EKS, S3)
+# =============================================================================
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Basic Configuration
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: VPC Configuration
+        Parameters:
+          - CreateNewVPC
+          - VpcCIDR
+          - ExistingVpcId
+          - ExistingPrivateSubnet1
+          - ExistingPrivateSubnet2
+          - AvailabilityZones
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    AllowedPattern: ^[a-z][a-z0-9-]*$
+    Description: Project name used as prefix for all resources
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Deployment environment
+
+  CreateNewVPC:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Create a new VPC or use existing
+
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: VPC CIDR block (only used if CreateNewVPC is true)
+
+  ExistingVpcId:
+    Type: String
+    Default: ''
+    Description: Existing VPC ID (only used if CreateNewVPC is false)
+
+  ExistingPrivateSubnet1:
+    Type: String
+    Default: ''
+    Description: Existing private subnet 1 (only used if CreateNewVPC is false)
+
+  ExistingPrivateSubnet2:
+    Type: String
+    Default: ''
+    Description: Existing private subnet 2 (only used if CreateNewVPC is false)
+
+  AvailabilityZones:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Description: Select 2-3 Availability Zones
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Conditions:
+  CreateVPC: !Equals [!Ref CreateNewVPC, 'true']
+  UseExistingVPC: !Not [!Condition CreateVPC]
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # VPC (Conditional - only if CreateNewVPC is true)
+  # ===========================================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Condition: CreateVPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpc-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateVPC
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-igw-${Environment}'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-1-${Environment}'
+        - Key: kubernetes.io/role/elb
+          Value: '1'
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-2-${Environment}'
+        - Key: kubernetes.io/role/elb
+          Value: '1'
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [3, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-1-${Environment}'
+        - Key: kubernetes.io/role/internal-elb
+          Value: '1'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [4, !Cidr [!Ref VpcCIDR, 6, 8]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-2-${Environment}'
+        - Key: kubernetes.io/role/internal-elb
+          Value: '1'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-rt-${Environment}'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Condition: CreateVPC
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVPC
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVPC
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-rt-${Environment}'
+
+  PrivateSubnet1RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVPC
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVPC
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ===========================================================================
+  # Security Groups
+  # ===========================================================================
+  EKSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-eks-sg-${Environment}'
+      GroupDescription: Security group for EKS cluster
+      VpcId: !If [CreateVPC, !Ref VPC, !Ref ExistingVpcId]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-eks-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  EKSNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-eks-node-sg-${Environment}'
+      GroupDescription: Security group for EKS worker nodes
+      VpcId: !If [CreateVPC, !Ref VPC, !Ref ExistingVpcId]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-eks-node-sg-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  EKSNodeIngressFromNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSNodeSecurityGroup
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      IpProtocol: -1
+      Description: Allow nodes to communicate with each other
+
+  EKSNodeIngressFromControlPlane:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSNodeSecurityGroup
+      SourceSecurityGroupId: !Ref EKSSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+      Description: Allow control plane to nodes
+
+  EKSControlPlaneIngressFromNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSSecurityGroup
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      Description: Allow nodes to control plane
+
+  NeptuneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-neptune-sg-${Environment}'
+      GroupDescription: Security group for Neptune database
+      VpcId: !If [CreateVPC, !Ref VPC, !Ref ExistingVpcId]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8182
+          ToPort: 8182
+          SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+          Description: Allow EKS nodes to Neptune
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-sg-${Environment}'
+
+  OpenSearchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-opensearch-sg-${Environment}'
+      GroupDescription: Security group for OpenSearch domain
+      VpcId: !If [CreateVPC, !Ref VPC, !Ref ExistingVpcId]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+          Description: Allow EKS nodes to OpenSearch
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-opensearch-sg-${Environment}'
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-alb-sg-${Environment}'
+      GroupDescription: Security group for Application Load Balancer
+      VpcId: !If [CreateVPC, !Ref VPC, !Ref ExistingVpcId]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTPS from internet
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-alb-sg-${Environment}'
+
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-vpce-sg-${Environment}'
+      GroupDescription: Security group for VPC endpoints
+      VpcId: !If [CreateVPC, !Ref VPC, !Ref ExistingVpcId]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref EKSNodeSecurityGroup
+          Description: HTTPS from EKS nodes
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpce-sg-${Environment}'
+
+  # ===========================================================================
+  # IAM Roles
+  # ===========================================================================
+  EKSClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-eks-cluster-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKSClusterPolicy'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKSVPCResourceController'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  EKSNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-eks-node-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKS_CNI_Policy'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy'
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !If [CreateVPC, !Ref VPC, !Ref ExistingVpcId]
+    Export:
+      Name: !Sub '${AWS::StackName}-VpcId'
+
+  PrivateSubnet1Id:
+    Description: Private subnet 1 ID
+    Value: !If [CreateVPC, !Ref PrivateSubnet1, !Ref ExistingPrivateSubnet1]
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnet1Id'
+
+  PrivateSubnet2Id:
+    Description: Private subnet 2 ID
+    Value: !If [CreateVPC, !Ref PrivateSubnet2, !Ref ExistingPrivateSubnet2]
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnet2Id'
+
+  PrivateSubnetIds:
+    Description: Private subnet IDs (comma-separated)
+    Value: !If
+      - CreateVPC
+      - !Sub '${PrivateSubnet1},${PrivateSubnet2}'
+      - !Sub '${ExistingPrivateSubnet1},${ExistingPrivateSubnet2}'
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnetIds'
+
+  EKSSecurityGroupId:
+    Description: EKS cluster security group ID
+    Value: !Ref EKSSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-EKSSecurityGroupId'
+
+  EKSNodeSecurityGroupId:
+    Description: EKS node security group ID
+    Value: !Ref EKSNodeSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-EKSNodeSecurityGroupId'
+
+  NeptuneSecurityGroupId:
+    Description: Neptune security group ID
+    Value: !Ref NeptuneSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-NeptuneSecurityGroupId'
+
+  OpenSearchSecurityGroupId:
+    Description: OpenSearch security group ID
+    Value: !Ref OpenSearchSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-OpenSearchSecurityGroupId'
+
+  ALBSecurityGroupId:
+    Description: ALB security group ID
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ALBSecurityGroupId'
+
+  VPCEndpointSecurityGroupId:
+    Description: VPC endpoint security group ID
+    Value: !Ref VPCEndpointSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCEndpointSecurityGroupId'
+
+  EKSClusterRoleArn:
+    Description: EKS cluster role ARN
+    Value: !GetAtt EKSClusterRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-EKSClusterRoleArn'
+
+  EKSNodeRoleArn:
+    Description: EKS node role ARN
+    Value: !GetAtt EKSNodeRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-EKSNodeRoleArn'
+
+  NextSteps:
+    Description: Next steps after foundation deployment
+    Value: |
+      Foundation layer deployed. Next steps:
+      1. Deploy data layer: aura-data-layer.yaml
+      2. Deploy application layer: aura-application.yaml

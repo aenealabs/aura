@@ -1,0 +1,458 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.2 - Monitoring (CloudWatch Dashboards)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Description: Email for alerts and notifications
+
+  EnableContainerInsights:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable Container Insights alarms (requires CloudWatch Observability addon)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'prod']
+  ContainerInsightsEnabled: !Equals [!Ref EnableContainerInsights, 'true']
+
+Resources:
+  # SNS Topic for Alerts
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-alerts-${Environment}'
+      DisplayName: Aura Platform Alerts
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Dashboard
+  MainDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/EKS", "cluster_failed_node_count", {"stat": "Average"}],
+                  [".", "cluster_node_count", {"stat": "Average"}]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "EKS Cluster Health",
+                "yAxis": {
+                  "left": {
+                    "label": "Count"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/Neptune", "MainRequestQueueDepth", {"stat": "Average"}],
+                  [".", "CPUUtilization", {"stat": "Average"}]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "Neptune Performance"
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/ES", "ClusterStatus.green", {"stat": "Maximum"}],
+                  [".", "ClusterStatus.yellow", {"stat": "Maximum"}],
+                  [".", "ClusterStatus.red", {"stat": "Maximum"}]
+                ],
+                "period": 300,
+                "stat": "Maximum",
+                "region": "${AWS::Region}",
+                "title": "OpenSearch Cluster Status"
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["Aura/LLM", "CostUSD", {"stat": "Sum"}],
+                  [".", "TokensUsed", {"stat": "Sum", "yAxis": "right"}]
+                ],
+                "period": 3600,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Bedrock Usage & Costs",
+                "yAxis": {
+                  "left": {
+                    "label": "Cost (USD)"
+                  },
+                  "right": {
+                    "label": "Tokens"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["Aura/LLM", "CostByTier", "Tier", "fast", "Environment", "${Environment}", {"stat": "Sum", "label": "Fast (Haiku)"}],
+                  ["...", "accurate", ".", ".", {"stat": "Sum", "label": "Accurate (Sonnet)"}],
+                  ["...", "maximum", ".", ".", {"stat": "Sum", "label": "Maximum (Opus)"}]
+                ],
+                "period": 3600,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "LLM Cost by Tier (ADR-015)",
+                "yAxis": {
+                  "left": {
+                    "label": "Cost (USD)"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["Aura/LLM", "TierInvocations", "Tier", "fast", "Environment", "${Environment}", {"stat": "Sum", "label": "Fast"}],
+                  ["...", "accurate", ".", ".", {"stat": "Sum", "label": "Accurate"}],
+                  ["...", "maximum", ".", ".", {"stat": "Sum", "label": "Maximum"}]
+                ],
+                "period": 3600,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "LLM Invocations by Tier",
+                "yAxis": {
+                  "left": {
+                    "label": "Count"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["Aura/LLM", "SecurityOperationMisuse", {"stat": "Sum"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Security Operation Misuse (Fast Tier)",
+                "annotations": {
+                  "horizontal": [
+                    {"value": 1, "label": "Alert Threshold", "color": "#d62728"}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/DynamoDB", "ConsumedReadCapacityUnits", {"stat": "Sum"}],
+                  [".", "ConsumedWriteCapacityUnits", {"stat": "Sum"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "DynamoDB Throughput"
+              }
+            },
+            {
+              "type": "log",
+              "properties": {
+                "query": "SOURCE '/aws/eks/${ProjectName}-cluster-${Environment}/cluster'\n| fields @timestamp, @message\n| filter @message like /ERROR/\n| sort @timestamp desc\n| limit 20",
+                "region": "${AWS::Region}",
+                "title": "Recent EKS Errors",
+                "stacked": false
+              }
+            }
+          ]
+        }
+
+  # EKS Cluster Alarm - High CPU (requires Container Insights addon)
+  EKSHighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ContainerInsightsEnabled
+    Properties:
+      AlarmName: !Sub '${ProjectName}-eks-high-cpu-${Environment}'
+      AlarmDescription: Alert when EKS node CPU is too high
+      MetricName: node_cpu_utilization
+      Namespace: ContainerInsights
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: ClusterName
+          Value: !Sub '${ProjectName}-cluster-${Environment}'
+
+  # Neptune High Latency Alarm
+  NeptuneHighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-neptune-high-latency-${Environment}'
+      AlarmDescription: Alert when Neptune Gremlin query latency exceeds 5 seconds
+      MetricName: GremlinRequestLatency
+      Namespace: AWS/Neptune
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: DBClusterIdentifier
+          Value: !Sub '${ProjectName}-cluster-${Environment}'
+      AlarmActions:
+        - !Ref AlertTopic
+
+  # Neptune Low Traffic Alarm (Production Only)
+  # Alerts when traffic drops unexpectedly - potential app failure indicator
+  NeptuneLowTrafficAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-neptune-low-traffic-${Environment}'
+      AlarmDescription: Alert when Neptune traffic drops below baseline (cost optimized from 5-min/3-eval)
+      MetricName: GremlinRequestsPerSec
+      Namespace: AWS/Neptune
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      Dimensions:
+        - Name: DBClusterIdentifier
+          Value: !Sub '${ProjectName}-cluster-${Environment}'
+      AlarmActions:
+        - !Ref AlertTopic
+
+  # Neptune High Traffic Alarm (Production Only)
+  # Alerts on traffic spikes - potential overload or abuse
+  NeptuneHighTrafficAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-neptune-high-traffic-${Environment}'
+      AlarmDescription: Alert when Neptune traffic exceeds capacity threshold
+      MetricName: GremlinRequestsPerSec
+      Namespace: AWS/Neptune
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: DBClusterIdentifier
+          Value: !Sub '${ProjectName}-cluster-${Environment}'
+      AlarmActions:
+        - !Ref AlertTopic
+
+  # OpenSearch Cluster Red Alarm
+  OpenSearchClusterRedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-opensearch-cluster-red-${Environment}'
+      AlarmDescription: Alert when OpenSearch cluster status is red
+      MetricName: ClusterStatus.red
+      Namespace: AWS/ES
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: DomainName
+          Value: !Sub '${ProjectName}-${Environment}'
+        - Name: ClientId
+          Value: !Ref AWS::AccountId
+      AlarmActions:
+        - !Ref AlertTopic
+
+  # OpenSearch Storage Space Alarm
+  OpenSearchStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-opensearch-storage-${Environment}'
+      AlarmDescription: Alert when OpenSearch free storage is low
+      MetricName: FreeStorageSpace
+      Namespace: AWS/ES
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5000
+      ComparisonOperator: LessThanOrEqualToThreshold
+      Dimensions:
+        - Name: DomainName
+          Value: !Sub '${ProjectName}-${Environment}'
+        - Name: ClientId
+          Value: !Ref AWS::AccountId
+      AlarmActions:
+        - !Ref AlertTopic
+
+  # DynamoDB Throttle Alarm
+  DynamoDBThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-dynamodb-throttle-${Environment}'
+      AlarmDescription: Alert when DynamoDB requests are being throttled
+      MetricName: UserErrors
+      Namespace: AWS/DynamoDB
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+
+  # ADR-015: Security Operation Misuse Alarm
+  # Alerts when security-critical operations use FAST tier (should use ACCURATE/MAXIMUM)
+  LLMSecurityOperationMisuseAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-llm-security-misuse-${Environment}'
+      AlarmDescription: >-
+        Alert when security-critical operations (vulnerability ranking, patch generation,
+        threat assessment) are using FAST tier (Haiku) instead of ACCURATE/MAXIMUM tier.
+        This indicates incorrect operation-to-model mapping that could compromise security accuracy.
+      MetricName: SecurityOperationMisuse
+      Namespace: Aura/LLM
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Log Group for Application Logs
+  ApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/${ProjectName}/${Environment}/application'
+      RetentionInDays: 7
+
+  # Log Group for Agent Logs
+  AgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/${ProjectName}/${Environment}/agents'
+      RetentionInDays: 7
+
+  # Metric Filter for Application Errors
+  ErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '[time, request_id, level = ERROR*, ...]'
+      LogGroupName: !Ref ApplicationLogGroup
+      MetricTransformations:
+        - MetricName: ApplicationErrors
+          MetricNamespace: !Sub '${ProjectName}/${Environment}'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  # Alarm for High Error Rate
+  HighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-high-error-rate-${Environment}'
+      AlarmDescription: Alert when application error rate is high
+      MetricName: ApplicationErrors
+      Namespace: !Sub '${ProjectName}/${Environment}'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+
+  # Metric Filter for Code Generation Success
+  CodeGenSuccessMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '[time, request_id, level, msg = "Code generation completed successfully"]'
+      LogGroupName: !Ref AgentLogGroup
+      MetricTransformations:
+        - MetricName: CodeGenSuccess
+          MetricNamespace: !Sub '${ProjectName}/${Environment}'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  # Metric Filter for Code Generation Failures
+  CodeGenFailureMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '[time, request_id, level = ERROR*, msg = "*Code generation failed*"]'
+      LogGroupName: !Ref AgentLogGroup
+      MetricTransformations:
+        - MetricName: CodeGenFailure
+          MetricNamespace: !Sub '${ProjectName}/${Environment}'
+          MetricValue: '1'
+          DefaultValue: 0
+
+Outputs:
+  AlertTopicArn:
+    Description: SNS topic ARN for alerts
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-AlertTopicArn'
+
+  DashboardURL:
+    Description: CloudWatch dashboard URL
+    Value: !Sub 'https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-${Environment}'
+
+  ApplicationLogGroupName:
+    Description: Application log group name
+    Value: !Ref ApplicationLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ApplicationLogGroupName'
+
+  AgentLogGroupName:
+    Description: Agent log group name
+    Value: !Ref AgentLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-AgentLogGroupName'

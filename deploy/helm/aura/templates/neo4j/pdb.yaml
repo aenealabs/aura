@@ -1,0 +1,13 @@
+{{- if and (include "aura.isSelfHosted" .) .Values.databases.graph.neo4j.enabled .Values.databases.graph.neo4j.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aura.fullname" . }}-neo4j
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "neo4j" "context" .) | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.databases.graph.neo4j.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "neo4j" "context" .) | nindent 6 }}
+{{- end }}

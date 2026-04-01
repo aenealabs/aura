@@ -1,0 +1,209 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 9.8 - Vuln Scan EventBridge (Event Routing)'
+
+# =============================================================================
+# EventBridge event routing for ADR-084 vulnerability scanner.
+#
+# Resources:
+# - Custom event bus for scan events
+# - Rules: findings to SNS, scan completion to agent orchestrator,
+#   high-severity findings to DynamoDB audit stream
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # ===========================================================================
+  # Custom Event Bus for Scan Events
+  # ===========================================================================
+  ScanEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub '${ProjectName}-scan-events-${Environment}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-scan-events-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # Rule: Scan Completed → SNS Notification
+  # ===========================================================================
+  ScanCompletedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-scan-completed-notify-${Environment}'
+      Description: Notify on scan completion via SNS
+      EventBusName: !Ref ScanEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura.vuln-scanner
+        detail-type:
+          - Scan Completed
+      Targets:
+        - Id: sns-notify
+          Arn: !ImportValue
+            Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              scanId: $.detail.scan_id
+              tenantId: $.detail.tenant_id
+              status: $.detail.status
+            InputTemplate: |
+              "Vulnerability Scan Completed"
+              ""
+              "Scan ID: <scanId>"
+              "Tenant: <tenantId>"
+              "Status: <status>"
+
+  # ===========================================================================
+  # Rule: Scan Failed → SNS Alert
+  # ===========================================================================
+  ScanFailedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-scan-failed-alert-${Environment}'
+      Description: Alert on scan failures via SNS
+      EventBusName: !Ref ScanEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura.vuln-scanner
+        detail-type:
+          - Scan Failed
+      Targets:
+        - Id: sns-alert
+          Arn: !ImportValue
+            Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              scanId: $.detail.scan_id
+              tenantId: $.detail.tenant_id
+              error: $.detail.error
+            InputTemplate: |
+              "ALERT: Vulnerability Scan Failed"
+              ""
+              "Scan ID: <scanId>"
+              "Tenant: <tenantId>"
+              "Error: <error>"
+
+  # ===========================================================================
+  # Rule: Critical/High Finding → SNS Immediate Alert
+  # ===========================================================================
+  CriticalFindingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-scan-critical-finding-${Environment}'
+      Description: Immediate alert on critical or high severity findings
+      EventBusName: !Ref ScanEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura.vuln-scanner
+        detail-type:
+          - Finding Detected
+        detail:
+          severity:
+            - CRITICAL
+            - HIGH
+      Targets:
+        - Id: sns-critical-alert
+          Arn: !ImportValue
+            Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+          InputTransformer:
+            InputPathsMap:
+              findingId: $.detail.finding_id
+              scanId: $.detail.scan_id
+              tenantId: $.detail.tenant_id
+              severity: $.detail.severity
+              title: $.detail.title
+              cweId: $.detail.cwe_id
+              filePath: $.detail.file_path
+            InputTemplate: |
+              "SECURITY ALERT: <severity> Vulnerability Found"
+              ""
+              "Finding: <title>"
+              "CWE: <cweId>"
+              "File: <filePath>"
+              "Scan: <scanId>"
+              "Tenant: <tenantId>"
+              "Finding ID: <findingId>"
+
+  # ===========================================================================
+  # Rule: Scan Completed → Forward to Main Aura Event Bus
+  # ===========================================================================
+  # Routes scan events to the existing aura-events bus for integration
+  # with the Agent Orchestrator and other downstream services.
+  ForwardToMainBusRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-scan-forward-main-bus-${Environment}'
+      Description: Forward scan events to main Aura event bus for agent orchestrator
+      EventBusName: !Ref ScanEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - aura.vuln-scanner
+        detail-type:
+          - Scan Completed
+          - Finding Detected
+      Targets:
+        - Id: main-event-bus
+          Arn: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-events-${Environment}'
+          RoleArn: !GetAtt EventBridgeForwardRole.Arn
+
+  # ===========================================================================
+  # IAM Role for Cross-Bus Event Forwarding
+  # ===========================================================================
+  EventBridgeForwardRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-vuln-scan-eb-forward-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PutEventsToMainBus
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: events:PutEvents
+                Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-events-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ScanEventBusName:
+    Description: Custom event bus name for scan events
+    Value: !Ref ScanEventBus
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-event-bus-${Environment}'
+
+  ScanEventBusArn:
+    Description: Custom event bus ARN for scan events
+    Value: !GetAtt ScanEventBus.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-event-bus-arn-${Environment}'

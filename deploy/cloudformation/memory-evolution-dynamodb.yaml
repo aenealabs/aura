@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.20 - Memory Evolution (ADR-080 Evo-Memory Enhancements)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # KMS Key for memory evolution data encryption
+  MemoryEvolutionKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'KMS key for ${ProjectName} memory evolution data encryption - ${Environment}'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow DynamoDB
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+          - Sid: Allow SQS
+            Effect: Allow
+            Principal:
+              Service: sqs.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'sqs.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-memory-evolution-key-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-080
+
+  MemoryEvolutionKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-memory-evolution-${Environment}'
+      TargetKeyId: !Ref MemoryEvolutionKMSKey
+
+  # Main DynamoDB table for memory evolution metrics
+  MemoryEvolutionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-memory-evolution-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: agent_id
+          AttributeType: S
+        - AttributeName: task_sequence_number
+          AttributeType: N
+        - AttributeName: task_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: task-index
+          KeySchema:
+            - AttributeName: task_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: agent-task-sequence-index
+          KeySchema:
+            - AttributeName: agent_id
+              KeyType: HASH
+            - AttributeName: task_sequence_number
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt MemoryEvolutionKMSKey.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-memory-evolution-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-080
+        - Key: DataClassification
+          Value: CONFIDENTIAL
+
+  # SQS Queue for async refine operations
+  RefineAsyncQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-refine-async-${Environment}'
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 86400
+      KmsMasterKeyId: !GetAtt MemoryEvolutionKMSKey.Arn
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt RefineDeadLetterQueue.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-refine-async-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-080
+
+  # Dead letter queue for failed refine operations
+  RefineDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-refine-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600
+      KmsMasterKeyId: !GetAtt MemoryEvolutionKMSKey.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-refine-dlq-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-080
+
+  # CloudWatch Alarms
+  RefineSuccessRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-refine-success-rate-${Environment}'
+      AlarmDescription: Alert if refine operation success rate drops below 80%
+      MetricName: RefineSuccessRate
+      Namespace: Aura/MemoryEvolution
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 0.8
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  StrategyReuseAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-strategy-reuse-rate-${Environment}'
+      AlarmDescription: Alert if strategy reuse rate drops below 30%
+      MetricName: StrategyReuseRate
+      Namespace: Aura/MemoryEvolution
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 2
+      Threshold: 30
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  EvolutionRegressionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-evolution-regression-${Environment}'
+      AlarmDescription: Alert if evolution gain becomes negative
+      MetricName: EvolutionGain
+      Namespace: Aura/MemoryEvolution
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 3
+      Threshold: 0
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  RefineLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-refine-latency-${Environment}'
+      AlarmDescription: Alert if p95 refine latency exceeds 500ms (trigger circuit breaker)
+      MetricName: RefineLatency
+      Namespace: Aura/MemoryEvolution
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 500
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+
+  DLQMessagesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-refine-dlq-messages-${Environment}'
+      AlarmDescription: Alert if messages appear in dead letter queue
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt RefineDeadLetterQueue.QueueName
+
+Outputs:
+  MemoryEvolutionTableName:
+    Description: Memory evolution table name
+    Value: !Ref MemoryEvolutionTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TableName'
+
+  MemoryEvolutionTableArn:
+    Description: Memory evolution table ARN
+    Value: !GetAtt MemoryEvolutionTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TableArn'
+
+  MemoryEvolutionTableStreamArn:
+    Description: Memory evolution table stream ARN
+    Value: !GetAtt MemoryEvolutionTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-TableStreamArn'
+
+  RefineAsyncQueueUrl:
+    Description: Refine async queue URL
+    Value: !Ref RefineAsyncQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-QueueUrl'
+
+  RefineAsyncQueueArn:
+    Description: Refine async queue ARN
+    Value: !GetAtt RefineAsyncQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-QueueArn'
+
+  RefineDeadLetterQueueUrl:
+    Description: Refine dead letter queue URL
+    Value: !Ref RefineDeadLetterQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-DLQUrl'
+
+  RefineDeadLetterQueueArn:
+    Description: Refine dead letter queue ARN
+    Value: !GetAtt RefineDeadLetterQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DLQArn'
+
+  MemoryEvolutionKMSKeyArn:
+    Description: Memory evolution KMS key ARN
+    Value: !GetAtt MemoryEvolutionKMSKey.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-KMSKeyArn'
+
+  MemoryEvolutionKMSKeyId:
+    Description: Memory evolution KMS key ID
+    Value: !Ref MemoryEvolutionKMSKey
+    Export:
+      Name: !Sub '${AWS::StackName}-KMSKeyId'

@@ -1,0 +1,542 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.3 - Drift Detection (CMMC Compliance)'
+
+Metadata:
+  Version: '1.1'
+  LastUpdated: '2025-12-09'
+  Purpose: |
+    Provides automated drift detection, CloudWatch alarms, and SNS notifications
+    for all Project Aura CloudFormation stacks. Ensures compliance with CMMC Level 3
+    CM-3 (Configuration Change Control) and AU-2 (Event Logging) requirements.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used for resource naming and tagging
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Environment name
+
+  AlertEmail:
+    Type: String
+    Description: Email address for drift detection alerts
+    AllowedPattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+  DriftDetectionSchedule:
+    Type: String
+    Default: 'rate(1 day)'
+    AllowedValues:
+      - 'rate(1 hour)'
+      - 'rate(6 hours)'
+      - 'rate(12 hours)'
+      - 'rate(1 day)'
+    Description: How often to check for drift (cost optimized from 6 hours; production should use 1-6 hours)
+
+  EnableAutomaticRemediation:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: |
+      WARNING: Setting to 'true' will automatically trigger stack updates to remediate drift.
+      Recommended: false (manual review required for HITL compliance)
+
+  LambdaTimeout:
+    Type: Number
+    Default: 300
+    MinValue: 60
+    MaxValue: 900
+    Description: Lambda function timeout in seconds (max 15 minutes)
+
+  LambdaMemorySize:
+    Type: Number
+    Default: 256
+    AllowedValues:
+      - 128
+      - 256
+      - 512
+      - 1024
+    Description: Lambda function memory size in MB
+
+  LogRetentionDays:
+    Type: Number
+    Default: 90
+    AllowedValues:
+      - 30
+      - 60
+      - 90
+      - 180
+      - 365
+      - 730
+    Description: CloudWatch Logs retention in days
+
+  CriticalStacks:
+    Type: String
+    Default: 'iam,security,networking,neptune'
+    Description: Comma-separated list of critical stack suffixes (e.g., 'iam,security,networking')
+
+Conditions:
+  AutoRemediationEnabled: !Equals [!Ref EnableAutomaticRemediation, 'true']
+
+Resources:
+  # ============================================================================
+  # SNS Topic for Drift Alerts
+  # ============================================================================
+  DriftAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-drift-alerts-${Environment}'
+      DisplayName: !Sub 'CloudFormation Drift Alerts - ${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Compliance
+          Value: CMMC-Level-3
+
+  DriftAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref DriftAlertTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudWatchEvents
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action:
+              - sns:Publish
+            Resource: !Ref DriftAlertTopic
+          - Sid: AllowLambdaPublish
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sns:Publish
+            Resource: !Ref DriftAlertTopic
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref AWS::AccountId
+
+  DriftAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref DriftAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================================
+  # IAM Role for Lambda Drift Detector
+  # ============================================================================
+  DriftDetectorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-drift-detector-lambda-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DriftDetectionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudFormation drift detection
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ListStacks
+                  - cloudformation:DetectStackDrift
+                  - cloudformation:DescribeStackDriftDetectionStatus
+                  - cloudformation:DescribeStackResourceDrifts
+                Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-*/*'
+
+              # SNS publishing for alerts
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref DriftAlertTopic
+
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-drift-detector-${Environment}*'
+
+              # Optional: Stack update for auto-remediation (controlled by condition)
+              - !If
+                - AutoRemediationEnabled
+                - Effect: Allow
+                  Action:
+                    - cloudformation:UpdateStack
+                    - cloudformation:GetTemplate
+                  Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-*/*'
+                - !Ref AWS::NoValue
+
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # Lambda Function: Drift Detector
+  # ============================================================================
+  DriftDetectorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-drift-detector-${Environment}'
+      Description: !Sub 'Detects CloudFormation drift for ${ProjectName} stacks in ${Environment}'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt DriftDetectorLambdaRole.Arn
+      Timeout: !Ref LambdaTimeout
+      MemorySize: !Ref LambdaMemorySize
+      Environment:
+        Variables:
+          PROJECT_NAME: !Ref ProjectName
+          ENVIRONMENT: !Ref Environment
+          SNS_TOPIC_ARN: !Ref DriftAlertTopic
+          AUTO_REMEDIATION: !Ref EnableAutomaticRemediation
+          CRITICAL_STACKS: !Ref CriticalStacks
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime
+          from typing import Dict, List, Any
+
+          cfn = boto3.client('cloudformation')
+          sns = boto3.client('sns')
+
+          PROJECT_NAME = os.environ['PROJECT_NAME']
+          ENVIRONMENT = os.environ['ENVIRONMENT']
+          SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+          AUTO_REMEDIATION = os.environ['AUTO_REMEDIATION'] == 'true'
+
+          # Critical stacks that MUST NOT drift (from parameter)
+          CRITICAL_STACKS_SUFFIXES = os.environ.get('CRITICAL_STACKS', 'iam,security,networking,neptune').split(',')
+          CRITICAL_STACKS = [
+              f'{PROJECT_NAME}-{suffix.strip()}-{ENVIRONMENT}'
+              for suffix in CRITICAL_STACKS_SUFFIXES
+          ]
+
+          def lambda_handler(event, context):
+              """
+              Detects drift in CloudFormation stacks and sends alerts.
+              """
+              print(f"Starting drift detection for {PROJECT_NAME} in {ENVIRONMENT}")
+
+              # Get all project stacks
+              stacks = get_project_stacks()
+              print(f"Found {len(stacks)} stacks to check")
+
+              drift_results = []
+
+              for stack_name in stacks:
+                  try:
+                      drift_info = detect_stack_drift(stack_name)
+                      if drift_info:
+                          drift_results.append(drift_info)
+                          print(f"Drift detected in {stack_name}: {drift_info['status']}")
+                  except Exception as e:
+                      print(f"Error checking drift for {stack_name}: {str(e)}")
+
+              # Send alert if drift detected
+              if drift_results:
+                  send_drift_alert(drift_results)
+
+                  # Optional: Auto-remediate critical stacks
+                  if AUTO_REMEDIATION:
+                      remediate_drift(drift_results)
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'stacks_checked': len(stacks),
+                      'drifted_stacks': len(drift_results),
+                      'results': drift_results
+                  })
+              }
+
+          def get_project_stacks() -> List[str]:
+              """Get all CloudFormation stacks for this project."""
+              stacks = []
+              paginator = cfn.get_paginator('list_stacks')
+
+              for page in paginator.paginate(StackStatusFilter=[
+                  'CREATE_COMPLETE', 'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'
+              ]):
+                  for stack in page['StackSummaries']:
+                      stack_name = stack['StackName']
+                      # Only check project stacks
+                      if stack_name.startswith(f'{PROJECT_NAME}-'):
+                          stacks.append(stack_name)
+
+              return stacks
+
+          def detect_stack_drift(stack_name: str) -> Dict[str, Any]:
+              """Detect drift for a single stack."""
+              # Initiate drift detection
+              response = cfn.detect_stack_drift(StackName=stack_name)
+              drift_detection_id = response['StackDriftDetectionId']
+
+              # Poll for completion (up to 2 minutes)
+              import time
+              max_attempts = 24  # 24 * 5 seconds = 2 minutes
+              for _ in range(max_attempts):
+                  status_response = cfn.describe_stack_drift_detection_status(
+                      StackDriftDetectionId=drift_detection_id
+                  )
+
+                  detection_status = status_response['DetectionStatus']
+
+                  if detection_status == 'DETECTION_COMPLETE':
+                      drift_status = status_response['StackDriftStatus']
+
+                      # Only return info if drift detected
+                      if drift_status in ['DRIFTED', 'MODIFIED']:
+                          return {
+                              'stack_name': stack_name,
+                              'status': drift_status,
+                              'timestamp': status_response['Timestamp'].isoformat(),
+                              'drifted_resources': get_drifted_resources(stack_name),
+                              'is_critical': stack_name in CRITICAL_STACKS
+                          }
+                      return None
+
+                  elif detection_status == 'DETECTION_FAILED':
+                      print(f"Drift detection failed for {stack_name}")
+                      return None
+
+                  time.sleep(5)
+
+              print(f"Drift detection timed out for {stack_name}")
+              return None
+
+          def get_drifted_resources(stack_name: str) -> List[Dict[str, str]]:
+              """Get details of drifted resources in a stack."""
+              drifted = []
+
+              try:
+                  paginator = cfn.get_paginator('describe_stack_resource_drifts')
+
+                  for page in paginator.paginate(
+                      StackName=stack_name,
+                      StackResourceDriftStatusFilters=['MODIFIED', 'DELETED']
+                  ):
+                      for drift in page['StackResourceDrifts']:
+                          drifted.append({
+                              'resource_type': drift['ResourceType'],
+                              'logical_id': drift['LogicalResourceId'],
+                              'drift_status': drift['StackResourceDriftStatus'],
+                              'property_differences': len(drift.get('PropertyDifferences', []))
+                          })
+              except Exception as e:
+                  print(f"Error getting drifted resources for {stack_name}: {str(e)}")
+
+              return drifted
+
+          def send_drift_alert(drift_results: List[Dict[str, Any]]):
+              """Send SNS alert about detected drift."""
+              critical_drifts = [d for d in drift_results if d['is_critical']]
+
+              subject = f"⚠️ CloudFormation Drift Detected - {PROJECT_NAME} {ENVIRONMENT}"
+              if critical_drifts:
+                  subject = f"🚨 CRITICAL Drift Detected - {PROJECT_NAME} {ENVIRONMENT}"
+
+              message_lines = [
+                  f"CloudFormation Drift Detection Report",
+                  f"Project: {PROJECT_NAME}",
+                  f"Environment: {ENVIRONMENT}",
+                  f"Timestamp: {datetime.utcnow().isoformat()}Z",
+                  f"",
+                  f"Total Drifted Stacks: {len(drift_results)}",
+                  f"Critical Stacks Drifted: {len(critical_drifts)}",
+                  f"",
+              ]
+
+              if critical_drifts:
+                  message_lines.append("🚨 CRITICAL STACKS (Security/Compliance Impact):")
+                  for drift in critical_drifts:
+                      message_lines.extend(format_drift_info(drift))
+                  message_lines.append("")
+
+              non_critical = [d for d in drift_results if not d['is_critical']]
+              if non_critical:
+                  message_lines.append("⚠️  NON-CRITICAL STACKS:")
+                  for drift in non_critical:
+                      message_lines.extend(format_drift_info(drift))
+
+              message_lines.extend([
+                  "",
+                  "Action Required:",
+                  "1. Review drift details in CloudFormation console",
+                  "2. Determine if changes were authorized",
+                  "3. Update stack template if needed, or revert manual changes",
+                  "4. Document resolution in change log",
+                  "",
+                  f"CloudFormation Console: https://console.aws.amazon.com/cloudformation/home?region={boto3.session.Session().region_name}",
+              ])
+
+              message = '\n'.join(message_lines)
+
+              sns.publish(
+                  TopicArn=SNS_TOPIC_ARN,
+                  Subject=subject[:100],  # SNS subject max 100 chars
+                  Message=message
+              )
+
+              print(f"Drift alert sent to {SNS_TOPIC_ARN}")
+
+          def format_drift_info(drift: Dict[str, Any]) -> List[str]:
+              """Format drift information for alert message."""
+              lines = [
+                  f"  Stack: {drift['stack_name']}",
+                  f"  Status: {drift['status']}",
+                  f"  Drifted Resources: {len(drift['drifted_resources'])}",
+              ]
+
+              for resource in drift['drifted_resources'][:5]:  # Show first 5 resources
+                  lines.append(
+                      f"    - {resource['logical_id']} ({resource['resource_type']}): "
+                      f"{resource['drift_status']}, {resource['property_differences']} properties changed"
+                  )
+
+              if len(drift['drifted_resources']) > 5:
+                  lines.append(f"    ... and {len(drift['drifted_resources']) - 5} more resources")
+
+              lines.append("")
+              return lines
+
+          def remediate_drift(drift_results: List[Dict[str, Any]]):
+              """
+              Attempt to automatically remediate drift by updating stacks.
+              WARNING: Only enable for non-critical environments (dev/qa).
+              """
+              print("Auto-remediation is enabled - attempting to fix drift")
+
+              for drift in drift_results:
+                  stack_name = drift['stack_name']
+
+                  # SAFETY: Only auto-remediate non-critical stacks in dev/qa
+                  if drift['is_critical'] or ENVIRONMENT == 'prod':
+                      print(f"Skipping auto-remediation for critical/prod stack: {stack_name}")
+                      continue
+
+                  try:
+                      # Update stack with existing template (drift back to template)
+                      cfn.update_stack(
+                          StackName=stack_name,
+                          UsePreviousTemplate=True,
+                          Capabilities=['CAPABILITY_NAMED_IAM']
+                      )
+                      print(f"Auto-remediation initiated for {stack_name}")
+                  except Exception as e:
+                      print(f"Failed to auto-remediate {stack_name}: {str(e)}")
+
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # CloudWatch Log Group for Lambda
+  # ============================================================================
+  DriftDetectorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-drift-detector-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ============================================================================
+  # EventBridge Rule: Scheduled Drift Detection
+  # ============================================================================
+  DriftDetectionScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-drift-detection-schedule-${Environment}'
+      Description: !Sub 'Runs drift detection every ${DriftDetectionSchedule} for ${ProjectName}'
+      ScheduleExpression: !Ref DriftDetectionSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DriftDetectorFunction.Arn
+          Id: DriftDetectorTarget
+
+  DriftDetectorLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DriftDetectorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DriftDetectionScheduleRule.Arn
+
+  # ============================================================================
+  # CloudWatch Alarms for Critical Drift
+  # ============================================================================
+  DriftDetectorErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-drift-detector-errors-${Environment}'
+      AlarmDescription: Alerts when drift detector Lambda function fails
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref DriftDetectorFunction
+      AlarmActions:
+        - !Ref DriftAlertTopic
+      TreatMissingData: notBreaching
+
+Outputs:
+  DriftAlertTopicArn:
+    Description: SNS Topic ARN for drift alerts
+    Value: !Ref DriftAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-drift-alert-topic-${Environment}'
+
+  DriftDetectorFunctionArn:
+    Description: Lambda function ARN for drift detection
+    Value: !GetAtt DriftDetectorFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-drift-detector-function-${Environment}'
+
+  DriftDetectorFunctionName:
+    Description: Lambda function name
+    Value: !Ref DriftDetectorFunction
+
+  DriftDetectionSchedule:
+    Description: Schedule for automated drift detection
+    Value: !Ref DriftDetectionSchedule
+
+  AutoRemediationEnabled:
+    Description: Whether automatic drift remediation is enabled
+    Value: !Ref EnableAutomaticRemediation

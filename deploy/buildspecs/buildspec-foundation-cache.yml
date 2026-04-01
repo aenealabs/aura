@@ -1,0 +1,83 @@
+version: 0.2
+
+# Foundation Sub-Layer: CI/CD Build Cache Infrastructure (Layer 1.8)
+# Deploys S3 cache bucket and KMS key for CodeBuild pip/Docker layer caching (ADR-038)
+# Environment variables (ENVIRONMENT, PROJECT_NAME, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing cfn-lint..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Foundation Sub-Layer - CI/CD Build Cache"
+      - echo "=========================================="
+      - echo "Environment - $ENVIRONMENT"
+      - echo "Region - $AWS_DEFAULT_REGION"
+
+      # Validate template
+      - echo "Validating build-cache template..."
+      - cfn-lint deploy/cloudformation/build-cache.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+
+  build:
+    commands:
+      # Generate deployment timestamp
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # Deploy Build Cache Stack (S3 bucket + KMS key for CodeBuild caching)
+      - echo "Deploying Build Cache Stack..."
+      - BUILD_CACHE_STACK="${PROJECT_NAME}-build-cache-${ENVIRONMENT}"
+      - |
+        aws cloudformation deploy \
+          --stack-name $BUILD_CACHE_STACK \
+          --template-file deploy/cloudformation/build-cache.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            CacheRetentionDays=7 \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=foundation SubLayer=1.8 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+      - echo "Build Cache Stack deployment complete"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Build Cache Deployment Complete"
+      - echo "=========================================="
+      - |
+        BUILD_CACHE_STACK="${PROJECT_NAME}-build-cache-${ENVIRONMENT}"
+        echo "Build Cache Stack Outputs:"
+        aws cloudformation describe-stacks --stack-name $BUILD_CACHE_STACK \
+          --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Stack not available"
+
+      - |
+        echo ""
+        echo "Cache bucket is now available for CodeBuild projects."
+        echo "To use caching, ensure CodeBuild projects have Cache.Type=S3 configured."
+
+artifacts:
+  files:
+    - deploy/cloudformation/build-cache.yaml
+  name: foundation-cache-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

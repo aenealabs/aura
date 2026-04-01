@@ -1,0 +1,258 @@
+version: 0.2
+
+# Deployment Coordinator BuildSpec
+# Purpose: CI/CD meta-coordinator that detects infrastructure changes and triggers layer deployments
+# NOT related to: Agent Orchestrator (application service deployed via buildspec-application.yml)
+# Triggered by: Push to main branch (when enabled)
+# Triggers: Layer-specific buildspecs (foundation, data, compute, application, etc.)
+#
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - python -m pip install --upgrade pip
+      - pip install cfn-lint boto3 pyyaml
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Project Aura - Modular Infrastructure Deployment"
+      - echo "=========================================="
+      - echo "Environment - $ENVIRONMENT"
+      - echo "Region - $AWS_DEFAULT_REGION"
+      - echo "Build ID - $CODEBUILD_BUILD_ID"
+      - echo ""
+
+      # Detect which layers have changed
+      - echo "Detecting infrastructure changes..."
+      - python3 deploy/scripts/detect_changes.py --output /tmp/deployment-plan.json
+
+      # Load deployment plan
+      - |
+        if [ ! -f /tmp/deployment-plan.json ]; then
+          echo "ERROR: Deployment plan not found"
+          exit 1
+        fi
+
+      # Parse and display deployment plan
+      - |
+        LAYERS_TO_DEPLOY=$(cat /tmp/deployment-plan.json | python3 -c "import sys, json; plan = json.load(sys.stdin); print(' '.join(plan['layers_to_deploy']))")
+        echo "Layers to deploy: $LAYERS_TO_DEPLOY"
+
+      - |
+        if [ -z "$LAYERS_TO_DEPLOY" ]; then
+          echo "No infrastructure changes detected. Exiting."
+          exit 0
+        fi
+
+      # Global validation
+      - echo "Running global CloudFormation validation..."
+      - cfn-lint deploy/cloudformation/*.yaml --ignore-checks W3002 || echo "Validation warnings present"
+
+      # Set up artifact bucket
+      - echo "Setting up artifacts bucket..."
+      - ARTIFACT_BUCKET="${PROJECT_NAME}-cfn-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+      - |
+        if ! aws s3 ls "s3://${ARTIFACT_BUCKET}" 2>/dev/null; then
+          echo "Creating artifacts bucket..."
+          aws s3 mb "s3://${ARTIFACT_BUCKET}" --region $AWS_DEFAULT_REGION
+          aws s3api put-bucket-encryption \
+            --bucket "${ARTIFACT_BUCKET}" \
+            --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+          aws s3api put-public-access-block \
+            --bucket "${ARTIFACT_BUCKET}" \
+            --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+        fi
+
+  build:
+    commands:
+      - echo "=========================================="
+      - echo "Starting Layer-by-Layer Deployment"
+      - echo "=========================================="
+
+      # Deploy each layer in sequence
+      - |
+        for layer in $LAYERS_TO_DEPLOY; do
+          echo ""
+          echo "=========================================="
+          echo "Deploying Layer: $layer"
+          echo "=========================================="
+
+          # Check if buildspec exists for this layer
+          BUILDSPEC_FILE="deploy/buildspecs/buildspec-${layer}.yml"
+          if [ ! -f "$BUILDSPEC_FILE" ]; then
+            echo "ERROR: Buildspec not found: $BUILDSPEC_FILE"
+            exit 1
+          fi
+
+          # Extract and execute the build commands from the layer's buildspec
+          # We parse the YAML and execute the phases inline
+          echo "Executing ${layer} deployment..."
+
+          case $layer in
+            foundation)
+              # Execute foundation layer deployment
+              bash -c '
+                set -e
+                source deploy/buildspecs/buildspec-foundation.yml.sh 2>/dev/null || {
+                  # Inline execution of foundation buildspec
+                  export LAYER_NAME=foundation
+
+                  # Pre-build
+                  echo "Validating foundation templates..."
+                  cfn-lint deploy/cloudformation/networking.yaml --ignore-checks W3002
+                  cfn-lint deploy/cloudformation/security.yaml --ignore-checks W3002
+                  cfn-lint deploy/cloudformation/iam.yaml --ignore-checks W3002
+
+                  # Build - Networking
+                  echo "Deploying Networking Stack..."
+                  NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+                  if aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+                    OPERATION="update-stack"
+                    WAIT_CONDITION="stack-update-complete"
+                  else
+                    OPERATION="create-stack"
+                    WAIT_CONDITION="stack-create-complete"
+                  fi
+
+                  aws cloudformation $OPERATION \
+                    --stack-name $NETWORKING_STACK \
+                    --template-body file://deploy/cloudformation/networking.yaml \
+                    --parameters \
+                      ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                      ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+                      ParameterKey=VpcCIDR,ParameterValue=10.0.0.0/16 \
+                      ParameterKey=AvailabilityZones,ParameterValue="us-east-1a,us-east-1b" \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=foundation \
+                    --region $AWS_DEFAULT_REGION \
+                    --no-cli-pager || true
+
+                  aws cloudformation wait $WAIT_CONDITION --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION
+
+                  # Build - Security
+                  echo "Deploying Security Stack..."
+                  SECURITY_STACK="${PROJECT_NAME}-security-${ENVIRONMENT}"
+                  VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --query "Stacks[0].Outputs[?OutputKey==\`VpcId\`].OutputValue" --output text --region $AWS_DEFAULT_REGION)
+
+                  if aws cloudformation describe-stacks --stack-name $SECURITY_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+                    OPERATION="update-stack"
+                    WAIT_CONDITION="stack-update-complete"
+                  else
+                    OPERATION="create-stack"
+                    WAIT_CONDITION="stack-create-complete"
+                  fi
+
+                  aws cloudformation $OPERATION \
+                    --stack-name $SECURITY_STACK \
+                    --template-body file://deploy/cloudformation/security.yaml \
+                    --parameters \
+                      ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                      ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+                      ParameterKey=VpcId,ParameterValue=$VPC_ID \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=foundation \
+                    --region $AWS_DEFAULT_REGION \
+                    --no-cli-pager || true
+
+                  aws cloudformation wait $WAIT_CONDITION --stack-name $SECURITY_STACK --region $AWS_DEFAULT_REGION
+
+                  # Build - IAM
+                  echo "Deploying IAM Stack..."
+                  IAM_STACK="${PROJECT_NAME}-iam-${ENVIRONMENT}"
+
+                  if aws cloudformation describe-stacks --stack-name $IAM_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+                    OPERATION="update-stack"
+                    WAIT_CONDITION="stack-update-complete"
+                  else
+                    OPERATION="create-stack"
+                    WAIT_CONDITION="stack-create-complete"
+                  fi
+
+                  aws cloudformation $OPERATION \
+                    --stack-name $IAM_STACK \
+                    --template-body file://deploy/cloudformation/iam.yaml \
+                    --parameters \
+                      ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                      ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=foundation \
+                    --region $AWS_DEFAULT_REGION \
+                    --no-cli-pager || true
+
+                  aws cloudformation wait $WAIT_CONDITION --stack-name $IAM_STACK --region $AWS_DEFAULT_REGION
+
+                  echo "Foundation layer completed!"
+                }
+              '
+              ;;
+
+            data|compute|application|observability)
+              # For other layers, use a Python helper to execute their buildspecs
+              echo "Executing $layer layer buildspec..."
+              python3 deploy/scripts/execute_buildspec.py --layer $layer --environment $ENVIRONMENT
+              ;;
+
+            *)
+              echo "ERROR: Unknown layer: $layer"
+              exit 1
+              ;;
+          esac
+
+          echo "Layer $layer deployment completed successfully!"
+        done
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Deployment Summary"
+      - echo "=========================================="
+      - echo "Deployed layers: $LAYERS_TO_DEPLOY"
+      - echo ""
+
+      # Show overall status
+      - |
+        echo "Stack Status Summary:"
+        for layer in $LAYERS_TO_DEPLOY; do
+          case $layer in
+            foundation)
+              aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-networking-${ENVIRONMENT} --query 'Stacks[0].[StackName,StackStatus]' --output text --region $AWS_DEFAULT_REGION || true
+              aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-security-${ENVIRONMENT} --query 'Stacks[0].[StackName,StackStatus]' --output text --region $AWS_DEFAULT_REGION || true
+              aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-iam-${ENVIRONMENT} --query 'Stacks[0].[StackName,StackStatus]' --output text --region $AWS_DEFAULT_REGION || true
+              ;;
+            data)
+              aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-neptune-${ENVIRONMENT} --query 'Stacks[0].[StackName,StackStatus]' --output text --region $AWS_DEFAULT_REGION || true
+              aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-opensearch-${ENVIRONMENT} --query 'Stacks[0].[StackName,StackStatus]' --output text --region $AWS_DEFAULT_REGION || true
+              ;;
+            compute)
+              aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-eks-${ENVIRONMENT} --query 'Stacks[0].[StackName,StackStatus]' --output text --region $AWS_DEFAULT_REGION || true
+              ;;
+          esac
+        done
+
+      - echo ""
+      - echo "Deployment completed successfully!"
+
+artifacts:
+  files:
+    - 'deploy/cloudformation/**/*'
+    - '/tmp/deployment-plan.json'
+  name: infrastructure-deployment-artifacts
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

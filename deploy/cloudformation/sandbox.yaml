@@ -1,0 +1,906 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.1 - Sandbox (Ephemeral Environments)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  VpcId:
+    Type: String
+    Description: VPC ID for sandbox resources (imported from networking stack)
+    Default: ''
+
+  PrivateSubnetIds:
+    Type: String
+    Description: Comma-separated list of private subnet IDs for ECS tasks
+    Default: ''
+
+  AlertEmail:
+    Type: String
+    Description: Email address for HITL approval notifications (receives patch review requests)
+    Default: ''
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+  HasVpc: !Not [!Equals [!Ref VpcId, '']]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ============================================================================
+  # DynamoDB Tables
+  # ============================================================================
+
+  # Approval Requests Table - Tracks HITL approval workflow state
+  ApprovalRequestsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-approval-requests-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: approval_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: reviewer_email
+          AttributeType: S
+        - AttributeName: statusBucket
+          AttributeType: S
+        - AttributeName: createdAtTimestamp
+          AttributeType: N
+        - AttributeName: reviewedAtMonth
+          AttributeType: S
+        - AttributeName: reviewedAtTimestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: approval_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-created_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: reviewer-status-index
+          KeySchema:
+            - AttributeName: reviewer_email
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # StatusBucketIndex - Partition spreading to prevent hot partitions
+        # Items are distributed across 10 buckets (e.g., PENDING#0 through PENDING#9)
+        - IndexName: StatusBucketIndex
+          KeySchema:
+            - AttributeName: statusBucket
+              KeyType: HASH
+            - AttributeName: createdAtTimestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # ReviewedAtIndex - Efficient time-range queries for audit log
+        # Partition by month (YYYY-MM) to spread load and enable efficient range queries
+        - IndexName: ReviewedAtIndex
+          KeySchema:
+            - AttributeName: reviewedAtMonth
+              KeyType: HASH
+            - AttributeName: reviewedAtTimestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+        - Key: Purpose
+          Value: HITL-approval-workflow
+
+  # Sandbox State Table - Tracks ephemeral sandbox lifecycle
+  SandboxStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-sandbox-state-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sandbox_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sandbox_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-created_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # Sandbox Results Table - Test execution results
+  SandboxResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-sandbox-results-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: result_id
+          AttributeType: S
+        - AttributeName: sandbox_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: result_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: sandbox-id-index
+          KeySchema:
+            - AttributeName: sandbox_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # Patch Workflows Table - Tracks end-to-end patch validation workflow state
+  PatchWorkflowsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-patch-workflows-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: workflow_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: workflow_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-created_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # ============================================================================
+  # ECS Cluster for Sandbox Tasks
+  # ============================================================================
+
+  SandboxCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${ProjectName}-sandboxes-${Environment}'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 2
+        - CapacityProvider: FARGATE
+          Weight: 1
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # ============================================================================
+  # Security Groups
+  # ============================================================================
+
+  # Sandbox Security Group - Highly restrictive for isolation
+  SandboxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: HasVpc
+    Properties:
+      GroupName: !Sub '${ProjectName}-sandbox-isolated-${Environment}'
+      GroupDescription: Highly restrictive security group for sandbox patch testing
+      VpcId: !Ref VpcId
+      # Outbound: Only allow DNS and internal AWS services
+      SecurityGroupEgress:
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: DNS resolution
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS for AWS APIs and package downloads
+      # Inbound: No inbound traffic allowed (sandboxes are isolated)
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-sandbox-isolated-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+        - Key: Purpose
+          Value: sandbox-isolation
+
+  # ============================================================================
+  # SNS Topic for HITL Notifications
+  # ============================================================================
+
+  HITLNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-hitl-notifications-${Environment}'
+      DisplayName: !Sub 'Aura HITL Approval Notifications (${Environment})'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # Email subscription for HITL approval notifications
+  # Reviewers receive notifications when patches require approval
+  HITLNotificationEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref HITLNotificationTopic
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================================
+  # IAM Roles
+  # ============================================================================
+
+  # Sandbox Task Execution Role (for ECS Fargate)
+  SandboxTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-sandbox-task-execution-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: SandboxSecrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # Sandbox Task Role (what the container can do)
+  SandboxTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-sandbox-task-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SandboxTaskPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB - Update sandbox state
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt SandboxStateTable.Arn
+                  - !GetAtt SandboxResultsTable.Arn
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/sandboxes-${Environment}:*'
+              # S3 - Read patched code artifacts
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # ============================================================================
+  # ECR Repository for Test Runner
+  # ============================================================================
+
+  SandboxTestRunnerRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-sandbox-test-runner'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # ============================================================================
+  # CloudWatch Log Group for ECS Tasks
+  # ============================================================================
+
+  SandboxTaskLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}-sandbox-test-runner-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # ============================================================================
+  # ECS Task Definition for Sandbox Test Runner
+  # ============================================================================
+
+  SandboxTestRunnerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ProjectName}-sandbox-test-runner-${Environment}'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt SandboxTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt SandboxTaskRole.Arn
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: sandbox-test-runner
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ProjectName}-sandbox-test-runner:latest'
+          Essential: true
+          LinuxParameters:
+            InitProcessEnabled: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref SandboxTaskLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: sandbox
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: PROJECT_NAME
+              Value: !Ref ProjectName
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+          # SANDBOX_ID, PATCH_ID, TEST_SUITE, REPOSITORY_URL, BRANCH
+          # are passed via Step Functions containerOverrides
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - test -f /app/workspace/.ready || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          Ulimits:
+            - Name: nofile
+              SoftLimit: 65535
+              HardLimit: 65535
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # Step Functions Execution Role
+  StepFunctionsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-sandbox-stepfunctions-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StepFunctionsPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Lambda invocation
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-sandbox-*'
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-hitl-*'
+              # ECS task management
+              - Effect: Allow
+                Action:
+                  - ecs:RunTask
+                  - ecs:StopTask
+                  - ecs:DescribeTasks
+                Resource: '*'
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !GetAtt SandboxCluster.Arn
+              # Pass roles to ECS
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt SandboxTaskExecutionRole.Arn
+                  - !GetAtt SandboxTaskRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+              # DynamoDB operations
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ApprovalRequestsTable.Arn
+                  - !Sub '${ApprovalRequestsTable.Arn}/index/*'
+                  - !GetAtt SandboxStateTable.Arn
+                  - !GetAtt SandboxResultsTable.Arn
+              # SNS notifications
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Ref HITLNotificationTopic
+              # S3 - Validate and read code artifacts before running tests
+              # Note: s3:GetObject permission covers HeadObject API calls
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}/*'
+              # CloudWatch Events (for wait states)
+              - Effect: Allow
+                Action:
+                  - events:PutTargets
+                  - events:PutRule
+                  - events:DescribeRule
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForECSTaskRule'
+              # CloudWatch Logs (for state machine execution logging)
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !GetAtt StepFunctionsLogGroup.Arn
+                  - !Sub '${StepFunctionsLogGroup.Arn}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # ============================================================================
+  # CloudWatch Log Groups
+  # ============================================================================
+
+  SandboxLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/sandboxes-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  StepFunctionsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/states/${ProjectName}-hitl-workflow-${Environment}'
+      RetentionInDays: !If [IsProd, 365, 30]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # ============================================================================
+  # S3 Bucket for Sandbox Artifacts
+  # ============================================================================
+
+  SandboxArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldSandboxArtifacts
+            Status: Enabled
+            ExpirationInDays: 7  # Sandboxes are ephemeral
+            NoncurrentVersionExpirationInDays: 3
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: sandbox
+
+  # Defense-in-depth: Restrict write access to sandbox-related roles only
+  SandboxArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SandboxArtifactsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyNonSandboxRoleWrite
+            Effect: Deny
+            Principal: '*'
+            Action:
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub '${SandboxArtifactsBucket.Arn}/*'
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-sandbox-codebuild-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-sandbox-task-role-${Environment}'
+
+  # ============================================================================
+  # CloudWatch Alarms
+  # ============================================================================
+
+  # Alarm: High number of pending approvals
+  PendingApprovalsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-hitl-pending-approvals-high-${Environment}'
+      AlarmDescription: Alert when pending HITL approvals exceed threshold
+      MetricName: ItemCount
+      Namespace: AWS/DynamoDB
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: TableName
+          Value: !Ref ApprovalRequestsTable
+      TreatMissingData: notBreaching
+
+Outputs:
+  # DynamoDB Tables
+  ApprovalRequestsTableName:
+    Description: DynamoDB table for approval requests
+    Value: !Ref ApprovalRequestsTable
+    Export:
+      Name: !Sub '${ProjectName}-approval-requests-table-${Environment}'
+
+  ApprovalRequestsTableArn:
+    Description: ARN of approval requests table
+    Value: !GetAtt ApprovalRequestsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-approval-requests-table-arn-${Environment}'
+
+  SandboxStateTableName:
+    Description: DynamoDB table for sandbox state
+    Value: !Ref SandboxStateTable
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-state-table-${Environment}'
+
+  SandboxStateTableArn:
+    Description: ARN of sandbox state table
+    Value: !GetAtt SandboxStateTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-state-table-arn-${Environment}'
+
+  SandboxResultsTableName:
+    Description: DynamoDB table for sandbox results
+    Value: !Ref SandboxResultsTable
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-results-table-${Environment}'
+
+  PatchWorkflowsTableName:
+    Description: DynamoDB table for patch validation workflows
+    Value: !Ref PatchWorkflowsTable
+    Export:
+      Name: !Sub '${ProjectName}-patch-workflows-table-${Environment}'
+
+  PatchWorkflowsTableArn:
+    Description: ARN of patch workflows table
+    Value: !GetAtt PatchWorkflowsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-patch-workflows-table-arn-${Environment}'
+
+  # ECS Cluster
+  SandboxClusterName:
+    Description: ECS cluster for sandbox tasks
+    Value: !Ref SandboxCluster
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-cluster-${Environment}'
+
+  SandboxClusterArn:
+    Description: ARN of sandbox ECS cluster
+    Value: !GetAtt SandboxCluster.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-cluster-arn-${Environment}'
+
+  # Security Group
+  SandboxSecurityGroupId:
+    Condition: HasVpc
+    Description: Security group for sandbox tasks
+    Value: !Ref SandboxSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-security-group-${Environment}'
+
+  # VPC Configuration (for Step Functions ECS tasks)
+  SandboxVpcId:
+    Condition: HasVpc
+    Description: VPC ID for sandbox ECS tasks
+    Value: !Ref VpcId
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-vpc-id-${Environment}'
+
+  SandboxPrivateSubnetIds:
+    Description: Private subnet IDs for sandbox ECS tasks
+    Value: !Ref PrivateSubnetIds
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-private-subnet-ids-${Environment}'
+
+  # IAM Roles
+  SandboxTaskExecutionRoleArn:
+    Description: Task execution role for sandbox Fargate tasks
+    Value: !GetAtt SandboxTaskExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-task-execution-role-arn-${Environment}'
+
+  SandboxTaskRoleArn:
+    Description: Task role for sandbox containers
+    Value: !GetAtt SandboxTaskRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-task-role-arn-${Environment}'
+
+  StepFunctionsRoleArn:
+    Description: IAM role for Step Functions
+    Value: !GetAtt StepFunctionsExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-stepfunctions-role-arn-${Environment}'
+
+  # SNS Topic
+  HITLNotificationTopicArn:
+    Description: SNS topic for HITL notifications
+    Value: !Ref HITLNotificationTopic
+    Export:
+      Name: !Sub '${ProjectName}-hitl-notification-topic-arn-${Environment}'
+
+  # S3 Bucket
+  SandboxArtifactsBucketName:
+    Description: S3 bucket for sandbox artifacts
+    Value: !Ref SandboxArtifactsBucket
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-artifacts-bucket-${Environment}'
+
+  SandboxArtifactsBucketArn:
+    Description: ARN of sandbox artifacts bucket
+    Value: !GetAtt SandboxArtifactsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-artifacts-bucket-arn-${Environment}'
+
+  # Log Groups
+  SandboxLogGroupName:
+    Description: CloudWatch log group for sandbox tasks
+    Value: !Ref SandboxLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-log-group-${Environment}'
+
+  StepFunctionsLogGroupArn:
+    Description: CloudWatch log group ARN for Step Functions workflow
+    Value: !GetAtt StepFunctionsLogGroup.Arn
+    Export:
+      Name: !Sub '${ProjectName}-stepfunctions-log-group-arn-${Environment}'
+
+  # ECR Repository
+  SandboxTestRunnerRepositoryUri:
+    Description: ECR repository URI for sandbox test runner
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${SandboxTestRunnerRepository}'
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-test-runner-repo-uri-${Environment}'
+
+  SandboxTestRunnerRepositoryArn:
+    Description: ECR repository ARN for sandbox test runner
+    Value: !GetAtt SandboxTestRunnerRepository.Arn
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-test-runner-repo-arn-${Environment}'
+
+  # ECS Task Definition
+  SandboxTestRunnerTaskDefinitionArn:
+    Description: ECS task definition ARN for sandbox test runner
+    Value: !Ref SandboxTestRunnerTaskDefinition
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-test-runner-task-def-${Environment}'
+
+  SandboxTaskLogGroupName:
+    Description: CloudWatch log group for sandbox test runner tasks
+    Value: !Ref SandboxTaskLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-sandbox-task-log-group-${Environment}'

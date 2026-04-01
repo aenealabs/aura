@@ -1,0 +1,98 @@
+{{- if .Values.orchestrator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aura.fullname" . }}-orchestrator
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "orchestrator" "context" .) | nindent 4 }}
+spec:
+  {{- if not .Values.orchestrator.autoscaling.enabled }}
+  replicas: {{ .Values.orchestrator.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "orchestrator" "context" .) | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        {{- include "aura.configChecksum" . | nindent 8 }}
+      labels:
+        {{- include "aura.componentSelectorLabels" (dict "component" "orchestrator" "context" .) | nindent 8 }}
+    spec:
+      {{- include "aura.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "aura.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.orchestrator.securityContext | nindent 8 }}
+      containers:
+        - name: orchestrator
+          image: {{ include "aura.image" (dict "component" .Values.orchestrator "context" .) }}
+          imagePullPolicy: {{ .Values.orchestrator.image.pullPolicy | default (include "aura.imagePullPolicy" .) }}
+          securityContext:
+            {{- toYaml .Values.orchestrator.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.orchestrator.service.port }}
+              protocol: TCP
+          env:
+            {{- include "aura.commonEnv" . | nindent 12 }}
+            {{- include "aura.databaseEnv" . | nindent 12 }}
+            {{- include "aura.llmEnv" . | nindent 12 }}
+            {{- include "aura.redisEnv" . | nindent 12 }}
+            {{- include "aura.storageEnv" . | nindent 12 }}
+            # Orchestrator-specific settings
+            - name: ORCHESTRATOR_MODE
+              value: {{ .Values.global.deploymentMode | quote }}
+            - name: MAX_CONCURRENT_AGENTS
+              value: "10"
+            - name: AGENT_TIMEOUT_SECONDS
+              value: "300"
+            {{- if .Values.license.key }}
+            - name: AURA_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.license.existingSecret | default (printf "%s-license" (include "aura.fullname" .)) }}
+                  key: {{ .Values.license.existingSecretKey | default "license-key" }}
+            {{- end }}
+          {{- include "aura.livenessProbe" .Values.orchestrator.healthChecks.liveness | nindent 10 }}
+          {{- include "aura.readinessProbe" .Values.orchestrator.healthChecks.readiness | nindent 10 }}
+          resources:
+            {{- toYaml .Values.orchestrator.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: agent-workspace
+              mountPath: /app/workspace
+            {{- if .Values.global.tls.enabled }}
+            - name: tls-certs
+              mountPath: /etc/ssl/certs/aura
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: agent-workspace
+          emptyDir:
+            sizeLimit: 10Gi
+        {{- if .Values.global.tls.enabled }}
+        - name: tls-certs
+          secret:
+            secretName: {{ include "aura.tlsSecretName" (dict "component" "orchestrator" "context" .) }}
+        {{- end }}
+      {{- with .Values.orchestrator.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.orchestrator.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.orchestrator.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

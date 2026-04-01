@@ -1,0 +1,616 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Application Layer (EKS + Services)'
+
+# =============================================================================
+# Project Aura Application Layer Template
+# =============================================================================
+# Deploys the compute and application infrastructure:
+# - EKS cluster with managed node groups
+# - S3 buckets for artifacts and backups
+# - ECR repositories for container images
+# - Secrets Manager for sensitive configuration
+#
+# Prerequisites:
+# - Foundation layer deployed (aura-foundation-only.yaml)
+# - Data layer deployed (aura-data-layer.yaml)
+# =============================================================================
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Basic Configuration
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: Stack References
+        Parameters:
+          - FoundationStackName
+          - DataStackName
+      - Label:
+          default: EKS Configuration
+        Parameters:
+          - KubernetesVersion
+          - NodeInstanceType
+          - NodeMinSize
+          - NodeMaxSize
+          - NodeVolumeSize
+      - Label:
+          default: Bedrock Configuration
+        Parameters:
+          - EnableBedrock
+          - PrimaryModel
+          - EmbeddingModel
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name (must match foundation and data stacks)
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Deployment environment
+
+  FoundationStackName:
+    Type: String
+    Description: Name of the foundation CloudFormation stack
+    Default: aura-foundation-prod
+
+  DataStackName:
+    Type: String
+    Description: Name of the data layer CloudFormation stack
+    Default: aura-data-prod
+
+  KubernetesVersion:
+    Type: String
+    Default: '1.34'
+    AllowedValues:
+      - '1.29'
+      - '1.30'
+      - '1.31'
+      - '1.32'
+      - '1.33'
+      - '1.34'
+    Description: Kubernetes version for EKS cluster
+
+  NodeInstanceType:
+    Type: String
+    Default: r6i.large
+    AllowedValues:
+      - t3.medium
+      - t3.large
+      - r6i.large
+      - r6i.xlarge
+      - r6i.2xlarge
+    Description: EKS worker node instance type
+
+  NodeMinSize:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 10
+    Description: Minimum number of EKS worker nodes
+
+  NodeMaxSize:
+    Type: Number
+    Default: 8
+    MinValue: 2
+    MaxValue: 50
+    Description: Maximum number of EKS worker nodes
+
+  NodeVolumeSize:
+    Type: Number
+    Default: 50
+    MinValue: 20
+    MaxValue: 500
+    Description: EBS volume size for worker nodes in GB
+
+  EnableBedrock:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable Amazon Bedrock integration
+
+  PrimaryModel:
+    Type: String
+    Default: anthropic.claude-3-5-sonnet-20241022-v1:0
+    Description: Primary Bedrock model for reasoning
+
+  EmbeddingModel:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+    Description: Bedrock model for embeddings
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  BedrockEnabled: !Equals [!Ref EnableBedrock, 'true']
+
+Resources:
+  # ===========================================================================
+  # EKS Cluster
+  # ===========================================================================
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Sub '${ProjectName}-cluster-${Environment}'
+      Version: !Ref KubernetesVersion
+      RoleArn:
+        Fn::ImportValue: !Sub '${FoundationStackName}-EKSClusterRoleArn'
+      AccessConfig:
+        AuthenticationMode: API_AND_CONFIG_MAP
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub '${FoundationStackName}-EKSSecurityGroupId'
+        SubnetIds:
+          - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnet1Id'
+          - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnet2Id'
+        EndpointPrivateAccess: true
+        EndpointPublicAccess: true
+      Logging:
+        ClusterLogging:
+          EnabledTypes:
+            - Type: api
+            - Type: audit
+            - Type: authenticator
+            - Type: controllerManager
+            - Type: scheduler
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-cluster-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  EKSNodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-node-lt-${Environment}'
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: !Ref NodeVolumeSize
+              VolumeType: gp3
+              DeleteOnTermination: true
+              Encrypted: true
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups:
+              - Fn::ImportValue: !Sub '${FoundationStackName}-EKSNodeSecurityGroupId'
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 2
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-node-${Environment}'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+
+  EKSNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodegroupName: !Sub '${ProjectName}-nodegroup-${Environment}'
+      NodeRole:
+        Fn::ImportValue: !Sub '${FoundationStackName}-EKSNodeRoleArn'
+      Subnets:
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnet1Id'
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnet2Id'
+      AmiType: AL2023_x86_64_STANDARD
+      Version: !Ref KubernetesVersion
+      ScalingConfig:
+        MinSize: !Ref NodeMinSize
+        MaxSize: !Ref NodeMaxSize
+        DesiredSize: !Ref NodeMinSize
+      LaunchTemplate:
+        Id: !Ref EKSNodeLaunchTemplate
+        Version: !GetAtt EKSNodeLaunchTemplate.LatestVersionNumber
+      InstanceTypes:
+        - !Ref NodeInstanceType
+      UpdateConfig:
+        MaxUnavailable: 1
+      Labels:
+        project: !Ref ProjectName
+        environment: !Ref Environment
+        nodegroup: primary
+      Tags:
+        Name: !Sub '${ProjectName}-nodegroup-${Environment}'
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  # OIDC Provider for IRSA
+  EKSOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 9e99a48a9960b14926bb7f3b02e22da2b0ab7280
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ===========================================================================
+  # IRSA Role for Aura API
+  # ===========================================================================
+  AuraAPIRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-api-irsa-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "${OIDCArn}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OIDCUrl}:aud": "sts.amazonaws.com",
+                      "${OIDCUrl}:sub": "system:serviceaccount:${ProjectName}:aura-api"
+                    }
+                  }
+                }
+              ]
+            }
+          - OIDCArn: !GetAtt EKSOIDCProvider.Arn
+            OIDCUrl: !Select [1, !Split ['https://', !GetAtt EKSCluster.OpenIdConnectIssuerUrl]]
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${PrimaryModel}'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${EmbeddingModel}'
+        - PolicyName: NeptuneAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - neptune-db:*
+                Resource:
+                  - !Sub
+                    - 'arn:${AWS::Partition}:neptune-db:${AWS::Region}:${AWS::AccountId}:${ClusterId}/*'
+                    - ClusterId:
+                        Fn::ImportValue: !Sub '${DataStackName}-NeptuneClusterId'
+        - PolicyName: OpenSearchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - es:ESHttp*
+                Resource:
+                  - Fn::Sub:
+                    - '${DomainArn}/*'
+                    - DomainArn:
+                        Fn::ImportValue: !Sub '${DataStackName}-OpenSearchArn'
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-${Environment}/index/*'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}/*'
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # S3 Buckets
+  # ===========================================================================
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupOldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-artifacts-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  BackupsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-backups-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 30
+            ExpirationInDays: 365
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-backups-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  LogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-logs-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireLogs
+            Status: Enabled
+            ExpirationInDays: !If [IsProduction, 365, 90]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-logs-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ===========================================================================
+  # ECR Repositories
+  # ===========================================================================
+  APIRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}/api'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  OrchestratorRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}/orchestrator'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  FrontendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}/frontend'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ===========================================================================
+  # Secrets Manager
+  # ===========================================================================
+  APISecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}/${Environment}/api-config'
+      Description: API configuration secrets
+      SecretString: !Sub |
+        {
+          "neptune_endpoint": "${NeptuneEndpoint}",
+          "opensearch_endpoint": "${OpenSearchEndpoint}",
+          "bedrock_model": "${PrimaryModel}",
+          "embedding_model": "${EmbeddingModel}"
+        }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Import endpoints from data stack
+  NeptuneEndpoint:
+    Type: AWS::CloudFormation::WaitConditionHandle
+    Metadata:
+      Value:
+        Fn::ImportValue: !Sub '${DataStackName}-NeptuneEndpoint'
+
+  OpenSearchEndpoint:
+    Type: AWS::CloudFormation::WaitConditionHandle
+    Metadata:
+      Value:
+        Fn::ImportValue: !Sub '${DataStackName}-OpenSearchEndpoint'
+
+Outputs:
+  EKSClusterName:
+    Description: EKS cluster name
+    Value: !Ref EKSCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterName'
+
+  EKSClusterEndpoint:
+    Description: EKS cluster endpoint
+    Value: !GetAtt EKSCluster.Endpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterEndpoint'
+
+  EKSClusterArn:
+    Description: EKS cluster ARN
+    Value: !GetAtt EKSCluster.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterArn'
+
+  OIDCProviderArn:
+    Description: OIDC provider ARN for IRSA
+    Value: !GetAtt EKSOIDCProvider.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProviderArn'
+
+  AuraAPIRoleArn:
+    Description: IRSA role ARN for Aura API
+    Value: !GetAtt AuraAPIRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-APIRoleArn'
+
+  ArtifactsBucketName:
+    Description: S3 artifacts bucket name
+    Value: !Ref ArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
+
+  BackupsBucketName:
+    Description: S3 backups bucket name
+    Value: !Ref BackupsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BackupsBucket'
+
+  LogsBucketName:
+    Description: S3 logs bucket name
+    Value: !Ref LogsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-LogsBucket'
+
+  APIRepositoryUri:
+    Description: ECR repository URI for API
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${APIRepository}'
+    Export:
+      Name: !Sub '${AWS::StackName}-APIRepositoryUri'
+
+  ConfigureKubectl:
+    Description: Command to configure kubectl
+    Value: !Sub 'aws eks update-kubeconfig --name ${EKSCluster} --region ${AWS::Region}'
+
+  DeploymentInstructions:
+    Description: Next steps for application deployment
+    Value: !Sub |
+      Application layer deployed successfully!
+
+      Next steps:
+      1. Configure kubectl:
+         aws eks update-kubeconfig --name ${EKSCluster} --region ${AWS::Region}
+
+      2. Create the aura namespace:
+         kubectl create namespace ${ProjectName}
+
+      3. Create the service account with IRSA:
+         kubectl create serviceaccount aura-api -n ${ProjectName}
+         kubectl annotate serviceaccount aura-api -n ${ProjectName} \
+           eks.amazonaws.com/role-arn=${AuraAPIRole.Arn}
+
+      4. Deploy Aura applications:
+         kubectl apply -k deploy/kubernetes/overlays/${Environment}/
+
+      5. Access the dashboard:
+         kubectl port-forward svc/aura-frontend 8080:80 -n ${ProjectName}

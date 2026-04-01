@@ -1,0 +1,258 @@
+name: Aura Security Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - develop
+    # Only run on code changes - skip for docs-only PRs
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'deploy/**/*.yaml'
+      - 'deploy/**/*.yml'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review (for manual trigger)'
+        required: false
+        type: number
+
+# Cancel in-progress runs when new commits are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  AURA_API_URL: ${{ vars.AURA_API_URL || 'http://localhost:8080' }}
+
+jobs:
+  security-review:
+    name: Aura Agent Security Review
+    runs-on: ubuntu-latest
+    # Skip for dependabot and automated PRs
+    if: github.actor != 'dependabot[bot]'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for diff analysis
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install review dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests pyyaml semgrep
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            src/**/*.py
+            tests/**/*.py
+            deploy/**/*.yaml
+            deploy/**/*.yml
+
+      - name: Get PR diff
+        id: pr-diff
+        if: github.event_name == 'pull_request'
+        run: |
+          # Get the diff of changed Python files
+          git diff ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} \
+            -- 'src/**/*.py' 'tests/**/*.py' > pr_diff.txt || true
+
+          # Count lines changed
+          LINES_CHANGED=$(wc -l < pr_diff.txt)
+          echo "lines_changed=$LINES_CHANGED" >> $GITHUB_OUTPUT
+          echo "Changed $LINES_CHANGED lines in PR"
+
+      - name: Run Semgrep security scan
+        id: semgrep
+        continue-on-error: true
+        run: |
+          # Run Semgrep with Python security rules
+          semgrep scan --config=p/python \
+            --config=p/owasp-top-ten \
+            --config=p/security-audit \
+            --json --output=semgrep-results.json \
+            src/ tests/ || true
+
+          # Parse results
+          if [ -f semgrep-results.json ]; then
+            FINDINGS=$(python3 -c "import json; data=json.load(open('semgrep-results.json')); print(len(data.get('results', [])))")
+            echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+            echo "Found $FINDINGS security findings"
+          fi
+
+      - name: Create Aura security review request
+        id: aura-review
+        if: steps.changed-files.outputs.any_changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+        run: |
+          python3 << 'EOF'
+          import os
+          import json
+          import sys
+
+          # Load changed files
+          changed_files = os.environ.get('CHANGED_FILES', '').split()
+          pr_number = '${{ github.event.pull_request.number }}'
+          repo = '${{ github.repository }}'
+
+          # Load Semgrep results
+          semgrep_findings = []
+          if os.path.exists('semgrep-results.json'):
+              with open('semgrep-results.json') as f:
+                  data = json.load(f)
+                  semgrep_findings = data.get('results', [])
+
+          # Create review summary
+          review = {
+              'repository': repo,
+              'pr_number': pr_number,
+              'changed_files': changed_files[:20],  # Limit to first 20
+              'semgrep_findings': len(semgrep_findings),
+              'critical_findings': len([f for f in semgrep_findings if f.get('extra', {}).get('severity') == 'ERROR']),
+              'high_findings': len([f for f in semgrep_findings if f.get('extra', {}).get('severity') == 'WARNING']),
+          }
+
+          print(f"Review summary: {json.dumps(review, indent=2)}")
+
+          # Write findings to output
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"semgrep_count={len(semgrep_findings)}\n")
+              f.write(f"critical_count={review['critical_findings']}\n")
+          EOF
+
+      - name: Generate security review comment
+        if: github.event_name == 'pull_request' && steps.changed-files.outputs.any_changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 << 'EOF'
+          import os
+          import json
+
+          # Load Semgrep results
+          findings = []
+          if os.path.exists('semgrep-results.json'):
+              with open('semgrep-results.json') as f:
+                  data = json.load(f)
+                  findings = data.get('results', [])
+
+          # Build comment
+          comment_lines = []
+          comment_lines.append("## Aura Security Review")
+          comment_lines.append("")
+
+          if not findings:
+              comment_lines.append("No security findings detected by automated analysis.")
+              comment_lines.append("")
+              comment_lines.append("*Note: This is an automated review. Manual review by Aura agents is pending.*")
+          else:
+              comment_lines.append(f"Found **{len(findings)}** potential security issues:")
+              comment_lines.append("")
+
+              # Group by severity
+              critical = [f for f in findings if f.get('extra', {}).get('severity') == 'ERROR']
+              high = [f for f in findings if f.get('extra', {}).get('severity') == 'WARNING']
+              other = [f for f in findings if f.get('extra', {}).get('severity') not in ['ERROR', 'WARNING']]
+
+              if critical:
+                  comment_lines.append(f"### Critical ({len(critical)})")
+                  for f in critical[:5]:  # Limit to 5
+                      comment_lines.append(f"- `{f.get('path')}:{f.get('start', {}).get('line')}` - {f.get('check_id')}")
+                  comment_lines.append("")
+
+              if high:
+                  comment_lines.append(f"### High ({len(high)})")
+                  for f in high[:5]:
+                      comment_lines.append(f"- `{f.get('path')}:{f.get('start', {}).get('line')}` - {f.get('check_id')}")
+                  comment_lines.append("")
+
+              if other:
+                  comment_lines.append(f"### Other ({len(other)})")
+                  for f in other[:5]:
+                      comment_lines.append(f"- `{f.get('path')}:{f.get('start', {}).get('line')}` - {f.get('check_id')}")
+                  comment_lines.append("")
+
+              comment_lines.append("---")
+              comment_lines.append("*Run `semgrep scan --config=p/python src/` locally for full details.*")
+
+          comment = "\n".join(comment_lines)
+
+          # Save for next step
+          with open('review_comment.txt', 'w') as f:
+              f.write(comment)
+
+          print(comment)
+          EOF
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request' && steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('review_comment.txt', 'utf8');
+
+            // Check for existing Aura comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const auraComment = comments.find(c => c.body.includes('## Aura Security Review'));
+
+            if (auraComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: auraComment.id,
+                body: comment + '\n\n*Updated: ' + new Date().toISOString() + '*'
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
+      - name: Upload security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-review-results
+          path: |
+            semgrep-results.json
+            pr_diff.txt
+          retention-days: 30
+
+      - name: Check for blocking issues
+        if: steps.aura-review.outputs.critical_count > 0
+        run: |
+          echo "::warning::Found ${{ steps.aura-review.outputs.critical_count }} critical security issues"
+          echo "Please address critical security findings before merging"
+          # Optionally fail the check for critical issues:
+          # exit 1

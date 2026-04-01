@@ -1,0 +1,48 @@
+{
+    "family": "ckge-context-retrieval-service",
+    "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/CKGE-Context-Fargate-TaskRole",
+    "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/CKGE-Context-Fargate-ExecutionRole",
+    "networkMode": "awsvpc",
+    "cpu": "1024",
+    "memory": "4096",
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "containerDefinitions": [
+        {
+            "name": "context-retrieval-agent",
+            "image": "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/ckge-context-retrieval:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 8080,
+                    "hostPort": 8080,
+                    "protocol": "tcp"
+                }
+            ],
+            "environment": [],
+            "secrets": [
+                {
+                    "name": "NEPTUNE_ENDPOINT",
+                    "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:CKGE-Neptune-Endpoint"
+                },
+                {
+                    "name": "OPENSEARCH_ENDPOINT",
+                    "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:CKGE-OpenSearch-Endpoint"
+                },
+                {
+                    "name": "LLM_API_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:CKGE-LLM-Key"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/ckge-context-retrieval",
+                    "awslogs-region": "${AWS_REGION}",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            }
+        }
+    ]
+}

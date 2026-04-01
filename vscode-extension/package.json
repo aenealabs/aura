@@ -1,0 +1,204 @@
+{
+  "name": "aura-code-intelligence",
+  "displayName": "Aura Code Intelligence",
+  "description": "Autonomous vulnerability detection, GraphRAG code context visualization, and AI-powered security patching",
+  "version": "2.0.0",
+  "publisher": "aenea-labs",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "security",
+    "vulnerability",
+    "code review",
+    "ai",
+    "patching",
+    "graphrag",
+    "code intelligence",
+    "secrets detection"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aenealabs/aura"
+  },
+  "activationEvents": [
+    "onLanguage:python",
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:java",
+    "onLanguage:go",
+    "onLanguage:rust"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aura.scanFile",
+        "title": "Aura: Scan Current File",
+        "icon": "$(search)"
+      },
+      {
+        "command": "aura.scanWorkspace",
+        "title": "Aura: Scan Workspace",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "aura.generatePatch",
+        "title": "Aura: Generate Patch for Finding"
+      },
+      {
+        "command": "aura.applyPatch",
+        "title": "Aura: Apply Approved Patch"
+      },
+      {
+        "command": "aura.showApprovals",
+        "title": "Aura: Show HITL Approvals"
+      },
+      {
+        "command": "aura.toggleScanOnSave",
+        "title": "Aura: Toggle Scan on Save"
+      },
+      {
+        "command": "aura.showGraphContext",
+        "title": "Aura: Show Code Context Graph",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "aura.previewFix",
+        "title": "Aura: Preview Fix"
+      },
+      {
+        "command": "aura.checkSecrets",
+        "title": "Aura: Check for Secrets",
+        "icon": "$(key)"
+      },
+      {
+        "command": "aura.refreshGraphContext",
+        "title": "Aura: Refresh Code Context"
+      }
+    ],
+    "configuration": {
+      "title": "Aura Code Intelligence",
+      "properties": {
+        "aura.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8080",
+          "description": "URL of the Aura API server"
+        },
+        "aura.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan files on save"
+        },
+        "aura.severityThreshold": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low", "info"],
+          "default": "low",
+          "description": "Minimum severity level to display"
+        },
+        "aura.autoSuggestPatches": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically suggest patches for critical/high findings"
+        },
+        "aura.showCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show CodeLens annotations for findings"
+        },
+        "aura.showGraphContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show GraphRAG code context panel (key differentiator)"
+        },
+        "aura.graphDepth": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Default traversal depth for code context graph"
+        },
+        "aura.enableSecretsDetection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Detect and warn about secrets in code"
+        },
+        "aura.blockOnSecrets": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prevent scanning files that contain detected secrets"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aura-sidebar",
+          "title": "Aura Security",
+          "icon": "resources/aura-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aura-sidebar": [
+        {
+          "id": "aura-graph-context",
+          "type": "webview",
+          "name": "Code Context",
+          "icon": "$(type-hierarchy)"
+        },
+        {
+          "id": "aura-findings",
+          "name": "Findings"
+        },
+        {
+          "id": "aura-patches",
+          "name": "Patches"
+        },
+        {
+          "id": "aura-approvals",
+          "name": "HITL Approvals"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "aura.scanFile",
+          "group": "aura"
+        },
+        {
+          "command": "aura.generatePatch",
+          "group": "aura",
+          "when": "aura.hasFindings"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.x",
+    "@typescript-eslint/parser": "^6.x",
+    "@vscode/test-electron": "^2.3.x",
+    "eslint": "^8.x",
+    "typescript": "^5.x"
+  },
+  "dependencies": {
+    "axios": "^1.6.x"
+  }
+}

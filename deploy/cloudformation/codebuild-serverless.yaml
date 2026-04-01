@@ -1,0 +1,360 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Serverless Layer CodeBuild Project (Layer 6: Lambda, Step Functions, EventBridge)'
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+  ProjectName:
+    Type: String
+    Default: aura
+  GitHubRepository:
+    Type: String
+    Default: https://github.com/aenealabs/aura
+  GitHubBranch:
+    Type: String
+    Default: main
+    AllowedValues: [main, develop]
+
+Resources:
+  ServerlessArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-serverless-artifacts-${AWS::AccountId}-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOld
+            Status: Enabled
+            ExpirationInDays: 60
+            NoncurrentVersionExpirationInDays: 14
+          - Id: IntelligentTiering
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 0
+                StorageClass: INTELLIGENT_TIERING
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  ServerlessBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${ProjectName}-serverless-deploy-${Environment}'
+      RetentionInDays: 30
+
+  ServerlessCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-serverless-codebuild-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/ReadOnlyAccess'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+      Policies:
+        - PolicyName: ServerlessDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs - all project log groups
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:PutRetentionPolicy, logs:TagResource, logs:UntagResource, logs:DeleteLogGroup, logs:PutMetricFilter, logs:DeleteMetricFilter, logs:DescribeMetricFilters]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/stepfunctions/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/stepfunctions/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws-cloudtrail-logs-${AWS::AccountId}-${AWS::Region}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws-cloudtrail-logs-${AWS::AccountId}-${AWS::Region}-${Environment}:*'
+
+              # CloudWatch Logs Resource Policy (account-level)
+              - Effect: Allow
+                Action: [logs:PutResourcePolicy, logs:DeleteResourcePolicy, logs:DescribeResourcePolicies]
+                Resource: '*'
+
+              # CloudWatch Metrics/Alarms/Dashboards
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/CICD/Serverless'
+              - Effect: Allow
+                Action: [cloudwatch:PutMetricAlarm, cloudwatch:DeleteAlarms, cloudwatch:DescribeAlarms, cloudwatch:EnableAlarmActions, cloudwatch:DisableAlarmActions, cloudwatch:TagResource, cloudwatch:UntagResource, cloudwatch:ListTagsForResource]
+                Resource: !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-*'
+              - Effect: Allow
+                Action: [cloudwatch:PutDashboard, cloudwatch:DeleteDashboards, cloudwatch:GetDashboard]
+                Resource: !Sub 'arn:${AWS::Partition}:cloudwatch::${AWS::AccountId}:dashboard/${ProjectName}-*'
+
+              # S3 - all project buckets (artifacts, runbook, blocklist, cloudtrail)
+              - Effect: Allow
+                Action: [s3:CreateBucket, s3:DeleteBucket, s3:PutEncryptionConfiguration, s3:PutBucketVersioning, s3:PutBucketPublicAccessBlock, s3:PutLifecycleConfiguration, s3:PutBucketTagging, s3:GetBucketTagging, s3:GetBucketPolicy, s3:PutBucketPolicy, s3:DeleteBucketPolicy, s3:GetBucketAcl, s3:GetBucketLocation, s3:GetLifecycleConfiguration, s3:GetEncryptionConfiguration, s3:GetBucketVersioning, s3:ListBucket, s3:PutObject, s3:GetObject, s3:DeleteObject]
+                Resource:
+                  - !GetAtt ServerlessArtifactsBucket.Arn
+                  - !Sub '${ServerlessArtifactsBucket.Arn}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}/*'
+
+              # CloudFormation - all serverless stacks
+              - Effect: Allow
+                Action: [cloudformation:CreateStack, cloudformation:UpdateStack, cloudformation:DeleteStack, cloudformation:CreateChangeSet, cloudformation:ExecuteChangeSet, cloudformation:DeleteChangeSet, cloudformation:DescribeChangeSet, cloudformation:DescribeStacks, cloudformation:DescribeStackEvents, cloudformation:DescribeStackResources, cloudformation:GetTemplate, cloudformation:ValidateTemplate, cloudformation:GetTemplateSummary]
+                Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-*-${Environment}/*'
+
+              # CloudTrail
+              - Effect: Allow
+                Action: [cloudtrail:CreateTrail, cloudtrail:DeleteTrail, cloudtrail:GetTrail, cloudtrail:DescribeTrails, cloudtrail:UpdateTrail, cloudtrail:StartLogging, cloudtrail:StopLogging, cloudtrail:GetEventSelectors, cloudtrail:PutEventSelectors, cloudtrail:AddTags, cloudtrail:RemoveTags, cloudtrail:ListTags]
+                Resource: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${ProjectName}-*'
+
+              # Lambda
+              - Effect: Allow
+                Action: [lambda:CreateFunction, lambda:DeleteFunction, lambda:GetFunction, lambda:GetFunctionConfiguration, lambda:UpdateFunctionCode, lambda:UpdateFunctionConfiguration, lambda:AddPermission, lambda:RemovePermission, lambda:InvokeFunction, lambda:TagResource, lambda:UntagResource, lambda:PutFunctionConcurrency, lambda:DeleteFunctionConcurrency, lambda:PublishVersion, lambda:CreateAlias, lambda:UpdateAlias, lambda:DeleteAlias, lambda:GetAlias, lambda:CreateFunctionUrlConfig, lambda:UpdateFunctionUrlConfig, lambda:DeleteFunctionUrlConfig, lambda:GetFunctionUrlConfig]
+                Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-*'
+              - Effect: Allow
+                Action: [lambda:CreateEventSourceMapping, lambda:DeleteEventSourceMapping, lambda:GetEventSourceMapping, lambda:UpdateEventSourceMapping, lambda:ListEventSourceMappings, lambda:TagResource, lambda:UntagResource]
+                Resource: '*'
+
+              # EventBridge
+              - Effect: Allow
+                Action: [events:PutRule, events:DeleteRule, events:DescribeRule, events:EnableRule, events:DisableRule, events:PutTargets, events:RemoveTargets, events:ListTargetsByRule, events:ListRules, events:TagResource, events:UntagResource]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*/${ProjectName}-*'
+              - Effect: Allow
+                Action: [events:CreateEventBus, events:DeleteEventBus, events:DescribeEventBus, events:PutPermission, events:RemovePermission, events:TagResource, events:UntagResource]
+                Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/${ProjectName}-*'
+
+              # SQS
+              - Effect: Allow
+                Action: [sqs:CreateQueue, sqs:DeleteQueue, sqs:GetQueueAttributes, sqs:SetQueueAttributes, sqs:TagQueue, sqs:UntagQueue, sqs:GetQueueUrl, sqs:AddPermission, sqs:RemovePermission]
+                Resource: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+              # API Gateway V2 (WebSocket)
+              - Effect: Allow
+                Action: [apigateway:POST, apigateway:GET, apigateway:PUT, apigateway:DELETE, apigateway:PATCH, apigateway:TagResource, apigateway:UntagResource]
+                Resource: [!Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis', !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/*', !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/tags/*']
+
+              # SNS
+              - Effect: Allow
+                Action: [sns:CreateTopic, sns:DeleteTopic, sns:Publish, sns:Subscribe, sns:Unsubscribe, sns:GetTopicAttributes, sns:SetTopicAttributes, sns:ListTopics, sns:ListSubscriptionsByTopic, sns:TagResource, sns:UntagResource, sns:ListTagsForResource]
+                Resource: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+
+              # EC2 - Describe operations (AWS requires Resource: '*')
+              - Effect: Allow
+                Action: [ec2:DescribeSecurityGroups, ec2:DescribeVpcs, ec2:DescribeSubnets, ec2:DescribeNetworkInterfaces]
+                Resource: '*'
+              # EC2 - Security group creation (VPC networking)
+              - Effect: Allow
+                Action: ec2:CreateSecurityGroup
+                Resource: [!Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*', !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*']
+              # EC2 - Security group modification (VPC networking)
+              - Effect: Allow
+                Action: [ec2:DeleteSecurityGroup, ec2:AuthorizeSecurityGroupIngress, ec2:AuthorizeSecurityGroupEgress, ec2:RevokeSecurityGroupIngress, ec2:RevokeSecurityGroupEgress, ec2:CreateTags]
+                Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+              # EC2 - Network interface operations (Lambda VPC)
+              - Effect: Allow
+                Action: [ec2:CreateNetworkInterface, ec2:DeleteNetworkInterface]
+                Resource: [!Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*', !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/*', !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*']
+
+              # DynamoDB
+              - Effect: Allow
+                Action: [dynamodb:CreateTable, dynamodb:DeleteTable, dynamodb:DescribeTable, dynamodb:UpdateTable, dynamodb:UpdateTimeToLive, dynamodb:DescribeTimeToLive, dynamodb:UpdateContinuousBackups, dynamodb:DescribeContinuousBackups, dynamodb:TagResource, dynamodb:UntagResource, dynamodb:ListTagsOfResource]
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*'
+
+              # Secrets Manager
+              - Effect: Allow
+                Action: [secretsmanager:GetSecretValue, secretsmanager:DescribeSecret]
+                Resource: [!Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*', !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-*-${Environment}*']
+
+              # IAM - permission boundary policy
+              - Effect: Allow
+                Action: [iam:CreatePolicy, iam:DeletePolicy, iam:GetPolicy, iam:GetPolicyVersion, iam:ListPolicyVersions, iam:CreatePolicyVersion, iam:DeletePolicyVersion, iam:SetDefaultPolicyVersion]
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+
+              # IAM - Lambda role creation (requires permission boundary)
+              - Effect: Allow
+                Action: iam:CreateRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/Project: !Ref ProjectName
+                    aws:RequestTag/Environment: !Ref Environment
+                    aws:RequestTag/ManagedBy: CloudFormation
+                  StringLike:
+                    iam:PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+
+              # IAM - CloudTrail service role (no permission boundary needed for service roles)
+              - Effect: Allow
+                Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:TagRole, iam:UntagRole, iam:UpdateAssumeRolePolicy]
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cloudtrail-*-${Environment}'
+
+              # IAM - role management
+              - Effect: Allow
+                Action: [iam:DeleteRole, iam:GetRole, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:TagRole, iam:UntagRole, iam:ListAttachedRolePolicies, iam:ListRolePolicies, iam:UpdateAssumeRolePolicy, iam:PutRolePermissionsBoundary]
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: [lambda.amazonaws.com, codebuild.amazonaws.com, events.amazonaws.com, apigateway.amazonaws.com, cloudtrail.amazonaws.com]
+
+              # SSM Parameter Store
+              - Effect: Allow
+                Action: [ssm:GetParameter, ssm:GetParameters]
+                Resource: [!Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*', !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/global/*']
+
+              # CodeBuild (Runbook Agent)
+              - Effect: Allow
+                Action: [codebuild:CreateProject, codebuild:DeleteProject, codebuild:UpdateProject, codebuild:BatchGetProjects]
+                Resource: !Sub 'arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectName}-runbook-agent-${Environment}'
+
+              # CodeConnections (GitHub)
+              - Effect: Allow
+                Action: [codeconnections:UseConnection, codeconnections:GetConnectionToken]
+                Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+
+              # SES (alerts)
+              - Effect: Allow
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource: '*'
+                Condition:
+                  StringLike:
+                    ses:FromAddress: !Sub '${ProjectName}-*@*'
+
+  ServerlessCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-serverless-deploy-${Environment}'
+      Description: 'Project Aura - Serverless Layer CodeBuild Project (Layer 6: Lambda, Step Functions, EventBridge)'
+      ServiceRole: !GetAtt ServerlessCodeBuildRole.Arn
+      Artifacts:
+        Type: S3
+        Location: !Ref ServerlessArtifactsBucket
+        Name: serverless-artifacts
+        Packaging: ZIP
+        EncryptionDisabled: false
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: LAYER
+            Value: serverless
+          - Name: LAMBDA_ARTIFACTS_BUCKET
+            Value: !Ref ServerlessArtifactsBucket
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+        BuildSpec: deploy/buildspecs/buildspec-serverless.yml
+        GitCloneDepth: 1
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: '{{resolve:ssm:/aura/global/codeconnections-arn}}'
+      SourceVersion: !Sub 'refs/heads/${GitHubBranch}'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref ServerlessBuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Cache:
+        Type: LOCAL
+        Modes: [LOCAL_SOURCE_CACHE, LOCAL_CUSTOM_CACHE]
+      TimeoutInMinutes: 45
+      QueuedTimeoutInMinutes: 480
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: serverless
+
+  ServerlessBuildFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-serverless-build-failures-${Environment}'
+      AlarmDescription: 'Alert when Serverless Layer has 2+ failures in 1 hour'
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref ServerlessCodeBuildProject
+      TreatMissingData: notBreaching
+
+Outputs:
+  CodeBuildProjectName:
+    Description: CodeBuild Project Name
+    Value: !Ref ServerlessCodeBuildProject
+    Export:
+      Name: !Sub '${ProjectName}-serverless-codebuild-project-${Environment}'
+  CodeBuildProjectArn:
+    Description: CodeBuild Project ARN
+    Value: !GetAtt ServerlessCodeBuildProject.Arn
+    Export:
+      Name: !Sub '${ProjectName}-serverless-codebuild-arn-${Environment}'
+  ArtifactsBucketName:
+    Description: S3 Bucket for Lambda deployment packages
+    Value: !Ref ServerlessArtifactsBucket
+    Export:
+      Name: !Sub '${ProjectName}-serverless-artifacts-bucket-${Environment}'
+  ArtifactsBucketArn:
+    Description: S3 Bucket ARN for Lambda deployment packages
+    Value: !GetAtt ServerlessArtifactsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-serverless-artifacts-bucket-arn-${Environment}'
+  CodeBuildRoleArn:
+    Description: IAM Role ARN for CodeBuild
+    Value: !GetAtt ServerlessCodeBuildRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-serverless-codebuild-role-arn-${Environment}'

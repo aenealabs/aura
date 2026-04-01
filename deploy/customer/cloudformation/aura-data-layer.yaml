@@ -1,0 +1,457 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Data Layer (Neptune + OpenSearch)'
+
+# =============================================================================
+# Project Aura Data Layer Template
+# =============================================================================
+# Deploys the data services for Aura's hybrid GraphRAG architecture:
+# - Neptune graph database for code relationships
+# - OpenSearch for vector embeddings and semantic search
+#
+# Prerequisites:
+# - Foundation layer deployed (aura-foundation-only.yaml)
+# - Security groups and subnets available
+#
+# Note: GovCloud compatible. Uses provisioned Neptune (serverless not available
+# in GovCloud).
+# =============================================================================
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Basic Configuration
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: Foundation Stack Reference
+        Parameters:
+          - FoundationStackName
+      - Label:
+          default: Neptune Configuration
+        Parameters:
+          - NeptuneInstanceType
+          - NeptuneBackupRetention
+      - Label:
+          default: OpenSearch Configuration
+        Parameters:
+          - OpenSearchInstanceType
+          - OpenSearchVolumeSize
+          - OpenSearchInstanceCount
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name (must match foundation stack)
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Deployment environment
+
+  FoundationStackName:
+    Type: String
+    Description: Name of the foundation CloudFormation stack
+    Default: aura-foundation-prod
+
+  NeptuneInstanceType:
+    Type: String
+    Default: db.t3.medium
+    AllowedValues:
+      - db.t3.medium
+      - db.r6g.large
+      - db.r6g.xlarge
+      - db.r6g.2xlarge
+      - db.r6g.4xlarge
+    Description: Neptune instance type (provisioned mode for GovCloud compatibility)
+
+  NeptuneBackupRetention:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 35
+    Description: Neptune backup retention period in days
+
+  OpenSearchInstanceType:
+    Type: String
+    Default: t3.small.search
+    AllowedValues:
+      - t3.small.search
+      - t3.medium.search
+      - r6g.large.search
+      - r6g.xlarge.search
+      - r6g.2xlarge.search
+    Description: OpenSearch instance type
+
+  OpenSearchVolumeSize:
+    Type: Number
+    Default: 20
+    MinValue: 10
+    MaxValue: 1000
+    Description: OpenSearch EBS volume size in GB
+
+  OpenSearchInstanceCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 10
+    Description: Number of OpenSearch data nodes
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  MultiAZOpenSearch: !And
+    - !Condition IsProduction
+    - !Not [!Equals [!Ref OpenSearchInstanceCount, 1]]
+
+Resources:
+  # ===========================================================================
+  # Neptune Graph Database
+  # ===========================================================================
+  NeptuneSubnetGroup:
+    Type: AWS::Neptune::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${ProjectName}-neptune-subnet-${Environment}'
+      DBSubnetGroupDescription: Subnet group for Neptune cluster
+      SubnetIds:
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnet1Id'
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnet2Id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-subnet-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  NeptuneClusterParameterGroup:
+    Type: AWS::Neptune::DBClusterParameterGroup
+    Properties:
+      Name: !Sub '${ProjectName}-neptune-cpg-${Environment}'
+      Description: Neptune cluster parameter group
+      Family: neptune1.3
+      Parameters:
+        neptune_enable_audit_log: '1'
+        neptune_query_timeout: 300000
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-cpg-${Environment}'
+
+  NeptuneCluster:
+    Type: AWS::Neptune::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub '${ProjectName}-neptune-${Environment}'
+      EngineVersion: '1.3.1.0'
+      Port: 8182
+      DBSubnetGroupName: !Ref NeptuneSubnetGroup
+      DBClusterParameterGroupName: !Ref NeptuneClusterParameterGroup
+      VpcSecurityGroupIds:
+        - Fn::ImportValue: !Sub '${FoundationStackName}-NeptuneSecurityGroupId'
+      StorageEncrypted: true
+      BackupRetentionPeriod: !Ref NeptuneBackupRetention
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      DeletionProtection: !If [IsProduction, true, false]
+      IamAuthEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: GovCloudCompatible
+          Value: 'true'
+
+  NeptunePrimaryInstance:
+    Type: AWS::Neptune::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-neptune-primary-${Environment}'
+      DBInstanceClass: !Ref NeptuneInstanceType
+      DBClusterIdentifier: !Ref NeptuneCluster
+      AutoMinorVersionUpgrade: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-primary-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  NeptuneReadReplica:
+    Type: AWS::Neptune::DBInstance
+    Condition: IsProduction
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-neptune-replica-${Environment}'
+      DBInstanceClass: !Ref NeptuneInstanceType
+      DBClusterIdentifier: !Ref NeptuneCluster
+      AutoMinorVersionUpgrade: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-neptune-replica-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ===========================================================================
+  # OpenSearch Vector Database
+  # ===========================================================================
+  OpenSearchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/opensearch/${ProjectName}-${Environment}'
+      RetentionInDays: !If [IsProduction, 90, 14]
+
+  OpenSearchLogResourcePolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-opensearch-logs-${Environment}'
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "es.amazonaws.com"
+              },
+              "Action": [
+                "logs:PutLogEvents",
+                "logs:CreateLogStream"
+              ],
+              "Resource": "${OpenSearchLogGroup.Arn}:*"
+            }
+          ]
+        }
+
+  OpenSearchDomain:
+    Type: AWS::OpenSearchService::Domain
+    DependsOn: OpenSearchLogResourcePolicy
+    Properties:
+      DomainName: !Sub '${ProjectName}-${Environment}'
+      EngineVersion: 'OpenSearch_2.11'
+      ClusterConfig:
+        InstanceType: !Ref OpenSearchInstanceType
+        InstanceCount: !Ref OpenSearchInstanceCount
+        DedicatedMasterEnabled: !If [IsProduction, true, false]
+        DedicatedMasterType: !If [IsProduction, 't3.small.search', !Ref 'AWS::NoValue']
+        DedicatedMasterCount: !If [IsProduction, 3, !Ref 'AWS::NoValue']
+        ZoneAwarenessEnabled: !If [MultiAZOpenSearch, true, false]
+        ZoneAwarenessConfig:
+          !If
+            - MultiAZOpenSearch
+            - AvailabilityZoneCount: 2
+            - !Ref 'AWS::NoValue'
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: gp3
+        VolumeSize: !Ref OpenSearchVolumeSize
+        Iops: 3000
+        Throughput: 125
+      VPCOptions:
+        SubnetIds:
+          - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnet1Id'
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub '${FoundationStackName}-OpenSearchSecurityGroupId'
+      EncryptionAtRestOptions:
+        Enabled: true
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      DomainEndpointOptions:
+        EnforceHTTPS: true
+        TLSSecurityPolicy: Policy-Min-TLS-1-2-2019-07
+      AdvancedSecurityOptions:
+        Enabled: true
+        InternalUserDatabaseEnabled: false
+        MasterUserOptions:
+          MasterUserARN:
+            Fn::ImportValue: !Sub '${FoundationStackName}-EKSNodeRoleArn'
+      LogPublishingOptions:
+        INDEX_SLOW_LOGS:
+          CloudWatchLogsLogGroupArn: !GetAtt OpenSearchLogGroup.Arn
+          Enabled: true
+        SEARCH_SLOW_LOGS:
+          CloudWatchLogsLogGroupArn: !GetAtt OpenSearchLogGroup.Arn
+          Enabled: true
+        ES_APPLICATION_LOGS:
+          CloudWatchLogsLogGroupArn: !GetAtt OpenSearchLogGroup.Arn
+          Enabled: true
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: 2
+      AccessPolicies:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - Fn::ImportValue: !Sub '${FoundationStackName}-EKSNodeRoleArn'
+            Action: 'es:*'
+            Resource: !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-${Environment}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-opensearch-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # DynamoDB Tables (for session state and caching)
+  # ===========================================================================
+  SessionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-sessions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-sessions-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  CacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-cache-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: cache_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: cache_key
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-cache-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-audit-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: event_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: event_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: user-time-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-audit-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  NeptuneClusterEndpoint:
+    Description: Neptune cluster endpoint
+    Value: !GetAtt NeptuneCluster.Endpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-NeptuneEndpoint'
+
+  NeptuneClusterReadEndpoint:
+    Description: Neptune read endpoint
+    Value: !GetAtt NeptuneCluster.ReadEndpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-NeptuneReadEndpoint'
+
+  NeptuneClusterPort:
+    Description: Neptune cluster port
+    Value: !GetAtt NeptuneCluster.Port
+    Export:
+      Name: !Sub '${AWS::StackName}-NeptunePort'
+
+  NeptuneClusterIdentifier:
+    Description: Neptune cluster identifier
+    Value: !Ref NeptuneCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-NeptuneClusterId'
+
+  OpenSearchDomainEndpoint:
+    Description: OpenSearch domain endpoint
+    Value: !GetAtt OpenSearchDomain.DomainEndpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-OpenSearchEndpoint'
+
+  OpenSearchDomainArn:
+    Description: OpenSearch domain ARN
+    Value: !GetAtt OpenSearchDomain.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OpenSearchArn'
+
+  SessionTableName:
+    Description: DynamoDB session table name
+    Value: !Ref SessionTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SessionTable'
+
+  CacheTableName:
+    Description: DynamoDB cache table name
+    Value: !Ref CacheTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CacheTable'
+
+  AuditTableName:
+    Description: DynamoDB audit table name
+    Value: !Ref AuditTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AuditTable'
+
+  ConnectionInfo:
+    Description: Database connection information
+    Value: !Sub |
+      Neptune:
+        Endpoint: ${NeptuneCluster.Endpoint}
+        Port: 8182
+        Protocol: wss (WebSocket Secure)
+
+      OpenSearch:
+        Endpoint: https://${OpenSearchDomain.DomainEndpoint}
+        Port: 443

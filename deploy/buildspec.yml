@@ -1,0 +1,168 @@
+version: 0.2
+
+# Project Aura - CloudFormation Deployment Pipeline
+# This buildspec validates, tests, and deploys CloudFormation stacks
+
+env:
+  variables:
+    ENVIRONMENT: "dev"
+    PROJECT_NAME: "aura"
+    AWS_DEFAULT_REGION: "us-east-1"
+  parameter-store:
+    ALERT_EMAIL: "/aura/dev/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing dependencies..."
+      - pip install --upgrade pip
+      - pip install cfn-lint boto3 pyyaml
+
+  pre_build:
+    commands:
+      - echo "Starting CloudFormation validation..."
+      - echo "Environment - $ENVIRONMENT"
+      - echo "Region - $AWS_DEFAULT_REGION"
+
+      # Validate all CloudFormation templates
+      - echo "Running cfn-lint on all templates..."
+      - cfn-lint deploy/cloudformation/*.yaml --ignore-checks W3002
+
+      # Check template file sizes
+      - echo "Checking template sizes..."
+      - |
+        for file in deploy/cloudformation/*.yaml; do
+          size=$(wc -c < "$file")
+          if [ $size -gt 51200 ]; then
+            echo "WARNING: $file is larger than 51KB ($size bytes)"
+          fi
+        done
+
+      # Validate master stack template
+      - echo "Validating master stack template..."
+      - |
+        aws cloudformation validate-template \
+          --template-body file://deploy/cloudformation/master-stack.yaml \
+          --region $AWS_DEFAULT_REGION
+
+      # Upload nested templates to S3
+      - echo "Creating/updating artifacts bucket..."
+      - ARTIFACT_BUCKET="${PROJECT_NAME}-cfn-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+      - |
+        if ! aws s3 ls "s3://${ARTIFACT_BUCKET}" 2>/dev/null; then
+          aws s3 mb "s3://${ARTIFACT_BUCKET}" --region $AWS_DEFAULT_REGION
+          aws s3api put-bucket-encryption \
+            --bucket "${ARTIFACT_BUCKET}" \
+            --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+          aws s3api put-public-access-block \
+            --bucket "${ARTIFACT_BUCKET}" \
+            --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+        fi
+
+      - echo "Uploading nested templates to S3..."
+      - |
+        aws s3 sync deploy/cloudformation/ "s3://${ARTIFACT_BUCKET}/cloudformation/" \
+          --exclude "master-stack.yaml" \
+          --exclude "codebuild.yaml" \
+          --region $AWS_DEFAULT_REGION
+
+      # Estimate costs
+      - echo "Estimating stack costs..."
+      - python3 tools/aws_cost_calculator.py --scenario development --format text
+
+  build:
+    commands:
+      - echo "Deploying CloudFormation stacks..."
+      - STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+
+      # Check if stack exists
+      - |
+        if aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Stack exists, updating..."
+          OPERATION="update-stack"
+          WAIT_CONDITION="stack-update-complete"
+        else
+          echo "Stack does not exist, creating..."
+          OPERATION="create-stack"
+          WAIT_CONDITION="stack-create-complete"
+        fi
+
+      # Deploy/Update stack
+      - |
+        aws cloudformation $OPERATION \
+          --stack-name $STACK_NAME \
+          --template-body file://deploy/cloudformation/master-stack.yaml \
+          --parameters \
+            ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+            ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+            ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
+            ParameterKey=VpcCIDR,ParameterValue=10.0.0.0/16 \
+            ParameterKey=AvailabilityZones,ParameterValue="us-east-1a,us-east-1b" \
+            ParameterKey=EKSNodeInstanceType,ParameterValue=t3.medium \
+            ParameterKey=EKSNodeGroupMinSize,ParameterValue=2 \
+            ParameterKey=EKSNodeGroupMaxSize,ParameterValue=5 \
+            ParameterKey=NeptuneInstanceType,ParameterValue=db.t3.medium \
+            ParameterKey=OpenSearchInstanceType,ParameterValue=t3.small.search \
+            ParameterKey=DailyBudget,ParameterValue=15 \
+            ParameterKey=MonthlyBudget,ParameterValue=400 \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags \
+            Key=Project,Value=$PROJECT_NAME \
+            Key=Environment,Value=$ENVIRONMENT \
+            Key=ManagedBy,Value=CodeBuild \
+          --region $AWS_DEFAULT_REGION \
+          --no-cli-pager
+
+      # Wait for stack operation to complete
+      - echo "Waiting for stack operation to complete..."
+      - |
+        aws cloudformation wait $WAIT_CONDITION \
+          --stack-name $STACK_NAME \
+          --region $AWS_DEFAULT_REGION
+
+  post_build:
+    commands:
+      - echo "Deployment completed!"
+
+      # Get stack outputs
+      - echo "Retrieving stack outputs..."
+      - |
+        aws cloudformation describe-stacks \
+          --stack-name $STACK_NAME \
+          --query 'Stacks[0].Outputs' \
+          --region $AWS_DEFAULT_REGION \
+          --output table
+
+      # Run post-deployment validation
+      - echo "Running post-deployment validation..."
+      - python3 deploy/validate_aws_setup.py
+
+      # Check stack drift (for existing stacks)
+      - echo "Checking for stack drift..."
+      - |
+        if [ "$OPERATION" = "update-stack" ]; then
+          DRIFT_ID=$(aws cloudformation detect-stack-drift \
+            --stack-name $STACK_NAME \
+            --region $AWS_DEFAULT_REGION \
+            --query 'StackDriftDetectionId' \
+            --output text)
+          echo "Drift detection initiated: $DRIFT_ID"
+        fi
+
+artifacts:
+  files:
+    - 'deploy/cloudformation/**/*'
+    - 'deploy/validate_aws_setup.py'
+  name: cloudformation-templates
+
+reports:
+  cfn-lint-report:
+    files:
+      - 'cfn-lint-report.txt'
+    file-format: PlainText
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

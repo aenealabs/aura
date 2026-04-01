@@ -1,0 +1,73 @@
+# Project Aura - Neural Memory Service Configuration
+# Configuration for Titan/MIRAS neural memory inference service
+#
+# These values are injected as environment variables into the memory service pod.
+# For secrets (API keys, model credentials), use Kubernetes Secrets or AWS Secrets Manager.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: memory-service-config
+  namespace: default
+  labels:
+    app: memory-service
+    component: config
+    environment: dev
+data:
+  # AWS Configuration
+  AWS_REGION: "us-east-1"
+  ENVIRONMENT: "dev"
+  PROJECT_NAME: "aura"
+
+  # Service Configuration
+  GRPC_PORT: "50051"
+  HEALTH_PORT: "8080"
+  METRICS_PORT: "9090"
+  LOG_LEVEL: "INFO"
+
+  # Model Configuration (Titan Neural Memory)
+  MODEL_BACKEND: "gpu"  # Options: gpu, inferentia (commercial AWS only)
+  MODEL_CACHE_DIR: "/var/lib/memory-service/models"
+  MODEL_STATE_DIR: "/var/lib/memory-service/state"
+
+  # Memory Architecture (from ADR-024)
+  # Deep MLP memory configuration (Titans/MIRAS)
+  MEMORY_TYPE: "titans"
+  MEMORY_DIM: "1024"
+  MEMORY_LAYERS: "3"
+  MEMORY_HEADS: "8"
+
+  # Test-time training parameters
+  TTT_LEARNING_RATE: "0.001"
+  TTT_MOMENTUM: "0.9"
+  TTT_STEPS: "1"
+
+  # Surprise-driven memorization thresholds
+  SURPRISE_THRESHOLD: "0.5"
+  MEMORY_UPDATE_DECAY: "0.99"
+
+  # S3 Configuration for model checkpoints
+  MODEL_S3_BUCKET: "aura-models-dev"
+  MODEL_S3_PREFIX: "neural-memory/checkpoints"
+  CHECKPOINT_INTERVAL_SECONDS: "3600"
+
+  # DynamoDB Configuration for memory state persistence
+  MEMORY_STATE_TABLE: "aura-neural-memory-dev"
+  STATE_SYNC_INTERVAL_SECONDS: "300"
+
+  # Performance Configuration
+  MAX_BATCH_SIZE: "32"
+  MAX_SEQUENCE_LENGTH: "8192"
+  WORKER_THREADS: "4"
+
+  # gRPC Configuration
+  GRPC_MAX_MESSAGE_SIZE: "104857600"  # 100MB
+  GRPC_KEEPALIVE_TIME_MS: "30000"
+  GRPC_KEEPALIVE_TIMEOUT_MS: "10000"
+
+  # CloudWatch Metrics
+  METRICS_NAMESPACE: "Aura/NeuralMemory"
+  METRICS_PUBLISH_INTERVAL_SECONDS: "60"
+
+  # Debug mode (set to "true" for verbose error messages)
+  DEBUG: "false"

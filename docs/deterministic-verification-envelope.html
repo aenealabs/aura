@@ -1,0 +1,1646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Aura - ADR-085: Deterministic Verification Envelope</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --brand: #3B82F6;
+    --brand-dark: #2563EB;
+    --critical: #DC2626;
+    --high: #EA580C;
+    --medium: #F59E0B;
+    --success: #10B981;
+    --info: #3B82F6;
+    --bg: #F8FAFC;
+    --surface: #FFFFFF;
+    --border: #E2E8F0;
+    --text: #1E293B;
+    --text-secondary: #64748B;
+    --code-bg: #F1F5F9;
+    --purple: #8B5CF6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .header {
+    background: linear-gradient(135deg, #0F172A 0%, #1E293B 40%, #1E3A5F 100%);
+    color: white;
+    padding: 48px 40px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; position: relative; }
+  .header .subtitle { font-size: 16px; color: #94A3B8; font-weight: 400; position: relative; max-width: 800px; }
+  .header .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 32px;
+    margin-top: 20px;
+    position: relative;
+  }
+  .header .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #CBD5E1;
+  }
+  .header .meta-value { color: white; font-weight: 600; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 32px 40px 60px; }
+
+  /* Navigation */
+  .nav {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .nav-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 10px; font-weight: 600; }
+  .nav-links { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nav-links a {
+    color: var(--brand);
+    text-decoration: none;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #EFF6FF;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .nav-links a:hover { background: var(--brand); color: white; }
+
+  /* Executive Summary */
+  .exec-summary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .exec-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .exec-card .number { font-size: 32px; font-weight: 800; color: var(--brand); line-height: 1; }
+  .exec-card .number.green { color: var(--success); }
+  .exec-card .number.orange { color: var(--high); }
+  .exec-card .number.purple { color: var(--purple); }
+  .exec-card .label { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+
+  section { margin-bottom: 36px; }
+  section h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--brand);
+  }
+  section h3 { font-size: 16px; font-weight: 600; margin: 16px 0 10px; color: var(--text); }
+  section h4 { font-size: 14px; font-weight: 600; margin: 12px 0 6px; color: var(--text-secondary); }
+  p, li { font-size: 14px; line-height: 1.7; }
+  p { margin-bottom: 12px; }
+  ul, ol { padding-left: 24px; margin-bottom: 12px; }
+  li { margin-bottom: 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0 20px; }
+  th {
+    background: var(--code-bg);
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--border);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: #F8FAFC; }
+  td.center { text-align: center; }
+
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  pre {
+    background: #0F172A;
+    color: #E2E8F0;
+    padding: 16px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    margin: 12px 0 16px;
+  }
+  pre code { background: none; padding: 0; font-size: 12.5px; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-proposed { background: #EDE9FE; color: #5B21B6; }
+  .badge-new { background: #DBEAFE; color: #1E40AF; }
+  .badge-deterministic { background: #D1FAE5; color: #065F46; }
+  .badge-probabilistic { background: #FEF3C7; color: #92400E; }
+  .badge-independent { background: #E0E7FF; color: #3730A3; }
+  .badge-deployed { background: #D1FAE5; color: #065F46; }
+  .badge-critical { background: #FEE2E2; color: #991B1B; }
+  .badge-high { background: #FFEDD5; color: #9A3412; }
+  .badge-medium { background: #FEF3C7; color: #92400E; }
+  .badge-info { background: #DBEAFE; color: #1E40AF; }
+  .badge-success { background: #D1FAE5; color: #065F46; }
+  .badge-deferred { background: #FEF3C7; color: #92400E; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+    transition: box-shadow 0.2s;
+  }
+  .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .card h4 { margin: 0 0 8px; font-size: 15px; font-weight: 700; color: var(--text); }
+  .card p { font-size: 13px; color: var(--text-secondary); }
+
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin: 16px 0; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+  /* Pillar cards */
+  .pillar-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    border-left: 5px solid;
+    margin-bottom: 16px;
+  }
+  .pillar-card h3 { margin-top: 0; font-size: 17px; }
+  .pillar-card p { font-size: 13px; color: var(--text-secondary); }
+  .pillar-1 { border-left-color: var(--brand); }
+  .pillar-2 { border-left-color: var(--success); }
+  .pillar-3 { border-left-color: var(--purple); }
+
+  /* Flow diagram */
+  .flow-diagram {
+    background: #0F172A;
+    color: #94A3B8;
+    padding: 20px 24px;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 12px 0 16px;
+    white-space: pre;
+  }
+  .flow-diagram .hl-blue { color: #60A5FA; }
+  .flow-diagram .hl-green { color: #34D399; }
+  .flow-diagram .hl-yellow { color: #FBBF24; }
+  .flow-diagram .hl-red { color: #F87171; }
+  .flow-diagram .hl-purple { color: #C084FC; }
+  .flow-diagram .hl-cyan { color: #22D3EE; }
+  .flow-diagram .hl-dim { color: #475569; }
+  .flow-diagram .hl-white { color: #E2E8F0; }
+
+  /* Callouts */
+  .callout {
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin: 12px 0 16px;
+    font-size: 13px;
+    border: 1px solid;
+  }
+  .callout-info { background: #EFF6FF; border-color: #BFDBFE; border-left: 4px solid var(--brand); }
+  .callout-warning { background: #FFFBEB; border-color: #FDE68A; border-left: 4px solid var(--medium); }
+  .callout-success { background: #F0FDF4; border-color: #BBF7D0; border-left: 4px solid var(--success); }
+  .callout-danger { background: #FEF2F2; border-color: #FECACA; border-left: 4px solid var(--critical); }
+  .callout-title { font-weight: 700; margin-bottom: 6px; font-size: 14px; }
+
+  /* Consequence cards */
+  .consequence-positive {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--success);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+    font-size: 13px;
+  }
+  .consequence-negative {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--high);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+    font-size: 13px;
+  }
+
+  /* Constraint axis cards */
+  .axis-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .axis-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+    border-top: 3px solid;
+  }
+  .axis-card.expressible { border-top-color: var(--success); }
+  .axis-card.deferred { border-top-color: var(--medium); }
+  .axis-card .axis-id { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+  .axis-card .axis-name { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .axis-card .axis-status { font-size: 11px; }
+
+  /* Phase timeline */
+  .phase-timeline {
+    display: flex;
+    gap: 0;
+    margin: 20px 0;
+    overflow-x: auto;
+  }
+  .phase-block {
+    flex: 1;
+    min-width: 140px;
+    padding: 14px 12px;
+    text-align: center;
+    border: 2px solid var(--border);
+    position: relative;
+    background: var(--surface);
+  }
+  .phase-block:first-child { border-radius: 10px 0 0 10px; }
+  .phase-block:last-child { border-radius: 0 10px 10px 0; }
+  .phase-block .phase-num { font-size: 20px; font-weight: 800; color: var(--brand); }
+  .phase-block .phase-name { font-size: 11px; font-weight: 600; margin: 2px 0; }
+  .phase-block .phase-weeks { font-size: 10px; color: var(--text-secondary); }
+  .phase-block .phase-tests { font-size: 10px; color: var(--success); font-weight: 600; }
+
+  /* Package tree */
+  .tree-container {
+    background: #0F172A;
+    color: #E2E8F0;
+    padding: 16px 20px;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    overflow-x: auto;
+    margin: 12px 0 16px;
+  }
+  .tree-container .tree-dir { color: #60A5FA; font-weight: 600; }
+  .tree-container .tree-file { color: #94A3B8; }
+  .tree-container .tree-loc { color: #64748B; }
+
+  .footer {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  @media (max-width: 1024px) {
+    .exec-summary { grid-template-columns: repeat(3, 1fr); }
+    .three-col { grid-template-columns: 1fr; }
+    .two-col { grid-template-columns: 1fr; }
+    .axis-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+  @media (max-width: 768px) {
+    .header { padding: 32px 20px; }
+    .header h1 { font-size: 24px; }
+    .container { padding: 20px; }
+    .exec-summary { grid-template-columns: 1fr 1fr; }
+    .card-grid { grid-template-columns: 1fr; }
+    .nav-links { gap: 4px; }
+    .axis-grid { grid-template-columns: repeat(2, 1fr); }
+    .phase-timeline { flex-direction: column; }
+    .phase-block { border-radius: 0; }
+    .phase-block:first-child { border-radius: 10px 10px 0 0; }
+    .phase-block:last-child { border-radius: 0 0 10px 10px; }
+    pre, .flow-diagram { font-size: 10.5px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <h1>Deterministic Verification Envelope</h1>
+  <div class="subtitle">DO-178C Output Verification Architecture -- Three deterministic verification pillars wrapping the LLM agent pipeline to enable FAA tool qualification compliance via output verification</div>
+  <div class="meta-row">
+    <div class="meta-item">Platform: <span class="meta-value">Project Aura</span></div>
+    <div class="meta-item">|</div>
+    <div class="meta-item">Company: <span class="meta-value">Aenea Labs</span></div>
+    <div class="meta-item">|</div>
+    <div class="meta-item">Date: <span class="meta-value">February 2026</span></div>
+    <div class="meta-item">|</div>
+    <div class="meta-item">Record: <span class="meta-value">ADR-085</span></div>
+    <div class="meta-item">|</div>
+    <div class="meta-item">Status: <span class="meta-value"><span class="badge badge-proposed">Proposed</span></span></div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- Executive Summary -->
+<div class="exec-summary">
+  <div class="exec-card">
+    <div class="number">3</div>
+    <div class="label">Verification Pillars</div>
+  </div>
+  <div class="exec-card">
+    <div class="number purple">6</div>
+    <div class="label">Independent Verification Passes</div>
+  </div>
+  <div class="exec-card">
+    <div class="number orange">~4,700</div>
+    <div class="label">Lines of Code (Planned)</div>
+  </div>
+  <div class="exec-card">
+    <div class="number green">~750</div>
+    <div class="label">Tests (Planned)</div>
+  </div>
+  <div class="exec-card">
+    <div class="number">20</div>
+    <div class="label">Week Implementation</div>
+  </div>
+</div>
+
+<!-- Navigation -->
+<nav class="nav">
+  <div class="nav-title">Quick Navigation</div>
+  <div class="nav-links">
+    <a href="#context">Context</a>
+    <a href="#gap-summary">Gap Summary</a>
+    <a href="#decision">Decision</a>
+    <a href="#certification-argument">DO-330 Argument</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#pipeline-diagram">Pipeline Diagram</a>
+    <a href="#pillar-1">Pillar 1: Consensus</a>
+    <a href="#pillar-2">Pillar 2: Coverage</a>
+    <a href="#pillar-3">Pillar 3: Formal</a>
+    <a href="#policy-profiles">Policy Profiles</a>
+    <a href="#traceability">Traceability</a>
+    <a href="#implementation">Implementation</a>
+    <a href="#phases">Phases</a>
+    <a href="#govcloud">GovCloud</a>
+    <a href="#cost">Cost Analysis</a>
+    <a href="#testing">Testing</a>
+    <a href="#consequences">Consequences</a>
+    <a href="#metrics">Success Metrics</a>
+    <a href="#references">References</a>
+  </div>
+</nav>
+
+<!-- 1. Context -->
+<section id="context">
+  <h2>1. Context</h2>
+
+  <h3>The Non-Determinism Problem</h3>
+  <p>Large language models are inherently non-deterministic. The same input can produce different outputs across invocations due to sampling temperature, floating-point variance across hardware, model weight updates, and stochastic decoding strategies. DO-178C (Software Considerations in Airborne Systems and Equipment Certification) and DO-330 (Software Tool Qualification Considerations) require tools used in the development of airborne software to behave predictably and produce verifiable outputs. This creates a fundamental conflict: AI-based code generation tools cannot satisfy determinism requirements through their generation mechanism alone.</p>
+
+  <p>Aura's existing agent execution pipeline contains multiple layers, but most are probabilistic:</p>
+
+  <table>
+    <tr>
+      <th>Pipeline Layer</th>
+      <th>ADR</th>
+      <th>Deterministic?</th>
+      <th>Limitation</th>
+    </tr>
+    <tr>
+      <td>Semantic Guardrails</td>
+      <td>ADR-065</td>
+      <td class="center"><span class="badge badge-probabilistic">No</span></td>
+      <td>LLM-as-judge in Layer 4 is probabilistic</td>
+    </tr>
+    <tr>
+      <td>Agent Execution (Coder)</td>
+      <td>--</td>
+      <td class="center"><span class="badge badge-probabilistic">No</span></td>
+      <td>LLM generation is inherently non-deterministic</td>
+    </tr>
+    <tr>
+      <td>Constitutional AI</td>
+      <td>ADR-063</td>
+      <td class="center"><span class="badge badge-probabilistic">No</span></td>
+      <td>LLM critiquing LLM -- probabilistic critique and revision</td>
+    </tr>
+    <tr>
+      <td>Constraint Geometry Engine</td>
+      <td>ADR-081</td>
+      <td class="center"><span class="badge badge-deterministic">Yes</span></td>
+      <td>Deterministic scoring, but only measures coherence -- does not formally prove correctness</td>
+    </tr>
+    <tr>
+      <td>Sandbox Validation</td>
+      <td>--</td>
+      <td class="center"><span class="badge badge-deterministic">Yes</span></td>
+      <td>Deterministic (tests pass or fail), but only 70% statement coverage -- no MC/DC</td>
+    </tr>
+    <tr>
+      <td>HITL Approval</td>
+      <td>ADR-032</td>
+      <td class="center"><span class="badge badge-independent">Independent</span></td>
+      <td>Human review is independent but not scalable</td>
+    </tr>
+  </table>
+
+  <p>The Constraint Geometry Engine (ADR-081) was explicitly designed as the "sole deterministic decision boundary" in the agent execution pipeline. It measures geometric coherence of agent outputs against a 7-axis constraint space using frozen embeddings, cosine similarity, and weighted harmonic means. However, the CGE measures how well an output aligns with constraint exemplars -- it does not perform formal proof of correctness, structural coverage analysis, or consensus validation across multiple generation attempts. Coherence is necessary but not sufficient for safety-critical software certification.</p>
+
+  <h3>DO-178C and DO-330 Regulatory Context</h3>
+  <p>Full Authority Digital Engine Control (FADEC) software typically receives Design Assurance Level (DAL) A (Catastrophic) or DAL B (Hazardous). FADEC controls engine thrust, and loss of thrust control can result in loss of aircraft. The certification rigor scales with the severity of the failure condition:</p>
+
+  <table>
+    <tr>
+      <th>DAL</th>
+      <th>Failure Condition</th>
+      <th>Objectives</th>
+      <th>Failure Rate</th>
+      <th>Structural Coverage Required</th>
+    </tr>
+    <tr>
+      <td><strong>A</strong></td>
+      <td>Catastrophic</td>
+      <td class="center">71</td>
+      <td class="center">&le; 1x10<sup>-9</sup>/flight hour</td>
+      <td>Statement + Decision + MC/DC + Object Code</td>
+    </tr>
+    <tr>
+      <td><strong>B</strong></td>
+      <td>Hazardous</td>
+      <td class="center">69</td>
+      <td class="center">&le; 1x10<sup>-7</sup>/flight hour</td>
+      <td>Statement + Decision + MC/DC</td>
+    </tr>
+    <tr>
+      <td><strong>C</strong></td>
+      <td>Major</td>
+      <td class="center">62</td>
+      <td class="center">&le; 1x10<sup>-5</sup>/flight hour</td>
+      <td>Statement + Decision</td>
+    </tr>
+    <tr>
+      <td><strong>D</strong></td>
+      <td>Minor</td>
+      <td class="center">26</td>
+      <td class="center">--</td>
+      <td>Statement</td>
+    </tr>
+  </table>
+
+  <p>DO-330 governs tool qualification. Tool Qualification Levels (TQL) are determined by how the tool affects the development process and the DAL of the software being developed:</p>
+
+  <table>
+    <tr>
+      <th>Aura Component</th>
+      <th>DO-330 Criteria</th>
+      <th>TQL at DAL A</th>
+      <th>Implication</th>
+    </tr>
+    <tr>
+      <td>Coder Agent</td>
+      <td>Criteria 1 (output becomes airborne software)</td>
+      <td class="center">TQL-1</td>
+      <td>Most rigorous -- tool must be developed to near-DAL A rigor</td>
+    </tr>
+    <tr>
+      <td>Reviewer Agent</td>
+      <td>Criteria 2 (automates verification)</td>
+      <td class="center">TQL-2</td>
+      <td>Tool qualification with independence</td>
+    </tr>
+    <tr>
+      <td>Validator Agent</td>
+      <td>Criteria 2/3</td>
+      <td class="center">TQL-2/TQL-5</td>
+      <td>Depends on whether output eliminates other verification</td>
+    </tr>
+    <tr>
+      <td>CGE (ADR-081)</td>
+      <td>Criteria 3 (could fail to detect errors)</td>
+      <td class="center">TQL-5</td>
+      <td>Least rigorous -- standard development practices</td>
+    </tr>
+  </table>
+
+  <div class="callout callout-danger">
+    <div class="callout-title">Critical Regulatory Gap</div>
+    No LLM-based tool has ever been qualified under DO-330 at any TQL level. The FAA states: "Assuring the safety of such systems cannot rely on traditional aviation design assurance." TQL-1 qualification for an LLM-based code generator would require development rigor equivalent to DAL A software -- including full MC/DC coverage of the tool itself, formal methods where applicable, and complete requirements traceability. This is not achievable for a stochastic neural network.
+  </div>
+
+  <h3>The Output Verification Escape Clause</h3>
+  <p>DO-330 Section 11.4 states that tool qualification is required when the tool eliminates, reduces, or automates DO-178C processes -- <strong>unless the output of the tool is verified by other means.</strong> Specifically, if independent verification confirms that the tool's output is correct, the tool itself does not need to be qualified at the full TQL level dictated by its criteria classification.</p>
+  <p>This creates a viable certification path: if every output of the non-deterministic Coder Agent is independently verified through deterministic means that themselves can be qualified, the generator itself does not require TQL-1 qualification. The verification tools require TQL-2 or TQL-5 qualification -- levels that are achievable for deterministic software with well-defined behavior, bounded inputs, and repeatable outputs.</p>
+</section>
+
+<!-- 2. Gap Summary -->
+<section id="gap-summary">
+  <h2>2. Gap Summary -- Pre-DVE vs Post-DVE</h2>
+  <table>
+    <tr>
+      <th>Gap</th>
+      <th>DO-178C Requirement</th>
+      <th>Pre-DVE Status</th>
+      <th>Post-DVE Status</th>
+    </tr>
+    <tr>
+      <td>MC/DC Coverage (6.4.4.2c)</td>
+      <td>100% at DAL A/B</td>
+      <td><span class="badge badge-critical">Not Measured</span></td>
+      <td><span class="badge badge-success">Addressed (Pillar 2)</span></td>
+    </tr>
+    <tr>
+      <td>Decision Coverage (6.4.4.2b)</td>
+      <td>100% at DAL A/B/C</td>
+      <td><span class="badge badge-critical">Not Measured</span></td>
+      <td><span class="badge badge-success">Addressed (Pillar 2)</span></td>
+    </tr>
+    <tr>
+      <td>Statement Coverage (6.4.4.2a)</td>
+      <td>100% at all DALs</td>
+      <td><span class="badge badge-medium">70% Threshold</span></td>
+      <td><span class="badge badge-success">Configurable per DAL</span></td>
+    </tr>
+    <tr>
+      <td>Formal Methods (DO-333)</td>
+      <td>Supplements testing</td>
+      <td><span class="badge badge-critical">Not Implemented</span></td>
+      <td><span class="badge badge-success">Z3 SMT Integration</span></td>
+    </tr>
+    <tr>
+      <td>DO-330 TQL-1 for Coder</td>
+      <td>Required unless output verified</td>
+      <td><span class="badge badge-critical">Critical Gap</span></td>
+      <td><span class="badge badge-success">Output Verification</span></td>
+    </tr>
+    <tr>
+      <td>Requirements Traceability (5.5)</td>
+      <td>HLR &harr; LLR &harr; Code &harr; Test</td>
+      <td><span class="badge badge-critical">Not Addressed</span></td>
+      <td><span class="badge badge-success">Neptune Schema (Phase 4)</span></td>
+    </tr>
+    <tr>
+      <td>Generation Reproducibility</td>
+      <td>Tool behavior predictable</td>
+      <td><span class="badge badge-critical">Non-Deterministic</span></td>
+      <td><span class="badge badge-success">N-of-M Consensus</span></td>
+    </tr>
+  </table>
+
+  <h3>N-Modular Redundancy -- Aviation Precedent</h3>
+  <p>Triple-redundant flight computers are standard practice in commercial aviation. The Boeing 777 Aircraft Information Management System (AIMS) uses triple-modular redundancy: three independent processing channels compute the same function, and a voter selects the majority output. The Airbus A380 Integrated Modular Avionics (IMA) uses a similar approach with dissimilar redundancy (different processors, different compilers) to protect against common-mode failures.</p>
+  <p>Pillar 1 of the DVE applies this principle to LLM outputs: generate N independent outputs, normalize them to a canonical form, and accept only when M-of-N converge semantically. The critical difference from hardware redundancy is that software failures are not independent -- the same systematic bias in an LLM can produce the same incorrect output across all N generations. Consensus therefore reduces variance and filters outliers, but it is necessary and not sufficient. The converged output must still pass the full deterministic verification chain (CGE scoring, formal verification, structural coverage) before acceptance.</p>
+
+  <h3>What DVE Does NOT Address (Scope Limitations)</h3>
+  <div class="callout callout-warning">
+    <div class="callout-title">Scope Limitations</div>
+    The DVE is a necessary but not sufficient component of a DO-178C certification effort. The following are explicitly out of scope:
+    <ul style="margin-top:8px;">
+      <li><strong>DO-178C independence requirements:</strong> All DVE verification runs on shared Bedrock/Claude infrastructure. A common-mode LLM failure could affect both generation and verification. True independence requires dissimilar tools or human review (HITL satisfies this for the final gate).</li>
+      <li><strong>Embedded target testing:</strong> FADEC software runs on PowerPC or ARM Cortex-R processors with specialized real-time operating systems. DVE operates in cloud-hosted Python on x86/ARM EKS. Target-representative testing on actual FADEC hardware is not addressed.</li>
+      <li><strong>Object code verification:</strong> Compiler-generated machine code traceability is a DAL A requirement. DVE flags object code verification as a configurable policy requirement but does not implement compiler output analysis.</li>
+      <li><strong>Certification liaison:</strong> DVE does not substitute for Designated Engineering Representative (DER) or Aircraft Certification Office (ACO) engagement, Plan for Software Aspects of Certification (PSAC) negotiation, or Stage of Involvement (SOI) reviews.</li>
+      <li><strong>Model version stability:</strong> LLM upgrades (e.g., Claude 3.5 Sonnet to Claude 4) invalidate consensus convergence statistics. Re-validation is required after any model change.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 3. Decision -->
+<section id="decision">
+  <h2>3. Decision</h2>
+  <p>Implement the <strong>Deterministic Verification Envelope (DVE)</strong> as a new service package <code>src/services/verification_envelope/</code> that wraps the existing agent execution pipeline with three deterministic verification pillars, enabling a DO-330 Section 11.4 output verification argument for the LLM-based Coder Agent.</p>
+
+  <h3>Core Capabilities</h3>
+  <ol>
+    <li><strong>N-of-M Consensus Generation</strong> -- Run Coder Agent N times (default N=3), normalize outputs to canonical AST form, accept if M-of-N converge semantically (default M=2), escalate to HITL otherwise</li>
+    <li><strong>Structural Coverage Gate</strong> -- Add MC/DC analysis as stage 6 of sandbox validation pipeline with per-DAL configurable thresholds; extend <code>TestResult</code> dataclass with coverage fields; adapter pattern for VectorCAST, LDRA, Parasoft</li>
+    <li><strong>Formal Verification Integration</strong> -- Adapter pattern for SMT/model-checking backends; Z3 SMT solver as first implementation; translates CGE constraint axes C1-C4 to SMT assertions (C5-C7 not directly SMT-expressible -- documented as limitation)</li>
+    <li><strong>DO-178C Policy Profiles</strong> -- Two new CGE profiles (<code>do-178c-dal-a</code>, <code>do-178c-dal-b</code>) with mandatory formal verification and MC/DC conditions via new <code>PolicyConstraint</code> mechanism</li>
+    <li><strong>Bidirectional Requirements Traceability</strong> -- Neptune schema extension for HLR/LLR requirement nodes with <code>TRACES_TO</code>, <code>DERIVED_FROM</code>, <code>VERIFIED_BY</code> edge types</li>
+  </ol>
+</section>
+
+<!-- 4. DO-330 Certification Argument -->
+<section id="certification-argument">
+  <h2>4. DO-330 Certification Argument</h2>
+  <p>The DVE enables the following output verification argument under DO-330 Section 11.4:</p>
+
+  <div class="callout callout-info">
+    <div class="callout-title">Premise 1</div>
+    DO-330 states that tool qualification is not required when the output of the tool is verified by other means (Section 11.4).
+  </div>
+
+  <div class="callout callout-info">
+    <div class="callout-title">Premise 2</div>
+    The DVE provides six independent verification passes on every Coder Agent output:
+    <table style="margin-top:10px;">
+      <tr><th>Pass</th><th>Gate</th><th>Nature</th></tr>
+      <tr><td>(a)</td><td>N-of-M consensus filtering</td><td><span class="badge badge-probabilistic">Quasi-Deterministic</span> -- reduces variance through multi-generation convergence</td></tr>
+      <tr><td>(b)</td><td>Constitutional AI critique-revision</td><td><span class="badge badge-probabilistic">Probabilistic</span> -- adds safety margin through principle-based review</td></tr>
+      <tr><td>(c)</td><td>CGE deterministic 7-axis coherence scoring</td><td><span class="badge badge-deterministic">Deterministic</span> -- frozen embeddings, pure arithmetic</td></tr>
+      <tr><td>(d)</td><td>Z3 formal constraint satisfaction proof</td><td><span class="badge badge-deterministic">Deterministic</span> -- SMT solver with reproducible proof hash</td></tr>
+      <tr><td>(e)</td><td>Sandbox testing with MC/DC structural coverage</td><td><span class="badge badge-deterministic">Deterministic</span> -- tests pass or fail, coverage measured</td></tr>
+      <tr><td>(f)</td><td>HITL human review</td><td><span class="badge badge-independent">Independent</span> -- satisfies DO-178C independence requirements</td></tr>
+    </table>
+  </div>
+
+  <div class="callout callout-info">
+    <div class="callout-title">Premise 3</div>
+    Passes (c), (d), and (e) are fully deterministic -- the same output always produces the same verification result. Passes (a) and (b) are probabilistic but serve as variance reducers that filter non-convergent and principle-violating outputs before they reach the deterministic gates. Pass (f) satisfies the independence requirement through human cognition.
+  </div>
+
+  <div class="callout callout-success">
+    <div class="callout-title">Conclusion</div>
+    The verification envelope independently verifies every Coder Agent output through a chain of deterministic and independent checks. The Coder Agent itself, as a non-deterministic generation tool, does not require TQL-1 qualification provided this output verification argument is accepted by the cognizant DER.
+  </div>
+
+  <h3>Qualification Strategy</h3>
+  <p>The DVE verification components (CGE, formal verification gate, structural coverage gate) qualify at TQL-2 or TQL-5 as deterministic software tools that automate verification processes. Their Tool Operational Requirements (TOR) can be written, behavior demonstrated via bounded inputs and expected outputs, and qualification tests repeated with identical results. This is achievable because these components are deterministic software, not stochastic models.</p>
+
+  <div class="callout callout-warning">
+    <div class="callout-title">Caveat</div>
+    This argument has not been validated by any DER or certification authority. It is a proposed compliance approach subject to FAA/EASA acceptance. Proactive DER engagement is planned for Phase 1 to validate the argument structure before significant implementation investment.
+  </div>
+</section>
+
+<!-- 5. Architecture -->
+<section id="architecture">
+  <h2>5. Architecture</h2>
+
+  <h3 id="pipeline-diagram">Enhanced Pipeline Diagram</h3>
+  <div class="flow-diagram"><span class="hl-dim">+-------------------------------------------------------------------+</span>
+<span class="hl-white">|                    PRE-EXECUTION CONTROLS                          |</span>
+<span class="hl-dim">+-------------------------------------------------------------------+</span>
+<span class="hl-yellow">|  Input --&gt; ADR-065: Semantic Guardrails (probabilistic)            |</span>
+|                          |                                        |
+|                          v                                        |
+|  <span class="hl-blue">+---------------------------------------------------+</span>           |
+|  <span class="hl-blue">|  DVE PILLAR 1: N-of-M Consensus Engine  </span><span class="hl-cyan">[NEW]</span><span class="hl-blue">     |</span>           |
+|  <span class="hl-blue">|                                                   |</span>           |
+|  <span class="hl-blue">|  +---------+  +---------+  +---------+            |</span>           |
+|  <span class="hl-blue">|  | Coder   |  | Coder   |  | Coder   |            |</span>           |
+|  <span class="hl-blue">|  | Run 1   |  | Run 2   |  | Run N   |            |</span>           |
+|  <span class="hl-blue">|  +----+----+  +----+----+  +----+----+            |</span>           |
+|  <span class="hl-blue">|       v            v            v                 |</span>           |
+|  <span class="hl-blue">|  +--------------------------------------+         |</span>           |
+|  <span class="hl-blue">|  |  AST Normalizer (canonical form)     |         |</span>           |
+|  <span class="hl-blue">|  +------------------+-------------------+         |</span>           |
+|  <span class="hl-blue">|                     v                             |</span>           |
+|  <span class="hl-blue">|  +--------------------------------------+         |</span>           |
+|  <span class="hl-blue">|  |  Semantic Equivalence Check          |         |</span>           |
+|  <span class="hl-blue">|  |  M-of-N convergence?                 |         |</span>           |
+|  <span class="hl-blue">|  +------+-------------------+-----------+         |</span>           |
+|  <span class="hl-blue">|    </span><span class="hl-green">YES  |</span>              <span class="hl-red">NO   |</span>                     |           |
+|  <span class="hl-blue">|         v</span>                   <span class="hl-red">v</span>                     |           |
+|  <span class="hl-blue">|   </span><span class="hl-green">consensus_output</span>     <span class="hl-red">HITL Escalation</span>            |           |
+|  <span class="hl-blue">+-----------+-----------------------------------+</span>   |           |
+|              v                                                    |
+<span class="hl-dim">+-------------------------------------------------------------------+</span>
+<span class="hl-white">|                   POST-GENERATION CONTROLS                        |</span>
+<span class="hl-dim">+-------------------------------------------------------------------+</span>
+<span class="hl-yellow">|  ADR-063: Constitutional AI (probabilistic critique/revision)     |</span>
+|              |                                                    |
+|              v                                                    |
+<span class="hl-green">|  ADR-081: Constraint Geometry Engine (DETERMINISTIC scoring)      |</span>
+|              |  CCS score + per-axis breakdown                    |
+|              v                                                    |
+|  <span class="hl-purple">+---------------------------------------------------+</span>           |
+|  <span class="hl-purple">|  DVE PILLAR 3: Formal Verification Gate </span><span class="hl-cyan">[NEW]</span><span class="hl-purple">     |</span>           |
+|  <span class="hl-purple">|                                                   |</span>           |
+|  <span class="hl-purple">|  ConstraintTranslator: C1-C4 --&gt; SMT assertions   |</span>           |
+|  <span class="hl-purple">|  Z3 SMT Solver: satisfiability check              |</span>           |
+|  <span class="hl-purple">|  VerificationAuditor: proof hash + audit          |</span>           |
+|  <span class="hl-purple">|                                                   |</span>           |
+|  <span class="hl-purple">|  </span><span class="hl-green">PROVED --&gt; continue</span>    <span class="hl-red">FAILED --&gt; REJECT</span><span class="hl-purple">          |</span>           |
+|  <span class="hl-purple">+-----------+---------------------------------------+</span>           |
+|              v                                                    |
+<span class="hl-dim">+-------------------------------------------------------------------+</span>
+<span class="hl-white">|                   SANDBOX &amp; APPROVAL CONTROLS                     |</span>
+<span class="hl-dim">+-------------------------------------------------------------------+</span>
+<span class="hl-green">|  Sandbox Validation (existing 5 categories)</span>                       |
+|              |                                                    |
+|              v                                                    |
+|  <span class="hl-green">+---------------------------------------------------+</span>           |
+|  <span class="hl-green">|  DVE PILLAR 2: Structural Coverage Gate </span><span class="hl-cyan">[NEW]</span><span class="hl-green">     |</span>           |
+|  <span class="hl-green">|                                                   |</span>           |
+|  <span class="hl-green">|  MC/DC Coverage Adapter --&gt; VectorCAST/LDRA       |</span>           |
+|  <span class="hl-green">|  DAL Coverage Policy: per-DAL thresholds          |</span>           |
+|  <span class="hl-green">|                                                   |</span>           |
+|  <span class="hl-green">|  </span><span class="hl-green">PASSES --&gt; continue</span>    <span class="hl-red">FAILS --&gt; REJECT</span><span class="hl-green">           |</span>           |
+|  <span class="hl-green">+-----------+---------------------------------------+</span>           |
+|              v                                                    |
+<span class="hl-green">|  HITL Approval Workflow (ADR-032)</span>                                 |
+|              |                                                    |
+|              v                                                    |
+<span class="hl-green">|  Deploy</span>                                                           |
+<span class="hl-dim">+-------------------------------------------------------------------+</span></div>
+
+  <div style="margin:8px 0 16px; display:flex; gap:16px; flex-wrap:wrap; font-size:12px;">
+    <span><span class="badge badge-new">NEW</span> DVE Pillars (blue/purple/green borders)</span>
+    <span><span class="badge badge-deterministic">Deterministic</span> Existing deterministic gates</span>
+    <span><span class="badge badge-probabilistic">Probabilistic</span> LLM-dependent layers</span>
+    <span style="color:var(--critical); font-weight:600;">RED = Reject / Escalation paths</span>
+  </div>
+
+  <h3>Integration Points</h3>
+  <table>
+    <tr>
+      <th>DVE Component</th>
+      <th>Existing Service</th>
+      <th>Integration Method</th>
+    </tr>
+    <tr>
+      <td><code>ConsensusGenerationService</code></td>
+      <td><code>orchestration_service.py</code> (MetaOrchestrator)</td>
+      <td>Invokes <code>spawn_coder_agent()</code> N times in parallel</td>
+    </tr>
+    <tr>
+      <td><code>ASTNormalizer</code></td>
+      <td>Python stdlib <code>ast</code> module</td>
+      <td>New service; reuses AST patterns from <code>src/services/rlm/</code></td>
+    </tr>
+    <tr>
+      <td><code>SemanticEquivalenceChecker</code></td>
+      <td><code>semantic_cache_service.py</code></td>
+      <td>Reuses Bedrock Titan v2 embedding patterns</td>
+    </tr>
+    <tr>
+      <td><code>CoverageGateService</code></td>
+      <td><code>sandbox_test_runner.py</code></td>
+      <td>Extends <code>TestResult</code>; adds stage 6 to pipeline</td>
+    </tr>
+    <tr>
+      <td><code>FormalVerificationGate</code></td>
+      <td><code>constraint_geometry/engine.py</code></td>
+      <td>Post-CGE step; receives <code>CoherenceResult</code></td>
+    </tr>
+    <tr>
+      <td><code>ConstraintTranslator</code></td>
+      <td><code>constraint_geometry/contracts.py</code></td>
+      <td>Reads <code>ConstraintRule</code> centroids to derive SMT assertions</td>
+    </tr>
+    <tr>
+      <td><code>DO178CProfiles</code></td>
+      <td><code>constraint_geometry/policy_profile.py</code></td>
+      <td>New profiles in <code>_BUILTIN_PROFILES</code>; new <code>PolicyConstraint</code> mechanism</td>
+    </tr>
+    <tr>
+      <td><code>TraceabilityService</code></td>
+      <td><code>neptune_graph_service.py</code></td>
+      <td>Adds HLR/LLR vertex types, <code>TRACES_TO</code>/<code>DERIVED_FROM</code>/<code>VERIFIED_BY</code> edges</td>
+    </tr>
+  </table>
+</section>
+
+<!-- 6. Pillar 1 -->
+<section id="pillar-1">
+  <h2>6. Pillar 1: N-of-M Consensus Engine</h2>
+
+  <div class="pillar-card pillar-1">
+    <h3><span class="badge badge-new">NEW</span> Consensus Generation</h3>
+    <p>Run Coder Agent N times (default N=3), normalize outputs to canonical AST form, accept if M-of-N converge semantically (default M=2), escalate to HITL otherwise. Applies the aviation N-modular redundancy pattern to LLM output verification.</p>
+  </div>
+
+  <h3>AST Normalization</h3>
+  <p>The <code>ASTNormalizer</code> uses Python's stdlib <code>ast</code> module to convert generated code into a canonical form suitable for structural comparison. Normalization steps: sort imports alphabetically, remove comments and docstrings (semantics-only comparison), normalize variable names to positional placeholders (<code>_v0</code>, <code>_v1</code>, ...) to eliminate naming variance, and standardize whitespace. The result is an <code>ASTCanonicalForm</code> frozen dataclass containing the normalized AST and its SHA-256 hash.</p>
+
+  <h3>Semantic Equivalence</h3>
+  <p>The <code>SemanticEquivalenceChecker</code> performs a two-stage comparison:</p>
+  <ol>
+    <li><strong>Fast path:</strong> Exact AST canonical form match (string comparison of normalized AST dumps). If two outputs normalize to the same canonical form, they are equivalent. This catches trivially identical outputs that differ only in variable naming or formatting.</li>
+    <li><strong>Slow path:</strong> If AST forms differ, compute Bedrock Titan v2 embeddings for both canonical forms and check cosine similarity &gt; 0.97 threshold. This catches semantically equivalent outputs with structurally different implementations (e.g., <code>for</code> loop vs. list comprehension).</li>
+  </ol>
+
+  <h3>Consensus Selection</h3>
+  <p>When M-of-N outputs converge, the consensus output is selected as the invocation whose AST canonical form has the minimum total edit distance to all other converging outputs (the centroid of the convergence cluster). This selection is deterministic given the same set of converging outputs. When fewer than M outputs converge, the task is escalated to HITL with all N outputs and their pairwise similarity matrix attached for human review.</p>
+</section>
+
+<!-- 7. Pillar 2 -->
+<section id="pillar-2">
+  <h2>7. Pillar 2: Structural Coverage Gate</h2>
+
+  <div class="pillar-card pillar-2">
+    <h3><span class="badge badge-new">NEW</span> MC/DC Structural Coverage</h3>
+    <p>Adds MC/DC analysis as stage 6 of the sandbox validation pipeline with per-DAL configurable thresholds. Extends the <code>TestResult</code> dataclass with coverage fields and uses an adapter pattern for VectorCAST, LDRA, and coverage.py integration.</p>
+  </div>
+
+  <h3>TestResult Extension</h3>
+  <pre><code># New fields on existing TestResult dataclass
+statement_coverage_pct: float = 0.0
+decision_coverage_pct: float = 0.0
+mcdc_coverage_pct: float = 0.0
+structural_coverage_dal: Optional[str] = None  # "DAL_A" through "DAL_D" or "DEFAULT"
+coverage_tool_used: Optional[str] = None       # "vectorcast", "ldra", "coverage_py"
+coverage_report_s3_key: Optional[str] = None   # S3 path to full report</code></pre>
+
+  <h3>DAL Coverage Policy</h3>
+  <table>
+    <tr>
+      <th>DAL</th>
+      <th>Statement</th>
+      <th>Decision</th>
+      <th>MC/DC</th>
+      <th>Object Code</th>
+    </tr>
+    <tr style="background:#FEF2F2;">
+      <td><strong>A</strong></td>
+      <td class="center">100.0%</td>
+      <td class="center">100.0%</td>
+      <td class="center">100.0%</td>
+      <td class="center"><span class="badge badge-critical">Yes</span></td>
+    </tr>
+    <tr style="background:#FFF7ED;">
+      <td><strong>B</strong></td>
+      <td class="center">100.0%</td>
+      <td class="center">100.0%</td>
+      <td class="center">100.0%</td>
+      <td class="center">No</td>
+    </tr>
+    <tr style="background:#FFFBEB;">
+      <td><strong>C</strong></td>
+      <td class="center">100.0%</td>
+      <td class="center">100.0%</td>
+      <td class="center">0.0%</td>
+      <td class="center">No</td>
+    </tr>
+    <tr>
+      <td><strong>D</strong></td>
+      <td class="center">100.0%</td>
+      <td class="center">0.0%</td>
+      <td class="center">0.0%</td>
+      <td class="center">No</td>
+    </tr>
+    <tr style="background:#F0FDF4;">
+      <td><strong>DEFAULT</strong></td>
+      <td class="center">70.0%</td>
+      <td class="center">0.0%</td>
+      <td class="center">0.0%</td>
+      <td class="center">No</td>
+    </tr>
+  </table>
+  <p>The DEFAULT policy preserves Aura's existing 70% statement coverage threshold. Non-aviation workloads are unaffected.</p>
+
+  <h3>MC/DC Adapter Interface</h3>
+  <pre><code>class MCDCCoverageAdapter(Protocol):
+    """Protocol for MC/DC coverage analysis tool integration."""
+    async def analyze(
+        self,
+        source_file: Path,
+        test_results: TestResult,
+        dal_policy: DALCoveragePolicy,
+    ) -&gt; MCDCCoverageReport: ...</code></pre>
+  <p>Three adapters are provided:</p>
+  <ul>
+    <li><strong>VectorCASTAdapter</strong> -- Primary enterprise MC/DC tool (Vector Software). Subprocess invocation of VectorCAST CLI with SARIF-compatible output parsing.</li>
+    <li><strong>LDRAAdapter</strong> -- Alternative MC/DC tool (LDRA Testbed). Subprocess invocation with coverage report parsing.</li>
+    <li><strong>CoveragePyAdapter</strong> -- Statement and branch coverage only (open-source <code>coverage.py</code>). Used for DEFAULT DAL policy. Already integrated with Aura's test runner.</li>
+  </ul>
+</section>
+
+<!-- 8. Pillar 3 -->
+<section id="pillar-3">
+  <h2>8. Pillar 3: Formal Verification Integration</h2>
+
+  <div class="pillar-card pillar-3">
+    <h3><span class="badge badge-new">NEW</span> Z3 SMT Formal Verification</h3>
+    <p>Adapter pattern for SMT/model-checking backends with Z3 SMT solver as first implementation. Translates CGE constraint axes C1-C4 to SMT assertions, providing DO-333 formal methods supplement capability. C5-C7 remain covered by CGE coherence scoring.</p>
+  </div>
+
+  <h3>Constraint Translation -- SMT Expressibility</h3>
+  <div class="axis-grid">
+    <div class="axis-card expressible">
+      <div class="axis-id" style="color:var(--success);">C1</div>
+      <div class="axis-name">Syntactic Validity</div>
+      <div class="axis-status"><span class="badge badge-success">SMT Expressible</span></div>
+    </div>
+    <div class="axis-card expressible">
+      <div class="axis-id" style="color:var(--success);">C2</div>
+      <div class="axis-name">Semantic Correctness</div>
+      <div class="axis-status"><span class="badge badge-success">SMT Expressible</span></div>
+    </div>
+    <div class="axis-card expressible">
+      <div class="axis-id" style="color:var(--success);">C3</div>
+      <div class="axis-name">Security Policy</div>
+      <div class="axis-status"><span class="badge badge-success">SMT Expressible</span></div>
+    </div>
+    <div class="axis-card expressible">
+      <div class="axis-id" style="color:var(--success);">C4</div>
+      <div class="axis-name">Operational Bounds</div>
+      <div class="axis-status"><span class="badge badge-success">SMT Expressible</span></div>
+    </div>
+    <div class="axis-card deferred">
+      <div class="axis-id" style="color:var(--medium);">C5</div>
+      <div class="axis-name">Domain Compliance</div>
+      <div class="axis-status"><span class="badge badge-deferred">Deferred to CGE</span></div>
+    </div>
+    <div class="axis-card deferred">
+      <div class="axis-id" style="color:var(--medium);">C6</div>
+      <div class="axis-name">Provenance Trust</div>
+      <div class="axis-status"><span class="badge badge-deferred">Deferred to CGE</span></div>
+    </div>
+    <div class="axis-card deferred">
+      <div class="axis-id" style="color:var(--medium);">C7</div>
+      <div class="axis-name">Temporal Validity</div>
+      <div class="axis-status"><span class="badge badge-deferred">Deferred to CGE</span></div>
+    </div>
+  </div>
+
+  <h4>Constraint Translation Details</h4>
+  <ul>
+    <li><strong>C1 (Syntactic Validity):</strong> AST structural constraints and type annotation checks. Example: <code>assert valid_python_ast(output)</code>, <code>assert all_types_annotated(output)</code>.</li>
+    <li><strong>C2 (Semantic Correctness):</strong> Pre/post-condition checks via Z3 integer and bitvector arithmetic. Example: <code>assert output_satisfies_postcondition(spec, output)</code>.</li>
+    <li><strong>C3 (Security Policy):</strong> Negation of known-bad patterns. Example: <code>assert not contains_wildcard_iam(output)</code>, <code>assert not uses_eval_on_user_input(output)</code>.</li>
+    <li><strong>C4 (Operational Bounds):</strong> Quantitative constraints. Example: <code>assert max_resource_allocation &lt;= 1024</code>, <code>assert timeout_ms &lt;= 30000</code>.</li>
+    <li><strong>C5 (Domain Compliance):</strong> Not expressible in SMT. Domain business rules require semantic understanding beyond first-order logic. Deferred to CGE coherence scoring.</li>
+    <li><strong>C6 (Provenance Trust):</strong> Not expressible in SMT. Provenance chain verification is a graph operation, not a satisfiability problem. Deferred to CGE.</li>
+    <li><strong>C7 (Temporal Validity):</strong> Not expressible in SMT. Time-bounded operations depend on runtime state. Deferred to CGE.</li>
+  </ul>
+
+  <h3>Verification Result</h3>
+  <pre><code>@dataclass(frozen=True)
+class VerificationResult:
+    """Immutable formal verification outcome with audit trail."""
+    verdict: VerificationVerdict        # PROVED, FAILED, UNKNOWN, SKIPPED
+    axes_verified: tuple[str, ...]      # ("C1", "C2", "C3", "C4")
+    proof_hash: str                     # SHA-256(output_hash + assertions + solver_version)
+    solver_version: str                 # "z3-4.13.0"
+    verification_time_ms: float
+    smt_formula_hash: str               # SHA-256 of SMT-LIB formula
+    counterexample: Optional[str] = None  # Non-None only when FAILED</code></pre>
+  <p>The <code>proof_hash</code> enables DO-330 audit reproducibility. A DER can re-run the same output against the same assertions with the same Z3 version and verify that the proof hash matches. The <code>smt_formula_hash</code> allows independent verification that the SMT formula itself has not been modified between audit runs.</p>
+
+  <h3>Verification Verdicts</h3>
+  <table>
+    <tr><th>Verdict</th><th>Description</th><th>Behavior</th></tr>
+    <tr>
+      <td><span class="badge badge-success">PROVED</span></td>
+      <td>Z3 confirmed all assertions satisfiable for the given output</td>
+      <td>Output proceeds to next gate</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-critical">FAILED</span></td>
+      <td>Z3 found a counterexample</td>
+      <td>Output is rejected; counterexample included for diagnostic review</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-medium">UNKNOWN</span></td>
+      <td>Z3 could not determine satisfiability within timeout (default 30s)</td>
+      <td>Policy-dependent: DAL-A rejects; DAL-B escalates to HITL; DEFAULT skips</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-info">SKIPPED</span></td>
+      <td>Formal verification not required by the active policy profile</td>
+      <td>Used for DEFAULT and developer-sandbox profiles</td>
+    </tr>
+  </table>
+</section>
+
+<!-- 9. Policy Profiles -->
+<section id="policy-profiles">
+  <h2>9. New CGE Policy Profiles</h2>
+  <p>The DVE introduces a <code>PolicyConstraint</code> mechanism that extends the existing <code>PolicyProfile</code> to support mandatory boolean conditions beyond threshold-based CCS scoring:</p>
+  <pre><code>@dataclass(frozen=True)
+class PolicyConstraint:
+    """Mandatory boolean condition on a policy profile."""
+    name: str
+    description: str
+    predicate_key: str  # e.g., "formal_verification_proved", "mcdc_coverage_passed"
+    required: bool = True</code></pre>
+
+  <div class="two-col">
+    <div class="card" style="border-top:4px solid var(--critical);">
+      <h4>do-178c-dal-a Profile</h4>
+      <table>
+        <tr><td><strong>auto_execute_threshold</strong></td><td>0.95</td></tr>
+        <tr><td><strong>review_threshold</strong></td><td>0.85</td></tr>
+        <tr><td><strong>escalate_threshold</strong></td><td>0.70</td></tr>
+        <tr><td><strong>Axis weights</strong></td><td>C3 (Security) = 1.5, C5 (Domain) = 1.4, others = 1.0</td></tr>
+        <tr><td><strong>provenance_sensitivity</strong></td><td>0.9</td></tr>
+        <tr><td><strong>Mandatory constraints</strong></td><td><code>formal_verification_proved=True</code>, <code>mcdc_coverage_passed=True</code></td></tr>
+        <tr><td><strong>UNKNOWN formal verdict</strong></td><td><span class="badge badge-critical">REJECT</span></td></tr>
+      </table>
+    </div>
+    <div class="card" style="border-top:4px solid var(--high);">
+      <h4>do-178c-dal-b Profile</h4>
+      <table>
+        <tr><td><strong>auto_execute_threshold</strong></td><td>0.92</td></tr>
+        <tr><td><strong>review_threshold</strong></td><td>0.80</td></tr>
+        <tr><td><strong>escalate_threshold</strong></td><td>0.65</td></tr>
+        <tr><td><strong>Axis weights</strong></td><td>Same as DAL-A</td></tr>
+        <tr><td><strong>Mandatory constraints</strong></td><td><code>mcdc_coverage_passed=True</code></td></tr>
+        <tr><td><strong>Formal verification</strong></td><td>PROVED required for auto-execute; UNKNOWN triggers HITL escalation</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <p>Both profiles are registered in <code>_BUILTIN_PROFILES</code> alongside the existing <code>default</code>, <code>dod-il5</code>, <code>developer-sandbox</code>, and <code>sox-compliant</code> profiles. The existing four profiles are not modified.</p>
+</section>
+
+<!-- 10. Traceability -->
+<section id="traceability">
+  <h2>10. Neptune Requirements Traceability Schema</h2>
+  <pre><code>Vertex Types (NEW):
+  HighLevelRequirement (HLR)  - System-level requirement (e.g., "Engine shall maintain idle thrust")
+  LowLevelRequirement (LLR)  - Software-level requirement derived from HLR
+  CodeUnit                    - Function, class, or module implementing an LLR
+  TestCase                    - Test verifying a CodeUnit against an LLR
+
+Edge Types (NEW):
+  TRACES_TO     - HLR --&gt; LLR (derivation), LLR --&gt; CodeUnit (implementation)
+  DERIVED_FROM  - LLR --&gt; HLR (inverse traceability), CodeUnit --&gt; LLR (inverse)
+  VERIFIED_BY   - LLR --&gt; TestCase (verification linkage)
+  SATISFIES     - CodeUnit --&gt; LLR (forward traceability from code to requirement)
+
+Edge Properties:
+  verification_status: str   - "PASSED", "FAILED", "PENDING", "NOT_RUN"
+  dal_level:           str   - "DAL_A" through "DAL_D"
+  coverage_type:       str   - "statement", "decision", "mcdc"
+  last_verified:       str   - ISO timestamp</code></pre>
+  <p>This schema extends the existing Neptune graph (which already contains <code>CALL_GRAPH</code>, <code>DEPENDENCIES</code>, <code>INHERITANCE</code>, and <code>REFERENCES</code> edge types) with requirements engineering vertices and edges required by DO-178C Section 5.5 (Software Requirements Process) and Section 6.3 (Software Requirements Review).</p>
+</section>
+
+<!-- 11. Implementation -->
+<section id="implementation">
+  <h2>11. Implementation</h2>
+
+  <h3>Package Structure</h3>
+  <div class="tree-container"><span class="tree-dir">src/services/verification_envelope/</span>
+<span class="tree-file">|-- __init__.py</span>                          <span class="tree-loc">(~50 lines)</span>
+<span class="tree-file">|-- config.py</span>                            <span class="tree-loc">(~150 lines)</span>
+<span class="tree-file">|-- contracts.py</span>                         <span class="tree-loc">(~400 lines)</span>
+<span class="tree-dir">|-- consensus/</span>
+<span class="tree-file">|   |-- __init__.py</span>
+<span class="tree-file">|   |-- consensus_service.py</span>             <span class="tree-loc">(~300 lines)</span>
+<span class="tree-file">|   |-- ast_normalizer.py</span>                <span class="tree-loc">(~250 lines)</span>
+<span class="tree-file">|   |-- semantic_equivalence.py</span>          <span class="tree-loc">(~200 lines)</span>
+<span class="tree-file">|   +-- consensus_policy.py</span>              <span class="tree-loc">(~150 lines)</span>
+<span class="tree-dir">|-- coverage/</span>
+<span class="tree-file">|   |-- __init__.py</span>
+<span class="tree-file">|   |-- coverage_gate.py</span>                 <span class="tree-loc">(~250 lines)</span>
+<span class="tree-file">|   |-- mcdc_adapter.py</span>                  <span class="tree-loc">(~100 lines)</span>
+<span class="tree-file">|   |-- vectorcast_adapter.py</span>            <span class="tree-loc">(~200 lines)</span>
+<span class="tree-file">|   |-- ldra_adapter.py</span>                  <span class="tree-loc">(~150 lines)</span>
+<span class="tree-file">|   +-- dal_coverage_policy.py</span>           <span class="tree-loc">(~150 lines)</span>
+<span class="tree-dir">|-- formal/</span>
+<span class="tree-file">|   |-- __init__.py</span>
+<span class="tree-file">|   |-- verification_gate.py</span>             <span class="tree-loc">(~250 lines)</span>
+<span class="tree-file">|   |-- formal_adapter.py</span>               <span class="tree-loc">(~80 lines)</span>
+<span class="tree-file">|   |-- z3_smt_adapter.py</span>               <span class="tree-loc">(~350 lines)</span>
+<span class="tree-file">|   |-- constraint_translator.py</span>         <span class="tree-loc">(~300 lines)</span>
+<span class="tree-file">|   +-- verification_auditor.py</span>          <span class="tree-loc">(~200 lines)</span>
+<span class="tree-dir">|-- traceability/</span>
+<span class="tree-file">|   |-- __init__.py</span>
+<span class="tree-file">|   |-- traceability_service.py</span>          <span class="tree-loc">(~400 lines)</span>
+<span class="tree-file">|   |-- lifecycle_data.py</span>                <span class="tree-loc">(~600 lines)</span>
+<span class="tree-file">|   +-- neptune_requirements.py</span>          <span class="tree-loc">(~250 lines)</span>
+<span class="tree-dir">|-- pipeline/</span>
+<span class="tree-file">|   |-- __init__.py</span>
+<span class="tree-file">|   |-- dve_pipeline.py</span>                  <span class="tree-loc">(~350 lines)</span>
+<span class="tree-file">|   +-- dve_metrics.py</span>                   <span class="tree-loc">(~150 lines)</span>
+<span class="tree-dir">+-- policies/</span>
+<span class="tree-file">    |-- __init__.py</span>
+<span class="tree-file">    +-- do178c_profiles.py</span>               <span class="tree-loc">(~100 lines)</span></div>
+  <p><strong>Estimated source code:</strong> ~4,700 lines</p>
+
+  <h3>Files Modified (Existing)</h3>
+  <table>
+    <tr><th>File</th><th>Modification</th></tr>
+    <tr>
+      <td><code>src/services/sandbox_test_runner.py</code></td>
+      <td>Extend <code>TestResult</code> with 6 structural coverage fields; add stage 6 (coverage gate) to sandbox pipeline</td>
+    </tr>
+    <tr>
+      <td><code>src/services/constraint_geometry/policy_profile.py</code></td>
+      <td>Add <code>PolicyConstraint</code> to <code>PolicyProfile</code> dataclass; register <code>do-178c-dal-a</code> and <code>do-178c-dal-b</code> profiles</td>
+    </tr>
+    <tr>
+      <td><code>src/services/constraint_geometry/contracts.py</code></td>
+      <td>Add <code>PolicyConstraint</code> frozen dataclass; add optional <code>formal_verification_result</code> field on <code>CoherenceResult</code></td>
+    </tr>
+  </table>
+
+  <h3>Key Data Contracts</h3>
+  <pre><code># src/services/verification_envelope/contracts.py
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional
+from datetime import datetime
+
+
+class VerificationVerdict(Enum):
+    """Formal verification outcome."""
+    PROVED = "proved"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+    SKIPPED = "skipped"
+
+
+class ConsensusOutcome(Enum):
+    """N-of-M consensus result."""
+    CONVERGED = "converged"
+    DIVERGED = "diverged"
+    PARTIAL = "partial"
+
+
+@dataclass(frozen=True)
+class ASTCanonicalForm:
+    """Normalized AST representation for comparison."""
+    source_hash: str           # SHA-256 of original source
+    canonical_hash: str        # SHA-256 of normalized AST dump
+    canonical_dump: str        # ast.dump() of normalized tree
+    variable_count: int        # Number of unique variables
+    node_count: int            # Total AST node count
+
+
+@dataclass(frozen=True)
+class ConsensusResult:
+    """Result of N-of-M consensus generation."""
+    outcome: ConsensusOutcome
+    n_generated: int
+    m_converged: int
+    selected_output: Optional[str]
+    canonical_forms: tuple[ASTCanonicalForm, ...]
+    pairwise_similarities: tuple[tuple[float, ...], ...]
+    convergence_rate: float    # m_converged / n_generated
+    selection_method: str      # "ast_centroid" or "embedding_centroid"
+
+
+@dataclass(frozen=True)
+class MCDCCoverageReport:
+    """Structural coverage analysis result."""
+    statement_coverage_pct: float
+    decision_coverage_pct: float
+    mcdc_coverage_pct: float
+    dal_policy_satisfied: bool
+    coverage_tool: str
+    report_s3_key: Optional[str] = None
+    uncovered_conditions: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class DVEResult:
+    """Complete Deterministic Verification Envelope result."""
+    consensus: ConsensusResult
+    coherence: "CoherenceResult"         # From CGE (ADR-081)
+    formal_verification: VerificationResult
+    structural_coverage: MCDCCoverageReport
+    overall_verdict: str                 # "ACCEPTED", "REJECTED", "HITL_REQUIRED"
+    pipeline_latency_ms: float
+    dal_level: str
+    audit_record_id: str
+    computed_at: datetime</code></pre>
+
+  <h3>Pipeline Orchestration</h3>
+  <pre><code># src/services/verification_envelope/pipeline/dve_pipeline.py (simplified)
+
+class DVEPipeline:
+    """Orchestrates the Deterministic Verification Envelope."""
+
+    async def execute(
+        self,
+        task: "AgentTask",
+        dal_level: str = "DEFAULT",
+    ) -&gt; DVEResult:
+        """Run full DVE pipeline on an agent task."""
+
+        # Stage 1: N-of-M Consensus (Pillar 1)
+        consensus = await self.consensus_service.generate_and_check(
+            task=task,
+            n=self.config.consensus_n,
+            m=self.config.consensus_m,
+        )
+        if consensus.outcome == ConsensusOutcome.DIVERGED:
+            return self._hitl_escalation(consensus, reason="consensus_diverged")
+
+        # Stage 2: Constitutional AI (existing ADR-063)
+        revised = await self.constitutional_mixin.finalize_with_constitutional(
+            consensus.selected_output, task
+        )
+
+        # Stage 3: CGE Coherence (existing ADR-081)
+        coherence = await self.cge.assess_coherence(
+            output=revised,
+            policy_profile=self._dal_to_profile(dal_level),
+        )
+        if coherence.action == CoherenceAction.REJECT:
+            return self._rejection(consensus, coherence, reason="cge_rejected")
+
+        # Stage 4: Formal Verification (Pillar 3)
+        formal = await self.formal_gate.verify(
+            output=revised,
+            coherence_result=coherence,
+            dal_level=dal_level,
+        )
+        if formal.verdict == VerificationVerdict.FAILED:
+            return self._rejection(consensus, coherence, formal, reason="formal_failed")
+
+        # Stage 5: Sandbox Validation (existing)
+        test_result = await self.sandbox_runner.execute(revised)
+
+        # Stage 6: Structural Coverage Gate (Pillar 2)
+        coverage = await self.coverage_gate.analyze(
+            source=revised,
+            test_result=test_result,
+            dal_policy=self._get_dal_policy(dal_level),
+        )
+        if not coverage.dal_policy_satisfied:
+            return self._rejection(
+                consensus, coherence, formal, coverage, reason="coverage_insufficient"
+            )
+
+        # Stage 7: HITL (existing ADR-032)
+        # Routed based on CGE action and policy constraints
+        return self._assemble_result(consensus, coherence, formal, coverage, dal_level)</code></pre>
+</section>
+
+<!-- 12. Implementation Phases -->
+<section id="phases">
+  <h2>12. Implementation Phases</h2>
+
+  <div class="phase-timeline">
+    <div class="phase-block" style="border-color:var(--brand);">
+      <div class="phase-num">1</div>
+      <div class="phase-name">Consensus Engine</div>
+      <div class="phase-weeks">Weeks 1-4</div>
+      <div class="phase-tests">~200 tests</div>
+    </div>
+    <div class="phase-block" style="border-color:var(--success);">
+      <div class="phase-num">2</div>
+      <div class="phase-name">Coverage Gate</div>
+      <div class="phase-weeks">Weeks 5-8</div>
+      <div class="phase-tests">~150 tests</div>
+    </div>
+    <div class="phase-block" style="border-color:var(--purple);">
+      <div class="phase-num">3</div>
+      <div class="phase-name">Formal Verification</div>
+      <div class="phase-weeks">Weeks 9-14</div>
+      <div class="phase-tests">~200 tests</div>
+    </div>
+    <div class="phase-block" style="border-color:var(--medium);">
+      <div class="phase-num">4</div>
+      <div class="phase-name">Profiles &amp; Traceability</div>
+      <div class="phase-weeks">Weeks 15-18</div>
+      <div class="phase-tests">~150 tests</div>
+    </div>
+    <div class="phase-block" style="border-color:var(--high);">
+      <div class="phase-num">5</div>
+      <div class="phase-name">Infrastructure</div>
+      <div class="phase-weeks">Weeks 19-20</div>
+      <div class="phase-tests">~50 tests</div>
+    </div>
+  </div>
+
+  <h3>Phase 1: N-of-M Consensus Engine (Weeks 1-4)</h3>
+  <table>
+    <tr><th>Task</th><th>Deliverable</th><th>Est. LOC</th></tr>
+    <tr><td><code>contracts.py</code></td><td>All DVE frozen dataclasses, enums</td><td>~400</td></tr>
+    <tr><td><code>config.py</code></td><td>DVEConfig with <code>for_testing</code>/<code>for_production</code></td><td>~150</td></tr>
+    <tr><td><code>consensus/ast_normalizer.py</code></td><td>Python AST canonical form normalization</td><td>~250</td></tr>
+    <tr><td><code>consensus/semantic_equivalence.py</code></td><td>Two-stage equivalence (AST + embedding)</td><td>~200</td></tr>
+    <tr><td><code>consensus/consensus_service.py</code></td><td>N-of-M generation, convergence check, centroid selection</td><td>~300</td></tr>
+    <tr><td><code>consensus/consensus_policy.py</code></td><td>Configurable N, M, similarity thresholds</td><td>~150</td></tr>
+    <tr><td>MetaOrchestrator integration</td><td>Parallel <code>spawn_coder_agent()</code> invocation</td><td>~100</td></tr>
+    <tr><td>Tests</td><td>~200 tests (normalizer: 60, equivalence: 50, consensus: 70, integration: 20)</td><td>~1,200</td></tr>
+    <tr style="font-weight:700;"><td>Phase 1 Total</td><td></td><td>~2,750</td></tr>
+  </table>
+
+  <h3>Phase 2: Structural Coverage Gate (Weeks 5-8)</h3>
+  <table>
+    <tr><th>Task</th><th>Deliverable</th><th>Est. LOC</th></tr>
+    <tr><td><code>coverage/dal_coverage_policy.py</code></td><td>DAL threshold definitions, policy validation</td><td>~150</td></tr>
+    <tr><td><code>coverage/mcdc_adapter.py</code></td><td><code>MCDCCoverageAdapter</code> protocol definition</td><td>~100</td></tr>
+    <tr><td><code>coverage/vectorcast_adapter.py</code></td><td>VectorCAST CLI subprocess adapter</td><td>~200</td></tr>
+    <tr><td><code>coverage/ldra_adapter.py</code></td><td>LDRA Testbed subprocess adapter</td><td>~150</td></tr>
+    <tr><td><code>coverage/coverage_gate.py</code></td><td>Stage 6 orchestrator, policy enforcement</td><td>~250</td></tr>
+    <tr><td><code>sandbox_test_runner.py</code> modification</td><td><code>TestResult</code> extension, stage 6 hook</td><td>~50</td></tr>
+    <tr><td>Tests</td><td>~150 tests (policies: 40, adapters: 50, gate: 40, integration: 20)</td><td>~900</td></tr>
+    <tr style="font-weight:700;"><td>Phase 2 Total</td><td></td><td>~1,800</td></tr>
+  </table>
+
+  <h3>Phase 3: Formal Verification Integration (Weeks 9-14)</h3>
+  <table>
+    <tr><th>Task</th><th>Deliverable</th><th>Est. LOC</th></tr>
+    <tr><td><code>formal/formal_adapter.py</code></td><td><code>FormalVerificationAdapter</code> protocol</td><td>~80</td></tr>
+    <tr><td><code>formal/z3_smt_adapter.py</code></td><td>Z3 solver integration, timeout handling, proof hash</td><td>~350</td></tr>
+    <tr><td><code>formal/constraint_translator.py</code></td><td>CGE C1-C4 to Z3 assertion translation</td><td>~300</td></tr>
+    <tr><td><code>formal/verification_gate.py</code></td><td>Gate orchestrator, verdict routing</td><td>~250</td></tr>
+    <tr><td><code>formal/verification_auditor.py</code></td><td>Audit record generation, proof archive</td><td>~200</td></tr>
+    <tr><td>CGE integration</td><td><code>CoherenceResult</code> extension, pipeline wiring</td><td>~50</td></tr>
+    <tr><td>Tests</td><td>~200 tests (translator: 70, Z3: 60, gate: 40, auditor: 30)</td><td>~1,300</td></tr>
+    <tr style="font-weight:700;"><td>Phase 3 Total</td><td></td><td>~2,530</td></tr>
+  </table>
+
+  <h3>Phase 4: DO-178C Profiles and Traceability (Weeks 15-18)</h3>
+  <table>
+    <tr><th>Task</th><th>Deliverable</th><th>Est. LOC</th></tr>
+    <tr><td><code>policies/do178c_profiles.py</code></td><td><code>do-178c-dal-a</code>, <code>do-178c-dal-b</code> profile definitions</td><td>~100</td></tr>
+    <tr><td><code>PolicyConstraint</code> mechanism</td><td>Extension to <code>PolicyProfile</code> dataclass</td><td>~80</td></tr>
+    <tr><td><code>traceability/traceability_service.py</code></td><td>Bidirectional HLR/LLR/Code/Test linking</td><td>~400</td></tr>
+    <tr><td><code>traceability/lifecycle_data.py</code></td><td>PSAC/SDP/SVP/SQAP/SAS template generation</td><td>~600</td></tr>
+    <tr><td><code>traceability/neptune_requirements.py</code></td><td>Neptune schema extension, Gremlin queries</td><td>~250</td></tr>
+    <tr><td>Tests</td><td>~150 tests (profiles: 30, constraints: 20, traceability: 60, lifecycle: 40)</td><td>~1,000</td></tr>
+    <tr style="font-weight:700;"><td>Phase 4 Total</td><td></td><td>~2,430</td></tr>
+  </table>
+
+  <h3>Phase 5: Infrastructure (Weeks 19-20)</h3>
+  <table>
+    <tr><th>Task</th><th>Deliverable</th><th>Est. LOC</th></tr>
+    <tr><td><code>deploy/cloudformation/dve-infrastructure.yaml</code></td><td>DynamoDB audit table, S3 proof archive, SQS queue</td><td>~300</td></tr>
+    <tr><td><code>deploy/cloudformation/dve-monitoring.yaml</code></td><td>CloudWatch dashboards, alarms, EventBridge rules</td><td>~250</td></tr>
+    <tr><td><code>pipeline/dve_pipeline.py</code></td><td>Full pipeline orchestrator</td><td>~350</td></tr>
+    <tr><td><code>pipeline/dve_metrics.py</code></td><td>CloudWatch metrics publisher</td><td>~150</td></tr>
+    <tr><td>Tests</td><td>~50 tests (infrastructure: 20, pipeline E2E: 30)</td><td>~400</td></tr>
+    <tr style="font-weight:700;"><td>Phase 5 Total</td><td></td><td>~1,450</td></tr>
+  </table>
+</section>
+
+<!-- 13. GovCloud Compatibility -->
+<section id="govcloud">
+  <h2>13. GovCloud Compatibility</h2>
+  <table>
+    <tr><th>Service</th><th>GovCloud Available</th><th>DVE Usage</th></tr>
+    <tr><td>Neptune</td><td class="center"><span class="badge badge-success">Yes</span> (provisioned)</td><td>Requirements traceability nodes and edges</td></tr>
+    <tr><td>OpenSearch</td><td class="center"><span class="badge badge-success">Yes</span></td><td>Semantic equivalence embedding lookups</td></tr>
+    <tr><td>Bedrock Titan v2</td><td class="center"><span class="badge badge-success">Yes</span> (us-gov-west-1)</td><td>SemanticEquivalenceChecker embeddings</td></tr>
+    <tr><td>DynamoDB</td><td class="center"><span class="badge badge-success">Yes</span></td><td>DVE decision audit records, verification results</td></tr>
+    <tr><td>S3</td><td class="center"><span class="badge badge-success">Yes</span></td><td>Coverage reports, SMT formula archives, lifecycle data</td></tr>
+    <tr><td>SQS</td><td class="center"><span class="badge badge-success">Yes</span></td><td>Async DVE audit dispatch</td></tr>
+    <tr><td>EKS</td><td class="center"><span class="badge badge-success">Yes</span></td><td>DVE services co-hosted with agent services</td></tr>
+    <tr><td>CloudWatch</td><td class="center"><span class="badge badge-success">Yes</span></td><td>DVE metrics and alarms</td></tr>
+    <tr><td>Z3 solver</td><td class="center"><span class="badge badge-info">N/A</span> (pure library)</td><td>Runs in-process; no network calls; Apache-2.0 license</td></tr>
+    <tr><td>VectorCAST/LDRA</td><td class="center"><span class="badge badge-info">Customer-Procured</span></td><td>External tool via subprocess; no AWS dependency</td></tr>
+  </table>
+  <p>All CloudFormation templates use <code>${AWS::Partition}</code> in all ARNs. No commercial-only AWS services are required. Z3 is a pure Python/C++ library with no cloud dependency, making it fully operational in air-gapped deployments (ADR-078 compatible).</p>
+</section>
+
+<!-- 14. Cost Analysis -->
+<section id="cost">
+  <h2>14. Cost Analysis</h2>
+  <h3>Monthly Cost (1,000 Patches/Month, Aviation Mode)</h3>
+  <table>
+    <tr><th>Component</th><th>Specification</th><th>Monthly Cost</th></tr>
+    <tr><td>Bedrock invocations (consensus, N=3)</td><td>3x Coder invocations per patch</td><td class="center">~$150-450</td></tr>
+    <tr><td>Bedrock Titan v2 (semantic equivalence)</td><td>~3 embedding calls per consensus round</td><td class="center">Negligible</td></tr>
+    <tr><td>Z3 solver compute</td><td>Pure CPU in EKS pod; no additional infrastructure</td><td class="center">~$0 incremental</td></tr>
+    <tr><td>DynamoDB (DVE audit records)</td><td>PAY_PER_REQUEST; ~4 records per patch</td><td class="center">~$2-5</td></tr>
+    <tr><td>S3 (coverage reports, SMT archives)</td><td>~500KB per patch</td><td class="center">~$5-15</td></tr>
+    <tr><td>CloudWatch (DVE metrics)</td><td>~15 custom metrics</td><td class="center">~$4.50</td></tr>
+    <tr style="font-weight:700;background:#F0FDF4;"><td>Total incremental infrastructure</td><td></td><td class="center">~$200-500</td></tr>
+    <tr style="background:#FEF3C7;"><td>VectorCAST or LDRA license</td><td>Enterprise MC/DC analysis (customer-procured)</td><td class="center">$50K-150K/year</td></tr>
+  </table>
+  <p>The primary cost driver is the 3x Bedrock invocation multiplier from N-of-M consensus. Non-aviation workloads using the DEFAULT policy skip consensus generation, formal verification, and MC/DC analysis -- incurring zero incremental cost. The VectorCAST/LDRA license cost is borne by the customer as part of their existing DO-178C toolchain investment and is not an Aura platform cost.</p>
+</section>
+
+<!-- 15. Testing Strategy -->
+<section id="testing">
+  <h2>15. Testing Strategy</h2>
+  <table>
+    <tr><th>Category</th><th>Count</th><th>Purpose</th></tr>
+    <tr><td>Unit -- Consensus</td><td class="center">80</td><td>ASTNormalizer, SemanticEquivalenceChecker, ConsensusPolicy</td></tr>
+    <tr><td>Unit -- Coverage Gate</td><td class="center">60</td><td>CoverageGateService, DALCoveragePolicy, adapter contracts</td></tr>
+    <tr><td>Unit -- Formal Verification</td><td class="center">80</td><td>Z3SMTAdapter, ConstraintTranslator, VerificationAuditor</td></tr>
+    <tr><td>Unit -- Traceability</td><td class="center">60</td><td>TraceabilityService, Neptune schema, lifecycle templates</td></tr>
+    <tr><td>Determinism</td><td class="center">60</td><td>Same input produces same DVE decision (parametrized, 100 runs per case)</td></tr>
+    <tr><td>Integration -- Consensus + CGE</td><td class="center">80</td><td>Consensus output feeds CGE scoring correctly</td></tr>
+    <tr><td>Integration -- Coverage + Sandbox</td><td class="center">50</td><td>Stage 6 integrates with existing sandbox; existing tests pass at DEFAULT</td></tr>
+    <tr><td>Integration -- Formal + CGE</td><td class="center">60</td><td>CGE result drives SMT assertions; audit trail correct</td></tr>
+    <tr><td>Integration -- Full Pipeline</td><td class="center">80</td><td>End-to-end DVE; HITL escalation paths; REJECT paths</td></tr>
+    <tr><td>Performance</td><td class="center">40</td><td>Consensus &lt; 3x single generation time; formal &lt; 5s; coverage gate &lt; 500ms</td></tr>
+    <tr><td>GovCloud</td><td class="center">20</td><td>All AWS calls use <code>${AWS::Partition}</code></td></tr>
+    <tr><td>Golden Dataset</td><td class="center">30</td><td>&ge;85% convergence on known-good patches from ADR-084 vulnerability dataset</td></tr>
+    <tr><td>Backward Compatibility</td><td class="center">50</td><td>Existing sandbox tests pass unchanged at DEFAULT policy</td></tr>
+    <tr style="font-weight:700;"><td>Total</td><td class="center">~750</td><td></td></tr>
+  </table>
+
+  <div class="callout callout-danger">
+    <div class="callout-title">Critical Testing Requirements</div>
+    <ul>
+      <li><strong>DEFAULT DAL policy must produce identical behavior to the pre-DVE sandbox pipeline.</strong> Existing tests must pass without modification. The consensus engine, formal verification gate, and MC/DC coverage gate are all bypassed at DEFAULT policy. Only when a DO-178C profile is active do these gates engage.</li>
+      <li><strong><code>fail_under = 70</code> in <code>pyproject.toml</code> must not be lowered.</strong> DVE tests must increase or maintain overall coverage.</li>
+      <li><strong>Determinism validation:</strong> Every DVE gate that claims determinism must pass the 100-iteration parametrized test. Any non-deterministic behavior in gates (c), (d), or (e) is a test failure.</li>
+    </ul>
+  </div>
+
+  <h3>Determinism Validation</h3>
+  <pre><code># tests/services/test_verification_envelope/test_determinism.py
+
+class TestDVEDeterminism:
+    """Verify that deterministic DVE gates produce identical results."""
+
+    @pytest.mark.parametrize("iteration", range(100))
+    async def test_formal_verification_determinism(
+        self, formal_gate, sample_output, iteration
+    ):
+        """Z3 proof hash must be identical across 100 runs."""
+        result = await formal_gate.verify(
+            output=sample_output,
+            coherence_result=self.coherence,
+            dal_level="DAL_A",
+        )
+        if iteration == 0:
+            self.__class__.baseline_hash = result.proof_hash
+            self.__class__.baseline_verdict = result.verdict
+        else:
+            assert result.proof_hash == self.__class__.baseline_hash
+            assert result.verdict == self.__class__.baseline_verdict
+
+    @pytest.mark.parametrize("iteration", range(100))
+    async def test_coverage_gate_determinism(
+        self, coverage_gate, sample_source, sample_test_result, iteration
+    ):
+        """Coverage analysis must produce identical results."""
+        result = await coverage_gate.analyze(
+            source=sample_source,
+            test_result=sample_test_result,
+            dal_policy=DALCoveragePolicy.for_dal("DAL_B"),
+        )
+        if iteration == 0:
+            self.__class__.baseline_satisfied = result.dal_policy_satisfied
+            self.__class__.baseline_mcdc = result.mcdc_coverage_pct
+        else:
+            assert result.dal_policy_satisfied == self.__class__.baseline_satisfied
+            assert result.mcdc_coverage_pct == self.__class__.baseline_mcdc</code></pre>
+</section>
+
+<!-- 16. Consequences -->
+<section id="consequences">
+  <h2>16. Consequences</h2>
+
+  <h3>Positive</h3>
+  <div class="consequence-positive"><strong>1.</strong> DO-330 output verification argument enabled -- The Coder Agent can remain unqualified at TQL-1, removing the single largest barrier to using LLM-based code generation in DO-178C development environments</div>
+  <div class="consequence-positive"><strong>2.</strong> First aviation-grade verification wrapper for AI code generation -- No competing platform offers a structured DO-178C output verification architecture for LLM-generated code</div>
+  <div class="consequence-positive"><strong>3.</strong> MC/DC structural coverage closes the largest technical gap -- 100% MC/DC coverage measurement is the most rigorous structural coverage objective in DO-178C and was previously absent from the pipeline</div>
+  <div class="consequence-positive"><strong>4.</strong> Z3 formal verification provides DO-333 supplement capability -- Formal methods are an accepted supplement to testing under DO-333, and SMT-based constraint satisfaction proofs strengthen the safety argument</div>
+  <div class="consequence-positive"><strong>5.</strong> N-of-M consensus converts probabilistic generation into quantifiably reliable output -- Convergence rate is a measurable, auditable metric that quantifies generation reliability</div>
+  <div class="consequence-positive"><strong>6.</strong> Fully backward compatible -- The DEFAULT policy preserves existing pipeline behavior with zero regressions; DO-178C gates activate only when aviation profiles are selected</div>
+  <div class="consequence-positive"><strong>7.</strong> Requirements traceability closes HLR/LLR/Code/Test bidirectional linking gap -- DO-178C Section 5.5 and 6.3 traceability requirements are addressed through Neptune schema extension</div>
+  <div class="consequence-positive"><strong>8.</strong> DO-178C lifecycle data templates enable PSAC/SDP/SVP/SQAP/SAS generation -- Reduces the documentation burden for certification applicants using Aura-generated code</div>
+  <div class="consequence-positive"><strong>9.</strong> New policy profiles extend CGE to aviation domain -- Two new profiles are added without modifying the existing four profiles, preserving all current behavior</div>
+
+  <h3>Negative</h3>
+  <div class="consequence-negative"><strong>1.</strong> N-of-M consensus increases Bedrock costs by Nx -- Default 3x multiplier on every patch generation in aviation mode; configurable but irreducible when consensus is required</div>
+  <div class="consequence-negative"><strong>2.</strong> MC/DC tooling requires external procurement -- VectorCAST ($50K-150K/year) or LDRA are required for DAL A/B MC/DC analysis; this is a customer cost, not a platform cost, but represents a barrier to adoption</div>
+  <div class="consequence-negative"><strong>3.</strong> Z3 provides only partial constraint axis coverage -- C1-C4 are expressible in SMT; C5 (Domain Compliance), C6 (Provenance Trust), and C7 (Temporal Validity) cannot be formally verified</div>
+  <div class="consequence-negative"><strong>4.</strong> Consensus convergence statistics must be re-validated after LLM model upgrades -- Any change to the underlying LLM (version, provider, fine-tuning) invalidates convergence baselines and requires re-measurement</div>
+  <div class="consequence-negative"><strong>5.</strong> DVE adds substantial complexity and latency to the pipeline -- Aviation-mode operations include N parallel LLM invocations, SMT solving, and MC/DC analysis; total pipeline time increases significantly compared to DEFAULT mode</div>
+
+  <h3>Risks</h3>
+  <table>
+    <tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
+    <tr>
+      <td>DER rejects output verification argument</td>
+      <td class="center"><span class="badge badge-medium">Medium</span></td>
+      <td class="center"><span class="badge badge-high">High</span></td>
+      <td>Proactive DER engagement before Phase 1 implementation; prepare alternative Issue Paper pathway via FAA</td>
+    </tr>
+    <tr>
+      <td>Consensus convergence &lt; 85% at N=3, M=2</td>
+      <td class="center"><span class="badge badge-medium">Medium</span></td>
+      <td class="center"><span class="badge badge-medium">Medium</span></td>
+      <td>Configurable N/M parameters; N=5, M=3 fallback; per-task-type convergence tracking to identify low-convergence patterns</td>
+    </tr>
+    <tr>
+      <td>Z3 returns UNKNOWN (undecidable formula)</td>
+      <td class="center"><span class="badge badge-medium">Medium</span></td>
+      <td class="center"><span class="badge badge-medium">Medium</span></td>
+      <td>UNKNOWN triggers HITL escalation, not REJECT (except at DAL A); track UNKNOWN rate in CloudWatch metrics</td>
+    </tr>
+    <tr>
+      <td>VectorCAST/LDRA integration complexity</td>
+      <td class="center"><span class="badge badge-high">High</span></td>
+      <td class="center"><span class="badge badge-medium">Medium</span></td>
+      <td>CoveragePyAdapter as fallback for DEFAULT; MC/DC analysis is optional for non-aviation workloads</td>
+    </tr>
+    <tr>
+      <td>DO-178C regulatory framework evolution</td>
+      <td class="center"><span class="badge badge-info">Low</span></td>
+      <td class="center"><span class="badge badge-high">High</span></td>
+      <td>DVE architecture is standards-agnostic; thresholds, coverage types, and verification methods are all configurable</td>
+    </tr>
+  </table>
+</section>
+
+<!-- 17. Success Metrics -->
+<section id="metrics">
+  <h2>17. Success Metrics</h2>
+  <table>
+    <tr><th>Metric</th><th>Target</th><th>Measurement</th></tr>
+    <tr>
+      <td>Consensus convergence rate (N=3, M=2)</td>
+      <td class="center"><span class="badge badge-success">&ge; 85%</span></td>
+      <td>CloudWatch <code>DVE/ConsensusConvergenceRate</code></td>
+    </tr>
+    <tr>
+      <td>CGE + formal verification false positive rate</td>
+      <td class="center"><span class="badge badge-success">&lt; 5%</span></td>
+      <td>Human reviewer agreement with REJECT decisions</td>
+    </tr>
+    <tr>
+      <td>MC/DC coverage achievable for generated patches</td>
+      <td class="center"><span class="badge badge-success">&ge; 90%</span></td>
+      <td>Patches reaching MC/DC threshold when tool available</td>
+    </tr>
+    <tr>
+      <td>End-to-end DVE pipeline latency</td>
+      <td class="center"><span class="badge badge-success">&lt; 10 minutes</span></td>
+      <td>CloudWatch <code>DVE/PipelineLatencyP95</code> (excludes MC/DC tool)</td>
+    </tr>
+    <tr>
+      <td>Non-deterministic outputs escaping DVE</td>
+      <td class="center"><span class="badge badge-critical">0</span></td>
+      <td>Audit: outputs reaching HITL without passing deterministic gates</td>
+    </tr>
+    <tr>
+      <td>DER acceptance of output verification argument</td>
+      <td class="center"><span class="badge badge-info">Accepted</span></td>
+      <td>Binary outcome from initial DER engagement</td>
+    </tr>
+    <tr>
+      <td>Backward compatibility regressions</td>
+      <td class="center"><span class="badge badge-critical">0</span></td>
+      <td>Existing test suite passes unchanged at DEFAULT policy</td>
+    </tr>
+    <tr>
+      <td>Proof hash reproducibility</td>
+      <td class="center"><span class="badge badge-success">100%</span></td>
+      <td>Same output + same Z3 version = same hash (10,000 runs)</td>
+    </tr>
+  </table>
+</section>
+
+<!-- 18. References -->
+<section id="references">
+  <h2>18. References</h2>
+  <ol>
+    <li>ADR-081: Constraint Geometry Engine (Deterministic Cortical Discrimination)</li>
+    <li>ADR-063: Constitutional AI Integration</li>
+    <li>ADR-065: Semantic Guardrails Engine</li>
+    <li>ADR-032: Configurable Autonomy Framework (HITL)</li>
+    <li>ADR-042: Real-Time Agent Intervention</li>
+    <li>ADR-018: Meta-Orchestrator with Dynamic Agent Spawning</li>
+    <li>ADR-067: Context Provenance and Integrity</li>
+    <li>ADR-076: SBOM Attestation and Supply Chain</li>
+    <li>ADR-078: Air-Gapped and Edge Deployment</li>
+    <li>RTCA DO-178C: Software Considerations in Airborne Systems and Equipment Certification</li>
+    <li>RTCA DO-330: Software Tool Qualification Considerations</li>
+    <li>RTCA DO-333: Formal Methods Supplement to DO-178C</li>
+    <li>FAA AC 20-115D: Airborne Software Development Assurance Using EUROCAE ED-12C and RTCA DO-178C</li>
+    <li>FAA AC 33.28-3: Guidance Material for Aircraft Engine Control Systems (14 CFR 33.28)</li>
+    <li>MIL-STD-882E: Department of Defense Standard Practice -- System Safety</li>
+    <li><code>docs/product/executive-summaries/faa-do178c-gap-analysis.md</code> -- Aenea Labs internal gap analysis</li>
+  </ol>
+</section>
+
+</div>
+
+<div class="footer">
+  Project Aura -- Aenea Labs -- ADR-085: Deterministic Verification Envelope -- February 2026
+</div>
+
+</body>
+</html>

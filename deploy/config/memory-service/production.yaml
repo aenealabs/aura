@@ -1,0 +1,134 @@
+# Project Aura - Neural Memory Service Configuration (Production)
+# Configuration for Titan/MIRAS neural memory service in production environment
+#
+# Production configuration for GovCloud deployment
+# CMMC Level 3 / FedRAMP High compliant settings
+
+# =============================================================================
+# Service Identity
+# =============================================================================
+service:
+  name: "memory-service"
+  version: "1.0.0"
+  environment: "production"
+
+# =============================================================================
+# Server Configuration
+# =============================================================================
+server:
+  grpc_port: 50051
+  health_port: 8080
+  metrics_port: 9090
+  log_level: "WARNING"  # Minimal logging in prod
+  worker_threads: 8
+
+# =============================================================================
+# AWS Configuration
+# =============================================================================
+# Note: account_id is resolved at runtime from AWS_ACCOUNT_ID environment variable
+# or retrieved from AWS STS. Do not hardcode account IDs.
+aws:
+  region: "${AWS_REGION:-us-gov-west-1}"  # GovCloud region
+
+# =============================================================================
+# Neural Memory Architecture (Titans/MIRAS - ADR-024)
+# =============================================================================
+memory:
+  type: "titans"
+
+  architecture:
+    dimension: 1024
+    layers: 3
+    heads: 8
+    max_sequence_length: 16384  # Extended for production workloads
+
+  ttt:
+    enabled: true
+    learning_rate: 0.0005  # More conservative in prod
+    momentum: 0.9
+    steps_per_update: 1
+
+  surprise:
+    enabled: true
+    threshold: 0.6  # Higher threshold for stability
+    decay_factor: 0.995
+
+# =============================================================================
+# Model Checkpoint Storage (S3)
+# =============================================================================
+storage:
+  s3:
+    bucket: "${S3_MODELS_BUCKET:-aura-models-${ENVIRONMENT:-prod}}"
+    prefix: "neural-memory/checkpoints"
+    checkpoint_interval_seconds: 900  # 15 minutes
+
+  local:
+    model_cache_dir: "/var/lib/memory-service/models"
+    state_dir: "/var/lib/memory-service/state"
+
+# =============================================================================
+# State Persistence (DynamoDB)
+# =============================================================================
+persistence:
+  dynamodb:
+    table_name: "${DYNAMODB_MEMORY_TABLE:-aura-neural-memory-${ENVIRONMENT:-prod}}"
+    sync_interval_seconds: 60  # 1 minute
+    ttl_days: 365  # Keep state for 1 year
+
+# =============================================================================
+# Performance Configuration
+# =============================================================================
+performance:
+  max_batch_size: 128
+  batch_timeout_ms: 25
+
+  gpu_memory_fraction: 0.95
+  enable_memory_pool: true
+
+  grpc:
+    max_message_size_bytes: 104857600
+    keepalive_time_ms: 30000
+    keepalive_timeout_ms: 10000
+    max_concurrent_streams: 500
+
+# =============================================================================
+# Observability
+# =============================================================================
+observability:
+  metrics:
+    namespace: "Aura/NeuralMemory"
+    publish_interval_seconds: 15
+
+  tracing:
+    enabled: true
+    sample_rate: 0.01  # 1% sampling in prod
+    exporter: "otlp"
+    endpoint: "http://otel-collector:4317"
+
+# =============================================================================
+# Resource Limits (Production - Full)
+# =============================================================================
+resources:
+  cpu_limit: "8000m"
+  memory_limit: "32Gi"
+  gpu_count: 1
+
+# =============================================================================
+# Feature Flags
+# =============================================================================
+features:
+  async_memorization: true
+  adaptive_learning_rate: false  # Disabled in prod for stability
+  memory_compression: true
+  distributed_memory: false  # Enable when multi-GPU support is ready
+
+# =============================================================================
+# Security (Production/GovCloud)
+# =============================================================================
+security:
+  # FIPS 140-2 mode (required for GovCloud)
+  fips_mode: true
+  # TLS 1.3 required for all connections
+  min_tls_version: "1.3"
+  # KMS encryption for at-rest data
+  kms_key_alias: "${KMS_KEY_ALIAS:-alias/aura-neural-memory-${ENVIRONMENT:-prod}}"

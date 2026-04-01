@@ -1,0 +1,538 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 9.4 - Vuln Scan Workflow (Step Functions Pipeline)'
+
+# =============================================================================
+# Step Functions state machine for ADR-084 7-stage scan pipeline.
+# Orchestrates: Ingestion → Parsing → Graph Build → Embedding →
+#               LLM Analysis → Verification → Reporting
+#
+# Each stage runs as a Fargate task with DynamoDB checkpointing.
+# Failures route to error handling with SNS notification.
+# Verification is optional (controlled by scan request parameters).
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # Step Functions State Machine - Scan Pipeline
+  # ===========================================================================
+  ScanPipelineStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ProjectName}-vuln-scan-pipeline-${Environment}'
+      StateMachineType: STANDARD
+      RoleArn: !ImportValue
+        Fn::Sub: '${ProjectName}-vuln-scan-sfn-role-arn-${Environment}'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !ImportValue
+                Fn::Sub: '${ProjectName}-vuln-scan-sfn-log-arn-${Environment}'
+        IncludeExecutionData: true
+        Level: !If [IsProduction, ERROR, ALL]
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString: !Sub |
+        {
+          "Comment": "ADR-084 Vulnerability Scanning Pipeline - 7 Stage Orchestration",
+          "StartAt": "ValidateInput",
+          "TimeoutSeconds": 7200,
+          "States": {
+            "ValidateInput": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "And": [
+                    {"Variable": "$.scan_id", "IsPresent": true},
+                    {"Variable": "$.tenant_id", "IsPresent": true},
+                    {"Variable": "$.repository_url", "IsPresent": true}
+                  ],
+                  "Next": "RecordScanStarted"
+                }
+              ],
+              "Default": "InputValidationFailed"
+            },
+            "RecordScanStarted": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:putItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-scan-jobs-${Environment}",
+                "Item": {
+                  "job_id": {"S.$": "$.scan_id"},
+                  "updated_at": {"S.$": "$$.State.EnteredTime"},
+                  "scan_id": {"S.$": "$.scan_id"},
+                  "tenant_id": {"S.$": "$.tenant_id"},
+                  "status": {"S": "ingesting"},
+                  "repository_url": {"S.$": "$.repository_url"}
+                }
+              },
+              "ResultPath": "$.dynamodb_result",
+              "Next": "Ingestion",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "HandleError",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "Ingestion": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${ProjectName}-vuln-scanner-${Environment}",
+                "TaskDefinition": "${ProjectName}-vuln-scan-worker-${Environment}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "AssignPublicIp": "DISABLED",
+                    "SecurityGroups.$": "States.Array($.security_group_id)",
+                    "Subnets.$": "$.subnet_ids"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "scan-worker",
+                      "Environment": [
+                        {"Name": "STAGE", "Value": "ingestion"},
+                        {"Name": "SCAN_ID", "Value.$": "$.scan_id"},
+                        {"Name": "TENANT_ID", "Value.$": "$.tenant_id"},
+                        {"Name": "REPOSITORY_URL", "Value.$": "$.repository_url"},
+                        {"Name": "BRANCH", "Value.$": "$.branch"},
+                        {"Name": "ENVIRONMENT", "Value": "${Environment}"}
+                      ]
+                    }
+                  ]
+                }
+              },
+              "TimeoutSeconds": 600,
+              "ResultPath": "$.ingestion_result",
+              "Next": "Parsing",
+              "Retry": [
+                {
+                  "ErrorEquals": ["ECS.AmazonECSException"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "HandleError",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "Parsing": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${ProjectName}-vuln-scanner-${Environment}",
+                "TaskDefinition": "${ProjectName}-vuln-scan-worker-${Environment}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "AssignPublicIp": "DISABLED",
+                    "SecurityGroups.$": "States.Array($.security_group_id)",
+                    "Subnets.$": "$.subnet_ids"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "scan-worker",
+                      "Environment": [
+                        {"Name": "STAGE", "Value": "parsing"},
+                        {"Name": "SCAN_ID", "Value.$": "$.scan_id"},
+                        {"Name": "TENANT_ID", "Value.$": "$.tenant_id"},
+                        {"Name": "ENVIRONMENT", "Value": "${Environment}"}
+                      ]
+                    }
+                  ]
+                }
+              },
+              "TimeoutSeconds": 1800,
+              "ResultPath": "$.parsing_result",
+              "Next": "GraphBuild",
+              "Retry": [
+                {
+                  "ErrorEquals": ["ECS.AmazonECSException"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "HandleError",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "GraphBuild": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${ProjectName}-vuln-scanner-${Environment}",
+                "TaskDefinition": "${ProjectName}-vuln-scan-worker-${Environment}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "AssignPublicIp": "DISABLED",
+                    "SecurityGroups.$": "States.Array($.security_group_id)",
+                    "Subnets.$": "$.subnet_ids"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "scan-worker",
+                      "Environment": [
+                        {"Name": "STAGE", "Value": "graph_build"},
+                        {"Name": "SCAN_ID", "Value.$": "$.scan_id"},
+                        {"Name": "TENANT_ID", "Value.$": "$.tenant_id"},
+                        {"Name": "ENVIRONMENT", "Value": "${Environment}"}
+                      ]
+                    }
+                  ]
+                }
+              },
+              "TimeoutSeconds": 1800,
+              "ResultPath": "$.graph_result",
+              "Next": "Embedding",
+              "Retry": [
+                {
+                  "ErrorEquals": ["ECS.AmazonECSException"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "HandleError",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "Embedding": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${ProjectName}-vuln-scanner-${Environment}",
+                "TaskDefinition": "${ProjectName}-vuln-scan-worker-${Environment}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "AssignPublicIp": "DISABLED",
+                    "SecurityGroups.$": "States.Array($.security_group_id)",
+                    "Subnets.$": "$.subnet_ids"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "scan-worker",
+                      "Environment": [
+                        {"Name": "STAGE", "Value": "embedding"},
+                        {"Name": "SCAN_ID", "Value.$": "$.scan_id"},
+                        {"Name": "TENANT_ID", "Value.$": "$.tenant_id"},
+                        {"Name": "ENVIRONMENT", "Value": "${Environment}"}
+                      ]
+                    }
+                  ]
+                }
+              },
+              "TimeoutSeconds": 1800,
+              "ResultPath": "$.embedding_result",
+              "Next": "Analysis",
+              "Retry": [
+                {
+                  "ErrorEquals": ["ECS.AmazonECSException"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "HandleError",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "Analysis": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${ProjectName}-vuln-scanner-${Environment}",
+                "TaskDefinition": "${ProjectName}-vuln-scan-worker-${Environment}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "AssignPublicIp": "DISABLED",
+                    "SecurityGroups.$": "States.Array($.security_group_id)",
+                    "Subnets.$": "$.subnet_ids"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "scan-worker",
+                      "Environment": [
+                        {"Name": "STAGE", "Value": "analysis"},
+                        {"Name": "SCAN_ID", "Value.$": "$.scan_id"},
+                        {"Name": "TENANT_ID", "Value.$": "$.tenant_id"},
+                        {"Name": "ENVIRONMENT", "Value": "${Environment}"}
+                      ]
+                    }
+                  ]
+                }
+              },
+              "TimeoutSeconds": 3600,
+              "ResultPath": "$.analysis_result",
+              "Next": "CheckVerification",
+              "Retry": [
+                {
+                  "ErrorEquals": ["ECS.AmazonECSException"],
+                  "IntervalSeconds": 60,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "HandleError",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "CheckVerification": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.enable_verification",
+                  "BooleanEquals": true,
+                  "Next": "Verification"
+                }
+              ],
+              "Default": "Reporting"
+            },
+            "Verification": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${ProjectName}-vuln-scanner-${Environment}",
+                "TaskDefinition": "${ProjectName}-vuln-scan-worker-${Environment}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "AssignPublicIp": "DISABLED",
+                    "SecurityGroups.$": "States.Array($.security_group_id)",
+                    "Subnets.$": "$.subnet_ids"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "scan-worker",
+                      "Environment": [
+                        {"Name": "STAGE", "Value": "verification"},
+                        {"Name": "SCAN_ID", "Value.$": "$.scan_id"},
+                        {"Name": "TENANT_ID", "Value.$": "$.tenant_id"},
+                        {"Name": "ENVIRONMENT", "Value": "${Environment}"}
+                      ]
+                    }
+                  ]
+                }
+              },
+              "TimeoutSeconds": 1800,
+              "ResultPath": "$.verification_result",
+              "Next": "Reporting",
+              "Retry": [
+                {
+                  "ErrorEquals": ["ECS.AmazonECSException"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 1,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "Reporting",
+                  "ResultPath": "$.verification_error",
+                  "Comment": "Verification failure is non-fatal — proceed to reporting"
+                }
+              ]
+            },
+            "Reporting": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
+              "Parameters": {
+                "Cluster": "${ProjectName}-vuln-scanner-${Environment}",
+                "TaskDefinition": "${ProjectName}-vuln-scan-worker-${Environment}",
+                "LaunchType": "FARGATE",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "AssignPublicIp": "DISABLED",
+                    "SecurityGroups.$": "States.Array($.security_group_id)",
+                    "Subnets.$": "$.subnet_ids"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "scan-worker",
+                      "Environment": [
+                        {"Name": "STAGE", "Value": "reporting"},
+                        {"Name": "SCAN_ID", "Value.$": "$.scan_id"},
+                        {"Name": "TENANT_ID", "Value.$": "$.tenant_id"},
+                        {"Name": "ENVIRONMENT", "Value": "${Environment}"}
+                      ]
+                    }
+                  ]
+                }
+              },
+              "TimeoutSeconds": 600,
+              "ResultPath": "$.reporting_result",
+              "Next": "RecordScanCompleted",
+              "Retry": [
+                {
+                  "ErrorEquals": ["ECS.AmazonECSException"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "HandleError",
+                  "ResultPath": "$.error"
+                }
+              ]
+            },
+            "RecordScanCompleted": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-scan-jobs-${Environment}",
+                "Key": {
+                  "job_id": {"S.$": "$.scan_id"},
+                  "updated_at": {"S.$": "$$.State.EnteredTime"}
+                },
+                "UpdateExpression": "SET #s = :status",
+                "ExpressionAttributeNames": {"#s": "status"},
+                "ExpressionAttributeValues": {":status": {"S": "completed"}}
+              },
+              "ResultPath": "$.completion_result",
+              "Next": "NotifySuccess"
+            },
+            "NotifySuccess": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "Source": "aura.vuln-scanner",
+                    "DetailType": "Scan Completed",
+                    "Detail": {
+                      "scan_id.$": "$.scan_id",
+                      "tenant_id.$": "$.tenant_id",
+                      "status": "completed"
+                    },
+                    "EventBusName": "${ProjectName}-scan-events-${Environment}"
+                  }
+                ]
+              },
+              "End": true
+            },
+            "HandleError": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${ProjectName}-scan-jobs-${Environment}",
+                "Key": {
+                  "job_id": {"S.$": "$.scan_id"},
+                  "updated_at": {"S.$": "$$.State.EnteredTime"}
+                },
+                "UpdateExpression": "SET #s = :status, error_message = :err",
+                "ExpressionAttributeNames": {"#s": "status"},
+                "ExpressionAttributeValues": {
+                  ":status": {"S": "failed"},
+                  ":err": {"S.$": "States.Format('Stage failed: {}', $.error.Cause)"}
+                }
+              },
+              "ResultPath": "$.error_record",
+              "Next": "NotifyFailure"
+            },
+            "NotifyFailure": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${ScanAlertsTopicArn}",
+                "Subject": "Vulnerability Scan Failed",
+                "Message.$": "States.Format('Scan {} for tenant {} failed. Error: {}', $.scan_id, $.tenant_id, $.error.Cause)"
+              },
+              "End": true
+            },
+            "InputValidationFailed": {
+              "Type": "Fail",
+              "Error": "InputValidationError",
+              "Cause": "Missing required fields: scan_id, tenant_id, or repository_url"
+            }
+          }
+        }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # Parameter to pass SNS ARN into the state machine definition
+  ScanAlertsTopicArn:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/vuln-scan/alerts-topic-arn'
+      Type: String
+      Value: !ImportValue
+        Fn::Sub: '${ProjectName}-vuln-scan-alerts-topic-arn-${Environment}'
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+Outputs:
+  ScanPipelineStateMachineArn:
+    Description: Step Functions state machine ARN for scan pipeline
+    Value: !Ref ScanPipelineStateMachine
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-pipeline-arn-${Environment}'
+
+  ScanPipelineStateMachineName:
+    Description: Step Functions state machine name
+    Value: !GetAtt ScanPipelineStateMachine.Name
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-pipeline-name-${Environment}'

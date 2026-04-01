@@ -1,0 +1,255 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.3 - HITL Callback (Approval Processing)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name used for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - staging
+      - prod
+    Description: Deployment environment
+
+  HITLTableName:
+    Type: String
+    Default: ''
+    Description: DynamoDB table name for HITL approval requests (leave empty for default)
+
+  WorkflowTableName:
+    Type: String
+    Default: ''
+    Description: DynamoDB table name for patch workflows (leave empty for default)
+
+  SNSTopicArn:
+    Type: String
+    Default: ''
+    Description: SNS topic ARN for notifications (leave empty for default)
+
+  StateMachineArn:
+    Type: String
+    Default: ''
+    Description: Step Functions state machine ARN (leave empty for default)
+
+  LambdaS3Bucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+
+  LambdaS3Key:
+    Type: String
+    Description: S3 key for Lambda deployment package
+
+  LambdaMemorySize:
+    Type: Number
+    Default: 256
+    MinValue: 128
+    MaxValue: 1024
+    Description: Lambda function memory in MB
+
+  LambdaTimeout:
+    Type: Number
+    Default: 30
+    MinValue: 10
+    MaxValue: 300
+    Description: Lambda function timeout in seconds
+
+Conditions:
+  HasCustomTableName: !Not [!Equals [!Ref HITLTableName, '']]
+  HasCustomWorkflowTable: !Not [!Equals [!Ref WorkflowTableName, '']]
+  HasCustomSNSTopic: !Not [!Equals [!Ref SNSTopicArn, '']]
+  HasCustomStateMachine: !Not [!Equals [!Ref StateMachineArn, '']]
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # IAM Role for Lambda execution
+  ApprovalCallbackRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-approval-callback-role-${Environment}
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-approval-requests-${Environment}
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-approval-requests-${Environment}/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-patch-workflows-${Environment}
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-patch-workflows-${Environment}/index/*
+        - PolicyName: StepFunctionsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:SendTaskSuccess
+                  - states:SendTaskFailure
+                  - states:SendTaskHeartbeat
+                Resource:
+                  - !If
+                    - HasCustomStateMachine
+                    - !Ref StateMachineArn
+                    - !Sub arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-hitl-patch-workflow-${Environment}
+        - PolicyName: SNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !If
+                    - HasCustomSNSTopic
+                    - !Ref SNSTopicArn
+                    - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-notifications-${Environment}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Lambda Function for Approval Callback
+  ApprovalCallbackFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-approval-callback-${Environment}
+      Description: Processes approval decisions and sends Step Functions callbacks
+      Runtime: python3.11
+      Handler: src.lambda.approval_callback_handler.handler
+      Role: !GetAtt ApprovalCallbackRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          APPROVAL_TABLE_NAME: !If
+            - HasCustomTableName
+            - !Ref HITLTableName
+            - !Sub ${ProjectName}-approval-requests-${Environment}
+          WORKFLOW_TABLE_NAME: !If
+            - HasCustomWorkflowTable
+            - !Ref WorkflowTableName
+            - !Sub ${ProjectName}-patch-workflows-${Environment}
+          SNS_TOPIC_ARN: !If
+            - HasCustomSNSTopic
+            - !Ref SNSTopicArn
+            - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-notifications-${Environment}
+          STATE_MACHINE_ARN: !If
+            - HasCustomStateMachine
+            - !Ref StateMachineArn
+            - !Sub arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-hitl-patch-workflow-${Environment}
+          USE_MOCK: 'false'
+      # ReservedConcurrentExecutions: 10  # Disabled - account quota insufficient (10 total)
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Lambda Function URL (simpler alternative to API Gateway)
+  ApprovalCallbackFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: AWS_IAM
+      TargetFunctionArn: !GetAtt ApprovalCallbackFunction.Arn
+      Cors:
+        AllowOrigins:
+          - '*'  # Allow all origins for dev; tighten for production
+        AllowMethods:
+          - POST
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        MaxAge: 3600
+
+  # Permission for Function URL invocation
+  ApprovalCallbackFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApprovalCallbackFunction
+      FunctionUrlAuthType: AWS_IAM
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+
+  # CloudWatch Alarm for Lambda errors
+  ApprovalCallbackErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ProjectName}-approval-callback-errors-${Environment}
+      AlarmDescription: Alert when approval callback Lambda encounters errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApprovalCallbackFunction
+      TreatMissingData: notBreaching
+
+  # CloudWatch Log Group with retention
+  ApprovalCallbackLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-approval-callback-${Environment}
+      RetentionInDays: !If [IsProd, 365, 90]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  FunctionArn:
+    Description: Approval Callback Lambda ARN
+    Value: !GetAtt ApprovalCallbackFunction.Arn
+    Export:
+      Name: !Sub ${ProjectName}-approval-callback-arn-${Environment}
+
+  FunctionName:
+    Description: Approval Callback Lambda function name
+    Value: !Ref ApprovalCallbackFunction
+
+  FunctionUrl:
+    Description: Lambda Function URL for direct invocation
+    Value: !GetAtt ApprovalCallbackFunctionUrl.FunctionUrl
+
+  RoleArn:
+    Description: Lambda execution role ARN
+    Value: !GetAtt ApprovalCallbackRole.Arn
+
+  LogGroupName:
+    Description: CloudWatch Log Group name
+    Value: !Ref ApprovalCallbackLogGroup

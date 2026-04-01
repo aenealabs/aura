@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.7 - ECR Frontend (Dashboard Registry)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2025-12-12'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  FrontendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-frontend-${Environment}'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 20 tagged images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["v", "latest", "dev", "qa", "prod"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Delete untagged images older than 14 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 14
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: frontend
+        - Key: Layer
+          Value: '4'
+
+Outputs:
+  RepositoryUri:
+    Description: ECR Repository URI for Frontend image
+    Value: !GetAtt FrontendRepository.RepositoryUri
+    Export:
+      Name: !Sub '${ProjectName}-ecr-frontend-${Environment}-RepositoryUri'
+
+  RepositoryArn:
+    Description: ECR Repository ARN
+    Value: !GetAtt FrontendRepository.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ecr-frontend-${Environment}-RepositoryArn'
+
+  RepositoryName:
+    Description: ECR Repository Name
+    Value: !Ref FrontendRepository
+    Export:
+      Name: !Sub '${ProjectName}-ecr-frontend-${Environment}-RepositoryName'

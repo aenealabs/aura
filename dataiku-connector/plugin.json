@@ -1,0 +1,58 @@
+{
+    "id": "aura-code-intelligence",
+    "version": "2.0.0",
+    "meta": {
+        "label": "Aura Code Intelligence",
+        "description": "Export vulnerability findings and code patterns to Dataiku DSS for analytics and visualization",
+        "author": "Aenea Labs",
+        "icon": "icon.svg",
+        "licenseInfo": "Apache-2.0",
+        "url": "https://github.com/aenealabs/aura",
+        "supportLevel": "SUPPORTED"
+    },
+    "connectorTypes": [
+        {
+            "connectorType": "aura-findings",
+            "label": "Aura Vulnerability Findings",
+            "description": "Connect to Aura API and retrieve vulnerability findings for analysis",
+            "paramsJsFn": "connectorParams.js"
+        },
+        {
+            "connectorType": "aura-code-patterns",
+            "label": "Aura Code Patterns",
+            "description": "Connect to GraphRAG and retrieve code patterns and relationships",
+            "paramsJsFn": "connectorParams.js"
+        }
+    ],
+    "customRecipes": [
+        {
+            "recipeType": "aura-scan-repository",
+            "label": "Aura Repository Scan",
+            "description": "Trigger a full repository scan and export findings",
+            "icon": "icon-scan.png"
+        },
+        {
+            "recipeType": "aura-trend-analysis",
+            "label": "Aura Vulnerability Trends",
+            "description": "Analyze vulnerability trends over time",
+            "icon": "icon-trend.png"
+        }
+    ],
+    "params": [
+        {
+            "name": "server_url",
+            "type": "STRING",
+            "label": "Aura Server URL",
+            "description": "URL of the Aura API server",
+            "mandatory": true,
+            "defaultValue": "http://localhost:8080"
+        },
+        {
+            "name": "api_key",
+            "type": "PASSWORD",
+            "label": "API Key",
+            "description": "API key for authentication (optional)",
+            "mandatory": false
+        }
+    ]
+}

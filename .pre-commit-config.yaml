@@ -1,0 +1,287 @@
+# Project Aura - Pre-commit Configuration
+#
+# Security-focused pre-commit hooks for:
+# - Secrets detection (API keys, passwords, tokens)
+# - Input validation
+# - Code quality
+#
+# Installation:
+#   pip install pre-commit
+#   pre-commit install
+#   pre-commit install --hook-type commit-msg  # Required for AI attribution stripping
+#
+# Manual run:
+#   pre-commit run --all-files
+#
+# Skip hooks (emergency):
+#   git commit --no-verify
+#
+# False Positive Documentation:
+#   See docs/reference/PRE_COMMIT_FALSE_POSITIVES.md for verified false positives
+#   and the rationale for each exclusion pattern below.
+
+repos:
+  # ==========================================================================
+  # Project Aura Custom Security Hooks
+  # ==========================================================================
+  - repo: local
+    hooks:
+      # Secrets Detection Hook
+      - id: aura-secrets-scan
+        name: Aura Secrets Scanner
+        entry: python -m scripts.security_hooks.secrets_hook
+        language: python
+        types: [text]
+        exclude: |
+          (?x)^(
+            # Build artifacts and dependencies
+            \.git/.*|
+            \.venv/.*|
+            venv/.*|
+            node_modules/.*|
+            __pycache__/.*|
+            \.pytest_cache/.*|
+            htmlcov/.*|
+            \.coverage|
+            .*\.pyc|
+            .*\.pyo|
+            .*\.egg-info/.*|
+
+            # Test and documentation directories (contain intentional mock secrets)
+            tests/.*|
+            archive/.*|
+            docs/.*|
+
+            # Package and config files (contain pattern documentation, not secrets)
+            .*package-lock\.json|
+            pyproject\.toml|
+
+            # Template and example files (contain placeholder patterns)
+            .*\.template|
+            .*\.example|
+
+            # Services with secret detection logic (contain pattern samples)
+            src/services/secrets_detection_service\.py|
+            src/services/.*_connector\.py|
+            src/services/github_pr_service\.py|
+            src/services/adversarial_input_service\.py|
+            src/services/observability_mcp_adapters\.py|
+            src/prompts/.*|
+            src/api/webhook_handler\.py|
+
+            # Scripts with credential handling (fetch at runtime, not hardcoded)
+            scripts/get-dev-token\.sh|
+
+            # SDK test files
+            sdk/.*/__tests__/.*|
+
+            # Frontend components - form field names trigger false positives
+            # (e.g., "Password", "PasswordConfirm" are UI labels, not secrets)
+            # See: docs/reference/PRE_COMMIT_FALSE_POSITIVES.md#react-form-field-names
+            frontend/src/components/auth/.*|
+            frontend/src/components/ProfilePage\.jsx
+          )$
+        description: "Scan for secrets in source code (excludes tests, docs, examples)"
+
+      # Input Validation Hook (for config files)
+      - id: aura-config-validation
+        name: Aura Config Validator
+        entry: python -m scripts.security_hooks.config_hook
+        language: python
+        files: \.(yaml|yml|json|env|ini|cfg)$
+        exclude: |
+          (?x)^(
+            \.git/.*|
+            node_modules/.*|
+            \.pre-commit-config\.yaml|
+            .*package-lock\.json|
+            .*package\.json|
+            tests/.*|
+            archive/.*|
+            .*\.example|
+            .*\.template
+          )$
+        description: "Validate configuration files for security issues"
+
+      # AI Attribution Stripping Hook (commit-msg)
+      # Removes Claude/AI attribution from commit messages per CLAUDE.md policy
+      - id: aura-strip-ai-attribution
+        name: Aura AI Attribution Stripper
+        entry: python -m scripts.security_hooks.commit_msg_hook
+        language: python
+        stages: [commit-msg]
+        always_run: true
+        description: "Strip AI attribution from commit messages"
+
+  # ==========================================================================
+  # Standard Python Hooks
+  # ==========================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # Prevent large files from being committed
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+
+      # Check for files that would conflict on case-insensitive filesystems
+      - id: check-case-conflict
+
+      # Check for merge conflict markers
+      - id: check-merge-conflict
+
+      # Check that executables have shebangs
+      - id: check-executables-have-shebangs
+
+      # Check JSON syntax
+      - id: check-json
+
+      # Check YAML syntax
+      # Uses --unsafe to allow CloudFormation intrinsic functions (!Sub, !Ref, !GetAtt)
+      # CloudFormation templates are validated separately via cfn-lint
+      # See: docs/reference/PRE_COMMIT_FALSE_POSITIVES.md#cloudformation-intrinsic-functions
+      - id: check-yaml
+        args: ['--unsafe']
+        exclude: |
+          (?x)^(
+            # Archive contains legacy CloudFormation with deprecated syntax
+            archive/.*|
+            # CloudFormation templates use intrinsic functions (!Sub, !Ref, !GetAtt)
+            # that are valid CloudFormation but not standard YAML
+            # These are validated separately via cfn-lint
+            deploy/cloudformation/.*\.yaml|
+            # Helm templates contain Go template syntax ({{ }}) which is not valid YAML
+            # These are validated via helm lint instead
+            deploy/helm/.*/templates/.*\.yaml
+          )$
+
+      # Check TOML syntax
+      - id: check-toml
+
+      # Detect private keys
+      # Excludes test fixtures, templates, and services that contain mock keys
+      # See: docs/reference/PRE_COMMIT_FALSE_POSITIVES.md#test-fixtures-and-templates
+      - id: detect-private-key
+        exclude: |
+          (?x)^(
+            # Test files contain intentional mock private keys for testing
+            tests/.*|
+
+            # Template files contain placeholder key formats
+            .*\.template|
+            .*\.example|
+            deploy/kubernetes/argocd/.*\.template|
+
+            # Services with key detection/handling logic
+            src/services/github_pr_service\.py|
+            src/services/secrets_detection_service\.py|
+
+            # False positives documentation contains example key patterns
+            docs/reference/PRE_COMMIT_FALSE_POSITIVES\.md
+          )$
+
+      # Ensure files end with newline
+      - id: end-of-file-fixer
+        exclude: |
+          (?x)^(
+            .*\.svg|
+            .*\.lock
+          )$
+
+      # Remove trailing whitespace
+      - id: trailing-whitespace
+        exclude: |
+          (?x)^(
+            .*\.md
+          )$
+
+      # Prevent committing to main/master directly
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'master']
+
+  # ==========================================================================
+  # Python Code Quality
+  # ==========================================================================
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        args: ['--line-length=88']
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        # E501: Line too long (handled by black formatter)
+        # W503: Line break before binary operator (conflicts with black)
+        # E203: Whitespace before ':' (conflicts with black)
+        # E226: Missing whitespace around arithmetic operator
+        # E704: Multiple statements on one line
+        args: ['--max-line-length=120', '--ignore=E501,W503,E203,E226,E704']
+        additional_dependencies:
+          - flake8-bugbear
+          - flake8-comprehensions
+        # Exclude directories with intentional style deviations
+        # See: docs/reference/PRE_COMMIT_FALSE_POSITIVES.md#flake8-code-quality
+        exclude: |
+          (?x)^(
+            # Deploy scripts have conditional imports and debug code
+            deploy/.*|
+            # Utility scripts have relaxed style requirements
+            scripts/.*|
+            # Archive is immutable
+            archive/.*|
+            # Test files have intentional patterns (B007 unused vars, B008 fixtures)
+            tests/.*
+          )$
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ['--profile=black']
+
+  # ==========================================================================
+  # Security Scanning (Third-party)
+  # ==========================================================================
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.7
+    hooks:
+      - id: bandit
+        # Configuration in pyproject.toml includes:
+        # - severity=MEDIUM (ignores LOW severity false positives)
+        # - per-file-ignores for known false positive patterns
+        # See: docs/reference/PRE_COMMIT_FALSE_POSITIVES.md#bandit-security-scanner
+        # -ll = severity MEDIUM+, -ii = confidence MEDIUM+
+        args: ['-c', 'pyproject.toml', '-ll', '-ii', '-r', 'src/']
+        additional_dependencies: ['bandit[toml]']
+        exclude: |
+          (?x)^(
+            # Test files contain intentional security anti-patterns for testing
+            tests/.*|
+            # Scripts use subprocess and random intentionally for non-security purposes
+            scripts/.*|
+            # Archive is immutable
+            archive/.*|
+            # Deploy contains infrastructure scripts, not application code
+            deploy/.*|
+            # Lambda functions use subprocess for kubectl - validated in code review
+            src/lambda/.*
+          )$
+
+  # ==========================================================================
+  # Markdown
+  # ==========================================================================
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.39.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041']
+
+# Default stages for hooks
+default_stages: [pre-commit, pre-push]
+
+# Fail fast - stop on first failure
+fail_fast: false
+
+# Minimum pre-commit version
+minimum_pre_commit_version: '3.0.0'

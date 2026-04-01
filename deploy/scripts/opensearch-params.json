@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "aura"
+  },
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "PrivateSubnetIds",
+    "ParameterValue": "subnet-0aaaa00000aaaa0003,subnet-0aaaa00000aaaa0004"
+  },
+  {
+    "ParameterKey": "OpenSearchSecurityGroupId",
+    "ParameterValue": "sg-0example000000005"
+  },
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "t3.small.search"
+  }
+]

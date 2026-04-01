@@ -1,0 +1,448 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.9 - GPU Monitoring (Dashboard, Alarms, Budget Alerts)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertTopicArn:
+    Type: String
+    Description: SNS topic ARN for alerts (from monitoring.yaml)
+
+  GPUBudgetThresholdPercent:
+    Type: Number
+    Default: 80
+    MinValue: 50
+    MaxValue: 100
+    Description: Alert when GPU budget usage exceeds this percentage
+
+  GPUQueueDepthAlarmThreshold:
+    Type: Number
+    Default: 10
+    Description: Alert when GPU queue depth exceeds this value
+
+  GPUJobFailureRateThreshold:
+    Type: Number
+    Default: 10
+    Description: Alert when job failure rate exceeds this percentage
+
+  SpotInterruptionAlarmThreshold:
+    Type: Number
+    Default: 5
+    Description: Alert when Spot interruptions exceed this count per hour
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # ==========================================================================
+  # CloudWatch Dashboard for GPU Workloads
+  # ==========================================================================
+
+  GPUDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-gpu-scheduler-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 1,
+              "properties": {
+                "markdown": "# GPU Workload Scheduler Dashboard - ${Environment}"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 1,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "GPU Jobs - Lifecycle",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "JobsSubmitted", "Environment", "${Environment}", {"stat": "Sum", "period": 300}],
+                  [".", "JobsCompleted", ".", ".", {"stat": "Sum", "period": 300}],
+                  [".", "JobsFailed", ".", ".", {"stat": "Sum", "period": 300}],
+                  [".", "JobsCancelled", ".", ".", {"stat": "Sum", "period": 300}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "yAxis": {"left": {"label": "Count", "min": 0}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 1,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "GPU Resource Utilization",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "GPUsInUse", "Environment", "${Environment}", {"stat": "Average", "period": 60}],
+                  [".", "GPUsAvailable", ".", ".", {"stat": "Average", "period": 60}]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "yAxis": {"left": {"label": "GPUs", "min": 0}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 1,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Queue Depth by Priority",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "QueueDepth", "Priority", "high", "Environment", "${Environment}", {"stat": "Average", "period": 60}],
+                  [".", ".", ".", "normal", ".", ".", {"stat": "Average", "period": 60}],
+                  [".", ".", ".", "low", ".", ".", {"stat": "Average", "period": 60}]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "yAxis": {"left": {"label": "Jobs", "min": 0}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 7,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Daily GPU Costs (USD)",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "DailyCost", "Environment", "${Environment}", {"stat": "Sum", "period": 86400}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "yAxis": {"left": {"label": "USD", "min": 0}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 7,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Cost by Job Type",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "CostByJobType", "JobType", "embedding_generation", "Environment", "${Environment}", {"stat": "Sum", "period": 86400}],
+                  [".", ".", ".", "vulnerability_training", ".", ".", {"stat": "Sum", "period": 86400}],
+                  [".", ".", ".", "swe_rl_training", ".", ".", {"stat": "Sum", "period": 86400}],
+                  [".", ".", ".", "memory_consolidation", ".", ".", {"stat": "Sum", "period": 86400}],
+                  [".", ".", ".", "local_inference", ".", ".", {"stat": "Sum", "period": 86400}]
+                ],
+                "view": "pie",
+                "setPeriodToTimeRange": true
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 7,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Queue Wait Time (seconds)",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "QueueWaitTime", "Environment", "${Environment}", {"stat": "Average", "period": 60}],
+                  [".", ".", ".", ".", {"stat": "p90", "period": 60}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "yAxis": {"left": {"label": "Seconds", "min": 0}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 13,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Job Duration (minutes)",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "JobDuration", "Environment", "${Environment}", {"stat": "Average", "period": 300}],
+                  [".", ".", ".", ".", {"stat": "p90", "period": 300}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "yAxis": {"left": {"label": "Minutes", "min": 0}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 13,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Spot Interruptions & Preemptions",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "SpotInterruptions", "Environment", "${Environment}", {"stat": "Sum", "period": 3600}],
+                  [".", "JobsPreempted", ".", ".", {"stat": "Sum", "period": 3600}],
+                  [".", "StarvationPromotions", ".", ".", {"stat": "Sum", "period": 3600}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "yAxis": {"left": {"label": "Count", "min": 0}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 13,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Budget Usage (%)",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "BudgetUsagePercent", "Environment", "${Environment}", {"stat": "Maximum", "period": 3600}]
+                ],
+                "view": "gauge",
+                "yAxis": {"left": {"min": 0, "max": 100}},
+                "annotations": {
+                  "horizontal": [
+                    {"label": "Warning", "value": 80, "fill": "above", "color": "#ff7f0e"},
+                    {"label": "Critical", "value": 100, "fill": "above", "color": "#d62728"}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 19,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "GPU Hardware Metrics (DCGM)",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "GPUUtilization", "Environment", "${Environment}", {"stat": "Average", "period": 60}],
+                  [".", "GPUTemperature", ".", ".", {"stat": "Average", "period": 60, "yAxis": "right"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "yAxis": {
+                  "left": {"label": "Utilization %", "min": 0, "max": 100},
+                  "right": {"label": "Temperature °C", "min": 0, "max": 100}
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 19,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "GPU Memory Usage",
+                "region": "${AWS::Region}",
+                "metrics": [
+                  ["Aura/GPUScheduler", "GPUMemoryUsed", "Environment", "${Environment}", {"stat": "Average", "period": 60}],
+                  [".", "GPUMemoryTotal", ".", ".", {"stat": "Average", "period": 60}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "yAxis": {"left": {"label": "GB", "min": 0}}
+              }
+            }
+          ]
+        }
+
+  # ==========================================================================
+  # CloudWatch Alarms
+  # ==========================================================================
+
+  # Queue Depth Alarm - Alert when queue is backing up
+  GPUQueueDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-queue-depth-${Environment}'
+      AlarmDescription: GPU job queue depth is high - jobs may be waiting too long
+      MetricName: QueueDepth
+      Namespace: Aura/GPUScheduler
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: !Ref GPUQueueDepthAlarmThreshold
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: notBreaching
+
+  # Job Failure Rate Alarm
+  GPUJobFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-job-failures-${Environment}'
+      AlarmDescription: GPU job failure rate is elevated
+      MetricName: JobsFailed
+      Namespace: Aura/GPUScheduler
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: !Ref GPUJobFailureRateThreshold
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: notBreaching
+
+  # Spot Interruption Alarm
+  GPUSpotInterruptionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-spot-interruptions-${Environment}'
+      AlarmDescription: High rate of Spot instance interruptions (cost optimized from 1-hour period)
+      MetricName: SpotInterruptions
+      Namespace: Aura/GPUScheduler
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 21600
+      EvaluationPeriods: 1
+      Threshold: !Ref SpotInterruptionAlarmThreshold
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: notBreaching
+
+  # Budget Threshold Alarm
+  GPUBudgetAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-budget-threshold-${Environment}'
+      AlarmDescription: !Sub 'GPU budget usage exceeded ${GPUBudgetThresholdPercent}%'
+      MetricName: BudgetUsagePercent
+      Namespace: Aura/GPUScheduler
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Maximum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: !Ref GPUBudgetThresholdPercent
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: notBreaching
+
+  # Queue Wait Time Alarm (jobs waiting too long)
+  GPUQueueWaitTimeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-queue-wait-time-${Environment}'
+      AlarmDescription: GPU jobs are waiting too long in queue
+      MetricName: QueueWaitTime
+      Namespace: Aura/GPUScheduler
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      ExtendedStatistic: p90
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 1800  # 30 minutes
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: notBreaching
+
+  # GPU Utilization Alarm (underutilized resources)
+  GPUUnderutilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-underutilization-${Environment}'
+      AlarmDescription: GPUs are underutilized - consider scaling down (cost optimized from hourly/6-eval)
+      MetricName: GPUUtilization
+      Namespace: Aura/GPUScheduler
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Average
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 20  # Below 20% for 1 day
+      ComparisonOperator: LessThanThreshold
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: notBreaching
+
+  # No GPUs Available Alarm
+  GPUAvailabilityAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-gpu-no-availability-${Environment}'
+      AlarmDescription: No GPUs available for new jobs
+      MetricName: GPUsAvailable
+      Namespace: Aura/GPUScheduler
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 6  # 30 minutes with no GPUs
+      Threshold: 0
+      ComparisonOperator: LessThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: notBreaching
+
+Outputs:
+  DashboardName:
+    Description: CloudWatch Dashboard name
+    Value: !Sub '${ProjectName}-gpu-scheduler-${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-gpu-dashboard-${Environment}'
+
+  DashboardUrl:
+    Description: URL to CloudWatch Dashboard
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-gpu-scheduler-${Environment}'
+
+  QueueDepthAlarmArn:
+    Description: Queue depth alarm ARN
+    Value: !GetAtt GPUQueueDepthAlarm.Arn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-queue-alarm-${Environment}'
+
+  BudgetAlarmArn:
+    Description: Budget threshold alarm ARN
+    Value: !GetAtt GPUBudgetAlarm.Arn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-budget-alarm-${Environment}'

@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 9.5 - Vuln Scan ECR (Container Repositories)'
+
+# =============================================================================
+# ECR repositories for ADR-084 vulnerability scanner container images.
+#
+# Repositories:
+# - scan-worker: Main scanner worker (ingestion, parsing, analysis, reporting)
+# - scan-graph-builder: Graph construction service (Neptune bulk loader)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Resources:
+  # ===========================================================================
+  # Scan Worker Repository
+  # ===========================================================================
+  ScanWorkerRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-scan-worker-${Environment}'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 20 tagged images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["v", "latest", "dev", "qa", "prod"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Delete untagged images older than 14 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 14
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+  # ===========================================================================
+  # Graph Builder Repository
+  # ===========================================================================
+  ScanGraphBuilderRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-scan-graph-builder-${Environment}'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 20 tagged images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["v", "latest", "dev", "qa", "prod"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Delete untagged images older than 14 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 14
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: '9'
+
+Outputs:
+  ScanWorkerRepositoryUri:
+    Description: ECR repository URI for scan worker image
+    Value: !GetAtt ScanWorkerRepository.RepositoryUri
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-worker-ecr-uri-${Environment}'
+
+  ScanWorkerRepositoryArn:
+    Description: ECR repository ARN for scan worker
+    Value: !GetAtt ScanWorkerRepository.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-worker-ecr-arn-${Environment}'
+
+  ScanGraphBuilderRepositoryUri:
+    Description: ECR repository URI for graph builder image
+    Value: !GetAtt ScanGraphBuilderRepository.RepositoryUri
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-graph-builder-ecr-uri-${Environment}'
+
+  ScanGraphBuilderRepositoryArn:
+    Description: ECR repository ARN for graph builder
+    Value: !GetAtt ScanGraphBuilderRepository.Arn
+    Export:
+      Name: !Sub '${ProjectName}-vuln-scan-graph-builder-ecr-arn-${Environment}'

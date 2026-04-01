@@ -1,0 +1,24 @@
+# Project Aura - API Canary Service (Base)
+# Routes traffic to canary pods during progressive rollout
+# Used by Argo Rollouts for traffic splitting (ADR-022 Phase 3)
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: aura-api-canary
+  namespace: default
+  labels:
+    app: aura-api
+    component: api
+    role: canary
+spec:
+  type: ClusterIP
+  # Selector is managed by Argo Rollouts controller
+  # It automatically injects rollouts-pod-template-hash label
+  selector:
+    app: aura-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

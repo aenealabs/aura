@@ -1,0 +1,53 @@
+{{- if and (include "aura.isSelfHosted" .) .Values.llm.vllm.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aura.fullname" . }}-vllm
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "vllm" "context" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "aura.componentSelectorLabels" (dict "component" "vllm" "context" .) | nindent 4 }}
+{{- end }}
+---
+{{- if and (include "aura.isSelfHosted" .) .Values.llm.tgi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aura.fullname" . }}-tgi
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "tgi" "context" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "aura.componentSelectorLabels" (dict "component" "tgi" "context" .) | nindent 4 }}
+{{- end }}
+---
+{{- if and (include "aura.isSelfHosted" .) .Values.llm.ollama.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aura.fullname" . }}-ollama
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "ollama" "context" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 11434
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "aura.componentSelectorLabels" (dict "component" "ollama" "context" .) | nindent 4 }}
+{{- end }}

@@ -1,0 +1,32 @@
+{
+  "ProjectName": "aura",
+  "Environment": "prod",
+  "DeploymentSize": "small",
+  "VpcCIDR": "10.0.0.0/16",
+
+  "NeptuneInstanceType": "db.t3.medium",
+  "OpenSearchInstanceType": "t3.small.search",
+  "OpenSearchVolumeSize": "20",
+  "OpenSearchInstanceCount": "1",
+
+  "EKSNodeInstanceType": "t3.medium",
+  "EKSNodeMinSize": "2",
+  "EKSNodeMaxSize": "4",
+  "NodeVolumeSize": "50",
+
+  "KubernetesVersion": "1.34",
+  "EnableDeletionProtection": "false",
+
+  "EnableBedrock": "true",
+  "PrimaryModel": "anthropic.claude-3-5-sonnet-20241022-v1:0",
+  "EmbeddingModel": "amazon.titan-embed-text-v2:0",
+
+  "_metadata": {
+    "description": "Small deployment configuration for 1-50 developers",
+    "estimated_monthly_cost": "$400-600",
+    "recommended_for": "Proof of concept, small teams, development environments",
+    "neptune_mode": "provisioned",
+    "high_availability": false,
+    "multi_az": false
+  }
+}

@@ -1,0 +1,18 @@
+{{- if and .Values.api.enabled .Values.api.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aura.fullname" . }}-api
+  labels:
+    {{- include "aura.componentLabels" (dict "component" "api" "context" .) | nindent 4 }}
+spec:
+  {{- if .Values.api.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.api.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.api.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.api.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "aura.componentSelectorLabels" (dict "component" "api" "context" .) | nindent 6 }}
+{{- end }}

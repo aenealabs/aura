@@ -1,0 +1,685 @@
+version: 0.2
+
+# Sandbox Layer: HITL Testing Environment
+# Environment variables (ENVIRONMENT, PROJECT_NAME, LAYER, AWS_ACCOUNT_ID, AWS_DEFAULT_REGION)
+# are provided by CodeBuild project from CloudFormation parameters
+
+env:
+  variables:
+    # Suppress pip root user warning (safe in ephemeral CI/CD containers)
+    PIP_ROOT_USER_ACTION: ignore
+    # Prevent pip cache poisoning between builds
+    PIP_NO_CACHE_DIR: "true"
+  parameter-store:
+    ALERT_EMAIL: "/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing build dependencies..."
+      - python -m pip install --upgrade pip
+      - pip3 install cfn-lint setuptools wheel
+      # Configure ECR credential helper (eliminates password storage warnings)
+      - chmod +x deploy/scripts/configure-ecr-credential-helper.sh
+      - ./deploy/scripts/configure-ecr-credential-helper.sh
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Sandbox Layer Deployment (Layer 7)"
+      - echo "=========================================="
+      - echo "Environment $ENVIRONMENT | Project $PROJECT_NAME | Region $AWS_DEFAULT_REGION"
+
+      # Validate templates
+      - echo "Validating sandbox layer templates..."
+      - cfn-lint deploy/cloudformation/sandbox.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-state.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-iam.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-environment-catalog.yaml --ignore-checks W3002,W1020,W2001,W1031 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-approval.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-monitoring.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-budgets.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      # Phase 4: Advanced Features templates
+      - cfn-lint deploy/cloudformation/test-env-scheduler.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-namespace.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/test-env-marketplace.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - echo "Validating Service Catalog product templates..."
+      - cfn-lint deploy/service-catalog/products/*.yaml --ignore-checks W3002,W1020,W2001,W3045 || echo "cfn-lint warnings (non-blocking)"
+      - echo "Template validation complete"
+
+      # Retrieve VPC and subnet information from Networking stack
+      - echo "Retrieving dependency outputs from Networking stack..."
+      - NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $NETWORKING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          VPC_ID=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          PRIVATE_SUBNET_IDS=$(aws cloudformation describe-stacks --stack-name $NETWORKING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnetIds`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "VPC ID: $VPC_ID"
+          echo "Private Subnet IDs: $PRIVATE_SUBNET_IDS"
+        else
+          echo "Warning: Networking stack not found"
+          VPC_ID=""
+          PRIVATE_SUBNET_IDS=""
+        fi
+
+      # Check if monitoring stack exists for SNS topic
+      - echo "Checking for Monitoring stack..."
+      - MONITORING_STACK="${PROJECT_NAME}-monitoring-${ENVIRONMENT}"
+      - |
+        if aws cloudformation describe-stacks --stack-name $MONITORING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          SNS_TOPIC_ARN=$(aws cloudformation describe-stacks --stack-name $MONITORING_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`AlertTopicArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          echo "SNS Topic ARN: $SNS_TOPIC_ARN"
+        else
+          echo "Warning: Monitoring stack not found, SNS notifications disabled"
+          SNS_TOPIC_ARN=""
+        fi
+
+      # Retrieve compliance settings from SSM (ADR-040)
+      - echo "Retrieving compliance settings from SSM..."
+      - |
+        KMS_MODE=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/compliance/kms-mode" \
+          --query 'Parameter.Value' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "aws_managed")
+        LOG_RETENTION=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/compliance/log-retention-days" \
+          --query 'Parameter.Value' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "90")
+        USE_CUSTOMER_KMS=$([ "$KMS_MODE" = "customer_managed" ] && echo "true" || echo "false")
+        echo "KMS Mode: $KMS_MODE (Use Customer KMS: $USE_CUSTOMER_KMS)"
+        echo "Log Retention Days: $LOG_RETENTION"
+        # Get Data KMS Key ARN if using customer-managed keys
+        if [ "$USE_CUSTOMER_KMS" = "true" ]; then
+          DATA_KMS_KEY_ARN=$(aws cloudformation describe-stacks --stack-name "${PROJECT_NAME}-kms-${ENVIRONMENT}" \
+            --query 'Stacks[0].Outputs[?OutputKey==`DataKMSKeyArn`].OutputValue' --output text \
+            --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+          echo "Data KMS Key ARN: $DATA_KMS_KEY_ARN"
+        else
+          DATA_KMS_KEY_ARN=""
+        fi
+
+  build:
+    commands:
+      # Generate deployment timestamp for forcing stack updates
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
+
+      # Deploy Sandbox Infrastructure
+      - echo "Deploying Sandbox Infrastructure..."
+      - SANDBOX_STACK="${PROJECT_NAME}-sandbox-${ENVIRONMENT}"
+
+      # Build CloudFormation parameters
+      - |
+        PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
+        PARAMS="$PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+          PARAMS="$PARAMS ParameterKey=VpcId,ParameterValue=$VPC_ID"
+        fi
+        if [ -n "$PRIVATE_SUBNET_IDS" ] && [ "$PRIVATE_SUBNET_IDS" != "None" ]; then
+          PARAMS="$PARAMS ParameterKey=PrivateSubnetIds,ParameterValue=\"$PRIVATE_SUBNET_IDS\""
+        fi
+        # Add AlertEmail for SNS notifications (from SSM parameter store)
+        if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
+          PARAMS="$PARAMS ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL"
+          echo "SNS notifications will be sent to: $ALERT_EMAIL"
+        else
+          echo "Warning: ALERT_EMAIL not set, SNS email notifications disabled"
+        fi
+        echo "CloudFormation parameters: $PARAMS"
+
+      # Deploy or update stack
+      - |
+        if aws cloudformation describe-stacks --stack-name $SANDBOX_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Stack exists, attempting update..."
+          OUTPUT=$(aws cloudformation update-stack \
+            --stack-name $SANDBOX_STACK \
+            --template-body file://deploy/cloudformation/sandbox.yaml \
+            --parameters $PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=sandbox Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager 2>&1) && \
+          aws cloudformation wait stack-update-complete --stack-name $SANDBOX_STACK --region $AWS_DEFAULT_REGION || \
+          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+            echo "No updates needed for $SANDBOX_STACK"
+          else
+            echo "Update failed: $OUTPUT"
+            # Check stack events for detailed error
+            aws cloudformation describe-stack-events --stack-name $SANDBOX_STACK \
+              --query 'StackEvents[?ResourceStatus==`UPDATE_FAILED` || ResourceStatus==`CREATE_FAILED`].[LogicalResourceId,ResourceStatusReason]' \
+              --output table --region $AWS_DEFAULT_REGION || true
+            exit 1
+          fi
+        else
+          echo "Stack does not exist, creating..."
+          aws cloudformation create-stack \
+            --stack-name $SANDBOX_STACK \
+            --template-body file://deploy/cloudformation/sandbox.yaml \
+            --parameters $PARAMS \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=sandbox Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-cli-pager
+          aws cloudformation wait stack-create-complete --stack-name $SANDBOX_STACK --region $AWS_DEFAULT_REGION
+        fi
+      - echo "Sandbox Infrastructure deployment complete"
+
+      # Deploy Test Environment State Table (Layer 7.3)
+      - echo "Deploying Test Environment State Table..."
+      - TEST_ENV_STATE_STACK="${PROJECT_NAME}-test-env-state-${ENVIRONMENT}"
+      - |
+        aws cloudformation deploy \
+          --stack-name $TEST_ENV_STATE_STACK \
+          --template-file deploy/cloudformation/test-env-state.yaml \
+          --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=7.3 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+      - echo "Test Environment State Table deployment complete"
+
+      # Deploy Test Environment IAM Roles (Layer 7.4)
+      - echo "Deploying Test Environment IAM Roles..."
+      - TEST_ENV_IAM_STACK="${PROJECT_NAME}-test-env-iam-${ENVIRONMENT}"
+      - |
+        aws cloudformation deploy \
+          --stack-name $TEST_ENV_IAM_STACK \
+          --template-file deploy/cloudformation/test-env-iam.yaml \
+          --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=7.4 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+      - echo "Test Environment IAM Roles deployment complete"
+
+      # Get IAM role ARNs for Service Catalog
+      - echo "Retrieving IAM role ARNs..."
+      - |
+        CATALOG_LAUNCH_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`CatalogLaunchRoleArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        ECS_TASK_EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`ECSTaskExecutionRoleArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        ECS_TASK_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`ECSTaskRoleArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        STEP_FUNCTIONS_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`StepFunctionsRoleArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        echo "Catalog Launch Role: $CATALOG_LAUNCH_ROLE_ARN"
+        echo "ECS Task Execution Role: $ECS_TASK_EXECUTION_ROLE_ARN"
+        echo "ECS Task Role: $ECS_TASK_ROLE_ARN"
+        echo "Step Functions Role: $STEP_FUNCTIONS_ROLE_ARN"
+
+      # Upload Service Catalog product templates to S3
+      - echo "Uploading Service Catalog product templates to S3..."
+      - ARTIFACTS_BUCKET="${PROJECT_NAME}-sandbox-artifacts-${AWS_ACCOUNT_ID}-${ENVIRONMENT}"
+      - |
+        # Check if bucket exists
+        if aws s3 ls "s3://${ARTIFACTS_BUCKET}" 2>/dev/null; then
+          echo "Uploading product templates to s3://${ARTIFACTS_BUCKET}/service-catalog/products/"
+          # Use templates from deploy/service-catalog/products/ which use parameters instead of SSM references
+          # This avoids EarlyValidation failures when SSM parameters don't exist yet
+          # --sse AES256: Required by SCP DenyUnencryptedS3Uploads (bucket defaults apply after SCP evaluation)
+          aws s3 sync deploy/service-catalog/products/ "s3://${ARTIFACTS_BUCKET}/service-catalog/products/" \
+            --sse AES256 \
+            --delete \
+            --region $AWS_DEFAULT_REGION
+          echo "Product templates uploaded successfully"
+          # List uploaded files
+          aws s3 ls "s3://${ARTIFACTS_BUCKET}/service-catalog/products/" --region $AWS_DEFAULT_REGION
+        else
+          echo "WARNING: Artifacts bucket ${ARTIFACTS_BUCKET} not found. Service Catalog products may fail to deploy."
+        fi
+
+      # Deploy Test Environment Service Catalog (Layer 7.4)
+      - echo "Deploying Test Environment Service Catalog..."
+      - TEST_ENV_CATALOG_STACK="${PROJECT_NAME}-test-env-catalog-${ENVIRONMENT}"
+      - |
+        # Catalog template only needs Environment, ProjectName, and CatalogLaunchRoleArn
+        # VPC/Subnet info is used by individual Service Catalog product templates, not the catalog itself
+        if [ -z "$CATALOG_LAUNCH_ROLE_ARN" ] || [ "$CATALOG_LAUNCH_ROLE_ARN" = "None" ]; then
+          echo "ERROR: CatalogLaunchRoleArn is required. Ensure test-env-iam stack deployed successfully."
+          exit 1
+        fi
+        echo "Deploying catalog with launch role: $CATALOG_LAUNCH_ROLE_ARN"
+
+        # Check if stack exists and is in a stuck/failed state
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_CATALOG_STACK \
+          --query 'Stacks[0].StackStatus' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "DOES_NOT_EXIST")
+        echo "Current stack status: $STACK_STATUS"
+
+        if [ "$STACK_STATUS" = "REVIEW_IN_PROGRESS" ] || [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+          echo "Stack is in $STACK_STATUS state. Deleting and recreating..."
+          aws cloudformation delete-stack --stack-name $TEST_ENV_CATALOG_STACK --region $AWS_DEFAULT_REGION
+          echo "Waiting for stack deletion..."
+          aws cloudformation wait stack-delete-complete --stack-name $TEST_ENV_CATALOG_STACK --region $AWS_DEFAULT_REGION || true
+          echo "Stack deleted."
+          STACK_STATUS="DOES_NOT_EXIST"
+        fi
+
+        # Use create-stack or update-stack directly to bypass CloudFormation's EarlyValidation
+        # which can incorrectly flag Service Catalog templates with intrinsic functions
+        if [ "$STACK_STATUS" = "DOES_NOT_EXIST" ]; then
+          echo "Creating new Service Catalog stack..."
+          aws cloudformation create-stack \
+            --stack-name $TEST_ENV_CATALOG_STACK \
+            --template-body file://deploy/cloudformation/test-environment-catalog.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=CatalogLaunchRoleArn,ParameterValue=$CATALOG_LAUNCH_ROLE_ARN \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=7.4 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION
+          echo "Waiting for stack creation..."
+          aws cloudformation wait stack-create-complete --stack-name $TEST_ENV_CATALOG_STACK --region $AWS_DEFAULT_REGION
+        else
+          echo "Updating existing Service Catalog stack..."
+          aws cloudformation update-stack \
+            --stack-name $TEST_ENV_CATALOG_STACK \
+            --template-body file://deploy/cloudformation/test-environment-catalog.yaml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              ParameterKey=CatalogLaunchRoleArn,ParameterValue=$CATALOG_LAUNCH_ROLE_ARN \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=7.4 Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION || {
+              # update-stack fails if no changes - check if that's the case
+              UPDATE_STATUS=$?
+              if [ $UPDATE_STATUS -eq 255 ]; then
+                echo "No updates to perform (stack is current)"
+              else
+                echo "Update failed with status $UPDATE_STATUS"
+                exit $UPDATE_STATUS
+              fi
+            }
+          if [ $? -eq 0 ]; then
+            echo "Waiting for stack update..."
+            aws cloudformation wait stack-update-complete --stack-name $TEST_ENV_CATALOG_STACK --region $AWS_DEFAULT_REGION || true
+          fi
+        fi
+      - echo "Test Environment Service Catalog deployment complete"
+
+      # Deploy Test Environment Approval Workflow (Layer 7.5)
+      - echo "Deploying Test Environment Approval Workflow..."
+      - TEST_ENV_APPROVAL_STACK="${PROJECT_NAME}-test-env-approval-${ENVIRONMENT}"
+      - |
+        # Get notifications topic ARN from catalog stack
+        NOTIFICATIONS_TOPIC_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_CATALOG_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`NotificationsTopicArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        # Get state table name from state stack
+        STATE_TABLE_NAME=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_STATE_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`TestEnvStateTableName`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        # Get HITL approvals topic ARN from sandbox stack
+        HITL_APPROVALS_TOPIC_ARN=$(aws cloudformation describe-stacks --stack-name $SANDBOX_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`HITLNotificationTopicArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        # Build approval workflow parameters
+        APPROVAL_PARAMS="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME"
+        if [ -n "$NOTIFICATIONS_TOPIC_ARN" ] && [ "$NOTIFICATIONS_TOPIC_ARN" != "None" ]; then
+          APPROVAL_PARAMS="$APPROVAL_PARAMS NotificationsTopicArn=$NOTIFICATIONS_TOPIC_ARN"
+        fi
+        if [ -n "$STATE_TABLE_NAME" ] && [ "$STATE_TABLE_NAME" != "None" ]; then
+          APPROVAL_PARAMS="$APPROVAL_PARAMS TestEnvStateTableName=$STATE_TABLE_NAME"
+        fi
+        if [ -n "$STEP_FUNCTIONS_ROLE_ARN" ] && [ "$STEP_FUNCTIONS_ROLE_ARN" != "None" ]; then
+          APPROVAL_PARAMS="$APPROVAL_PARAMS StepFunctionsRoleArn=$STEP_FUNCTIONS_ROLE_ARN"
+        fi
+        if [ -n "$HITL_APPROVALS_TOPIC_ARN" ] && [ "$HITL_APPROVALS_TOPIC_ARN" != "None" ]; then
+          APPROVAL_PARAMS="$APPROVAL_PARAMS HITLApprovalsTopicArn=$HITL_APPROVALS_TOPIC_ARN"
+        fi
+        echo "Approval Workflow parameters: $APPROVAL_PARAMS"
+
+        aws cloudformation deploy \
+          --stack-name $TEST_ENV_APPROVAL_STACK \
+          --template-file deploy/cloudformation/test-env-approval.yaml \
+          --parameter-overrides $APPROVAL_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=7.5 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+      - echo "Test Environment Approval Workflow deployment complete"
+
+      # Deploy Test Environment Monitoring (Layer 7.6)
+      - echo "Deploying Test Environment Monitoring..."
+      - TEST_ENV_MONITORING_STACK="${PROJECT_NAME}-test-env-monitoring-${ENVIRONMENT}"
+      - |
+        MONITORING_PARAMS="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME"
+        if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
+          MONITORING_PARAMS="$MONITORING_PARAMS AlertEmail=$ALERT_EMAIL"
+        fi
+        aws cloudformation deploy \
+          --stack-name $TEST_ENV_MONITORING_STACK \
+          --template-file deploy/cloudformation/test-env-monitoring.yaml \
+          --parameter-overrides $MONITORING_PARAMS \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=7.6 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+      - echo "Test Environment Monitoring deployment complete"
+
+      # Deploy Test Environment Budgets (Layer 7.7)
+      - echo "Deploying Test Environment Budgets..."
+      - TEST_ENV_BUDGETS_STACK="${PROJECT_NAME}-test-env-budgets-${ENVIRONMENT}"
+      - |
+        BUDGETS_PARAMS="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME"
+        if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
+          BUDGETS_PARAMS="$BUDGETS_PARAMS AlertEmail=$ALERT_EMAIL"
+        fi
+        aws cloudformation deploy \
+          --stack-name $TEST_ENV_BUDGETS_STACK \
+          --template-file deploy/cloudformation/test-env-budgets.yaml \
+          --parameter-overrides $BUDGETS_PARAMS \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=7.7 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+      - echo "Test Environment Budgets deployment complete"
+
+      # === PHASE 4: ADVANCED FEATURES ===
+
+      # Get Phase 4 IAM role ARNs from IAM stack
+      - echo "Retrieving Phase 4 IAM role ARNs..."
+      - |
+        SCHEDULER_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`SchedulerRoleArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        NAMESPACE_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`NamespaceControllerRoleArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        MARKETPLACE_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_IAM_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`MarketplaceRoleArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        echo "Scheduler Role: $SCHEDULER_ROLE_ARN"
+        echo "Namespace Controller Role: $NAMESPACE_ROLE_ARN"
+        echo "Marketplace Role: $MARKETPLACE_ROLE_ARN"
+
+      # Get EKS cluster name from Compute stack
+      - echo "Retrieving EKS cluster name..."
+      - |
+        EKS_STACK="${PROJECT_NAME}-eks-${ENVIRONMENT}"
+        EKS_CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name $EKS_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`ClusterName`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "${PROJECT_NAME}-cluster-${ENVIRONMENT}")
+        echo "EKS Cluster Name: $EKS_CLUSTER_NAME"
+
+      # Get State Table Name and Notification Topic from earlier stacks
+      - |
+        STATE_TABLE_NAME=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_STATE_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`TestEnvStateTableName`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        NOTIFICATION_TOPIC_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_MONITORING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`AlertTopicArn`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        echo "State Table: $STATE_TABLE_NAME"
+        echo "Notification Topic: $NOTIFICATION_TOPIC_ARN"
+
+      # Get Service Catalog portfolio ID
+      - |
+        PORTFOLIO_ID=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_CATALOG_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`TestEnvPortfolioId`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        echo "Portfolio ID: $PORTFOLIO_ID"
+
+      # Deploy Test Environment Scheduler (Layer 7.8)
+      - echo "Deploying Test Environment Scheduler (Layer 7.8)..."
+      - TEST_ENV_SCHEDULER_STACK="${PROJECT_NAME}-test-env-scheduler-${ENVIRONMENT}"
+      - |
+        if [ -n "$SCHEDULER_ROLE_ARN" ] && [ "$SCHEDULER_ROLE_ARN" != "None" ]; then
+          SCHEDULER_PARAMS="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME"
+          SCHEDULER_PARAMS="$SCHEDULER_PARAMS SchedulerRoleArn=$SCHEDULER_ROLE_ARN"
+          if [ -n "$NOTIFICATION_TOPIC_ARN" ] && [ "$NOTIFICATION_TOPIC_ARN" != "None" ]; then
+            SCHEDULER_PARAMS="$SCHEDULER_PARAMS NotificationTopicArn=$NOTIFICATION_TOPIC_ARN"
+          fi
+          # ADR-040: Add compliance parameters
+          SCHEDULER_PARAMS="$SCHEDULER_PARAMS UseCustomerManagedKMS=$USE_CUSTOMER_KMS"
+          SCHEDULER_PARAMS="$SCHEDULER_PARAMS LogRetentionDays=$LOG_RETENTION"
+          if [ -n "$DATA_KMS_KEY_ARN" ] && [ "$DATA_KMS_KEY_ARN" != "None" ]; then
+            SCHEDULER_PARAMS="$SCHEDULER_PARAMS DataKMSKeyArn=$DATA_KMS_KEY_ARN"
+          fi
+          aws cloudformation deploy \
+            --stack-name $TEST_ENV_SCHEDULER_STACK \
+            --template-file deploy/cloudformation/test-env-scheduler.yaml \
+            --parameter-overrides $SCHEDULER_PARAMS \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=7.8 DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
+          echo "Test Environment Scheduler deployment complete"
+        else
+          echo "Skipping Scheduler deployment - SchedulerRoleArn not available"
+        fi
+
+      # Deploy EKS Namespace Controller (Layer 7.9)
+      - echo "Deploying EKS Namespace Controller (Layer 7.9)..."
+      - TEST_ENV_NAMESPACE_STACK="${PROJECT_NAME}-test-env-namespace-${ENVIRONMENT}"
+      - |
+        if [ -n "$NAMESPACE_ROLE_ARN" ] && [ "$NAMESPACE_ROLE_ARN" != "None" ]; then
+          NAMESPACE_PARAMS="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME"
+          NAMESPACE_PARAMS="$NAMESPACE_PARAMS NamespaceControllerRoleArn=$NAMESPACE_ROLE_ARN"
+          NAMESPACE_PARAMS="$NAMESPACE_PARAMS EKSClusterName=$EKS_CLUSTER_NAME"
+          if [ -n "$STATE_TABLE_NAME" ] && [ "$STATE_TABLE_NAME" != "None" ]; then
+            NAMESPACE_PARAMS="$NAMESPACE_PARAMS StateTableName=$STATE_TABLE_NAME"
+          fi
+          if [ -n "$NOTIFICATION_TOPIC_ARN" ] && [ "$NOTIFICATION_TOPIC_ARN" != "None" ]; then
+            NAMESPACE_PARAMS="$NAMESPACE_PARAMS NotificationTopicArn=$NOTIFICATION_TOPIC_ARN"
+          fi
+          # Note: KubectlLayerS3Bucket left empty - layer will be created separately
+          aws cloudformation deploy \
+            --stack-name $TEST_ENV_NAMESPACE_STACK \
+            --template-file deploy/cloudformation/test-env-namespace.yaml \
+            --parameter-overrides $NAMESPACE_PARAMS \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=7.9 DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
+          echo "EKS Namespace Controller deployment complete"
+        else
+          echo "Skipping Namespace Controller deployment - NamespaceControllerRoleArn not available"
+        fi
+
+      # Deploy Template Marketplace (Layer 7.10)
+      - echo "Deploying Template Marketplace (Layer 7.10)..."
+      - TEST_ENV_MARKETPLACE_STACK="${PROJECT_NAME}-test-env-marketplace-${ENVIRONMENT}"
+      - |
+        if [ -n "$MARKETPLACE_ROLE_ARN" ] && [ "$MARKETPLACE_ROLE_ARN" != "None" ]; then
+          MARKETPLACE_PARAMS="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME"
+          MARKETPLACE_PARAMS="$MARKETPLACE_PARAMS MarketplaceRoleArn=$MARKETPLACE_ROLE_ARN"
+          MARKETPLACE_PARAMS="$MARKETPLACE_PARAMS ArtifactsBucket=${ARTIFACTS_BUCKET}"
+          if [ -n "$HITL_APPROVALS_TOPIC_ARN" ] && [ "$HITL_APPROVALS_TOPIC_ARN" != "None" ]; then
+            MARKETPLACE_PARAMS="$MARKETPLACE_PARAMS HITLApprovalsTopicArn=$HITL_APPROVALS_TOPIC_ARN"
+          fi
+          if [ -n "$PORTFOLIO_ID" ] && [ "$PORTFOLIO_ID" != "None" ]; then
+            MARKETPLACE_PARAMS="$MARKETPLACE_PARAMS ServiceCatalogPortfolioId=$PORTFOLIO_ID"
+          fi
+          # Get approval state machine ARN
+          APPROVAL_STATE_MACHINE_ARN=$(aws cloudformation describe-stacks --stack-name $TEST_ENV_APPROVAL_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApprovalStateMachineArn`].OutputValue' \
+            --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+          if [ -n "$APPROVAL_STATE_MACHINE_ARN" ] && [ "$APPROVAL_STATE_MACHINE_ARN" != "None" ]; then
+            MARKETPLACE_PARAMS="$MARKETPLACE_PARAMS ApprovalStateMachineArn=$APPROVAL_STATE_MACHINE_ARN"
+          fi
+          aws cloudformation deploy \
+            --stack-name $TEST_ENV_MARKETPLACE_STACK \
+            --template-file deploy/cloudformation/test-env-marketplace.yaml \
+            --parameter-overrides $MARKETPLACE_PARAMS \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=7.10 DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
+          echo "Template Marketplace deployment complete"
+        else
+          echo "Skipping Marketplace deployment - MarketplaceRoleArn not available"
+        fi
+
+      # Build and push Sandbox Test Runner Docker image
+      - echo "Building Sandbox Test Runner Docker image..."
+      - |
+        ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PROJECT_NAME}-sandbox-test-runner"
+
+        # Get Python base image from private ECR (ADR-020: Controlled Supply Chain)
+        echo "Getting Python base image from private ECR..."
+        BASE_IMAGES_STACK="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
+        PYTHON_BASE_IMAGE_RAW=$(aws cloudformation describe-stacks --stack-name $BASE_IMAGES_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`PythonRepositoryUri`].OutputValue' \
+          --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+
+        if [[ -z "$PYTHON_BASE_IMAGE_RAW" || "$PYTHON_BASE_IMAGE_RAW" == "None" ]]; then
+          echo "Private ECR Python image not found, using ECR Public Gallery fallback..."
+          PYTHON_BASE_IMAGE="public.ecr.aws/docker/library/python:3.11-slim"
+        else
+          PYTHON_BASE_IMAGE="${PYTHON_BASE_IMAGE_RAW}:3.11-slim"
+        fi
+        echo "Python Base Image: $PYTHON_BASE_IMAGE"
+
+        # Check if repository exists (created by sandbox.yaml)
+        if aws ecr describe-repositories --repository-names "${PROJECT_NAME}-sandbox-test-runner" --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Building test runner image with controlled base image..."
+          docker build --platform linux/amd64 \
+            --build-arg PYTHON_BASE_IMAGE=${PYTHON_BASE_IMAGE} \
+            -t ${ECR_REPO}:latest \
+            -t ${ECR_REPO}:${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual} \
+            -f deploy/docker/sandbox/Dockerfile.test-runner .
+
+          echo "Pushing image to ECR..."
+          docker push ${ECR_REPO}:latest
+          docker push ${ECR_REPO}:${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}
+          echo "Sandbox Test Runner image pushed successfully"
+        else
+          echo "ECR repository not yet available, skipping image build"
+        fi
+
+      # Deploy Step Functions workflow (if template exists)
+      - echo "Checking for HITL Workflow State Machine template..."
+      - HITL_WORKFLOW_STACK="${PROJECT_NAME}-hitl-workflow-${ENVIRONMENT}"
+      - |
+        if [ -f "deploy/cloudformation/hitl-workflow.yaml" ]; then
+          echo "Deploying HITL Workflow State Machine..."
+          # Get sandbox stack outputs for the state machine
+          SANDBOX_CLUSTER_ARN=$(aws cloudformation describe-stacks --stack-name $SANDBOX_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`SandboxClusterArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+          STEPFUNCTIONS_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $SANDBOX_STACK \
+            --query 'Stacks[0].Outputs[?OutputKey==`StepFunctionsRoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+
+          if aws cloudformation describe-stacks --stack-name $HITL_WORKFLOW_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
+            echo "HITL workflow stack exists, attempting update..."
+            OUTPUT=$(aws cloudformation update-stack \
+              --stack-name $HITL_WORKFLOW_STACK \
+              --template-body file://deploy/cloudformation/hitl-workflow.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=sandbox Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager 2>&1) && \
+            aws cloudformation wait stack-update-complete --stack-name $HITL_WORKFLOW_STACK --region $AWS_DEFAULT_REGION || \
+            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
+              echo "No updates needed for $HITL_WORKFLOW_STACK"
+            else
+              echo "Update failed: $OUTPUT"
+              exit 1
+            fi
+          else
+            echo "HITL workflow stack does not exist, creating..."
+            aws cloudformation create-stack \
+              --stack-name $HITL_WORKFLOW_STACK \
+              --template-body file://deploy/cloudformation/hitl-workflow.yaml \
+              --parameters \
+                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
+                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=sandbox Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+              --region $AWS_DEFAULT_REGION \
+              --no-cli-pager
+            aws cloudformation wait stack-create-complete --stack-name $HITL_WORKFLOW_STACK --region $AWS_DEFAULT_REGION
+          fi
+          echo "HITL Workflow State Machine deployment complete"
+        else
+          echo "HITL workflow template not found, skipping (will be created in next iteration)"
+        fi
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Sandbox Layer Deployment Complete"
+      - echo "=========================================="
+
+      - echo "=== Sandbox Stack Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $SANDBOX_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Stack not available"
+
+      - echo "=== Test Environment State Table Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $TEST_ENV_STATE_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Test Env State stack not available"
+
+      - echo "=== Test Environment IAM Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $TEST_ENV_IAM_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Test Env IAM stack not available"
+
+      - echo "=== Test Environment Service Catalog Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $TEST_ENV_CATALOG_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Service Catalog stack not available"
+
+      - echo "=== Test Environment Approval Workflow Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $TEST_ENV_APPROVAL_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Approval Workflow stack not available"
+
+      - echo "=== Test Environment Monitoring Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $TEST_ENV_MONITORING_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Monitoring stack not available"
+
+      - echo "=== Test Environment Budgets Outputs ==="
+      - aws cloudformation describe-stacks --stack-name $TEST_ENV_BUDGETS_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Budgets stack not available"
+
+      - 'echo "=== Phase 4 - Test Environment Scheduler Outputs ==="'
+      - aws cloudformation describe-stacks --stack-name $TEST_ENV_SCHEDULER_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Scheduler stack not available"
+
+      - 'echo "=== Phase 4 - EKS Namespace Controller Outputs ==="'
+      - aws cloudformation describe-stacks --stack-name $TEST_ENV_NAMESPACE_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Namespace Controller stack not available"
+
+      - 'echo "=== Phase 4 - Template Marketplace Outputs ==="'
+      - aws cloudformation describe-stacks --stack-name $TEST_ENV_MARKETPLACE_STACK --query 'Stacks[0].Outputs' --region $AWS_DEFAULT_REGION --output table 2>/dev/null || echo "Marketplace stack not available"
+
+      - echo "=== Service Catalog Portfolios ==="
+      - aws servicecatalog list-portfolios --query "PortfolioDetails[?contains(DisplayName, '${PROJECT_NAME}')]" --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No Service Catalog portfolios found"
+
+      - echo "=== DynamoDB Tables ==="
+      - aws dynamodb list-tables --query "TableNames[?contains(@, '${PROJECT_NAME}') && (contains(@, 'approval') || contains(@, 'sandbox') || contains(@, 'test-env'))]" --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No DynamoDB tables found"
+
+      - echo "=== ECS Clusters ==="
+      - aws ecs list-clusters --query "clusterArns[?contains(@, '${PROJECT_NAME}')]" --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No ECS clusters found"
+
+      - echo "=== Step Functions State Machines ==="
+      - aws stepfunctions list-state-machines --query "stateMachines[?contains(name, '${PROJECT_NAME}')]" --output table --region $AWS_DEFAULT_REGION 2>/dev/null || echo "No state machines found"
+
+      # Publish build metrics
+      - echo "Publishing build metrics..."
+      - |
+        aws cloudwatch put-metric-data \
+          --namespace "Aura/CICD/Sandbox" \
+          --metric-name "SuccessfulDeployments" \
+          --value 1 \
+          --unit Count \
+          --dimensions Environment=$ENVIRONMENT \
+          --region $AWS_DEFAULT_REGION || echo "Failed to publish metrics"
+
+artifacts:
+  files:
+    - deploy/cloudformation/sandbox.yaml
+    - deploy/cloudformation/hitl-workflow.yaml
+    - deploy/cloudformation/test-env-state.yaml
+    - deploy/cloudformation/test-env-iam.yaml
+    - deploy/cloudformation/test-environment-catalog.yaml
+    - deploy/cloudformation/test-env-approval.yaml
+    - deploy/cloudformation/test-env-monitoring.yaml
+    - deploy/cloudformation/test-env-budgets.yaml
+    # Phase 4: Advanced Features
+    - deploy/cloudformation/test-env-scheduler.yaml
+    - deploy/cloudformation/test-env-namespace.yaml
+    - deploy/cloudformation/test-env-marketplace.yaml
+    - deploy/service-catalog/products/**/*
+  name: sandbox-layer-artifacts
+  discard-paths: no
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

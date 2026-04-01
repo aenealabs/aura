@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Aura — Infrastructure &amp; Deployment Architecture</title>
+<style>
+  :root {
+    --brand:#3B82F6;--brand-dark:#1E40AF;--critical:#DC2626;--high:#EA580C;
+    --medium:#F59E0B;--success:#10B981;--bg:#F8FAFC;--surface:#FFFFFF;
+    --border:#E2E8F0;--text:#1E293B;--text-secondary:#64748B;--text-muted:#94A3B8;
+    --purple:#7C3AED;--teal:#0D9488;--orange:#EA580C;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:var(--text);background:var(--bg)}
+
+  .header{background:linear-gradient(135deg,#0F172A 0%,#1E3A5F 40%,var(--brand) 100%);color:#fff;padding:48px 32px;text-align:center}
+  .header h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+  .header .subtitle{font-size:18px;opacity:0.9;margin-bottom:24px}
+  .header .meta{font-size:13px;opacity:0.75}
+
+  .stats-bar{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;padding:24px 32px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .stat{text-align:center}
+  .stat .number{font-size:28px;font-weight:800;color:var(--brand)}
+  .stat .number.green{color:var(--success)}
+  .stat .number.purple{color:var(--purple)}
+  .stat .number.orange{color:var(--orange)}
+  .stat .label{font-size:12px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px}
+
+  .nav-bar{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom:1px solid var(--border);padding:12px 32px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+  .nav-bar a{font-size:12px;padding:4px 12px;border-radius:9999px;background:#F1F5F9;color:var(--text-secondary);text-decoration:none;font-weight:500;transition:all 0.15s;white-space:nowrap}
+  .nav-bar a:hover{background:var(--brand);color:#fff}
+
+  .container{max-width:1320px;margin:0 auto;padding:32px}
+  section{margin-bottom:48px}
+  section>h2{font-size:24px;font-weight:700;color:var(--brand-dark);border-bottom:3px solid var(--brand);padding-bottom:8px;margin-bottom:24px}
+  section>p.desc{color:var(--text-secondary);margin-bottom:20px;max-width:800px}
+  h3{font-size:16px;font-weight:700;color:var(--text);margin:20px 0 12px}
+
+  .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;margin-bottom:24px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;transition:box-shadow 0.15s}
+  .card:hover{box-shadow:0 4px 12px rgba(0,0,0,0.08);border-color:var(--brand)}
+  .card .card-title{font-size:15px;font-weight:700;margin-bottom:8px}
+  .card .card-body{font-size:13px;color:var(--text-secondary);line-height:1.6}
+  .card .card-body strong{color:var(--text)}
+  .card-accent{border-left:4px solid}
+
+  .table-wrapper{overflow-x:auto;margin-bottom:24px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:var(--brand-dark);color:#fff;padding:10px 12px;text-align:left;font-weight:600;position:sticky;top:0}
+  th.dark{background:#0F172A}
+  td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  tr:hover td{background:#F8FAFC}
+  td:first-child{font-weight:600}
+
+  .badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:9999px;text-transform:uppercase;letter-spacing:0.5px}
+  .badge-deployed{background:#D1FAE5;color:#065F46}
+  .badge-spot{background:#FEF3C7;color:#92400E}
+  .badge-ondemand{background:#DBEAFE;color:#1E40AF}
+
+  .code-block{background:#1E293B;color:#E2E8F0;border-radius:8px;padding:20px;font-family:'JetBrains Mono','Fira Code',monospace;font-size:12px;line-height:1.7;overflow-x:auto;white-space:pre;margin-bottom:20px}
+  .code-block .comment{color:#64748B}
+  .code-block .hl{color:#34D399}
+  .code-block .svc{color:#93C5FD}
+  .code-block .arrow{color:#F59E0B}
+
+  .layer-card{border-radius:10px;padding:20px;margin-bottom:16px;color:#fff}
+  .layer-card h4{font-size:16px;font-weight:700;margin-bottom:8px}
+  .layer-card .layer-body{font-size:13px;opacity:0.9;line-height:1.6}
+  .l0{background:linear-gradient(135deg,#334155,#475569)}
+  .l1{background:linear-gradient(135deg,#312E81,#4338CA)}
+  .l2{background:linear-gradient(135deg,#5B21B6,#7C3AED)}
+  .l3{background:linear-gradient(135deg,#1E40AF,#3B82F6)}
+  .l4{background:linear-gradient(135deg,#065F46,#10B981)}
+  .l5{background:linear-gradient(135deg,#92400E,#F59E0B)}
+  .l6{background:linear-gradient(135deg,#9A3412,#F97316)}
+  .l7{background:linear-gradient(135deg,#831843,#EC4899)}
+  .l8{background:linear-gradient(135deg,#991B1B,#DC2626)}
+  .l9{background:linear-gradient(135deg,#78350F,#D97706)}
+
+  .callout{background:#EFF6FF;border:1px solid #BFDBFE;border-left:4px solid var(--brand);border-radius:8px;padding:16px 20px;margin-bottom:20px}
+  .callout.warn{background:#FFFBEB;border-color:#FDE68A;border-left-color:var(--medium)}
+  .callout.success{background:#ECFDF5;border-color:#A7F3D0;border-left-color:var(--success)}
+
+  @media print{.nav-bar{display:none}.header{padding:24px}.card{break-inside:avoid}}
+  @media(max-width:768px){.header h1{font-size:24px}.stats-bar{gap:16px}.card-grid{grid-template-columns:1fr}.container{padding:16px}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Infrastructure &amp; Deployment Architecture</h1>
+  <div class="subtitle">Project Aura — AWS Cloud Infrastructure, CI/CD, and Operations</div>
+  <div class="meta">Aenea Labs &middot; 155 CloudFormation Templates &middot; 9 Deployment Layers &middot; 38 AWS Services &middot; February 2026</div>
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><div class="number">155</div><div class="label">CloudFormation Templates</div></div>
+  <div class="stat"><div class="number green">137</div><div class="label">Stacks (Dev)</div></div>
+  <div class="stat"><div class="number purple">111</div><div class="label">Stacks (QA)</div></div>
+  <div class="stat"><div class="number">9</div><div class="label">Deployment Layers</div></div>
+  <div class="stat"><div class="number">38</div><div class="label">AWS Services</div></div>
+  <div class="stat"><div class="number orange">20</div><div class="label">CodeBuild Projects</div></div>
+  <div class="stat"><div class="number">58K+</div><div class="label">Lines of IaC</div></div>
+</div>
+
+<div class="nav-bar">
+  <a href="#layers">9 Layers</a>
+  <a href="#vpc">VPC &amp; Networking</a>
+  <a href="#eks">EKS &amp; Kubernetes</a>
+  <a href="#data">Data Services</a>
+  <a href="#cicd">CI/CD Pipeline</a>
+  <a href="#containers">Container Strategy</a>
+  <a href="#serverless">Serverless</a>
+  <a href="#security-infra">Security Infra</a>
+  <a href="#monitoring">Monitoring</a>
+  <a href="#environments">Environments</a>
+  <a href="#cost">Cost Management</a>
+  <a href="#selfhosted">Self-Hosted &amp; Edge</a>
+  <a href="#aws-services">AWS Services</a>
+  <a href="#summary">Summary</a>
+</div>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<!-- SECTION 1: 9-Layer Architecture                               -->
+<!-- ============================================================ -->
+<section id="layers">
+  <h2>9-Layer Deployment Architecture</h2>
+  <p class="desc">Aura deploys via a modular 9-layer CloudFormation architecture. Each layer is independently deployable with explicit dependencies, enabling parallel builds and targeted updates.</p>
+
+  <div class="code-block"><span class="comment">Deployment Cascade (Total: ~120-180 min dev, 180-240 min prod)</span>
+
+<span class="hl">Layer 0: Bootstrap</span> <span class="comment">(manual, one-time)</span>
+    <span class="arrow">↓</span>
+<span class="hl">Layer 1: Foundation</span> <span class="comment">(5-7 min)</span>
+    <span class="arrow">├──→</span> <span class="svc">Layer 2: Data</span> <span class="comment">(15-20 min)</span>
+    <span class="arrow">│</span>        <span class="arrow">└──→</span> <span class="svc">Layer 3: Compute</span> <span class="comment">(30-45 min)</span>
+    <span class="arrow">│</span>                 <span class="arrow">└──→</span> <span class="svc">Layer 4: Application</span> <span class="comment">(10-15 min)</span>
+    <span class="arrow">│</span>                          <span class="arrow">└──→</span> <span class="svc">Layer 6: Serverless</span> <span class="comment">(10-15 min)</span>
+    <span class="arrow">│</span>                                   <span class="arrow">└──→</span> <span class="svc">Layer 7: Sandbox</span> <span class="comment">(5-10 min)</span>
+    <span class="arrow">│</span>                                            <span class="arrow">└──→</span> <span class="svc">Layer 8: Security</span> <span class="comment">(5-10 min)</span>
+    <span class="arrow">│</span>                                                     <span class="arrow">└──→</span> <span class="svc">Layer 9: Scanning</span> <span class="comment">(5-10 min)</span>
+    <span class="arrow">│</span>
+    <span class="arrow">└──→</span> <span class="svc">Layer 5: Observability</span> <span class="comment">(5-10 min, parallel with Data)</span>
+             <span class="arrow">└──→</span> <span class="svc">Network Services &amp; K8s Deploy</span></div>
+
+  <div class="layer-card l0"><h4>Layer 0: Bootstrap &amp; Account Setup</h4><div class="layer-body">3 templates &middot; Account bootstrap, KMS, SNS, CodeBuild projects (20 total). One-time manual trigger per environment.</div></div>
+  <div class="layer-card l1"><h4>Layer 1: Foundation — VPC, IAM, Security, DNS</h4><div class="layer-body">12 templates &middot; VPC (10.0.0.0/16), 2-3 AZs, security groups, IAM roles, KMS keys, 10 VPC endpoints, Route 53, dnsmasq ECS Fargate, ECR base images, S3 build cache.</div></div>
+  <div class="layer-card l2"><h4>Layer 2: Data — Neptune, OpenSearch, DynamoDB, S3, Redis</h4><div class="layer-body">13 templates &middot; Neptune graph DB (provisioned), OpenSearch vector search, 25+ DynamoDB tables, S3 buckets (artifacts, logs, reports), ElastiCache Redis, context provenance, supply chain tables, runtime security tables.</div></div>
+  <div class="layer-card l3"><h4>Layer 3: Compute — EKS, Node Groups, ECR</h4><div class="layer-body">10 templates &middot; EKS 1.34 cluster, 3 node groups (general t3.large SPOT, memory r6i.xlarge ON_DEMAND, GPU g5.xlarge SPOT), ALB Controller, Cluster Autoscaler IRSA, 7 ECR application repos.</div></div>
+  <div class="layer-card l4"><h4>Layer 4: Application — APIs, LLM, Authentication, Frontend</h4><div class="layer-body">12 templates &middot; Bedrock model endpoints + guardrails, Cognito user pool, OAuth/OIDC multi-IdP, CloudFront + S3 marketing site, CloudFront + S3 docs portal, A2A infrastructure, Palantir IAM.</div></div>
+  <div class="layer-card l5"><h4>Layer 5: Observability — Monitoring, Secrets, Cost, DR</h4><div class="layer-body">12 templates &middot; Secrets Manager, CloudWatch dashboards (14) + alarms (175+), AWS Budgets, cost anomaly detection, disaster recovery (AWS Backup), OpenTelemetry collector, DEV/QA cost schedulers, GPU monitoring, alignment alerts.</div></div>
+  <div class="layer-card l6"><h4>Layer 6: Serverless — Lambda, Step Functions, EventBridge, Queues</h4><div class="layer-body">20 templates &middot; 45+ Lambda functions, 4 Step Functions state machines, custom EventBridge bus (60+ rules), SQS queues (Standard + FIFO), threat intel scheduler, HITL scheduler, chat assistant WebSocket, incident response, GPU scheduler, constitutional AI audit.</div></div>
+  <div class="layer-card l7"><h4>Layer 7: Sandbox — Ephemeral Environments, HITL, Training</h4><div class="layer-body">13 templates &middot; ECS Fargate sandbox cluster (zero-egress), HITL approval workflow, self-play SWE-RL training pipeline, self-service test environments (ADR-039) with budgets, monitoring, namespace controller, Service Catalog.</div></div>
+  <div class="layer-card l8"><h4>Layer 8: Security — Config, GuardDuty, Runtime Security</h4><div class="layer-body">13 templates &middot; AWS Config (17 managed rules), GuardDuty, CloudFormation drift detection, AURA-ATT&CK red team (75 techniques), semantic guardrails, capability governance, IAM security alerting, runtime security (interceptor, discovery, baselines, correlation).</div></div>
+  <div class="layer-card l9"><h4>Layer 9: Scanning Engine — Vulnerability Discovery</h4><div class="layer-body">9 templates &middot; DynamoDB (jobs + findings), S3 (artifacts + reports), ECS Fargate zero-egress cluster, Step Functions 7-stage pipeline, 2 ECR repos, CloudWatch dashboard + alarms, cleanup Lambda, EventBridge custom bus + routing rules.</div></div>
+
+  <h3>Templates by Layer Summary</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Layer</th><th>Name</th><th>Templates</th><th>Key Services</th><th>Stacks (Dev)</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>Bootstrap</td><td>3</td><td>Account setup, CodeBuild</td><td>3</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>1</td><td>Foundation</td><td>12</td><td>VPC, IAM, KMS, ECR, DNS</td><td>12</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>2</td><td>Data</td><td>13</td><td>Neptune, OpenSearch, DynamoDB, S3, Redis</td><td>13</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>3</td><td>Compute</td><td>10</td><td>EKS, Node Groups, ECR, IRSA</td><td>10</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>4</td><td>Application</td><td>12</td><td>Bedrock, Cognito, Frontend, IdP</td><td>12</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>5</td><td>Observability</td><td>12</td><td>CloudWatch, Secrets, Budgets, DR</td><td>12</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>6</td><td>Serverless</td><td>20</td><td>Lambda, Step Functions, SQS, EventBridge</td><td>20</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>7</td><td>Sandbox</td><td>13</td><td>ECS Fargate, HITL, Test Environments</td><td>13</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>8</td><td>Security</td><td>13</td><td>Config, GuardDuty, Runtime Security</td><td>13</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>9</td><td>Scanning</td><td>9</td><td>Vuln Scanner, Step Functions, ECS</td><td>9</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr style="font-weight:700;background:#F8FAFC"><td></td><td>Total</td><td>117+</td><td></td><td>137</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 2: VPC & Networking                                   -->
+<!-- ============================================================ -->
+<section id="vpc">
+  <h2>VPC &amp; Network Architecture</h2>
+  <p class="desc">Multi-AZ VPC with public/private subnet separation, VPC endpoints for zero-egress GovCloud compatibility, and 3-tier DNS via dnsmasq.</p>
+
+  <div class="code-block"><span class="hl">10.0.0.0/16</span> <span class="comment">(VPC CIDR)</span>
+<span class="arrow">├──</span> <span class="svc">Availability Zone 1</span> (us-east-1a)
+<span class="arrow">│</span>   <span class="arrow">├──</span> Public Subnet 1: <span class="hl">10.0.0.0/24</span>
+<span class="arrow">│</span>   <span class="arrow">│</span>   <span class="arrow">├──</span> NAT Gateway 1
+<span class="arrow">│</span>   <span class="arrow">│</span>   <span class="arrow">└──</span> ALB (frontend + API ingress)
+<span class="arrow">│</span>   <span class="arrow">└──</span> Private Subnet 1: <span class="hl">10.0.3.0/24</span>
+<span class="arrow">│</span>       <span class="arrow">├──</span> EKS Nodes (general, memory, GPU)
+<span class="arrow">│</span>       <span class="arrow">├──</span> Neptune (subnet group)
+<span class="arrow">│</span>       <span class="arrow">└──</span> OpenSearch (subnet group)
+<span class="arrow">├──</span> <span class="svc">Availability Zone 2</span> (us-east-1b)
+<span class="arrow">│</span>   <span class="arrow">├──</span> Public Subnet 2: <span class="hl">10.0.1.0/24</span>
+<span class="arrow">│</span>   <span class="arrow">│</span>   <span class="arrow">├──</span> NAT Gateway 2
+<span class="arrow">│</span>   <span class="arrow">│</span>   <span class="arrow">└──</span> dnsmasq (ECS Fargate)
+<span class="arrow">│</span>   <span class="arrow">└──</span> Private Subnet 2: <span class="hl">10.0.4.0/24</span>
+<span class="arrow">│</span>       <span class="arrow">├──</span> EKS Nodes
+<span class="arrow">│</span>       <span class="arrow">├──</span> VPC Endpoints (interface)
+<span class="arrow">│</span>       <span class="arrow">└──</span> ElastiCache Redis
+<span class="arrow">└──</span> <span class="svc">Availability Zone 3</span> (us-east-1c) <span class="comment">[prod only]</span>
+    <span class="arrow">├──</span> Public Subnet 3: <span class="hl">10.0.2.0/24</span>
+    <span class="arrow">└──</span> Private Subnet 3: <span class="hl">10.0.5.0/24</span></div>
+
+  <h3>VPC Endpoints (10 Total)</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Endpoint</th><th>Type</th><th>Cost</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>S3</td><td>Gateway</td><td>Free</td><td>ECR layer downloads, CodeBuild artifacts</td></tr>
+        <tr><td>DynamoDB</td><td>Gateway</td><td>Free</td><td>HITL approval tables, job state</td></tr>
+        <tr><td>ECR API</td><td>Interface</td><td>~$7/mo</td><td>Container registry API calls</td></tr>
+        <tr><td>ECR DKR</td><td>Interface</td><td>~$7/mo</td><td>Docker layer downloads</td></tr>
+        <tr><td>CloudWatch Logs</td><td>Interface</td><td>~$7/mo</td><td>Log shipping</td></tr>
+        <tr><td>CloudWatch</td><td>Interface</td><td>~$7/mo</td><td>Metrics publishing</td></tr>
+        <tr><td>STS</td><td>Interface</td><td>~$7/mo</td><td>IRSA token exchange</td></tr>
+        <tr><td>SSM</td><td>Interface</td><td>~$7/mo</td><td>Parameter Store access</td></tr>
+        <tr><td>Secrets Manager</td><td>Interface</td><td>~$7/mo</td><td>Credential retrieval</td></tr>
+        <tr><td>Bedrock Runtime</td><td>Interface</td><td>~$7/mo</td><td>LLM inference API</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Security Groups</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Group</th><th>Ingress</th><th>Egress</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>ALB SG</td><td>443 (world), 80 redirect</td><td>30000-32767 (EKS)</td><td>Load balancing</td></tr>
+        <tr><td>EKS Node SG</td><td>443 (ALB), 53 (dnsmasq), node-to-node</td><td>All (via NAT/VPC endpoints)</td><td>Kubernetes nodes</td></tr>
+        <tr><td>Neptune SG</td><td>8182 (EKS nodes only)</td><td>None</td><td>Graph database</td></tr>
+        <tr><td>OpenSearch SG</td><td>9200 (EKS nodes only)</td><td>None</td><td>Vector database</td></tr>
+        <tr><td>VPC Endpoint SG</td><td>443 (EKS nodes)</td><td>None</td><td>AWS service access</td></tr>
+        <tr><td>dnsmasq SG</td><td>53 UDP (EKS + Fargate)</td><td>53 UDP (upstream), 443</td><td>DNS service</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>3-Tier DNS Architecture (dnsmasq)</h3>
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:#6366F1">
+      <div class="card-title">Tier 1: EKS DaemonSet</div>
+      <div class="card-body">Local caching DNS on every EKS node. Resolves <code>*.aura.local</code> service endpoints (neptune.aura.local:8182, opensearch.aura.local:9200). DNSSEC validation enabled.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--purple)">
+      <div class="card-title">Tier 2: ECS Fargate (VPC-Wide)</div>
+      <div class="card-body">Centralized DNS for non-EKS services. NLB-fronted ECS tasks. Threat intelligence blocklist integration. Private ECR image with vulnerability scanning.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--orange)">
+      <div class="card-title">Tier 3: Ephemeral Sandbox</div>
+      <div class="card-body">Per-sandbox DNS for isolated test environments. Automatic provisioning/teardown with sandbox lifecycle. Zero leakage between sandboxes.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: EKS & Kubernetes                                   -->
+<!-- ============================================================ -->
+<section id="eks">
+  <h2>EKS &amp; Kubernetes</h2>
+  <p class="desc">Multi-node-group EKS cluster with IRSA, Kustomize overlays, and workload-specific placement via taints and tolerations.</p>
+
+  <div class="callout">
+    <strong>Cluster:</strong> <code>aura-cluster-{env}</code> &middot; Kubernetes 1.34 &middot; API_AND_CONFIG_MAP auth &middot; OIDC for IRSA &middot; Envelope encryption (KMS) &middot; Full audit logging
+  </div>
+
+  <h3>Node Groups</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Node Group</th><th>Instance</th><th>Capacity</th><th>Min</th><th>Max</th><th>Desired</th><th>Use Case</th></tr></thead>
+      <tbody>
+        <tr><td>General</td><td>t3.large</td><td><span class="badge badge-spot">SPOT</span></td><td>1 (dev) / 2 (prod)</td><td>6</td><td>2-3</td><td>API, agents, orchestrators</td></tr>
+        <tr><td>Memory</td><td>r6i.xlarge</td><td><span class="badge badge-ondemand">ON_DEMAND</span></td><td>0</td><td>4</td><td>0</td><td>Titan Neural Memory, ML workloads</td></tr>
+        <tr><td>GPU</td><td>g5.xlarge</td><td><span class="badge badge-spot">SPOT</span></td><td>0</td><td>4</td><td>0</td><td>Training, inference, Inferentia2</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>IRSA Service Accounts</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Service</th><th>IRSA Role</th><th>Permissions</th></tr></thead>
+      <tbody>
+        <tr><td>Cluster Autoscaler</td><td><code>aura-cluster-autoscaler-irsa-{env}</code></td><td>ASG management, EC2 describe</td></tr>
+        <tr><td>ALB Controller</td><td><code>aura-alb-controller-irsa-{env}</code></td><td>ALB/security group management</td></tr>
+        <tr><td>API Service</td><td><code>aura-api-irsa-{env}</code></td><td>Neptune R/W, OpenSearch search</td></tr>
+        <tr><td>Memory Service</td><td><code>aura-memory-service-irsa-{env}</code></td><td>Neptune R/W, S3 model access</td></tr>
+        <tr><td>GPU Scheduler</td><td><code>aura-gpu-scheduler-irsa-{env}</code></td><td>SQS receive, DynamoDB job table</td></tr>
+        <tr><td>Env Validator</td><td><code>aura-env-validator-irsa-{env}</code></td><td>CloudFormation describe, drift detection</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Kubernetes Manifests (<code>deploy/kubernetes/</code>)</h3>
+  <div class="card-grid">
+    <div class="card"><div class="card-title">ALB Controller</div><div class="card-body">Helm-managed AWS Load Balancer Controller. Path-based routing for frontend + API. Managed via Kustomize overlays.</div></div>
+    <div class="card"><div class="card-title">Memory Service</div><div class="card-body">1-3 replicas (HPA). IRSA for Neptune/OpenSearch. NetworkPolicy: egress to VPC endpoints only. Base + dev/qa overlays.</div></div>
+    <div class="card"><div class="card-title">GPU Scheduler</div><div class="card-body">Job queue monitor deployment. FIFO processing from SQS to Kubernetes. IRSA for DynamoDB + SQS. Base + dev/qa/prod overlays.</div></div>
+    <div class="card"><div class="card-title">dnsmasq Blocklist Sync</div><div class="card-body">CronJob: fetch blocklist every 6 hours. ConfigMap for URLs and update strategy. Sidecar pattern.</div></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: Data Services                                      -->
+<!-- ============================================================ -->
+<section id="data">
+  <h2>Data Services</h2>
+  <p class="desc">Graph database, vector search, NoSQL tables, object storage, and caching — all with KMS encryption and automated backups.</p>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:var(--purple)">
+      <div class="card-title">Neptune (Graph Database)</div>
+      <div class="card-body"><strong>Engine:</strong> Neptune 1.3 (Gremlin queries)<br><strong>Mode:</strong> Provisioned (GovCloud compatible)<br><strong>Instance:</strong> db.t3.medium (dev), db.r5.large (prod)<br><strong>Multi-AZ:</strong> Yes &middot; <strong>Backup:</strong> 35 days<br><strong>Query Timeout:</strong> 30s &middot; <strong>Result Cache:</strong> Enabled<br><strong>Endpoint:</strong> <code>neptune.aura.local:8182</code></div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--brand)">
+      <div class="card-title">OpenSearch (Vector Search)</div>
+      <div class="card-body"><strong>Instance:</strong> t3.small (dev), t3.medium (prod)<br><strong>Nodes:</strong> 1 (dev), 2 (prod)<br><strong>EBS:</strong> 100 GB gp3<br><strong>Auth:</strong> IAM Master User (IRSA + SigV4)<br><strong>HTTPS:</strong> Enabled &middot; <strong>FGAC:</strong> Enabled<br><strong>Endpoint:</strong> <code>opensearch.aura.local:9200</code></div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--success)">
+      <div class="card-title">DynamoDB (25+ Tables)</div>
+      <div class="card-body"><strong>Billing:</strong> PAY_PER_REQUEST<br><strong>Encryption:</strong> KMS customer-managed keys<br><strong>PITR:</strong> Enabled<br><strong>TTL:</strong> Per-table (30-90 days)<br><strong>Tables:</strong> Jobs, approvals, settings, anomalies, provenance, supply chain, runtime security, AI security, memory evolution, dashboard, repository metadata</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--orange)">
+      <div class="card-title">ElastiCache Redis</div>
+      <div class="card-body"><strong>Engine:</strong> Redis 7.0<br><strong>Instance:</strong> t3.micro (dev), t3.small (prod)<br><strong>Multi-AZ:</strong> No (dev), Yes (prod)<br><strong>Failover:</strong> Automatic<br><strong>Use:</strong> Semantic caching, session state, rate limiting</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:#64748B">
+      <div class="card-title">S3 (15+ Buckets)</div>
+      <div class="card-body"><strong>Encryption:</strong> KMS customer-managed keys<br><strong>Versioning:</strong> Enabled (critical buckets)<br><strong>Lifecycle:</strong> 90-day GLACIER transition<br><strong>Buckets:</strong> CodeBuild artifacts, Neptune backups, scan results, SARIF reports, frontend assets, marketing site, CloudFront logs</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: CI/CD Pipeline                                     -->
+<!-- ============================================================ -->
+<section id="cicd">
+  <h2>CI/CD Pipeline</h2>
+  <p class="desc">Modular layer-based CodeBuild cascade with 20 projects, 38 buildspecs, and a 3-gate validation system. CodeBuild is the single source of truth — manual deployments are prohibited.</p>
+
+  <div class="callout warn">
+    <strong>Critical Rules:</strong> (1) CodeBuild is the ONLY authorized deployment method. (2) Never trigger CodeBuild while another build is running. (3) No manual CloudFormation deployments. (4) Max 600 lines per buildspec.
+  </div>
+
+  <h3>CodeBuild Projects (20 Total)</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">9 Parent Layer Projects</div>
+      <div class="card-body">
+        <code>aura-bootstrap-deploy-{env}</code><br>
+        <code>aura-foundation-deploy-{env}</code><br>
+        <code>aura-data-deploy-{env}</code><br>
+        <code>aura-compute-deploy-{env}</code><br>
+        <code>aura-application-deploy-{env}</code><br>
+        <code>aura-observability-deploy-{env}</code><br>
+        <code>aura-serverless-deploy-{env}</code><br>
+        <code>aura-sandbox-deploy-{env}</code><br>
+        <code>aura-security-deploy-{env}</code>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">10 Sub-Layer Projects</div>
+      <div class="card-body">
+        <code>aura-network-services-deploy-{env}</code><br>
+        <code>aura-k8s-deploy-{env}</code><br>
+        <code>aura-integration-test-{env}</code><br>
+        <code>aura-vuln-scan-deploy-{env}</code><br>
+        <code>aura-chat-assistant-deploy-{env}</code><br>
+        <code>aura-incident-response-deploy-{env}</code><br>
+        <code>aura-frontend-deploy-{env}</code><br>
+        <code>aura-runtime-security-deploy-{env}</code><br>
+        <code>aura-env-validator-deploy-{env}</code><br>
+        <code>aura-docker-build-{env}</code>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">3-Gate Buildspec System</div>
+      <div class="card-body">
+        <strong>Gate 1 (pre_build):</strong> Smoke tests — validate environment, credentials, SSH keys<br><br>
+        <strong>Gate 2 (pre_build):</strong> cfn-lint validation — syntax, IAM policy size &lt;10KB<br><br>
+        <strong>Gate 3 (pre_build):</strong> <code>aws cloudformation validate-template</code><br><br>
+        <strong>Gate 4 (post_build):</strong> Post-deployment health checks, connectivity, SNS notification
+      </div>
+    </div>
+  </div>
+
+  <h3>CodeBuild Configuration</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Property</th><th>Value</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>Compute</td><td>BUILD_GENERAL1_SMALL (3GB/2vCPU); MEDIUM for data/compute</td><td>Right-sized per layer</td></tr>
+        <tr><td>Runtime</td><td>Docker + Ubuntu + Python 3.11</td><td>Standard environment</td></tr>
+        <tr><td>Timeout</td><td>5-60 min (varies by layer)</td><td>Prevent runaway builds</td></tr>
+        <tr><td>Artifacts</td><td>S3 per layer, 90-day retention</td><td>Audit trail + cost control</td></tr>
+        <tr><td>VPC Mode</td><td>Private subnets + VPC endpoints</td><td>Security + auditability</td></tr>
+        <tr><td>Cache</td><td>S3 cache (opt-in per project)</td><td>2-3x faster rebuilds</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>GitOps with ArgoCD (ADR-022)</h3>
+  <div class="callout success">
+    <strong>CI/CD Separation:</strong> CodeBuild handles CI (build, validate, push). ArgoCD handles CD (deploy to Kubernetes). Git as single source of truth. Progressive delivery via Argo Rollouts with automatic rollback.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: Container Strategy                                 -->
+<!-- ============================================================ -->
+<section id="containers">
+  <h2>Container Strategy</h2>
+  <p class="desc">Podman-first local development, private ECR base images for supply chain security, and multi-platform builds for ARM/AMD64 compatibility.</p>
+
+  <h3>Container Images (8 Total)</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Image</th><th>Base</th><th>Size</th><th>Stages</th><th>ECR Repo</th></tr></thead>
+      <tbody>
+        <tr><td>API</td><td>Python 3.11-slim</td><td>~500MB</td><td>2 (builder → runtime)</td><td>ecr-api</td></tr>
+        <tr><td>Frontend</td><td>Node 20-slim</td><td>~200MB</td><td>3 (build → minify → serve)</td><td>ecr-frontend</td></tr>
+        <tr><td>Agent Orchestrator</td><td>Python 3.11</td><td>~800MB</td><td>2</td><td>ecr-agent-orchestrator</td></tr>
+        <tr><td>Meta Orchestrator</td><td>Python 3.11</td><td>~600MB</td><td>2</td><td>ecr-meta-orchestrator</td></tr>
+        <tr><td>Memory Service</td><td>Python 3.11 + PyTorch</td><td>~700MB</td><td>2</td><td>ecr-memory-service</td></tr>
+        <tr><td>Memory Service (CPU)</td><td>Python 3.11</td><td>~400MB</td><td>2</td><td>ecr-memory-service</td></tr>
+        <tr><td>Runtime Incident Agent</td><td>Python 3.11</td><td>~800MB</td><td>2</td><td>ecr-runtime-incident-agent</td></tr>
+        <tr><td>dnsmasq</td><td>Alpine 3.19</td><td>~15MB</td><td>1</td><td>ecr-dnsmasq</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:var(--critical)">
+      <div class="card-title">Supply Chain Security (Mandatory)</div>
+      <div class="card-body">All CI/CD builds use private ECR base images from <code>aura-base-images/</code>. Public images (Docker Hub, public ECR) are prohibited in production. Bootstrap-once pattern: pull from ECR Public Gallery, push to private ECR with vulnerability scanning.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--success)">
+      <div class="card-title">Podman-First (ADR-049)</div>
+      <div class="card-body">Podman is the primary container runtime for local development (avoids Docker Desktop licensing). Docker available as CI/CD fallback in CodeBuild. Always use <code>--platform linux/amd64</code> on Apple Silicon.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 7: Serverless                                         -->
+<!-- ============================================================ -->
+<section id="serverless">
+  <h2>Serverless Services</h2>
+  <p class="desc">45+ Lambda functions, 4 Step Functions state machines, custom EventBridge bus with 60+ rules, and SQS queues for async processing.</p>
+
+  <div class="card-grid">
+    <div class="card"><div class="card-title">AWS Lambda (45+ Functions)</div><div class="card-body"><strong>Runtime:</strong> Python 3.11<br><strong>Memory:</strong> 1024-3008MB<br><strong>Timeout:</strong> 5-900 seconds<br><strong>Concurrency:</strong> Reserved for critical paths<br><strong>Config:</strong> Env vars from Parameter Store</div></div>
+    <div class="card"><div class="card-title">Step Functions (4 State Machines)</div><div class="card-body"><strong>Deployment Pipeline:</strong> 5-stage cascade (Foundation → Verification)<br><strong>HITL Workflow:</strong> 7-state approval loop<br><strong>Incident Investigation:</strong> Multi-step RCA automation<br><strong>Scanning Engine:</strong> 7-stage vulnerability pipeline</div></div>
+    <div class="card"><div class="card-title">EventBridge</div><div class="card-body"><strong>Custom Bus:</strong> <code>aura-events</code><br><strong>Rules:</strong> 60+ event routing rules<br><strong>Targets:</strong> Lambda, SQS, SNS, Step Functions<br><strong>Scheduled:</strong> 10+ periodic tasks (threat intel, cost aggregation)</div></div>
+    <div class="card"><div class="card-title">SQS Queues</div><div class="card-body"><strong>Standard:</strong> Agent work, A2A messaging<br><strong>FIFO:</strong> GPU scheduler jobs (ordered)<br><strong>Visibility Timeout:</strong> 300 seconds<br><strong>Retention:</strong> 4 days</div></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 8: Security Infrastructure                            -->
+<!-- ============================================================ -->
+<section id="security-infra">
+  <h2>Security Infrastructure</h2>
+  <p class="desc">AWS Config compliance rules, GuardDuty threat detection, drift detection, WAF, KMS encryption, and runtime security monitoring.</p>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:var(--critical)">
+      <div class="card-title">AWS Config (17 Managed Rules)</div>
+      <div class="card-body">CMMC/NIST/DoD compliance monitoring. Custom rules for EKS RBAC, pod security, and network policies. Auto-remediation for non-compliant resources. Real-time compliance dashboard.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--orange)">
+      <div class="card-title">GuardDuty</div>
+      <div class="card-body">Network + API call analysis. EKS Audit Log integration. Security Hub findings aggregation. Automated SNS → Lambda → remediation response chain.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--purple)">
+      <div class="card-title">Drift Detection (Layer 8.3)</div>
+      <div class="card-body">CloudFormation drift detection Lambda every 6 hours. CloudWatch dashboard + SNS alerts. Auto-rollback or HITL manual approval for remediation.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--brand)">
+      <div class="card-title">KMS Encryption</div>
+      <div class="card-body">15+ customer-managed keys with automatic rotation. All databases, secrets, S3 buckets, and EBS volumes encrypted. Key policies scoped via <code>kms:ViaService</code> conditions.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--teal)">
+      <div class="card-title">WAFv2</div>
+      <div class="card-body">Web Application Firewall rules for ALB + API Gateway. Rate limiting, SQL injection protection, XSS filtering, and geo-blocking capabilities.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:#64748B">
+      <div class="card-title">Runtime Security (ADR-083)</div>
+      <div class="card-body">Traffic interception, shadow agent detection, behavioral baselines, AURA-ATT&CK red team (75 techniques), runtime-to-code correlation via GraphRAG. 4 dedicated CloudFormation templates.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 9: Monitoring & Observability                         -->
+<!-- ============================================================ -->
+<section id="monitoring">
+  <h2>Monitoring &amp; Observability</h2>
+  <p class="desc">175+ CloudWatch alarms, 14 dashboards, Container Insights, OpenTelemetry, and multi-channel alerting.</p>
+
+  <div class="card-grid">
+    <div class="card"><div class="card-title">CloudWatch Dashboards (14)</div><div class="card-body"><strong>Main:</strong> Cluster health, Neptune/OpenSearch metrics, Lambda<br><strong>Cost:</strong> Daily spend, top drivers, budget status<br><strong>GPU:</strong> Utilization, temperature, spot interruptions<br><strong>Performance:</strong> Latency, throughput, error rates<br><strong>Scanning:</strong> 7 widgets for vuln scanner pipeline<br><strong>Security:</strong> Guardrails, capability governance, runtime</div></div>
+    <div class="card"><div class="card-title">CloudWatch Alarms (175+)</div><div class="card-body"><strong>Critical (page):</strong> EKS node failures, Neptune unavailable, Lambda errors &gt;5%<br><strong>High (email):</strong> CPU pressure, memory pressure, scaling delays<br><strong>Medium:</strong> Slow queries, cache misses, cost threshold<br><strong>Info (dashboard):</strong> Resource utilization trends</div></div>
+    <div class="card"><div class="card-title">Logging Architecture</div><div class="card-body"><strong>EKS:</strong> Container Insights + CloudWatch Logs (90 days)<br><strong>Lambda:</strong> CloudWatch Logs (30 days)<br><strong>Neptune:</strong> Enhanced monitoring (CloudWatch)<br><strong>OpenSearch:</strong> Slow query + error logs<br><strong>VPC Flow Logs:</strong> S3 + CloudWatch (365 days prod)</div></div>
+    <div class="card"><div class="card-title">Alerting Channels</div><div class="card-body"><strong>SNS:</strong> 30+ topics, email subscriptions<br><strong>PagerDuty:</strong> Critical alarms<br><strong>Slack:</strong> Build status notifications<br><strong>Email:</strong> <code>notifications@aenealabs.com</code></div></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 10: Environments                                      -->
+<!-- ============================================================ -->
+<section id="environments">
+  <h2>Environment Management</h2>
+  <p class="desc">Three environments with environment-specific configurations, cost optimization, and GovCloud production readiness.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Environment</th><th>Region</th><th>EKS Nodes</th><th>Cost</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Dev</strong></td><td>us-east-1</td><td>1-6 SPOT</td><td>~$800-1,200/mo</td><td><span class="badge badge-deployed">Active</span></td></tr>
+        <tr><td><strong>QA</strong></td><td>us-east-1</td><td>1-4 SPOT</td><td>Shut down</td><td><span class="badge" style="background:#FEE2E2;color:#991B1B">Shut Down Feb 15</span></td></tr>
+        <tr><td><strong>Prod</strong></td><td>us-gov-west-1</td><td>3-8 ON_DEMAND</td><td>TBD</td><td><span class="badge" style="background:#FEF3C7;color:#92400E">Not Yet Deployed</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:var(--success)">
+      <div class="card-title">GovCloud Readiness (100%)</div>
+      <div class="card-body">All 19 deployed services GovCloud-compatible. ARN partition mapping via <code>${AWS::Partition}</code>. Provisioned Neptune (serverless unavailable). FedRAMP High alignment (certification pending). Region: us-gov-west-1.</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--medium)">
+      <div class="card-title">QA Kill-Switch</div>
+      <div class="card-body"><code>scripts/qa_killswitch.py</code> &middot; 47 tests<br>9 stacks deleted Feb 15 (Neptune, EKS, OpenSearch, VPC Endpoints, ElastiCache, dnsmasq). Significant monthly savings. Restore in 45-60 min via <code>restore --execute</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 11: Cost Management                                   -->
+<!-- ============================================================ -->
+<section id="cost">
+  <h2>Cost Management</h2>
+  <p class="desc">Multi-layer cost optimization including DEV cost scheduler, QA kill-switch, SPOT instances, and AWS Budget alarms.</p>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:var(--medium)">
+      <div class="card-title">DEV Cost Scheduler (Layer 5.11)</div>
+      <div class="card-body">Lambda scales EKS nodegroups to 0 nightly at 1:00 UTC. Restores Mon-Fri at 12:00 UTC. Weekends fully off. General, memory, and GPU node groups managed.<br><br><strong>Savings:</strong> ~$115-145/month (27-37% of compute)</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--success)">
+      <div class="card-title">SPOT Instances</div>
+      <div class="card-body">All general + GPU EKS nodes use SPOT pricing. ~70% cost savings vs ON_DEMAND. Interruption rate ~1-2% (acceptable for dev). Memory nodes ON_DEMAND (ML workload reliability).</div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--brand)">
+      <div class="card-title">AWS Budgets</div>
+      <div class="card-body"><strong>Dev:</strong> $1,500/month alert threshold<br><strong>Prod:</strong> $3,000/month alert threshold<br><strong>ML-based:</strong> Cost anomaly detection for spend trend monitoring<br><strong>Reserved:</strong> Neptune db.t3.medium 1-year reservation</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 12: Self-Hosted & Edge                                -->
+<!-- ============================================================ -->
+<section id="selfhosted">
+  <h2>Self-Hosted &amp; Edge Deployment</h2>
+  <p class="desc">Podman-based self-hosted deployment for Windows/Linux/macOS, air-gapped environments, and edge runtime for disconnected operations.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Self-Hosted (ADR-049)</div>
+      <div class="card-body"><strong>Runtime:</strong> Podman-first (Docker fallback)<br><strong>LLM:</strong> Hybrid strategy (local + cloud)<br><strong>Platforms:</strong> Windows, Linux, macOS<br><strong>Phases:</strong> All 5 complete<br><strong>Installer:</strong> <code>deploy/installer/aura-install.sh</code></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Air-Gapped &amp; Edge (ADR-078)</div>
+      <div class="card-body"><strong>Offline Bundles:</strong> Pre-packaged model + dependency archives<br><strong>Egress Validation:</strong> Verify zero internet connectivity<br><strong>Firmware Analysis:</strong> Edge device compatibility checks<br><strong>Edge Runtime:</strong> Lightweight agent for constrained environments<br><strong>Tests:</strong> 200 &middot; <strong>Lines:</strong> ~4K</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Customer Installer</div>
+      <div class="card-body"><code>aura-install.sh</code> — Main install with pre-flight checks<br><code>aura-uninstall.sh</code> — Clean removal + data retention<br><code>config-wizard.sh</code> — Interactive configuration<br><strong>Templates:</strong> Quick-start, foundation-only, data-layer, application<br><strong>Sizing:</strong> Small (~$400/mo), Medium (~$800/mo), Enterprise (~$1,200/mo)</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 13: AWS Services Inventory                            -->
+<!-- ============================================================ -->
+<section id="aws-services">
+  <h2>Complete AWS Services Inventory</h2>
+  <p class="desc">38 AWS services deployed across all layers.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th class="dark">Category</th><th class="dark">Service</th><th class="dark">Configuration</th><th class="dark">Status</th></tr></thead>
+      <tbody>
+        <tr><td colspan="4" style="background:#F1F5F9;font-weight:700">Compute</td></tr>
+        <tr><td>Compute</td><td>EC2</td><td>t3.large SPOT, r6i.xlarge ON_DEMAND, g5.xlarge GPU</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Compute</td><td>ECS</td><td>Fargate (dnsmasq + scanning engine, zero-egress)</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Compute</td><td>EKS</td><td>1.34, multi-AZ, OIDC IRSA, envelope encryption</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Compute</td><td>Lambda</td><td>45+ functions, 1024-3008MB, Python 3.11</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td colspan="4" style="background:#F1F5F9;font-weight:700">Containers</td></tr>
+        <tr><td>Containers</td><td>ECR</td><td>16 repos, scan-on-push, immutable tags, lifecycle policies</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td colspan="4" style="background:#F1F5F9;font-weight:700">Networking</td></tr>
+        <tr><td>Networking</td><td>VPC</td><td>10.0.0.0/16, 2-3 AZs, public + private subnets</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Networking</td><td>Route 53</td><td>Hosted zones, health checks, failover</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Networking</td><td>CloudFront</td><td>S3 origin (marketing + docs portal)</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Networking</td><td>ELBv2</td><td>ALB (ingress), NLB (dnsmasq)</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Networking</td><td>VPC Endpoints</td><td>2 gateway + 8 interface endpoints</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td colspan="4" style="background:#F1F5F9;font-weight:700">Databases &amp; Storage</td></tr>
+        <tr><td>Database</td><td>Neptune</td><td>db.t3.medium provisioned, 35-day backup</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Database</td><td>DynamoDB</td><td>25+ tables, KMS, PAY_PER_REQUEST</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Database</td><td>OpenSearch</td><td>t3.small, 100GB gp3, FGAC</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Database</td><td>ElastiCache</td><td>Redis 7.0, t3.micro</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Storage</td><td>S3</td><td>15+ buckets, KMS, lifecycle, versioning</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Storage</td><td>AWS Backup</td><td>Neptune + S3 snapshots, 35-day retention</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td colspan="4" style="background:#F1F5F9;font-weight:700">Security &amp; Identity</td></tr>
+        <tr><td>Security</td><td>IAM</td><td>124+ roles, least-privilege policies</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Security</td><td>KMS</td><td>15+ customer-managed keys, auto-rotation</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Security</td><td>Secrets Manager</td><td>DB credentials, API keys, auto-rotate</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Security</td><td>WAFv2</td><td>ALB + API Gateway rules</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Security</td><td>Cognito</td><td>User pool, OIDC, email MFA</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Security</td><td>GuardDuty</td><td>Network + API + EKS audit</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Security</td><td>Config</td><td>17 managed + 5 custom rules</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Security</td><td>CloudTrail</td><td>Organization + account level</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td colspan="4" style="background:#F1F5F9;font-weight:700">Application Services</td></tr>
+        <tr><td>App</td><td>Step Functions</td><td>4 state machines (deploy, HITL, incident, scanning)</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>App</td><td>EventBridge</td><td>Custom bus, 60+ rules</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>App</td><td>SQS</td><td>Standard + FIFO, 4-day retention</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>App</td><td>SNS</td><td>30+ topics, email subscriptions</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>App</td><td>API Gateway</td><td>REST (JWT auth, WAF) + WebSocket (chat, checkpoints)</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td colspan="4" style="background:#F1F5F9;font-weight:700">AI / ML &amp; DevTools</td></tr>
+        <tr><td>AI</td><td>Bedrock</td><td>Claude 3.5 Sonnet, Haiku, Opus</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>DevTools</td><td>CodeBuild</td><td>20 projects, Docker + Buildspec</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td colspan="4" style="background:#F1F5F9;font-weight:700">Monitoring &amp; Cost</td></tr>
+        <tr><td>Monitoring</td><td>CloudWatch</td><td>175+ alarms, 14 dashboards, Container Insights</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Cost</td><td>Budgets</td><td>Monthly limits, anomaly detection</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Cost</td><td>Cost Explorer</td><td>Multi-account aggregation</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Other</td><td>Organizations</td><td>Multi-account (dev, qa, prod/govcloud)</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+        <tr><td>Other</td><td>Marketplace</td><td>SaaS metering, subscription management</td><td><span class="badge badge-deployed">Deployed</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 14: Summary                                           -->
+<!-- ============================================================ -->
+<section id="summary">
+  <h2>Summary</h2>
+
+  <div class="card-grid">
+    <div class="card card-accent" style="border-left-color:var(--brand)">
+      <div class="card-title">Infrastructure at a Glance</div>
+      <div class="card-body">
+        <strong>155</strong> CloudFormation templates (~58K lines IaC)<br>
+        <strong>137</strong> stacks deployed to dev<br>
+        <strong>9</strong> deployment layers + bootstrap<br>
+        <strong>38</strong> AWS services in use<br>
+        <strong>20</strong> CodeBuild projects<br>
+        <strong>38</strong> buildspec files<br>
+        <strong>45+</strong> Lambda functions<br>
+        <strong>175+</strong> CloudWatch alarms<br>
+        <strong>14</strong> CloudWatch dashboards<br>
+        <strong>124+</strong> IAM roles<br>
+        <strong>15+</strong> KMS keys (customer-managed)
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--success)">
+      <div class="card-title">Key Architectural Decisions</div>
+      <div class="card-body">
+        <strong>EKS over ECS:</strong> GovCloud compatibility (Fargate limited)<br>
+        <strong>VPC Endpoints over NAT:</strong> Zero-egress for CMMC compliance<br>
+        <strong>Provisioned Neptune:</strong> GovCloud serverless unavailable<br>
+        <strong>Podman-first:</strong> Avoids Docker Desktop licensing<br>
+        <strong>Private ECR:</strong> Controlled supply chain + rate limit avoidance<br>
+        <strong>CodeBuild-only:</strong> Single source of truth for deployments<br>
+        <strong>Layer-based:</strong> Parallel builds, targeted updates, blast radius control
+      </div>
+    </div>
+    <div class="card card-accent" style="border-left-color:var(--purple)">
+      <div class="card-title">Compliance &amp; Security</div>
+      <div class="card-body">
+        <strong>NIST 800-53:</strong> Aligned technical controls deployed<br>
+        <strong>GovCloud Ready:</strong> 19/19 services compatible<br>
+        <strong>Encryption:</strong> KMS everywhere (at-rest + in-transit)<br>
+        <strong>Audit:</strong> CloudTrail + Config + GuardDuty<br>
+        <strong>Drift Detection:</strong> Every 6 hours + auto-remediation<br>
+        <strong>IAM:</strong> Least privilege + defense-in-depth compensating controls<br>
+        <strong>WAF:</strong> Rate limiting, injection protection
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div style="text-align:center;padding:32px;color:var(--text-muted);font-size:12px;border-top:1px solid var(--border)">
+  Project Aura &middot; Aenea Labs &middot; Infrastructure &amp; Deployment Architecture &middot; 155 CloudFormation Templates &middot; February 2026
+</div>
+
+</body>
+</html>

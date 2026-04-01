@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 3.4 - EKS GPU Compute Node Group'
+
+# Purpose: Provides GPU compute for ML inference workloads
+# Workloads: memory-service (GPU mode), future ML inference
+# Instance: g5.xlarge (A10G GPU) - cost-effective for inference
+# Scaling: Scale-to-zero, Spot-enabled, NVIDIA device plugin required
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  ClusterName:
+    Type: String
+    Description: EKS cluster name
+
+  NodeRoleArn:
+    Type: String
+    Description: IAM role ARN for EKS nodes
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: Private subnet IDs for node placement
+
+  InstanceTypes:
+    Type: CommaDelimitedList
+    Default: 'g5.xlarge,g4dn.xlarge,g5.2xlarge'
+    Description: GPU instance types (with fallbacks)
+
+  MinSize:
+    Type: Number
+    Default: 0
+    Description: Minimum number of nodes (0 for scale-to-zero)
+
+  MaxSize:
+    Type: Number
+    Default: 2
+    Description: Maximum number of nodes
+
+  DesiredSize:
+    Type: Number
+    Default: 0
+    Description: Desired number of nodes (0 initially)
+
+  CapacityType:
+    Type: String
+    Default: SPOT
+    AllowedValues: [ON_DEMAND, SPOT]
+    Description: Capacity type (SPOT for cost savings on interruptible inference)
+
+  KubernetesVersion:
+    Type: String
+    Default: '1.34'
+    Description: Kubernetes version
+
+  AmiType:
+    Type: String
+    Default: AL2023_x86_64_NVIDIA
+    AllowedValues: [AL2_x86_64_GPU, AL2023_x86_64_NVIDIA]
+    Description: GPU-accelerated AMI type
+
+  NodeSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group ID for EKS nodes (must have VPC endpoint access)
+
+Resources:
+  # Launch template with correct security group for VPC endpoint access
+  NodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-gpu-lt-${Environment}'
+      LaunchTemplateData:
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups:
+              - !Ref NodeSecurityGroupId
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required
+          HttpPutResponseHopLimit: 2
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-gpu-${Environment}'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+
+  GpuComputeNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ProjectName}-gpu-${Environment}'
+      NodeRole: !Ref NodeRoleArn
+      Subnets: !Ref PrivateSubnetIds
+      LaunchTemplate:
+        Id: !Ref NodeLaunchTemplate
+        Version: !GetAtt NodeLaunchTemplate.LatestVersionNumber
+      InstanceTypes: !Ref InstanceTypes
+      CapacityType: !Ref CapacityType
+      AmiType: !Ref AmiType
+      Version: !Ref KubernetesVersion
+      ScalingConfig:
+        MinSize: !Ref MinSize
+        MaxSize: !Ref MaxSize
+        DesiredSize: !Ref DesiredSize
+      Labels:
+        workload-type: gpu-compute
+        environment: !Ref Environment
+        project: !Ref ProjectName
+        accelerator: nvidia-gpu
+      Taints:
+        - Key: nvidia.com/gpu
+          Value: 'true'
+          Effect: NO_SCHEDULE
+        - Key: workload-type
+          Value: gpu-compute
+          Effect: NO_SCHEDULE
+      UpdateConfig:
+        MaxUnavailable: 1
+      Tags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Layer: compute
+        NodeGroupType: gpu-compute
+        CostCenter: ml-inference
+        # Note: Cluster Autoscaler discovery tags (k8s.io/cluster-autoscaler/*) are
+        # automatically added to the underlying ASG by EKS. CloudFormation Tags don't
+        # support forward slashes in tag keys.
+
+Outputs:
+  NodeGroupName:
+    Description: Name of the GPU compute node group
+    Value: !Ref GpuComputeNodeGroup
+    Export:
+      Name: !Sub '${ProjectName}-gpu-nodegroup-${Environment}'
+
+  NodeGroupArn:
+    Description: ARN of the GPU compute node group
+    Value: !GetAtt GpuComputeNodeGroup.Arn
+    Export:
+      Name: !Sub '${ProjectName}-gpu-nodegroup-arn-${Environment}'

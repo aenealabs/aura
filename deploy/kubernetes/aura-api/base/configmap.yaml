@@ -1,0 +1,29 @@
+# Project Aura - API Configuration (Base)
+# Database endpoints and application configuration
+#
+# IMPORTANT: This is the base ConfigMap. Environment-specific values
+# (AWS_REGION, NEPTUNE_ENDPOINT, SNS ARNs, etc.) are set via Kustomize overlays.
+#
+# These values are injected as environment variables into the API pod.
+# For secrets (API keys, passwords), use Kubernetes Secrets or AWS Secrets Manager.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aura-api-config
+  namespace: default
+  labels:
+    app: aura-api
+    component: config
+data:
+  # Project Configuration (shared across environments)
+  PROJECT_NAME: "aura"
+  VECTOR_DIMENSION: "1024"
+
+  # Application Configuration
+  LOG_LEVEL: "INFO"
+  AURA_CLONE_PATH: "/tmp/aura-repos"
+  AURA_ALLOWED_BRANCHES: "main,master,develop"
+
+  # Debug mode (set to "true" for verbose error messages)
+  DEBUG: "false"

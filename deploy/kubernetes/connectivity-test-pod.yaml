@@ -1,0 +1,139 @@
+---
+# Quick Connectivity Test Pod
+# Tests Neptune and OpenSearch connectivity from within VPC
+#
+# IMPORTANT: This manifest uses ConfigMap references instead of hardcoded values.
+# Before running, ensure the integration-test-config ConfigMap exists:
+#   kubectl apply -f deploy/kubernetes/test-configs/integration-test-config-${ENV}.yaml
+#
+# Or generate it automatically:
+#   ./deploy/scripts/generate-k8s-config.sh ${ENV}
+#
+# Usage:
+#   kubectl apply -f deploy/kubernetes/connectivity-test-pod.yaml
+#   kubectl logs connectivity-test -n aura -f
+#   kubectl delete pod connectivity-test -n aura
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: connectivity-test
+  namespace: aura
+  labels:
+    app: connectivity-test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: python:3.12-slim
+      command:
+        - /bin/sh
+        - -c
+        - |
+          echo "=================================================="
+          echo "Project Aura - VPC Connectivity Test"
+          echo "=================================================="
+          echo "Start Time: $(date -u)"
+          echo "Environment: ${ENVIRONMENT:-unknown}"
+          echo ""
+
+          # Validate configuration
+          if [ -z "$NEPTUNE_ENDPOINT" ] || [ "$NEPTUNE_ENDPOINT" = "PENDING_DEPLOYMENT" ]; then
+            echo "ERROR: NEPTUNE_ENDPOINT not configured"
+            echo "Run: ./deploy/scripts/generate-k8s-config.sh <env>"
+            echo "Then: kubectl apply -f deploy/kubernetes/test-configs/integration-test-config-<env>.yaml"
+            exit 1
+          fi
+
+          # Install required packages
+          pip install --quiet urllib3 2>/dev/null
+
+          # Test Neptune connectivity
+          echo "Testing Neptune connectivity..."
+          python3 << PYTHON_EOF
+          import urllib.request
+          import ssl
+          import json
+          import os
+
+          NEPTUNE_ENDPOINT = os.environ.get("NEPTUNE_ENDPOINT", "")
+          NEPTUNE_PORT = int(os.environ.get("NEPTUNE_PORT", "8182"))
+
+          print(f"  Endpoint: {NEPTUNE_ENDPOINT}:{NEPTUNE_PORT}")
+
+          if not NEPTUNE_ENDPOINT or NEPTUNE_ENDPOINT == "PENDING_DEPLOYMENT":
+              print("  Error: NEPTUNE_ENDPOINT not configured")
+              print("  Result: NEPTUNE SKIPPED")
+          else:
+              try:
+                  ssl_context = ssl.create_default_context()
+                  ssl_context.check_hostname = False
+                  ssl_context.verify_mode = ssl.CERT_NONE
+
+                  url = f"https://{NEPTUNE_ENDPOINT}:{NEPTUNE_PORT}/status"
+                  request = urllib.request.Request(url)
+                  with urllib.request.urlopen(request, timeout=10, context=ssl_context) as response:
+                      data = json.loads(response.read().decode())
+                      print(f"  Status: {data.get('status', 'unknown')}")
+                      print(f"  Role: {data.get('role', 'unknown')}")
+                      print(f"  Result: NEPTUNE OK")
+              except Exception as e:
+                  print(f"  Error: {e}")
+                  print(f"  Result: NEPTUNE FAILED")
+          PYTHON_EOF
+
+          echo ""
+
+          # Test OpenSearch connectivity
+          echo "Testing OpenSearch connectivity..."
+          python3 << PYTHON_EOF
+          import urllib.request
+          import ssl
+          import json
+          import os
+
+          OPENSEARCH_ENDPOINT = os.environ.get("OPENSEARCH_ENDPOINT", "")
+          OPENSEARCH_PORT = int(os.environ.get("OPENSEARCH_PORT", "443"))
+
+          print(f"  Endpoint: {OPENSEARCH_ENDPOINT}:{OPENSEARCH_PORT}")
+
+          if not OPENSEARCH_ENDPOINT or OPENSEARCH_ENDPOINT == "PENDING_DEPLOYMENT":
+              print("  Error: OPENSEARCH_ENDPOINT not configured")
+              print("  Result: OPENSEARCH SKIPPED")
+          else:
+              try:
+                  ssl_context = ssl.create_default_context()
+                  ssl_context.check_hostname = False
+                  ssl_context.verify_mode = ssl.CERT_NONE
+
+                  url = f"https://{OPENSEARCH_ENDPOINT}:{OPENSEARCH_PORT}/_cluster/health"
+                  request = urllib.request.Request(url)
+                  with urllib.request.urlopen(request, timeout=15, context=ssl_context) as response:
+                      data = json.loads(response.read().decode())
+                      print(f"  Cluster: {data.get('cluster_name', 'unknown')}")
+                      print(f"  Status: {data.get('status', 'unknown')}")
+                      print(f"  Nodes: {data.get('number_of_nodes', 0)}")
+                      print(f"  Result: OPENSEARCH OK")
+              except Exception as e:
+                  print(f"  Error: {e}")
+                  print(f"  Result: OPENSEARCH FAILED")
+          PYTHON_EOF
+
+          echo ""
+          echo "=================================================="
+          echo "End Time: $(date -u)"
+          echo "=================================================="
+
+          # Keep pod alive briefly for log retrieval
+          sleep 30
+      # Load configuration from ConfigMap
+      envFrom:
+        - configMapRef:
+            name: integration-test-config
+      resources:
+        limits:
+          cpu: "200m"
+          memory: "256Mi"
+        requests:
+          cpu: "100m"
+          memory: "128Mi"

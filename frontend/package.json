@@ -15,7 +15,7 @@
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "amazon-cognito-identity-js": "^6.3.12",
-    "jspdf": "^4.0.0",
+    "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.562.0",
     "mermaid": "^11.12.2",

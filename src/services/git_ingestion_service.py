@@ -26,7 +26,10 @@ from git import GitCommandError, InvalidGitRepositoryError, Repo
 
 from src.services.github_app_auth import GitHubAppAuth, get_github_app_auth
 from src.services.observability_service import ObservabilityService, get_monitor
-from src.services.secure_command_executor import SecureCommandExecutor, get_secure_executor
+from src.services.secure_command_executor import (
+    SecureCommandExecutor,
+    get_secure_executor,
+)
 from src.services.semantic_guardrails.normalizer import normalize_text
 from src.services.semantic_guardrails.pattern_matcher import match_patterns
 

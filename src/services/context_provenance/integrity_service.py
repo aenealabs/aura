@@ -304,9 +304,7 @@ def get_integrity_service() -> IntegrityVerificationService:
                 "AURA_INTEGRITY_HMAC_KEY environment variable is required. "
                 "Set it via SSM Parameter Store or environment configuration."
             )
-        _integrity_service = IntegrityVerificationService(
-            hmac_secret_key=hmac_key
-        )
+        _integrity_service = IntegrityVerificationService(hmac_secret_key=hmac_key)
     return _integrity_service
 
 

@@ -348,9 +348,7 @@ def get_provenance_service() -> ContentProvenanceService:
                 "AURA_PROVENANCE_HMAC_KEY environment variable is required. "
                 "Set it via SSM Parameter Store or environment configuration."
             )
-        _provenance_service = ContentProvenanceService(
-            hmac_secret_key=hmac_key
-        )
+        _provenance_service = ContentProvenanceService(hmac_secret_key=hmac_key)
     return _provenance_service
 
 

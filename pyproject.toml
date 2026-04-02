@@ -6,20 +6,20 @@ authors = [{name = "Project Aura Team"}]
 requires-python = ">=3.11"
 dependencies = [
     "pytest==8.3.4",
-    "pytest-mock==3.14.0",
+    "pytest-mock==3.15.1",
     "pytest-cov==6.0.0",
     "pytest-asyncio==0.24.0",
     "pytest-forked==1.6.0",
-    "pytest-xdist==3.5.0",
+    "pytest-xdist==3.8.0",
     # AWS service mocking for 85% coverage target
-    "moto[all]==5.0.27",
+    "moto[all]==5.1.22",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff==0.14.0",
-    "mypy==1.8.0",
-    "bandit==1.9.0",
+    "ruff==0.15.9",
+    "mypy==1.20.0",
+    "bandit==1.9.4",
 ]
 
 [build-system]

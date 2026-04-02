@@ -107,7 +107,7 @@ jobs:
           fi
 
       - name: Upload validation report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: iam-validation-report
           path: iam-validation-report.txt

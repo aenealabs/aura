@@ -8,7 +8,7 @@ dependencies = [
     "pytest==8.3.4",
     "pytest-mock==3.15.1",
     "pytest-cov==6.0.0",
-    "pytest-asyncio==0.24.0",
+    "pytest-asyncio==1.3.0",
     "pytest-forked==1.6.0",
     "pytest-xdist==3.8.0",
     # AWS service mocking for 85% coverage target

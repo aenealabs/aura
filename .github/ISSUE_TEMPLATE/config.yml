@@ -1,8 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Known Issues
-    url: https://github.com/aenealabs/aura/blob/main/KNOWN_ISSUES.md
-    about: Check known issues and accepted limitations before filing a bug
   - name: Documentation
     url: https://github.com/aenealabs/aura/tree/main/docs
     about: Browse project documentation

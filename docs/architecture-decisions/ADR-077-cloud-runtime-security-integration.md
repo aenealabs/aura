@@ -25,14 +25,16 @@ _Awaiting review._
 
 ### Market Opportunity
 
-Cloud runtime security represents a $12B+ market opportunity, with organizations increasingly recognizing that static analysis alone cannot protect cloud-native workloads. The gap between "shift-left" security (code scanning) and runtime protection creates blind spots that attackers exploit.
+Cloud runtime security is a large and growing market segment (various analyst reports place it in the multi-billion-dollar range as of 2025-2026), with organizations increasingly combining static analysis with runtime protection for cloud-native workloads. The gap between "shift-left" security (code scanning) and runtime protection can create blind spots.
 
-**Target Markets:**
-- **Wiz** - Cloud security posture management
-- **Google Cloud Security** - Container and Kubernetes security
-- **Microsoft Defender for Cloud** - Runtime protection integration
+**Market Segment References (as of February 2026):**
+- **Wiz** - Cloud security posture management (publicly documented)
+- **Google Cloud Security Command Center** - Container and Kubernetes security (publicly documented)
+- **Microsoft Defender for Cloud** - Runtime protection integration (publicly documented)
 
-**Market Opportunity:** Strong demand from enterprise customers requiring runtime-to-code correlation
+These vendors lead in broad cloud posture coverage and multi-cloud inventory. Aura's focus on runtime-to-source-code correlation via its code graph is complementary to, rather than a replacement for, these platforms.
+
+**Market Opportunity:** Customer demand for runtime-to-code correlation alongside existing CSPM tooling.
 
 ### Current State
 
@@ -49,7 +51,7 @@ Project Aura excels at static code analysis through its hybrid GraphRAG architec
 
 | ID | Requirement | Source |
 |----|-------------|--------|
-| R1 | Kubernetes admission webhook for policy enforcement | Wiz/Google parity |
+| R1 | Kubernetes admission webhook for policy enforcement | Parity with capabilities publicly documented by Wiz, Google, and similar vendors |
 | R2 | Correlate CloudTrail/GuardDuty alerts to source code | Customer demand |
 | R3 | Detect container escape attempts using eBPF | Security best practice |
 | R4 | Integrate with Falco for runtime threat detection | Industry standard |
@@ -500,22 +502,22 @@ g.addE('ADMISSION_FOR').from(admission_decision).to(container_image)
 
 ## Alternatives Considered
 
-### Alternative 1: Use Wiz/Orca as Runtime Layer
+### Alternative 1: Integrate with Existing CSPM Platforms (e.g., Wiz, Orca) as Runtime Layer
 
-Integrate with existing CSPM tools instead of building custom runtime security.
+Integrate with existing CSPM tools instead of building complementary runtime capabilities in-house.
 
 **Pros:**
 - Faster time to market
-- Proven technology
+- Mature, publicly documented runtime capabilities
 - Lower development cost
+- Leverages vendor investment in CSPM breadth
 
 **Cons:**
-- No differentiation - commodity feature
-- Limited code correlation (Aura's strength)
-- Vendor lock-in and licensing costs
-- Cannot integrate with Neptune code graph
+- Reduced ability to achieve tight integration with Aura's Neptune code graph
+- Third-party licensing costs
+- Runtime-to-source-code correlation depth depends on vendor APIs
 
-**Decision:** Rejected - runtime-to-code correlation is key differentiator
+**Decision:** Build complementary runtime-to-code correlation in-house; customers can still use Wiz, Orca, or other CSPM tools alongside Aura.
 
 ### Alternative 2: Falco-Only Detection (No Custom eBPF)
 
@@ -552,7 +554,7 @@ Use mutating webhooks to auto-remediate issues instead of blocking.
 
 ### Positive
 
-1. **Runtime-to-Code Intelligence** - Unique capability to trace production issues to source
+1. **Runtime-to-Code Intelligence** - Differentiating capability to trace production issues to source via the Aura code graph (as of February 2026, we are not aware of a publicly documented equivalent in surveyed CSPM tools; readers should verify)
 2. **Proactive Security** - Block vulnerable deployments before they reach production
 3. **Incident Response** - Faster root cause analysis with code context
 4. **Market Differentiation** - Bridges gap between SAST and runtime security
@@ -626,3 +628,7 @@ Use mutating webhooks to auto-remediate issues instead of blocking.
 - [ADR-065: Semantic Guardrails Engine](/docs/architecture-decisions/ADR-065-semantic-guardrails-engine.md)
 - [ADR-066: Agent Capability Governance](/docs/architecture-decisions/ADR-066-agent-capability-governance.md)
 - [ADR-067: Context Provenance and Integrity](/docs/architecture-decisions/ADR-067-context-provenance-integrity.md)
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

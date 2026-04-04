@@ -39,11 +39,13 @@ Project Aura currently uses AWS Cognito as the sole identity provider. While Cog
 
 ### Market Requirements
 
-Competitor analysis shows that enterprise AI platforms universally support multi-IdP:
-- **GitHub Copilot Enterprise**: SAML, OIDC, GitHub auth
-- **GitLab Duo**: SAML, LDAP, OIDC, OmniAuth
-- **Snyk**: SAML SSO, OIDC, Azure AD
-- **SonarQube**: LDAP, SAML, OAuth2, GitHub/GitLab
+As of January 2026, publicly available vendor documentation indicates that several enterprise AI and developer platforms publish support for multiple identity providers:
+- **GitHub Copilot Enterprise**: SAML, OIDC, GitHub auth (per GitHub documentation)
+- **GitLab Duo**: SAML, LDAP, OIDC, OmniAuth (per GitLab documentation)
+- **Snyk**: SAML SSO, OIDC, Azure AD (per Snyk documentation)
+- **SonarQube**: LDAP, SAML, OAuth2, GitHub/GitLab (per SonarSource documentation)
+
+Readers should consult each vendor's current documentation to verify capabilities before decision-making.
 
 ### Existing Authentication Architecture
 
@@ -1454,6 +1456,10 @@ All authentication events logged to CloudWatch and DynamoDB:
 5. **AWS Cognito Federation** - https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-federation.html
 6. **NIST 800-63B** - Digital Identity Guidelines (Authentication)
 7. **FedRAMP Marketplace** - Authorized identity providers
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*
 
 ---
 

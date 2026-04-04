@@ -790,3 +790,7 @@ metadata { tags, estimated_cost, provisioning_time }
 - AWS Service Catalog Documentation
 - NIST 800-53: Configuration Management (CM) family
 - CMMC Level 2: Access Control requirements
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

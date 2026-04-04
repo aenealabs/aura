@@ -25,7 +25,7 @@ _Awaiting review._
 
 ### Market Opportunity
 
-The intersection of scale infrastructure and AI model security represents a rapidly emerging market. As enterprises deploy larger LLMs and train custom models, new security challenges arise that existing tools do not address.
+The intersection of scale infrastructure and AI model security represents a rapidly emerging market. As of publication, as enterprises deploy larger LLMs and train custom models, new security challenges arise that are not fully addressed by the tools we have surveyed.
 
 **Target Markets:**
 - **OpenAI/Anthropic** - Model security for frontier labs ($10B+ valuations)
@@ -738,9 +738,9 @@ Keep batch analysis instead of streaming.
 - More thorough analysis
 
 **Cons:**
-- Poor developer experience
+- Slower developer feedback loop
 - Delays in vulnerability detection
-- Not competitive with modern tools
+- Does not match sub-second feedback offered by streaming analysis tools as of publication
 
 **Decision:** Rejected - sub-second feedback is table stakes
 
@@ -750,8 +750,8 @@ Keep batch analysis instead of streaming.
 
 1. **Hyperscale Support** - Analyze billion-node codebases
 2. **Developer Experience** - Sub-second CI/CD feedback
-3. **AI Security Leadership** - First-mover in model protection
-4. **Market Differentiation** - Unique runtime-to-code capability
+3. **AI Security Leadership** - Early entrant in model protection (as of publication)
+4. **Market Differentiation** - Runtime-to-code capability we are not aware of being publicly documented by other vendors as of publication
 5. **Revenue Growth** - Access to AI lab and hyperscaler markets
 6. **Compliance Ready** - Audit logging for regulated industries
 
@@ -812,6 +812,10 @@ Keep batch analysis instead of streaming.
 - Model weights stored in GovCloud S3 with KMS encryption
 - Training data must not leave GovCloud boundary
 - FIPS 140-2 validated crypto for model fingerprinting
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*
 
 ## References
 

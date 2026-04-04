@@ -11,7 +11,7 @@
 | **Overall Completion** | 99% |
 | **Lines of Code** | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure) |
 | **Test Suite** | 23,165+ tests (16,499 passed, 6,666 skipped, 0 failed) |
-| **Architecture Decision Records** | 84 ADRs (83 Deployed/Accepted, 1 Proposed) |
+| **Architecture Decision Records** | 85 ADRs (83 Deployed/Accepted, 2 Proposed) |
 | **CloudFormation Templates** | 155 templates (24 CodeBuild + 131 infrastructure) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
@@ -116,7 +116,7 @@
 
 ## Architecture Decision Records
 
-84 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
+85 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
 
 - **ADR-004**: Cloud Abstraction Layer (Multi-cloud)
 - **ADR-024**: Titan Neural Memory Architecture
@@ -131,3 +131,4 @@
 - **ADR-083**: Runtime Agent Security Platform
 - **ADR-084**: Native Vulnerability Scanning Engine
 - **ADR-085**: Deterministic Verification Envelope (Proposed)
+- **ADR-086**: Agentic Identity Lifecycle Controls (Proposed)

@@ -41,9 +41,9 @@ These controls secure what agents **produce** and what infrastructure **allows**
 
 ### Competitive Landscape
 
-Startups like Akto.io ($13M Series A), Lasso Security, and Prompt Security are building standalone runtime agent security products. Their approach: detect runtime anomalies, generate alerts, stop. None offer remediation.
+As of February 2026, startups including Akto.io (which announced a $13M Series A), Lasso Security, and Prompt Security are building standalone runtime agent security products. Based on their publicly documented capabilities at that time, their approach centers on detecting runtime anomalies and generating alerts. We are not aware of any of these vendors publicly documenting autonomous source-code remediation as part of their runtime agent security offering as of that date; readers should verify current capabilities directly.
 
-Aura's GraphRAG infrastructure (Neptune + OpenSearch) enables something competitors cannot: tracing runtime security events back to source code root causes and generating patches autonomously. This creates a closed-loop security system: **detect → trace → fix → verify**.
+Aura's GraphRAG infrastructure (Neptune + OpenSearch) enables tracing runtime security events back to source code root causes and generating patches autonomously — a combination we are not aware of being publicly documented by other runtime agent security vendors as of February 2026. This creates a closed-loop security system: **detect → trace → fix → verify**.
 
 ### Strategic Imperative
 
@@ -334,7 +334,7 @@ All services use `${AWS::Partition}` in ARNs. Dependencies:
 2. **Shadow agent detection** — identify unregistered agents before they cause damage
 3. **Behavioral drift alerting** — catch gradual agent degradation or compromise
 4. **Automated red teaming** — continuous adversarial validation with 75 techniques
-5. **Competitive moat** — runtime-to-code correlation via GraphRAG is unique
+5. **Competitive differentiation** — runtime-to-code correlation via GraphRAG is a capability we are not aware of being publicly documented by comparable runtime agent security vendors as of February 2026
 6. **Compliance readiness** — NIST 800-53 SI-4, AU-6 continuous monitoring requirements
 
 ### Negative
@@ -364,6 +364,10 @@ All services use `${AWS::Partition}` in ARNs. Dependencies:
 | Runtime-to-code correlation accuracy | >85% |
 | Interceptor overhead | <5ms P95 |
 | Unit test count | >550 |
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*
 
 ## References
 

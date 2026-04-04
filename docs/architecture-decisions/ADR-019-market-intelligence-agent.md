@@ -9,9 +9,9 @@
 
 ### Market Research Findings
 
-At AWS re:Invent 2025, Amazon unveiled **AWS Security Agent** as part of their "Frontier Agents" initiative. This competitor analysis reveals both capability alignment and gaps:
+At AWS re:Invent 2025, Amazon announced **AWS Security Agent** as part of their "Frontier Agents" initiative. This analysis, based on publicly available information as of December 2025, reviews capability alignment and gaps. Capabilities may have changed since publication.
 
-#### AWS Security Agent Capabilities (December 2025)
+#### AWS Security Agent Publicly Announced Capabilities (as of AWS re:Invent 2025)
 
 | Capability | AWS Security Agent | Project Aura Status |
 |------------|-------------------|---------------------|
@@ -28,7 +28,7 @@ At AWS re:Invent 2025, Amazon unveiled **AWS Security Agent** as part of their "
 
 #### AWS Agentic AI Security Scoping Matrix
 
-AWS published a security framework defining 4 autonomy scopes:
+As of December 2025, AWS has published a security framework defining 4 autonomy scopes:
 - **Scope 1: No Agency** - Read-only, recommendations only
 - **Scope 2: Prescribed Agency** - HITL mandatory for all changes
 - **Scope 3: Supervised Agency** - Autonomous execution, human-initiated
@@ -38,11 +38,11 @@ AWS published a security framework defining 4 autonomy scopes:
 
 ### Gap Analysis
 
-**Immediate Capability Gaps:**
-1. **Penetration Testing** - AWS performs active exploitation; we rely on static CVE matching
-2. **Design Document Review** - AWS proactively reviews architecture; we analyze code only
-3. **GitHub PR Creation** - AWS auto-creates remediation PRs; we require manual intervention
-4. **Business Logic Testing** - AWS detects context-specific vulnerabilities
+**Immediate Capability Gaps (as of December 2025, based on publicly available information):**
+1. **Penetration Testing** - AWS documents active exploitation capabilities; Project Aura relies on static CVE matching
+2. **Design Document Review** - AWS documents proactive architecture review; Project Aura analyzes code only
+3. **GitHub PR Creation** - AWS documents auto-created remediation PRs; Project Aura requires manual intervention
+4. **Business Logic Testing** - AWS documents context-specific vulnerability detection
 
 **Strategic Gap: No Market Intelligence Capability**
 
@@ -346,7 +346,7 @@ MARKET_INTELLIGENCE_PRESETS = {
 
 ## Appendix: Capability Comparison Matrix
 
-### AWS Security Agent vs Project Aura (Post ADR-018)
+### AWS Security Agent vs Project Aura (Post ADR-018, as of December 2025)
 
 | Capability | AWS Security Agent | Project Aura | Gap Status |
 |------------|-------------------|--------------|------------|
@@ -372,3 +372,7 @@ Based on this analysis, recommended roadmap additions:
 2. **Medium Priority**: Design document security review capability
 3. **Medium Priority**: Market Intelligence Agent (this ADR)
 4. **Lower Priority**: Active penetration testing (complex, regulatory considerations)
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

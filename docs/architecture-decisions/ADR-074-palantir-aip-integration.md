@@ -36,7 +36,7 @@ Additional enhancements incorporated:
 
 ### Strategic Opportunity
 
-Palantir's Artificial Intelligence Platform (AIP) has become the de facto standard for enterprise data integration and decision intelligence, particularly in defense, healthcare, and financial services. Their strength lies in:
+Palantir's Artificial Intelligence Platform (AIP) is a widely adopted enterprise data integration and decision intelligence platform, with public deployments in defense, healthcare, and financial services (as of January 2026, per Palantir's publicly disclosed customers). Publicly documented strengths include:
 
 - **Ontology-based data modeling**: Unified semantic layer across disparate data sources
 - **AIP Logic**: LLM-powered decision workflows grounded in enterprise data
@@ -72,21 +72,25 @@ The integration targets organizations requiring both data-centric security opera
 
 ### Competitive Landscape
 
-| Competitor | Data Integration | Code Remediation | Time to Remediation | Gap |
-|------------|------------------|------------------|---------------------|-----|
-| Snyk + Splunk | Log aggregation | Manual fixes | Days-Weeks | No autonomous remediation |
-| Veracode + ServiceNow | ITSM ticketing | Prioritization only | Days-Weeks | No intelligent patching |
-| GitHub + Datadog | Observability | Dependabot (limited) | Hours-Days | No threat correlation |
-| **Aura + Palantir** | **Ontology-based** | **Autonomous** | **Hours** | **Complete solution** |
+The following landscape reflects publicly documented capabilities as of January 2026. Each referenced vendor offers capabilities Aura does not (e.g., Snyk's developer ecosystem integrations, Splunk's mature SIEM analytics, ServiceNow's ITSM platform breadth, GitHub's developer platform scale). The table highlights specific gaps relevant to autonomous code remediation paired with enterprise data context.
 
-### Quantitative Differentiators
+| Stack (as of Jan 2026) | Data Integration | Code Remediation | Publicly Documented Gap for this Use Case |
+|------------|------------------|------------------|---------------------|
+| Snyk + Splunk | Log aggregation | Primarily advisory/fix suggestions | No publicly documented autonomous remediation workflow |
+| Veracode + ServiceNow | ITSM ticketing | Prioritization + manual fix workflows | No publicly documented autonomous patch generation |
+| GitHub + Datadog | Observability | Dependabot (version bumps) | No publicly documented threat-intel-driven prioritization |
+| **Aura + Palantir (this ADR)** | **Ontology-based** | **Autonomous with HITL** | **N/A – target architecture** |
 
-| Metric | Aura + Palantir | Industry Average | Improvement |
-|--------|-----------------|------------------|-------------|
-| Mean Time to Remediation (MTTR) | 2 hours | 60+ days | 720x faster |
-| Threat-to-patch correlation | 97% | 0% | ∞ (not available elsewhere) |
-| Autonomous remediation rate | 85%+ | 0% | N/A (manual only) |
-| False positive deployment rate | <1% | 15-30% | 15-30x reduction |
+### Target Differentiators
+
+The following are internal targets for the integrated Aura + Palantir architecture described in this ADR. They reflect design goals, not measured industry averages:
+
+| Metric | Aura + Palantir Target | Notes |
+|--------|-----------------|-------|
+| Mean Time to Remediation (MTTR) | 2 hours (target) | Industry MTTR varies widely by vulnerability class and organization |
+| Threat-to-patch correlation | 97% (design target) | Dependent on Palantir threat intel coverage |
+| Autonomous remediation rate | 85%+ (design target) | Requires HITL approval gates per ADR-032 |
+| False positive deployment rate | <1% (design target) | Measured against sandbox validation outcomes |
 
 ## Decision
 
@@ -1558,3 +1562,7 @@ aws codebuild start-build --project-name aura-application-irsa-deploy-dev
 - [ADR-073: Attribute-Based Access Control](./ADR-073-attribute-based-access-control.md)
 - [NIST SP 800-53 Security Controls](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)
 - [CMMC Level 2 Requirements](https://dodcio.defense.gov/CMMC/)
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

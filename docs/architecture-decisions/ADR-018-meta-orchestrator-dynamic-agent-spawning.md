@@ -9,10 +9,10 @@
 
 ### Competitive Landscape
 
-AWS and other major cloud providers are developing security agents capable of:
+As of December 2025, AWS and other major cloud providers have publicly discussed security agents with capabilities such as:
 - **Dynamic agent spawning** - Creating sub-agents on-demand for complex tasks
 - **Recursive task decomposition** - Breaking complex problems into smaller sub-tasks handled by specialized agents
-- **80-85% autonomous operation** - Minimal human oversight for routine security operations
+- **High autonomy operation** - Reduced human oversight for routine security operations
 
 ### Current Project Aura Limitations
 
@@ -35,7 +35,7 @@ PLAN → CONTEXT → CODE → REVIEW → VALIDATE → REMEDIATE (loop)
 |-------------|-------------|
 | **Dual-Mode Operation** | Support both HITL-required (regulated industries) and fully autonomous (trusted environments) |
 | **Scalable Complexity** | Handle arbitrarily complex security tasks via recursive decomposition |
-| **Competitive Parity** | Match AWS agent capabilities (80-85% autonomous operation) |
+| **Competitive Parity** | Match publicly discussed agent capabilities for high-autonomy operation (as of December 2025) |
 | **Enterprise Flexibility** | Per-organization, per-repository, per-severity autonomy configuration |
 
 ### Key Question
@@ -766,7 +766,7 @@ always_require_hitl = [
 - Wasted resources for unused agent types
 - No recursive decomposition capability
 
-**Rejected because:** Does not address competitive gap (dynamic spawning).
+**Rejected because:** Does not address the capability goal of dynamic spawning.
 
 ### Alternative 2: Serverless Agent Functions (Lambda)
 
@@ -804,7 +804,7 @@ always_require_hitl = [
 
 ### Positive
 
-1. **Competitive parity** with AWS security agents
+1. **Competitive parity** with publicly announced AWS security agent capabilities (as of December 2025)
 2. **Scalable complexity handling** via recursive decomposition
 3. **Enterprise flexibility** through configurable autonomy
 4. **Improved throughput** via parallel agent execution
@@ -859,3 +859,7 @@ always_require_hitl = [
 - ADR-016: HITL Auto-Escalation Strategy
 - AWS Security Agent capabilities (competitive analysis)
 - Project Aura System Architecture (`SYSTEM_ARCHITECTURE.md`)
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

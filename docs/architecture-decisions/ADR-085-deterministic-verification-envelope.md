@@ -61,7 +61,7 @@ DO-330 governs tool qualification. Tool Qualification Levels (TQL) are determine
 | Validator Agent | Criteria 2/3 | TQL-2/TQL-5 | Depends on whether output eliminates other verification |
 | CGE (ADR-081) | Criteria 3 (could fail to detect errors) | TQL-5 | Least rigorous -- standard development practices |
 
-**No LLM-based tool has ever been qualified under DO-330 at any TQL level.** The FAA states: "Assuring the safety of such systems cannot rely on traditional aviation design assurance." TQL-1 qualification for an LLM-based code generator would require development rigor equivalent to DAL A software -- including full MC/DC coverage of the tool itself, formal methods where applicable, and complete requirements traceability. This is not achievable for a stochastic neural network.
+**As of publication, we are not aware of any publicly documented LLM-based tool that has been qualified under DO-330 at any TQL level.** The FAA has stated: "Assuring the safety of such systems cannot rely on traditional aviation design assurance." TQL-1 qualification for an LLM-based code generator would require development rigor equivalent to DAL A software -- including full MC/DC coverage of the tool itself, formal methods where applicable, and complete requirements traceability. This is not achievable for a stochastic neural network.
 
 ### The Output Verification Escape Clause
 
@@ -780,7 +780,7 @@ class TestDVEDeterminism:
 ### Positive
 
 1. **DO-330 output verification argument enabled** -- The Coder Agent can remain unqualified at TQL-1, removing the single largest barrier to using LLM-based code generation in DO-178C development environments
-2. **First aviation-grade verification wrapper for AI code generation** -- No competing platform offers a structured DO-178C output verification architecture for LLM-generated code
+2. **Early entrant in aviation-grade verification wrappers for AI code generation** -- As of publication, we are not aware of another platform that publicly documents a structured DO-178C output verification architecture for LLM-generated code
 3. **MC/DC structural coverage closes the largest technical gap** -- 100% MC/DC coverage measurement is the most rigorous structural coverage objective in DO-178C and was previously absent from the pipeline
 4. **Z3 formal verification provides DO-333 supplement capability** -- Formal methods are an accepted supplement to testing under DO-333, and SMT-based constraint satisfaction proofs strengthen the safety argument
 5. **N-of-M consensus converts probabilistic generation into quantifiably reliable output** -- Convergence rate is a measurable, auditable metric that quantifies generation reliability
@@ -819,6 +819,10 @@ class TestDVEDeterminism:
 | DER acceptance of output verification argument | Accepted | Binary outcome from initial DER engagement |
 | Backward compatibility regressions | 0 | Existing test suite passes unchanged at DEFAULT policy |
 | Proof hash reproducibility | 100% | Same output + same Z3 version = same hash (10,000 runs) |
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*
 
 ## References
 

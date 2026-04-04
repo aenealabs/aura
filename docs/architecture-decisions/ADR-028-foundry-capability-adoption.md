@@ -7,20 +7,22 @@
 
 ## Context
 
-A comprehensive competitive analysis of Microsoft Foundry (formerly Azure AI Foundry) identified capability gaps that Project Aura should address to maintain competitive positioning. While Aura has significant advantages in code-specific GraphRAG, automated patch generation, ephemeral sandbox testing, and GovCloud-native architecture, several Foundry capabilities would enhance our enterprise readiness and developer experience.
+A competitive analysis of Microsoft Foundry (formerly Azure AI Foundry), based on publicly available information as of December 2025, identified capability areas that Project Aura should consider. Project Aura's differentiation centers on code-specific GraphRAG, automated patch generation, ephemeral sandbox testing, and GovCloud-native architecture. Microsoft Foundry is a broad platform with strengths in general-purpose agent orchestration, enterprise identity integration, and Azure-native tooling; several Foundry capabilities would enhance Project Aura's enterprise readiness and developer experience. Readers should verify current capabilities of either platform before relying on this comparison.
 
 **Analysis Source:** `research/MICROSOFT_FOUNDRY_COMPARATIVE_ANALYSIS.md`
 
-### Aura's Competitive Advantages (Preserve and Enhance)
+### Aura's Differentiation Areas (as of December 2025)
 
-| Advantage | Foundry Limitation | Aura Strategy |
-|-----------|-------------------|---------------|
-| **Hybrid GraphRAG** | Optional integration (not native) | Continue innovation in code-specific graph queries |
-| **Automated Patch Generation** | Relies on GitHub Copilot (separate product) | Core differentiator; accelerate Coder Agent capabilities |
-| **Ephemeral Sandbox Testing** | Project-level isolation only | Unique for security patch validation |
-| **GovCloud Native** | Azure GCC High (different ecosystem) | Stronger for DoD/IC customers on AWS |
-| **Code-Specific Agents** | Generic agent framework | Domain expertise is defensible moat |
-| **RuntimeIncidentAgent** | No direct equivalent | Unique competitive positioning vs AWS DevOps Agent |
+The following table compares Project Aura's focus areas against publicly documented Microsoft Foundry capabilities as of December 2025. Foundry operates in a different ecosystem (Azure/GCC High) with its own strengths, and both platforms evolve rapidly.
+
+| Focus Area | Microsoft Foundry Public Documentation (Dec 2025) | Aura Strategy |
+|-----------|---------------------------------------------------|---------------|
+| **Hybrid GraphRAG for code** | Does not publicly document native code-specific GraphRAG; graph features available via integrations | Continue innovation in code-specific graph queries |
+| **Automated Patch Generation** | Patch generation is delivered through GitHub Copilot as a separate product | Core differentiator; accelerate Coder Agent capabilities |
+| **Ephemeral Sandbox Testing for security patches** | Does not publicly document equivalent per-patch ephemeral sandbox isolation | Differentiator for security patch validation |
+| **AWS GovCloud Native** | Offers Azure GCC High (a different sovereign cloud ecosystem) | Targets customers standardized on AWS |
+| **Code-Specific Agents** | Offers a general-purpose agent framework with strong enterprise identity and Azure-native integrations | Domain focus in security code remediation |
+| **RuntimeIncidentAgent** | We are not aware of a publicly documented direct equivalent as of December 2025 | Differentiator for runtime incident response |
 
 ### Identified Gaps to Address
 
@@ -638,13 +640,13 @@ Continue using CloudWatch exclusively without OTel.
 
 Create proprietary agent interoperability protocol instead of A2A.
 
-**Rejected:** A2A is emerging as the industry standard; proprietary protocols fragment the ecosystem.
+**Rejected:** As of December 2025, A2A is being positioned as an emerging cross-platform agent interoperability protocol; proprietary protocols risk ecosystem fragmentation.
 
 ### Alternative 3: JetBrains Plugin Instead of VS Code
 
 Build for IntelliJ/PyCharm instead of VS Code.
 
-**Rejected:** VS Code has 70%+ market share among developers; JetBrains plugin can follow later.
+**Rejected:** Per publicly available developer surveys as of 2025, VS Code has the largest share among code editors; a JetBrains plugin can follow later.
 
 ---
 
@@ -721,3 +723,7 @@ Build for IntelliJ/PyCharm instead of VS Code.
 - ADR-022: GitOps for Kubernetes Deployment
 - ADR-023: AgentCore Gateway Integration
 - ADR-025: RuntimeIncidentAgent Architecture
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

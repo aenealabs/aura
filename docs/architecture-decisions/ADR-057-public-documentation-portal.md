@@ -45,13 +45,17 @@ Project Aura has comprehensive internal documentation:
 
 ### Competitive Analysis
 
-| Competitor | Docs Access | Animation Quality | Notes |
+As of January 2026, a review of public documentation portals shows the following patterns (based on vendor public websites at time of writing):
+
+| Vendor | Docs Access | Animation Style Observed | Observation |
 |------------|-------------|-------------------|-------|
-| **Snyk** | Public | Basic diagrams | Developer-first; docs are marketing |
-| **CrowdStrike** | Public | Product screenshots | Enterprise sales-led |
-| **Datadog** | Public | Animated GIFs | PLG motion; docs enable self-serve |
-| **Wiz** | Public | Interactive demos | Cloud security; transparency builds trust |
-| **Apple** | Public | Sophisticated scroll animations | Gold standard for product marketing |
+| **Snyk** | Public | Static diagrams | Developer-focused documentation |
+| **CrowdStrike** | Public | Product screenshots | Enterprise sales-led motion |
+| **Datadog** | Public | Animated GIFs | Self-serve onboarding emphasis |
+| **Wiz** | Public | Interactive demos | Cloud security; public transparency |
+| **Apple** | Public | Scroll-triggered animations | Frequently cited as a reference for product marketing animation |
+
+Readers should verify these vendors' current documentation and site implementations directly, as public sites change frequently.
 
 ---
 
@@ -234,7 +238,7 @@ docs.aenealabs.com/
 3. **Support Reduction:** 30-40% fewer basic support tickets (industry benchmark)
 4. **Trust Signal:** Transparency builds credibility with security-conscious buyers
 5. **Lead Capture:** Tier 2 soft-gating captures high-intent leads
-6. **Brand Differentiation:** Apple-quality animations differentiate from competitors
+6. **Brand Differentiation:** High-quality scroll animations differentiate the landing page experience
 
 ### Negative
 
@@ -430,3 +434,7 @@ Until human-captured content is available, use animated placeholders:
 - ADR-046: Support Ticketing Connectors
 - ADR-047: Customer Onboarding Features
 - ADR-056: Documentation Agent
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

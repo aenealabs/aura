@@ -387,7 +387,9 @@ class TokenNormalizationService:
 
     def decode_token_unverified(self, token: str) -> dict[str, Any]:
         """Decode token without verification (for inspection only)."""
-        return jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256", "RS256"])
+        return jwt.decode(
+            token, options={"verify_signature": False}, algorithms=["HS256", "RS256"]
+        )
 
     def get_token_header(self, token: str) -> dict[str, Any]:
         """Get token header without verification."""

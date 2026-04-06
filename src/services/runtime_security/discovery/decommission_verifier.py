@@ -57,9 +57,7 @@ class DecommissionReport:
     attestation: Optional[DecommissionAttestation] = None
     requires_hitl: bool = False
     error: Optional[str] = None
-    started_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,9 +69,7 @@ class DecommissionReport:
             "all_zero_confirmed": self.all_zero_confirmed,
             "residual_credential_count": self.residual_credential_count,
             "enumeration_results": [r.to_dict() for r in self.enumeration_results],
-            "attestation": (
-                self.attestation.to_dict() if self.attestation else None
-            ),
+            "attestation": (self.attestation.to_dict() if self.attestation else None),
             "requires_hitl": self.requires_hitl,
             "error": self.error,
             "started_at": self.started_at.isoformat(),
@@ -156,9 +152,7 @@ class DecommissionVerifier:
         report.all_zero_confirmed = self._enumerator_registry.all_zero_confirmed(
             results
         )
-        report.residual_credential_count = sum(
-            r.active_count for r in results
-        )
+        report.residual_credential_count = sum(r.active_count for r in results)
 
         if report.all_zero_confirmed:
             # Create and sign attestation
@@ -263,9 +257,7 @@ class DecommissionVerifier:
             logger.error(f"Archive failed for {agent_id}: {e}")
             return False
 
-    def _build_summary(
-        self, results: list[EnumerationResult]
-    ) -> dict[str, Any]:
+    def _build_summary(self, results: list[EnumerationResult]) -> dict[str, Any]:
         """Build enumeration summary for attestation record."""
         return {
             "total_classes": len(results),

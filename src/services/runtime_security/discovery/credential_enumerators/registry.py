@@ -73,9 +73,7 @@ class EnumerationResult:
     credentials: list[CredentialRecord] = field(default_factory=list)
     zero_confirmed: bool = False
     error: Optional[str] = None
-    enumerated_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    enumerated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def active_count(self) -> int:
@@ -140,9 +138,7 @@ class EnumeratorRegistry:
             enumerator: Enumerator instance implementing the protocol.
         """
         self._enumerators[enumerator.credential_class] = enumerator
-        logger.info(
-            f"Registered credential enumerator: {enumerator.credential_class}"
-        )
+        logger.info(f"Registered credential enumerator: {enumerator.credential_class}")
 
     def unregister(self, credential_class: str) -> bool:
         """Remove an enumerator. Returns True if it existed."""

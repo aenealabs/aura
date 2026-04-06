@@ -54,9 +54,7 @@ class DecommissionAttestation:
     verifier_signature: Optional[str] = None
     human_cosigner_id: Optional[str] = None
     cosigned_at: Optional[datetime] = None
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None
 
@@ -86,9 +84,7 @@ class DecommissionAttestation:
             "enumeration_summary": self.enumeration_summary,
             "verifier_signature": self.verifier_signature,
             "human_cosigner_id": self.human_cosigner_id,
-            "cosigned_at": (
-                self.cosigned_at.isoformat() if self.cosigned_at else None
-            ),
+            "cosigned_at": (self.cosigned_at.isoformat() if self.cosigned_at else None),
             "created_at": self.created_at.isoformat(),
             "completed_at": (
                 self.completed_at.isoformat() if self.completed_at else None
@@ -180,9 +176,7 @@ class AttestationService:
 
         if attestation.requires_cosign:
             attestation.status = AttestationStatus.PENDING_COSIGN
-            logger.info(
-                f"Attestation {attestation_id} signed, awaiting human co-sign"
-            )
+            logger.info(f"Attestation {attestation_id} signed, awaiting human co-sign")
         else:
             attestation.status = AttestationStatus.ATTESTED
             attestation.completed_at = datetime.now(timezone.utc)
@@ -222,9 +216,7 @@ class AttestationService:
         attestation.cosigned_at = now
         attestation.status = AttestationStatus.ATTESTED
         attestation.completed_at = now
-        logger.info(
-            f"Attestation {attestation_id} co-signed by {cosigner_id}"
-        )
+        logger.info(f"Attestation {attestation_id} co-signed by {cosigner_id}")
         return True
 
     def reject(
@@ -249,14 +241,10 @@ class AttestationService:
         attestation.status = AttestationStatus.REJECTED
         attestation.rejection_reason = reason
         attestation.completed_at = datetime.now(timezone.utc)
-        logger.info(
-            f"Attestation {attestation_id} rejected: {reason}"
-        )
+        logger.info(f"Attestation {attestation_id} rejected: {reason}")
         return True
 
-    def get_attestation(
-        self, attestation_id: str
-    ) -> Optional[DecommissionAttestation]:
+    def get_attestation(self, attestation_id: str) -> Optional[DecommissionAttestation]:
         """Get an attestation by ID."""
         return self._attestations.get(attestation_id)
 
@@ -264,9 +252,7 @@ class AttestationService:
         self, agent_id: str
     ) -> list[DecommissionAttestation]:
         """Get all attestations for an agent."""
-        return [
-            a for a in self._attestations.values() if a.agent_id == agent_id
-        ]
+        return [a for a in self._attestations.values() if a.agent_id == agent_id]
 
     def _all_zero(self, summary: dict[str, Any]) -> bool:
         """Check if enumeration summary shows zero active credentials."""

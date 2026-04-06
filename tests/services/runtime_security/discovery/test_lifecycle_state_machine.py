@@ -32,8 +32,12 @@ class TestLifecycleState:
     def test_all_states_defined(self):
         states = {s.value for s in LifecycleState}
         assert states == {
-            "active", "dormant", "decommissioning",
-            "remediation_required", "attested", "archived",
+            "active",
+            "dormant",
+            "decommissioning",
+            "remediation_required",
+            "attested",
+            "archived",
         }
 
     def test_state_values_are_lowercase(self):
@@ -180,7 +184,8 @@ class TestLifecycleStateMachine:
     def test_active_to_dormant(self):
         self.sm.register_agent("a1")
         t = self.sm.transition(
-            "a1", LifecycleState.DORMANT,
+            "a1",
+            LifecycleState.DORMANT,
             trigger=DecommissionTrigger.DORMANCY_THRESHOLD,
             initiated_by="scanner",
         )
@@ -233,12 +238,15 @@ class TestLifecycleStateMachine:
     def test_full_happy_path(self):
         """Test the complete decommission flow."""
         self.sm.register_agent("a1", agent_tier=3)
-        self.sm.transition("a1", LifecycleState.DORMANT,
-                           trigger=DecommissionTrigger.DORMANCY_THRESHOLD)
-        self.sm.transition("a1", LifecycleState.DECOMMISSIONING,
-                           trigger=DecommissionTrigger.DORMANCY_THRESHOLD)
-        self.sm.transition("a1", LifecycleState.ATTESTED,
-                           initiated_by="verifier")
+        self.sm.transition(
+            "a1", LifecycleState.DORMANT, trigger=DecommissionTrigger.DORMANCY_THRESHOLD
+        )
+        self.sm.transition(
+            "a1",
+            LifecycleState.DECOMMISSIONING,
+            trigger=DecommissionTrigger.DORMANCY_THRESHOLD,
+        )
+        self.sm.transition("a1", LifecycleState.ATTESTED, initiated_by="verifier")
         self.sm.transition("a1", LifecycleState.ARCHIVED)
         assert self.sm.get_state("a1") == LifecycleState.ARCHIVED
         assert len(self.sm.get_transitions("a1")) == 4
@@ -276,7 +284,8 @@ class TestLifecycleStateMachine:
     def test_transition_records_metadata(self):
         self.sm.register_agent("a1")
         t = self.sm.transition(
-            "a1", LifecycleState.DORMANT,
+            "a1",
+            LifecycleState.DORMANT,
             metadata={"scan_id": "abc123"},
         )
         assert ("scan_id", "abc123") in t.metadata

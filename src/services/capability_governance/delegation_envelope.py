@@ -143,9 +143,7 @@ class VerificationResult:
     assertion_id: str
     verdict: VerificationVerdict
     explanation: str
-    verified_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    verified_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def is_valid(self) -> bool:
@@ -164,13 +162,15 @@ class VerificationResult:
 
 
 # Untrusted-origin capability profile: read-only, non-sensitive operations
-UNTRUSTED_ORIGIN_CAPABILITIES = frozenset({
-    CapabilityGrant(tool_name="semantic_search", action="read"),
-    CapabilityGrant(tool_name="get_documentation", action="read"),
-    CapabilityGrant(tool_name="describe_tool", action="read"),
-    CapabilityGrant(tool_name="get_sandbox_status", action="read"),
-    CapabilityGrant(tool_name="get_agent_status", action="read"),
-})
+UNTRUSTED_ORIGIN_CAPABILITIES = frozenset(
+    {
+        CapabilityGrant(tool_name="semantic_search", action="read"),
+        CapabilityGrant(tool_name="get_documentation", action="read"),
+        CapabilityGrant(tool_name="describe_tool", action="read"),
+        CapabilityGrant(tool_name="get_sandbox_status", action="read"),
+        CapabilityGrant(tool_name="get_agent_status", action="read"),
+    }
+)
 
 
 class DelegationVerifier:
@@ -526,9 +526,7 @@ class DelegationVerifier:
 
         import hmac
 
-        expected = hmac.new(
-            self._signing_key, payload, hashlib.sha256
-        ).digest()
+        expected = hmac.new(self._signing_key, payload, hashlib.sha256).digest()
         return hmac.compare_digest(assertion.signature, expected)
 
     def _is_revoked(self, assertion_id: str) -> bool:

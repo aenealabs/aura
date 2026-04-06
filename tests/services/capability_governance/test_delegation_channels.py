@@ -49,10 +49,12 @@ def verifier():
 @pytest.fixture
 def sample_caps():
     """Sample capabilities."""
-    return frozenset({
-        CapabilityGrant(tool_name="semantic_search", action="execute"),
-        CapabilityGrant(tool_name="query_code_graph", action="read"),
-    })
+    return frozenset(
+        {
+            CapabilityGrant(tool_name="semantic_search", action="execute"),
+            CapabilityGrant(tool_name="query_code_graph", action="read"),
+        }
+    )
 
 
 def _make_assertion(
@@ -186,17 +188,13 @@ class TestMemoryMediatedVerifier:
     def test_passes_depth_0(self, verifier, sample_caps):
         """Depth 0 passes."""
         v = MemoryMediatedVerifier(max_memory_depth=1)
-        a = _make_assertion(
-            verifier, sample_caps, DelegationChannel.MEMORY_MEDIATED
-        )
+        a = _make_assertion(verifier, sample_caps, DelegationChannel.MEMORY_MEDIATED)
         assert v.verify(a) is True
 
     def test_fails_depth_exceeded(self, verifier, sample_caps):
         """Depth exceeding max fails."""
         v = MemoryMediatedVerifier(max_memory_depth=0)
-        root = _make_assertion(
-            verifier, sample_caps, DelegationChannel.MEMORY_MEDIATED
-        )
+        root = _make_assertion(verifier, sample_caps, DelegationChannel.MEMORY_MEDIATED)
         child = verifier.remint(
             root, "agent-2", sample_caps, DelegationChannel.MEMORY_MEDIATED
         )
@@ -219,17 +217,13 @@ class TestHITLRoundTripVerifier:
     def test_passes_root(self, verifier, sample_caps):
         """Root assertion passes."""
         v = HITLRoundTripVerifier()
-        a = _make_assertion(
-            verifier, sample_caps, DelegationChannel.HITL_ROUND_TRIP
-        )
+        a = _make_assertion(verifier, sample_caps, DelegationChannel.HITL_ROUND_TRIP)
         assert v.verify(a) is True
 
     def test_fails_non_root(self, verifier, sample_caps):
         """Non-root assertion fails."""
         v = HITLRoundTripVerifier()
-        root = _make_assertion(
-            verifier, sample_caps, DelegationChannel.HITL_ROUND_TRIP
-        )
+        root = _make_assertion(verifier, sample_caps, DelegationChannel.HITL_ROUND_TRIP)
         child = verifier.remint(
             root, "agent-2", sample_caps, DelegationChannel.HITL_ROUND_TRIP
         )
@@ -283,25 +277,19 @@ class TestExternalAdapterVerifier:
     def test_passes_no_known_adapters(self, verifier, sample_caps):
         """No known adapters means pass-through."""
         v = ExternalAdapterVerifier()
-        a = _make_assertion(
-            verifier, sample_caps, DelegationChannel.EXTERNAL_ADAPTER
-        )
+        a = _make_assertion(verifier, sample_caps, DelegationChannel.EXTERNAL_ADAPTER)
         assert v.verify(a) is True
 
     def test_passes_known_adapter(self, verifier, sample_caps):
         """Known adapter passes."""
         v = ExternalAdapterVerifier(known_adapters={"orch"})
-        a = _make_assertion(
-            verifier, sample_caps, DelegationChannel.EXTERNAL_ADAPTER
-        )
+        a = _make_assertion(verifier, sample_caps, DelegationChannel.EXTERNAL_ADAPTER)
         assert v.verify(a) is True
 
     def test_fails_unknown_adapter(self, verifier, sample_caps):
         """Unknown adapter fails."""
         v = ExternalAdapterVerifier(known_adapters={"palantir-adapter"})
-        a = _make_assertion(
-            verifier, sample_caps, DelegationChannel.EXTERNAL_ADAPTER
-        )
+        a = _make_assertion(verifier, sample_caps, DelegationChannel.EXTERNAL_ADAPTER)
         assert v.verify(a) is False
 
     def test_channel_property(self):
@@ -330,6 +318,7 @@ class TestChannelVerifierRegistry:
         from src.services.capability_governance.delegation_envelope import (
             DelegationAssertion,
         )
+
         # verify with no verifiers returns True
         v = DelegationVerifier()
         a = v.mint_root(

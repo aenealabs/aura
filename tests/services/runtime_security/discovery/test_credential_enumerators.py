@@ -226,8 +226,10 @@ class TestEnumeratorRegistry:
     def test_all_zero_confirmed_false_with_error(self):
         results = [
             EnumerationResult(
-                credential_class="a", agent_id="x",
-                zero_confirmed=True, error="oops",
+                credential_class="a",
+                agent_id="x",
+                zero_confirmed=True,
+                error="oops",
             ),
         ]
         assert self.registry.all_zero_confirmed(results) is False

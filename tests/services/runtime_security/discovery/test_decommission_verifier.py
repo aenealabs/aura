@@ -159,9 +159,7 @@ class TestDecommissionVerifier:
         self.sm.register_agent("a1", agent_tier=4)
         self._register_zero_enumerator()
 
-        self.verifier.verify_decommission(
-            "a1", DecommissionTrigger.EXPLICIT_SHUTDOWN
-        )
+        self.verifier.verify_decommission("a1", DecommissionTrigger.EXPLICIT_SHUTDOWN)
         success = self.verifier.archive("a1")
         assert success is True
         assert self.sm.get_state("a1") == LifecycleState.ARCHIVED

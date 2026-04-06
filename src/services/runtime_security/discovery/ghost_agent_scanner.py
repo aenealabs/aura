@@ -61,9 +61,7 @@ class GhostAgentFinding:
     last_activity: Optional[datetime] = None
     owner_id: Optional[str] = None
     agent_tier: int = 4
-    discovered_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    discovered_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
@@ -106,9 +104,7 @@ class ScanResult:
             "auto_triggered_decommissions": self.auto_triggered_decommissions,
             "scan_started_at": self.scan_started_at.isoformat(),
             "scan_completed_at": (
-                self.scan_completed_at.isoformat()
-                if self.scan_completed_at
-                else None
+                self.scan_completed_at.isoformat() if self.scan_completed_at else None
             ),
             "error_count": len(self.errors),
         }
@@ -164,13 +160,9 @@ class GhostAgentScanner:
         result = ScanResult()
         cutoff = datetime.now(timezone.utc) - timedelta(days=self._dormancy_days)
 
-        active_agents = self._state_machine.list_agents(
-            state=LifecycleState.ACTIVE
-        )
+        active_agents = self._state_machine.list_agents(state=LifecycleState.ACTIVE)
         # Also check dormant agents that haven't been decommissioned yet
-        dormant_agents = self._state_machine.list_agents(
-            state=LifecycleState.DORMANT
-        )
+        dormant_agents = self._state_machine.list_agents(state=LifecycleState.DORMANT)
         all_agents = active_agents + dormant_agents
         result.agents_scanned = len(all_agents)
 
@@ -186,9 +178,7 @@ class GhostAgentScanner:
                         result.auto_triggered_decommissions += 1
 
             except Exception as e:
-                error_msg = (
-                    f"Error scanning agent {agent_record.agent_id}: {e}"
-                )
+                error_msg = f"Error scanning agent {agent_record.agent_id}: {e}"
                 result.errors.append(error_msg)
                 logger.error(error_msg)
 
@@ -223,13 +213,9 @@ class GhostAgentScanner:
             return None  # Agent is active recently
 
         # Dormant — check for residual credentials
-        enum_results = self._enumerator_registry.enumerate_all(
-            agent_record.agent_id
-        )
+        enum_results = self._enumerator_registry.enumerate_all(agent_record.agent_id)
         active_classes = [
-            r.credential_class
-            for r in enum_results
-            if r.active_count > 0
+            r.credential_class for r in enum_results if r.active_count > 0
         ]
         total_active = sum(r.active_count for r in enum_results)
 
@@ -311,13 +297,9 @@ class GhostAgentScanner:
                 initiated_by="ghost_agent_scanner",
                 reason="Ghost agent auto-decommission",
             )
-            logger.info(
-                f"Auto-triggered decommission for ghost agent {agent_id}"
-            )
+            logger.info(f"Auto-triggered decommission for ghost agent {agent_id}")
         except Exception as e:
-            logger.error(
-                f"Failed to auto-trigger decommission for {agent_id}: {e}"
-            )
+            logger.error(f"Failed to auto-trigger decommission for {agent_id}: {e}")
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -340,7 +322,5 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     )
     result = scanner.scan()
 
-    logger.info(
-        f"Lambda scan complete: {result.ghost_agents_found} ghosts found"
-    )
+    logger.info(f"Lambda scan complete: {result.ghost_agents_found} ghosts found")
     return result.to_dict()

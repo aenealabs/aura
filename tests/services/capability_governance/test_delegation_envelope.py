@@ -44,19 +44,23 @@ def verifier():
 @pytest.fixture
 def sample_caps():
     """Sample capability grants."""
-    return frozenset({
-        CapabilityGrant(tool_name="semantic_search", action="execute"),
-        CapabilityGrant(tool_name="query_code_graph", action="read"),
-        CapabilityGrant(tool_name="get_documentation", action="read"),
-    })
+    return frozenset(
+        {
+            CapabilityGrant(tool_name="semantic_search", action="execute"),
+            CapabilityGrant(tool_name="query_code_graph", action="read"),
+            CapabilityGrant(tool_name="get_documentation", action="read"),
+        }
+    )
 
 
 @pytest.fixture
 def narrow_caps():
     """Narrowed capability subset."""
-    return frozenset({
-        CapabilityGrant(tool_name="semantic_search", action="execute"),
-    })
+    return frozenset(
+        {
+            CapabilityGrant(tool_name="semantic_search", action="execute"),
+        }
+    )
 
 
 @pytest.fixture
@@ -188,10 +192,12 @@ class TestMinting:
 
     def test_remint_rejects_expansion(self, verifier, root_assertion):
         """Re-minting with superset capabilities returns None."""
-        expanded = frozenset({
-            CapabilityGrant(tool_name="semantic_search", action="execute"),
-            CapabilityGrant(tool_name="DANGEROUS_TOOL", action="execute"),
-        })
+        expanded = frozenset(
+            {
+                CapabilityGrant(tool_name="semantic_search", action="execute"),
+                CapabilityGrant(tool_name="DANGEROUS_TOOL", action="execute"),
+            }
+        )
         result = verifier.remint(
             parent=root_assertion,
             delegate_agent_id="evil-agent",
@@ -563,8 +569,12 @@ class TestDelegationChannel:
     def test_channel_values(self):
         """Channel values match expected strings."""
         expected = {
-            "a2a_direct", "tool_mediated", "scheduled",
-            "memory_mediated", "hitl_round_trip", "webhook",
+            "a2a_direct",
+            "tool_mediated",
+            "scheduled",
+            "memory_mediated",
+            "hitl_round_trip",
+            "webhook",
             "external_adapter",
         }
         actual = {c.value for c in DelegationChannel}

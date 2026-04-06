@@ -99,12 +99,8 @@ class AgentLifecycleRecord:
     current_state: LifecycleState = LifecycleState.ACTIVE
     owner_id: Optional[str] = None
     agent_tier: int = 4  # Default to lowest tier (read-only)
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
-    last_activity: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_activity: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     state_changed_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )

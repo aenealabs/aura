@@ -462,8 +462,7 @@ class TestSelfGovernanceEdge:
         )
         graph = analyzer.synchronizer.get_mock_graph()
         gov_edges = [
-            e for e in graph["edges"]
-            if e.get("edge_type") == "self_governance"
+            e for e in graph["edges"] if e.get("edge_type") == "self_governance"
         ]
         assert len(gov_edges) >= 1
         last = gov_edges[-1]
@@ -488,12 +487,14 @@ class TestSelfGovernanceEdge:
         )
 
         # Add a dangerous write capability directly to mock edges
-        analyzer.synchronizer._mock_edges.append({
-            "source_id": "agent:CoderAgent",
-            "target_id": "cap:write_file",
-            "edge_type": "has_capability",
-            "classification": "dangerous",
-        })
+        analyzer.synchronizer._mock_edges.append(
+            {
+                "source_id": "agent:CoderAgent",
+                "target_id": "cap:write_file",
+                "edge_type": "has_capability",
+                "classification": "dangerous",
+            }
+        )
 
         paths = await analyzer.detect_self_modification_paths()
         assert len(paths) >= 1
@@ -506,12 +507,14 @@ class TestSelfGovernanceEdge:
     async def test_self_mod_path_without_write_cap_is_not_detected(self, analyzer):
         """Agent with self-governance edge but no write cap has no path."""
         # Only add self-governance edge, no write capability
-        analyzer.synchronizer._mock_edges.append({
-            "source_id": "agent:ReadOnlyAgent",
-            "target_id": "policy-readonly",
-            "edge_type": "self_governance",
-            "artifact_class": "iam_policy",
-        })
+        analyzer.synchronizer._mock_edges.append(
+            {
+                "source_id": "agent:ReadOnlyAgent",
+                "target_id": "policy-readonly",
+                "edge_type": "self_governance",
+                "artifact_class": "iam_policy",
+            }
+        )
 
         paths = await analyzer.detect_self_modification_paths()
         readonly_paths = [p for p in paths if p["agent_id"] == "ReadOnlyAgent"]

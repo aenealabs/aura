@@ -60,9 +60,14 @@ class TestGhostAgentScanner:
             "baseline_records": "list_baselines",
         }.get(credential_class, "list_roles_for_agent")
         getattr(mock_client, attr_name).return_value = [
-            {"role_arn": "arn:test", "role_name": "test",
-             "token_id": "tok-1", "server_id": "s1",
-             "baseline_id": "b1", "metric_type": "frequency"}
+            {
+                "role_arn": "arn:test",
+                "role_name": "test",
+                "token_id": "tok-1",
+                "server_id": "s1",
+                "baseline_id": "b1",
+                "metric_type": "frequency",
+            }
         ]
         enum_cls = {
             "aws_iam_roles": IAMRoleEnumerator,
@@ -146,42 +151,48 @@ class TestSeverityClassification:
 
     def test_critical_tier1_iam(self):
         sev = self.scanner._classify_severity(
-            agent_tier=1, active_count=1,
+            agent_tier=1,
+            active_count=1,
             active_classes=["aws_iam_roles"],
         )
         assert sev == GhostFindingSeverity.CRITICAL
 
     def test_critical_tier2_secrets(self):
         sev = self.scanner._classify_severity(
-            agent_tier=2, active_count=1,
+            agent_tier=2,
+            active_count=1,
             active_classes=["secrets_manager"],
         )
         assert sev == GhostFindingSeverity.CRITICAL
 
     def test_high_tier1_no_sensitive(self):
         sev = self.scanner._classify_severity(
-            agent_tier=1, active_count=1,
+            agent_tier=1,
+            active_count=1,
             active_classes=["mcp_tokens"],
         )
         assert sev == GhostFindingSeverity.HIGH
 
     def test_high_tier4_iam(self):
         sev = self.scanner._classify_severity(
-            agent_tier=4, active_count=1,
+            agent_tier=4,
+            active_count=1,
             active_classes=["aws_access_keys"],
         )
         assert sev == GhostFindingSeverity.HIGH
 
     def test_medium_tier4_multiple(self):
         sev = self.scanner._classify_severity(
-            agent_tier=4, active_count=3,
+            agent_tier=4,
+            active_count=3,
             active_classes=["mcp_tokens", "remem_grants"],
         )
         assert sev == GhostFindingSeverity.MEDIUM
 
     def test_low_tier4_single(self):
         sev = self.scanner._classify_severity(
-            agent_tier=4, active_count=1,
+            agent_tier=4,
+            active_count=1,
             active_classes=["baseline_records"],
         )
         assert sev == GhostFindingSeverity.LOW

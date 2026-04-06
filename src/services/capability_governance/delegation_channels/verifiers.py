@@ -225,8 +225,7 @@ class WebhookVerifier(BaseChannelVerifier):
         # Check if the delegator is in the allowed origins
         if assertion.delegator_agent_id not in self._allowed_origins:
             logger.warning(
-                f"WEBHOOK: origin {assertion.delegator_agent_id} "
-                f"not in allowlist"
+                f"WEBHOOK: origin {assertion.delegator_agent_id} " f"not in allowlist"
             )
             return False
         return True
@@ -295,9 +294,7 @@ class ChannelVerifierRegistry:
         self.register(WebhookVerifier())
         self.register(ExternalAdapterVerifier())
 
-    def get_verifier(
-        self, channel: DelegationChannel
-    ) -> Optional[BaseChannelVerifier]:
+    def get_verifier(self, channel: DelegationChannel) -> Optional[BaseChannelVerifier]:
         """Get the verifier for a specific channel."""
         return self._verifiers.get(channel)
 
@@ -323,8 +320,7 @@ class ChannelVerifierRegistry:
         Returns a dict mapping channels to verify callables.
         """
         return {
-            channel: verifier.verify
-            for channel, verifier in self._verifiers.items()
+            channel: verifier.verify for channel, verifier in self._verifiers.items()
         }
 
     @property

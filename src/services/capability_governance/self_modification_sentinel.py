@@ -118,9 +118,7 @@ class SentinelAlert:
     delegation_ancestors: tuple[str, ...] = ()
     explanation: str = ""
     checkpoint_id: Optional[str] = None
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
@@ -200,9 +198,7 @@ class SelfModificationSentinel:
         writer_in_governed = event.writer_agent_id in event.governed_agent_ids
 
         # Check ancestor-mediated self-modification
-        ancestor_in_governed = bool(
-            set(ancestors) & event.governed_agent_ids
-        )
+        ancestor_in_governed = bool(set(ancestors) & event.governed_agent_ids)
 
         is_self_mod = writer_in_governed or ancestor_in_governed
 
@@ -262,9 +258,7 @@ class SelfModificationSentinel:
 
         return alert
 
-    def evaluate_batch(
-        self, events: list[GovernanceWriteEvent]
-    ) -> list[SentinelAlert]:
+    def evaluate_batch(self, events: list[GovernanceWriteEvent]) -> list[SentinelAlert]:
         """Evaluate multiple events."""
         return [self.evaluate(e) for e in events]
 
@@ -311,9 +305,7 @@ class SelfModificationSentinel:
             try:
                 return self._delegation_resolver(agent_id)
             except Exception as e:
-                logger.warning(
-                    f"Delegation resolver failed for {agent_id}: {e}"
-                )
+                logger.warning(f"Delegation resolver failed for {agent_id}: {e}")
         return []
 
 

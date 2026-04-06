@@ -688,15 +688,16 @@ class CapabilityGraphAnalyzer:
 
             # Find SELF_GOVERNANCE edges
             governance_edges = [
-                e for e in edges
-                if e.get("edge_type") == EdgeType.SELF_GOVERNANCE.value
+                e for e in edges if e.get("edge_type") == EdgeType.SELF_GOVERNANCE.value
             ]
 
             # Find write-capable agents
             write_caps = [
-                e for e in edges
+                e
+                for e in edges
                 if e.get("edge_type") == EdgeType.HAS_CAPABILITY.value
-                and e.get("classification") in (
+                and e.get("classification")
+                in (
                     ToolClassification.DANGEROUS.value,
                     ToolClassification.CRITICAL.value,
                 )
@@ -708,24 +709,25 @@ class CapabilityGraphAnalyzer:
                 artifact_id = gov_edge["target_id"]
 
                 agent_write_caps = [
-                    e["target_id"] for e in write_caps
-                    if e["source_id"] == agent_id
+                    e["target_id"] for e in write_caps if e["source_id"] == agent_id
                 ]
 
                 if agent_write_caps:
-                    paths.append({
-                        "agent_id": agent_id.replace("agent:", ""),
-                        "governance_artifact": artifact_id,
-                        "write_capabilities": [
-                            c.replace("cap:", "") for c in agent_write_caps
-                        ],
-                        "depth": 1,
-                        "risk_level": "critical",
-                        "description": (
-                            f"Agent can modify governance artifact "
-                            f"'{artifact_id}' that controls its own behavior"
-                        ),
-                    })
+                    paths.append(
+                        {
+                            "agent_id": agent_id.replace("agent:", ""),
+                            "governance_artifact": artifact_id,
+                            "write_capabilities": [
+                                c.replace("cap:", "") for c in agent_write_caps
+                            ],
+                            "depth": 1,
+                            "risk_level": "critical",
+                            "description": (
+                                f"Agent can modify governance artifact "
+                                f"'{artifact_id}' that controls its own behavior"
+                            ),
+                        }
+                    )
 
         else:
             # Neptune Gremlin query:

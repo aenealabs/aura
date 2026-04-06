@@ -150,6 +150,7 @@ class TestSentinelDetection:
 
     def test_ancestor_mediated_self_modification(self):
         """Delegation ancestor in governed set is CRITICAL."""
+
         def resolver(agent_id):
             if agent_id == "child-agent":
                 return ["parent-agent"]
@@ -171,6 +172,7 @@ class TestSentinelDetection:
 
     def test_ancestor_not_in_governed_is_safe(self):
         """Delegation ancestor not in governed set is SAFE."""
+
         def resolver(agent_id):
             return ["unrelated-parent"]
 
@@ -189,6 +191,7 @@ class TestSentinelDetection:
 
     def test_resolver_failure_falls_back_safe(self):
         """Failing delegation resolver treats as no ancestors."""
+
         def failing_resolver(agent_id):
             raise RuntimeError("resolver down")
 
@@ -243,8 +246,11 @@ class TestSentinelCallbacks:
         sentinel.evaluate(self_mod_event)
         assert counts == [1, 1]
 
-    def test_handler_exception_does_not_break_evaluation(self, sentinel, self_mod_event):
+    def test_handler_exception_does_not_break_evaluation(
+        self, sentinel, self_mod_event
+    ):
         """A failing handler doesn't prevent the alert from being returned."""
+
         def bad_handler(alert):
             raise ValueError("handler crash")
 

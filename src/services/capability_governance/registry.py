@@ -528,13 +528,16 @@ class CapabilityRegistry:
                    remediation_required, attested, archived).
         """
         valid_states = {
-            "active", "dormant", "decommissioning",
-            "remediation_required", "attested", "archived",
+            "active",
+            "dormant",
+            "decommissioning",
+            "remediation_required",
+            "attested",
+            "archived",
         }
         if state not in valid_states:
             raise ValueError(
-                f"Invalid decommission state '{state}'. "
-                f"Valid: {valid_states}"
+                f"Invalid decommission state '{state}'. " f"Valid: {valid_states}"
             )
         self._decommission_states[agent_id] = state
         logger.info(f"Agent {agent_id} decommission_state set to {state}")

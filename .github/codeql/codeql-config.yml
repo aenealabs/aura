@@ -1,0 +1,49 @@
+name: "Project Aura CodeQL Configuration"
+
+# Paths to exclude from analysis
+# These directories contain intentional security patterns (test fixtures,
+# mock secrets, validation scripts) that produce false positives.
+paths-ignore:
+  - tests
+  - archive
+  - docs
+  - "**/__tests__"
+  - "**/test_*.py"
+  - "**/*.test.jsx"
+  - "**/*.test.js"
+  - "**/*.test.ts"
+
+# Use the extended query suite for comprehensive coverage
+query-filters:
+  # Exclude rules that produce persistent false positives in this codebase
+  #
+  # py/clear-text-logging-sensitive-data: Flags __main__ demo blocks in
+  # bedrock_llm_service.py (print statements with model IDs/budget config),
+  # validation scripts logging secret names (not values), and cost calculator
+  # output. These are dev/ops tools, not production logging paths.
+  - exclude:
+      id: py/clear-text-logging-sensitive-data
+      tags contain: security
+
+  # py/incomplete-url-substring-sanitization: Flags AWS service domain suffix
+  # checks (e.g., "es.amazonaws.com" in value) in env_validator. These are
+  # infrastructure config validation, not user-facing URL sanitization.
+  - exclude:
+      id: py/incomplete-url-substring-sanitization
+
+  # py/weak-sensitive-data-hashing: Flags MD5 in zscaler_connector.py which
+  # uses hashlib.md5(usedforsecurity=False) as required by the Zscaler API
+  # obfuscation protocol. Not used for security purposes.
+  - exclude:
+      id: py/weak-sensitive-data-hashing
+
+  # js/clear-text-storage-of-sensitive-data: Flags OAuth state tokens stored
+  # in sessionStorage. This is the standard OAuth CSRF protection pattern -
+  # state is intentionally temporary and scoped to the browser tab.
+  - exclude:
+      id: js/clear-text-storage-of-sensitive-data
+
+  # py/clear-text-storage-sensitive-data: Flags aws_cost_calculator.py writing
+  # cost reports to local files. These contain pricing data, not credentials.
+  - exclude:
+      id: py/clear-text-storage-sensitive-data

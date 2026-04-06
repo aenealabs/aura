@@ -42,7 +42,11 @@ Then what?                                   Awaiting human approval for deploym
 - **Constitutional AI guardrails** -- 16-principle critique-revision pipeline ensures safe, compliant agent behavior
 
 **Screenshot AI Trust Center**
-![Aura AI Trust Center](aura/assets/logo/aura-ai-trust-center.jpeg)
+
+
+<p align="center">
+  <img src="assets/logo/aura-ai-trust-center.jpeg" alt="Aura AI Trust Center" width="600">
+</p>
 ---
 
 ## Architecture

@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 
 from src.services.api_rate_limiter import admin_rate_limit, standard_rate_limit
 from src.services.ticketing import (
+from src.api.log_sanitizer import sanitize_log
     TicketCreate,
     TicketFilters,
     TicketingConnectorFactory,
@@ -218,7 +219,7 @@ async def save_ticketing_config(
     Creates or updates the ticketing provider configuration for a customer.
     """
     logger.info(
-        f"Saving ticketing config for customer {customer_id}: provider={config.provider}"
+        f"Saving ticketing config for customer {sanitize_log(customer_id)}: provider={sanitize_log(config.provider)}"
     )
     save_config(config, customer_id)
     return get_config(customer_id)
@@ -255,7 +256,7 @@ async def test_ticketing_connection(
 
     Validates credentials and connectivity to the external system.
     """
-    logger.info(f"Testing connection for provider: {request.provider}")
+    logger.info(f"Testing connection for provider: {sanitize_log(request.provider)}")
 
     try:
         factory = TicketingConnectorFactory()
@@ -282,10 +283,10 @@ async def test_ticketing_connection(
             }
 
     except Exception as e:
-        logger.exception(f"Connection test error: {e}")
+        logger.exception(f"Connection test error: {sanitize_log(e)}")
         return {
             "success": False,
-            "error_message": str(e),
+            "error_message": "Connection test failed due to an internal error.",
         }
 
 

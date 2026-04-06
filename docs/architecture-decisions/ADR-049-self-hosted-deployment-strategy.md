@@ -238,7 +238,7 @@ Enterprise customers in regulated industries require self-hosted options:
 ### Positive
 
 - Access to regulated industry markets (government, healthcare, finance)
-- Competitive parity with GitLab, Snyk, Sentry
+- Self-hosted deployment option aligning with capabilities publicly documented by GitLab, Snyk, and Sentry as of December 2025
 - Data sovereignty for international customers
 - Exit strategy for vendor lock-in concerns
 - Community contribution potential
@@ -260,3 +260,7 @@ Enterprise customers in regulated industries require self-hosted options:
 - [Replicated KOTS](https://docs.replicated.com/)
 - [ADR-004: Cloud Abstraction Layer](./ADR-004-cloud-abstraction-layer.md)
 - [vLLM Documentation](https://docs.vllm.ai/)
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

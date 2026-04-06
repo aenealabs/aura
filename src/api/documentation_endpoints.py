@@ -70,6 +70,7 @@ from src.services.documentation.confidence_calibration import (
     create_metrics_service,
 )
 from src.services.documentation.documentation_agent import (
+from src.api.log_sanitizer import sanitize_log
     DocumentationAgent,
     create_documentation_agent,
 )
@@ -662,7 +663,7 @@ async def generate_documentation(
     Results are cached for performance.
     """
     logger.info(
-        f"Documentation request: repo={request.repository_id}, "
+        f"Documentation request: repo={sanitize_log(request.repository_id)}, "
         f"mode={request.mode.value}, user={current_user.sub}"
     )
 
@@ -729,7 +730,7 @@ async def _generate_aura_svg_diagram(
 
         # Generate diagram from prompt
         logger.info(
-            f"Generating Aura SVG diagram from prompt: {request.prompt[:100]}..."
+            f"Generating Aura SVG diagram from prompt: {sanitize_log(request.prompt[:100])}..."
         )
 
         generation_result = await ai_generator.generate(
@@ -863,7 +864,7 @@ async def _generate_eraser_api_diagram(
         client = EraserClient(api_key=api_key)
 
         logger.info(
-            f"Generating Eraser.io diagram from prompt: {request.prompt[:100]}..."
+            f"Generating Eraser.io diagram from prompt: {sanitize_log(request.prompt[:100])}..."
         )
 
         result = await client.generate_diagram(
@@ -1013,7 +1014,7 @@ async def stream_documentation_generation(
     - error: Generation failed
     """
     logger.info(
-        f"Streaming documentation: repo={repository_id}, user={current_user.sub}"
+        f"Streaming documentation: repo={sanitize_log(repository_id)}, user={sanitize_log(current_user.sub)}"
     )
 
     # Parse diagram types
@@ -1055,8 +1056,8 @@ async def stream_documentation_generation(
                 await asyncio.sleep(0.1)
 
         except Exception as e:
-            logger.error(f"Stream error: {e}")
-            error_data = {"error": str(e), "phase": "error", "progress": 0}
+            logger.error(f"Stream error: {sanitize_log(e)}")
+            error_data = {"error": "Internal processing error", "phase": "error", "progress": 0}
             yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
 
     return StreamingResponse(
@@ -1088,7 +1089,7 @@ async def submit_feedback(
     import uuid
 
     logger.info(
-        f"Feedback submitted: job={request.job_id}, "
+        f"Feedback submitted: job={sanitize_log(request.job_id)}, "
         f"type={request.documentation_type}, feedback={request.feedback_type}, "
         f"user={current_user.sub}"
     )
@@ -1328,7 +1329,7 @@ async def invalidate_cache(
 
     Call this when a repository is re-ingested to clear stale documentation.
     """
-    logger.info(f"Cache invalidation: repo={repository_id}, user={current_user.sub}")
+    logger.info(f"Cache invalidation: repo={sanitize_log(repository_id)}, user={sanitize_log(current_user.sub)}")
 
     count = agent.invalidate_cache(repository_id)
 
@@ -1385,7 +1386,7 @@ async def test_diagram_generation(
 
         # Choose generator based on use_real_llm flag
         if use_real_llm:
-            logger.info(f"Using real LLM for diagram generation: {prompt[:50]}...")
+            logger.info(f"Using real LLM for diagram generation: {sanitize_log(prompt[:50])}...")
             generator = get_ai_diagram_generator()
         else:
             generator = _create_mock_ai_generator()

@@ -38,6 +38,7 @@ from src.config.integration_config import (
 )
 from src.services.api_rate_limiter import RateLimitResult, admin_rate_limit
 from src.services.settings_persistence_service import (
+from src.api.log_sanitizer import sanitize_log
     DEFAULT_PLATFORM_SETTINGS,
     get_settings_service,
 )
@@ -538,7 +539,7 @@ async def update_settings(
 
     _invalidate_config()
 
-    logger.info(f"Platform settings updated: mode={settings.integration_mode}")
+    logger.info(f"Platform settings updated: mode={sanitize_log(settings.integration_mode)}")
 
     return settings
 
@@ -713,7 +714,7 @@ async def update_mcp_settings(
     )
     _invalidate_config()
 
-    logger.info(f"MCP settings updated: enabled={settings.enabled}")
+    logger.info(f"MCP settings updated: enabled={sanitize_log(settings.enabled)}")
 
     return settings
 
@@ -767,7 +768,7 @@ async def test_mcp_connection(request: ConnectionTestRequest):
 
         latency = (time.time() - start_time) * 1000
 
-        logger.info(f"MCP connection test successful: {request.gateway_url}")
+        logger.info(f"MCP connection test successful: {sanitize_log(request.gateway_url)}")
 
         return ConnectionTestResponse(
             success=True, message="Connection successful", latency_ms=round(latency, 2)
@@ -845,7 +846,7 @@ async def update_security_settings(
     # If retention changed, invoke Lambda to sync CloudWatch log groups
     if old_retention != settings.retain_logs_for_days:
         logger.info(
-            f"Log retention changed: {old_retention} -> {settings.retain_logs_for_days} days"
+            f"Log retention changed: {sanitize_log(old_retention)} -> {sanitize_log(settings.retain_logs_for_days)} days"
         )
 
         # Invoke log retention sync Lambda asynchronously
@@ -975,7 +976,7 @@ async def update_compliance_settings(
     if kms_mode_changing:
         settings.pending_kms_change = True
         logger.info(
-            f"KMS mode change pending: {old_kms_mode} -> {settings.kms_encryption_mode}"
+            f"KMS mode change pending: {sanitize_log(old_kms_mode)} -> {sanitize_log(settings.kms_encryption_mode)}"
         )
 
     # Validate profile
@@ -1004,7 +1005,7 @@ async def update_compliance_settings(
     # If log retention changed, invoke the log retention sync Lambda
     if old_log_retention != settings.log_retention_days:
         logger.info(
-            f"Compliance log retention changed: {old_log_retention} -> {settings.log_retention_days}"
+            f"Compliance log retention changed: {sanitize_log(old_log_retention)} -> {sanitize_log(settings.log_retention_days)}"
         )
         await _invoke_log_retention_sync(settings.log_retention_days)
 
@@ -1012,7 +1013,7 @@ async def update_compliance_settings(
     sync_result = await _invoke_compliance_settings_sync(settings)
     logger.info(f"Compliance settings sync result: {sync_result}")
 
-    logger.info(f"Compliance settings updated: profile={settings.profile}")
+    logger.info(f"Compliance settings updated: profile={sanitize_log(settings.profile)}")
     return settings
 
 
@@ -1087,7 +1088,7 @@ async def apply_compliance_profile(
     if old_log_retention != new_log_retention:
         await _invoke_log_retention_sync(new_log_retention)
 
-    logger.info(f"Applied compliance profile: {profile}")
+    logger.info(f"Applied compliance profile: {sanitize_log(profile)}")
 
     return {
         "status": "success",

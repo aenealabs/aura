@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user, verify_token
 from src.services.orchestration_service import (
+from src.api.log_sanitizer import sanitize_log
     JobPriority,
     JobStatus,
     JobSubmission,
@@ -450,7 +451,7 @@ class ConnectionManager:
         if job_id not in self.active_connections:
             self.active_connections[job_id] = []
         self.active_connections[job_id].append(websocket)
-        logger.info(f"WebSocket connected for job {job_id}")
+        logger.info(f"WebSocket connected for job {sanitize_log(job_id)}")
 
     def disconnect(self, websocket: WebSocket, job_id: str):
         """Remove a WebSocket connection."""
@@ -461,7 +462,7 @@ class ConnectionManager:
                     del self.active_connections[job_id]
             except ValueError:
                 pass
-        logger.info(f"WebSocket disconnected for job {job_id}")
+        logger.info(f"WebSocket disconnected for job {sanitize_log(job_id)}")
 
     async def broadcast_update(self, job_id: str, message: dict[str, Any]):
         """Broadcast update to all connections for a job."""
@@ -606,9 +607,9 @@ async def job_stream(
             await asyncio.sleep(WEBSOCKET_POLL_INTERVAL)
 
     except WebSocketDisconnect:
-        logger.info(f"Client disconnected from job {job_id} stream")
+        logger.info(f"Client disconnected from job {sanitize_log(job_id)} stream")
     except Exception as e:
-        logger.error(f"WebSocket error for job {job_id}: {e}")
+        logger.error(f"WebSocket error for job {sanitize_log(job_id)}: {sanitize_log(e)}")
         try:
             await websocket.send_json(
                 {

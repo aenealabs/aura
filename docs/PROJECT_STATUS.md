@@ -11,7 +11,7 @@
 | **Overall Completion** | 99% |
 | **Lines of Code** | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure) |
 | **Test Suite** | 23,165+ tests (16,499 passed, 6,666 skipped, 0 failed) |
-| **Architecture Decision Records** | 85 ADRs (83 Deployed/Accepted, 2 Proposed) |
+| **Architecture Decision Records** | 85 ADRs (84 Deployed/Accepted, 1 Proposed) |
 | **CloudFormation Templates** | 155 templates (24 CodeBuild + 131 infrastructure) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
@@ -58,6 +58,7 @@
 | Runtime Agent Security | Complete | Traffic interception, behavioral baselines, AURA-ATT&CK, 848 tests (ADR-083) |
 | Policy-as-Code GitOps | Complete | OPA Rego validation, policy simulation, 98 tests (ADR-070) |
 | ABAC Authorization | Complete | Clearance levels, multi-tenant isolation, 115 tests (ADR-073) |
+| Agentic Identity Lifecycle | 100% | Decommission assurance, 15 credential enumerators, ghost scanner, self-modification sentinel, delegation trust envelope, 7 channel verifiers, 271 tests (ADR-086) |
 
 ### AI Optimizations
 
@@ -131,4 +132,4 @@
 - **ADR-083**: Runtime Agent Security Platform
 - **ADR-084**: Native Vulnerability Scanning Engine
 - **ADR-085**: Deterministic Verification Envelope (Proposed)
-- **ADR-086**: Agentic Identity Lifecycle Controls (Proposed)
+- **ADR-086**: Agentic Identity Lifecycle Controls (Deployed)

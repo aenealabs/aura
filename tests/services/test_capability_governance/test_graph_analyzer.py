@@ -450,6 +450,83 @@ class TestFullAnalysis:
         assert risk_score <= 1.0
 
 
+class TestSelfGovernanceEdge:
+    """Tests for self-governance edge and self-modification path detection (ADR-086)."""
+
+    def test_add_self_governance_edge(self, analyzer):
+        """Test adding a SELF_GOVERNANCE edge to the graph."""
+        analyzer.add_self_governance_edge(
+            agent_id="coder-agent",
+            artifact_id="policy-coder-permissions",
+            artifact_class="iam_policy",
+        )
+        graph = analyzer.synchronizer.get_mock_graph()
+        gov_edges = [
+            e for e in graph["edges"] if e.get("edge_type") == "self_governance"
+        ]
+        assert len(gov_edges) >= 1
+        last = gov_edges[-1]
+        assert last["source_id"] == "agent:coder-agent"
+        assert last["target_id"] == "policy-coder-permissions"
+        assert last["artifact_class"] == "iam_policy"
+
+    @pytest.mark.asyncio
+    async def test_detect_self_modification_no_edges(self, analyzer):
+        """No self-governance edges means no self-modification paths."""
+        paths = await analyzer.detect_self_modification_paths()
+        assert paths == []
+
+    @pytest.mark.asyncio
+    async def test_detect_self_modification_with_write_cap(self, analyzer):
+        """Agent with write cap + self-governance edge is detected."""
+        # Add self-governance edge
+        analyzer.add_self_governance_edge(
+            agent_id="CoderAgent",
+            artifact_id="guardrail-coder-config",
+            artifact_class="guardrail_config",
+        )
+
+        # Add a dangerous write capability directly to mock edges
+        analyzer.synchronizer._mock_edges.append(
+            {
+                "source_id": "agent:CoderAgent",
+                "target_id": "cap:write_file",
+                "edge_type": "has_capability",
+                "classification": "dangerous",
+            }
+        )
+
+        paths = await analyzer.detect_self_modification_paths()
+        assert len(paths) >= 1
+        coder_paths = [p for p in paths if p["agent_id"] == "CoderAgent"]
+        assert len(coder_paths) >= 1
+        assert coder_paths[0]["risk_level"] == "critical"
+        assert "write_file" in coder_paths[0]["write_capabilities"]
+
+    @pytest.mark.asyncio
+    async def test_self_mod_path_without_write_cap_is_not_detected(self, analyzer):
+        """Agent with self-governance edge but no write cap has no path."""
+        # Only add self-governance edge, no write capability
+        analyzer.synchronizer._mock_edges.append(
+            {
+                "source_id": "agent:ReadOnlyAgent",
+                "target_id": "policy-readonly",
+                "edge_type": "self_governance",
+                "artifact_class": "iam_policy",
+            }
+        )
+
+        paths = await analyzer.detect_self_modification_paths()
+        readonly_paths = [p for p in paths if p["agent_id"] == "ReadOnlyAgent"]
+        assert len(readonly_paths) == 0
+
+    @pytest.mark.asyncio
+    async def test_full_analysis_includes_self_mod_paths(self, analyzer):
+        """run_full_analysis includes self_modification_paths in results."""
+        results = await analyzer.run_full_analysis()
+        assert "self_modification_paths" in results
+
+
 class TestAnalyzerCache:
     """Tests for analyzer caching."""
 

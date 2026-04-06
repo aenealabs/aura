@@ -979,7 +979,7 @@ Detailed technical specifications for complex architectural components.
 | [architecture-decisions/ADR-083-runtime-agent-security-platform.md](architecture-decisions/ADR-083-runtime-agent-security-platform.md) | Deployed | Runtime Agent Security Platform (Traffic Interception, Behavioral Baselines, Red Team, Correlation) |
 | [architecture-decisions/ADR-084-native-vulnerability-scanning-engine.md](architecture-decisions/ADR-084-native-vulnerability-scanning-engine.md) | Infrastructure + UI Deployed | Native Vulnerability Scanning Engine (GraphRAG-Enhanced LLM Analysis, 4-Layer Isolation, Closed-Loop Remediation) |
 | [architecture-decisions/ADR-085-deterministic-verification-envelope.md](architecture-decisions/ADR-085-deterministic-verification-envelope.md) | Proposed | Deterministic Verification Envelope (DO-178C Output Verification, N-of-M Consensus, MC/DC Coverage, Z3 Formal Verification) |
-| [architecture-decisions/ADR-086-agentic-identity-lifecycle-controls.md](architecture-decisions/ADR-086-agentic-identity-lifecycle-controls.md) | Proposed | Agentic Identity Lifecycle Controls (Self-Modification Sentinel, Delegation Trust Envelope, Decommission Assurance) |
+| [architecture-decisions/ADR-086-agentic-identity-lifecycle-controls.md](architecture-decisions/ADR-086-agentic-identity-lifecycle-controls.md) | Deployed | Agentic Identity Lifecycle Controls (Decommission Assurance, Ghost Agent Scanner, Self-Modification Sentinel, Delegation Trust Envelope) |
 
 ### Runtime Agent Security Platform (ADR-083)
 | File | Purpose |

@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_optional_user
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -408,7 +409,7 @@ async def scan_file(request: ScanRequest):
     start_time = time.time()
 
     try:
-        logger.info(f"Starting scan {scan_id} for {request.file_path}")
+        logger.info(f"Starting scan {sanitize_log(scan_id)} for {sanitize_log(request.file_path)}")
 
         # Store scan record
         _scans[scan_id] = {
@@ -530,7 +531,7 @@ async def generate_patch(request: PatchRequest):
     patch_id = str(uuid.uuid4())
 
     try:
-        logger.info(f"Generating patch {patch_id} for finding {request.finding_id}")
+        logger.info(f"Generating patch {sanitize_log(patch_id)} for finding {sanitize_log(request.finding_id)}")
 
         # Find the finding
         finding = None
@@ -628,7 +629,7 @@ async def apply_patch(patch_id: str, request: ApplyPatchRequest):
         patch.status = PatchStatus.APPLIED
         patch.applied_at = datetime.now(timezone.utc).isoformat()
 
-        logger.info(f"Patch {patch_id} applied to {patch.file_path}")
+        logger.info(f"Patch {sanitize_log(patch_id)} applied to {sanitize_log(patch.file_path)}")
 
         return ApplyPatchResponse(
             success=True,
@@ -847,7 +848,7 @@ async def get_graph_context(
     start_time = time.time()
 
     try:
-        logger.info(f"GraphRAG context request for {request.file_path}")
+        logger.info(f"GraphRAG context request for {sanitize_log(request.file_path)}")
 
         # Get graph context (mock implementation)
         nodes, edges = await _get_graph_context(
@@ -1016,7 +1017,7 @@ async def preview_fix(request: FixPreviewRequest):
     along with potential side effects and test suggestions.
     """
     try:
-        logger.info(f"Fix preview request for finding {request.finding_id}")
+        logger.info(f"Fix preview request for finding {sanitize_log(request.finding_id)}")
 
         # Find the finding
         finding = None
@@ -1137,7 +1138,7 @@ async def apply_fix(
             detail="Critical/High severity findings require HITL approval. Use /patches endpoint.",
         )
 
-    logger.info(f"Direct fix applied for finding {finding_id}")
+    logger.info(f"Direct fix applied for finding {sanitize_log(finding_id)}")
 
     return ApplyPatchResponse(
         success=True,
@@ -1326,7 +1327,7 @@ async def scan_notebook_cell(request: CellScanRequest):
 
     try:
         logger.info(
-            f"Starting notebook cell scan {scan_id} for "
+            f"Starting notebook cell scan {sanitize_log(scan_id)} for "
             f"{request.notebook_path} cell {request.cell_index}"
         )
 

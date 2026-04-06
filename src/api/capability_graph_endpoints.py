@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from src.services.capability_governance import (
+from src.api.log_sanitizer import sanitize_log
     CapabilityGraphAnalyzer,
     PolicyGraphSynchronizer,
     get_capability_graph_analyzer,
@@ -194,7 +195,7 @@ async def get_visualization(
     formatted for D3.js force-directed graph visualization.
     """
     logger.info(
-        f"Getting visualization data (include_escalation_paths={include_escalation_paths})"
+        f"Getting visualization data (include_escalation_paths={sanitize_log(include_escalation_paths)})"
     )
     analyzer = get_analyzer()
 
@@ -259,7 +260,7 @@ async def get_agent_graph(
 
     Returns the agent's direct capabilities and relationships.
     """
-    logger.info(f"Getting graph for agent: {agent_name}")
+    logger.info(f"Getting graph for agent: {sanitize_log(agent_name)}")
     synchronizer = get_synchronizer()
 
     try:
@@ -316,7 +317,7 @@ async def get_escalation_paths(
     unauthorized capability access through inheritance or delegation.
     """
     logger.info(
-        f"Getting escalation paths (min_risk={min_risk_score}, max_depth={max_depth})"
+        f"Getting escalation paths (min_risk={sanitize_log(min_risk_score)}, max_depth={sanitize_log(max_depth)})"
     )
     analyzer = get_analyzer()
 
@@ -378,7 +379,7 @@ async def get_inheritance_tree(
 
     Shows how capabilities flow through parent-child relationships.
     """
-    logger.info(f"Getting inheritance tree for: {agent_name}")
+    logger.info(f"Getting inheritance tree for: {sanitize_log(agent_name)}")
     analyzer = get_analyzer()
 
     try:
@@ -405,7 +406,7 @@ async def get_effective_capabilities(
     what an agent can actually do at runtime.
     """
     logger.info(
-        f"Getting effective capabilities for {agent_id} ({agent_type}) in {execution_context}"
+        f"Getting effective capabilities for {sanitize_log(agent_id)} ({sanitize_log(agent_type)}) in {sanitize_log(execution_context)}"
     )
     analyzer = get_analyzer()
 
@@ -429,7 +430,7 @@ async def trigger_sync(request: SyncRequest) -> SyncResponse:
     Syncs agent capability policies to the Neptune graph database.
     """
     logger.info(
-        f"Triggering sync (agent_type={request.agent_type}, force={request.force})"
+        f"Triggering sync (agent_type={sanitize_log(request.agent_type)}, force={sanitize_log(request.force)})"
     )
     synchronizer = get_synchronizer()
 

@@ -27,11 +27,13 @@ _Awaiting review._
 
 Air-gapped and edge deployment represents a significant untapped market for AI-powered code security. Defense contractors, critical infrastructure operators, and manufacturing facilities require security tooling that operates without internet connectivity.
 
-**Target Markets:**
-- **Anduril** - Defense autonomous systems (commercial classification)
+**Target Markets (as of February 2026):**
+- **Defense autonomous systems vendors** (e.g., companies such as Anduril) - commercial-classification deployments
 - **Critical Infrastructure** - Energy, water, transportation (OT/ICS environments)
 - **Manufacturing** - Automotive, aerospace (factory floor edge devices)
 - **Government (Non-Classified)** - IL5/IL6 technical readiness (certification postponed)
+
+No endorsement or partnership with any named company is implied; names are used nominatively to describe market segments.
 
 **Market Opportunity:** Significant demand from defense and critical infrastructure customers
 
@@ -53,7 +55,7 @@ Project Aura's self-hosted deployment (ADR-049) provides Podman-based local oper
 | R1 | Complete offline operation (no internet required) | Air-gap mandate |
 | R2 | Bundle packaging for secure transfer into isolated networks | DISA STIG |
 | R3 | Firmware and embedded C/C++ security analysis | Critical infrastructure |
-| R4 | RTOS support (FreeRTOS, VxWorks, QNX) | Anduril requirement |
+| R4 | RTOS support (FreeRTOS, VxWorks, QNX) | Defense/edge customer requirement |
 | R5 | Resource-constrained operation (<2GB RAM, ARM) | Edge device limits |
 | R6 | Offline SBOM signing with HSM/YubiKey | Attestation without Sigstore |
 | R7 | Model quantization for edge inference | Performance requirement |
@@ -738,7 +740,7 @@ Run full (non-quantized) LLM on edge devices.
 
 1. **New Market Access** - Defense, critical infrastructure, manufacturing
 2. **True Air-Gap Support** - Meets strict isolation requirements
-3. **Firmware Coverage** - Unique capability for embedded security
+3. **Firmware Coverage** - Differentiated capability for embedded security integrated with the Aura code graph (as of February 2026)
 4. **Edge Flexibility** - Portable security analysis anywhere
 5. **Supply Chain Security** - Signed, verified offline updates
 6. **Customer Trust** - Demonstrates commitment to secure-by-design
@@ -813,3 +815,7 @@ Run full (non-quantized) LLM on edge devices.
 - [ICS-CERT Advisories](https://www.cisa.gov/uscert/ics)
 - [ADR-049: Self-Hosted Deployment Strategy](/docs/architecture-decisions/ADR-049-self-hosted-deployment-strategy.md)
 - [ADR-076: SBOM Attestation and Supply Chain Security](/docs/architecture-decisions/ADR-076-sbom-attestation-supply-chain.md)
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

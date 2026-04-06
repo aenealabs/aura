@@ -9,9 +9,9 @@
 
 ## Executive Summary
 
-This ADR establishes an enterprise-grade diagram generation system that matches or exceeds the quality of commercial tools like Eraser.io. The initiative extends Aura's existing Documentation Agent (ADR-056) with official cloud provider icons, intelligent layout engines, AI-powered diagram generation, and a multi-provider model routing strategy that selects optimal AI models (Claude, OpenAI, Gemini) based on task requirements.
+This ADR establishes an enterprise-grade diagram generation system targeting output quality comparable to commercial diagramming tools such as Eraser.io (as observed from its public product pages in January 2026). The initiative extends Aura's existing Documentation Agent (ADR-056) with official cloud provider icons, intelligent layout engines, AI-powered diagram generation, and a multi-provider model routing strategy that selects optimal AI models (Claude, OpenAI, Gemini) based on task requirements.
 
-**Core Thesis:** While Claude models excel at reasoning and code generation, diagram generation involves multiple specialized subtasks where different models may perform optimally. By extending Aura's existing tiered model routing (ADR-015) to support multi-provider selection, we can leverage Claude for DSL/code generation, Gemini for vision-based diagram understanding, and dedicated rendering engines for visual output—achieving Eraser-quality results.
+**Core Thesis:** Different model families have different strengths across diagram-generation subtasks. By extending Aura's existing tiered model routing (ADR-015) to support multi-provider selection, we can leverage Claude for DSL/code generation, vision-capable models for image understanding, and dedicated rendering engines for visual output—targeting output quality comparable to leading commercial diagramming tools.
 
 **Key Outcomes:**
 - Official AWS/Azure/GCP icon library integration (SVG sprites)
@@ -51,19 +51,21 @@ This ADR was reviewed by domain experts. Key findings have been incorporated:
 
 ## Competitive Analysis: Eraser.io vs. Aura Current State
 
-### Eraser.io Key Capabilities (from Analysis)
+### Eraser.io Publicly Documented Capabilities (as of January 2026)
 
-| Feature | Eraser Implementation | Quality Assessment |
-|---------|----------------------|-------------------|
-| **Cloud Provider Icons** | Official AWS/Azure/GCP SVG icons with brand colors | Excellent |
-| **Layout Engine** | Custom constraint-based layout with minimal overlap | Excellent |
-| **Nested Groupings** | Multi-level containers with color-coded borders (Terraform modules, K8s namespaces) | Excellent |
-| **Connection Styles** | Solid/dashed/dotted lines with inline labels and directional arrows | Excellent |
-| **Reference Library** | Company-specific architecture templates | Good |
-| **AI Generation** | OpenAI-powered natural language to diagram | Good |
-| **Git Sync** | Direct commit to repository | Good |
-| **Diagram Types** | 25+ specialized generators | Excellent |
-| **Dark Theme** | Professional dark canvas optimized for technical content | Excellent |
+The following summarizes capabilities publicly documented on Eraser.io's product pages as of January 2026. Readers should verify against current vendor documentation before decision-making.
+
+| Feature | Eraser Publicly Documented Capability |
+|---------|----------------------|
+| **Cloud Provider Icons** | Official AWS/Azure/GCP SVG icons with brand colors |
+| **Layout Engine** | Constraint-based layout |
+| **Nested Groupings** | Multi-level containers with color-coded borders (e.g., Terraform modules, K8s namespaces) |
+| **Connection Styles** | Solid/dashed/dotted lines with inline labels and directional arrows |
+| **Reference Library** | Architecture templates |
+| **AI Generation** | LLM-powered natural language to diagram |
+| **Git Sync** | Direct commit to repository |
+| **Diagram Types** | Multiple specialized diagram types |
+| **Dark Theme** | Dark canvas theme |
 
 ### Aura Current State (ADR-056)
 
@@ -77,7 +79,7 @@ This ADR was reviewed by domain experts. Key findings have been incorporated:
 | **AI Generation** | Template-based only, no natural language | **High** |
 | **Git Sync** | Not implemented | **Medium** |
 | **Diagram Types** | 7 types (architecture, data flow, dependency, component, sequence, ER, state) | **Medium** |
-| **Confidence Scoring** | Production-grade with calibration (unique to Aura) | **Advantage** |
+| **Confidence Scoring** | Production-grade with calibration (we are not aware of any diagramming vendor that publicly documents equivalent confidence calibration as of January 2026) | **Advantage** |
 
 ---
 
@@ -115,7 +117,7 @@ Aura already has:
 
 ## Decision
 
-**Implement an enterprise diagram generation system with multi-provider model routing that extends ADR-015 and ADR-056 to achieve Eraser-quality output through specialized model selection per subtask.**
+**Implement an enterprise diagram generation system with multi-provider model routing that extends ADR-015 and ADR-056 to achieve output quality comparable to leading commercial diagramming tools through specialized model selection per subtask.**
 
 ### Architecture Overview
 
@@ -1852,7 +1854,7 @@ class DiagramGitSync:
 
 ### Positive
 
-1. **Eraser-quality output** - Professional diagrams with official cloud icons
+1. **Professional output** - Diagrams with official cloud icons, targeting quality comparable to leading commercial diagramming tools
 2. **Optimal model selection** - Right AI for each subtask
 3. **GovCloud compatible** - Bedrock-only path with data classification enforcement
 4. **Explainability** - Users understand AI reasoning via reference citations
@@ -1893,3 +1895,7 @@ class DiagramGitSync:
 - Azure Architecture Icons: https://learn.microsoft.com/azure/architecture/icons/
 - ELK.js Documentation: https://eclipse.dev/elk/
 - WCAG 2.1 Guidelines: https://www.w3.org/WAI/WCAG21/quickref/
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

@@ -22,6 +22,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -613,7 +614,7 @@ async def dismiss_finding(finding_id: str, request: DismissRequest) -> DismissRe
     finding["dismissal_reason"] = request.reason
 
     logger.info(
-        f"Finding {finding_id} dismissed by {request.dismissed_by}: {request.reason}"
+        f"Finding {sanitize_log(finding_id)} dismissed by {sanitize_log(request.dismissed_by)}: {sanitize_log(request.reason)}"
     )
 
     return DismissResponse(

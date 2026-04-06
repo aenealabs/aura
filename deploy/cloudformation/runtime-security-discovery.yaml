@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Layer 8.7 - Runtime Security Discovery (ADR-083 Agent Topology & Shadow Detection)'
+Description: 'Project Aura - Layer 8.7 - Runtime Security Discovery (ADR-083 Agent Topology & Shadow Detection, ADR-086 Ghost Agent Scanner)'
 
 Parameters:
   Environment:
@@ -154,6 +154,224 @@ Resources:
       AlarmActions:
         - !Ref ShadowAgentAlertTopic
 
+  # =====================================================================
+  # ADR-086: Ghost Agent Scanner (Decommission Assurance)
+  # =====================================================================
+
+  # EventBridge Scheduled Rule - Weekly Ghost Agent Scan
+  GhostAgentScannerRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-ghost-agent-scanner-${Environment}'
+      Description: Weekly ghost agent reconciliation scan (ADR-086)
+      State: ENABLED
+      ScheduleExpression: 'rate(7 days)'
+      Targets:
+        - Arn: !GetAtt GhostAgentScannerFunction.Arn
+          Id: GhostAgentScannerTarget
+          Input: !Sub '{"dormancy_days": 30, "auto_trigger_decommission": false, "environment": "${Environment}"}'
+
+  # Lambda Permission for EventBridge
+  GhostAgentScannerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GhostAgentScannerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt GhostAgentScannerRule.Arn
+
+  # Lambda Function - Ghost Agent Scanner
+  GhostAgentScannerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-ghost-agent-scanner-${Environment}'
+      Description: Weekly ghost agent scanner for decommission assurance (ADR-086)
+      Runtime: python3.11
+      Handler: ghost_agent_scanner.lambda_handler
+      Role: !GetAtt GhostAgentScannerRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+          GHOST_ALERT_TOPIC_ARN: !Ref GhostAgentAlertTopic
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-086
+
+  # IAM Role for Ghost Agent Scanner Lambda
+  GhostAgentScannerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ghost-scanner-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: GhostScannerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:Scan, dynamodb:Query, dynamodb:GetItem]
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-${Environment}'
+              - Effect: Allow
+                Action: [iam:ListRoles, iam:ListAccessKeys, iam:GetRole]
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*'
+              - Effect: Allow
+                Action: [secretsmanager:ListSecrets]
+                Resource: '*'
+              - Effect: Allow
+                Action: [ssm:GetParametersByPath]
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/*'
+              - Effect: Allow
+                Action: [sns:Publish]
+                Resource: !Ref GhostAgentAlertTopic
+              - Effect: Allow
+                Action: [events:PutEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-086
+
+  # SNS Topic - Ghost Agent Alerts
+  GhostAgentAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-ghost-agent-alerts-${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-086
+
+  GhostAgentAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowLambdaPublish
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref GhostAgentAlertTopic
+      Topics:
+        - !Ref GhostAgentAlertTopic
+
+  # EventBridge Rule - Ghost Agent Findings
+  GhostAgentFindingEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-ghost-agent-finding-${Environment}'
+      Description: Routes ghost agent findings to SNS (ADR-086)
+      State: ENABLED
+      EventPattern:
+        source:
+          - !Sub '${ProjectName}.runtime-security'
+        detail-type:
+          - GhostAgentDetected
+          - DecommissionTriggered
+      Targets:
+        - Arn: !Ref GhostAgentAlertTopic
+          Id: GhostAgentSNSTarget
+
+  GhostAgentFindingEventRulePermission:
+    Type: AWS::SNS::TopicPolicy
+    DependsOn: GhostAgentAlertTopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref GhostAgentAlertTopic
+      Topics:
+        - !Ref GhostAgentAlertTopic
+
+  # CloudWatch Alarm - Ghost Agent Detection
+  GhostAgentAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-ghost-agents-detected-${Environment}'
+      AlarmDescription: Alert when ghost agents with active credentials are detected (ADR-086)
+      MetricName: GhostAgentsDetected
+      Namespace: !Sub 'Aura/RuntimeSecurity/${Environment}'
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref GhostAgentAlertTopic
+
+  # DynamoDB Table - Decommission Attestations
+  DecommissionAttestationTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-decommission-attestations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-086
+
 Outputs:
   ShadowAgentAlertTopicArn:
     Description: Shadow agent alert SNS topic ARN
@@ -172,3 +390,21 @@ Outputs:
     Value: !GetAtt DiscoveryServiceRole.Arn
     Export:
       Name: !Sub '${AWS::StackName}-DiscoveryServiceRoleArn'
+
+  GhostAgentAlertTopicArn:
+    Description: Ghost agent alert SNS topic ARN (ADR-086)
+    Value: !Ref GhostAgentAlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-GhostAgentAlertTopicArn'
+
+  GhostAgentScannerFunctionArn:
+    Description: Ghost agent scanner Lambda function ARN (ADR-086)
+    Value: !GetAtt GhostAgentScannerFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-GhostAgentScannerFunctionArn'
+
+  DecommissionAttestationTableArn:
+    Description: Decommission attestation DynamoDB table ARN (ADR-086)
+    Value: !GetAtt DecommissionAttestationTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DecommissionAttestationTableArn'

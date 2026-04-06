@@ -35,6 +35,7 @@ from src.services.cloudwatch_metrics_publisher import (
     get_metrics_publisher,
 )
 from src.services.settings_persistence_service import (
+from src.api.log_sanitizer import sanitize_log
     PersistenceMode,
     SettingsPersistenceService,
     create_settings_persistence_service,
@@ -327,7 +328,7 @@ async def get_orchestrator_settings(
     Requires authentication.
     """
     logger.info(
-        f"User {user.email} retrieving orchestrator settings for org={organization_id}"
+        f"User {sanitize_log(user.email)} retrieving orchestrator settings for org={sanitize_log(organization_id)}"
     )
     service = get_settings_service()
 
@@ -446,7 +447,7 @@ async def update_orchestrator_settings(
         raise HTTPException(status_code=500, detail="Failed to update settings")
 
     logger.info(
-        f"Admin {user.email} updated orchestrator settings for org={organization_id}"
+        f"Admin {sanitize_log(user.email)} updated orchestrator settings for org={sanitize_log(organization_id)}"
     )
 
     # Publish metric for mode change
@@ -587,7 +588,7 @@ async def switch_deployment_mode(
 
     if request_body.force:
         logger.warning(
-            f"Admin {user.email} forcing mode change during cooldown "
+            f"Admin {sanitize_log(user.email)} forcing mode change during cooldown "
             f"(org={organization_id}, reason={request_body.reason})"
         )
 
@@ -624,7 +625,7 @@ async def switch_deployment_mode(
         raise HTTPException(status_code=500, detail="Failed to switch mode")
 
     logger.info(
-        f"Admin {user.email} switched orchestrator mode: {old_mode} -> {target_mode} "
+        f"Admin {sanitize_log(user.email)} switched orchestrator mode: {sanitize_log(old_mode)} -> {sanitize_log(target_mode)} "
         f"(org={organization_id}, reason={request_body.reason})"
     )
 

@@ -31,6 +31,8 @@ from src.services.capability_governance import (
     reset_capability_graph_analyzer,
     reset_capability_middleware,
     reset_capability_registry,
+    reset_channel_verifier_registry,
+    reset_delegation_verifier,
     reset_grant_manager,
     reset_honeypot_detector,
     reset_metrics_publisher,
@@ -38,6 +40,7 @@ from src.services.capability_governance import (
     reset_policy_repository,
     reset_policy_simulator,
     reset_policy_validator,
+    reset_self_modification_sentinel,
     reset_statistical_detector,
 )
 
@@ -58,6 +61,9 @@ def reset_singletons():
     reset_anomaly_explainer()
     reset_policy_validator()
     reset_policy_simulator()
+    reset_self_modification_sentinel()
+    reset_delegation_verifier()
+    reset_channel_verifier_registry()
     yield
     reset_policy_repository()
     reset_capability_middleware()
@@ -72,6 +78,9 @@ def reset_singletons():
     reset_anomaly_explainer()
     reset_policy_validator()
     reset_policy_simulator()
+    reset_self_modification_sentinel()
+    reset_delegation_verifier()
+    reset_channel_verifier_registry()
 
 
 @pytest.fixture

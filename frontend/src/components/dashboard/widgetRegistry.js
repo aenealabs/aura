@@ -1276,6 +1276,27 @@ export const WIDGET_CATALOG = [
     defaultColor: 'aura',
     requiredRoles: ['devops', 'superuser'],
   },
+  // =====================================================================
+  // ADR-086: Agentic Identity Lifecycle Widget
+  // =====================================================================
+  {
+    id: 'agent-lifecycle',
+    type: WidgetType.STATUS_GRID,
+    category: WidgetCategory.RUNTIME_SECURITY,
+    name: 'Agent Lifecycle',
+    description: 'Agent lifecycle state counts and ghost agent alerts',
+    dataSource: 'agents/lifecycle/summary',
+    component: 'AgentLifecycleWidget',
+    defaultRefreshSeconds: 60,
+    supportsSparkline: false,
+    supportsTrend: false,
+    minWidth: 3,
+    minHeight: 2,
+    defaultWidth: 6,
+    defaultHeight: 4,
+    defaultColor: 'aura',
+    requiredRoles: ['security-engineer', 'devops', 'compliance-officer', 'superuser'],
+  },
 ];
 
 // Category labels for display

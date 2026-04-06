@@ -1,6 +1,6 @@
 [project]
 name = "project-aura"
-version = "1.6.1"
+version = "1.7.0"
 description = "Autonomous AI SaaS Platform for Code Intelligence and Security"
 authors = [{name = "Project Aura Team"}]
 requires-python = ">=3.11"

@@ -6,6 +6,7 @@ closed loop. Uses GraphRAG (Neptune + OpenSearch) to trace runtime security
 events back to source code root causes.
 
 Based on ADR-083: Runtime Agent Security Platform
+Extended by ADR-086: Self-modification sentinel event subscription
 
 This is the architectural moat: no competitor offers detect → trace → fix.
 
@@ -13,6 +14,7 @@ Compliance:
 - NIST 800-53 SI-4: Information system monitoring
 - NIST 800-53 IR-4: Incident handling
 - NIST 800-53 IR-5: Incident monitoring
+- NIST 800-53 CM-5: Access restrictions for change (ADR-086)
 """
 
 import logging
@@ -158,6 +160,7 @@ class RuntimeCodeCorrelator:
         self.auto_remediate = auto_remediate
 
         self._chains: deque[CorrelationChain] = deque(maxlen=10000)
+        self._sentinel_correlation_count = 0
 
     async def correlate_event(
         self,
@@ -273,6 +276,79 @@ class RuntimeCodeCorrelator:
             timestamp=datetime.now(timezone.utc),
             latency_ms=elapsed_ms,
         )
+
+    async def correlate_sentinel_alert(
+        self,
+        alert: Any,
+    ) -> CorrelationChain:
+        """
+        Correlate a self-modification sentinel alert to source code.
+
+        Converts a SentinelAlert (ADR-086 Phase 2) into the standard
+        detect → trace → fix pipeline so that self-modification findings
+        get traced back to the code that granted the writing capability.
+
+        Args:
+            alert: SentinelAlert from the self-modification sentinel.
+
+        Returns:
+            CorrelationChain with trace results for the self-modification event.
+        """
+        self._sentinel_correlation_count += 1
+
+        description = (
+            f"Self-modification detected: agent {alert.writer_agent_id} "
+            f"{alert.event.action.value}d {alert.event.artifact_class.value} "
+            f"'{alert.event.artifact_id}' governing "
+            f"{sorted(alert.governed_agent_ids)}"
+        )
+
+        chain = await self.correlate_event(
+            event_id=alert.event.event_id,
+            agent_id=alert.writer_agent_id,
+            anomaly_description=description,
+            auto_remediate=False,  # Self-mod always requires HITL
+        )
+
+        logger.warning(
+            f"Sentinel correlation complete: event={alert.event.event_id} "
+            f"agent={alert.writer_agent_id} traced={chain.has_trace}"
+        )
+
+        return chain
+
+    def register_sentinel_handler(self) -> None:
+        """
+        Register this correlator as a handler on the global sentinel.
+
+        Connects the self-modification sentinel's CRITICAL alert stream
+        to the runtime-to-code correlation pipeline.
+        """
+        import asyncio
+
+        from ...capability_governance.self_modification_sentinel import (
+            get_self_modification_sentinel,
+        )
+
+        sentinel = get_self_modification_sentinel()
+
+        def _handle_alert(alert: Any) -> None:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.correlate_sentinel_alert(alert))
+            except RuntimeError:
+                logger.debug(
+                    "No running event loop for sentinel correlation; "
+                    "alert will be correlated on next batch."
+                )
+
+        sentinel.on_alert(_handle_alert)
+        logger.info("Correlator registered as sentinel alert handler")
+
+    @property
+    def sentinel_correlation_count(self) -> int:
+        """Number of sentinel alerts correlated."""
+        return self._sentinel_correlation_count
 
     def get_all_chains(self) -> list[CorrelationChain]:
         """Get all correlation chains."""

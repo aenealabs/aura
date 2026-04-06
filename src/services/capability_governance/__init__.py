@@ -96,6 +96,21 @@ from .contracts import (  # Enums; Dataclasses; Type aliases
     ToolClassification,
     ToolName,
 )
+from .delegation_channels import (  # ADR-086 Delegation Channels
+    ChannelVerifierRegistry,
+    get_channel_verifier_registry,
+    reset_channel_verifier_registry,
+)
+from .delegation_envelope import (  # ADR-086 Delegation Trust Envelope
+    CapabilityGrant,
+    DelegationAssertion,
+    DelegationChannel,
+    DelegationVerifier,
+    VerificationResult,
+    VerificationVerdict,
+    get_delegation_verifier,
+    reset_delegation_verifier,
+)
 from .dynamic_grants import (
     DynamicGrantManager,
     GrantManagerConfig,
@@ -191,6 +206,16 @@ from .simulator import (  # ADR-070 Policy Simulator
     ToolInvocation,
     get_policy_simulator,
     reset_policy_simulator,
+)
+from .self_modification_sentinel import (  # ADR-086 Self-Modification Sentinel
+    GovernanceArtifactClass,
+    GovernanceWriteEvent,
+    SelfModificationSentinel,
+    SentinelAlert,
+    SentinelVerdict,
+    WriteAction,
+    get_self_modification_sentinel,
+    reset_self_modification_sentinel,
 )
 from .statistical_detector import (  # ADR-072 Statistical Detector
     BaselineService,
@@ -361,6 +386,27 @@ __all__ = [
     "ValidationWarning",
     "get_policy_validator",
     "reset_policy_validator",
+    # Delegation Trust Envelope (ADR-086)
+    "CapabilityGrant",
+    "ChannelVerifierRegistry",
+    "DelegationAssertion",
+    "DelegationChannel",
+    "DelegationVerifier",
+    "VerificationResult",
+    "VerificationVerdict",
+    "get_channel_verifier_registry",
+    "get_delegation_verifier",
+    "reset_channel_verifier_registry",
+    "reset_delegation_verifier",
+    # Self-Modification Sentinel (ADR-086)
+    "GovernanceArtifactClass",
+    "GovernanceWriteEvent",
+    "SelfModificationSentinel",
+    "SentinelAlert",
+    "SentinelVerdict",
+    "WriteAction",
+    "get_self_modification_sentinel",
+    "reset_self_modification_sentinel",
     # Policy Simulator (ADR-070)
     "PolicyDifference",
     "PolicySimulator",

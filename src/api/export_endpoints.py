@@ -24,6 +24,7 @@ from src.services.integrations.export_authorization_service import (
     ExportScope,
 )
 from src.services.integrations.secrets_prescan_filter import SecretsPrescanFilter
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/export", tags=["export"])
@@ -457,8 +458,8 @@ async def export_data(
     logger.info(
         "Export completed",
         extra={
-            "entity": request.entity.value,
-            "user_id": auth_context.user_id,
+            "entity": sanitize_log(request.entity.value),
+            "user_id": sanitize_log(auth_context.user_id),
             "record_count": len(filtered_data),
             "has_more": has_more,
         },

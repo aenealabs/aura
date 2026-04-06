@@ -322,7 +322,7 @@ databases:
       edition: community
 
       # Authentication
-      password: ""  # Required - set via --set or secret
+      password: "CHANGE_ME"  # Required: override via --set or existingPasswordSecret
       existingPasswordSecret: ""
       existingPasswordSecretKey: "neo4j-password"
 
@@ -401,7 +401,7 @@ databases:
 
       # Authentication
       username: aura
-      password: ""
+      password: "CHANGE_ME"  # Required: override via --set or existingPasswordSecret
       database: aura
       existingPasswordSecret: ""
 
@@ -570,7 +570,7 @@ redis:
 
   auth:
     enabled: true
-    password: ""
+    password: "CHANGE_ME"  # Required: override via --set or existingSecret
     existingSecret: ""
 
   master:

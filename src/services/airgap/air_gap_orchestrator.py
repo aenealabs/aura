@@ -844,7 +844,13 @@ class AirGapOrchestrator:
             with tempfile.TemporaryDirectory() as temp_dir:
                 # Extract transfer package
                 with tarfile.open(transfer_path, "r:gz") as tar:
-                    tar.extractall(temp_dir)  # nosec B202 - trusted internal bundle
+                    for member in tar.getmembers():
+                        member_path = os.path.realpath(os.path.join(temp_dir, member.name))
+                        if not member_path.startswith(os.path.realpath(temp_dir) + os.sep):
+                            raise TransferMediumError(
+                                f"Tar path traversal blocked: {member.name}"
+                            )
+                    tar.extractall(temp_dir)  # nosec B202
 
                 # Load manifest
                 manifest_path = os.path.join(temp_dir, "manifest.json")
@@ -1027,7 +1033,13 @@ class AirGapOrchestrator:
 
             # Extract archive
             with tarfile.open(bundle.archive_path, "r:*") as tar:
-                tar.extractall(target_dir)  # nosec B202 - trusted internal bundle
+                for member in tar.getmembers():
+                    member_path = os.path.realpath(os.path.join(target_dir, member.name))
+                    if not member_path.startswith(os.path.realpath(target_dir) + os.sep):
+                        raise BundleNotFoundError(
+                            f"Tar path traversal blocked: {member.name}"
+                        )
+                tar.extractall(target_dir)  # nosec B202
 
             bundle.status = BundleStatus.DEPLOYED
             bundle.deployed_at = datetime.now(timezone.utc)

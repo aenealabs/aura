@@ -12,7 +12,7 @@ Deployed
 
 ### Market Opportunity
 
-Software supply chain attacks have increased 742% since 2019 (Sonatype). Executive Order 14028 mandates SBOM for federal software. Target markets (Snyk, Wiz, Defense) require cryptographic attestation of software provenance.
+Software supply chain attacks have increased substantially since 2019 (see Sonatype State of the Software Supply Chain reports, which have reported multi-hundred-percent growth figures in multiple years). Executive Order 14028 mandates SBOM for federal software. Target markets served by vendors such as Snyk and Wiz, as well as defense customers, increasingly require cryptographic attestation of software provenance (as of February 2026).
 
 ### Current State
 
@@ -33,9 +33,9 @@ Project Aura has `SBOMDetectionService` (`src/services/sbom_detection_service.py
 | ID | Requirement | Source |
 |----|-------------|--------|
 | R1 | Generate CycloneDX 1.5 and SPDX 2.3 format SBOMs | EO 14028, NTIA |
-| R2 | Sign SBOMs with Sigstore (keyless) or HSM (air-gapped) | Snyk parity |
+| R2 | Sign SBOMs with Sigstore (keyless) or HSM (air-gapped) | Parity with capabilities publicly documented by Snyk and similar vendors |
 | R3 | Store attestations in Rekor transparency log | Supply chain integrity |
-| R4 | Detect typosquatting and namespace hijacking | Wiz parity |
+| R4 | Detect typosquatting and namespace hijacking | Parity with capabilities publicly documented by Wiz and similar vendors |
 | R5 | Analyze license compatibility and generate attribution | Legal compliance |
 | R6 | Query provenance chain for any component | Auditability |
 | R7 | Support VEX documents for vulnerability exceptions | CISA guidance |
@@ -314,7 +314,7 @@ Require Sigstore for all signing.
 
 ### Positive
 
-- Opens Snyk/Wiz competitive market (significant revenue opportunity)
+- Addresses the supply chain security market segment served by vendors such as Snyk and Wiz (as of February 2026)
 - Enables federal compliance (EO 14028)
 - Differentiates with graph-based provenance queries
 - Foundation for Phase 2 Kubernetes admission control
@@ -334,3 +334,7 @@ Require Sigstore for all signing.
 - [SPDX Specification](https://spdx.github.io/spdx-spec/)
 - [ADR-049: Self-Hosted Deployment Strategy](/docs/architecture-decisions/ADR-049-self-hosted-deployment-strategy.md)
 - [Existing SBOMDetectionService](/src/services/sbom_detection_service.py)
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

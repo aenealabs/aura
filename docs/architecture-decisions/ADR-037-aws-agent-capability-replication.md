@@ -9,18 +9,18 @@
 
 ### Strategic Imperative
 
-AWS announced four major agent capabilities at re:Invent 2025 that represent the industry benchmark for enterprise AI agents:
+At AWS re:Invent 2025, AWS announced four agent capabilities that represent significant public benchmarks for enterprise AI agents (as of December 2025):
 
 1. **Amazon Bedrock AgentCore** - Platform for building, deploying, and operating AI agents at scale
 2. **AWS Security Agent** - Frontier agent for application security throughout development lifecycle
 3. **AWS DevOps Agent** - Frontier agent for incident response and operational excellence
 4. **AWS Transform** - Agentic AI for legacy code modernization
 
-Project Aura must achieve full capability parity with these offerings to remain competitive in the enterprise AI security market. This ADR defines the comprehensive implementation plan.
+This ADR defines an implementation plan for Project Aura to pursue feature parity with publicly documented capabilities of these offerings (as of their December 2025 announcements). Capabilities of both AWS and Project Aura evolve continuously; readers should verify current state before decision-making.
 
-### Current State Analysis
+### Current State Analysis (as of December 2025)
 
-| AWS Capability | Aura Current State | Gap Severity |
+| AWS Publicly Documented Capability | Aura Current State | Gap Severity |
 |----------------|-------------------|--------------|
 | AgentCore Runtime | EKS-based, no code upload | High |
 | AgentCore Gateway | MCPGatewayClient (partial) | Medium |
@@ -36,7 +36,7 @@ Project Aura must achieve full capability parity with these offerings to remain 
 
 ### Competitive Positioning
 
-AWS frontier agents are marketed as:
+As of December 2025, AWS publicly markets frontier agents as:
 - **Autonomous** - Work hours/days without intervention
 - **Scalable** - Deploy across application portfolios
 - **Enterprise-grade** - VPC, PrivateLink, CloudFormation support
@@ -191,7 +191,7 @@ class AgentRuntimeService:
 - Long-term memory (across sessions)
 - Episodic memory (experience-based learning)
 - Semantic memory (factual knowledge)
-- Industry-leading accuracy for memory retrieval
+- High accuracy for memory retrieval (as publicly claimed by AWS as of December 2025)
 
 **Architecture:**
 
@@ -1546,7 +1546,7 @@ class ArchitectureReimaginerAgent(SpawnableAgent):
 - Customer comparison unfavorable
 - Technical debt accumulation
 
-**Decision:** Rejected - Enterprise customers expect full parity.
+**Decision:** Rejected - Full parity is considered necessary to meet anticipated enterprise customer expectations.
 
 ### Alternative 3: Partnership with AWS
 
@@ -1594,6 +1594,10 @@ Total: 22-29 sprints (~9-12 months)
 ```
 
 ---
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*
 
 ## References
 

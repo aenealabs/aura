@@ -69,12 +69,16 @@ Exposing security settings creates tension between user agency and platform secu
 
 ### Competitive Landscape
 
-| Competitor | Guardrail Configuration | Aura Opportunity |
-|------------|------------------------|------------------|
-| GitHub Copilot | No user config, black box | Transparency wins trust |
-| Amazon CodeWhisperer | Basic on/off toggles | Granular enterprise control |
-| Cursor | Minimal guardrails | Security-first for regulated industries |
-| Tabnine | Privacy modes only | Full explainability framework |
+As of January 2026, based on publicly available product documentation, AI coding assistant guardrail configuration varies across vendors. The table below summarizes publicly documented end-user guardrail configuration options; several of these vendors offer additional enterprise admin controls that may not be reflected here.
+
+| Competitor | Publicly Documented Guardrail Configuration (as of Jan 2026) | Aura Opportunity |
+|------------|---------------------------------------------------------------|------------------|
+| GitHub Copilot | Enterprise content filtering and policy controls; end-user configuration limited per public docs | Expose risk-tolerance tuning to end users |
+| Amazon CodeWhisperer / Q Developer | On/off toggles for suggestion filtering; admin-level guardrails | Granular per-project configuration |
+| Cursor | Limited end-user-exposed guardrail configuration per public docs | Security-first presets for regulated industries |
+| Tabnine | Privacy/deployment mode controls documented publicly | Full explainability framework |
+
+These competitors lead in areas Aura does not address (e.g., IDE integration breadth, code suggestion quality at scale). Readers should verify current vendor capabilities before making procurement decisions.
 
 ## Decision
 
@@ -428,7 +432,7 @@ frontend/src/components/widgets/
 ### Positive
 
 1. **User Agency** - Organizations can tune guardrails to their risk tolerance
-2. **Competitive Differentiation** - Enterprise control competitors lack
+2. **Competitive Differentiation** - Enterprise control beyond what surveyed competitors publicly document as of January 2026
 3. **Reduced Support Burden** - Self-service reduces "why blocked" tickets
 4. **Compliance Demonstration** - Visible controls aid audit evidence
 5. **Trust Through Transparency** - Users understand what protects them
@@ -459,3 +463,7 @@ frontend/src/components/widgets/
 - ADR-068: Universal Explainability Framework
 - AWS Well-Architected Framework: Operational Excellence Pillar
 - NIST AI Risk Management Framework 1.0
+
+---
+
+*Competitive references in this ADR reflect publicly available information as of the document date. Vendor products evolve; readers should verify current capabilities before decision-making. Third-party vendor names and products referenced herein are trademarks of their respective owners. References are nominative and do not imply endorsement or partnership.*

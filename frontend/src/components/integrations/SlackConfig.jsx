@@ -157,7 +157,7 @@ export default function SlackConfig({ isOpen, onClose, onSave, existingConfig })
     const clientId = config.client_id;
     const redirectUri = `${window.location.origin}/integrations/slack/callback`;
     const scopes = 'chat:write,channels:read,channels:join,groups:read,users:read,incoming-webhook';
-    const state = Math.random().toString(36).substring(7);
+    const state = crypto.getRandomValues(new Uint8Array(16)).reduce((s, b) => s + b.toString(16).padStart(2, '0'), '');
 
     // Store state for verification
     sessionStorage.setItem('slack_oauth_state', state);

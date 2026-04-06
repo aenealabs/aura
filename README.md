@@ -41,7 +41,7 @@ Then what?                                   Awaiting human approval for deploym
 - **Sandbox-first validation** -- every patch is tested in network-isolated environments before reaching human reviewers
 - **Constitutional AI guardrails** -- 16-principle critique-revision pipeline ensures safe, compliant agent behavior
 
-**Screenshot AI Trust Center**
+**Screenshot of AI Trust Center**
 
 
 <p align="center">
@@ -89,7 +89,7 @@ Project Aura uses a layered architecture with specialized AI agents collaboratin
                              v
     +-----------------------------------------------+
     |            HITL APPROVAL                       |
-    |   Policy Engine --> Human Review --> Deploy     |
+    |   Policy Engine --> Human Review --> Deploy    |
     +-----------------------------------------------+
 ```
 

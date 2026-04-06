@@ -30,10 +30,10 @@ from src.services.api_rate_limiter import (
 )
 from src.services.repository_onboard_service import RepositoryConfig as RepoConfigModel
 from src.services.repository_onboard_service import (
-from src.api.log_sanitizer import sanitize_log
     RepositoryOnboardService,
     get_repository_service,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -448,7 +448,9 @@ async def update_repository(
         repo = await repo_service.update_repository(
             user.sub, repository_id, repo_config
         )
-        logger.info(f"Repository {sanitize_log(repository_id)} updated for user {sanitize_log(user.sub)}")
+        logger.info(
+            f"Repository {sanitize_log(repository_id)} updated for user {sanitize_log(user.sub)}"
+        )
 
         return RepositoryResponse(
             repository_id=repo.repository_id,
@@ -667,7 +669,9 @@ async def cancel_ingestion(
     """
     try:
         await repo_service.cancel_ingestion(user.sub, job_id)
-        logger.info(f"Ingestion job {sanitize_log(job_id)} cancelled for user {sanitize_log(user.sub)}")
+        logger.info(
+            f"Ingestion job {sanitize_log(job_id)} cancelled for user {sanitize_log(user.sub)}"
+        )
 
         return {"status": "cancelled", "job_id": job_id}
 
@@ -724,7 +728,9 @@ async def trigger_sync(
             )
 
         job = jobs[0]
-        logger.info(f"Manual sync triggered for repository {sanitize_log(repository_id)}")
+        logger.info(
+            f"Manual sync triggered for repository {sanitize_log(repository_id)}"
+        )
 
         return {
             "status": "queued",

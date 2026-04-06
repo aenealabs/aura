@@ -24,7 +24,6 @@ from pydantic import BaseModel, Field
 from src.api.auth import User, get_current_user
 from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
 from src.services.environment_provisioning_service import (
-from src.api.log_sanitizer import sanitize_log
     EnvironmentConfig,
     EnvironmentProvisioningService,
     EnvironmentStatus,
@@ -35,6 +34,7 @@ from src.api.log_sanitizer import sanitize_log
     TestEnvironment,
     create_environment_service,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -421,7 +421,9 @@ async def terminate_environment(
     if not success:
         raise HTTPException(status_code=500, detail="Failed to terminate environment")
 
-    logger.info(f"Environment {sanitize_log(environment_id)} terminated by user {sanitize_log(user.sub)}")
+    logger.info(
+        f"Environment {sanitize_log(environment_id)} terminated by user {sanitize_log(user.sub)}"
+    )
 
 
 @router.post("/{environment_id}/extend", response_model=EnvironmentResponse)

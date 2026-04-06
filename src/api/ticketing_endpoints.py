@@ -29,7 +29,6 @@ from pydantic import BaseModel, Field
 
 from src.services.api_rate_limiter import admin_rate_limit, standard_rate_limit
 from src.services.ticketing import (
-from src.api.log_sanitizer import sanitize_log
     TicketCreate,
     TicketFilters,
     TicketingConnectorFactory,
@@ -38,6 +37,7 @@ from src.api.log_sanitizer import sanitize_log
     TicketUpdate,
     get_ticketing_connector,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

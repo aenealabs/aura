@@ -48,10 +48,10 @@ from src.services.autonomy_policy_service import (
     create_autonomy_policy_service,
 )
 from src.services.cloudwatch_metrics_publisher import (
-from src.api.log_sanitizer import sanitize_log
     CloudWatchMetricsPublisher,
     get_metrics_publisher,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +305,9 @@ async def list_policies(
     Returns active policies by default. Use include_inactive=true to see all.
     Requires authentication.
     """
-    logger.info(f"User {sanitize_log(user.email)} listing policies for org {sanitize_log(organization_id)}")
+    logger.info(
+        f"User {sanitize_log(user.email)} listing policies for org {sanitize_log(organization_id)}"
+    )
     service = get_autonomy_service()
     policies = service.list_policies(
         organization_id=organization_id,
@@ -380,7 +382,9 @@ async def get_policy(
     user: User = Depends(get_current_user),  # noqa: B008
 ):
     """Get details of a specific autonomy policy. Requires authentication."""
-    logger.info(f"User {sanitize_log(user.email)} retrieving policy {sanitize_log(policy_id)}")
+    logger.info(
+        f"User {sanitize_log(user.email)} retrieving policy {sanitize_log(policy_id)}"
+    )
     service = get_autonomy_service()
     policy = service.get_policy(policy_id)
 
@@ -423,7 +427,9 @@ async def update_policy(
     if not policy:
         raise HTTPException(status_code=404, detail=f"Policy {policy_id} not found")
 
-    logger.info(f"Admin {sanitize_log(user.email)} updated autonomy policy {sanitize_log(policy_id)}")
+    logger.info(
+        f"Admin {sanitize_log(user.email)} updated autonomy policy {sanitize_log(policy_id)}"
+    )
     return policy_to_response(policy)
 
 
@@ -446,7 +452,9 @@ async def delete_policy(
     if not success:
         raise HTTPException(status_code=404, detail=f"Policy {policy_id} not found")
 
-    logger.info(f"Admin {sanitize_log(user.email)} deleted autonomy policy {sanitize_log(policy_id)}")
+    logger.info(
+        f"Admin {sanitize_log(user.email)} deleted autonomy policy {sanitize_log(policy_id)}"
+    )
 
 
 @router.put("/policies/{policy_id}/toggle", response_model=PolicyResponse)
@@ -486,7 +494,9 @@ async def toggle_hitl(
         raise HTTPException(status_code=404, detail=f"Policy {policy_id} not found")
 
     action = "enabled" if request.hitl_enabled else "disabled"
-    logger.info(f"Admin {sanitize_log(user.email)} {sanitize_log(action)} HITL for policy {sanitize_log(policy_id)}")
+    logger.info(
+        f"Admin {sanitize_log(user.email)} {sanitize_log(action)} HITL for policy {sanitize_log(policy_id)}"
+    )
 
     # Publish HITL toggle metric for compliance dashboards
     background_tasks.add_task(
@@ -699,7 +709,9 @@ async def get_decisions(
     Returns a log of autonomous decisions made, including whether
     HITL was required or bypassed.
     """
-    logger.info(f"User {sanitize_log(user.email)} retrieving decisions for org {sanitize_log(organization_id)}")
+    logger.info(
+        f"User {sanitize_log(user.email)} retrieving decisions for org {sanitize_log(organization_id)}"
+    )
     service = get_autonomy_service()
 
     if execution_id:

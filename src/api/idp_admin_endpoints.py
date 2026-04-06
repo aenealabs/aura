@@ -20,13 +20,13 @@ from src.services.identity.audit_service import get_audit_service
 from src.services.identity.base_provider import IdentityProviderFactory
 from src.services.identity.idp_config_service import get_idp_config_service
 from src.services.identity.models import (
-from src.api.log_sanitizer import sanitize_log
     AttributeMapping,
     AuthAction,
     GroupMapping,
     IdentityProviderConfig,
     IdPType,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -370,7 +370,9 @@ async def update_idp_config(
         changes=update_dict,
     )
 
-    logger.info(f"Updated IdP config {sanitize_log(idp_id)} by user {sanitize_log(user.sub)}")
+    logger.info(
+        f"Updated IdP config {sanitize_log(idp_id)} by user {sanitize_log(user.sub)}"
+    )
 
     return IdPConfigResponse.from_config(updated)
 
@@ -413,7 +415,9 @@ async def delete_idp_config(
         changes={"name": existing.name},
     )
 
-    logger.info(f"Deleted IdP config {sanitize_log(idp_id)} by user {sanitize_log(user.sub)}")
+    logger.info(
+        f"Deleted IdP config {sanitize_log(idp_id)} by user {sanitize_log(user.sub)}"
+    )
 
 
 # =============================================================================

@@ -38,10 +38,10 @@ from src.config.integration_config import (
 )
 from src.services.api_rate_limiter import RateLimitResult, admin_rate_limit
 from src.services.settings_persistence_service import (
-from src.api.log_sanitizer import sanitize_log
     DEFAULT_PLATFORM_SETTINGS,
     get_settings_service,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +539,9 @@ async def update_settings(
 
     _invalidate_config()
 
-    logger.info(f"Platform settings updated: mode={sanitize_log(settings.integration_mode)}")
+    logger.info(
+        f"Platform settings updated: mode={sanitize_log(settings.integration_mode)}"
+    )
 
     return settings
 
@@ -768,7 +770,9 @@ async def test_mcp_connection(request: ConnectionTestRequest):
 
         latency = (time.time() - start_time) * 1000
 
-        logger.info(f"MCP connection test successful: {sanitize_log(request.gateway_url)}")
+        logger.info(
+            f"MCP connection test successful: {sanitize_log(request.gateway_url)}"
+        )
 
         return ConnectionTestResponse(
             success=True, message="Connection successful", latency_ms=round(latency, 2)
@@ -1013,7 +1017,9 @@ async def update_compliance_settings(
     sync_result = await _invoke_compliance_settings_sync(settings)
     logger.info(f"Compliance settings sync result: {sync_result}")
 
-    logger.info(f"Compliance settings updated: profile={sanitize_log(settings.profile)}")
+    logger.info(
+        f"Compliance settings updated: profile={sanitize_log(settings.profile)}"
+    )
     return settings
 
 

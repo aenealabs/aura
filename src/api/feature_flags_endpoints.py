@@ -16,7 +16,6 @@ from pydantic import BaseModel
 
 from src.api.auth import User, get_current_user, require_role
 from src.config.feature_flags import (
-from src.api.log_sanitizer import sanitize_log
     CustomerFeatureOverrides,
     FeatureDefinition,
     FeatureStatus,
@@ -24,6 +23,7 @@ from src.api.log_sanitizer import sanitize_log
     get_beta_features,
     get_feature_flags,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

@@ -35,11 +35,11 @@ from src.services.cloudwatch_metrics_publisher import (
     get_metrics_publisher,
 )
 from src.services.settings_persistence_service import (
-from src.api.log_sanitizer import sanitize_log
     PersistenceMode,
     SettingsPersistenceService,
     create_settings_persistence_service,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

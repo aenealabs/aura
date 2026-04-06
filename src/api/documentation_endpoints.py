@@ -70,10 +70,10 @@ from src.services.documentation.confidence_calibration import (
     create_metrics_service,
 )
 from src.services.documentation.documentation_agent import (
-from src.api.log_sanitizer import sanitize_log
     DocumentationAgent,
     create_documentation_agent,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -1057,7 +1057,11 @@ async def stream_documentation_generation(
 
         except Exception as e:
             logger.error(f"Stream error: {sanitize_log(e)}")
-            error_data = {"error": "Internal processing error", "phase": "error", "progress": 0}
+            error_data = {
+                "error": "Internal processing error",
+                "phase": "error",
+                "progress": 0,
+            }
             yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
 
     return StreamingResponse(
@@ -1329,7 +1333,9 @@ async def invalidate_cache(
 
     Call this when a repository is re-ingested to clear stale documentation.
     """
-    logger.info(f"Cache invalidation: repo={sanitize_log(repository_id)}, user={sanitize_log(current_user.sub)}")
+    logger.info(
+        f"Cache invalidation: repo={sanitize_log(repository_id)}, user={sanitize_log(current_user.sub)}"
+    )
 
     count = agent.invalidate_cache(repository_id)
 
@@ -1386,7 +1392,9 @@ async def test_diagram_generation(
 
         # Choose generator based on use_real_llm flag
         if use_real_llm:
-            logger.info(f"Using real LLM for diagram generation: {sanitize_log(prompt[:50])}...")
+            logger.info(
+                f"Using real LLM for diagram generation: {sanitize_log(prompt[:50])}..."
+            )
             generator = get_ai_diagram_generator()
         else:
             generator = _create_mock_ai_generator()

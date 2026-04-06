@@ -24,12 +24,12 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from src.services.capability_governance import (
-from src.api.log_sanitizer import sanitize_log
     CapabilityGraphAnalyzer,
     PolicyGraphSynchronizer,
     get_capability_graph_analyzer,
     get_policy_graph_synchronizer,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

@@ -26,10 +26,10 @@ from pydantic import BaseModel, Field
 from src.api.auth import User, get_current_user
 from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
 from src.services.trust_center_service import (
-from src.api.log_sanitizer import sanitize_log
     TrustCenterService,
     create_trust_center_service,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -374,7 +374,9 @@ async def get_safety_metrics(
 
     Requires authentication.
     """
-    logger.debug(f"User {sanitize_log(user.email)} requesting metrics (period={sanitize_log(period)})")
+    logger.debug(
+        f"User {sanitize_log(user.email)} requesting metrics (period={sanitize_log(period)})"
+    )
 
     # Validate period
     valid_periods = ["24h", "7d", "30d"]
@@ -601,7 +603,9 @@ async def get_export_data(
 
     Requires authentication.
     """
-    logger.debug(f"User {sanitize_log(user.email)} requesting export data {sanitize_log(export_id)}")
+    logger.debug(
+        f"User {sanitize_log(user.email)} requesting export data {sanitize_log(export_id)}"
+    )
 
     # In a real implementation, we would retrieve from cache or regenerate
     # For now, generate fresh data

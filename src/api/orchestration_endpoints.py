@@ -33,7 +33,6 @@ from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user, verify_token
 from src.services.orchestration_service import (
-from src.api.log_sanitizer import sanitize_log
     JobPriority,
     JobStatus,
     JobSubmission,
@@ -41,6 +40,7 @@ from src.api.log_sanitizer import sanitize_log
     OrchestrationService,
     create_orchestration_service,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -609,7 +609,9 @@ async def job_stream(
     except WebSocketDisconnect:
         logger.info(f"Client disconnected from job {sanitize_log(job_id)} stream")
     except Exception as e:
-        logger.error(f"WebSocket error for job {sanitize_log(job_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"WebSocket error for job {sanitize_log(job_id)}: {sanitize_log(e)}"
+        )
         try:
             await websocket.send_json(
                 {

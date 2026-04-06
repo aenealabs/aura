@@ -23,7 +23,6 @@ from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user, require_role
 from src.services.marketplace_service import (
-from src.api.log_sanitizer import sanitize_log
     EntitlementCheck,
     EntitlementStatus,
     MarketplaceCustomer,
@@ -32,6 +31,7 @@ from src.api.log_sanitizer import sanitize_log
     UsageRecord,
     get_marketplace_service,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +265,9 @@ async def handle_sns_webhook(
         # Handle SNS subscription confirmation
         if x_amz_sns_message_type == "SubscriptionConfirmation":
             subscribe_url = message.get("SubscribeURL")
-            logger.info(f"SNS subscription confirmation required: {sanitize_log(subscribe_url)}")
+            logger.info(
+                f"SNS subscription confirmation required: {sanitize_log(subscribe_url)}"
+            )
             return {
                 "status": "subscription_confirmation_required",
                 "url": subscribe_url,

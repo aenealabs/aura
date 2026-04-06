@@ -63,7 +63,6 @@ from src.services.dashboard import (
     get_widgets_by_category,
 )
 from src.services.dashboard.exceptions import (
-from src.api.log_sanitizer import sanitize_log
     DashboardAccessDeniedError,
     DashboardConflictError,
     DashboardLimitExceededError,
@@ -71,6 +70,7 @@ from src.api.log_sanitizer import sanitize_log
     DashboardValidationError,
     ShareNotFoundError,
 )
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -413,7 +413,9 @@ async def get_role_default(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get role default for {sanitize_log(role)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to get role default for {sanitize_log(role)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get role default",
@@ -450,7 +452,9 @@ async def get_dashboard(
             detail="Access denied to this dashboard",
         )
     except Exception as e:
-        logger.error(f"Failed to get dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to get dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get dashboard",
@@ -493,7 +497,9 @@ async def update_dashboard(
             updates=update_data,
         )
 
-        logger.info(f"Dashboard updated: {sanitize_log(dashboard_id)} by user {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Dashboard updated: {sanitize_log(dashboard_id)} by user {sanitize_log(current_user.sub)}"
+        )
         return dashboard_to_response(dashboard)
 
     except DashboardNotFoundError:
@@ -517,7 +523,9 @@ async def update_dashboard(
             detail=str(e),
         )
     except Exception as e:
-        logger.error(f"Failed to update dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to update dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update dashboard",
@@ -536,7 +544,9 @@ async def delete_dashboard(
             dashboard_id=dashboard_id,
             user_id=current_user.sub,
         )
-        logger.info(f"Dashboard deleted: {sanitize_log(dashboard_id)} by user {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Dashboard deleted: {sanitize_log(dashboard_id)} by user {sanitize_log(current_user.sub)}"
+        )
 
     except DashboardNotFoundError:
         raise HTTPException(
@@ -549,7 +559,9 @@ async def delete_dashboard(
             detail="Access denied - you can only delete your own dashboards",
         )
     except Exception as e:
-        logger.error(f"Failed to delete dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to delete dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete dashboard",
@@ -605,7 +617,9 @@ async def clone_dashboard(
             detail=str(e),
         )
     except Exception as e:
-        logger.error(f"Failed to clone dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to clone dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to clone dashboard",
@@ -674,7 +688,9 @@ async def share_dashboard(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to share dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to share dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to share dashboard",
@@ -709,7 +725,9 @@ async def list_shares(
             detail="Only the dashboard owner can view shares",
         )
     except Exception as e:
-        logger.error(f"Failed to list shares for dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to list shares for dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list shares",
@@ -753,7 +771,9 @@ async def revoke_share(
             detail="Only the dashboard owner can revoke shares",
         )
     except Exception as e:
-        logger.error(f"Failed to revoke share for dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to revoke share for dashboard {sanitize_log(dashboard_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to revoke share",
@@ -1084,7 +1104,9 @@ async def get_custom_widget(
             detail="Access denied to this widget",
         )
     except Exception as e:
-        logger.error(f"Failed to get custom widget {sanitize_log(widget_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to get custom widget {sanitize_log(widget_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get custom widget",
@@ -1122,7 +1144,9 @@ async def update_custom_widget(
             updates=update_data,
         )
 
-        logger.info(f"Custom widget updated: {sanitize_log(widget_id)} by {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Custom widget updated: {sanitize_log(widget_id)} by {sanitize_log(current_user.sub)}"
+        )
         return custom_widget_to_response(widget)
 
     except KeyError:
@@ -1141,7 +1165,9 @@ async def update_custom_widget(
             detail=str(e),
         )
     except Exception as e:
-        logger.error(f"Failed to update custom widget {sanitize_log(widget_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to update custom widget {sanitize_log(widget_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update custom widget",
@@ -1160,7 +1186,9 @@ async def delete_custom_widget(
             widget_id=widget_id,
             user_id=current_user.sub,
         )
-        logger.info(f"Custom widget deleted: {sanitize_log(widget_id)} by {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Custom widget deleted: {sanitize_log(widget_id)} by {sanitize_log(current_user.sub)}"
+        )
 
     except KeyError:
         raise HTTPException(
@@ -1173,7 +1201,9 @@ async def delete_custom_widget(
             detail="Only the owner can delete this widget",
         )
     except Exception as e:
-        logger.error(f"Failed to delete custom widget {sanitize_log(widget_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to delete custom widget {sanitize_log(widget_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete custom widget",
@@ -1211,7 +1241,9 @@ async def execute_custom_widget_query(
             detail="Access denied to this widget",
         )
     except Exception as e:
-        logger.error(f"Failed to execute query for widget {sanitize_log(widget_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to execute query for widget {sanitize_log(widget_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to execute query",
@@ -1458,7 +1490,9 @@ async def get_scheduled_report(
             detail="Access denied to this report schedule",
         )
     except Exception as e:
-        logger.error(f"Failed to get scheduled report {sanitize_log(report_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to get scheduled report {sanitize_log(report_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get scheduled report",
@@ -1518,7 +1552,9 @@ async def update_scheduled_report(
                 detail=f"Report schedule {report_id} not found for dashboard",
             )
 
-        logger.info(f"Scheduled report updated: {sanitize_log(report_id)} by {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Scheduled report updated: {sanitize_log(report_id)} by {sanitize_log(current_user.sub)}"
+        )
         return scheduled_report_to_response(report)
 
     except KeyError:
@@ -1537,7 +1573,9 @@ async def update_scheduled_report(
             detail=str(e),
         )
     except Exception as e:
-        logger.error(f"Failed to update scheduled report {sanitize_log(report_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to update scheduled report {sanitize_log(report_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update scheduled report",
@@ -1569,7 +1607,9 @@ async def delete_scheduled_report(
             report_id=report_id,
             user_id=current_user.sub,
         )
-        logger.info(f"Scheduled report deleted: {sanitize_log(report_id)} by {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Scheduled report deleted: {sanitize_log(report_id)} by {sanitize_log(current_user.sub)}"
+        )
 
     except KeyError:
         raise HTTPException(
@@ -1582,7 +1622,9 @@ async def delete_scheduled_report(
             detail="Only the owner can delete this report schedule",
         )
     except Exception as e:
-        logger.error(f"Failed to delete scheduled report {sanitize_log(report_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to delete scheduled report {sanitize_log(report_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete scheduled report",
@@ -1615,7 +1657,9 @@ async def send_report_now(
             user_id=current_user.sub,
         )
 
-        logger.info(f"Manual report send triggered: {sanitize_log(report_id)} by {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Manual report send triggered: {sanitize_log(report_id)} by {sanitize_log(current_user.sub)}"
+        )
 
         return ReportDeliveryResponse(
             success=result.success,
@@ -1637,7 +1681,9 @@ async def send_report_now(
             detail="Access denied to this report schedule",
         )
     except Exception as e:
-        logger.error(f"Failed to send report {sanitize_log(report_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to send report {sanitize_log(report_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to send report",
@@ -1916,7 +1962,9 @@ async def get_embed_token(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get embed token {sanitize_log(token_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to get embed token {sanitize_log(token_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get embed token",
@@ -1953,7 +2001,9 @@ async def update_embed_token(
             updates=updates,
         )
 
-        logger.info(f"Embed token updated: {sanitize_log(token_id)} by {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Embed token updated: {sanitize_log(token_id)} by {sanitize_log(current_user.sub)}"
+        )
         return embed_token_to_response(updated_token)
 
     except KeyError:
@@ -1969,7 +2019,9 @@ async def update_embed_token(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to update embed token {sanitize_log(token_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to update embed token {sanitize_log(token_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update embed token",
@@ -1998,7 +2050,9 @@ async def delete_embed_token(
             )
 
         service.delete_token(token_id=token_id, user_id=current_user.sub)
-        logger.info(f"Embed token deleted: {sanitize_log(token_id)} by {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Embed token deleted: {sanitize_log(token_id)} by {sanitize_log(current_user.sub)}"
+        )
 
     except KeyError:
         raise HTTPException(
@@ -2013,7 +2067,9 @@ async def delete_embed_token(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete embed token {sanitize_log(token_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to delete embed token {sanitize_log(token_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete embed token",
@@ -2039,7 +2095,9 @@ async def revoke_embed_token(
             )
 
         service.revoke_token(token_id=token_id, user_id=current_user.sub)
-        logger.info(f"Embed token revoked: {sanitize_log(token_id)} by {sanitize_log(current_user.sub)}")
+        logger.info(
+            f"Embed token revoked: {sanitize_log(token_id)} by {sanitize_log(current_user.sub)}"
+        )
 
         return {"message": f"Embed token {token_id} has been revoked"}
 
@@ -2056,7 +2114,9 @@ async def revoke_embed_token(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to revoke embed token {sanitize_log(token_id)}: {sanitize_log(e)}")
+        logger.error(
+            f"Failed to revoke embed token {sanitize_log(token_id)}: {sanitize_log(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to revoke embed token",

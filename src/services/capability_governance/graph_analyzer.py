@@ -658,6 +658,124 @@ class CapabilityGraphAnalyzer:
 
         return viz
 
+    # -----------------------------------------------------------------
+    # ADR-086 Phase 2: Self-Governance Edge Analysis
+    # -----------------------------------------------------------------
+
+    async def detect_self_modification_paths(
+        self,
+        max_depth: int = 3,
+    ) -> list[dict[str, Any]]:
+        """
+        Detect write-capability → self-governance-edge paths.
+
+        Finds any agent that holds a write capability targeting a
+        governance artifact that controls that same agent's future
+        behavior. Returns paths that represent self-modification risk.
+
+        Args:
+            max_depth: Maximum path depth to search.
+
+        Returns:
+            List of self-modification path descriptions.
+        """
+        logger.info(f"Detecting self-modification paths (max_depth={max_depth})")
+        paths: list[dict[str, Any]] = []
+
+        if self.mock_mode:
+            graph = self.synchronizer.get_mock_graph()
+            edges = graph["edges"]
+
+            # Find SELF_GOVERNANCE edges
+            governance_edges = [
+                e for e in edges
+                if e.get("edge_type") == EdgeType.SELF_GOVERNANCE.value
+            ]
+
+            # Find write-capable agents
+            write_caps = [
+                e for e in edges
+                if e.get("edge_type") == EdgeType.HAS_CAPABILITY.value
+                and e.get("classification") in (
+                    ToolClassification.DANGEROUS.value,
+                    ToolClassification.CRITICAL.value,
+                )
+            ]
+
+            # Cross-reference: agent has write cap AND self-governance edge
+            for gov_edge in governance_edges:
+                agent_id = gov_edge["source_id"]
+                artifact_id = gov_edge["target_id"]
+
+                agent_write_caps = [
+                    e["target_id"] for e in write_caps
+                    if e["source_id"] == agent_id
+                ]
+
+                if agent_write_caps:
+                    paths.append({
+                        "agent_id": agent_id.replace("agent:", ""),
+                        "governance_artifact": artifact_id,
+                        "write_capabilities": [
+                            c.replace("cap:", "") for c in agent_write_caps
+                        ],
+                        "depth": 1,
+                        "risk_level": "critical",
+                        "description": (
+                            f"Agent can modify governance artifact "
+                            f"'{artifact_id}' that controls its own behavior"
+                        ),
+                    })
+
+        else:
+            # Neptune Gremlin query:
+            # g.V().hasLabel('agent')
+            #   .as('a')
+            #   .outE('self_governance').inV().as('gov')
+            #   .select('a')
+            #   .outE('has_capability')
+            #   .has('classification', within('dangerous','critical'))
+            #   .select('a','gov')
+            pass
+
+        logger.info(f"Found {len(paths)} self-modification paths")
+        return paths
+
+    def add_self_governance_edge(
+        self,
+        agent_id: str,
+        artifact_id: str,
+        artifact_class: str,
+    ) -> None:
+        """
+        Add a SELF_GOVERNANCE edge to the graph.
+
+        Links an agent vertex to the governance artifact controlling it.
+
+        Args:
+            agent_id: Agent being governed.
+            artifact_id: Governance artifact identifier.
+            artifact_class: Class of the governance artifact.
+        """
+        if self.mock_mode:
+            edge = {
+                "source_id": f"agent:{agent_id}",
+                "target_id": artifact_id,
+                "edge_type": EdgeType.SELF_GOVERNANCE.value,
+                "artifact_class": artifact_class,
+            }
+            self.synchronizer._mock_edges.append(edge)
+            logger.info(
+                f"Added SELF_GOVERNANCE edge: {agent_id} -> "
+                f"{artifact_id} ({artifact_class})"
+            )
+        else:
+            # Neptune: g.V('agent:{agent_id}')
+            #   .addE('self_governance')
+            #   .to(g.V(artifact_id))
+            #   .property('artifact_class', artifact_class)
+            pass
+
     async def run_full_analysis(self) -> dict[str, Any]:
         """
         Run all analysis queries and return comprehensive results.
@@ -672,6 +790,7 @@ class CapabilityGraphAnalyzer:
         escalation_paths = await self.detect_escalation_paths()
         coverage_gaps = await self.find_coverage_gaps()
         toxic_combinations = await self.detect_toxic_combinations()
+        self_mod_paths = await self.detect_self_modification_paths()
         visualization = await self.get_visualization_data()
 
         # Calculate summary metrics
@@ -698,6 +817,7 @@ class CapabilityGraphAnalyzer:
             "escalation_paths": [p.to_dict() for p in escalation_paths],
             "coverage_gaps": [g.to_dict() for g in coverage_gaps],
             "toxic_combinations": [c.to_dict() for c in toxic_combinations],
+            "self_modification_paths": self_mod_paths,
             "visualization": visualization.to_dict(),
         }
 

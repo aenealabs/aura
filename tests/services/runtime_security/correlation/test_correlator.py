@@ -706,3 +706,120 @@ class TestSingleton:
         c2 = get_code_correlator()
         # New instance should have zero correlations
         assert c2.total_correlations == 0
+
+
+# =========================================================================
+# Sentinel Integration Tests (ADR-086 Phase 2)
+# =========================================================================
+
+
+class TestSentinelCorrelation:
+    """Tests for correlate_sentinel_alert and sentinel handler registration."""
+
+    async def test_correlate_sentinel_alert(self, correlator: RuntimeCodeCorrelator):
+        """Test that a sentinel alert flows through the correlation pipeline."""
+        from datetime import datetime, timezone
+
+        from src.services.capability_governance.self_modification_sentinel import (
+            GovernanceArtifactClass,
+            GovernanceWriteEvent,
+            SelfModificationSentinel,
+            SentinelVerdict,
+            WriteAction,
+        )
+
+        sentinel = SelfModificationSentinel()
+        event = GovernanceWriteEvent(
+            event_id="evt-sentinel-test",
+            writer_agent_id="coder-agent",
+            artifact_class=GovernanceArtifactClass.IAM_POLICY,
+            artifact_id="policy-coder",
+            action=WriteAction.UPDATE,
+            governed_agent_ids=frozenset({"coder-agent"}),
+            timestamp=datetime.now(timezone.utc),
+        )
+        alert = sentinel.evaluate(event)
+        assert alert.verdict == SentinelVerdict.CRITICAL
+
+        chain = await correlator.correlate_sentinel_alert(alert)
+        assert chain.event_id == "evt-sentinel-test"
+        assert chain.agent_id == "coder-agent"
+        assert correlator.sentinel_correlation_count == 1
+
+    async def test_sentinel_alert_no_auto_remediate(
+        self, correlator: RuntimeCodeCorrelator
+    ):
+        """Sentinel alerts never auto-remediate (requires HITL)."""
+        from datetime import datetime, timezone
+
+        from src.services.capability_governance.self_modification_sentinel import (
+            GovernanceArtifactClass,
+            GovernanceWriteEvent,
+            SelfModificationSentinel,
+            WriteAction,
+        )
+
+        sentinel = SelfModificationSentinel()
+        event = GovernanceWriteEvent(
+            event_id="evt-no-auto",
+            writer_agent_id="coder-agent",
+            artifact_class=GovernanceArtifactClass.CAPABILITY_GRANT,
+            artifact_id="grant-123",
+            action=WriteAction.CREATE,
+            governed_agent_ids=frozenset({"coder-agent"}),
+            timestamp=datetime.now(timezone.utc),
+        )
+        alert = sentinel.evaluate(event)
+        chain = await correlator.correlate_sentinel_alert(alert)
+        # Even though correlator has auto_remediate=True, sentinel overrides to False
+        assert chain.has_remediation is False
+
+    async def test_sentinel_correlation_count_increments(
+        self, correlator: RuntimeCodeCorrelator
+    ):
+        """sentinel_correlation_count tracks how many sentinel alerts were correlated."""
+        from datetime import datetime, timezone
+
+        from src.services.capability_governance.self_modification_sentinel import (
+            GovernanceArtifactClass,
+            GovernanceWriteEvent,
+            SelfModificationSentinel,
+            WriteAction,
+        )
+
+        assert correlator.sentinel_correlation_count == 0
+        sentinel = SelfModificationSentinel()
+
+        for i in range(3):
+            event = GovernanceWriteEvent(
+                event_id=f"evt-cnt-{i}",
+                writer_agent_id="agent-x",
+                artifact_class=GovernanceArtifactClass.GUARDRAIL_CONFIG,
+                artifact_id=f"guardrail-{i}",
+                action=WriteAction.UPDATE,
+                governed_agent_ids=frozenset({"agent-x"}),
+                timestamp=datetime.now(timezone.utc),
+            )
+            alert = sentinel.evaluate(event)
+            await correlator.correlate_sentinel_alert(alert)
+
+        assert correlator.sentinel_correlation_count == 3
+
+    def test_register_sentinel_handler(self):
+        """Test that register_sentinel_handler wires up to the global sentinel."""
+        from src.services.capability_governance.self_modification_sentinel import (
+            get_self_modification_sentinel,
+            reset_self_modification_sentinel,
+        )
+
+        reset_self_modification_sentinel()
+        reset_code_correlator()
+
+        correlator = RuntimeCodeCorrelator()
+        correlator.register_sentinel_handler()
+
+        sentinel = get_self_modification_sentinel()
+        assert len(sentinel._alert_handlers) >= 1
+
+        reset_self_modification_sentinel()
+        reset_code_correlator()

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Layer 8.6 - Capability Governance'
+Description: 'Project Aura - Layer 8.6 - Capability Governance (ADR-066, ADR-086 Delegation Trust)'
 
 Parameters:
   ProjectName:
@@ -629,6 +629,36 @@ Resources:
         Project: !Ref ProjectName
         Environment: !Ref Environment
 
+  # DynamoDB Table - Delegation Revocations (ADR-086 Phase 3)
+  DelegationRevocationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-delegation-revocations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: assertion_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: assertion_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-delegation-revocations-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-086
+
 Outputs:
   CapabilityGovernanceKeyArn:
     Description: KMS key ARN for capability governance
@@ -671,6 +701,18 @@ Outputs:
     Value: !GetAtt CapabilityViolationTable.Arn
     Export:
       Name: !Sub '${ProjectName}-capability-violation-table-arn-${Environment}'
+
+  DelegationRevocationsTableName:
+    Description: Delegation revocations table name (ADR-086)
+    Value: !Ref DelegationRevocationsTable
+    Export:
+      Name: !Sub '${ProjectName}-delegation-revocations-table-${Environment}'
+
+  DelegationRevocationsTableArn:
+    Description: Delegation revocations table ARN (ADR-086)
+    Value: !GetAtt DelegationRevocationsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-delegation-revocations-table-arn-${Environment}'
 
   CapabilityGrantsTableName:
     Description: Capability grants table name

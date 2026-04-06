@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Layer 8.9 - Runtime Security Correlation (ADR-083 Runtime-to-Code Remediation)'
+Description: 'Project Aura - Layer 8.9 - Runtime Security Correlation (ADR-083 Runtime-to-Code Remediation, ADR-086 Sentinel Routing)'
 
 Parameters:
   Environment:
@@ -194,6 +194,70 @@ Resources:
       Topics:
         - !Ref RemediationAlertTopic
 
+  # SNS Topic - Self-Modification Sentinel Alerts (ADR-086 Phase 2)
+  SelfModificationAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-self-mod-alerts-${Environment}'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-086
+
+  # EventBridge Rule - Self-Modification Sentinel CRITICAL Events (ADR-086)
+  SelfModificationSentinelRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-self-mod-sentinel-${Environment}'
+      Description: Routes self-modification sentinel CRITICAL alerts to SNS and correlation
+      State: ENABLED
+      EventPattern:
+        source:
+          - !Sub '${ProjectName}.capability-governance'
+        detail-type:
+          - SelfModificationDetected
+      Targets:
+        - Arn: !Ref SelfModificationAlertTopic
+          Id: SelfModSNSTarget
+        - Arn: !Ref RemediationAlertTopic
+          Id: SelfModRemediationTarget
+
+  SelfModificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref SelfModificationAlertTopic
+      Topics:
+        - !Ref SelfModificationAlertTopic
+
+  # CloudWatch Alarm - Self-Modification Events (ADR-086)
+  SelfModificationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-self-modification-detected-${Environment}'
+      AlarmDescription: CRITICAL - Agent modifying its own governance controls detected
+      MetricName: SelfModificationCount
+      Namespace: !Sub 'Aura/CapabilityGovernance/${Environment}'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref SelfModificationAlertTopic
+
   # CloudWatch Alarm - Low Correlation Rate
   LowCorrelationRateAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -247,3 +311,9 @@ Outputs:
     Value: !Ref RemediationAlertTopic
     Export:
       Name: !Sub '${AWS::StackName}-RemediationAlertTopicArn'
+
+  SelfModificationAlertTopicArn:
+    Description: Self-modification sentinel alert SNS topic ARN
+    Value: !Ref SelfModificationAlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-SelfModificationAlertTopicArn'

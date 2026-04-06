@@ -323,10 +323,12 @@ class CapabilityRegistry:
     Central registry for tool capabilities.
 
     Provides tool discovery, classification lookup, and capability validation.
+    Extended by ADR-086 with decommission_state tracking per agent.
     """
 
     _tools: dict[str, ToolCapability] = field(default_factory=dict)
     _initialized: bool = False
+    _decommission_states: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         """Initialize with default tools."""
@@ -508,6 +510,43 @@ class CapabilityRegistry:
         if tool:
             return tool.is_action_allowed(action)
         return False
+
+    # -----------------------------------------------------------------
+    # ADR-086: Decommission State Management
+    # -----------------------------------------------------------------
+
+    def set_decommission_state(self, agent_id: str, state: str) -> None:
+        """
+        Set decommission lifecycle state for an agent.
+
+        Transitions to 'attested' require a valid DecommissionAttestation
+        (enforced by DecommissionVerifier, not here).
+
+        Args:
+            agent_id: Agent identifier.
+            state: Lifecycle state value (active, dormant, decommissioning,
+                   remediation_required, attested, archived).
+        """
+        valid_states = {
+            "active", "dormant", "decommissioning",
+            "remediation_required", "attested", "archived",
+        }
+        if state not in valid_states:
+            raise ValueError(
+                f"Invalid decommission state '{state}'. "
+                f"Valid: {valid_states}"
+            )
+        self._decommission_states[agent_id] = state
+        logger.info(f"Agent {agent_id} decommission_state set to {state}")
+
+    def get_decommission_state(self, agent_id: str) -> Optional[str]:
+        """Get the decommission lifecycle state for an agent."""
+        return self._decommission_states.get(agent_id)
+
+    def is_decommissioned(self, agent_id: str) -> bool:
+        """Check if an agent is in a terminal decommission state."""
+        state = self._decommission_states.get(agent_id)
+        return state in ("attested", "archived")
 
     def to_dict(self) -> dict[str, Any]:
         """Convert registry to dictionary for serialization."""

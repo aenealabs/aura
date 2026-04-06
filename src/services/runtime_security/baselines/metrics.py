@@ -31,6 +31,7 @@ class MetricType(Enum):
     UNIQUE_TOOLS_USED = "unique_tools_used"
     SESSION_DURATION = "session_duration"
     CHECKPOINT_FREQUENCY = "checkpoint_frequency"
+    POLICY_WRITE_FREQUENCY = "policy_write_frequency"  # ADR-086 Phase 2
 
 
 class MetricWindow(Enum):

@@ -48,6 +48,7 @@ class EdgeType(Enum):
     REQUIRES = "requires"  # Capability -> Capability (prerequisite)
     CONFLICTS_WITH = "conflicts_with"  # Capability -> Capability (mutex)
     RESTRICTED_TO = "restricted_to"  # Capability -> Context (allowed contexts)
+    SELF_GOVERNANCE = "self_governance"  # Agent -> Governance Artifact (ADR-086)
 
 
 class RiskLevel(Enum):

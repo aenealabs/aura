@@ -96,13 +96,15 @@ class TestDataFlowAnalyzerReal:
         """Test analyzing directory with database code."""
         with tempfile.TemporaryDirectory() as tmpdir:
             db_file = Path(tmpdir) / "db_service.py"
-            db_file.write_text("""
+            db_file.write_text(
+                """
 import psycopg2
 
 conn = psycopg2.connect("postgresql://localhost/db")
 cursor = conn.cursor()
 cursor.execute("SELECT * FROM users")
-""")
+"""
+            )
 
             result = await analyzer.analyze(
                 repository_id="db-repo",
@@ -121,12 +123,14 @@ cursor.execute("SELECT * FROM users")
         """Test analyzing directory with queue code."""
         with tempfile.TemporaryDirectory() as tmpdir:
             queue_file = Path(tmpdir) / "queue_service.py"
-            queue_file.write_text("""
+            queue_file.write_text(
+                """
 import boto3
 
 sqs = boto3.client("sqs")
 sqs.send_message(QueueUrl="url", MessageBody="msg")
-""")
+"""
+            )
 
             result = await analyzer.analyze(
                 repository_id="queue-repo",
@@ -143,7 +147,8 @@ sqs.send_message(QueueUrl="url", MessageBody="msg")
         """Test analyzing directory with API code."""
         with tempfile.TemporaryDirectory() as tmpdir:
             api_file = Path(tmpdir) / "api_service.py"
-            api_file.write_text("""
+            api_file.write_text(
+                """
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -151,7 +156,8 @@ app = FastAPI()
 @app.get("/users")
 async def get_users():
     return []
-""")
+"""
+            )
 
             result = await analyzer.analyze(
                 repository_id="api-repo",
@@ -166,12 +172,14 @@ async def get_users():
         """Test analyzing directory with PII fields."""
         with tempfile.TemporaryDirectory() as tmpdir:
             model_file = Path(tmpdir) / "models.py"
-            model_file.write_text("""
+            model_file.write_text(
+                """
 class User:
     email: str
     phone_number: str
     ssn: str
-""")
+"""
+            )
 
             result = await analyzer.analyze(
                 repository_id="pii-repo",
@@ -187,7 +195,8 @@ class User:
         """Test that analysis creates correlated data flows."""
         with tempfile.TemporaryDirectory() as tmpdir:
             service_file = Path(tmpdir) / "user_service.py"
-            service_file.write_text("""
+            service_file.write_text(
+                """
 import psycopg2
 
 class UserService:
@@ -198,7 +207,8 @@ class UserService:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users")
         return cursor.fetchall()
-""")
+"""
+            )
 
             result = await analyzer.analyze(
                 repository_id="flow-repo",
@@ -214,16 +224,20 @@ class UserService:
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create a test file
             test_file = Path(tmpdir) / "test_service.py"
-            test_file.write_text("""
+            test_file.write_text(
+                """
 import psycopg2
 conn = psycopg2.connect("postgresql://localhost/testdb")
-""")
+"""
+            )
             # Create a regular file
             regular_file = Path(tmpdir) / "service.py"
-            regular_file.write_text("""
+            regular_file.write_text(
+                """
 def process():
     pass
-""")
+"""
+            )
 
             result = await analyzer.analyze(
                 repository_id="test-exclusion-repo",
@@ -242,7 +256,8 @@ def process():
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create file with PII in cross-boundary flow
             service_file = Path(tmpdir) / "event_service.py"
-            service_file.write_text("""
+            service_file.write_text(
+                """
 import boto3
 
 class EventPublisher:
@@ -251,7 +266,8 @@ class EventPublisher:
     def publish_event(self, event):
         sqs = boto3.client("sqs")
         sqs.send_message(QueueUrl="url", MessageBody=str(event))
-""")
+"""
+            )
 
             result = await analyzer.analyze(
                 repository_id="warning-repo",
@@ -279,11 +295,13 @@ class EventPublisher:
         """Test report generation from analysis result."""
         with tempfile.TemporaryDirectory() as tmpdir:
             db_file = Path(tmpdir) / "service.py"
-            db_file.write_text("""
+            db_file.write_text(
+                """
 import psycopg2
 
 conn = psycopg2.connect("postgresql://localhost/db")
-""")
+"""
+            )
 
             result = await analyzer.analyze(
                 repository_id="report-repo",

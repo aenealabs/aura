@@ -83,7 +83,8 @@ class LocalGraphStore:
             )
 
             # Create tables
-            self._connection.executescript("""
+            self._connection.executescript(
+                """
                 CREATE TABLE IF NOT EXISTS vertices (
                     id TEXT PRIMARY KEY,
                     label TEXT NOT NULL,
@@ -107,7 +108,8 @@ class LocalGraphStore:
                 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_label ON edges(label);
-            """)
+            """
+            )
             self._connection.commit()
 
         except Exception as e:

@@ -559,7 +559,9 @@ async def trigger_ingestion(
             request.shallow_clone,
         )
 
-        logger.info(f"Ingestion job {sanitize_log(job_id)} queued for {sanitize_log(request.repository_url)}")
+        logger.info(
+            f"Ingestion job {sanitize_log(job_id)} queued for {sanitize_log(request.repository_url)}"
+        )
 
         return IngestionResponse(
             job_id=job_id,

@@ -76,7 +76,8 @@ def temp_repo():
 
         # Create architecture document
         arch_doc = docs_dir / "architecture.md"
-        arch_doc.write_text("""# System Architecture
+        arch_doc.write_text(
+            """# System Architecture
 
 ## Overview
 This is the system architecture.
@@ -86,13 +87,15 @@ The API uses a public endpoint for health checks.
 
 ## Authentication
 All endpoints require JWT tokens.
-""")
+"""
+        )
 
         # Create ADR with issues
         adr_dir = repo_path / "docs" / "adr"
         adr_dir.mkdir()
         adr = adr_dir / "ADR-001-auth.md"
-        adr.write_text("""# ADR-001: Authentication
+        adr.write_text(
+            """# ADR-001: Authentication
 
 ## Status
 Accepted
@@ -103,7 +106,8 @@ We need to decide on authentication.
 ## Decision
 Use open access for internal APIs.
 Skip auth for admin endpoints.
-""")
+"""
+        )
 
         yield repo_path
 
@@ -789,7 +793,8 @@ class TestLLMEnhancedAnalysis:
     async def test_llm_findings_parsed(self):
         """Test parsing of LLM findings."""
         mock_llm = AsyncMock()
-        mock_llm.generate = AsyncMock(return_value="""
+        mock_llm.generate = AsyncMock(
+            return_value="""
         [
             {
                 "category": "authentication",
@@ -799,7 +804,8 @@ class TestLLMEnhancedAnalysis:
                 "recommendation": "Add exp claim validation"
             }
         ]
-        """)
+        """
+        )
 
         agent = DesignDocSecurityAgent(llm_client=mock_llm, use_llm_analysis=True)
         findings = await agent.review_document("test.md", "# API\nSome content")

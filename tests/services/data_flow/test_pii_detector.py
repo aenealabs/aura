@@ -458,17 +458,21 @@ test_email = "user@test.com"
         with tempfile.TemporaryDirectory() as tmpdir:
             user_file = Path(tmpdir) / "models" / "user.py"
             user_file.parent.mkdir(parents=True)
-            user_file.write_text("""
+            user_file.write_text(
+                """
 class User:
     email: str
     ssn: str
-""")
+"""
+            )
             order_file = Path(tmpdir) / "models" / "order.py"
-            order_file.write_text("""
+            order_file.write_text(
+                """
 class Order:
     order_id: int
     total: float
-""")
+"""
+            )
 
             fields = await detector.detect_in_directory(tmpdir)
             assert len(fields) >= 2

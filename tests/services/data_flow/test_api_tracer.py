@@ -263,19 +263,23 @@ def format_price(amount):
         """Test directory tracing."""
         with tempfile.TemporaryDirectory() as tmpdir:
             api_file = Path(tmpdir) / "api_endpoints.py"
-            api_file.write_text("""
+            api_file.write_text(
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/users")
 async def get_users():
     return []
-""")
+"""
+            )
             util_file = Path(tmpdir) / "utils.py"
-            util_file.write_text("""
+            util_file.write_text(
+                """
 def format_data(data):
     return data
-""")
+"""
+            )
 
             endpoints = await tracer.trace_directory(tmpdir)
             assert len(endpoints) >= 1

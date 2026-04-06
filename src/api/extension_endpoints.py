@@ -409,7 +409,9 @@ async def scan_file(request: ScanRequest):
     start_time = time.time()
 
     try:
-        logger.info(f"Starting scan {sanitize_log(scan_id)} for {sanitize_log(request.file_path)}")
+        logger.info(
+            f"Starting scan {sanitize_log(scan_id)} for {sanitize_log(request.file_path)}"
+        )
 
         # Store scan record
         _scans[scan_id] = {
@@ -531,7 +533,9 @@ async def generate_patch(request: PatchRequest):
     patch_id = str(uuid.uuid4())
 
     try:
-        logger.info(f"Generating patch {sanitize_log(patch_id)} for finding {sanitize_log(request.finding_id)}")
+        logger.info(
+            f"Generating patch {sanitize_log(patch_id)} for finding {sanitize_log(request.finding_id)}"
+        )
 
         # Find the finding
         finding = None
@@ -629,7 +633,9 @@ async def apply_patch(patch_id: str, request: ApplyPatchRequest):
         patch.status = PatchStatus.APPLIED
         patch.applied_at = datetime.now(timezone.utc).isoformat()
 
-        logger.info(f"Patch {sanitize_log(patch_id)} applied to {sanitize_log(patch.file_path)}")
+        logger.info(
+            f"Patch {sanitize_log(patch_id)} applied to {sanitize_log(patch.file_path)}"
+        )
 
         return ApplyPatchResponse(
             success=True,
@@ -1017,7 +1023,9 @@ async def preview_fix(request: FixPreviewRequest):
     along with potential side effects and test suggestions.
     """
     try:
-        logger.info(f"Fix preview request for finding {sanitize_log(request.finding_id)}")
+        logger.info(
+            f"Fix preview request for finding {sanitize_log(request.finding_id)}"
+        )
 
         # Find the finding
         finding = None

@@ -845,8 +845,12 @@ class AirGapOrchestrator:
                 # Extract transfer package
                 with tarfile.open(transfer_path, "r:gz") as tar:
                     for member in tar.getmembers():
-                        member_path = os.path.realpath(os.path.join(temp_dir, member.name))
-                        if not member_path.startswith(os.path.realpath(temp_dir) + os.sep):
+                        member_path = os.path.realpath(
+                            os.path.join(temp_dir, member.name)
+                        )
+                        if not member_path.startswith(
+                            os.path.realpath(temp_dir) + os.sep
+                        ):
                             raise TransferMediumError(
                                 f"Tar path traversal blocked: {member.name}"
                             )
@@ -1034,8 +1038,12 @@ class AirGapOrchestrator:
             # Extract archive
             with tarfile.open(bundle.archive_path, "r:*") as tar:
                 for member in tar.getmembers():
-                    member_path = os.path.realpath(os.path.join(target_dir, member.name))
-                    if not member_path.startswith(os.path.realpath(target_dir) + os.sep):
+                    member_path = os.path.realpath(
+                        os.path.join(target_dir, member.name)
+                    )
+                    if not member_path.startswith(
+                        os.path.realpath(target_dir) + os.sep
+                    ):
                         raise BundleNotFoundError(
                             f"Tar path traversal blocked: {member.name}"
                         )

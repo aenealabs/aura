@@ -1017,13 +1017,15 @@ class LicenseComplianceEngine:
             if license_info.url:
                 license_link = f' (<a href="{license_info.url}">view license</a>)'
 
-            components_html.append(f"""
+            components_html.append(
+                f"""
         <tr>
             <td>{component.name}</td>
             <td>{component.version}</td>
             <td>{license_info.name}{license_link}</td>
             <td>{component.supplier or "Unknown"}</td>
-        </tr>""")
+        </tr>"""
+            )
 
         return f"""<!DOCTYPE html>
 <html>

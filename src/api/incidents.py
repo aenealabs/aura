@@ -264,7 +264,10 @@ async def get_investigation(incident_id: str) -> InvestigationDetail:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get investigation {sanitize_log(incident_id)}: {sanitize_log(e)}", exc_info=True)
+        logger.error(
+            f"Failed to get investigation {sanitize_log(incident_id)}: {sanitize_log(e)}",
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail="Failed to retrieve investigation")
 
 
@@ -340,7 +343,8 @@ async def approve_mitigation(
         raise
     except Exception as e:
         logger.error(
-            f"Failed to approve investigation {sanitize_log(incident_id)}: {sanitize_log(e)}", exc_info=True
+            f"Failed to approve investigation {sanitize_log(incident_id)}: {sanitize_log(e)}",
+            exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Failed to approve mitigation")
 
@@ -414,7 +418,8 @@ async def reject_mitigation(
         raise
     except Exception as e:
         logger.error(
-            f"Failed to reject investigation {sanitize_log(incident_id)}: {sanitize_log(e)}", exc_info=True
+            f"Failed to reject investigation {sanitize_log(incident_id)}: {sanitize_log(e)}",
+            exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Failed to reject mitigation")
 

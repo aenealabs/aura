@@ -298,7 +298,9 @@ async def revoke_connection(
     """
     try:
         await oauth_service.revoke_connection(user.sub, connection_id)
-        logger.info(f"OAuth connection {sanitize_log(connection_id)} revoked for user {sanitize_log(user.sub)}")
+        logger.info(
+            f"OAuth connection {sanitize_log(connection_id)} revoked for user {sanitize_log(user.sub)}"
+        )
 
         return {"status": "revoked", "connection_id": connection_id}
 

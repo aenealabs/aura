@@ -754,7 +754,9 @@ async def create_integration(
     }
 
     _configured_integrations[integration_id] = integration
-    logger.info(f"Created integration: {sanitize_log(request.name)} ({sanitize_log(request.connector_id)})")
+    logger.info(
+        f"Created integration: {sanitize_log(request.name)} ({sanitize_log(request.connector_id)})"
+    )
 
     return ConfiguredIntegration(
         id=integration["id"],
@@ -813,7 +815,9 @@ async def update_integration(
         integration["sync_frequency"] = request.sync_frequency
 
     integration["updated_at"] = datetime.now(timezone.utc).isoformat()
-    logger.info(f"Updated integration: {sanitize_log(integration['name'])} ({sanitize_log(integration_id)})")
+    logger.info(
+        f"Updated integration: {sanitize_log(integration['name'])} ({sanitize_log(integration_id)})"
+    )
 
     return ConfiguredIntegration(
         id=integration["id"],
@@ -849,7 +853,9 @@ async def delete_integration(integration_id: str) -> None:
         )
 
     integration = _configured_integrations.pop(integration_id)
-    logger.info(f"Deleted integration: {sanitize_log(integration['name'])} ({sanitize_log(integration_id)})")
+    logger.info(
+        f"Deleted integration: {sanitize_log(integration['name'])} ({sanitize_log(integration_id)})"
+    )
 
 
 @router.post("/{integration_id}/test", response_model=TestConnectionResult)

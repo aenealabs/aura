@@ -542,7 +542,9 @@ async def get_decision_detail(
 
     Requires authentication.
     """
-    logger.debug(f"User {sanitize_log(user.email)} requesting decision {sanitize_log(decision_id)}")
+    logger.debug(
+        f"User {sanitize_log(user.email)} requesting decision {sanitize_log(decision_id)}"
+    )
 
     decision = next((d for d in _decisions if d["id"] == decision_id), None)
     if not decision:
@@ -634,7 +636,9 @@ async def resolve_contradiction(
 
     Requires authentication.
     """
-    logger.info(f"User {sanitize_log(user.email)} resolving contradiction {sanitize_log(contradiction_id)}")
+    logger.info(
+        f"User {sanitize_log(user.email)} resolving contradiction {sanitize_log(contradiction_id)}"
+    )
 
     contradiction = next(
         (c for c in _contradictions if c["id"] == contradiction_id), None
@@ -690,7 +694,9 @@ async def dismiss_contradiction(
 
     Requires authentication.
     """
-    logger.info(f"User {sanitize_log(user.email)} dismissing contradiction {sanitize_log(contradiction_id)}")
+    logger.info(
+        f"User {sanitize_log(user.email)} dismissing contradiction {sanitize_log(contradiction_id)}"
+    )
 
     contradiction = next(
         (c for c in _contradictions if c["id"] == contradiction_id), None

@@ -101,7 +101,8 @@ class TestDocumentParsing:
         indexer = DocumentationIndexer()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-            f.write("""# Test Document
+            f.write(
+                """# Test Document
 
 This is a test document with some content.
 
@@ -117,7 +118,8 @@ More content here.
 def example():
     return "hello"
 ```
-""")
+"""
+            )
             f.flush()
             file_path = Path(f.name)
 
@@ -140,7 +142,8 @@ def example():
         indexer = DocumentationIndexer()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-            f.write("""---
+            f.write(
+                """---
 title: "Document with Frontmatter"
 version: "1.0"
 ---
@@ -148,7 +151,8 @@ version: "1.0"
 # Another Title
 
 Content after frontmatter.
-""")
+"""
+            )
             f.flush()
             file_path = Path(f.name)
 
@@ -168,10 +172,12 @@ Content after frontmatter.
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".md", delete=False, prefix="test-document-"
         ) as f:
-            f.write("""## Only H2 Header
+            f.write(
+                """## Only H2 Header
 
 Some content without H1.
-""")
+"""
+            )
             f.flush()
             file_path = Path(f.name)
 
@@ -189,7 +195,8 @@ Some content without H1.
         indexer = DocumentationIndexer()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-            f.write("""# Document Title
+            f.write(
+                """# Document Title
 
 **Version:** 1.0
 **Last Updated:** January 2026
@@ -200,7 +207,8 @@ It can span multiple lines.
 ## Next Section
 
 More content here.
-""")
+"""
+            )
             f.flush()
             file_path = Path(f.name)
 

@@ -582,7 +582,8 @@ class TestTruncationCorruptsStructure:
 
     def test_code_truncation_creates_syntax_error(self, mcp_manager):
         """Truncating code mid-structure creates syntax errors."""
-        python_code = '''
+        python_code = (
+            '''
 def complex_function(arg1, arg2, arg3):
     """Docstring with lots of content."""
     result = []
@@ -593,7 +594,9 @@ def complex_function(arg1, arg2, arg3):
                 "nested": {"deep": "content"},
             })
     return result
-''' * 50  # Make it large enough to trigger truncation
+'''
+            * 50
+        )  # Make it large enough to trigger truncation
 
         context = {"retrieved": {"code": python_code}}
 
@@ -610,7 +613,8 @@ def complex_function(arg1, arg2, arg3):
 
     def test_markdown_truncation_breaks_formatting(self, mcp_manager):
         """Truncating markdown breaks formatting structures."""
-        markdown = """
+        markdown = (
+            """
 # Header 1
 ## Header 2
 Some content with **bold** and *italic*.
@@ -623,7 +627,9 @@ def code_block():
 | Table | Header |
 |-------|--------|
 | Data  | More   |
-""" * 20
+"""
+            * 20
+        )
 
         context = {"retrieved": {"docs": markdown}}
 

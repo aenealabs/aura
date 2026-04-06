@@ -251,7 +251,8 @@ class DynamoDBToPostgresMigrator(BaseMigrator):
         async with self._postgres_pool.acquire() as conn:
             # Build CREATE TABLE
             if sk:
-                await conn.execute(f"""
+                await conn.execute(
+                    f"""
                     CREATE TABLE IF NOT EXISTS {full_table_name} (
                         {pk} TEXT NOT NULL,
                         {sk} TEXT NOT NULL,
@@ -260,22 +261,27 @@ class DynamoDBToPostgresMigrator(BaseMigrator):
                         updated_at TIMESTAMPTZ DEFAULT NOW(),
                         PRIMARY KEY ({pk}, {sk})
                     )
-                """)
+                """
+                )
             else:
-                await conn.execute(f"""
+                await conn.execute(
+                    f"""
                     CREATE TABLE IF NOT EXISTS {full_table_name} (
                         {pk} TEXT PRIMARY KEY,
                         data JSONB NOT NULL DEFAULT '{{}}',
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
                     )
-                """)
+                """
+                )
 
             # Create JSONB index
-            await conn.execute(f"""
+            await conn.execute(
+                f"""
                 CREATE INDEX IF NOT EXISTS idx_{full_table_name}_data
                 ON {full_table_name} USING GIN (data)
-            """)
+            """
+            )
 
     async def _insert_item(self, table_name: str, data: dict[str, Any]) -> None:
         """Insert an item into PostgreSQL table."""

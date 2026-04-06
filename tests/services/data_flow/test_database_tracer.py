@@ -294,17 +294,21 @@ def multiply_numbers(a, b):
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create a file with database code
             db_file = Path(tmpdir) / "db_service.py"
-            db_file.write_text("""
+            db_file.write_text(
+                """
 import psycopg2
 
 conn = psycopg2.connect("postgresql://localhost/db")
-""")
+"""
+            )
             # Create a file without database code
             util_file = Path(tmpdir) / "utils.py"
-            util_file.write_text("""
+            util_file.write_text(
+                """
 def format_string(s):
     return s.strip()
-""")
+"""
+            )
 
             connections = await tracer.trace_directory(tmpdir)
             assert len(connections) >= 1
@@ -318,18 +322,22 @@ def format_string(s):
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create a test file with database code
             test_file = Path(tmpdir) / "test_db.py"
-            test_file.write_text("""
+            test_file.write_text(
+                """
 import psycopg2
 
 def test_connection():
     conn = psycopg2.connect("postgresql://localhost/testdb")
-""")
+"""
+            )
             # Create a regular file
             regular_file = Path(tmpdir) / "service.py"
-            regular_file.write_text("""
+            regular_file.write_text(
+                """
 def process_data():
     pass
-""")
+"""
+            )
 
             connections = await tracer.trace_directory(tmpdir)
             # Test file should be excluded
@@ -344,11 +352,13 @@ def process_data():
             subdir.mkdir(parents=True)
 
             db_file = subdir / "user_repository.py"
-            db_file.write_text("""
+            db_file.write_text(
+                """
 import psycopg2
 
 conn = psycopg2.connect("postgresql://localhost/users")
-""")
+"""
+            )
 
             # trace_directory is recursive by default (uses **/*.py)
             connections = await tracer.trace_directory(tmpdir)
@@ -360,19 +370,23 @@ conn = psycopg2.connect("postgresql://localhost/users")
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create file in root
             root_file = Path(tmpdir) / "root_db.py"
-            root_file.write_text("""
+            root_file.write_text(
+                """
 import psycopg2
 conn = psycopg2.connect("postgresql://localhost/db")
-""")
+"""
+            )
 
             # Create file in subdirectory
             subdir = Path(tmpdir) / "sub"
             subdir.mkdir()
             sub_file = subdir / "sub_db.py"
-            sub_file.write_text("""
+            sub_file.write_text(
+                """
 import psycopg2
 conn = psycopg2.connect("postgresql://localhost/db")
-""")
+"""
+            )
 
             connections = await tracer.trace_directory(tmpdir)
             # Should find both files (recursive by default)

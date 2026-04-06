@@ -457,7 +457,9 @@ async def get_guardrail_metrics(
 
     Requires authentication.
     """
-    logger.debug(f"User {sanitize_log(user.email)} requesting metrics (time_range={sanitize_log(time_range)})")
+    logger.debug(
+        f"User {sanitize_log(user.email)} requesting metrics (time_range={sanitize_log(time_range)})"
+    )
 
     # Validate time range
     valid_ranges = ["24h", "7d", "30d"]

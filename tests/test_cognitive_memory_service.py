@@ -1446,13 +1446,15 @@ class TestCriticAgent:
 
     def test_challenge_task_complexity_complex(self, critic):
         """Test task complexity detection."""
-        complex_task = {"description": """
+        complex_task = {
+            "description": """
             Production deployment of critical IAM security update.
             1. Update Neptune permissions
             2. Update OpenSearch access
             3. Deploy to EKS
             4. Verify compliance
-            """}
+            """
+        }
         result = critic._challenge_task_complexity(
             task=complex_task,
             confidence=0.70,

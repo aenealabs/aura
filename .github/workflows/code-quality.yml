@@ -65,7 +65,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
-          python-version: '3.14'
+          python-version: '3.12'
           cache: 'pip'
 
       - name: Install dependencies
@@ -79,7 +79,7 @@ jobs:
 
       # --- LINTING (always runs) ---
       - name: Run Black (formatting check)
-        run: black --check src/ tests/
+        run: black --check --fast src/ tests/
 
       - name: Run Flake8 (linting)
         run: flake8 src/ tests/

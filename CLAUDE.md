@@ -165,17 +165,7 @@ See `scripts/security_hooks/commit_msg_hook.py` for implementation details.
 
 ### Design System (For UI/UX Work)
 
-- **Primary Brand Color:** `#3B82F6` (blue)
-- **Semantic Colors:**
-  - Critical/Error: `#DC2626` (red)
-  - High Priority: `#EA580C` (orange)
-  - Medium Priority: `#F59E0B` (amber)
-  - Success: `#10B981` (green)
-  - Info: `#3B82F6` (blue)
-- **Typography:** Inter font family, H1 32px, H2 24px, Body 14px, Code 13px (JetBrains Mono)
-- **Spacing:** 8px base unit (4px, 8px, 12px, 16px, 24px, 32px, 48px)
-- **Accessibility:** WCAG 2.1 AA compliance required (4.5:1 contrast minimum)
-- **CSS Framework:** Tailwind CSS (utility-first, LLM-friendly)
+> **Full design system:** See `frontend/CLAUDE.md` for colors, typography, spacing, and component conventions.
 
 ### Security Requirements
 
@@ -369,61 +359,7 @@ Always use `--platform linux/amd64` on ARM machines (Apple Silicon). See `docs/d
 
 **Key Security Requirements:**
 
-1. **IAM Policies - Least Privilege with Documented Exceptions**
-   - All `Resource` fields must be scoped to specific resources
-   - Use `${ProjectName}-*` naming patterns for resources
-   - Add conditions to limit scope (region, tags, service)
-   - Example: `Resource: !Sub 'arn:aws:s3:::${ProjectName}-*-${Environment}'`
-   - **AWS-Required Wildcards:** Some AWS APIs require `Resource: '*'` (e.g., `ecr:GetAuthorizationToken`, `cloudwatch:PutMetricData`). See ADR-041 for defense-in-depth compensating controls.
-
-2. **Encryption - KMS Customer-Managed Keys**
-   - All databases must use customer-managed KMS keys (not AWS-managed)
-   - Enable automatic key rotation (`EnableKeyRotation: true`)
-   - Scope key policies to specific services via `kms:ViaService` condition
-   - Example: See `deploy/cloudformation/neptune.yaml:37-88`
-
-3. **Logging - Extended Retention**
-   - VPC Flow Logs: 365 days (prod), 90 days (dev/qa) minimum
-   - CloudWatch Logs: 90 days minimum for application logs
-   - WAF Logs: 90 days minimum
-   - All logs must use KMS encryption where supported
-
-4. **GovCloud Compatibility - ARN Partitions**
-   - Never hardcode `arn:aws` - always use `${AWS::Partition}`
-   - Use PartitionMap for managed policy ARNs
-   - Example: `!Sub 'arn:${AWS::Partition}:service:...'`
-   - See `deploy/cloudformation/iam.yaml:4-9` for implementation
-
-5. **IAM Policy Size Limit - 10KB Maximum**
-   - AWS enforces a **hard 10,240 byte limit** on inline IAM policies
-   - **CRITICAL: Check policy size BEFORE adding new permissions:**
-     - Read the existing template and count approximate bytes in the inline policy
-     - If adding permissions to a large policy (>300 lines), proactively create a managed policy
-     - Never add permissions to inline policies that are already close to the limit
-   - **Managed policy pattern (REQUIRED when inline policy is large):**
-     ```yaml
-     NewPermissionsManagedPolicy:
-       Type: AWS::IAM::ManagedPolicy
-       Properties:
-         ManagedPolicyName: !Sub '${ProjectName}-descriptive-name-${Environment}'
-         PolicyDocument:
-           Version: '2012-10-17'
-           Statement:
-             - Effect: Allow
-               Action: [action:One, action:Two]
-               Resource: [!Sub 'arn:...']
-     # Then add !Ref NewPermissionsManagedPolicy to role's ManagedPolicyArns
-     ```
-   - **Optimization techniques** to stay under limit:
-     - Use inline array syntax: `Action: [s3:GetObject, s3:PutObject]` not multi-line
-     - Combine resources with wildcards: `${ProjectName}-*-${Environment}` not individual ARNs
-     - Use single CloudFormation wildcard: `stack/${ProjectName}-*-${Environment}/*`
-     - Avoid duplicate ARN patterns across statements
-   - **Validation:** Check policy size BEFORE deploying with `aws iam simulate-custom-policy --policy-input-list` or observe UPDATE_ROLLBACK for "Maximum policy size of 10240 bytes exceeded"
-   - **When limit is hit:** Do NOT disable features as a workaround - split into managed policies attached to the role
-   - See `deploy/cloudformation/codebuild-observability.yaml` for managed policy pattern example
-
-6. **CRITICAL: Never Commit Secrets to Repository**
+1. **CRITICAL: Never Commit Secrets to Repository**
    - **NEVER hardcode** passwords, API keys, tokens, or credentials in any file
    - **NEVER commit** `.env` files, private keys (`.pem`, `.key`), or credential files
    - **Always use** SSM Parameter Store (SecureString) or Secrets Manager for sensitive values
@@ -433,12 +369,7 @@ Always use `--platform linux/amd64` on ARM machines (Apple Silicon). See `docs/d
    - **Allowed patterns:** Example/placeholder values like `AKIAIOSFODNN7EXAMPLE`, `your-api-key-here`, `${SSM_PARAM}`
    - See `scripts/rotate-dev-passwords.sh` for proper credential handling pattern
 
-7. **CRITICAL: Never Hardcode Environment-Specific Values in Templates**
-   - **NEVER hardcode** AWS account IDs, endpoints, cluster names, or other environment-specific values in CloudFormation templates
-   - **Always use** CloudFormation intrinsic functions: `${AWS::AccountId}`, `${AWS::Region}`, `!Sub`, `!Ref`
-   - **For cross-environment data:** Store defaults in Python code, not in CloudFormation
-   - **CloudFormation should only reference** the current deployment environment via parameters and intrinsics
-   - **Rationale:** Hardcoded values create security risks, break multi-environment deployments, and violate infrastructure-as-code principles
+2. **CloudFormation Security Rules:** See `deploy/cloudformation/CLAUDE.md` for IAM policies, KMS encryption, ARN partitions, IAM size limits, logging retention, and environment-specific value rules.
 
 ### Security Review
 
@@ -478,92 +409,13 @@ Before implementing any new pattern, utility, or architectural approach:
 
 ### CRITICAL: Test Coverage Threshold
 
-**The minimum test coverage threshold of 70% in `pyproject.toml` MUST NOT be lowered under any circumstances.**
+> See `tests/CLAUDE.md` for full testing conventions.
 
-- The `fail_under = 70` setting in `[tool.coverage.report]` is a hard requirement
-- If coverage drops below 70%, add more tests to increase coverage - never lower the threshold
-- This applies to all environments (dev, CI, production)
-- Violations of this standard require explicit written approval from the project owner
+**The minimum test coverage threshold of 70% in `pyproject.toml` MUST NOT be lowered under any circumstances.** Violations require explicit written approval from the project owner.
 
-### CloudFormation Description Standards
+### CloudFormation & cfn-lint Standards
 
-**IMPORTANT: Stack Descriptions vs Resource Descriptions**
-
-These standards apply ONLY to the **CloudFormation stack description** (the `Description:` field at the TOP of each template file). They do NOT apply to resource property descriptions inside templates (e.g., the `Description` property of an `AWS::CodeBuild::Project` resource).
-
-- **Stack Description** (line 2 of template): Use the layer-based pattern below
-- **Resource Description** (inside AWS resources): Use functional descriptions that explain what the resource does
-
-**Stack Description Patterns:**
-
-CodeBuild Templates:
-```
-'Project Aura - {LayerName} Layer CodeBuild Project (Layer N.S: Major Services)'
-```
-
-Infrastructure Templates:
-```
-'Project Aura - Layer N.S - ServiceName (Brief Purpose)'
-```
-
-Where `N` = layer number (1-8) and `S` = sub-layer number within that layer.
-
-**Sub-Layer Reference:** See `archive/documentation-audits/CLAUDE_MD_ARCHIVED_SECTIONS_2025-12-13.md` or grep `deploy/cloudformation/*.yaml` Description fields.
-
-**Layer Name Reference:**
-
-| Layer | Name | Major Services |
-|-------|------|----------------|
-| 1 | Foundation | VPC, IAM, WAF, VPC Endpoints, Network Services |
-| 2 | Data | Neptune, OpenSearch, DynamoDB, S3 |
-| 3 | Compute | EKS, Node Groups, ECR, IRSA |
-| 4 | Application | API Services, Bedrock Integration, Frontend |
-| 5 | Observability | Secrets, Monitoring, Cost Alerts, Disaster Recovery |
-| 6 | Serverless | Lambda, Step Functions, EventBridge, Chat, Runbook, Incident Response |
-| 7 | Sandbox | Ephemeral Test Environments, HITL Workflow |
-| 8 | Security | AWS Config, GuardDuty, Drift Detection, Red Team |
-
-**Rules:**
-- Single-line descriptions only (no multi-line `|` blocks)
-- No developer notes, cost analysis, or implementation details
-- Brief purpose in parentheses (2-4 words)
-- Each infrastructure template has a unique sub-layer number
-- Sub-layer numbers reflect deployment order within a layer (e.g., 6.1 → 6.2 → ... → 6.10)
-- Integer portion determines layer name (6.1 through 6.10 all use "Serverless" layer name)
-
-### cfn-lint Standards
-
-CloudFormation templates are validated using cfn-lint with standardized exit code handling.
-
-**Configuration:**
-- `.cfnlintrc` - Global configuration (ignores W3002, W1020)
-- `scripts/cfn-lint-wrapper.sh` - Wrapper script for consistent exit code handling
-- `scripts/validate_iam_actions.py` - IAM action validator for W3037 warnings
-
-**Exit Code Handling:**
-| Exit Code | Meaning | Action |
-|-----------|---------|--------|
-| 0 | No errors/warnings | Pass |
-| 4 | Warnings only | Non-blocking (pass) |
-| 2, 6, 8 | Errors found | Fail build |
-
-**Usage:**
-```bash
-# Use wrapper script (recommended)
-./scripts/cfn-lint-wrapper.sh deploy/cloudformation/template.yaml
-
-# Validate IAM actions (W3037 warnings)
-python scripts/validate_iam_actions.py --report
-
-# In buildspecs, always use graceful fallback pattern:
-cfn-lint template.yaml || echo "cfn-lint warnings (non-blocking)"
-```
-
-**Known Valid IAM Actions:**
-When cfn-lint reports W3037 for actions not in its database, add verified actions to `scripts/validate_iam_actions.py` KNOWN_VALID_ACTIONS set after confirming they exist in AWS documentation.
-
-**Nightly Validation:**
-`.github/workflows/nightly-iam-validation.yml` runs daily at 2 AM UTC to validate all templates and IAM actions. Creates GitHub issues for invalid actions.
+> **Full CloudFormation guide:** See `deploy/cloudformation/CLAUDE.md` for description standards, layer table, cfn-lint configuration, IAM policy limits, and all template conventions.
 
 ---
 
@@ -577,24 +429,7 @@ When cfn-lint reports W3037 for actions not in its database, add verified action
 
 ## CI/CD Best Practices
 
-> **Full Guide:** `docs/deployment/CICD_SETUP_GUIDE.md` (563 lines)
-
-**Critical Rules:**
-1. **Single Source of Truth:** CodeBuild is the ONLY authoritative deployment method
-2. **No Duplicate Builds:** Never trigger CodeBuild while another build is running
-3. **No Manual Deployments:** Manual deploys break audit trail and IAM consistency
-4. **Buildspec Size Limit:** Max 600 lines per buildspec (`wc -l deploy/buildspecs/*.yml` to check)
-
-**Quick Commands:**
-```bash
-# Trigger deployment
-aws codebuild start-build --project-name aura-compute-deploy-dev
-
-# Check for running builds first
-aws codebuild list-builds-for-project --project-name {project} --max-items 1
-```
-
-**If you manually deployed:** Delete stack → Redeploy via CodeBuild to restore single source of truth.
+> **Full CI/CD guide:** `docs/deployment/CICD_SETUP_GUIDE.md` | **Buildspec conventions:** `deploy/buildspecs/CLAUDE.md`
 
 ---
 
@@ -645,3 +480,59 @@ After completing any significant feature, bug fix, or infrastructure change, **A
 - **Research Findings:** See `docs/research/RESEARCH_FINDINGS_CI_CD_DESIGN_WORKFLOWS.md` for automation patterns
 
 **Remember:** Reference documentation files by path instead of reading them in full. This CLAUDE.md contains the most frequently-needed essentials for efficient context management.
+
+---
+
+## Scoped Context Assembly
+
+Directory-specific `CLAUDE.md` files load automatically when working in these directories. They contain domain-specific conventions extracted from this root file:
+
+| Directory | Scope |
+|-----------|-------|
+| `deploy/cloudformation/CLAUDE.md` | CF description standards, layer table, cfn-lint, IAM limits, ARN partitions, KMS, logging |
+| `deploy/buildspecs/CLAUDE.md` | CodeBuild rules, 600-line limit, deploy patterns |
+| `frontend/CLAUDE.md` | Design system, colors, typography, React/TS/Tailwind conventions |
+| `src/services/CLAUDE.md` | Python service patterns, fork-join boundaries, shared dependencies |
+| `tests/CLAUDE.md` | 70% coverage threshold, pytest conventions, mock patterns |
+| `scripts/CLAUDE.md` | Credential handling, kill-switch operations, security hooks |
+
+**Rules for scoped files:**
+- Scoped files are **additive** to root rules, never contradictory
+- Universal security rules (secrets, container images, attribution) live ONLY in this root file
+- Scoped files reference root rules with "See root CLAUDE.md for..." rather than duplicating them
+
+---
+
+## Agentic Harness Configuration
+
+### Command Risk Classification
+
+Agent permissions are enforced via `.claude/settings.json`:
+
+- **Auto-allowed:** Read-only commands (git status/log/diff, kubectl get/describe/logs, aws describe/list, pytest, linters)
+- **Denied:** Destructive operations (delete-stack, terminate-instances, delete-db, rm -rf, force-push, kubectl delete namespace, helm uninstall, credential creation)
+- **Ask (default):** Everything else requires explicit approval
+
+### Lifecycle Hooks
+
+Configured in `.claude/settings.json`:
+- **PostToolUse(Edit|Write)** on `*.py` in `src/`, `scripts/`, `tests/` -> auto-runs `black` formatter (conditional on binary availability)
+- **PostToolUse(Edit|Write)** on `deploy/cloudformation/*.yaml` -> auto-runs `cfn-lint` (excludes buildspecs, conditional on binary availability)
+
+### Fork-Join Parallelism
+
+Safe for isolated parallel worktree work:
+- **Independent service packages:** `rlm/`, `jepa/`, `constraint_geometry/`, `gpu_scheduler/`, `env_validator/`, `airgap/`, `vulnerability_scanner/`
+- **CloudFormation templates:** All 155 templates are independently validatable
+- **Test files:** Independent per-service test files
+
+**NOT safe for parallel work (shared dependencies):** Most single-file services under `src/services/` share `bedrock_llm_service`, `neptune_graph_service`, `opensearch_vector_service`.
+
+### Explore-Plan-Act Enforcement
+
+For high-risk operations (infrastructure changes, security modifications):
+1. **Explore:** Read and map the affected templates/services before proposing changes
+2. **Plan:** Present the change plan for approval before making edits
+3. **Act:** Execute changes only after exploration and plan approval
+
+This is enforced by the permission model: edits to `deploy/` paths require explicit approval via the ask-mode default.

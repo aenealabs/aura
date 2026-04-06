@@ -17,7 +17,7 @@
     "amazon-cognito-identity-js": "^6.3.12",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
-    "lucide-react": "^0.562.0",
+    "lucide-react": "^1.7.0",
     "mermaid": "^11.14.0",
     "pptxgenjs": "^4.0.1",
     "react": "^19.2.4",

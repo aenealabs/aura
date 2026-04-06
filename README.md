@@ -41,6 +41,8 @@ Then what?                                   Awaiting human approval for deploym
 - **Sandbox-first validation** -- every patch is tested in network-isolated environments before reaching human reviewers
 - **Constitutional AI guardrails** -- 16-principle critique-revision pipeline ensures safe, compliant agent behavior
 
+**Screenshot AI Trust Center**
+![Aura AI Trust Center](aura/assets/logo/aura-ai-trust-center.jpeg)
 ---
 
 ## Architecture

@@ -60,7 +60,7 @@ databases:
     neo4j:
       enabled: true
       edition: enterprise
-      password: ""  # REQUIRED: Set via --set
+      password: "CHANGE_ME"  # REQUIRED: Set via --set
       persistence:
         size: 100Gi
       resources:

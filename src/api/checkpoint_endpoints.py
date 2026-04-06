@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.services.execution_checkpoint_service import (
+from src.api.log_sanitizer import sanitize_log
     CheckpointStatus,
     ExecutionCheckpointService,
     InterventionMode,
@@ -416,7 +417,7 @@ async def emergency_stop(
             denied_count += 1
 
         logger.warning(
-            f"Emergency stop on execution {execution_id} by {request.user_id}: "
+            f"Emergency stop on execution {sanitize_log(execution_id)} by {sanitize_log(request.user_id)}: "
             f"{request.reason} (denied {denied_count} checkpoints)"
         )
 

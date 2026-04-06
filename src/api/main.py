@@ -83,6 +83,7 @@ from src.services.database_connections import (
 from src.services.git_ingestion_service import GitIngestionService
 from src.services.observability_service import get_monitor, start_event_loop_monitor
 from src.services.realtime_monitoring_integration import RealTimeMonitoringIntegration
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -558,7 +559,7 @@ async def trigger_ingestion(
             request.shallow_clone,
         )
 
-        logger.info(f"Ingestion job {job_id} queued for {request.repository_url}")
+        logger.info(f"Ingestion job {sanitize_log(job_id)} queued for {sanitize_log(request.repository_url)}")
 
         return IngestionResponse(
             job_id=job_id,

@@ -31,6 +31,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -695,7 +696,7 @@ async def connect_agent(request: ConnectAgentRequest):
     }
 
     logger.info(
-        f"Connected agent: {request.agent_id} from {marketplace_agent['provider']}"
+        f"Connected agent: {sanitize_log(request.agent_id)} from {sanitize_log(marketplace_agent['provider'])}"
     )
 
     return ConnectAgentResponse(
@@ -728,7 +729,7 @@ async def disconnect_agent(agent_id: str):
         )
 
     del _EXTERNAL_AGENTS[agent_id]
-    logger.info(f"Disconnected agent: {agent_id}")
+    logger.info(f"Disconnected agent: {sanitize_log(agent_id)}")
 
 
 @router.put(

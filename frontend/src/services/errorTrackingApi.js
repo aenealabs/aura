@@ -302,7 +302,7 @@ function getSessionId() {
   let sessionId = sessionStorage.getItem(key);
 
   if (!sessionId) {
-    sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    sessionId = `session-${Date.now()}-${crypto.getRandomValues(new Uint8Array(5)).reduce((s, b) => s + b.toString(36).padStart(2, '0'), '').substring(0, 7)}`;
     sessionStorage.setItem(key, sessionId);
   }
 

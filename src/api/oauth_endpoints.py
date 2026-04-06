@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from src.api.auth import User, get_current_user
 from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
 from src.services.oauth_provider_service import OAuthProviderService, get_oauth_service
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +298,7 @@ async def revoke_connection(
     """
     try:
         await oauth_service.revoke_connection(user.sub, connection_id)
-        logger.info(f"OAuth connection {connection_id} revoked for user {user.sub}")
+        logger.info(f"OAuth connection {sanitize_log(connection_id)} revoked for user {sanitize_log(user.sub)}")
 
         return {"status": "revoked", "connection_id": connection_id}
 

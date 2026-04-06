@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from src.api.auth import User, get_current_user
 from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
 from src.services.trust_center_service import (
+from src.api.log_sanitizer import sanitize_log
     TrustCenterService,
     create_trust_center_service,
 )
@@ -267,7 +268,7 @@ async def get_principles(
     Requires authentication.
     """
     logger.debug(
-        f"User {user.email} requesting principles (category={category}, severity={severity})"
+        f"User {sanitize_log(user.email)} requesting principles (category={sanitize_log(category)}, severity={sanitize_log(severity)})"
     )
 
     # Validate filters
@@ -373,7 +374,7 @@ async def get_safety_metrics(
 
     Requires authentication.
     """
-    logger.debug(f"User {user.email} requesting metrics (period={period})")
+    logger.debug(f"User {sanitize_log(user.email)} requesting metrics (period={sanitize_log(period)})")
 
     # Validate period
     valid_periods = ["24h", "7d", "30d"]
@@ -443,7 +444,7 @@ async def get_audit_decisions(
     Requires authentication.
     """
     logger.debug(
-        f"User {user.email} requesting decisions (limit={limit}, offset={offset})"
+        f"User {sanitize_log(user.email)} requesting decisions (limit={sanitize_log(limit)}, offset={sanitize_log(offset)})"
     )
 
     # Parse datetime filters
@@ -523,7 +524,7 @@ async def export_data(
     Requires authentication.
     """
     logger.info(
-        f"User {user.email} exporting Trust Center data (format={request.format}, period={request.period})"
+        f"User {sanitize_log(user.email)} exporting Trust Center data (format={sanitize_log(request.format)}, period={sanitize_log(request.period)})"
     )
 
     # Validate format
@@ -600,7 +601,7 @@ async def get_export_data(
 
     Requires authentication.
     """
-    logger.debug(f"User {user.email} requesting export data {export_id}")
+    logger.debug(f"User {sanitize_log(user.email)} requesting export data {sanitize_log(export_id)}")
 
     # In a real implementation, we would retrieve from cache or regenerate
     # For now, generate fresh data

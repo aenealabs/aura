@@ -29,6 +29,7 @@ from src.services.api_rate_limiter import (
     standard_rate_limit,
 )
 from src.services.hitl_approval_service import (
+from src.api.log_sanitizer import sanitize_log
     ApprovalStatus,
     HITLApprovalError,
     HITLApprovalService,
@@ -180,7 +181,7 @@ def _send_decision_notification(
             reason=reason,
             recipients=recipients,
         )
-        logger.info(f"Sent {decision.lower()} notification for {approval_id}")
+        logger.info(f"Sent {sanitize_log(decision.lower())} notification for {sanitize_log(approval_id)}")
     except Exception as err:
         # Don't fail the approval/rejection if notification fails
         logger.warning(f"Failed to send {decision.lower()} notification: {err}")
@@ -408,7 +409,7 @@ async def get_approval(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting approval {approval_id}: {e}", exc_info=True)
+        logger.error(f"Error getting approval {sanitize_log(approval_id)}: {sanitize_log(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error getting approval")
 
 
@@ -481,12 +482,12 @@ async def approve_request(
         )
 
     except HITLApprovalError as e:
-        logger.warning(f"Approval request error for {approval_id}: {e}")
+        logger.warning(f"Approval request error for {sanitize_log(approval_id)}: {sanitize_log(e)}")
         raise HTTPException(
             status_code=400, detail="Approval request cannot be processed"
         )
     except Exception as e:
-        logger.error(f"Error approving {approval_id}: {e}", exc_info=True)
+        logger.error(f"Error approving {sanitize_log(approval_id)}: {sanitize_log(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error approving request")
 
 
@@ -545,12 +546,12 @@ async def reject_request(
         )
 
     except HITLApprovalError as e:
-        logger.warning(f"Rejection request error for {approval_id}: {e}")
+        logger.warning(f"Rejection request error for {sanitize_log(approval_id)}: {sanitize_log(e)}")
         raise HTTPException(
             status_code=400, detail="Rejection request cannot be processed"
         )
     except Exception as e:
-        logger.error(f"Error rejecting {approval_id}: {e}", exc_info=True)
+        logger.error(f"Error rejecting {sanitize_log(approval_id)}: {sanitize_log(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error rejecting request")
 
 
@@ -580,10 +581,10 @@ async def cancel_request(
         )
 
     except HITLApprovalError as e:
-        logger.warning(f"Cancel request error for {approval_id}: {e}")
+        logger.warning(f"Cancel request error for {sanitize_log(approval_id)}: {sanitize_log(e)}")
         raise HTTPException(
             status_code=400, detail="Cancellation request cannot be processed"
         )
     except Exception as e:
-        logger.error(f"Error cancelling {approval_id}: {e}", exc_info=True)
+        logger.error(f"Error cancelling {sanitize_log(approval_id)}: {sanitize_log(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error cancelling request")

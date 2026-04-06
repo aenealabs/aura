@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from src.api.auth import User, get_current_user, require_role
 from src.config.feature_flags import (
+from src.api.log_sanitizer import sanitize_log
     CustomerFeatureOverrides,
     FeatureDefinition,
     FeatureStatus,
@@ -352,7 +353,7 @@ async def set_feature_override(
         service.set_customer_overrides(overrides)
 
         logger.info(
-            f"Admin {current_user.email} set {feature_name}={enabled} for customer {customer_id}"
+            f"Admin {sanitize_log(current_user.email)} set {sanitize_log(feature_name)}={sanitize_log(enabled)} for customer {sanitize_log(customer_id)}"
         )
 
         return {

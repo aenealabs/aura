@@ -254,9 +254,10 @@ async def detailed_health_check(adapter=Depends(get_adapter)) -> dict[str, Any]:
             "health_check_passed": is_healthy,
         }
     except Exception as e:
+        logger.error("Palantir health check failed: %s", e)
         return {
             "status": "error",
-            "error": str(e),
+            "error": "Internal health check failure",
             "health_check_passed": False,
         }
 

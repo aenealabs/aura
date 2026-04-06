@@ -19,6 +19,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -310,7 +311,7 @@ async def decompose_query(request: DecomposeRequest) -> QueryDecompositionRespon
 
     Returns the decomposition plan with confidence scores.
     """
-    logger.info(f"Decomposing query: {request.query[:100]}...")
+    logger.info(f"Decomposing query: {sanitize_log(request.query[:100])}...")
 
     decomposition = _generate_decomposition(request.query, request.max_subqueries)
 

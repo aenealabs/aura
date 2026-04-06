@@ -18,6 +18,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +194,7 @@ async def list_investigations(
         ]
 
         logger.info(
-            f"Retrieved {len(investigations)} investigations (hitl_status={hitl_status})"
+            f"Retrieved {sanitize_log(len(investigations))} investigations (hitl_status={sanitize_log(hitl_status)})"
         )
         return investigations
 
@@ -257,13 +258,13 @@ async def get_investigation(incident_id: str) -> InvestigationDetail:
             rejection_reason=item.get("rejection_reason"),
         )
 
-        logger.info(f"Retrieved investigation details: {incident_id}")
+        logger.info(f"Retrieved investigation details: {sanitize_log(incident_id)}")
         return investigation
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get investigation {incident_id}: {e}", exc_info=True)
+        logger.error(f"Failed to get investigation {sanitize_log(incident_id)}: {sanitize_log(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve investigation")
 
 
@@ -323,7 +324,7 @@ async def approve_mitigation(
         )
 
         logger.info(
-            f"Investigation {incident_id} approved by {approval.approver_email}"
+            f"Investigation {sanitize_log(incident_id)} approved by {sanitize_log(approval.approver_email)}"
         )
 
         # TODO: Trigger mitigation execution (Step Functions or direct action)
@@ -339,7 +340,7 @@ async def approve_mitigation(
         raise
     except Exception as e:
         logger.error(
-            f"Failed to approve investigation {incident_id}: {e}", exc_info=True
+            f"Failed to approve investigation {sanitize_log(incident_id)}: {sanitize_log(e)}", exc_info=True
         )
         raise HTTPException(status_code=500, detail="Failed to approve mitigation")
 
@@ -400,7 +401,7 @@ async def reject_mitigation(
         )
 
         logger.info(
-            f"Investigation {incident_id} rejected by {rejection.approver_email}: {rejection.reason}"
+            f"Investigation {sanitize_log(incident_id)} rejected by {sanitize_log(rejection.approver_email)}: {sanitize_log(rejection.reason)}"
         )
 
         return ApprovalResponse(
@@ -413,7 +414,7 @@ async def reject_mitigation(
         raise
     except Exception as e:
         logger.error(
-            f"Failed to reject investigation {incident_id}: {e}", exc_info=True
+            f"Failed to reject investigation {sanitize_log(incident_id)}: {sanitize_log(e)}", exc_info=True
         )
         raise HTTPException(status_code=500, detail="Failed to reject mitigation")
 

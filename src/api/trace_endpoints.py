@@ -18,6 +18,7 @@ from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -669,5 +670,5 @@ async def get_trace(trace_id: str) -> TraceModel:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Failed to get trace %s: %s", trace_id, e, exc_info=True)
+        logger.error("Failed to get trace %s: %s", sanitize_log(trace_id), e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get trace")

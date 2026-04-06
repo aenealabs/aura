@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.services.recurring_task_service import (
+from src.api.log_sanitizer import sanitize_log
     JobType,
     RecurringTask,
     RecurringTaskService,
@@ -269,7 +270,7 @@ async def update_recurring_task(
         logger.warning(f"Task update validation error: {e}")
         raise HTTPException(status_code=400, detail="Invalid task update parameters")
     except Exception as e:
-        logger.error(f"Failed to update task {task_id}: {e}", exc_info=True)
+        logger.error(f"Failed to update task {sanitize_log(task_id)}: {sanitize_log(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update task")
 
 

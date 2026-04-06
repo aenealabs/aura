@@ -35,6 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.config import get_integration_config
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -538,7 +539,7 @@ async def receive_notification(
     External agents send status updates here when tasks complete.
     """
     logger.info(
-        f"Received push notification: method={notification.method}, "
+        f"Received push notification: method={sanitize_log(notification.method)}, "
         f"params={notification.params}"
     )
 

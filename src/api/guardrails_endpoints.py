@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user
 from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -367,7 +368,7 @@ async def update_guardrail_config(
     }
 
     logger.info(
-        f"Guardrail config updated by {user.email} (version {_current_config['version']})"
+        f"Guardrail config updated by {sanitize_log(user.email)} (version {sanitize_log(_current_config['version'])})"
     )
 
     return GuardrailConfigResponse(
@@ -456,7 +457,7 @@ async def get_guardrail_metrics(
 
     Requires authentication.
     """
-    logger.debug(f"User {user.email} requesting metrics (time_range={time_range})")
+    logger.debug(f"User {sanitize_log(user.email)} requesting metrics (time_range={sanitize_log(time_range)})")
 
     # Validate time range
     valid_ranges = ["24h", "7d", "30d"]

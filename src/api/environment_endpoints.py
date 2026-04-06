@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from src.api.auth import User, get_current_user
 from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
 from src.services.environment_provisioning_service import (
+from src.api.log_sanitizer import sanitize_log
     EnvironmentConfig,
     EnvironmentProvisioningService,
     EnvironmentStatus,
@@ -351,7 +352,7 @@ async def create_environment(
         raise HTTPException(status_code=429, detail="Environment quota exceeded")
 
     logger.info(
-        f"Environment {env.environment_id} created by user {user.sub} "
+        f"Environment {sanitize_log(env.environment_id)} created by user {sanitize_log(user.sub)} "
         f"(template={request.template_id}, status={env.status.value})"
     )
 
@@ -420,7 +421,7 @@ async def terminate_environment(
     if not success:
         raise HTTPException(status_code=500, detail="Failed to terminate environment")
 
-    logger.info(f"Environment {environment_id} terminated by user {user.sub}")
+    logger.info(f"Environment {sanitize_log(environment_id)} terminated by user {sanitize_log(user.sub)}")
 
 
 @router.post("/{environment_id}/extend", response_model=EnvironmentResponse)
@@ -463,7 +464,7 @@ async def extend_environment(
         raise HTTPException(status_code=500, detail="Failed to extend environment TTL")
 
     logger.info(
-        f"Environment {environment_id} TTL extended by {request.additional_hours}h "
+        f"Environment {sanitize_log(environment_id)} TTL extended by {sanitize_log(request.additional_hours)}h "
         f"by user {user.sub}"
     )
 

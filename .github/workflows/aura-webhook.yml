@@ -69,28 +69,32 @@ jobs:
       - name: Send push notification to Aura
         if: github.event_name == 'push'
         continue-on-error: true
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_AUTHOR: ${{ github.actor }}
+          COMMIT_SHA: ${{ github.sha }}
+          REPO_NAME: ${{ github.repository }}
+          REPO_CLONE_URL: ${{ github.event.repository.clone_url }}
+          GIT_REF: ${{ github.ref }}
+          DELIVERY_ID: ${{ github.run_id }}
         run: |
-          curl -X POST "${{ env.AURA_API_URL }}/webhook/github" \
+          jq -n \
+            --arg ref "$GIT_REF" \
+            --arg repo "$REPO_NAME" \
+            --arg clone_url "$REPO_CLONE_URL" \
+            --arg sha "$COMMIT_SHA" \
+            --arg message "$COMMIT_MESSAGE" \
+            --arg author "$COMMIT_AUTHOR" \
+            '{
+              ref: $ref,
+              repository: { full_name: $repo, clone_url: $clone_url },
+              head_commit: { id: $sha, message: $message, author: { name: $author } },
+              pusher: { name: $author }
+            }' | curl -X POST "${{ env.AURA_API_URL }}/webhook/github" \
             -H "Content-Type: application/json" \
             -H "X-GitHub-Event: push" \
-            -H "X-GitHub-Delivery: ${{ github.run_id }}" \
-            -d '{
-              "ref": "${{ github.ref }}",
-              "repository": {
-                "full_name": "${{ github.repository }}",
-                "clone_url": "${{ github.event.repository.clone_url }}"
-              },
-              "head_commit": {
-                "id": "${{ github.sha }}",
-                "message": "${{ github.event.head_commit.message }}",
-                "author": {
-                  "name": "${{ github.actor }}"
-                }
-              },
-              "pusher": {
-                "name": "${{ github.actor }}"
-              }
-            }' || echo "Failed to notify Aura API (may not be available)"
+            -H "X-GitHub-Delivery: $DELIVERY_ID" \
+            -d @- || echo "Failed to notify Aura API (may not be available)"
 
       - name: Trigger ingestion for significant changes
         if: github.event_name == 'push' && steps.commit.outputs.changed_files > 0
@@ -110,38 +114,47 @@ jobs:
       - name: Send PR notification to Aura
         if: github.event_name == 'pull_request'
         continue-on-error: true
+        env:
+          PR_ACTION: ${{ github.event.action }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          REPO_NAME: ${{ github.repository }}
+          DELIVERY_ID: ${{ github.run_id }}
         run: |
-          PR_ACTION="${{ github.event.action }}"
-          PR_MERGED="${{ github.event.pull_request.merged }}"
-
           if [ "$PR_ACTION" == "closed" ] && [ "$PR_MERGED" == "true" ]; then
             EVENT_TYPE="pr_merged"
           else
             EVENT_TYPE="pr_$PR_ACTION"
           fi
 
-          curl -X POST "${{ env.AURA_API_URL }}/webhook/github" \
+          jq -n \
+            --arg action "$PR_ACTION" \
+            --argjson number "${PR_NUMBER}" \
+            --arg title "$PR_TITLE" \
+            --argjson merged "${PR_MERGED}" \
+            --arg head_ref "$PR_HEAD_REF" \
+            --arg head_sha "$PR_HEAD_SHA" \
+            --arg base_ref "$PR_BASE_REF" \
+            --arg repo "$REPO_NAME" \
+            '{
+              action: $action,
+              number: $number,
+              pull_request: {
+                title: $title,
+                merged: $merged,
+                head: { ref: $head_ref, sha: $head_sha },
+                base: { ref: $base_ref }
+              },
+              repository: { full_name: $repo }
+            }' | curl -X POST "${{ env.AURA_API_URL }}/webhook/github" \
             -H "Content-Type: application/json" \
             -H "X-GitHub-Event: pull_request" \
-            -H "X-GitHub-Delivery: ${{ github.run_id }}" \
-            -d '{
-              "action": "${{ github.event.action }}",
-              "number": ${{ github.event.pull_request.number }},
-              "pull_request": {
-                "title": "${{ github.event.pull_request.title }}",
-                "merged": ${{ github.event.pull_request.merged }},
-                "head": {
-                  "ref": "${{ github.event.pull_request.head.ref }}",
-                  "sha": "${{ github.event.pull_request.head.sha }}"
-                },
-                "base": {
-                  "ref": "${{ github.event.pull_request.base.ref }}"
-                }
-              },
-              "repository": {
-                "full_name": "${{ github.repository }}"
-              }
-            }' || echo "Failed to notify Aura API"
+            -H "X-GitHub-Delivery: $DELIVERY_ID" \
+            -d @- || echo "Failed to notify Aura API"
 
       - name: Send release notification to Aura
         if: github.event_name == 'release'

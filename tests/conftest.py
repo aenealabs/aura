@@ -296,12 +296,11 @@ def reset_lambda_environment():
     # Ensure clean event loop state for Lambda tests that use asyncio.run()
     # Some tests may leave event loops in a closed/corrupted state
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            # Create a new event loop if the current one is closed
-            asyncio.set_event_loop(asyncio.new_event_loop())
+        loop = asyncio.get_running_loop()
     except RuntimeError:
-        # No current event loop - create one
+        loop = None
+
+    if loop is None or loop.is_closed():
         asyncio.set_event_loop(asyncio.new_event_loop())
 
     yield

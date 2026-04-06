@@ -25,8 +25,7 @@ GitPython>=3.1.43            # Git metadata extraction
 PyGithub>=2.5.0              # GitHub API integration
 
 # Authentication
-PyJWT>=2.9.0                 # GitHub App JWT authentication
-python-jose[cryptography]>=3.3.0  # Cognito JWT validation with JWKS
+PyJWT[crypto]>=2.9.0         # JWT validation (GitHub App auth + Cognito JWKS)
 cryptography>=43.0.0         # RSA key support
 
 # API Framework

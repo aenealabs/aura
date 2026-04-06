@@ -16,7 +16,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from jose import jwt
+import jwt
 
 from src.services.identity.models import (
     AuraTokens,
@@ -329,16 +329,24 @@ class TokenNormalizationService:
             # For RS256, use public key; for HS256, use signing key
             verify_key = self._public_key or self._signing_key
 
+            # First decode without signature verification to check token type
+            unverified = jwt.decode(
+                token,
+                options={"verify_signature": False},
+                algorithms=[self.algorithm],
+            )
+            is_refresh = unverified.get("token_type") == "refresh"
+
             claims = jwt.decode(
                 token,
                 verify_key,
                 algorithms=[self.algorithm],
                 issuer=self.issuer,
-                audience="aura-api",
+                audience=None if is_refresh else "aura-api",
                 options={
                     "verify_iss": True,
                     "verify_exp": True,
-                    "verify_aud": True,
+                    "verify_aud": not is_refresh,
                 },
             )
 
@@ -356,7 +364,7 @@ class TokenNormalizationService:
                 valid=False,
                 error="Token has expired",
             )
-        except jwt.JWTClaimsError as e:
+        except jwt.InvalidTokenError as e:
             return TokenValidationResult(
                 valid=False,
                 error=f"Invalid claims: {e}",
@@ -379,7 +387,7 @@ class TokenNormalizationService:
 
     def decode_token_unverified(self, token: str) -> dict[str, Any]:
         """Decode token without verification (for inspection only)."""
-        return jwt.get_unverified_claims(token)
+        return jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256", "RS256"])
 
     def get_token_header(self, token: str) -> dict[str, Any]:
         """Get token header without verification."""

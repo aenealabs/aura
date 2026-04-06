@@ -27,7 +27,8 @@ from typing import Any
 from urllib.parse import urlencode
 
 import aiohttp
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 
 from src.services.identity.base_provider import (
     AuthenticationError,
@@ -461,22 +462,25 @@ class OIDCProvider(IdentityProvider):
             kid = header.get("kid")
 
             # Find matching key
-            key = None
+            jwk_data = None
             for k in jwks.get("keys", []):
                 if k.get("kid") == kid:
-                    key = k
+                    jwk_data = k
                     break
 
-            if not key:
+            if not jwk_data:
                 return TokenValidationResult(
                     valid=False,
                     error=f"No matching key found for kid: {kid}",
                 )
 
+            # Convert JWK dict to PyJWK for PyJWT compatibility
+            signing_key = jwt.PyJWK.from_dict(jwk_data)
+
             # Validate token
             claims = jwt.decode(
                 id_token,
-                key,
+                signing_key,
                 algorithms=["RS256", "RS384", "RS512"],
                 audience=self.client_id,
                 issuer=self.issuer,
@@ -509,12 +513,12 @@ class OIDCProvider(IdentityProvider):
                 valid=False,
                 error="ID token has expired",
             )
-        except jwt.JWTClaimsError as e:
+        except jwt.InvalidTokenError as e:
             return TokenValidationResult(
                 valid=False,
                 error=f"Invalid claims: {e}",
             )
-        except JWTError as e:
+        except PyJWTError as e:
             return TokenValidationResult(
                 valid=False,
                 error=f"JWT validation failed: {e}",
@@ -529,18 +533,21 @@ class OIDCProvider(IdentityProvider):
             header = jwt.get_unverified_header(token)
             kid = header.get("kid")
 
-            key = None
+            jwk_data = None
             for k in jwks.get("keys", []):
                 if k.get("kid") == kid:
-                    key = k
+                    jwk_data = k
                     break
 
-            if not key:
+            if not jwk_data:
                 return TokenValidationResult(valid=False, error="Key not found")
+
+            # Convert JWK dict to PyJWK for PyJWT compatibility
+            signing_key = jwt.PyJWK.from_dict(jwk_data)
 
             claims = jwt.decode(
                 token,
-                key,
+                signing_key,
                 algorithms=["RS256", "RS384", "RS512"],
                 options={
                     "verify_aud": False
@@ -549,7 +556,7 @@ class OIDCProvider(IdentityProvider):
 
             return TokenValidationResult(valid=True, claims=claims)
 
-        except JWTError as e:
+        except PyJWTError as e:
             return TokenValidationResult(valid=False, error=str(e))
 
     async def get_user_info(self, token: str) -> UserInfo:

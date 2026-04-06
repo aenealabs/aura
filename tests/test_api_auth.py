@@ -309,7 +309,7 @@ class TestVerifyToken:
 
     def test_expired_token(self):
         """Test that expired token raises 401 with 'expired' in detail."""
-        from jose import jwt as jose_jwt
+        import jwt as pyjwt
 
         import src.api.auth as auth_module
 
@@ -331,23 +331,23 @@ class TestVerifyToken:
             mock_client.get.return_value = mock_response
 
             # Patch the HTTP client and jwt on auth's imported modules
-            # Use jose_jwt.ExpiredSignatureError directly (not via auth_module)
-            # to ensure we get the real exception class
+            # First decode (unverified) returns token_use,
+            # second decode (verified) raises ExpiredSignatureError
+            mock_pyJWK = MagicMock()
             with patch.object(auth_module, "get_http_client", return_value=mock_client):
                 with patch.object(
                     auth_module.jwt,
                     "get_unverified_header",
                     return_value={"kid": "testkey"},
                 ):
-                    with patch.object(
-                        auth_module.jwt,
-                        "get_unverified_claims",
-                        return_value={"token_use": "access"},
-                    ):
+                    with patch.object(auth_module.jwt, "PyJWK", mock_pyJWK):
                         with patch.object(
                             auth_module.jwt,
                             "decode",
-                            side_effect=jose_jwt.ExpiredSignatureError("Token expired"),
+                            side_effect=[
+                                {"token_use": "access"},
+                                pyjwt.ExpiredSignatureError("Token expired"),
+                            ],
                         ):
                             with assert_http_exception(401, "expired"):
                                 auth_module.verify_token("expired.token.here")
@@ -381,10 +381,10 @@ class TestVerifyToken:
                     "get_unverified_header",
                     return_value={"kid": "testkey"},
                 ):
-                    # Return invalid token_use
+                    # First decode call (unverified) returns invalid token_use
                     with patch.object(
                         auth_module.jwt,
-                        "get_unverified_claims",
+                        "decode",
                         return_value={"token_use": "refresh"},  # Invalid!
                     ):
                         with assert_http_exception(401, "Invalid token type"):
@@ -421,23 +421,22 @@ class TestVerifyToken:
                     "get_unverified_header",
                     return_value={"kid": "testkey"},
                 ):
+                    # First decode (unverified) returns token_use,
+                    # second decode (verified) returns payload with wrong client_id
                     with patch.object(
                         auth_module.jwt,
-                        "get_unverified_claims",
-                        return_value={"token_use": "access"},
-                    ):
-                        # Access token with wrong client_id
-                        with patch.object(
-                            auth_module.jwt,
-                            "decode",
-                            return_value={
+                        "decode",
+                        side_effect=[
+                            {"token_use": "access"},
+                            {
                                 "sub": "user-123",
                                 "token_use": "access",
                                 "client_id": "wrong-client-id",  # Different client!
                             },
-                        ):
-                            with assert_http_exception(401, "Invalid token audience"):
-                                auth_module.verify_token("access.token.here")
+                        ],
+                    ):
+                        with assert_http_exception(401, "Invalid token audience"):
+                            auth_module.verify_token("access.token.here")
 
         auth_module.clear_auth_caches()
 
@@ -470,26 +469,26 @@ class TestVerifyToken:
                     "get_unverified_header",
                     return_value={"kid": "testkey"},
                 ):
+                    # Valid access token with correct client_id
+                    expected_payload = {
+                        "sub": "user-123",
+                        "token_use": "access",
+                        "client_id": "our-client-id",  # Correct!
+                        "cognito:groups": ["admin"],
+                    }
+                    # First decode (unverified) returns token_use,
+                    # second decode (verified) returns full payload
                     with patch.object(
                         auth_module.jwt,
-                        "get_unverified_claims",
-                        return_value={"token_use": "access"},
+                        "decode",
+                        side_effect=[
+                            {"token_use": "access"},
+                            expected_payload,
+                        ],
                     ):
-                        # Valid access token with correct client_id
-                        expected_payload = {
-                            "sub": "user-123",
-                            "token_use": "access",
-                            "client_id": "our-client-id",  # Correct!
-                            "cognito:groups": ["admin"],
-                        }
-                        with patch.object(
-                            auth_module.jwt,
-                            "decode",
-                            return_value=expected_payload,
-                        ):
-                            result = auth_module.verify_token("valid.access.token")
-                            assert result["sub"] == "user-123"
-                            assert result["client_id"] == "our-client-id"
+                        result = auth_module.verify_token("valid.access.token")
+                        assert result["sub"] == "user-123"
+                        assert result["client_id"] == "our-client-id"
 
         auth_module.clear_auth_caches()
 
@@ -522,28 +521,26 @@ class TestVerifyToken:
                     "get_unverified_header",
                     return_value={"kid": "testkey"},
                 ):
-                    with patch.object(
-                        auth_module.jwt,
-                        "get_unverified_claims",
-                        return_value={"token_use": "id"},
-                    ):
-                        expected_payload = {
-                            "sub": "user-456",
-                            "token_use": "id",
-                            "aud": "our-client-id",
-                            "email": "test@example.com",
-                        }
+                    expected_payload = {
+                        "sub": "user-456",
+                        "token_use": "id",
+                        "aud": "our-client-id",
+                        "email": "test@example.com",
+                    }
 
-                        # Mock decode to capture call arguments
-                        mock_decode = MagicMock(return_value=expected_payload)
-                        with patch.object(auth_module.jwt, "decode", mock_decode):
-                            result = auth_module.verify_token("valid.id.token")
+                    # First decode (unverified) returns token_use,
+                    # second decode (verified) returns full payload
+                    mock_decode = MagicMock(
+                        side_effect=[{"token_use": "id"}, expected_payload]
+                    )
+                    with patch.object(auth_module.jwt, "decode", mock_decode):
+                        result = auth_module.verify_token("valid.id.token")
 
-                            # Verify decode was called with audience for ID tokens
-                            call_kwargs = mock_decode.call_args[1]
-                            assert call_kwargs["audience"] == "our-client-id"
-                            assert call_kwargs["options"]["verify_aud"] is True
-                            assert result["email"] == "test@example.com"
+                        # Verify second decode call was made with audience for ID tokens
+                        call_kwargs = mock_decode.call_args_list[1][1]
+                        assert call_kwargs["audience"] == "our-client-id"
+                        assert call_kwargs["options"]["verify_aud"] is True
+                        assert result["email"] == "test@example.com"
 
         auth_module.clear_auth_caches()
 
@@ -576,25 +573,24 @@ class TestVerifyToken:
                     "get_unverified_header",
                     return_value={"kid": "testkey"},
                 ):
-                    with patch.object(
-                        auth_module.jwt,
-                        "get_unverified_claims",
-                        return_value={"token_use": "access"},
-                    ):
-                        expected_payload = {
-                            "sub": "user-789",
-                            "token_use": "access",
-                            "client_id": "our-client-id",
-                        }
+                    expected_payload = {
+                        "sub": "user-789",
+                        "token_use": "access",
+                        "client_id": "our-client-id",
+                    }
 
-                        mock_decode = MagicMock(return_value=expected_payload)
-                        with patch.object(auth_module.jwt, "decode", mock_decode):
-                            auth_module.verify_token("valid.access.token")
+                    # First decode (unverified) returns token_use,
+                    # second decode (verified) returns full payload
+                    mock_decode = MagicMock(
+                        side_effect=[{"token_use": "access"}, expected_payload]
+                    )
+                    with patch.object(auth_module.jwt, "decode", mock_decode):
+                        auth_module.verify_token("valid.access.token")
 
-                            # Verify decode was called without audience for access tokens
-                            call_kwargs = mock_decode.call_args[1]
-                            assert call_kwargs["audience"] is None
-                            assert call_kwargs["options"]["verify_aud"] is False
+                        # Verify second decode call was made without audience for access tokens
+                        call_kwargs = mock_decode.call_args_list[1][1]
+                        assert call_kwargs["audience"] is None
+                        assert call_kwargs["options"]["verify_aud"] is False
 
         auth_module.clear_auth_caches()
 

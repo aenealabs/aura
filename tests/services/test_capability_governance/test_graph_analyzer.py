@@ -28,7 +28,7 @@ def synced_graph():
     async def sync_all():
         await sync.sync_all_policies()
 
-    asyncio.get_event_loop().run_until_complete(sync_all())
+    asyncio.run(sync_all())
     return sync
 
 

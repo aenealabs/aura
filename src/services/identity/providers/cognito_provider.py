@@ -192,7 +192,8 @@ class CognitoProvider(IdentityProvider):
 
     async def validate_token(self, token: str) -> TokenValidationResult:
         """Validate Cognito JWT token."""
-        from jose import JWTError, jwt
+        import jwt
+        from jwt.exceptions import PyJWTError
 
         try:
             # Get JWKS
@@ -216,13 +217,18 @@ class CognitoProvider(IdentityProvider):
                 )
 
             # Determine token type
-            unverified_claims = jwt.get_unverified_claims(token)
+            unverified_claims = jwt.decode(
+                token, options={"verify_signature": False}, algorithms=["RS256"]
+            )
             token_use = unverified_claims.get("token_use")
+
+            # Convert JWK dict to PyJWK for PyJWT compatibility
+            signing_key = jwt.PyJWK.from_dict(key)
 
             # Validate token
             claims = jwt.decode(
                 token,
-                key,
+                signing_key,
                 algorithms=["RS256"],
                 issuer=self.issuer,
                 audience=self.client_id if token_use == "id" else None,
@@ -252,9 +258,9 @@ class CognitoProvider(IdentityProvider):
 
         except jwt.ExpiredSignatureError:
             return TokenValidationResult(valid=False, error="Token expired")
-        except jwt.JWTClaimsError as e:
+        except jwt.InvalidTokenError as e:
             return TokenValidationResult(valid=False, error=f"Invalid claims: {e}")
-        except JWTError as e:
+        except PyJWTError as e:
             return TokenValidationResult(valid=False, error=str(e))
 
     async def get_user_info(self, token: str) -> UserInfo:

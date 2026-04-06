@@ -22,7 +22,8 @@ from typing import Any, cast
 import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 from pydantic import BaseModel
 
 from src.services.observability_service import get_monitor
@@ -328,7 +329,7 @@ def get_public_key(token: str) -> dict[str, Any]:
     # Decode header without verification to get kid
     try:
         unverified_header = jwt.get_unverified_header(token)
-    except JWTError as e:
+    except PyJWTError as e:
         logger.warning(f"Invalid JWT header: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -395,8 +396,10 @@ def verify_token(token: str) -> dict[str, Any]:
     # First, decode without verification to inspect token_use
     # This determines whether we validate 'aud' (ID token) or 'client_id' (access token)
     try:
-        unverified_claims = jwt.get_unverified_claims(token)
-    except JWTError as e:
+        unverified_claims = jwt.decode(
+            token, options={"verify_signature": False}, algorithms=["RS256"]
+        )
+    except PyJWTError as e:
         logger.warning(f"Failed to decode token claims: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -416,10 +419,13 @@ def verify_token(token: str) -> dict[str, Any]:
     is_id_token = token_use == "id"
 
     try:
+        # Convert JWK dict to PyJWK for PyJWT compatibility
+        signing_key = jwt.PyJWK.from_dict(public_key)
+
         # Decode and verify token with appropriate audience validation
         payload: dict[str, Any] = jwt.decode(
             token,
-            public_key,
+            signing_key,
             algorithms=["RS256"],
             issuer=config.issuer,
             audience=config.client_id if is_id_token else None,
@@ -466,7 +472,7 @@ def verify_token(token: str) -> dict[str, Any]:
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except jwt.JWTClaimsError as e:
+    except jwt.InvalidTokenError as e:
         verify_latency_ms = (time.time() - start_time) * 1000
         monitor.record_latency("auth.token_verify", verify_latency_ms / 1000)
         monitor.record_error("auth.token_verify")
@@ -476,7 +482,7 @@ def verify_token(token: str) -> dict[str, Any]:
             detail="Invalid token claims",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except JWTError as e:
+    except PyJWTError as e:
         verify_latency_ms = (time.time() - start_time) * 1000
         monitor.record_latency("auth.token_verify", verify_latency_ms / 1000)
         monitor.record_error("auth.token_verify")

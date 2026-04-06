@@ -259,7 +259,7 @@ class TestOIDCProviderTokenValidation:
     @pytest.mark.asyncio
     async def test_validate_token_failure(self, provider):
         """Test validating a token that fails validation."""
-        from jose import JWTError
+        from jwt.exceptions import PyJWTError
 
         with patch.object(provider, "_get_jwks", new_callable=AsyncMock) as mock_jwks:
             mock_jwks.return_value = {
@@ -268,7 +268,7 @@ class TestOIDCProviderTokenValidation:
 
             with patch("src.services.identity.providers.oidc_provider.jwt") as mock_jwt:
                 mock_jwt.get_unverified_header.return_value = {"kid": "test-key"}
-                mock_jwt.decode.side_effect = JWTError("Token has expired")
+                mock_jwt.decode.side_effect = PyJWTError("Token has expired")
 
                 result = await provider.validate_token("expired.jwt.token")
 

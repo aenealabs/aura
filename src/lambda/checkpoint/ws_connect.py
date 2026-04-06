@@ -131,7 +131,7 @@ def validate_token(token: str) -> str | None:
     """
     try:
         # Simplified: decode without verification for demo
-        # Production should use python-jose or similar
+        # Production should use PyJWT or similar
         import base64
 
         parts = token.split(".")

@@ -4,14 +4,14 @@ Project Aura - Token Service Tests
 Tests for the token normalization service that issues unified Aura JWTs.
 
 Note: These tests use pytest.mark.forked to run in isolated processes,
-avoiding python-jose cryptography backend conflicts with cryptography>=42.0.0.
+avoiding cryptography backend conflicts with cryptography>=42.0.0.
 """
 
 import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-from jose import jwt
+import jwt
 
 from src.services.identity.models import AuthResult, IdentityProviderConfig, IdPType
 from src.services.identity.token_service import (
@@ -20,7 +20,7 @@ from src.services.identity.token_service import (
 )
 
 # Mark entire module to run tests in forked processes to avoid
-# python-jose backend pollution from other tests
+# cryptography backend pollution from other tests
 pytestmark = pytest.mark.forked
 
 

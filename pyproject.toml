@@ -273,10 +273,7 @@ markers = [
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-# Environment variable to force spawn multiprocessing on macOS (prevents fork crash with torch)
-env = [
-    "OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES",
-]
+# Note: OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES is set in tests/conftest.py
 filterwarnings = [
     "ignore::DeprecationWarning:pytest_forked",
 ]

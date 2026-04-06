@@ -117,7 +117,7 @@
 
 ## Architecture Decision Records
 
-84 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
+85 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
 
 - **ADR-004**: Cloud Abstraction Layer (Multi-cloud)
 - **ADR-024**: Titan Neural Memory Architecture

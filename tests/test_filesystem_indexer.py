@@ -530,8 +530,7 @@ class TestAnalyzePythonFile:
         """Test Python file analysis."""
         with tempfile.TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test.py"
-            test_file.write_text(
-                '''"""Module docstring"""
+            test_file.write_text('''"""Module docstring"""
 import os
 from pathlib import Path
 
@@ -541,8 +540,7 @@ class MyClass:
 def my_function():
     if True:
         pass
-'''
-            )
+''')
 
             result = await indexer._analyze_python_file(test_file)
 
@@ -575,8 +573,7 @@ def my_function():
         """Test that private functions/classes are excluded."""
         with tempfile.TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test.py"
-            test_file.write_text(
-                """
+            test_file.write_text("""
 def public_function():
     pass
 
@@ -588,8 +585,7 @@ class PublicClass:
 
 class _PrivateClass:
     pass
-"""
-            )
+""")
 
             result = await indexer._analyze_python_file(test_file)
 
@@ -603,8 +599,7 @@ class _PrivateClass:
         """Test complexity scoring with various control structures."""
         with tempfile.TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "complex.py"
-            test_file.write_text(
-                """
+            test_file.write_text("""
 def complex_function():
     if True:
         pass
@@ -618,8 +613,7 @@ def complex_function():
         pass
     with open('file') as f:
         pass
-"""
-            )
+""")
 
             result = await indexer._analyze_python_file(test_file)
 
@@ -631,14 +625,12 @@ def complex_function():
         """Test Python file analysis when no docstring present."""
         with tempfile.TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "no_docstring.py"
-            test_file.write_text(
-                """
+            test_file.write_text("""
 import os
 
 def my_function():
     pass
-"""
-            )
+""")
 
             result = await indexer._analyze_python_file(test_file)
 
@@ -649,13 +641,11 @@ def my_function():
         """Test that ImportFrom statements are captured correctly."""
         with tempfile.TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "imports.py"
-            test_file.write_text(
-                """
+            test_file.write_text("""
 from os.path import join, exists
 from typing import Optional, List
 import json
-"""
-            )
+""")
 
             result = await indexer._analyze_python_file(test_file)
 
@@ -834,13 +824,11 @@ class TestExtractMetadata:
                 # Create test Python file
                 test_file = Path(tmpdir) / "src" / "module.py"
                 test_file.parent.mkdir(parents=True, exist_ok=True)
-                test_file.write_text(
-                    '''"""Module docstring"""
+                test_file.write_text('''"""Module docstring"""
 
 def my_function():
     pass
-'''
-                )
+''')
 
                 result = await indexer._extract_metadata(test_file)
 

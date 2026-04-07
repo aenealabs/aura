@@ -22,7 +22,6 @@ from src.services.capability_governance.self_modification_sentinel import (
     reset_self_modification_sentinel,
 )
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================

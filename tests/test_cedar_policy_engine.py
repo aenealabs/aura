@@ -1025,8 +1025,7 @@ class TestCedarValidation:
 
     def test_validate_complex_policy(self, engine):
         """Test validating complex policy with conditions."""
-        result = engine._validate_cedar_syntax(
-            """
+        result = engine._validate_cedar_syntax("""
             permit(
                 principal == Agent::"coder-agent",
                 action == Action::"invoke_tool",
@@ -1034,8 +1033,7 @@ class TestCedarValidation:
             ) when {
                 context.approved == true
             };
-        """
-        )
+        """)
         assert result.valid is True
 
 

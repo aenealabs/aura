@@ -95,8 +95,7 @@ def temp_repo():
 
         # Create vulnerable user API
         users_api = api_dir / "users.py"
-        users_api.write_text(
-            """
+        users_api.write_text("""
 from flask import request, jsonify
 
 @app.route('/users/<int:user_id>')
@@ -112,13 +111,11 @@ def update_user(user_id):
     user = User(**request.json)
     db.session.commit()
     return jsonify(user.to_dict())
-"""
-        )
+""")
 
         # Create vulnerable payments API
         payments_api = api_dir / "payments.py"
-        payments_api.write_text(
-            """
+        payments_api.write_text("""
 from flask import request
 
 @app.route('/transfer', methods=['POST'])
@@ -132,13 +129,11 @@ def transfer_money():
         target.balance += request.json['amount']
         db.session.commit()
     return jsonify({'status': 'ok'})
-"""
-        )
+""")
 
         # Create secure API for comparison
         secure_api = api_dir / "secure.py"
-        secure_api.write_text(
-            """
+        secure_api.write_text("""
 from flask import request
 from flask_login import login_required, current_user
 
@@ -156,8 +151,7 @@ def get_document(doc_id):
     if doc.owner_id != current_user.id:
         return jsonify({'error': 'forbidden'}), 403
     return jsonify(doc.to_dict())
-"""
-        )
+""")
 
         yield repo_path
 
@@ -761,8 +755,7 @@ class TestLLMIntegration:
     async def test_llm_findings_parsed(self):
         """Test parsing of LLM findings."""
         mock_llm = AsyncMock()
-        mock_llm.generate = AsyncMock(
-            return_value="""
+        mock_llm.generate = AsyncMock(return_value="""
         [
             {
                 "type": "idor",
@@ -773,8 +766,7 @@ class TestLLMIntegration:
                 "recommendation": "Add ownership check"
             }
         ]
-        """
-        )
+        """)
 
         analyzer = BusinessLogicAnalyzerAgent(
             neptune_service=None,

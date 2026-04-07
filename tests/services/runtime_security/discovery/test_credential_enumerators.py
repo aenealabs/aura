@@ -39,7 +39,6 @@ from src.services.runtime_security.discovery.credential_enumerators.enumerators 
     register_all_enumerators,
 )
 
-
 # ---------------------------------------------------------------------------
 # CredentialRecord
 # ---------------------------------------------------------------------------

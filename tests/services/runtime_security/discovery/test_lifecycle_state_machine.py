@@ -20,7 +20,6 @@ from src.services.runtime_security.discovery.lifecycle_state_machine import (
     reset_lifecycle_state_machine,
 )
 
-
 # ---------------------------------------------------------------------------
 # LifecycleState enum
 # ---------------------------------------------------------------------------

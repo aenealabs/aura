@@ -47,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install black==25.12.0 flake8 requests
+          pip install black==26.3.1 flake8 requests
 
       - name: Get failed workflow logs
         id: get-logs
@@ -192,7 +192,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install black==25.12.0 isort autoflake
+          pip install black==26.3.1 isort autoflake
 
       - name: Apply formatting fixes
         if: contains(needs.analyze-failure.outputs.fix_type, 'formatting')

@@ -268,8 +268,7 @@ def format_currency(amount):
         with tempfile.TemporaryDirectory() as tmpdir:
             queue_file = Path(tmpdir) / "event_publisher.py"
             # Add more specific SQS usage pattern for detection
-            queue_file.write_text(
-                """
+            queue_file.write_text("""
 import boto3
 
 sqs = boto3.client("sqs")
@@ -277,15 +276,12 @@ queue_url = "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
 
 def send_event(event):
     sqs.send_message(QueueUrl=queue_url, MessageBody=str(event))
-"""
-            )
+""")
             util_file = Path(tmpdir) / "utils.py"
-            util_file.write_text(
-                """
+            util_file.write_text("""
 def helper():
     pass
-"""
-            )
+""")
 
             connections = await analyzer.analyze_directory(tmpdir)
             # Verify it doesn't error and returns a list

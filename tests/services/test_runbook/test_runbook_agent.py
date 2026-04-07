@@ -489,8 +489,7 @@ class TestRunbookAgentIntegration:
     async def test_sync_repository(self, agent_with_files, tmp_path):
         """Test repository synchronization."""
         # Create some runbook files
-        (tmp_path / "TEST_RUNBOOK_1.md").write_text(
-            """
+        (tmp_path / "TEST_RUNBOOK_1.md").write_text("""
 # Runbook: Test Runbook 1
 
 **Purpose:** Test purpose
@@ -500,11 +499,9 @@ Error message 1
 
 ## Root Cause
 Test root cause
-"""
-        )
+""")
 
-        (tmp_path / "TEST_RUNBOOK_2.md").write_text(
-            """
+        (tmp_path / "TEST_RUNBOOK_2.md").write_text("""
 # Runbook: Test Runbook 2
 
 **Purpose:** Another test
@@ -514,8 +511,7 @@ Error message 2
 
 ## Root Cause
 Another root cause
-"""
-        )
+""")
 
         # Mock DynamoDB operations
         agent_with_files.repository.use_dynamodb = False

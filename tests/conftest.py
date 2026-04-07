@@ -1123,14 +1123,12 @@ def subprocess_isolated():
         # Create a temporary file with the test code
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             # Add imports and path setup
-            f.write(
-                f"""
+            f.write(f"""
 import sys
 sys.path.insert(0, {str(Path.cwd())!r})
 
 {code}
-"""
-            )
+""")
             temp_file = f.name
 
         try:

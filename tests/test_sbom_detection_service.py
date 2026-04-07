@@ -132,14 +132,12 @@ class TestSBOMDetectionServiceRequirementsTxt:
         """Test parsing simple requirements.txt."""
         with tempfile.TemporaryDirectory() as tmpdir:
             req_file = Path(tmpdir) / "requirements.txt"
-            req_file.write_text(
-                """
+            req_file.write_text("""
 requests==2.28.0
 flask>=2.0.0
 numpy~=1.21.0
 pandas
-"""
-            )
+""")
 
             service = SBOMDetectionService()
             report = service.detect_dependencies(tmpdir)
@@ -155,15 +153,13 @@ pandas
         """Test parsing requirements.txt with comments."""
         with tempfile.TemporaryDirectory() as tmpdir:
             req_file = Path(tmpdir) / "requirements.txt"
-            req_file.write_text(
-                """
+            req_file.write_text("""
 # Core dependencies
 requests==2.28.0
 
 # Data processing
 pandas>=1.3.0  # Latest stable
-"""
-            )
+""")
 
             service = SBOMDetectionService()
             report = service.detect_dependencies(tmpdir)
@@ -187,15 +183,13 @@ pandas>=1.3.0  # Latest stable
         """Test that URL dependencies are skipped."""
         with tempfile.TemporaryDirectory() as tmpdir:
             req_file = Path(tmpdir) / "requirements.txt"
-            req_file.write_text(
-                """
+            req_file.write_text("""
 requests==2.28.0
 git+https://github.com/user/repo.git
 -e ./local-package
 http://example.com/package.tar.gz
 flask>=2.0
-"""
-            )
+""")
 
             service = SBOMDetectionService()
             report = service.detect_dependencies(tmpdir)
@@ -269,8 +263,7 @@ class TestSBOMDetectionServiceGoMod:
         """Test parsing go.mod."""
         with tempfile.TemporaryDirectory() as tmpdir:
             go_file = Path(tmpdir) / "go.mod"
-            go_file.write_text(
-                """
+            go_file.write_text("""
 module example.com/myproject
 
 go 1.21
@@ -281,8 +274,7 @@ require (
 )
 
 require github.com/stretchr/testify v1.8.0
-"""
-            )
+""")
 
             service = SBOMDetectionService()
             report = service.detect_dependencies(tmpdir)
@@ -301,8 +293,7 @@ class TestSBOMDetectionServiceCargoToml:
         """Test parsing Cargo.toml."""
         with tempfile.TemporaryDirectory() as tmpdir:
             cargo_file = Path(tmpdir) / "Cargo.toml"
-            cargo_file.write_text(
-                """
+            cargo_file.write_text("""
 [package]
 name = "myproject"
 version = "0.1.0"
@@ -313,8 +304,7 @@ tokio = { version = "1.0", features = ["full"] }
 
 [dev-dependencies]
 criterion = "^0.5"
-"""
-            )
+""")
 
             service = SBOMDetectionService()
             report = service.detect_dependencies(tmpdir)
@@ -337,8 +327,7 @@ class TestSBOMDetectionServiceGemfile:
         """Test parsing Gemfile.lock."""
         with tempfile.TemporaryDirectory() as tmpdir:
             gem_file = Path(tmpdir) / "Gemfile.lock"
-            gem_file.write_text(
-                """
+            gem_file.write_text("""
 GEM
   remote: https://rubygems.org/
   specs:
@@ -352,8 +341,7 @@ PLATFORMS
 DEPENDENCIES
   rails
   puma
-"""
-            )
+""")
 
             service = SBOMDetectionService()
             report = service.detect_dependencies(tmpdir)
@@ -372,8 +360,7 @@ class TestSBOMDetectionServiceCsproj:
         """Test parsing .csproj file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             csproj_file = Path(tmpdir) / "MyProject.csproj"
-            csproj_file.write_text(
-                """
+            csproj_file.write_text("""
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net7.0</TargetFramework>
@@ -383,8 +370,7 @@ class TestSBOMDetectionServiceCsproj:
     <PackageReference Include="Serilog" Version="2.12.0" />
   </ItemGroup>
 </Project>
-"""
-            )
+""")
 
             service = SBOMDetectionService()
             report = service.detect_dependencies(tmpdir)
@@ -533,13 +519,11 @@ class TestIntegrationWithThreatIntelligenceAgent:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             req_file = Path(tmpdir) / "requirements.txt"
-            req_file.write_text(
-                """
+            req_file.write_text("""
 requests==2.28.0
 flask>=2.0.0
 boto3~=1.26
-"""
-            )
+""")
 
             agent = ThreatIntelligenceAgent()
             count = agent.auto_detect_sbom(tmpdir)

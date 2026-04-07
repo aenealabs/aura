@@ -71,7 +71,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install black==25.12.0 flake8 mypy bandit[toml]
+          pip install black==26.3.1 flake8 mypy bandit[toml]
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt || true
           pip install pytest pytest-cov pytest-asyncio pytest-forked pytest-xdist

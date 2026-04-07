@@ -549,8 +549,7 @@ class TestTaskDecomposer:
     async def test_decompose_with_llm_parses_response(self, decomposer):
         """Test that decomposition with LLM parses response correctly."""
         # Mock LLM to return a JSON array as string
-        decomposer.llm.generate = AsyncMock(
-            return_value="""[
+        decomposer.llm.generate = AsyncMock(return_value="""[
                 {
                     "description": "Scan for vulnerabilities",
                     "capability": "vulnerability_scan",
@@ -565,8 +564,7 @@ class TestTaskDecomposer:
                     "dependencies": [0],
                     "can_parallelize": false
                 }
-            ]"""
-        )
+            ]""")
 
         tasks = await decomposer.decompose(
             task="Fix SQL injection vulnerability",

@@ -303,8 +303,7 @@ class TestRunbookGenerator:
         """Test finding similar runbooks when a match exists."""
         # Create a similar runbook
         runbook_path = tmp_path / "DOCKER_PLATFORM_FIX.md"
-        runbook_path.write_text(
-            """
+        runbook_path.write_text("""
 # Runbook: Docker Platform Fix
 
 ## Symptoms
@@ -316,8 +315,7 @@ Docker image architecture mismatch
 
 ## Resolution
 Use --platform linux/amd64
-"""
-        )
+""")
 
         similar = await generator.find_similar_runbooks(sample_incident, threshold=0.3)
 

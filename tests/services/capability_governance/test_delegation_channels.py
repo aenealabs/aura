@@ -27,7 +27,6 @@ from src.services.capability_governance.delegation_envelope import (
     DelegationVerifier,
 )
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================

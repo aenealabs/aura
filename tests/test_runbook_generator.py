@@ -484,16 +484,14 @@ class TestSimilarRunbooks:
         """Test finding similar runbooks with a match."""
         # Create a matching runbook
         runbook_path = Path(temp_runbooks_dir) / "DOCKER_FIX.md"
-        runbook_path.write_text(
-            """# Docker Fix
+        runbook_path.write_text("""# Docker Fix
 
 ## Problem
 exec format error when building
 
 ## Resolution
 Use platform flag
-"""
-        )
+""")
 
         similar = await generator_no_llm.find_similar_runbooks(
             sample_incident, threshold=0.3

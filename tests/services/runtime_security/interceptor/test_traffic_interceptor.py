@@ -532,6 +532,7 @@ class TestCallbacks:
 
         def cb(e):
             received.append(e.event_id)
+
         interceptor.register_callback(cb)
         await interceptor.capture_checkpoint(
             source_agent_id="agent-1",

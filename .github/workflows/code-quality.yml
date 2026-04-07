@@ -29,7 +29,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   security-events: write
 
@@ -71,7 +71,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install black flake8 mypy bandit[toml]
+          pip install black==25.12.0 flake8 mypy bandit[toml]
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt || true
           pip install pytest pytest-cov pytest-asyncio pytest-forked pytest-xdist
@@ -79,7 +79,33 @@ jobs:
 
       # --- LINTING (always runs) ---
       - name: Run Black (formatting check)
-        run: black --check --fast src/ tests/
+        id: black-check
+        run: |
+          if ! black --check --fast src/ tests/ 2>&1; then
+            echo "needs_format=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs_format=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Auto-fix Black formatting (push to main only)
+        if: steps.black-check.outputs.needs_format == 'true' && github.event_name == 'push'
+        run: |
+          black --fast src/ tests/
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No formatting changes to commit"
+          else
+            git commit -m "style: auto-format with black"
+            git push
+          fi
+
+      - name: Fail on Black formatting (PRs only)
+        if: steps.black-check.outputs.needs_format == 'true' && github.event_name != 'push'
+        run: |
+          echo "::error::Black formatting check failed. Run 'black --fast src/ tests/' locally and commit."
+          exit 1
 
       - name: Run Flake8 (linting)
         run: flake8 src/ tests/

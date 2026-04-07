@@ -317,7 +317,7 @@ _contradictions: list[dict[str, Any]] = []
 
 def _initialize_mock_data():
     """Initialize mock data if not already done."""
-    global _decisions, _contradictions
+    global _decisions, _contradictions  # noqa: F824
 
     if _decisions:
         return

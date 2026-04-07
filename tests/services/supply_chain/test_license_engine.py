@@ -329,15 +329,15 @@ class TestAttributionGeneration:
         # Components should be sorted alphabetically
         lines = attribution.split("\n")
         component_lines = [
-            l
-            for l in lines
-            if l
-            and not l.startswith(" ")
-            and not l.startswith("=")
-            and not l.startswith("-")
+            line
+            for line in lines
+            if line
+            and not line.startswith(" ")
+            and not line.startswith("=")
+            and not line.startswith("-")
         ]
         # Filter to get component names
-        names = [l.split(" (")[0] for l in component_lines if "(" in l]
+        names = [line.split(" (")[0] for line in component_lines if "(" in line]
         assert names == sorted(names, key=str.lower)
 
 

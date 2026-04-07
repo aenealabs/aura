@@ -238,7 +238,7 @@ class RuntimeCorrelator:
             dst_port = raw_log.get("dstport", 0)
             protocol = raw_log.get("protocol", "")
             action = raw_log.get("action", "")
-            _log_status = raw_log.get("log-status", "")  # Reserved for future use
+            _ = raw_log.get("log-status", "")  # Reserved for future use
             region = raw_log.get("region", "us-east-1")
 
             # Generate event ID
@@ -555,7 +555,7 @@ class RuntimeCorrelator:
         if arn_or_id.startswith("arn:"):
             parts = arn_or_id.split(":")
             if len(parts) >= 6:
-                _partition = parts[1]  # Available for GovCloud detection
+                _ = parts[1]  # Available for GovCloud detection
                 service = parts[2]
                 region = parts[3]
                 account_id = parts[4]

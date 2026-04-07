@@ -1073,7 +1073,7 @@ class TestCodeInterpreterAgentStats:
         languages = agent.get_supported_languages()
 
         assert len(languages) == len(SupportedLanguage)
-        python_info = next(l for l in languages if l["language"] == "python")
+        python_info = next(lang for lang in languages if lang["language"] == "python")
         assert python_info["extension"] == ".py"
         assert python_info["enabled"] is True
 
@@ -1083,10 +1083,10 @@ class TestCodeInterpreterAgentStats:
         agent = CodeInterpreterAgent(config=config)
         languages = agent.get_supported_languages()
 
-        python_info = next(l for l in languages if l["language"] == "python")
+        python_info = next(lang for lang in languages if lang["language"] == "python")
         assert python_info["enabled"] is True
 
-        js_info = next(l for l in languages if l["language"] == "javascript")
+        js_info = next(lang for lang in languages if lang["language"] == "javascript")
         assert js_info["enabled"] is False
 
     def test_get_service_stats_initial(self):

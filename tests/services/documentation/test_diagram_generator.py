@@ -676,7 +676,7 @@ class TestDiagramGeneratorIntegration:
         lines = mermaid.split("\n")
 
         # First non-empty line should be a valid Mermaid directive
-        first_line = next(l for l in lines if l.strip())
+        first_line = next(line for line in lines if line.strip())
         assert any(
             directive in first_line.lower()
             for directive in ["graph", "flowchart", "sequencediagram", "classDiagram"]

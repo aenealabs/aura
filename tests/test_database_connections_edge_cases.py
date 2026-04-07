@@ -463,7 +463,7 @@ class TestCircuitBreaker:
         for _ in range(threshold):
             try:
                 execute(True)
-            except:
+            except Exception:
                 pass
 
         assert state == "open"

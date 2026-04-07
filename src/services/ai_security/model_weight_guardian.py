@@ -180,7 +180,6 @@ class ModelWeightGuardian:
         model.access_count_24h += 1
 
         # Update daily access count
-        today = access.timestamp.date().isoformat()
         self._daily_access_counts[access.model_id][access.accessor_identity] += 1
 
         # Check for threats
@@ -236,7 +235,6 @@ class ModelWeightGuardian:
             )
 
         # Check daily read limit
-        today = access.timestamp.date().isoformat()
         daily_count = self._daily_access_counts[access.model_id].get(
             access.accessor_identity, 0
         )
@@ -390,14 +388,6 @@ class ModelWeightGuardian:
             by_accessor[access.accessor_identity].append(access)
 
         for accessor, accesses in by_accessor.items():
-            # Check for unusual frequency
-            access_count = len(accesses)
-            avg_bytes = (
-                sum(a.bytes_accessed for a in accesses) / access_count
-                if access_count > 0
-                else 0
-            )
-
             # Detect potential exfiltration
             export_count = sum(
                 1

@@ -166,7 +166,6 @@ def get_metrics_service() -> CalibrationMetricsService:
 
 def get_calibration_scorer(organization_id: str) -> CalibratedConfidenceScorer:
     """Get or create a calibration scorer for an organization."""
-    global _calibration_scorers
     if organization_id not in _calibration_scorers:
         _calibration_scorers[organization_id] = create_calibrated_scorer(
             organization_id=organization_id

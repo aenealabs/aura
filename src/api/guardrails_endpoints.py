@@ -333,7 +333,7 @@ async def update_guardrail_config(
 
     Requires authentication.
     """
-    global _current_config, _change_history
+    global _current_config, _change_history  # noqa: F824
 
     logger.info(f"User {user.email} updating guardrail config")
 
@@ -392,7 +392,7 @@ async def reset_guardrail_config(
 
     Requires authentication.
     """
-    global _current_config, _change_history
+    global _current_config, _change_history  # noqa: F824
 
     logger.info(f"User {user.email} resetting guardrail config to defaults")
 

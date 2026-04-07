@@ -313,12 +313,7 @@ class TestChannelVerifierRegistry:
     def test_verify_unregistered_channel(self):
         """Unregistered channel returns True (pass-through)."""
         reg = ChannelVerifierRegistry()
-        # Don't register anything
-        from src.services.capability_governance.delegation_envelope import (
-            DelegationAssertion,
-        )
-
-        # verify with no verifiers returns True
+        # Don't register anything — verify with no verifiers returns True
         v = DelegationVerifier()
         a = v.mint_root(
             delegator_agent_id="orch",

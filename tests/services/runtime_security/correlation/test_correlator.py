@@ -718,8 +718,6 @@ class TestSentinelCorrelation:
 
     async def test_correlate_sentinel_alert(self, correlator: RuntimeCodeCorrelator):
         """Test that a sentinel alert flows through the correlation pipeline."""
-        from datetime import datetime, timezone
-
         from src.services.capability_governance.self_modification_sentinel import (
             GovernanceArtifactClass,
             GovernanceWriteEvent,
@@ -750,8 +748,6 @@ class TestSentinelCorrelation:
         self, correlator: RuntimeCodeCorrelator
     ):
         """Sentinel alerts never auto-remediate (requires HITL)."""
-        from datetime import datetime, timezone
-
         from src.services.capability_governance.self_modification_sentinel import (
             GovernanceArtifactClass,
             GovernanceWriteEvent,
@@ -778,8 +774,6 @@ class TestSentinelCorrelation:
         self, correlator: RuntimeCodeCorrelator
     ):
         """sentinel_correlation_count tracks how many sentinel alerts were correlated."""
-        from datetime import datetime, timezone
-
         from src.services.capability_governance.self_modification_sentinel import (
             GovernanceArtifactClass,
             GovernanceWriteEvent,

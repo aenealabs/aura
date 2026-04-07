@@ -395,8 +395,6 @@ class TestHelperFunctions:
     @pytest.mark.skipif(not HAS_SKLEARN, reason="sklearn required")
     def test_save_calibrator_to_s3(self):
         """Test save_calibrator_to_s3 function."""
-        from sklearn.isotonic import IsotonicRegression
-
         save_calibrator_to_s3 = calibration_pipeline.save_calibrator_to_s3
 
         mock_client = MagicMock()

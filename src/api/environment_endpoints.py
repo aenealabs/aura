@@ -353,7 +353,7 @@ async def create_environment(
 
     logger.info(
         f"Environment {sanitize_log(env.environment_id)} created by user {sanitize_log(user.sub)} "
-        f"(template={request.template_id}, status={env.status.value})"
+        f"(template={sanitize_log(request.template_id)}, status={sanitize_log(env.status.value)})"
     )
 
     return environment_to_response(env)

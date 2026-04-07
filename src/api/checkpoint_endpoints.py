@@ -418,7 +418,7 @@ async def emergency_stop(
 
         logger.warning(
             f"Emergency stop on execution {sanitize_log(execution_id)} by {sanitize_log(request.user_id)}: "
-            f"{request.reason} (denied {denied_count} checkpoints)"
+            f"{sanitize_log(request.reason)} (denied {denied_count} checkpoints)"
         )
 
         return {

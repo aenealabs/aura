@@ -504,7 +504,7 @@ async def delete_repository(
         await repo_service.delete_repository(user.sub, repository_id)
         logger.info(
             f"Repository {sanitize_log(repository_id)} deleted for user {sanitize_log(user.sub)} "
-            f"(delete_data={delete_data})"
+            f"(delete_data={sanitize_log(delete_data)})"
         )
 
         return {

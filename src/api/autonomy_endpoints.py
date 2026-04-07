@@ -550,7 +550,7 @@ async def add_override(
 
         logger.info(
             f"Admin {sanitize_log(user.email)} added {sanitize_log(request.override_type)} override "
-            f"for {request.context_value} to policy {policy_id}"
+            f"for {sanitize_log(request.context_value)} to policy {sanitize_log(policy_id)}"
         )
         return policy_to_response(policy)
 
@@ -581,7 +581,7 @@ async def remove_override(
 
     logger.info(
         f"Admin {sanitize_log(user.email)} removed {sanitize_log(request.override_type)} override "
-        f"for {request.context_value} from policy {policy_id}"
+        f"for {sanitize_log(request.context_value)} from policy {sanitize_log(policy_id)}"
     )
     return policy_to_response(policy)
 

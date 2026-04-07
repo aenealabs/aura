@@ -664,7 +664,7 @@ async def generate_documentation(
     """
     logger.info(
         f"Documentation request: repo={sanitize_log(request.repository_id)}, "
-        f"mode={request.mode.value}, user={current_user.sub}"
+        f"mode={sanitize_log(request.mode.value)}, user={sanitize_log(current_user.sub)}"
     )
 
     # Route based on generation mode (ADR-060)
@@ -1094,8 +1094,8 @@ async def submit_feedback(
 
     logger.info(
         f"Feedback submitted: job={sanitize_log(request.job_id)}, "
-        f"type={request.documentation_type}, feedback={request.feedback_type}, "
-        f"user={current_user.sub}"
+        f"type={sanitize_log(request.documentation_type)}, feedback={sanitize_log(request.feedback_type)}, "
+        f"user={sanitize_log(current_user.sub)}"
     )
 
     # Parse feedback type

@@ -665,8 +665,8 @@ async def share_dashboard(
 
         logger.info(
             f"Dashboard shared: {sanitize_log(dashboard_id)} with "
-            f"user={request.user_id} org={request.org_id} "
-            f"by {current_user.sub}"
+            f"user={sanitize_log(request.user_id)} org={sanitize_log(request.org_id)} "
+            f"by {sanitize_log(current_user.sub)}"
         )
         return share_to_response(share)
 

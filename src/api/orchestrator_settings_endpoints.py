@@ -589,7 +589,7 @@ async def switch_deployment_mode(
     if request_body.force:
         logger.warning(
             f"Admin {sanitize_log(user.email)} forcing mode change during cooldown "
-            f"(org={organization_id}, reason={request_body.reason})"
+            f"(org={sanitize_log(organization_id)}, reason={sanitize_log(request_body.reason)})"
         )
 
     # Compute new settings based on target mode
@@ -626,7 +626,7 @@ async def switch_deployment_mode(
 
     logger.info(
         f"Admin {sanitize_log(user.email)} switched orchestrator mode: {sanitize_log(old_mode)} -> {sanitize_log(target_mode)} "
-        f"(org={organization_id}, reason={request_body.reason})"
+        f"(org={sanitize_log(organization_id)}, reason={sanitize_log(request_body.reason)})"
     )
 
     # Publish metric

@@ -354,6 +354,6 @@ The BSL allows you to use the source code for non-production purposes. Productio
 
 ## About
 
-**[Aenea Labs](https://aenealabs.com)** builds autonomous AI infrastructure for enterprise security teams.
+**Aenea Labs** builds autonomous AI infrastructure for enterprise security teams.
 
 Project Aura is designed for organizations that need to remediate vulnerabilities at scale while maintaining full compliance audit trails. The platform is built from the ground up for regulated industries including defense, financial services, healthcare, and government contracting.

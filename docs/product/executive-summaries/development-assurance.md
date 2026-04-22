@@ -285,9 +285,9 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 - **Traffic interception:** 8 interception points, >99.5% capture rate, <5ms P95 overhead
 - **Shadow agent detection:** Unregistered agents detected within 60 seconds
 - **Behavioral baselines:** Per-agent statistical profiles across 1h/24h/7d windows; drift alerted within 5 minutes
-- **Automated red teaming:** AURA-ATT&CK taxonomy -- 75 adversarial techniques across 8 MITRE-style categories
+- **Automated red teaming:** AURA-ATT&CK taxonomy -- 97 adversarial techniques across 11 MITRE-style categories
 - **Runtime-to-code correlation:** Neptune CALL_GRAPH traversal traces anomalies to source code, generates patches, routes through HITL approval
-- **Test coverage:** 848 tests
+- **Test coverage:** 1005 tests
 - **Codebase:** ~10,300 lines
 
 **Enforcement model:** Detective (behavioral monitoring and anomaly detection) + Corrective (closed-loop detect, trace, fix, verify pipeline).

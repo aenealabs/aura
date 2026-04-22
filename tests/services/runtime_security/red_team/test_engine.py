@@ -632,9 +632,9 @@ class TestRunCampaign:
         assert campaign.total_tests == 22  # 12 + 10
 
     async def test_campaign_with_all_techniques(self, engine: RedTeamEngine) -> None:
-        """Campaign with no filters runs all 75 techniques."""
+        """Campaign with no filters runs all 97 techniques."""
         campaign = await engine.run_campaign(target_agent_id="coder-agent")
-        assert campaign.total_tests == 75
+        assert campaign.total_tests == 97
 
     async def test_campaign_with_technique_ids(self, engine: RedTeamEngine) -> None:
         """Campaign with specific technique_ids runs only those."""
@@ -698,12 +698,12 @@ class TestRunCampaign:
         assert values == sorted(values)
 
     async def test_empty_categories_runs_all(self, engine: RedTeamEngine) -> None:
-        """Passing categories=None runs all 75 techniques."""
+        """Passing categories=None runs all 97 techniques."""
         campaign = await engine.run_campaign(
             target_agent_id="coder-agent",
             categories=None,
         )
-        assert campaign.total_tests == 75
+        assert campaign.total_tests == 97
 
     async def test_campaign_has_campaign_id(self, engine: RedTeamEngine) -> None:
         """Campaign has a non-empty campaign_id starting with rc-."""

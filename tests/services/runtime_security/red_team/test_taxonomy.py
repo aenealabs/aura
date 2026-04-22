@@ -2,7 +2,7 @@
 Tests for the AURA-ATT&CK Threat Taxonomy.
 
 Covers AttackCategory enum, TechniqueComplexity enum, AttackTechnique frozen
-dataclass, taxonomy completeness (75 techniques), ID formatting, field
+dataclass, taxonomy completeness (97 techniques), ID formatting, field
 validation, and lookup functions.
 """
 

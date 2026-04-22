@@ -993,7 +993,7 @@ Detailed technical specifications for complex architectural components.
 | [../src/services/runtime_security/baselines/baseline_engine.py](../src/services/runtime_security/baselines/baseline_engine.py) | Per-agent behavioral profiling and deviation scoring |
 | [../src/services/runtime_security/baselines/metrics.py](../src/services/runtime_security/baselines/metrics.py) | Metric definitions (MetricType, MetricWindow, BaselineMetric) |
 | [../src/services/runtime_security/baselines/drift_detector.py](../src/services/runtime_security/baselines/drift_detector.py) | Behavioral drift detection (short vs long window comparison) |
-| [../src/services/runtime_security/red_team/taxonomy.py](../src/services/runtime_security/red_team/taxonomy.py) | AURA-ATT&CK taxonomy (75 techniques, 8 categories) |
+| [../src/services/runtime_security/red_team/taxonomy.py](../src/services/runtime_security/red_team/taxonomy.py) | AURA-ATT&CK taxonomy (97 techniques, 11 categories) |
 | [../src/services/runtime_security/red_team/engine.py](../src/services/runtime_security/red_team/engine.py) | Red team engine orchestrator for automated adversarial testing |
 | [../src/services/runtime_security/correlation/correlator.py](../src/services/runtime_security/correlation/correlator.py) | Runtime-to-code correlation engine (detect → trace → fix → verify) |
 | [../src/services/runtime_security/correlation/graph_tracer.py](../src/services/runtime_security/correlation/graph_tracer.py) | Neptune CALL_GRAPH traversal for source code tracing |

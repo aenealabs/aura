@@ -10,7 +10,7 @@
 |--------|-------|
 | **Overall Completion** | 99% |
 | **Lines of Code** | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure) |
-| **Test Suite** | 23,165+ tests (16,499 passed, 6,666 skipped, 0 failed) |
+| **Test Suite** | 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed) |
 | **Architecture Decision Records** | 85 ADRs (84 Deployed/Accepted, 1 Proposed) |
 | **CloudFormation Templates** | 155 templates (24 CodeBuild + 131 infrastructure) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
@@ -55,7 +55,7 @@
 | Semantic Guardrails Engine | Complete | 6-layer threat detection, 793 tests (ADR-065) |
 | Agent Capability Governance | Complete | 4-tier tool classification, runtime enforcement, 322 tests (ADR-066) |
 | Context Provenance & Integrity | Complete | Trust scoring, anomaly detection, quarantine, 275 tests (ADR-067) |
-| Runtime Agent Security | Complete | Traffic interception, behavioral baselines, AURA-ATT&CK, 848 tests (ADR-083) |
+| Runtime Agent Security | Complete | Traffic interception, behavioral baselines, AURA-ATT&CK, 1005 tests (ADR-083) |
 | Policy-as-Code GitOps | Complete | OPA Rego validation, policy simulation, 98 tests (ADR-070) |
 | ABAC Authorization | Complete | Clearance levels, multi-tenant isolation, 115 tests (ADR-073) |
 | Agentic Identity Lifecycle | 100% | Decommission assurance, 15 credential enumerators, ghost scanner, self-modification sentinel, delegation trust envelope, 7 channel verifiers, 271 tests (ADR-086) |

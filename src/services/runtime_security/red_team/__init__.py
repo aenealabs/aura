@@ -2,7 +2,7 @@
 Project Aura - Automated Red Teaming Engine
 
 Adversarial testing against live agent deployments using the
-AURA-ATT&CK taxonomy of 75 techniques across 8 categories.
+AURA-ATT&CK taxonomy of 97 techniques across 11 categories.
 
 Based on ADR-083: Runtime Agent Security Platform
 """

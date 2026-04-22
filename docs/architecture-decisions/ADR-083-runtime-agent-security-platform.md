@@ -19,7 +19,7 @@ Deployed
 
 ### Review Summary
 
-Architecture designed with cybersecurity threat modeling (AURA-ATT&CK taxonomy, 75 techniques), product strategy, and technical integration analysis (8 existing interception points, 7 deployed security ADRs). Phase 1 implementation focuses on traffic interception and agent discovery.
+Architecture designed with cybersecurity threat modeling (AURA-ATT&CK taxonomy, 97 techniques), product strategy, and technical integration analysis (8 existing interception points, 7 deployed security ADRs). Phase 1 implementation focuses on traffic interception and agent discovery.
 
 ## Context
 
@@ -64,7 +64,7 @@ Implement a **Runtime Agent Security Platform** as an extension to the existing 
 1. **Full Traffic Visibility** — capture agent-to-agent, agent-to-tool, and agent-to-LLM traffic via 8 existing interception points
 2. **Shadow Agent Detection** — identify unregistered agents via traffic pattern analysis against ADR-066 capability registry
 3. **Behavioral Baselines** — statistical profiles per agent with drift alerting (extends ADR-072 statistical detector)
-4. **AURA-ATT&CK Taxonomy** — 75 adversarial techniques across 8 MITRE-style categories for automated red teaming
+4. **AURA-ATT&CK Taxonomy** — 97 adversarial techniques across 11 MITRE-style categories for automated red teaming
 5. **Runtime-to-Code Correlation** — trace runtime anomalies to source code via Neptune CALL_GRAPH + OpenSearch semantic search
 6. **Autonomous Remediation** — generate patches via Coder agent, route through HITL approval (ADR-032)
 
@@ -88,7 +88,7 @@ Existing Security Pipeline (ADR-065/066/063/067/072/077/042)
     │  │           ▼                     ▼                   ▼          │
     │  │  ┌──────────────────────────────────────────────────────────┐  │
     │  │  │              Red Teaming Engine                          │  │
-    │  │  │  (75 techniques, 8 MITRE-style categories)              │  │
+    │  │  │  (97 techniques, 11 MITRE-style categories)             │  │
     │  │  └────────────────────────┬─────────────────────────────────┘  │
     │  │                           │                                    │
     │  │                           ▼                                    │
@@ -118,7 +118,7 @@ The traffic interceptor hooks into these existing pipeline points:
 
 ### AURA-ATT&CK Threat Taxonomy
 
-75 techniques across 8 MITRE-style categories:
+97 techniques across 11 MITRE-style categories:
 
 | ID | Category | Techniques | Key NIST Controls |
 |----|----------|-----------|-------------------|
@@ -130,6 +130,9 @@ The traffic interceptor hooks into these existing pipeline points:
 | ATA-06 | Denial of Service | 8 (token exhaustion, recursive loops, resource starvation) | SC-5, CP-9 |
 | ATA-07 | Supply Chain | 9 (MCP server poisoning, dependency confusion, model weight tampering) | SA-12, SR-3 |
 | ATA-08 | Evasion | 9 (encoding bypass, language switching, semantic obfuscation) | SI-3, SI-4 |
+| ATA-09 | Cryptographic Weaknesses | 8 (weak algorithms, key management, protocol downgrade) | SC-12, SC-13 |
+| ATA-10 | Memory Safety | 8 (buffer overflow, use-after-free, uninitialized memory) | SI-16, SA-11 |
+| ATA-11 | Sandbox/Isolation Escape | 6 (container breakout, namespace escape, network bypass) | SC-7, SC-39 |
 
 ### Data Models
 
@@ -214,7 +217,7 @@ src/services/runtime_security/
 ├── red_team/
 │   ├── __init__.py
 │   ├── engine.py                  # Red team test orchestrator
-│   ├── taxonomy.py                # AURA-ATT&CK 75 technique definitions
+│   ├── taxonomy.py                # AURA-ATT&CK 97 technique definitions
 │   ├── generators/                # Attack payload generators (per category)
 │   │   ├── __init__.py
 │   │   ├── prompt_injection.py
@@ -333,7 +336,7 @@ All services use `${AWS::Partition}` in ARNs. Dependencies:
 1. **Full-lifecycle security** — detect, trace, fix, verify in a single platform
 2. **Shadow agent detection** — identify unregistered agents before they cause damage
 3. **Behavioral drift alerting** — catch gradual agent degradation or compromise
-4. **Automated red teaming** — continuous adversarial validation with 75 techniques
+4. **Automated red teaming** — continuous adversarial validation with 97 techniques
 5. **Competitive differentiation** — runtime-to-code correlation via GraphRAG is a capability we are not aware of being publicly documented by comparable runtime agent security vendors as of February 2026
 6. **Compliance readiness** — NIST 800-53 SI-4, AU-6 continuous monitoring requirements
 
@@ -360,7 +363,7 @@ All services use `${AWS::Partition}` in ARNs. Dependencies:
 | Traffic capture rate | >99.5% of agent calls |
 | Shadow agent detection time | <60 seconds |
 | Baseline drift alert latency | <5 minutes |
-| Red team coverage | 75/75 AURA-ATT&CK techniques |
+| Red team coverage | 97/97 AURA-ATT&CK techniques |
 | Runtime-to-code correlation accuracy | >85% |
 | Interceptor overhead | <5ms P95 |
 | Unit test count | >550 |

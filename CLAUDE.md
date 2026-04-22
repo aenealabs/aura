@@ -238,7 +238,7 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 - **Company:** Aenea Labs | **Domain:** aenealabs.com (Route 53)
 - **Overall Completion:** 99%
 - **Total Lines of Code:** 439,000+ lines (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure)
-- **Test Suite:** 23,165+ tests (16,499 passed, 6,666 skipped, 0 failed)
+- **Test Suite:** 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed)
 - **Architecture Decision Records:** 85 ADRs (83 Deployed/Accepted, 2 Proposed)
 - **Infrastructure:** 100% (All 9 phases deployed: Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
 - **Modular CI/CD:** 100% (32 buildspecs managing all 155 CloudFormation templates)
@@ -284,7 +284,7 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 - **Scale & AI Model Security (ADR-079):** 100% Deployed (Streaming analysis, model weight protection, training data poisoning detection, ~2.8K lines, 86 tests)
 - **Evo-Memory Enhancements (ADR-080):** 100% Deployed (ReMem Action Framework, 7 operations: CONSOLIDATE, PRUNE, REINFORCE, ABSTRACT, LINK, CORRECT, ROLLBACK, multi-agent sharing, ~10K lines, 336 tests)
 - **Constraint Geometry Engine (ADR-081):** Phase 1 Deployed (Deterministic cortical discrimination, 7-axis constraint space, coherence scoring, provenance-aware weighting, 4 policy profiles, ~4.5K lines, 358 tests)
-- **Runtime Agent Security Platform (ADR-083):** 100% Deployed (Traffic interception, shadow agent detection, behavioral baselines, AURA-ATT&CK red team (75 techniques), runtime-to-code correlation via GraphRAG, E2E pipeline integrated, 7 dashboard widgets, ~10.3K lines, 848 tests)
+- **Runtime Agent Security Platform (ADR-083):** 100% Deployed (Traffic interception, shadow agent detection, behavioral baselines, AURA-ATT&CK red team (97 techniques), runtime-to-code correlation via GraphRAG, E2E pipeline integrated, 7 dashboard widgets, ~10.3K lines, 1005 tests)
 - **Native Vulnerability Scanning Engine (ADR-084):** Infrastructure + UI Deployed (GraphRAG-enhanced LLM analysis, 3-phase adversarial verification, 4-layer isolation, closed-loop remediation, Titan Memory integration, ~4.9K lines foundation code, ~3K lines infrastructure, 9 stacks deployed to dev, 20 dashboard widgets, 3 pages, ~9.3K lines UI/mock data, 980 tests planned)
 - **Deterministic Verification Envelope (ADR-085):** Proposed (DO-178C output verification architecture, 3 pillars: N-of-M consensus generation, MC/DC structural coverage gate, Z3 formal verification; DO-330 Section 11.4 certification argument; 2 new CGE policy profiles for DAL A/B; ~4.7K lines planned, ~750 tests planned)
 - **Agentic Identity Lifecycle Controls (ADR-086):** 100% Deployed (Decommission assurance, lifecycle state machine, 15 credential enumerators, ghost agent scanner, tiered attestation, self-modification sentinel, SELF_GOVERNANCE graph edge, sentinel-to-correlator pipeline, delegation trust envelope, 7 channel verifiers, untrusted-origin profile, 1 dashboard widget, ~3.6K lines, 271 tests)

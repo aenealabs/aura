@@ -539,7 +539,7 @@ The path forward is not to wait for regulatory clarity but to close the engineer
 | Sandbox Security | N/A | N/A | N/A | Sandbox/Approval | 4-layer isolation, 5-category validation, 99.2% success rate |
 | HITL Approval Workflow | N/A | N/A | N/A | Sandbox/Approval | 5-stage workflow, 3 decision options |
 | Real-Time Agent Intervention | ADR-042 | N/A | N/A | Sandbox/Approval | 6 intervention modes, WebSocket per-action checkpoints |
-| Runtime Agent Security Platform | ADR-083 | 848 | ~10.3K | Continuous Monitoring | >99.5% traffic capture, <5ms P95, 75-technique red team |
+| Runtime Agent Security Platform | ADR-083 | 1005 | ~10.3K | Continuous Monitoring | >99.5% traffic capture, <5ms P95, 97-technique red team |
 | Policy-as-Code GitOps | ADR-070 | 98 | ~1.2K | Continuous Monitoring | 3-stage CI/CD, 30-second Neptune sync |
 
 ## Appendix E: Acronyms

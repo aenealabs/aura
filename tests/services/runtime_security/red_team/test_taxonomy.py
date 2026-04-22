@@ -60,9 +60,21 @@ class TestAttackCategory:
         """ATA-08 maps to EVASION."""
         assert AttackCategory.EVASION.value == "ATA-08"
 
+    def test_cryptographic_weaknesses_value(self) -> None:
+        """ATA-09 maps to CRYPTOGRAPHIC_WEAKNESSES."""
+        assert AttackCategory.CRYPTOGRAPHIC_WEAKNESSES.value == "ATA-09"
+
+    def test_memory_safety_value(self) -> None:
+        """ATA-10 maps to MEMORY_SAFETY."""
+        assert AttackCategory.MEMORY_SAFETY.value == "ATA-10"
+
+    def test_sandbox_escape_value(self) -> None:
+        """ATA-11 maps to SANDBOX_ESCAPE."""
+        assert AttackCategory.SANDBOX_ESCAPE.value == "ATA-11"
+
     def test_total_categories(self) -> None:
-        """There are exactly 8 attack categories."""
-        assert len(AttackCategory) == 8
+        """There are exactly 11 attack categories."""
+        assert len(AttackCategory) == 11
 
     def test_all_values_start_with_ata(self) -> None:
         """Every category value starts with ATA-."""
@@ -249,8 +261,8 @@ class TestTaxonomyCompleteness:
         assert isinstance(AURA_ATTACK_TAXONOMY, tuple)
 
     def test_total_techniques(self) -> None:
-        """Taxonomy contains exactly 75 techniques."""
-        assert len(AURA_ATTACK_TAXONOMY) == 75
+        """Taxonomy contains exactly 97 techniques."""
+        assert len(AURA_ATTACK_TAXONOMY) == 97
 
     def test_all_elements_are_attack_techniques(self) -> None:
         """Every element in the taxonomy is an AttackTechnique."""
@@ -323,8 +335,35 @@ class TestTaxonomyCompleteness:
         )
         assert count == 9
 
+    def test_cryptographic_weaknesses_count(self) -> None:
+        """ATA-09 Cryptographic Weaknesses has 8 techniques."""
+        count = sum(
+            1
+            for t in AURA_ATTACK_TAXONOMY
+            if t.category == AttackCategory.CRYPTOGRAPHIC_WEAKNESSES
+        )
+        assert count == 8
+
+    def test_memory_safety_count(self) -> None:
+        """ATA-10 Memory Safety has 8 techniques."""
+        count = sum(
+            1
+            for t in AURA_ATTACK_TAXONOMY
+            if t.category == AttackCategory.MEMORY_SAFETY
+        )
+        assert count == 8
+
+    def test_sandbox_escape_count(self) -> None:
+        """ATA-11 Sandbox/Isolation Escape has 6 techniques."""
+        count = sum(
+            1
+            for t in AURA_ATTACK_TAXONOMY
+            if t.category == AttackCategory.SANDBOX_ESCAPE
+        )
+        assert count == 6
+
     def test_category_counts_sum_to_total(self) -> None:
-        """Sum of per-category counts equals 75."""
+        """Sum of per-category counts equals 97."""
         expected = {
             AttackCategory.PROMPT_INJECTION: 12,
             AttackCategory.TOOL_ABUSE: 10,
@@ -334,14 +373,17 @@ class TestTaxonomyCompleteness:
             AttackCategory.DENIAL_OF_SERVICE: 8,
             AttackCategory.SUPPLY_CHAIN: 9,
             AttackCategory.EVASION: 9,
+            AttackCategory.CRYPTOGRAPHIC_WEAKNESSES: 8,
+            AttackCategory.MEMORY_SAFETY: 8,
+            AttackCategory.SANDBOX_ESCAPE: 6,
         }
-        assert sum(expected.values()) == 75
+        assert sum(expected.values()) == 97
         for cat, count in expected.items():
             actual = sum(1 for t in AURA_ATTACK_TAXONOMY if t.category == cat)
             assert actual == count, f"{cat.name} expected {count}, got {actual}"
 
-    def test_all_8_categories_represented(self) -> None:
-        """All 8 categories are present in the taxonomy."""
+    def test_all_11_categories_represented(self) -> None:
+        """All 11 categories are present in the taxonomy."""
         categories_in_taxonomy = set(t.category for t in AURA_ATTACK_TAXONOMY)
         assert categories_in_taxonomy == set(AttackCategory)
 

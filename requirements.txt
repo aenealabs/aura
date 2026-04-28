@@ -44,7 +44,7 @@ python-multipart>=0.0.20  # Required for FastAPI form data (fixes deprecation wa
 aiohttp>=3.13.0       # For ServiceNow, Splunk, Terraform Cloud, Snyk, CrowdStrike, Qualys, Azure DevOps connectors
 
 # Neural Memory / Titan Integration (ADR-024)
-torch>=2.0.0          # For DeepMLPMemory, MIRAS, neural memory backends
+torch>=2.11.0          # For DeepMLPMemory, MIRAS, neural memory backends
 numpy>=1.26.0         # For constraint geometry, memory evolution, semantic guardrails, JEPA
 
 # Structured Logging (Security/DevOps Agents)

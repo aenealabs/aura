@@ -53,7 +53,7 @@ structlog>=24.1.0     # For security agent orchestrator and devops services
 # --- TREE-SITTER LANGUAGE BINDINGS (Required for AST Parsing) ---
 # These are included to reflect the CKGE's multi-language analysis capability.
 # Updated to versions compatible with Python 3.12
-tree-sitter-python>=0.23.6
+tree-sitter-python>=0.25.0
 tree-sitter-javascript>=0.23.1
 
 # Testing Dependencies

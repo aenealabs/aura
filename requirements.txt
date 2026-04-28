@@ -45,6 +45,7 @@ aiohttp>=3.13.0       # For ServiceNow, Splunk, Terraform Cloud, Snyk, CrowdStri
 
 # Neural Memory / Titan Integration (ADR-024)
 torch>=2.0.0          # For DeepMLPMemory, MIRAS, neural memory backends
+numpy>=1.26.0         # For constraint geometry, memory evolution, semantic guardrails, JEPA
 
 # Structured Logging (Security/DevOps Agents)
 structlog>=24.1.0     # For security agent orchestrator and devops services

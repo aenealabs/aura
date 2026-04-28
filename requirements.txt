@@ -41,7 +41,7 @@ pydantic>=2.10.0      # Data validation (included with FastAPI)
 python-multipart>=0.0.20  # Required for FastAPI form data (fixes deprecation warning)
 
 # Async HTTP Client (Enterprise Integrations)
-aiohttp>=3.13.0       # For ServiceNow, Splunk, Terraform Cloud, Snyk, CrowdStrike, Qualys, Azure DevOps connectors
+aiohttp>=3.13.5       # For ServiceNow, Splunk, Terraform Cloud, Snyk, CrowdStrike, Qualys, Azure DevOps connectors
 
 # Neural Memory / Titan Integration (ADR-024)
 torch>=2.0.0          # For DeepMLPMemory, MIRAS, neural memory backends

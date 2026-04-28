@@ -11,7 +11,7 @@
 
 # AWS SDK
 boto3>=1.42.0
-botocore>=1.42.0
+botocore>=1.42.97
 
 # Graph Database and Vector Store
 gremlinpython>=3.7.3         # Amazon Neptune connectivity

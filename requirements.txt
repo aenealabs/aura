@@ -18,7 +18,7 @@ python-dotenv>=1.2.2
 
 # AWS and Core Agent Dependencies:
 boto3>=1.42.0
-botocore>=1.42.0
+botocore>=1.42.97
 tree-sitter>=0.24.0
 
 # Graph Database and Vector Store Dependencies

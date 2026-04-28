@@ -11,5 +11,5 @@
 
 # AST Parsing (tree-sitter)
 tree-sitter>=0.24.0
-tree-sitter-python>=0.23.6
+tree-sitter-python>=0.25.0
 tree-sitter-javascript>=0.23.1

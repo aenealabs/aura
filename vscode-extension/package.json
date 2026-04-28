@@ -196,7 +196,7 @@
     "@typescript-eslint/parser": "^6.x",
     "@vscode/test-electron": "^2.3.x",
     "eslint": "^10.x",
-    "typescript": "^5.x"
+    "typescript": "^6.x"
   },
   "dependencies": {
     "axios": "^1.6.x"

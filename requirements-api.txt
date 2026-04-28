@@ -10,7 +10,7 @@
 # Estimated image size reduction: ~2GB (excludes torch ~1.8GB, tree-sitter ~50MB)
 
 # AWS SDK
-boto3>=1.42.0
+boto3>=1.42.97
 botocore>=1.42.97
 
 # Graph Database and Vector Store

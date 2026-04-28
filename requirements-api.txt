@@ -43,7 +43,7 @@ aiohttp>=3.13.0              # ServiceNow, Splunk, Terraform Cloud, etc.
 structlog>=24.1.0            # Security agent orchestrator logging
 
 # Configuration
-python-dotenv>=1.0.1         # Environment variable loading
+python-dotenv>=1.2.2         # Environment variable loading
 networkx>=3.4.0              # Graph processing (lightweight, used in API)
 
 # YAML Support (config parsing)

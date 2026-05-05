@@ -26,7 +26,7 @@ PyGithub>=2.5.0              # GitHub API integration
 
 # Authentication
 PyJWT[crypto]>=2.9.0         # JWT validation (GitHub App auth + Cognito JWKS)
-cryptography>=43.0.0         # RSA key support
+cryptography>=48.0.0         # RSA key support
 
 # API Framework
 fastapi>=0.115.0             # REST API

@@ -34,7 +34,7 @@ cryptography>=43.0.0  # For RSA key support in PyJWT (GitHub App auth)
 defusedxml>=0.7.1    # For secure XML parsing (prevents XXE attacks) in SAML/Qualys
 
 # API Framework Dependencies
-fastapi>=0.115.0      # For REST API endpoints
+fastapi>=0.136.1      # For REST API endpoints
 uvicorn>=0.32.0       # ASGI server for FastAPI
 httpx>=0.28.1         # HTTP client for testing
 pydantic>=2.10.0      # Data validation (included with FastAPI)

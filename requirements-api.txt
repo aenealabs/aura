@@ -29,7 +29,7 @@ PyJWT[crypto]>=2.9.0         # JWT validation (GitHub App auth + Cognito JWKS)
 cryptography>=43.0.0         # RSA key support
 
 # API Framework
-fastapi>=0.115.0             # REST API
+fastapi>=0.136.1             # REST API
 uvicorn>=0.32.0              # ASGI server
 httpx>=0.28.1                # HTTP client
 pydantic>=2.10.0             # Data validation

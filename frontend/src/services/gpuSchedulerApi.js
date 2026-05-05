@@ -7,7 +7,7 @@
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 const WS_URL = import.meta.env.VITE_WS_BASE_URL || '';
-const DEV_MODE = import.meta.env.DEV && !import.meta.env.VITE_API_URL;
+const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true' || (import.meta.env.DEV && !import.meta.env.VITE_API_URL);
 
 // GPU job type definitions
 export const GPU_JOB_TYPES = [

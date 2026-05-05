@@ -6,7 +6,7 @@
  */
 
 const API_URL = import.meta.env.VITE_API_URL || '';
-const DEV_MODE = import.meta.env.DEV && !import.meta.env.VITE_API_URL;
+const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true' || (import.meta.env.DEV && !import.meta.env.VITE_API_URL);
 
 // Mock data for development - Production-realistic scheduled job data
 const mockScheduledJobs = [

@@ -3,6 +3,7 @@
  *
  * Configures orchestrator deployment modes (on-demand, warm pool, hybrid).
  * Manages agent spawn limits, timeouts, and DAG execution settings.
+ * Includes Hyperscale Orchestration section (ADR-087) with Defense Mode gating.
  */
 
 import { useState, useEffect } from 'react';
@@ -18,6 +19,12 @@ import {
   BoltIcon,
   ChartBarIcon,
   Cog6ToothIcon,
+  ShieldCheckIcon,
+  ExclamationTriangleIcon,
+  LockClosedIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  UserGroupIcon,
 } from '@heroicons/react/24/outline';
 
 import {
@@ -25,8 +32,13 @@ import {
   updateOrchestratorSettings,
   switchDeploymentMode,
   getModeStatus,
+  getHyperscaleSettings,
+  updateHyperscaleSettings,
   DEPLOYMENT_MODE_CONFIG,
   DEFAULT_ORCHESTRATOR_SETTINGS,
+  EXECUTION_TIER_CONFIG,
+  SECURITY_GATE_CONFIG,
+  DEFAULT_HYPERSCALE_SETTINGS,
 } from '../../services/orchestratorApi';
 
 // Icon mapping
@@ -410,9 +422,540 @@ function AdvancedSettingsPanel({ settings, onUpdate, isLoading }) {
 }
 
 /**
+ * Execution Tier Card Component (ADR-087)
+ */
+function ExecutionTierCard({ tier, config, isActive, onSelect, isLoading, disabled }) {
+  const Icon = ICONS[config.icon] || CpuChipIcon;
+  const colors = COLOR_STYLES[config.color] || COLOR_STYLES.aura;
+
+  return (
+    <div
+      className={`
+        relative rounded-xl border-2 transition-all duration-200 ease-[var(--ease-tahoe)]
+        ${isActive
+          ? `${colors.border} ${colors.bg} ring-2 ${colors.ring} shadow-[var(--shadow-glass-hover)]`
+          : 'border-surface-200/50 dark:border-surface-700/30 bg-white dark:bg-surface-800 backdrop-blur-xl hover:border-surface-300/60 dark:hover:border-surface-600/40 hover:shadow-[var(--shadow-glass)]'
+        }
+        ${disabled || isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+      `}
+      onClick={() => !disabled && !isLoading && onSelect(tier)}
+    >
+      {isActive && (
+        <div className="absolute top-3 right-3">
+          <CheckCircleIcon className={`h-5 w-5 ${colors.text}`} />
+        </div>
+      )}
+
+      <div className="p-5">
+        <div className="flex items-start gap-3 mb-3">
+          <div className={`p-2.5 rounded-xl ${isActive ? colors.iconBg : 'bg-surface-100 dark:bg-surface-700'}`}>
+            <Icon className={`h-5 w-5 ${isActive ? colors.text : 'text-surface-600 dark:text-surface-400'}`} />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">
+              {config.label}
+            </h4>
+            <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
+              {config.agentRange} agents
+            </p>
+          </div>
+        </div>
+
+        <p className="text-sm text-surface-600 dark:text-surface-400 mb-3">
+          {config.description}
+        </p>
+
+        {/* Cost Estimate */}
+        {config.costPerAgent > 0 && (
+          <div className="flex items-center gap-2 mb-3">
+            <CurrencyDollarIcon className="h-4 w-4 text-surface-400" />
+            <span className="text-sm text-surface-600 dark:text-surface-400">
+              ~${config.costPerAgent}/agent/job
+            </span>
+          </div>
+        )}
+
+        {/* Recommended For */}
+        <div>
+          <p className="text-xs font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1.5">
+            Recommended For
+          </p>
+          <ul className="space-y-1">
+            {config.recommended.map((item, idx) => (
+              <li key={idx} className="flex items-start gap-2 text-sm text-surface-600 dark:text-surface-400">
+                <CheckCircleIcon className="h-4 w-4 text-olive-500 mt-0.5 flex-shrink-0" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Edition Badge */}
+        <div className="mt-3 pt-3 border-t border-surface-100/50 dark:border-surface-700/30">
+          <span className={`
+            inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium
+            ${config.edition === 'standard'
+              ? 'bg-surface-100/80 dark:bg-surface-700/50 text-surface-600 dark:text-surface-400'
+              : config.edition === 'enterprise'
+                ? 'bg-aura-100/80 dark:bg-aura-900/30 text-aura-700 dark:text-aura-400'
+                : 'bg-warning-100/80 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400'
+            }
+          `}>
+            {config.edition === 'standard' ? 'Standard' : config.edition === 'enterprise' ? 'Enterprise' : 'Scale'} Edition
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Security Gate Status Component (ADR-087)
+ */
+function SecurityGateStatus({ gates }) {
+  return (
+    <div className="bg-white dark:bg-surface-800 backdrop-blur-xl rounded-xl border border-surface-200/50 dark:border-surface-700/30 shadow-[var(--shadow-glass)]">
+      <div className="p-6 border-b border-surface-200 dark:border-surface-700">
+        <div className="flex items-center gap-3">
+          <ShieldCheckIcon className="h-5 w-5 text-aura-600 dark:text-aura-400" />
+          <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+            Security Gate Validation
+          </h3>
+        </div>
+        <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">
+          Each gate must be validated before advancing to the next scale tier.
+        </p>
+      </div>
+
+      <div className="p-6 space-y-4">
+        {Object.entries(SECURITY_GATE_CONFIG).map(([gateKey, gateConfig]) => {
+          const gateStatus = gates?.[gateKey] || { validated: false };
+          const isValidated = gateStatus.validated;
+
+          return (
+            <div
+              key={gateKey}
+              className={`
+                p-4 rounded-xl border transition-all duration-200 ease-[var(--ease-tahoe)]
+                ${isValidated
+                  ? 'border-olive-200/50 dark:border-olive-800/50 bg-olive-50/50 dark:bg-olive-900/10'
+                  : 'border-surface-200/50 dark:border-surface-700/30 bg-surface-50 dark:bg-surface-800'
+                }
+              `}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <div className={`
+                    w-8 h-8 rounded-lg flex items-center justify-center
+                    ${isValidated
+                      ? 'bg-olive-100 dark:bg-olive-900/30'
+                      : 'bg-surface-100 dark:bg-surface-700'
+                    }
+                  `}>
+                    {isValidated ? (
+                      <CheckCircleIcon className="h-5 w-5 text-olive-600 dark:text-olive-400" />
+                    ) : (
+                      <LockClosedIcon className="h-5 w-5 text-surface-400 dark:text-surface-500" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-medium text-surface-900 dark:text-surface-100">
+                      {gateConfig.label}: Scale to {gateConfig.threshold} agents
+                    </p>
+                    <p className="text-xs text-surface-500 dark:text-surface-400">
+                      {gateConfig.description}
+                    </p>
+                  </div>
+                </div>
+                <span className={`
+                  px-2.5 py-0.5 rounded-lg text-xs font-medium
+                  ${isValidated
+                    ? 'bg-olive-100/80 dark:bg-olive-900/30 text-olive-700 dark:text-olive-400'
+                    : 'bg-surface-100/80 dark:bg-surface-700/50 text-surface-600 dark:text-surface-400'
+                  }
+                `}>
+                  {isValidated ? 'Validated' : 'Pending'}
+                </span>
+              </div>
+
+              <div className="ml-11 flex flex-wrap gap-1.5">
+                {gateConfig.controls.map((control, idx) => (
+                  <span
+                    key={idx}
+                    className={`
+                      px-2 py-0.5 rounded text-xs
+                      ${isValidated
+                        ? 'bg-olive-100 dark:bg-olive-900/20 text-olive-700 dark:text-olive-400'
+                        : 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
+                      }
+                    `}
+                  >
+                    {control}
+                  </span>
+                ))}
+              </div>
+
+              {isValidated && gateStatus.validated_at && (
+                <p className="ml-11 mt-2 text-xs text-surface-500 dark:text-surface-400">
+                  Validated {new Date(gateStatus.validated_at).toLocaleDateString('en-US', {
+                    month: 'short', day: 'numeric', year: 'numeric',
+                  })}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Hyperscale Orchestration Section Component (ADR-087)
+ *
+ * Displays as "Coming Soon" in Defense Mode, fully interactive otherwise.
+ */
+function HyperscaleOrchestrationSection({ integrationMode, onSuccess, onError }) {
+  const isDefenseMode = integrationMode === 'defense';
+  const [hyperscale, setHyperscale] = useState(DEFAULT_HYPERSCALE_SETTINGS);
+  const [loading, setLoading] = useState(!isDefenseMode);
+  const [saving, setSaving] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isDefenseMode) {
+      loadHyperscale();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDefenseMode]);
+
+  const loadHyperscale = async () => {
+    setLoading(true);
+    try {
+      const data = await getHyperscaleSettings();
+      setHyperscale(data);
+    } catch (err) {
+      onError?.(`Failed to load hyperscale settings: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdate = async (updates) => {
+    setSaving(true);
+    try {
+      const result = await updateHyperscaleSettings({ ...hyperscale, ...updates });
+      setHyperscale(result);
+      onSuccess?.('Hyperscale settings updated');
+    } catch (err) {
+      onError?.(`Failed to update hyperscale settings: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTierSelect = (tier) => {
+    const tierConfig = EXECUTION_TIER_CONFIG[tier];
+    handleUpdate({
+      execution_tier: tier,
+      max_parallel_agents: tierConfig.defaultAgents,
+    });
+  };
+
+  const handleToggle = () => {
+    handleUpdate({ enabled: !hyperscale.enabled });
+  };
+
+  // Defense Mode: Coming Soon banner
+  if (isDefenseMode) {
+    return (
+      <div className="bg-white dark:bg-surface-800 backdrop-blur-xl rounded-xl border border-surface-200/50 dark:border-surface-700/30 shadow-[var(--shadow-glass)]">
+        <div className="p-6 border-b border-surface-200 dark:border-surface-700">
+          <div className="flex items-center gap-3">
+            <BoltIcon className="h-5 w-5 text-surface-400 dark:text-surface-500" />
+            <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+              Hyperscale Agent Orchestration
+            </h3>
+            <span className="px-2.5 py-0.5 rounded-lg text-xs font-medium bg-aura-100/80 dark:bg-aura-900/30 text-aura-700 dark:text-aura-400">
+              Coming Soon
+            </span>
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl bg-aura-50 dark:bg-aura-900/20">
+              <UserGroupIcon className="h-6 w-6 text-aura-600 dark:text-aura-400" />
+            </div>
+            <div className="flex-1">
+              <p className="text-surface-700 dark:text-surface-300">
+                Hyperscale orchestration enables governance-bounded parallel agent execution
+                for large enterprise codebases. A defense-certified variant with enhanced
+                HITL controls and full audit logging is on the roadmap.
+              </p>
+              <div className="mt-4 flex items-center gap-4">
+                <div className="flex items-center gap-2 text-sm text-surface-500 dark:text-surface-400">
+                  <ShieldCheckIcon className="h-4 w-4 text-olive-500" />
+                  Defense Parallel tier planned
+                </div>
+                <div className="flex items-center gap-2 text-sm text-surface-500 dark:text-surface-400">
+                  <LockClosedIcon className="h-4 w-4 text-olive-500" />
+                  FedRAMP-authorized infrastructure
+                </div>
+              </div>
+              <p className="mt-4 text-sm text-aura-600 dark:text-aura-400">
+                Contact your account team for early access and timeline details.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-surface-800 backdrop-blur-xl rounded-xl border border-surface-200/50 dark:border-surface-700/30 p-6 shadow-[var(--shadow-glass)]">
+        <div className="flex items-center justify-center py-8">
+          <ArrowPathIcon className="h-6 w-6 text-aura-500 animate-spin" />
+          <span className="ml-3 text-surface-600 dark:text-surface-400">
+            Loading hyperscale settings...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Hyperscale Header + Toggle */}
+      <div className="bg-white dark:bg-surface-800 backdrop-blur-xl rounded-xl border border-surface-200/50 dark:border-surface-700/30 shadow-[var(--shadow-glass)]">
+        <div className="p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-aura-100 dark:bg-aura-900/30">
+                <BoltIcon className="h-5 w-5 text-aura-600 dark:text-aura-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+                  Hyperscale Agent Orchestration
+                </h3>
+                <p className="text-sm text-surface-500 dark:text-surface-400">
+                  Scale parallel agent execution from 10 to 1,000+ with governance controls
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleToggle}
+              disabled={saving}
+              className={`
+                relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
+                transition-all duration-200 ease-[var(--ease-tahoe)] focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2 dark:focus:ring-offset-surface-800
+                ${hyperscale.enabled ? 'bg-aura-600 shadow-sm' : 'bg-surface-200 dark:bg-surface-600'}
+                ${saving ? 'opacity-50 cursor-not-allowed' : ''}
+              `}
+            >
+              <span
+                className={`
+                  pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0
+                  transition-all duration-200 ease-[var(--ease-tahoe)]
+                  ${hyperscale.enabled ? 'translate-x-5' : 'translate-x-0'}
+                `}
+              />
+            </button>
+          </div>
+
+          {hyperscale.enabled && (
+            <div className="mt-4 flex items-start gap-3 p-3 bg-aura-50/80 dark:bg-aura-900/20 backdrop-blur-sm border border-aura-200/50 dark:border-aura-800/50 rounded-xl">
+              <InformationCircleIcon className="h-4 w-4 text-aura-600 dark:text-aura-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-aura-700 dark:text-aura-300">
+                Selecting a tier auto-configures the max parallel agent range. Security gates
+                must be validated before scaling beyond each threshold.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {hyperscale.enabled && (
+        <>
+          {/* Execution Tier Selection */}
+          <div>
+            <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100 mb-4">
+              Execution Tier
+            </h3>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {Object.entries(EXECUTION_TIER_CONFIG).map(([tier, config]) => (
+                <ExecutionTierCard
+                  key={tier}
+                  tier={tier}
+                  config={config}
+                  isActive={hyperscale.execution_tier === tier}
+                  onSelect={handleTierSelect}
+                  isLoading={saving}
+                  disabled={saving}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Advanced: Max Agents Slider + Cost Circuit Breaker */}
+          <div className="bg-white dark:bg-surface-800 backdrop-blur-xl rounded-xl border border-surface-200/50 dark:border-surface-700/30 shadow-[var(--shadow-glass)]">
+            <button
+              onClick={() => setAdvancedOpen(!advancedOpen)}
+              className="w-full p-4 flex items-center justify-between text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+            >
+              <div className="flex items-center gap-3">
+                <Cog6ToothIcon className="h-5 w-5 text-aura-600 dark:text-aura-400" />
+                <span className="font-medium text-surface-900 dark:text-surface-100">Advanced Configuration</span>
+              </div>
+              {advancedOpen ? (
+                <ChevronUpIcon className="h-4 w-4" />
+              ) : (
+                <ChevronDownIcon className="h-4 w-4" />
+              )}
+            </button>
+
+            {advancedOpen && (
+              <div className="px-6 pb-6 space-y-6 border-t border-surface-100/50 dark:border-surface-700/30 pt-4">
+                {/* Max Parallel Agents */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <label className="block font-medium text-surface-900 dark:text-surface-100">
+                        Max Parallel Agents
+                      </label>
+                      <p className="text-sm text-surface-500 dark:text-surface-400">
+                        Ceiling for concurrent agents (bounded by tier and edition)
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={EXECUTION_TIER_CONFIG[hyperscale.execution_tier]?.minAgents || 1}
+                        max={EXECUTION_TIER_CONFIG[hyperscale.execution_tier]?.maxAgents || 1000}
+                        value={hyperscale.max_parallel_agents}
+                        onChange={(e) => handleUpdate({ max_parallel_agents: parseInt(e.target.value) || 10 })}
+                        disabled={saving}
+                        className="w-24 px-3 py-1.5 border border-surface-300 dark:border-surface-600 rounded-xl text-right bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent disabled:opacity-50 transition-all duration-200 ease-[var(--ease-tahoe)]"
+                      />
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min={EXECUTION_TIER_CONFIG[hyperscale.execution_tier]?.minAgents || 1}
+                    max={EXECUTION_TIER_CONFIG[hyperscale.execution_tier]?.maxAgents || 1000}
+                    value={hyperscale.max_parallel_agents}
+                    onChange={(e) => handleUpdate({ max_parallel_agents: parseInt(e.target.value) })}
+                    disabled={saving}
+                    className="w-full h-2 bg-surface-200 dark:bg-surface-700 rounded-lg appearance-none cursor-pointer accent-aura-600 disabled:opacity-50"
+                  />
+                  <div className="flex justify-between text-xs text-surface-400 mt-1">
+                    <span>{EXECUTION_TIER_CONFIG[hyperscale.execution_tier]?.minAgents || 1}</span>
+                    <span>{EXECUTION_TIER_CONFIG[hyperscale.execution_tier]?.maxAgents || 1000}</span>
+                  </div>
+                </div>
+
+                {/* Cost Circuit Breaker */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <label className="block font-medium text-surface-900 dark:text-surface-100">
+                        Cost Circuit Breaker (USD)
+                      </label>
+                      <p className="text-sm text-surface-500 dark:text-surface-400">
+                        Pause job if estimated cost exceeds this threshold (server-enforced)
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-surface-500 dark:text-surface-400">$</span>
+                      <input
+                        type="number"
+                        min={10}
+                        max={10000}
+                        step={10}
+                        value={hyperscale.cost_circuit_breaker_usd}
+                        onChange={(e) => handleUpdate({ cost_circuit_breaker_usd: parseInt(e.target.value) || 500 })}
+                        disabled={saving}
+                        className="w-24 px-3 py-1.5 border border-surface-300 dark:border-surface-600 rounded-xl text-right bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent disabled:opacity-50 transition-all duration-200 ease-[var(--ease-tahoe)]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Feasibility Gate Toggle */}
+                <div className="flex items-center justify-between py-3">
+                  <div>
+                    <p className="font-medium text-surface-900 dark:text-surface-100">Pre-Generation Feasibility Gate</p>
+                    <p className="text-sm text-surface-500 dark:text-surface-400">
+                      Validate tasks against the knowledge graph before code generation
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleUpdate({ feasibility_gate_enabled: !hyperscale.feasibility_gate_enabled })}
+                    disabled={saving}
+                    className={`
+                      relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
+                      transition-all duration-200 ease-[var(--ease-tahoe)] focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2 dark:focus:ring-offset-surface-800
+                      ${hyperscale.feasibility_gate_enabled ? 'bg-aura-600 shadow-sm' : 'bg-surface-200 dark:bg-surface-600'}
+                      ${saving ? 'opacity-50 cursor-not-allowed' : ''}
+                    `}
+                  >
+                    <span
+                      className={`
+                        pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0
+                        transition-all duration-200 ease-[var(--ease-tahoe)]
+                        ${hyperscale.feasibility_gate_enabled ? 'translate-x-5' : 'translate-x-0'}
+                      `}
+                    />
+                  </button>
+                </div>
+
+                {/* Cost Estimate */}
+                {hyperscale.max_parallel_agents > 20 && (
+                  <div className="p-4 bg-surface-50 dark:bg-surface-800 backdrop-blur-sm rounded-xl border border-surface-200/30 dark:border-surface-700/20">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CurrencyDollarIcon className="h-4 w-4 text-surface-400" />
+                      <span className="text-sm font-medium text-surface-700 dark:text-surface-300">Estimated Cost per Job</span>
+                    </div>
+                    <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">
+                      ~${(hyperscale.max_parallel_agents * 0.162).toFixed(0)}
+                    </p>
+                    <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">
+                      Based on {hyperscale.max_parallel_agents} agents at ~3 LLM calls each (Sonnet + Haiku routing)
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Security Gates */}
+          <SecurityGateStatus gates={hyperscale.security_gates} />
+
+          {/* Scale Warning */}
+          {hyperscale.max_parallel_agents > 200 && (
+            <div className="flex items-start gap-3 p-4 bg-warning-50/90 dark:bg-warning-900/20 backdrop-blur-sm border border-warning-200/50 dark:border-warning-800/50 rounded-xl shadow-[var(--shadow-glass)]">
+              <ExclamationTriangleIcon className="h-5 w-5 text-warning-600 dark:text-warning-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-medium text-warning-800 dark:text-warning-200">High-Scale Configuration</h4>
+                <p className="text-sm text-warning-700 dark:text-warning-300 mt-1">
+                  Running {hyperscale.max_parallel_agents} parallel agents requires Gate 3 security validation
+                  and will use Karpenter spot-first autoscaling. Constitutional AI operates in fail-closed
+                  mode at this scale. Ensure your Bedrock RPM/TPM quotas support this throughput.
+                </p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * Main Orchestrator Mode Tab Component
  */
-export default function OrchestratorModeTab({ onSuccess, onError }) {
+export default function OrchestratorModeTab({ integrationMode, onSuccess, onError }) {
   const [settings, setSettings] = useState(DEFAULT_ORCHESTRATOR_SETTINGS);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -545,6 +1088,13 @@ export default function OrchestratorModeTab({ onSuccess, onError }) {
         settings={settings}
         onUpdate={handleSettingsUpdate}
         isLoading={saving}
+      />
+
+      {/* Hyperscale Agent Orchestration (ADR-087) */}
+      <HyperscaleOrchestrationSection
+        integrationMode={integrationMode}
+        onSuccess={onSuccess}
+        onError={onError}
       />
     </div>
   );

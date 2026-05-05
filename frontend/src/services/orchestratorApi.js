@@ -108,6 +108,130 @@ export const DEPLOYMENT_MODE_CONFIG = {
 };
 
 /**
+ * Hyperscale execution tiers (ADR-087)
+ */
+export const ExecutionTiers = {
+  IN_PROCESS: 'in_process',
+  DISTRIBUTED_SIMPLE: 'distributed_simple',
+  DISTRIBUTED_ORCHESTRATED: 'distributed_orchestrated',
+};
+
+/**
+ * Execution tier display configuration
+ */
+export const EXECUTION_TIER_CONFIG = {
+  in_process: {
+    label: 'In-Process',
+    description: 'Single pod, asyncio DAG execution. Zero infrastructure overhead.',
+    agentRange: '1–20',
+    minAgents: 1,
+    maxAgents: 20,
+    defaultAgents: 10,
+    icon: 'CpuChipIcon',
+    color: 'aura',
+    costPerAgent: 0,
+    recommended: [
+      'Small repositories (<50K lines)',
+      'Targeted vulnerability scans',
+      'Single-file patch generation',
+    ],
+    edition: 'standard',
+  },
+  distributed_simple: {
+    label: 'Distributed Simple',
+    description: 'SQS fan-out with DynamoDB job graph. Scales to mid-size enterprise repos.',
+    agentRange: '20–200',
+    minAgents: 20,
+    maxAgents: 200,
+    defaultAgents: 50,
+    icon: 'ServerStackIcon',
+    color: 'olive',
+    costPerAgent: 0.06,
+    recommended: [
+      'Mid-size enterprise codebases',
+      'Multi-service repositories',
+      'Parallel vulnerability scanning',
+    ],
+    edition: 'enterprise',
+  },
+  distributed_orchestrated: {
+    label: 'Distributed Orchestrated',
+    description: 'Step Functions fan-out with Karpenter autoscaling. Full enterprise codebase coverage.',
+    agentRange: '200–1,000+',
+    minAgents: 200,
+    maxAgents: 1000,
+    defaultAgents: 500,
+    icon: 'BoltIcon',
+    color: 'warning',
+    costPerAgent: 0.16,
+    recommended: [
+      'Large enterprise codebases (500K+ lines)',
+      'Organization-wide security audits',
+      'Full codebase remediation campaigns',
+    ],
+    edition: 'scale',
+  },
+};
+
+/**
+ * Security gate status configuration
+ */
+export const SECURITY_GATE_CONFIG = {
+  gate_1: {
+    label: 'Gate 1',
+    threshold: 50,
+    description: 'Prerequisite for distributed execution',
+    controls: [
+      'Neptune tenant partitioning',
+      'DAG cycle detection',
+      'Constitutional AI fail-closed',
+      'Per-tenant ResourceQuotas',
+      'Per-task execution timeouts',
+    ],
+  },
+  gate_2: {
+    label: 'Gate 2',
+    threshold: 200,
+    description: 'Distributed execution controls',
+    controls: [
+      'Tiered IAM roles',
+      'STS session tagging',
+      'Job-graph governance',
+      'HITL rate limiting',
+      'Sandbox concurrency ceiling',
+    ],
+  },
+  gate_3: {
+    label: 'Gate 3',
+    threshold: 1000,
+    description: 'Full hyperscale controls',
+    controls: [
+      'Write quorum for Neptune',
+      'Cumulative impact tracking',
+      'Graph mutation journaling',
+      'Behavioral baseline recalibration',
+      'Incident response playbooks',
+    ],
+  },
+};
+
+/**
+ * Default hyperscale settings (ADR-087)
+ */
+export const DEFAULT_HYPERSCALE_SETTINGS = {
+  enabled: false,
+  execution_tier: 'in_process',
+  max_parallel_agents: 10,
+  feasibility_gate_enabled: true,
+  cost_circuit_breaker_usd: 500,
+  security_gates: {
+    gate_1: { validated: false, validated_at: null },
+    gate_2: { validated: false, validated_at: null },
+    gate_3: { validated: false, validated_at: null },
+  },
+};
+
+/**
  * Default orchestrator settings
  */
 export const DEFAULT_ORCHESTRATOR_SETTINGS = {
@@ -126,6 +250,7 @@ export const DEFAULT_ORCHESTRATOR_SETTINGS = {
   effective_mode: 'on_demand',
   is_organization_override: false,
   organization_id: null,
+  hyperscale: DEFAULT_HYPERSCALE_SETTINGS,
 };
 
 /**
@@ -277,5 +402,56 @@ export async function getOrchestratorHealth() {
     return await fetchApi('/orchestrator/settings/health');
   } catch (error) {
     return { status: 'unknown', service: 'orchestrator_settings' };
+  }
+}
+
+/**
+ * Get hyperscale orchestration settings (ADR-087)
+ *
+ * @param {string} organizationId - Organization ID (optional)
+ * @returns {Promise<Object>} Hyperscale settings
+ */
+export async function getHyperscaleSettings(organizationId = null) {
+  try {
+    const params = organizationId ? `?organization_id=${organizationId}` : '';
+    return await fetchApi(`/orchestrator/hyperscale${params}`);
+  } catch (error) {
+    if (
+      error.message?.includes('Failed to fetch') ||
+      error.status === 404 ||
+      error.status === 500
+    ) {
+      console.warn('Hyperscale API not available, using defaults');
+      return DEFAULT_HYPERSCALE_SETTINGS;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Update hyperscale orchestration settings (ADR-087)
+ *
+ * @param {Object} updates - Settings to update
+ * @param {string} organizationId - Organization ID (optional)
+ * @returns {Promise<Object>} Updated hyperscale settings
+ */
+export async function updateHyperscaleSettings(updates, organizationId = null) {
+  try {
+    const params = organizationId ? `?organization_id=${organizationId}` : '';
+    return await fetchApi(`/orchestrator/hyperscale${params}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  } catch (error) {
+    if (
+      error.message?.includes('Failed to fetch') ||
+      error.status === 404 ||
+      error.status === 500 ||
+      error.message?.includes('API error')
+    ) {
+      console.warn('Hyperscale API not available, using local state');
+      return { ...DEFAULT_HYPERSCALE_SETTINGS, ...updates };
+    }
+    throw error;
   }
 }

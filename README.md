@@ -4,7 +4,7 @@
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-23%2C165+-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-23%2C761+-brightgreen.svg)](tests/)
 [![Lines of Code](https://img.shields.io/badge/Lines_of_Code-439K+-informational.svg)](docs/PROJECT_STATUS.md)
 
 Project Aura detects vulnerabilities, generates production-ready patches, validates fixes in isolated sandboxes, and queues them for human approval -- all autonomously. Unlike traditional security scanners that stop at detection, Aura provides end-to-end remediation through a multi-agent AI system built for regulated industries.
@@ -293,6 +293,7 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 - **ADR-063**: Constitutional AI Integration
 - **ADR-065**: Semantic Guardrails Engine
 - **ADR-083**: Runtime Agent Security Platform
+- **ADR-087**: Hyperscale Agent Orchestration
 
 ---
 
@@ -302,7 +303,7 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 |--------|-------|
 | Lines of Code | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config) |
 | Test Suite | 23,761+ tests (0 failures) |
-| Architecture Decision Records | 84 ADRs |
+| Architecture Decision Records | 86 ADRs |
 | CloudFormation Templates | 155 (24 CodeBuild + 131 infrastructure) |
 | Infrastructure Phases | 8 of 8 complete |
 

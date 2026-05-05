@@ -11,7 +11,7 @@
 | **Overall Completion** | 99% |
 | **Lines of Code** | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure) |
 | **Test Suite** | 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed) |
-| **Architecture Decision Records** | 85 ADRs (84 Deployed/Accepted, 1 Proposed) |
+| **Architecture Decision Records** | 86 ADRs (85 Deployed/Accepted, 1 Proposed) |
 | **CloudFormation Templates** | 155 templates (24 CodeBuild + 131 infrastructure) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
@@ -89,6 +89,7 @@
 | Customer Onboarding | Complete | Welcome modal, checklist, tour, tooltips (ADR-047) |
 | Repository Onboarding | Complete | 5-step wizard, OAuth GitHub/GitLab (ADR-043) |
 | Guardrail Configuration UI | Complete | Compliance profiles, validation, 128 tests (ADR-069) |
+| Hyperscale Agent Orchestration | Phase 1 | UI gating, execution tier selection, security gate validation, ~500 lines UI (ADR-087) |
 
 ---
 

@@ -1,6 +1,6 @@
 # Project Aura - Documentation Index
 
-**Last Updated:** March 26, 2026
+**Last Updated:** May 5, 2026
 **Purpose:** Master index for all project documentation with clear organization
 
 ---
@@ -980,6 +980,7 @@ Detailed technical specifications for complex architectural components.
 | [architecture-decisions/ADR-084-native-vulnerability-scanning-engine.md](architecture-decisions/ADR-084-native-vulnerability-scanning-engine.md) | Infrastructure + UI Deployed | Native Vulnerability Scanning Engine (GraphRAG-Enhanced LLM Analysis, 4-Layer Isolation, Closed-Loop Remediation) |
 | [architecture-decisions/ADR-085-deterministic-verification-envelope.md](architecture-decisions/ADR-085-deterministic-verification-envelope.md) | Proposed | Deterministic Verification Envelope (DO-178C Output Verification, N-of-M Consensus, MC/DC Coverage, Z3 Formal Verification) |
 | [architecture-decisions/ADR-086-agentic-identity-lifecycle-controls.md](architecture-decisions/ADR-086-agentic-identity-lifecycle-controls.md) | Deployed | Agentic Identity Lifecycle Controls (Decommission Assurance, Ghost Agent Scanner, Self-Modification Sentinel, Delegation Trust Envelope) |
+| [architecture-decisions/ADR-087-hyperscale-agent-orchestration.md](architecture-decisions/ADR-087-hyperscale-agent-orchestration.md) | Phase 1 Deployed | Hyperscale Agent Orchestration (3 Execution Tiers, Integration Mode Gating, Graduated Security Gates, 1,000+ Agent Scaling) |
 
 ### Runtime Agent Security Platform (ADR-083)
 | File | Purpose |

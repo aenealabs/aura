@@ -598,7 +598,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Tab Content */}
-          <div className="px-4 sm:px-6 py-6">
+          <div className="px-4 sm:px-6 pt-6 pb-24">
             {activeTab === 'integration' && (
               <IntegrationModeTab
                 currentMode={settings.integrationMode}
@@ -651,6 +651,7 @@ export default function SettingsPage() {
 
             {activeTab === 'orchestrator' && (
               <OrchestratorModeTab
+                integrationMode={settings.integrationMode}
                 onSuccess={(msg) => {
                   setSuccessMessage(msg);
                   setTimeout(() => setSuccessMessage(null), 3000);

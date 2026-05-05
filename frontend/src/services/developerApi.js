@@ -7,7 +7,7 @@
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
-const DEV_MODE = import.meta.env.DEV || !import.meta.env.VITE_API_URL;
+const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true' || import.meta.env.DEV || !import.meta.env.VITE_API_URL;
 
 /**
  * Get available feature flags from the server

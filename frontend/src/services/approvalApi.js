@@ -78,7 +78,9 @@ export async function listApprovals({ status, severity, limit = 50 } = {}) {
   const queryString = params.toString();
   const endpoint = `/approvals${queryString ? `?${queryString}` : ''}`;
 
-  return fetchApi(endpoint);
+  const data = await fetchApi(endpoint);
+  // Backend returns {approvals: [], total, ...} — extract the array
+  return data?.approvals ?? data;
 }
 
 /**

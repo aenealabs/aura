@@ -12,6 +12,8 @@ Endpoints:
 - POST /api/v1/orchestrator/settings/switch  - Switch deployment mode
 - GET  /api/v1/orchestrator/settings/status  - Get current mode status
 - GET  /api/v1/orchestrator/settings/health  - Health check
+- GET  /api/v1/orchestrator/hyperscale       - Get hyperscale settings (ADR-087)
+- PUT  /api/v1/orchestrator/hyperscale       - Update hyperscale settings (ADR-087)
 """
 
 import logging
@@ -722,3 +724,128 @@ async def orchestrator_settings_health():
         service="orchestrator_settings",
         mode=mode,
     )
+
+
+# ============================================================================
+# Hyperscale Agent Orchestration (ADR-087)
+# ============================================================================
+
+
+class ExecutionTier(str, Enum):
+    """Hyperscale execution tiers."""
+
+    IN_PROCESS = "in_process"
+    DISTRIBUTED_SIMPLE = "distributed_simple"
+    DISTRIBUTED_ORCHESTRATED = "distributed_orchestrated"
+
+
+class SecurityGateState(BaseModel):
+    """State of a single security gate."""
+
+    validated: bool = False
+    validated_at: str | None = None
+
+
+class HyperscaleSettingsResponse(BaseModel):
+    """Response model for hyperscale orchestration settings."""
+
+    enabled: bool = Field(False, description="Whether hyperscale orchestration is enabled")
+    execution_tier: str = Field("in_process", description="Current execution tier")
+    max_parallel_agents: int = Field(10, description="Maximum parallel agents allowed")
+    feasibility_gate_enabled: bool = Field(True, description="Whether feasibility gate is active")
+    cost_circuit_breaker_usd: float = Field(500, description="Cost circuit breaker threshold in USD")
+    security_gates: dict[str, SecurityGateState] = Field(
+        default_factory=lambda: {
+            "gate_1": SecurityGateState(),
+            "gate_2": SecurityGateState(),
+            "gate_3": SecurityGateState(),
+        },
+        description="Security gate validation states",
+    )
+
+
+class UpdateHyperscaleSettingsRequest(BaseModel):
+    """Request to update hyperscale settings."""
+
+    enabled: bool | None = Field(None, description="Enable/disable hyperscale")
+    execution_tier: str | None = Field(None, description="Execution tier")
+    max_parallel_agents: int | None = Field(None, ge=1, le=1000, description="Max parallel agents")
+    feasibility_gate_enabled: bool | None = Field(None, description="Enable feasibility gate")
+    cost_circuit_breaker_usd: float | None = Field(None, ge=0, le=10000, description="Cost circuit breaker USD")
+
+
+# Default hyperscale settings
+DEFAULT_HYPERSCALE_SETTINGS = {
+    "enabled": False,
+    "execution_tier": "in_process",
+    "max_parallel_agents": 10,
+    "feasibility_gate_enabled": True,
+    "cost_circuit_breaker_usd": 500,
+    "security_gates": {
+        "gate_1": {"validated": False, "validated_at": None},
+        "gate_2": {"validated": False, "validated_at": None},
+        "gate_3": {"validated": False, "validated_at": None},
+    },
+}
+
+# In-memory store for hyperscale settings (per-org)
+_hyperscale_settings: dict[str, dict] = {}
+
+
+hyperscale_router = APIRouter(
+    prefix="/api/v1/orchestrator/hyperscale", tags=["Hyperscale Orchestration"]
+)
+
+
+@hyperscale_router.get("", response_model=HyperscaleSettingsResponse)
+async def get_hyperscale_settings(
+    request: Request,
+    organization_id: str | None = Query(None, description="Organization ID"),
+    current_user: User = Depends(get_current_user),
+    rate_limit: RateLimitResult = Depends(standard_rate_limit),
+):
+    """Get hyperscale orchestration settings (ADR-087)."""
+    key = organization_id or "platform"
+    settings = _hyperscale_settings.get(key, DEFAULT_HYPERSCALE_SETTINGS.copy())
+
+    return HyperscaleSettingsResponse(**settings)
+
+
+@hyperscale_router.put("", response_model=HyperscaleSettingsResponse)
+async def update_hyperscale_settings(
+    request: Request,
+    updates: UpdateHyperscaleSettingsRequest,
+    organization_id: str | None = Query(None, description="Organization ID"),
+    current_user: User = Depends(require_admin),
+    rate_limit: RateLimitResult = Depends(admin_rate_limit),
+):
+    """Update hyperscale orchestration settings (ADR-087)."""
+    key = organization_id or "platform"
+    current = _hyperscale_settings.get(key, DEFAULT_HYPERSCALE_SETTINGS.copy())
+
+    # Apply updates
+    update_data = updates.model_dump(exclude_none=True)
+    current.update(update_data)
+
+    # Enforce tier-based agent limits
+    tier = current.get("execution_tier", "in_process")
+    max_agents = current.get("max_parallel_agents", 10)
+
+    tier_limits = {
+        "in_process": (1, 20),
+        "distributed_simple": (20, 200),
+        "distributed_orchestrated": (200, 1000),
+    }
+    min_agents, max_allowed = tier_limits.get(tier, (1, 20))
+    current["max_parallel_agents"] = max(min_agents, min(max_agents, max_allowed))
+
+    _hyperscale_settings[key] = current
+
+    logger.info(
+        sanitize_log(
+            f"Hyperscale settings updated by {current_user.email} "
+            f"for {key}: tier={tier}, max_agents={current['max_parallel_agents']}"
+        )
+    )
+
+    return HyperscaleSettingsResponse(**current)

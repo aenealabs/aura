@@ -58,6 +58,7 @@ from src.api.oauth_endpoints import router as oauth_router
 from src.api.onboarding_endpoints import router as onboarding_router
 from src.api.orchestration_endpoints import router as orchestration_router
 from src.api.orchestrator_settings_endpoints import (
+    hyperscale_router,
     router as orchestrator_settings_router,
 )
 from src.api.query_decomposition_endpoints import query_decomposition_router
@@ -892,6 +893,7 @@ app.include_router(orchestration_router)
 # ============================================================================
 
 app.include_router(orchestrator_settings_router)
+app.include_router(hyperscale_router)
 
 # ============================================================================
 # OAuth Endpoints (ADR-043 Repository Onboarding)

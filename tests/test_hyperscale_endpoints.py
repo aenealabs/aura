@@ -636,6 +636,154 @@ class TestUpdateHyperscaleSettings:
             assert gate.validated is False
             assert gate.validated_at is None
 
+    @pytest.mark.asyncio
+    async def test_unknown_tier_falls_back_to_in_process_limits(
+        self, mock_admin_user, mock_request, mock_rate_limit
+    ):
+        """Test that an unrecognized execution tier falls back to in_process limits (1-20)."""
+        from src.api.orchestrator_settings_endpoints import update_hyperscale_settings
+
+        updates = UpdateHyperscaleSettingsRequest(
+            execution_tier="turbo_mode",
+            max_parallel_agents=500,
+        )
+
+        result = await update_hyperscale_settings(
+            request=mock_request,
+            updates=updates,
+            organization_id=None,
+            current_user=mock_admin_user,
+            rate_limit=mock_rate_limit,
+        )
+
+        # Unknown tier should use fallback limits (1, 20)
+        assert result.max_parallel_agents == 20
+        assert result.execution_tier == "turbo_mode"
+
+    @pytest.mark.asyncio
+    async def test_second_put_overwrites_first(
+        self, mock_admin_user, mock_request, mock_rate_limit
+    ):
+        """Test that a second PUT fully overwrites the first update's values."""
+        from src.api.orchestrator_settings_endpoints import update_hyperscale_settings
+
+        # First update
+        await update_hyperscale_settings(
+            request=mock_request,
+            updates=UpdateHyperscaleSettingsRequest(
+                enabled=True,
+                execution_tier="distributed_simple",
+                max_parallel_agents=100,
+                cost_circuit_breaker_usd=2000,
+            ),
+            organization_id="org-overwrite",
+            current_user=mock_admin_user,
+            rate_limit=mock_rate_limit,
+        )
+
+        # Second update changes tier back and sets different cost
+        result = await update_hyperscale_settings(
+            request=mock_request,
+            updates=UpdateHyperscaleSettingsRequest(
+                execution_tier="in_process",
+                max_parallel_agents=5,
+                cost_circuit_breaker_usd=100,
+            ),
+            organization_id="org-overwrite",
+            current_user=mock_admin_user,
+            rate_limit=mock_rate_limit,
+        )
+
+        # enabled should persist from first update (not in second update)
+        assert result.enabled is True
+        # These should reflect second update
+        assert result.execution_tier == "in_process"
+        assert result.max_parallel_agents == 5
+        assert result.cost_circuit_breaker_usd == 100
+
+    @pytest.mark.asyncio
+    async def test_org_isolation_no_cross_contamination(
+        self, mock_admin_user, mock_request, mock_rate_limit
+    ):
+        """Test that updating org A does not affect org B."""
+        from src.api.orchestrator_settings_endpoints import (
+            get_hyperscale_settings,
+            update_hyperscale_settings,
+        )
+
+        # Update org-A to distributed_orchestrated with 800 agents
+        await update_hyperscale_settings(
+            request=mock_request,
+            updates=UpdateHyperscaleSettingsRequest(
+                enabled=True,
+                execution_tier="distributed_orchestrated",
+                max_parallel_agents=800,
+            ),
+            organization_id="org-A",
+            current_user=mock_admin_user,
+            rate_limit=mock_rate_limit,
+        )
+
+        # org-B should still return defaults
+        result_b = await get_hyperscale_settings(
+            request=mock_request,
+            organization_id="org-B",
+            current_user=mock_admin_user,
+            rate_limit=mock_rate_limit,
+        )
+
+        assert result_b.enabled is False
+        assert result_b.execution_tier == "in_process"
+        assert result_b.max_parallel_agents == 10
+
+    @pytest.mark.asyncio
+    async def test_cost_circuit_breaker_boundary_zero(
+        self, mock_admin_user, mock_request, mock_rate_limit
+    ):
+        """Test cost_circuit_breaker_usd accepts 0 (disabled)."""
+        from src.api.orchestrator_settings_endpoints import update_hyperscale_settings
+
+        updates = UpdateHyperscaleSettingsRequest(cost_circuit_breaker_usd=0)
+
+        result = await update_hyperscale_settings(
+            request=mock_request,
+            updates=updates,
+            organization_id=None,
+            current_user=mock_admin_user,
+            rate_limit=mock_rate_limit,
+        )
+
+        assert result.cost_circuit_breaker_usd == 0
+
+    @pytest.mark.asyncio
+    async def test_cost_circuit_breaker_boundary_max(
+        self, mock_admin_user, mock_request, mock_rate_limit
+    ):
+        """Test cost_circuit_breaker_usd accepts 10000 (max)."""
+        from src.api.orchestrator_settings_endpoints import update_hyperscale_settings
+
+        updates = UpdateHyperscaleSettingsRequest(cost_circuit_breaker_usd=10000)
+
+        result = await update_hyperscale_settings(
+            request=mock_request,
+            updates=updates,
+            organization_id=None,
+            current_user=mock_admin_user,
+            rate_limit=mock_rate_limit,
+        )
+
+        assert result.cost_circuit_breaker_usd == 10000
+
+    def test_cost_circuit_breaker_negative_rejected(self):
+        """Test negative cost_circuit_breaker_usd is rejected by validation."""
+        with pytest.raises(ValidationError):
+            UpdateHyperscaleSettingsRequest(cost_circuit_breaker_usd=-1)
+
+    def test_cost_circuit_breaker_over_max_rejected(self):
+        """Test cost_circuit_breaker_usd above 10000 is rejected."""
+        with pytest.raises(ValidationError):
+            UpdateHyperscaleSettingsRequest(cost_circuit_breaker_usd=10001)
+
 
 # =============================================================================
 # Default Settings Constant Tests
@@ -645,36 +793,18 @@ class TestUpdateHyperscaleSettings:
 class TestDefaultHyperscaleSettings:
     """Test DEFAULT_HYPERSCALE_SETTINGS constant."""
 
-    def test_default_enabled_is_false(self):
-        """Test default enabled is False."""
+    def test_default_settings_all_fields(self):
+        """Test all default settings values in one assertion block."""
         assert DEFAULT_HYPERSCALE_SETTINGS["enabled"] is False
-
-    def test_default_execution_tier(self):
-        """Test default execution tier is in_process."""
         assert DEFAULT_HYPERSCALE_SETTINGS["execution_tier"] == "in_process"
-
-    def test_default_max_parallel_agents(self):
-        """Test default max_parallel_agents is 10."""
         assert DEFAULT_HYPERSCALE_SETTINGS["max_parallel_agents"] == 10
-
-    def test_default_feasibility_gate_enabled(self):
-        """Test default feasibility_gate_enabled is True."""
         assert DEFAULT_HYPERSCALE_SETTINGS["feasibility_gate_enabled"] is True
-
-    def test_default_cost_circuit_breaker(self):
-        """Test default cost_circuit_breaker_usd is 500."""
         assert DEFAULT_HYPERSCALE_SETTINGS["cost_circuit_breaker_usd"] == 500
 
-    def test_default_security_gates_structure(self):
-        """Test default security gates has all three gates."""
-        gates = DEFAULT_HYPERSCALE_SETTINGS["security_gates"]
-        assert "gate_1" in gates
-        assert "gate_2" in gates
-        assert "gate_3" in gates
-
     def test_default_security_gates_all_unvalidated(self):
-        """Test all default security gates are unvalidated."""
+        """Test all three default security gates exist and are unvalidated."""
+        gates = DEFAULT_HYPERSCALE_SETTINGS["security_gates"]
+        assert set(gates.keys()) == {"gate_1", "gate_2", "gate_3"}
         for gate_key in ["gate_1", "gate_2", "gate_3"]:
-            gate = DEFAULT_HYPERSCALE_SETTINGS["security_gates"][gate_key]
-            assert gate["validated"] is False
-            assert gate["validated_at"] is None
+            assert gates[gate_key]["validated"] is False
+            assert gates[gate_key]["validated_at"] is None

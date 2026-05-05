@@ -303,7 +303,7 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 |--------|-------|
 | Lines of Code | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config) |
 | Test Suite | 23,761+ tests (0 failures) |
-| Architecture Decision Records | 86 ADRs |
+| Architecture Decision Records | 87 ADRs |
 | CloudFormation Templates | 155 (24 CodeBuild + 131 infrastructure) |
 | Infrastructure Phases | 8 of 8 complete |
 

@@ -11,7 +11,7 @@
 | **Overall Completion** | 99% |
 | **Lines of Code** | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure) |
 | **Test Suite** | 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed) |
-| **Architecture Decision Records** | 86 ADRs (85 Deployed/Accepted, 1 Proposed) |
+| **Architecture Decision Records** | 87 ADRs (85 Deployed/Accepted, 1 Reserved, 1 Proposed) |
 | **CloudFormation Templates** | 155 templates (24 CodeBuild + 131 infrastructure) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
@@ -118,7 +118,7 @@
 
 ## Architecture Decision Records
 
-85 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
+87 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
 
 - **ADR-004**: Cloud Abstraction Layer (Multi-cloud)
 - **ADR-024**: Titan Neural Memory Architecture

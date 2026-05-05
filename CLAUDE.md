@@ -239,7 +239,7 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 - **Overall Completion:** 99%
 - **Total Lines of Code:** 439,000+ lines (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure)
 - **Test Suite:** 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed)
-- **Architecture Decision Records:** 86 ADRs (85 Deployed/Accepted, 1 Proposed)
+- **Architecture Decision Records:** 87 ADRs (85 Deployed/Accepted, 1 Reserved, 1 Proposed)
 - **Infrastructure:** 100% (All 9 phases deployed: Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
 - **Modular CI/CD:** 100% (32 buildspecs managing all 155 CloudFormation templates)
 - **CloudFormation Templates:** 155 templates (24 CodeBuild + 131 infrastructure)

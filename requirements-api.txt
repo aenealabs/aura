@@ -14,7 +14,7 @@ boto3>=1.42.97
 botocore>=1.42.97
 
 # Graph Database and Vector Store
-gremlinpython>=3.7.3         # Amazon Neptune connectivity
+gremlinpython>=3.8.1         # Amazon Neptune connectivity
 nest-asyncio>=1.6.0          # Nested event loops for gremlin-python in FastAPI
 opensearch-py>=3.2.0         # OpenSearch vector store
 requests>=2.32.0             # HTTP client for requests-aws4auth

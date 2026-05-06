@@ -17,6 +17,8 @@ Resources:
   # SBOM Documents Table - stores SBOM metadata and references
   SBOMDocumentsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-sbom-documents-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -69,6 +71,8 @@ Resources:
   # Attestations Table - stores SBOM attestations and signatures
   AttestationsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-attestations-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -132,6 +136,8 @@ Resources:
   # License Violations Table - tracks license compliance violations
   LicenseViolationsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-license-violations-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -185,6 +191,8 @@ Resources:
   # Dependency Confusion Results Table - tracks confusion detection results
   ConfusionResultsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-confusion-results-${Environment}'
       BillingMode: PAY_PER_REQUEST

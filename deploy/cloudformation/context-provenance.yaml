@@ -125,6 +125,8 @@ Resources:
   # Author Trust Table - Tracks author reputation and commit history
   AuthorTrustTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-author-trust-${Environment}'
       BillingMode: PAY_PER_REQUEST

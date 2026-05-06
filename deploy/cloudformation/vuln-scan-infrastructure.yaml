@@ -105,6 +105,8 @@ Resources:
   # GSI2: scan_id (PK) + updated_at (SK) - scan history
   ScanJobsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-scan-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -170,6 +172,8 @@ Resources:
   # GSI2: cwe_id (PK) + created_at (SK) - findings by CWE pattern
   ScanFindingsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-scan-findings-${Environment}'
       BillingMode: PAY_PER_REQUEST

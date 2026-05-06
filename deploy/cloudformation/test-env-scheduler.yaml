@@ -69,6 +69,8 @@ Resources:
   # ==========================================================================
   ScheduleTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-test-env-schedule-${Environment}'
       BillingMode: PAY_PER_REQUEST

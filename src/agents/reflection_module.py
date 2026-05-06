@@ -46,6 +46,12 @@ class ReflectionResult:
     iteration: int
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     oscillation_detected: bool = False
+    # Approximate token cost across all reflection LLM round trips for this
+    # iteration. Computed from prompt+response character length divided by 4
+    # (the standard rough heuristic for English ASCII tokens). Replaces the
+    # previously-hardcoded ``tokens_used=1500`` constant in reviewer_agent.py
+    # — see audit finding F10 / Task 17.
+    approx_tokens_used: int = 0
 
     def was_refined(self) -> bool:
         """Check if the output was refined during reflection."""

@@ -39,24 +39,44 @@ from src.api.orchestrator_settings_endpoints import (
 
 @pytest.fixture
 def mock_user():
-    """Create a mock authenticated user."""
-    user = MagicMock()
-    user.id = "user-123"
-    user.email = "test@example.com"
-    user.sub = "sub-123"
-    user.roles = ["user"]
-    return user
+    """Create a mock authenticated user belonging to org-456."""
+    from src.api.auth import User
+
+    return User(
+        sub="sub-123",
+        email="test@example.com",
+        name="Test User",
+        groups=["user"],
+        organization_id="org-456",
+    )
 
 
 @pytest.fixture
 def mock_admin_user():
-    """Create a mock admin user."""
-    user = MagicMock()
-    user.id = "admin-123"
-    user.email = "admin@example.com"
-    user.sub = "admin-sub"
-    user.roles = ["admin"]
-    return user
+    """Create a mock platform-admin user (no specific org)."""
+    from src.api.auth import User
+
+    return User(
+        sub="admin-sub",
+        email="admin@example.com",
+        name="Admin User",
+        groups=["platform_admin", "admin"],
+        organization_id=None,
+    )
+
+
+@pytest.fixture
+def mock_org_admin_user():
+    """Create a mock org-level admin (admin within org-456 only)."""
+    from src.api.auth import User
+
+    return User(
+        sub="org-admin-sub",
+        email="org-admin@example.com",
+        name="Org Admin",
+        groups=["admin"],
+        organization_id="org-456",
+    )
 
 
 @pytest.fixture
@@ -178,15 +198,15 @@ class TestGetHyperscaleSettings:
 
     @pytest.mark.asyncio
     async def test_get_default_settings_no_org(
-        self, mock_user, mock_request, mock_rate_limit
+        self, mock_admin_user, mock_request, mock_rate_limit
     ):
-        """Test getting default settings when no org-specific settings exist."""
+        """Test getting default platform settings (admin-only path)."""
         from src.api.orchestrator_settings_endpoints import get_hyperscale_settings
 
         result = await get_hyperscale_settings(
             request=mock_request,
             organization_id=None,
-            current_user=mock_user,
+            current_user=mock_admin_user,
             rate_limit=mock_rate_limit,
         )
 
@@ -199,15 +219,15 @@ class TestGetHyperscaleSettings:
 
     @pytest.mark.asyncio
     async def test_get_default_settings_security_gates(
-        self, mock_user, mock_request, mock_rate_limit
+        self, mock_admin_user, mock_request, mock_rate_limit
     ):
-        """Test default security gates are all unvalidated."""
+        """Test default security gates are all unvalidated (admin path)."""
         from src.api.orchestrator_settings_endpoints import get_hyperscale_settings
 
         result = await get_hyperscale_settings(
             request=mock_request,
             organization_id=None,
-            current_user=mock_user,
+            current_user=mock_admin_user,
             rate_limit=mock_rate_limit,
         )
 
@@ -254,15 +274,19 @@ class TestGetHyperscaleSettings:
 
     @pytest.mark.asyncio
     async def test_get_org_falls_back_to_defaults(
-        self, mock_user, mock_request, mock_rate_limit
+        self, mock_admin_user, mock_request, mock_rate_limit
     ):
-        """Test that requesting a non-existent org falls back to defaults."""
+        """Test that requesting a non-existent org falls back to defaults.
+
+        Uses platform admin because cross-org reads are forbidden for
+        regular users (audit finding C1 — tenant isolation).
+        """
         from src.api.orchestrator_settings_endpoints import get_hyperscale_settings
 
         result = await get_hyperscale_settings(
             request=mock_request,
             organization_id="org-nonexistent",
-            current_user=mock_user,
+            current_user=mock_admin_user,
             rate_limit=mock_rate_limit,
         )
 
@@ -272,7 +296,7 @@ class TestGetHyperscaleSettings:
 
     @pytest.mark.asyncio
     async def test_get_platform_settings_after_update(
-        self, mock_user, mock_request, mock_rate_limit
+        self, mock_admin_user, mock_request, mock_rate_limit
     ):
         """Test getting platform settings that were previously updated."""
         from src.api.orchestrator_settings_endpoints import get_hyperscale_settings
@@ -293,13 +317,78 @@ class TestGetHyperscaleSettings:
         result = await get_hyperscale_settings(
             request=mock_request,
             organization_id=None,
-            current_user=mock_user,
+            current_user=mock_admin_user,
             rate_limit=mock_rate_limit,
         )
 
         assert result.enabled is True
         assert result.execution_tier == "distributed_orchestrated"
         assert result.max_parallel_agents == 500
+
+
+# =============================================================================
+# Tenant Isolation Tests (audit finding C1, ADR-087)
+# =============================================================================
+
+
+class TestHyperscaleTenantIsolation:
+    """Verify cross-tenant access is rejected on the hyperscale endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_user_cannot_read_another_orgs_settings(
+        self, mock_user, mock_request, mock_rate_limit
+    ):
+        """A user belonging to org-456 cannot read org-789's settings."""
+        from fastapi import HTTPException
+
+        from src.api.orchestrator_settings_endpoints import get_hyperscale_settings
+
+        with pytest.raises(HTTPException) as excinfo:
+            await get_hyperscale_settings(
+                request=mock_request,
+                organization_id="org-789",
+                current_user=mock_user,
+                rate_limit=mock_rate_limit,
+            )
+        assert excinfo.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_user_cannot_read_platform_settings(
+        self, mock_user, mock_request, mock_rate_limit
+    ):
+        """A non-platform-admin user cannot access the 'platform' key."""
+        from fastapi import HTTPException
+
+        from src.api.orchestrator_settings_endpoints import get_hyperscale_settings
+
+        with pytest.raises(HTTPException) as excinfo:
+            await get_hyperscale_settings(
+                request=mock_request,
+                organization_id=None,
+                current_user=mock_user,
+                rate_limit=mock_rate_limit,
+            )
+        assert excinfo.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_org_admin_cannot_write_other_orgs_settings(
+        self, mock_org_admin_user, mock_request, mock_rate_limit
+    ):
+        """An admin within org-456 cannot write org-789's settings."""
+        from fastapi import HTTPException
+
+        from src.api.orchestrator_settings_endpoints import update_hyperscale_settings
+
+        updates = UpdateHyperscaleSettingsRequest(enabled=True)
+        with pytest.raises(HTTPException) as excinfo:
+            await update_hyperscale_settings(
+                request=mock_request,
+                updates=updates,
+                organization_id="org-789",
+                current_user=mock_org_admin_user,
+                rate_limit=mock_rate_limit,
+            )
+        assert excinfo.value.status_code == 403
 
 
 # =============================================================================

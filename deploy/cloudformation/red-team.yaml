@@ -220,6 +220,8 @@ Resources:
 
   RedTeamFindingsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Condition: CreateResources
     Properties:
       TableName: !Sub '${ProjectName}-red-team-findings-${Environment}'
@@ -284,6 +286,8 @@ Resources:
 
   RedTeamTestRunsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Condition: CreateResources
     Properties:
       TableName: !Sub '${ProjectName}-red-team-runs-${Environment}'

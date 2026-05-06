@@ -371,28 +371,50 @@ def get_anomaly_triggers() -> AnomalyTriggers | None:
 # FastAPI Application
 # ============================================================================
 
+# Disable interactive API docs (/docs, /redoc) in production. They reveal
+# the full endpoint surface and schema map and don't add value to authenticated
+# clients in prod. Gated on the canonical ENVIRONMENT variable used elsewhere.
+_env_for_docs = (os.environ.get("ENVIRONMENT") or "dev").lower()
+_docs_enabled = _env_for_docs not in ("prod", "production")
+
 app = FastAPI(
     title="Project Aura API",
     description="Autonomous Code Intelligence Platform - Git Ingestion & Analysis",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
-# CORS configuration for frontend access
-# In production, restrict origins to specific domains
-cors_origins = os.environ.get(
+# CORS configuration for frontend access. Methods and headers are enumerated
+# rather than wildcarded because allow_credentials=True with allow_methods=["*"]
+# is a known footgun if the origin allowlist ever drifts. Empty origin lists
+# are rejected in production so a misconfigured CORS_ALLOWED_ORIGINS env var
+# (e.g., trailing comma) cannot silently disable the allowlist.
+cors_origins_raw = os.environ.get(
     "CORS_ALLOWED_ORIGINS",
     "http://localhost:3000,http://localhost:5173",
-).split(",")
+)
+cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+if not cors_origins and _env_for_docs in ("prod", "production"):
+    raise RuntimeError(
+        "CORS_ALLOWED_ORIGINS is empty in production. Refusing to start with "
+        "permissive CORS posture."
+    )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Request-ID",
+        "X-Organization-ID",
+        "Accept",
+    ],
 )
 
 # Security middleware (headers, request ID, size limits, exception handling)

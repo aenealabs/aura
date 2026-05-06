@@ -24,6 +24,8 @@ Resources:
   # Supports multiple IdPs per org with priority-based routing
   IdPConfigurationsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-idp-configurations-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -77,6 +79,8 @@ Resources:
   # Audit trail for IdP configuration changes and authentication events
   IdPAuditTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-idp-audit-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -146,6 +150,8 @@ Resources:
   # Tracks active authentication sessions for token refresh and revocation
   AuthSessionsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-auth-sessions-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -198,6 +204,8 @@ Resources:
   # Tracks SAML request state for SP-initiated SSO
   SAMLStateTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-saml-state-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -227,6 +235,8 @@ Resources:
   # Tracks OIDC authorization state and PKCE verifiers
   OIDCStateTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-oidc-state-${Environment}'
       BillingMode: PAY_PER_REQUEST

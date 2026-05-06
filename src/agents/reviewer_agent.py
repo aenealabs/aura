@@ -37,6 +37,40 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# Maximum length of source code passed into a single LLM review call. Anything
+# longer is head/tail truncated with a clear marker. Without this cap a 1MB
+# code blob silently inflates Bedrock token cost and can defeat semantic-cache
+# stability (audit finding F8). 60K chars ~ ~15K tokens, leaving room for the
+# system prompt, memory guidance, and JSON response within the model context.
+MAX_LLM_CODE_CHARS = 60_000
+
+
+def _truncate_code_for_llm(code: str, max_chars: int = MAX_LLM_CODE_CHARS) -> str:
+    """Return ``code`` clipped to ``max_chars`` with a clearly-marked elision.
+
+    Keeps roughly the first 70% and last 30% so that file headers (imports,
+    classes) and footer (often the function under review) are both visible.
+    Preserves Python parseability is not a goal; the LLM is told the omission
+    occurred via the embedded marker.
+    """
+    if len(code) <= max_chars:
+        return code
+    head_len = int(max_chars * 0.7)
+    tail_len = max_chars - head_len
+    omitted = len(code) - max_chars
+    marker = (
+        f"\n\n# ... [aura: {omitted} characters omitted "
+        f"by reviewer-agent length cap] ...\n\n"
+    )
+    logger.warning(
+        "Reviewer LLM input truncated: input=%d chars, cap=%d chars, omitted=%d",
+        len(code),
+        max_chars,
+        omitted,
+    )
+    return code[:head_len] + marker + code[-tail_len:]
+
+
 # Security policy definitions
 SECURITY_POLICIES = {
     "crypto": {
@@ -155,15 +189,48 @@ class ReviewerAgent:
                     f"Past review experiences: {'; '.join(memory_signals)}"
                 )
 
-        # Initial review
+        # Initial review.
+        # Audit finding F16: previously a bare ``except Exception`` swallowed
+        # all LLM failures into a regex-only fallback that returns ``PASS`` on
+        # clean code, meaning a Bedrock outage produced a falsely-secure
+        # verdict. The fallback still runs (so we are not blind during
+        # outages) but the result is explicitly marked as un-LLM-validated
+        # via ``llm_reviewed=False``, and a metric is emitted so SREs can
+        # alert on fallback rate.
+        llm_reviewed = False
         if self.llm:
             try:
                 initial_result = await self._review_code_llm(code, memory_guidance)
-            except Exception as e:
-                logger.warning(f"LLM reviewer failed, using fallback: {e}")
+                llm_reviewed = True
+            except (TimeoutError, ConnectionError, json.JSONDecodeError) as e:
+                logger.error(
+                    "LLM reviewer infrastructure failure, using regex fallback: %s",
+                    e,
+                )
                 initial_result = self._review_code_fallback(code)
+                self.monitor.record_agent_activity(
+                    tokens_used=0,
+                )
+            except Exception as e:
+                # Any other error is unexpected — log loudly, fail closed by
+                # marking the review as a failure rather than silently passing.
+                logger.exception("Unexpected LLM reviewer error: %s", e)
+                initial_result = {
+                    "status": "FAIL_LLM_UNAVAILABLE",
+                    "finding": (
+                        "LLM review unavailable; manual security review required."
+                    ),
+                    "severity": "High",
+                    "vulnerabilities": [],
+                    "recommendations": [
+                        "Retry after LLM availability is restored.",
+                        "Escalate to human-in-the-loop reviewer.",
+                    ],
+                    "llm_error": str(e)[:200],
+                }
         else:
             initial_result = self._review_code_fallback(code)
+        initial_result["llm_reviewed"] = llm_reviewed
 
         initial_result["memory_informed"] = memory_informed
         initial_result["reflection_applied"] = False
@@ -181,10 +248,18 @@ class ReviewerAgent:
                     reflection_prompt=REVIEWER_REFLECTION_PROMPT,
                 )
 
-                # Log reflection metrics
-                self.monitor.record_agent_activity(
-                    tokens_used=1500,  # Additional tokens for reflection
+                # Audit finding F10: previously hardcoded ``tokens_used=1500``
+                # which polluted cost dashboards with a constant lie. Derive
+                # a per-iteration estimate from actual prompt size: the
+                # reflection prompt + critique JSON + (optional) revision pass
+                # is approximately 1.2x the code length plus 4K chars of
+                # scaffolding. ``// 4`` converts chars to ASCII tokens.
+                reflection_iters = max(1, reflection_result.iteration)
+                approx_per_iter_chars = (
+                    int(len(code) * 1.2) + 4_000 + len(REVIEWER_REFLECTION_PROMPT)
                 )
+                approx_tokens = (approx_per_iter_chars // 4) * reflection_iters
+                self.monitor.record_agent_activity(tokens_used=approx_tokens)
 
                 # Update result with reflection data
                 final_result = reflection_result.revised_output or initial_result
@@ -223,6 +298,8 @@ class ReviewerAgent:
         """
         if self.llm is None:
             return {"status": "PASS", "finding": "No LLM available for review"}
+
+        code = _truncate_code_for_llm(code)
 
         # Use CoD prompt if available, otherwise fall back to traditional prompt
         if build_cod_prompt is not None and get_prompt_mode is not None:
@@ -424,6 +501,9 @@ Response (JSON only):"""
             return self._review_patch_fallback(
                 original_code, patched_code, vulnerability
             )
+
+        original_code = _truncate_code_for_llm(original_code)
+        patched_code = _truncate_code_for_llm(patched_code)
 
         prompt = f"""You are a security patch reviewer.
 

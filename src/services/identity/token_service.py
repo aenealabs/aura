@@ -386,9 +386,23 @@ class TokenNormalizationService:
         return hashlib.sha256(combined.encode()).hexdigest()
 
     def decode_token_unverified(self, token: str) -> dict[str, Any]:
-        """Decode token without verification (for inspection only)."""
+        """Decode token without verification (for inspection only).
+
+        SECURITY: never trust the result for control decisions. The returned
+        claims are attacker-controlled. This is a debugging / introspection
+        helper for surfacing kid/iss/sub before signature verification can
+        be performed.
+
+        The algorithm allowlist is pinned to the configured signing algorithm
+        rather than ``["HS256","RS256"]``. The previous broad list created an
+        algorithm-confusion footgun: if any caller mishandled the result and
+        re-used the public RSA key as an HMAC secret, signed-by-attacker
+        tokens would validate.
+        """
         return jwt.decode(
-            token, options={"verify_signature": False}, algorithms=["HS256", "RS256"]
+            token,
+            options={"verify_signature": False},
+            algorithms=[self.algorithm],
         )
 
     def get_token_header(self, token: str) -> dict[str, Any]:

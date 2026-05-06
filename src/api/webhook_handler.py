@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
@@ -101,6 +102,15 @@ class GitHubWebhookHandler:
             True if signature is valid
         """
         if not self.webhook_secret:
+            # Fail closed in production: a misconfigured deployment must not
+            # accept unsigned webhook traffic, which would let attackers trigger
+            # ingestion floods and downstream pipeline runs.
+            environment = (os.environ.get("ENVIRONMENT") or "dev").lower()
+            if environment in ("prod", "production"):
+                logger.error(
+                    "Webhook secret not configured in production - rejecting payload"
+                )
+                return False
             logger.warning("Webhook secret not configured - skipping validation")
             return True
 

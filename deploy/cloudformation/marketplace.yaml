@@ -50,6 +50,8 @@ Resources:
 
   MarketplaceCustomersTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-marketplace-customers-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -97,6 +99,8 @@ Resources:
 
   UsageRecordsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-marketplace-usage-${Environment}'
       BillingMode: PAY_PER_REQUEST

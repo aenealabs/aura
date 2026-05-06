@@ -48,8 +48,17 @@ class TestDecommissionVerifier:
         )
 
     def _register_zero_enumerator(self):
-        """Register an enumerator that reports zero credentials."""
-        enum = IAMRoleEnumerator()  # No client = zero_confirmed
+        """Register an enumerator that successfully checks and finds zero creds.
+
+        Audit finding C4: ``IAMRoleEnumerator()`` with no client used to be a
+        shortcut for ``zero_confirmed=True``. That contract was unsafe (it
+        could not distinguish "we checked" from "we never tried"), so tests
+        now wire a mock client that returns an empty list — i.e., the
+        enumerator actually executes a query and confirms zero.
+        """
+        mock_client = MagicMock()
+        mock_client.list_roles_for_agent.return_value = []
+        enum = IAMRoleEnumerator(client=mock_client)
         self.registry.register(enum)
 
     def _register_active_enumerator(self):

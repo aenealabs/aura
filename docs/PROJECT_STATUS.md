@@ -11,8 +11,9 @@
 | **Overall Completion** | 99% |
 | **Lines of Code** | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure) |
 | **Test Suite** | 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed) |
-| **Architecture Decision Records** | 87 ADRs (85 Deployed/Accepted, 1 Reserved, 1 Proposed) |
-| **CloudFormation Templates** | 155 templates (24 CodeBuild + 131 infrastructure) |
+| **Architecture Decision Records** | 88 ADRs (84 Deployed/Accepted, 1 Reserved [082], 3 Proposed [085, 087, 088]) |
+| **CloudFormation Templates** | 177 templates (counted by `AWSTemplateFormatVersion` header; 152 top-level + 25 nested) |
+| **Buildspecs** | 38 buildspec files in deploy/buildspecs/ |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
 | **GovCloud Readiness** | 100% (all deployed services compatible) |

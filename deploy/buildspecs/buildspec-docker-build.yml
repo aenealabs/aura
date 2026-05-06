@@ -191,18 +191,29 @@ phases:
         docker pull ${ECR_REPO_URI}:cache 2>/dev/null || echo "No cache image found, building from scratch"
 
       # Build with multiple tags and layer caching
-      # Pass base image from private ECR for controlled supply chain (ADR-020)
+      # Pass base image from private ECR for controlled supply chain (ADR-020).
+      # CLAUDE.md mandates that CI/CD builds MUST override the Dockerfile
+      # default with a private ECR image; we fail-fast if the required envs
+      # are absent rather than silently producing a public-registry image.
       - |
+        if [ -z "$BASE_IMAGE_ARG" ] || [ -z "$BASE_IMAGE_URI" ]; then
+          echo "ERROR: BASE_IMAGE_ARG and BASE_IMAGE_URI must both be set." >&2
+          echo "CLAUDE.md > Container Security: CI/CD must override Dockerfile defaults." >&2
+          exit 1
+        fi
+        case "$BASE_IMAGE_URI" in
+          public.ecr.aws/*|docker.io/*|ghcr.io/*|nvcr.io/*|quay.io/*)
+            echo "ERROR: BASE_IMAGE_URI=$BASE_IMAGE_URI points at a public registry." >&2
+            echo "Use a private ECR URI (\${ACCOUNT_ID}.dkr.ecr.\${REGION}.amazonaws.com/...)." >&2
+            exit 1
+            ;;
+        esac
         BUILD_ARGS="--build-arg BUILDKIT_INLINE_CACHE=1"
         BUILD_ARGS="$BUILD_ARGS --build-arg BUILD_TIME=$BUILD_TIME"
         BUILD_ARGS="$BUILD_ARGS --build-arg COMMIT_SHA=$COMMIT_SHA"
         BUILD_ARGS="$BUILD_ARGS --build-arg ENVIRONMENT=$ENVIRONMENT"
-
-        # Add base image arg if set (controlled supply chain)
-        if [ -n "$BASE_IMAGE_ARG" ] && [ -n "$BASE_IMAGE_URI" ]; then
-          BUILD_ARGS="$BUILD_ARGS --build-arg ${BASE_IMAGE_ARG}=${BASE_IMAGE_URI}"
-          echo "Using controlled base image: ${BASE_IMAGE_ARG}=${BASE_IMAGE_URI}"
-        fi
+        BUILD_ARGS="$BUILD_ARGS --build-arg ${BASE_IMAGE_ARG}=${BASE_IMAGE_URI}"
+        echo "Using controlled base image: ${BASE_IMAGE_ARG}=${BASE_IMAGE_URI}"
 
         docker build \
           --platform linux/amd64 \

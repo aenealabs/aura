@@ -17,6 +17,8 @@ Resources:
   # Runtime Events Table - stores correlated runtime security events
   RuntimeEventsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-runtime-events-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -82,6 +84,8 @@ Resources:
   # Resource Mappings Table - maps cloud resources to code
   ResourceMappingsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-resource-mappings-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -130,6 +134,8 @@ Resources:
   # Admission Decisions Table - records K8s admission controller decisions
   AdmissionDecisionsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-admission-decisions-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -195,6 +201,8 @@ Resources:
   # Escape Events Table - records container escape detection events
   EscapeEventsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-escape-events-${Environment}'
       BillingMode: PAY_PER_REQUEST

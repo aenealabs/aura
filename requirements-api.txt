@@ -48,3 +48,11 @@ networkx>=3.4.0              # Graph processing (lightweight, used in API)
 
 # YAML Support (config parsing)
 PyYAML>=6.0.2
+
+# Calibration / Explainability (ADR-068)
+# IsotonicRegression powers confidence calibration
+# (src/services/documentation/confidence_calibration.py and
+# src/lambda/calibration_pipeline.py). Both modules retain a SKLEARN_AVAILABLE
+# soft-import guard for slim/air-gapped builds (ADR-078) so they degrade to
+# passthrough when this dep is absent rather than crashing.
+scikit-learn>=1.3

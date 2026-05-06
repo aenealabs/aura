@@ -17,6 +17,8 @@ Resources:
   # Cost Tracking Table
   CostTrackingTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-cost-tracking-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -61,6 +63,8 @@ Resources:
   # User Sessions Table
   UserSessionsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-user-sessions-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -100,6 +104,8 @@ Resources:
   # Code Generation Jobs Table
   CodeGenJobsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-codegen-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -152,6 +158,8 @@ Resources:
   # Git Ingestion Jobs Table
   IngestionJobsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-ingestion-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -219,6 +227,8 @@ Resources:
   # Codebase Metadata Table
   CodebaseMetadataTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-codebase-metadata-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -255,6 +265,8 @@ Resources:
   # Platform Settings Table
   PlatformSettingsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-platform-settings-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -286,6 +298,8 @@ Resources:
   # Anomaly Audit Trail Table
   AnomaliesTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-anomalies-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -353,6 +367,8 @@ Resources:
   # Autonomy Policies Table - stores organization autonomy configurations
   AutonomyPoliciesTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-autonomy-policies-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -387,6 +403,8 @@ Resources:
   # Autonomy Policy Audit Table - audit trail for policy changes
   PolicyAuditTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-policy-audit-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -428,6 +446,8 @@ Resources:
   # Autonomy Decisions Table - records of autonomous decisions made
   AutonomyDecisionsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-autonomy-decisions-${Environment}'
       BillingMode: PAY_PER_REQUEST

@@ -73,6 +73,8 @@ Resources:
   # Chat Conversations Table
   ChatConversationsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-chat-conversations-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -128,6 +130,8 @@ Resources:
   # Chat Messages Table
   ChatMessagesTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-chat-messages-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -173,6 +177,8 @@ Resources:
   # WebSocket Connections Table
   ChatConnectionsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-chat-connections-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -208,6 +214,8 @@ Resources:
   # Research Tasks Table - Async deep research task tracking
   ResearchTasksTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-research-tasks-${Environment}'
       BillingMode: PAY_PER_REQUEST

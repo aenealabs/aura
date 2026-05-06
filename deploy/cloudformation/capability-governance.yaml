@@ -113,6 +113,8 @@ Resources:
   # Audit Table - Stores capability check audit records
   CapabilityAuditTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-capability-audit-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -173,6 +175,8 @@ Resources:
   # Escalation Table - Stores HITL escalation requests
   CapabilityEscalationTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-capability-escalations-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -223,6 +227,8 @@ Resources:
   # Violation Table - Stores capability violations
   CapabilityViolationTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-capability-violations-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -273,6 +279,8 @@ Resources:
   # Grants Table - Stores dynamic capability grants
   CapabilityGrantsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-capability-grants-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -632,6 +640,8 @@ Resources:
   # DynamoDB Table - Delegation Revocations (ADR-086 Phase 3)
   DelegationRevocationsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-delegation-revocations-${Environment}'
       BillingMode: PAY_PER_REQUEST

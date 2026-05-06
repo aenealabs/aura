@@ -39,6 +39,8 @@ Resources:
 
   A2AAgentRegistryTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Condition: A2AEnabled
     Properties:
       TableName: !Sub '${ProjectName}-a2a-agents-${Environment}'
@@ -93,6 +95,8 @@ Resources:
   # A2A Tasks Table
   A2ATasksTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Condition: A2AEnabled
     Properties:
       TableName: !Sub '${ProjectName}-a2a-tasks-${Environment}'

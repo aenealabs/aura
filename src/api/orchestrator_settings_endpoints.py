@@ -22,7 +22,15 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user, require_admin
@@ -788,8 +796,49 @@ DEFAULT_HYPERSCALE_SETTINGS = {
     },
 }
 
-# In-memory store for hyperscale settings (per-org)
+# In-memory store for hyperscale settings (per-org).
+# TODO(ADR-087 Phase 2): persist to DynamoDB. The current dict is module-global
+# state that is lost on pod restart and not coherent across replicas, which
+# means the cost circuit breaker is best-effort only. See audit finding C2.
 _hyperscale_settings: dict[str, dict] = {}
+
+
+def _resolve_settings_key(
+    requested_org_id: str | None, current_user: User
+) -> str:
+    """Validate that the caller is allowed to read/write the requested org's settings.
+
+    Tenant isolation rule (audit finding C1):
+    - The "platform" key is reserved for platform admins only.
+    - A regular user may only access their own ``current_user.organization_id``;
+      passing a different ``organization_id`` query parameter yields 403.
+    - A user without an ``organization_id`` claim may only access "platform",
+      and only if they are a platform admin.
+    """
+    if requested_org_id is None or requested_org_id == "platform":
+        if not current_user.is_platform_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="platform settings require platform_admin",
+            )
+        return "platform"
+
+    # Platform admins may read/write any org's settings (e.g., support workflows).
+    if current_user.is_platform_admin:
+        return requested_org_id
+
+    user_org = current_user.organization_id
+    if user_org is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="user has no organization claim",
+        )
+    if user_org != requested_org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="cannot access another organization's settings",
+        )
+    return requested_org_id
 
 
 hyperscale_router = APIRouter(
@@ -805,7 +854,7 @@ async def get_hyperscale_settings(
     rate_limit: RateLimitResult = Depends(standard_rate_limit),
 ):
     """Get hyperscale orchestration settings (ADR-087)."""
-    key = organization_id or "platform"
+    key = _resolve_settings_key(organization_id, current_user)
     settings = _hyperscale_settings.get(key, DEFAULT_HYPERSCALE_SETTINGS.copy())
 
     return HyperscaleSettingsResponse(**settings)
@@ -820,7 +869,7 @@ async def update_hyperscale_settings(
     rate_limit: RateLimitResult = Depends(admin_rate_limit),
 ):
     """Update hyperscale orchestration settings (ADR-087)."""
-    key = organization_id or "platform"
+    key = _resolve_settings_key(organization_id, current_user)
     current = _hyperscale_settings.get(key, DEFAULT_HYPERSCALE_SETTINGS.copy())
 
     # Apply updates

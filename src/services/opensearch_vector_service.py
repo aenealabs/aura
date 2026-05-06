@@ -165,7 +165,19 @@ class OpenSearchVectorService:
                     timeout=30,
                 )
             else:
-                # No auth (dev mode only)
+                # No auth (dev mode only). Refuse to connect over plaintext in
+                # production: a misconfigured prod container that loses its IAM
+                # credentials must not silently fall through to an unauthenticated,
+                # unencrypted OpenSearch session.
+                environment = (os.environ.get("ENVIRONMENT") or "dev").lower()
+                if environment in ("prod", "production"):
+                    raise RuntimeError(
+                        "OpenSearch IAM credentials unavailable in production. "
+                        "Refusing to fall back to unauthenticated plaintext."
+                    )
+                logger.warning(
+                    "OpenSearch initialized without IAM auth (plaintext, dev only)"
+                )
                 self.client = OpenSearch(hosts=[host], use_ssl=False, timeout=30)
 
             # Test connection

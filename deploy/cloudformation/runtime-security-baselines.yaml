@@ -17,6 +17,8 @@ Resources:
   # DynamoDB Table - Behavioral Profiles
   BehavioralProfilesTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-behavioral-profiles-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -62,6 +64,8 @@ Resources:
   # DynamoDB Table - Drift Alerts
   DriftAlertsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-drift-alerts-083-${Environment}'
       BillingMode: PAY_PER_REQUEST

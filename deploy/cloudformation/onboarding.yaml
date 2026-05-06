@@ -16,6 +16,8 @@ Resources:
   # User Onboarding State Table - Stores user onboarding progress
   UserOnboardingTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-user-onboarding-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -56,6 +58,8 @@ Resources:
   # Team Invitations Table - Stores pending team invitations
   TeamInvitationsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-team-invitations-${Environment}'
       BillingMode: PAY_PER_REQUEST

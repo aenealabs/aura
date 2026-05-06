@@ -16,6 +16,8 @@ Resources:
   # Repositories Table - Stores connected repository metadata
   RepositoriesTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-repositories-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -63,6 +65,8 @@ Resources:
   # OAuth Connections Table - Stores OAuth provider connections
   OAuthConnectionsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-oauth-connections-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -103,6 +107,8 @@ Resources:
   # Repository Ingestion Jobs Table - Tracks repository ingestion job status
   RepositoryIngestionJobsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-repo-ingestion-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST

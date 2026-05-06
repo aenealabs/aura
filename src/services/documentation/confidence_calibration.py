@@ -22,7 +22,6 @@ Isotonic regression ensures:
 import json
 import logging
 import os
-import pickle
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -393,11 +392,46 @@ class CalibratedConfidenceScorer:
                 "documentation_type": self.documentation_type,
             }
 
+    SERIALIZATION_VERSION = "v2-json"
+
     def serialize(self) -> bytes:
-        """Serialize the calibrator for storage."""
+        """Serialize the calibrator for storage as JSON.
+
+        Replaces the previous ``pickle.dumps`` representation. Pickle is RCE-
+        vulnerable if the storage backend's trust boundary is ever weakened
+        (CI fixture write, cross-account replication, leaked credentials);
+        JSON is value-only and cannot execute attacker-controlled code on
+        load. The IsotonicRegression model is reconstructed from its fitted
+        thresholds rather than its in-memory object graph.
+        """
         with self._lock:
+            calibrator_state: dict[str, Any] | None = None
+            if self._calibrator is not None and self._is_calibrated:
+                calibrator_state = {
+                    "X_thresholds_": (
+                        self._calibrator.X_thresholds_.tolist()
+                        if hasattr(self._calibrator, "X_thresholds_")
+                        else None
+                    ),
+                    "y_thresholds_": (
+                        self._calibrator.y_thresholds_.tolist()
+                        if hasattr(self._calibrator, "y_thresholds_")
+                        else None
+                    ),
+                    "increasing_": getattr(
+                        self._calibrator, "increasing_", "auto"
+                    ),
+                    "X_min_": float(getattr(self._calibrator, "X_min_", 0.0)),
+                    "X_max_": float(getattr(self._calibrator, "X_max_", 1.0)),
+                    "out_of_bounds": getattr(
+                        self._calibrator, "out_of_bounds", "clip"
+                    ),
+                    "y_min": getattr(self._calibrator, "y_min", None),
+                    "y_max": getattr(self._calibrator, "y_max", None),
+                }
             data = {
-                "calibrator": self._calibrator,
+                "version": self.SERIALIZATION_VERSION,
+                "calibrator": calibrator_state,
                 "is_calibrated": self._is_calibrated,
                 "sample_count": self._sample_count,
                 "model_version": self._model_version,
@@ -406,13 +440,57 @@ class CalibratedConfidenceScorer:
                 "organization_id": self.organization_id,
                 "documentation_type": self.documentation_type,
             }
-            return pickle.dumps(data)
+            return json.dumps(data).encode("utf-8")
 
     def deserialize(self, data: bytes) -> None:
-        """Deserialize a calibrator from storage."""
+        """Deserialize a calibrator from JSON storage.
+
+        Refuses to load pickle bytes (legacy v1) — historical calibrators must
+        be retrained or re-serialized with this version. The check is a
+        belt-and-braces measure on top of the JSON contract: pickle starts
+        with a protocol byte (\\x80) which is not valid JSON.
+        """
+        if not data:
+            raise ValueError("empty calibrator payload")
+        if data[:1] == b"\x80" or data[:2] == b"\x80\x04":
+            raise ValueError(
+                "Refusing to deserialize pickle calibrator. Re-train and "
+                "re-save with the v2-json format (see audit finding C5)."
+            )
+        loaded = json.loads(data.decode("utf-8"))
+        if loaded.get("version") != self.SERIALIZATION_VERSION:
+            raise ValueError(
+                f"Unsupported calibrator format: {loaded.get('version')!r}. "
+                f"Expected {self.SERIALIZATION_VERSION!r}."
+            )
+
         with self._lock:
-            loaded = pickle.loads(data)  # nosec B301 - trusted internal S3 storage
-            self._calibrator = loaded["calibrator"]
+            calibrator_state = loaded.get("calibrator")
+            if calibrator_state is not None and SKLEARN_AVAILABLE:
+                import numpy as np
+
+                calibrator = IsotonicRegression(
+                    out_of_bounds=calibrator_state.get("out_of_bounds", "clip"),
+                    y_min=calibrator_state.get("y_min"),
+                    y_max=calibrator_state.get("y_max"),
+                    increasing=calibrator_state.get("increasing_", "auto"),
+                )
+                if calibrator_state.get("X_thresholds_") is not None:
+                    calibrator.X_thresholds_ = np.asarray(
+                        calibrator_state["X_thresholds_"], dtype=float
+                    )
+                    calibrator.y_thresholds_ = np.asarray(
+                        calibrator_state["y_thresholds_"], dtype=float
+                    )
+                    calibrator.X_min_ = calibrator_state["X_min_"]
+                    calibrator.X_max_ = calibrator_state["X_max_"]
+                    calibrator.increasing_ = calibrator_state["increasing_"]
+                    calibrator._build_f(
+                        calibrator.X_thresholds_, calibrator.y_thresholds_
+                    )
+                self._calibrator = calibrator
+            else:
+                self._calibrator = None
             self._is_calibrated = loaded["is_calibrated"]
             self._sample_count = loaded["sample_count"]
             self._model_version = loaded["model_version"]

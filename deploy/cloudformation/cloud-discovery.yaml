@@ -35,6 +35,8 @@ Resources:
   # ---------------------------------------------------------------------------
   DiscoveryResultsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-cloud-discovery-results-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -81,6 +83,8 @@ Resources:
   # Table for credential configurations (metadata only, secrets in SM)
   CredentialConfigTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-cloud-credentials-config-${Environment}'
       BillingMode: PAY_PER_REQUEST

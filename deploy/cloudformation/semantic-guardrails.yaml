@@ -35,6 +35,8 @@ Resources:
   # Stores multi-turn conversation threat scores with TTL
   GuardrailsSessionsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-guardrails-sessions-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -83,6 +85,8 @@ Resources:
   # Stores threat assessment results for compliance and analysis
   GuardrailsAuditTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-guardrails-audit-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -141,6 +145,8 @@ Resources:
   # Caches embedding vectors for threat patterns
   GuardrailsCorpusCacheTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-guardrails-corpus-cache-${Environment}'
       BillingMode: PAY_PER_REQUEST

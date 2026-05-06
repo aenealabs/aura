@@ -172,6 +172,8 @@ Resources:
 
   SSRTrainingStateTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-ssr-training-state-${Environment}'
       BillingMode: PAY_PER_REQUEST

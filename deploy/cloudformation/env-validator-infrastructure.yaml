@@ -28,6 +28,8 @@ Resources:
 
   ValidationHistoryTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-env-validation-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -81,6 +83,8 @@ Resources:
 
   BaselineTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-env-baseline-${Environment}'
       BillingMode: PAY_PER_REQUEST

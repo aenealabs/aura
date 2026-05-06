@@ -331,6 +331,8 @@ Resources:
   # DynamoDB Table - Decommission Attestations
   DecommissionAttestationTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-decommission-attestations-${Environment}'
       BillingMode: PAY_PER_REQUEST

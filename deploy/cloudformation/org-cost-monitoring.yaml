@@ -366,6 +366,8 @@ Resources:
 
   CostAggregationTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-org-cost-tracking-${Environment}'
       BillingMode: PAY_PER_REQUEST

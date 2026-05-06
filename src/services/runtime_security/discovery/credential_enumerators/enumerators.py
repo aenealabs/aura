@@ -54,7 +54,15 @@ class _BaseEnumerator:
         credentials: Optional[list[CredentialRecord]] = None,
         error: Optional[str] = None,
     ) -> EnumerationResult:
-        """Build an EnumerationResult with zero_confirmed derived automatically."""
+        """Build an EnumerationResult with zero_confirmed derived automatically.
+
+        Audit finding C4: never claim ``zero_confirmed=True`` unless the
+        enumerator actually executed a query. The previous default
+        ``self._make_result(agent_id)`` (called when ``self._client is None``)
+        falsely confirmed zero credentials when the truth was "we did not
+        check". Decommission orchestration depends on this distinction; an
+        empty result with no error is interpreted as "credentials revoked".
+        """
         creds = credentials or []
         active = [c for c in creds if c.is_active]
         return EnumerationResult(
@@ -63,6 +71,20 @@ class _BaseEnumerator:
             credentials=creds,
             zero_confirmed=len(active) == 0 and error is None,
             error=error,
+        )
+
+    def _make_unchecked_result(self, agent_id: str) -> EnumerationResult:
+        """Return a result indicating the enumerator could not check.
+
+        Use this whenever the backing client is unavailable so the orchestrator
+        treats it as needs-remediation rather than zero-confirmed.
+        """
+        return self._make_result(
+            agent_id,
+            error=(
+                f"{self.credential_class} enumerator unavailable: "
+                "no backing client configured"
+            ),
         )
 
     def _make_credential(
@@ -93,7 +115,7 @@ class IAMRoleEnumerator(_BaseEnumerator):
         """Check IAM roles with trust policies referencing this agent."""
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             roles = self._client.list_roles_for_agent(agent_id)
             creds = [
                 self._make_credential(
@@ -117,7 +139,7 @@ class AccessKeyEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             keys = self._client.list_access_keys_for_agent(agent_id)
             creds = [
                 self._make_credential(
@@ -141,7 +163,7 @@ class MCPTokenEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             tokens = self._client.list_mcp_tokens(agent_id)
             creds = [
                 self._make_credential(
@@ -165,7 +187,7 @@ class OAuthRefreshTokenEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             tokens = self._client.list_oauth_tokens(agent_id)
             creds = [
                 self._make_credential(
@@ -189,7 +211,7 @@ class SecretsManagerEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             secrets = self._client.list_secrets_for_agent(agent_id)
             creds = [
                 self._make_credential(
@@ -213,7 +235,7 @@ class SSMParameterEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             params = self._client.list_ssm_params_for_agent(agent_id)
             creds = [
                 self._make_credential(
@@ -237,7 +259,7 @@ class BedrockSessionEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             sessions = self._client.list_bedrock_sessions(agent_id)
             creds = [
                 self._make_credential(
@@ -261,7 +283,7 @@ class PalantirAIPTokenEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             tokens = self._client.list_palantir_tokens(agent_id)
             creds = [
                 self._make_credential(
@@ -285,7 +307,7 @@ class GitHubOAuthEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             tokens = self._client.list_github_tokens(agent_id)
             creds = [
                 self._make_credential(
@@ -309,7 +331,7 @@ class GitLabOAuthEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             tokens = self._client.list_gitlab_tokens(agent_id)
             creds = [
                 self._make_credential(
@@ -333,7 +355,7 @@ class IntegrationHubEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             cred_list = self._client.list_integration_credentials(agent_id)
             creds = [
                 self._make_credential(
@@ -357,7 +379,7 @@ class ReMemGrantEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             grants = self._client.list_remem_grants(agent_id)
             creds = [
                 self._make_credential(
@@ -381,7 +403,7 @@ class CapabilityGrantEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             grants = self._client.list_capability_grants(agent_id)
             creds = [
                 self._make_credential(
@@ -405,7 +427,7 @@ class BaselineRecordEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             baselines = self._client.list_baselines(agent_id)
             creds = [
                 self._make_credential(
@@ -429,7 +451,7 @@ class ProvenanceRecordEnumerator(_BaseEnumerator):
     def enumerate(self, agent_id: str) -> EnumerationResult:
         try:
             if self._client is None:
-                return self._make_result(agent_id)
+                return self._make_unchecked_result(agent_id)
             records = self._client.list_provenance_records(agent_id)
             creds = [
                 self._make_credential(

@@ -85,6 +85,8 @@ Resources:
 
   GPUJobsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-gpu-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -159,6 +161,8 @@ Resources:
 
   GPUQuotasTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-gpu-quotas-${Environment}'
       BillingMode: PAY_PER_REQUEST

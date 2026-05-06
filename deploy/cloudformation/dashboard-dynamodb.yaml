@@ -16,6 +16,8 @@ Resources:
   # Dashboard Configurations Table - Single-table design per ADR-064
   DashboardConfigsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-dashboard-configs-${Environment}'
       BillingMode: PAY_PER_REQUEST

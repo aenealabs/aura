@@ -191,12 +191,20 @@ class TestEnumeratorRegistry:
         assert self.registry.count == 1
 
     def test_enumerate_all_no_client(self):
-        """Enumerators with no client return zero_confirmed."""
+        """Enumerators with no client return an unchecked result, not zero_confirmed.
+
+        Audit finding C4: previously each enumerator returned
+        ``zero_confirmed=True`` when its backing client was missing, which the
+        decommission orchestrator interpreted as "all credentials revoked".
+        Now an unchecked enumerator returns ``error`` set and
+        ``zero_confirmed=False`` so the orchestrator must reconcile.
+        """
         self.registry.register(IAMRoleEnumerator())
         self.registry.register(MCPTokenEnumerator())
         results = self.registry.enumerate_all("agent-1")
         assert len(results) == 2
-        assert all(r.zero_confirmed for r in results)
+        assert all(r.zero_confirmed is False for r in results)
+        assert all(r.error is not None for r in results)
 
     def test_enumerate_all_with_error(self):
         """Enumerator errors are captured, not raised."""
@@ -253,11 +261,19 @@ class TestConcreteEnumerators:
         assert len(set(classes)) == 15
 
     @pytest.mark.parametrize("cls", ALL_ENUMERATOR_CLASSES)
-    def test_enumerator_no_client_returns_zero(self, cls):
-        """Each enumerator with no client returns zero_confirmed."""
+    def test_enumerator_no_client_returns_unchecked(self, cls):
+        """Each enumerator with no client returns an explicit unchecked result.
+
+        Audit finding C4: an enumerator without a backing client cannot
+        truthfully claim ``zero_confirmed`` — surface the error instead so
+        the orchestrator escalates to remediation rather than treating the
+        agent as fully decommissioned.
+        """
         enum = cls()
         result = enum.enumerate("test-agent")
-        assert result.zero_confirmed is True
+        assert result.zero_confirmed is False
+        assert result.error is not None
+        assert "unavailable" in result.error
         assert result.active_count == 0
         assert result.credential_class == cls.credential_class
 

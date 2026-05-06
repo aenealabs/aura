@@ -28,6 +28,8 @@ Resources:
 
   ConstitutionalAuditTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-constitutional-audit-${Environment}'
       BillingMode: PAY_PER_REQUEST

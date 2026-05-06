@@ -167,6 +167,8 @@ Resources:
   # DynamoDB Table for Cost Tracking per User
   CostTrackingTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-test-env-cost-tracking-${Environment}'
       BillingMode: PAY_PER_REQUEST

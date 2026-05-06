@@ -21,6 +21,8 @@ Resources:
   # Test Environment State Table - tracks self-service test environments
   TestEnvironmentStateTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-test-env-state-${Environment}'
       BillingMode: PAY_PER_REQUEST

@@ -233,16 +233,16 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 - **Context Retrieval Service:** `context-retrieval.aura.local:8080`
 - **Agent Orchestrator:** `orchestrator.aura.local:8080`
 
-### Current Status (As of 2026-05-05)
+### Current Status (As of 2026-05-06)
 
 - **Company:** Aenea Labs | **Domain:** aenealabs.com (Route 53)
 - **Overall Completion:** 99%
 - **Total Lines of Code:** 439,000+ lines (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure)
-- **Test Suite:** 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed)
-- **Architecture Decision Records:** 87 ADRs (85 Deployed/Accepted, 1 Reserved, 1 Proposed)
+- **Test Suite:** 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed) — note: 6,666 skipped includes 387 enterprise connector tests skipped on Linux CI due to mock-pollution; remediation tracked in audit
+- **Architecture Decision Records:** 88 ADRs (84 Deployed/Accepted, 1 Reserved [082], 3 Proposed [085, 087, 088])
 - **Infrastructure:** 100% (All 9 phases deployed: Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
-- **Modular CI/CD:** 100% (32 buildspecs managing all 155 CloudFormation templates)
-- **CloudFormation Templates:** 155 templates (24 CodeBuild + 131 infrastructure)
+- **Modular CI/CD:** 100% (38 buildspecs managing all CloudFormation templates)
+- **CloudFormation Templates:** 177 templates (counted by `AWSTemplateFormatVersion` header; 152 top-level in deploy/cloudformation/, 25 nested under deploy/multi-region/, deploy/airgap/, deploy/helm/, etc.)
 - **CodeBuild Projects:** 19 projects (9 parent layers + 10 sub-layers including SSR, env-validator, and runtime-security)
 - **Network Services:** 100% (dnsmasq DNSSEC deployed to EKS, private ECR image, ECS Fargate VPC-wide DNS)
 - **LLM Integration:** 100% (Bedrock API operational, Claude 3.5 Sonnet approved and tested)

@@ -135,11 +135,22 @@ class User(BaseModel):
     email: str | None = None
     name: str | None = None
     groups: list[str] = []
+    organization_id: str | None = None
 
     @property
     def roles(self) -> list[str]:
         """Get user roles from Cognito groups."""
         return self.groups
+
+    @property
+    def is_platform_admin(self) -> bool:
+        """Platform admins manage cross-tenant ("platform") settings.
+
+        Distinct from the broader ``admin`` group used by ``require_admin``:
+        an org-level admin has ``admin`` in groups but not ``platform_admin``,
+        and must not be granted cross-tenant access via ``is_platform_admin``.
+        """
+        return "platform_admin" in self.groups
 
 
 def _fetch_ssm_parameter(ssm_client: Any, name: str) -> str | None:
@@ -508,17 +519,34 @@ async def get_current_user(
         async def protected_route(user: User = Depends(get_current_user)):
             return {"email": user.email}
     """
-    # Dev bypass for local testing (NEVER enable in production)
+    # Dev bypass for local testing. Fails closed: requires both AURA_AUTH_BYPASS=true
+    # and an explicit non-prod environment indicator. Defaults to "prod" if unset
+    # so a misconfigured container cannot accidentally enable bypass. Accepts the
+    # canonical ENVIRONMENT variable in addition to AURA_ENVIRONMENT to avoid
+    # the dual-env-var footgun flagged in the 2026-05-06 audit (M8).
     if os.environ.get("AURA_AUTH_BYPASS", "").lower() == "true":
-        environment = os.environ.get("AURA_ENVIRONMENT", "dev").lower()
+        env_raw = (
+            os.environ.get("AURA_ENVIRONMENT")
+            or os.environ.get("ENVIRONMENT")
+            or "prod"
+        )
+        environment = env_raw.lower()
         if environment in ("dev", "local", "test"):
-            logger.warning("Auth bypass enabled - using mock dev user")
+            logger.warning(
+                "Auth bypass enabled - using mock dev user (environment=%s)",
+                environment,
+            )
             return User(
                 sub="dev-user-001",
                 email="dev@aenealabs.com",
                 name="Dev User",
                 groups=["admin", "developers"],
+                organization_id="dev-org-001",
             )
+        logger.error(
+            "AURA_AUTH_BYPASS=true rejected: environment=%s is not dev/local/test",
+            environment,
+        )
 
     if credentials is None:
         raise HTTPException(
@@ -530,12 +558,20 @@ async def get_current_user(
     token = credentials.credentials
     payload = verify_token(token)
 
-    # Extract user info from token
+    # Extract user info from token. The organization claim may live under
+    # several names depending on IdP: Cognito custom attributes, OIDC scope,
+    # SAML assertion. Accept the first one we find.
+    org_id = (
+        payload.get("custom:organization_id")
+        or payload.get("organization_id")
+        or payload.get("org_id")
+    )
     return User(
         sub=payload.get("sub", ""),
         email=payload.get("email"),
         name=payload.get("name") or payload.get("cognito:username"),
         groups=payload.get("cognito:groups", []),
+        organization_id=org_id,
     )
 
 

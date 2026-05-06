@@ -96,6 +96,8 @@ Resources:
   # ===========================================================================
   NeptuneCluster:
     Type: AWS::Neptune::DBCluster
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
     Properties:
       DBClusterIdentifier: !Sub '${ProjectName}-neptune-${Environment}'
       DBClusterParameterGroupName: !Ref NeptuneClusterParameterGroup
@@ -124,6 +126,8 @@ Resources:
 
   NeptunePrimaryInstance:
     Type: AWS::Neptune::DBInstance
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       DBInstanceIdentifier: !Sub '${ProjectName}-neptune-primary-${Environment}'
       DBInstanceClass: !Ref InstanceType
@@ -145,6 +149,8 @@ Resources:
   NeptuneReadReplica:
     Type: AWS::Neptune::DBInstance
     Condition: CreateReadReplica
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       DBInstanceIdentifier: !Sub '${ProjectName}-neptune-replica-${Environment}'
       DBInstanceClass: !Ref InstanceType

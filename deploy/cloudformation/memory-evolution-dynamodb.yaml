@@ -75,6 +75,8 @@ Resources:
   # Main DynamoDB table for memory evolution metrics
   MemoryEvolutionTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-memory-evolution-${Environment}'
       BillingMode: PAY_PER_REQUEST

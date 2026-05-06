@@ -41,6 +41,8 @@ Resources:
   # ==========================================================================
   DocumentationFeedbackTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-documentation-feedback-${Environment}'
       BillingMode: PAY_PER_REQUEST

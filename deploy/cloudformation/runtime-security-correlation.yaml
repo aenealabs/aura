@@ -61,6 +61,8 @@ Resources:
   # DynamoDB Table - Correlation Results
   CorrelationResultsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-correlation-results-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -101,6 +103,8 @@ Resources:
   # DynamoDB Table - Remediation Plans
   RemediationPlansTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-remediation-plans-${Environment}'
       BillingMode: PAY_PER_REQUEST

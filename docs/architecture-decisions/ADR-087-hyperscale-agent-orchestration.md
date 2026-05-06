@@ -2,11 +2,15 @@
 
 ## Status
 
-Proposed
+Accepted (Phase 1 Implemented; full implementation in progress)
+
+Phase 1 deployed: UI gating, execution tier selection, security gate validation, Integration Mode enforcement, hyperscale endpoints (`src/api/orchestrator_settings_endpoints.py`, 39 tests at `tests/test_hyperscale_endpoints.py`).
+
+Outstanding before Phase 2: tenant isolation on per-org settings reads/writes, DynamoDB persistence for `_hyperscale_settings` (currently in-memory module-global, lost on pod restart), and the remainder of the planned 1,990 test suite.
 
 ## Date
 
-2026-05-05
+2026-05-05 (proposed) / 2026-05-06 (Phase 1 status update)
 
 ## Reviews
 

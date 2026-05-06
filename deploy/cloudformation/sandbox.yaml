@@ -44,6 +44,8 @@ Resources:
   # Approval Requests Table - Tracks HITL approval workflow state
   ApprovalRequestsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-approval-requests-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -125,6 +127,8 @@ Resources:
   # Sandbox State Table - Tracks ephemeral sandbox lifecycle
   SandboxStateTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-sandbox-state-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -166,6 +170,8 @@ Resources:
   # Sandbox Results Table - Test execution results
   SandboxResultsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-sandbox-results-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -205,6 +211,8 @@ Resources:
   # Patch Workflows Table - Tracks end-to-end patch validation workflow state
   PatchWorkflowsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-patch-workflows-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -501,8 +509,33 @@ Resources:
         - Name: sandbox-test-runner
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ProjectName}-sandbox-test-runner:latest'
           Essential: true
+          # Audit finding C6: previous task definition relied on application-layer
+          # ``network_mode != "none"`` checks to enforce isolation. Container
+          # hardening primitives are now declared at the task-definition level
+          # so a Fargate runc-style escape inside a vulnerability PoC executor
+          # cannot trivially write to the root FS or use Linux capabilities.
+          ReadonlyRootFilesystem: true
           LinuxParameters:
             InitProcessEnabled: true
+            Capabilities:
+              Drop:
+                - ALL
+            Tmpfs:
+              # Scratch space the test runner needs writable. Restricted to
+              # /tmp and /app/workspace; everything else is read-only.
+              - ContainerPath: /tmp
+                Size: 256
+                MountOptions:
+                  - rw
+                  - nosuid
+                  - nodev
+                  - noexec
+              - ContainerPath: /app/workspace
+                Size: 1024
+                MountOptions:
+                  - rw
+                  - nosuid
+                  - nodev
           LogConfiguration:
             LogDriver: awslogs
             Options:

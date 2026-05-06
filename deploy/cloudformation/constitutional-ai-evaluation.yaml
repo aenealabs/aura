@@ -114,6 +114,8 @@ Resources:
   # ==========================================================================
   GoldenSetTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-cai-golden-set-${Environment}'
       BillingMode: PAY_PER_REQUEST

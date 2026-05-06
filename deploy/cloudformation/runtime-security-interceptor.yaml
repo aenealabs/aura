@@ -55,6 +55,8 @@ Resources:
   # DynamoDB Table - Agent Traffic Events metadata
   TrafficEventsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-traffic-events-${Environment}'
       BillingMode: PAY_PER_REQUEST

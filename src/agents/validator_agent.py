@@ -40,6 +40,33 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# Mirror of reviewer_agent.MAX_LLM_CODE_CHARS. Imported at use sites rather
+# than at module load to avoid a hard dependency.
+def _truncate_code_for_llm(code: str, max_chars: int = 60_000) -> str:
+    """Head/tail truncate ``code`` to ``max_chars`` with an aura marker.
+
+    Mirror of the helper in ``src.agents.reviewer_agent``. See audit finding
+    F8: LLM code inputs were never length-bounded, allowing 1MB blobs to
+    silently inflate Bedrock token cost.
+    """
+    if len(code) <= max_chars:
+        return code
+    head_len = int(max_chars * 0.7)
+    tail_len = max_chars - head_len
+    omitted = len(code) - max_chars
+    marker = (
+        f"\n\n# ... [aura: {omitted} characters omitted "
+        f"by validator-agent length cap] ...\n\n"
+    )
+    logger.warning(
+        "Validator LLM input truncated: input=%d chars, cap=%d chars, omitted=%d",
+        len(code),
+        max_chars,
+        omitted,
+    )
+    return code[:head_len] + marker + code[-tail_len:]
+
+
 class ValidatorAgent:
     """Comprehensive code validation agent with LLM integration.
 
@@ -405,6 +432,7 @@ class ValidatorAgent:
         Returns:
             Dict with additional issues and recommendations.
         """
+        code = _truncate_code_for_llm(code)
         issues_str = "\n".join(
             [f"- {i['type']}: {i['message']}" for i in existing_issues]
         )
@@ -481,13 +509,39 @@ Response (JSON only):"""
         print(f"\n[{AgentRole.VALIDATOR.value}] Validating against requirements...")
         self.monitor.record_agent_activity(tokens_used=600)
 
+        # Audit finding F16: distinguish infrastructure failures (retry the
+        # regex fallback) from unexpected errors (fail closed). A silent
+        # PASS-on-exception path here would let a Bedrock outage produce a
+        # bogus "all requirements met" verdict.
         if self.llm:
             try:
-                return await self._validate_requirements_llm(code, requirements)
+                result = await self._validate_requirements_llm(code, requirements)
+                result["llm_validated"] = True
+                return result
+            except (TimeoutError, ConnectionError, json.JSONDecodeError) as e:
+                logger.error(
+                    "LLM requirements validation infra failure, using fallback: %s",
+                    e,
+                )
             except Exception as e:
-                logger.warning(f"LLM requirements validation failed: {e}")
+                logger.exception("Unexpected LLM requirements error: %s", e)
+                return {
+                    "all_met": False,
+                    "results": {
+                        req: {
+                            "status": "UNVALIDATED",
+                            "reason": "LLM unavailable",
+                        }
+                        for req in requirements
+                    },
+                    "confidence": 0.0,
+                    "llm_validated": False,
+                    "llm_error": str(e)[:200],
+                }
 
-        return self._validate_requirements_fallback(code, requirements)
+        result = self._validate_requirements_fallback(code, requirements)
+        result["llm_validated"] = False
+        return result
 
     async def _validate_requirements_llm(
         self,
@@ -499,6 +553,7 @@ Response (JSON only):"""
         Uses CoD prompting for 92% token reduction while maintaining accuracy.
         ADR-029 Phase 1.2 implementation.
         """
+        code = _truncate_code_for_llm(code)
         requirements_str = "\n".join(
             [f"{i+1}. {req}" for i, req in enumerate(requirements)]
         )

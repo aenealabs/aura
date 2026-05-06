@@ -180,8 +180,9 @@ describe('DiagramViewer', () => {
       const dialog = screen.getByRole('dialog');
       expect(dialog).toBeInTheDocument();
 
-      // Should show initial zoom at 150%
-      expect(screen.getByText('150%')).toBeInTheDocument();
+      // Initial fullscreen zoom is 10.0x (1000%) — diagrams open zoomed-in
+      // so users see detail by default. (See DiagramViewer.jsx:169.)
+      expect(screen.getByText('1000%')).toBeInTheDocument();
 
       // Zoom controls should be present in modal
       const zoomInButtons = screen.getAllByLabelText('Zoom in');
@@ -190,7 +191,7 @@ describe('DiagramViewer', () => {
       expect(zoomOutButtons.length).toBeGreaterThanOrEqual(2);
     });
 
-    test('fullscreen modal zoom in increases zoom', async () => {
+    test('fullscreen modal zoom out decreases zoom', async () => {
       const user = userEvent.setup();
       render(<DiagramViewer code={sampleMermaidCode} initialZoom={1} />);
 
@@ -198,13 +199,15 @@ describe('DiagramViewer', () => {
       const expandButton = screen.getByLabelText('Expand to fullscreen');
       await user.click(expandButton);
 
-      // Get the second zoom in button (in modal)
-      const zoomInButtons = screen.getAllByLabelText('Zoom in');
-      const modalZoomIn = zoomInButtons[zoomInButtons.length - 1];
-      await user.click(modalZoomIn);
+      // Use zoom-out rather than zoom-in: the default fullscreen zoom (10.0x)
+      // is at maxZoom, so clicking zoom-in is a no-op. Clicking zoom-out
+      // exercises the same control wiring with an observable state change.
+      const zoomOutButtons = screen.getAllByLabelText('Zoom out');
+      const modalZoomOut = zoomOutButtons[zoomOutButtons.length - 1];
+      await user.click(modalZoomOut);
 
-      // Zoom should increase from 150% to 188% (150 * 1.25)
-      expect(screen.getByText('188%')).toBeInTheDocument();
+      // Zoom should decrease from 1000% to 800% (1000 / 1.25)
+      expect(screen.getByText('800%')).toBeInTheDocument();
     });
 
     test('fullscreen modal has reset view button', async () => {
@@ -228,11 +231,16 @@ describe('DiagramViewer', () => {
       expect(copyButton).toBeInTheDocument();
     });
 
-    test('download button is present', () => {
+    test('export button is present', () => {
       render(<DiagramViewer code={sampleMermaidCode} />);
 
-      const downloadButton = screen.getByLabelText('Download SVG');
-      expect(downloadButton).toBeInTheDocument();
+      // The single download action was replaced by an export menu that
+      // exposes multiple formats (SVG, PNG, PDF, etc.) — the trigger is
+      // labelled "Export diagram" (DiagramViewer.jsx:928). The actual
+      // SVG-specific item lives inside the menu and is exercised by the
+      // dedicated export-menu tests.
+      const exportButton = screen.getByLabelText('Export diagram');
+      expect(exportButton).toBeInTheDocument();
     });
   });
 

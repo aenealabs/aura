@@ -7,7 +7,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
 import JobTimelineView from './JobTimelineView';
 import ToastProvider from '../ui/Toast';
@@ -241,13 +241,25 @@ describe('JobTimelineView', () => {
 
   describe('Timeline Display', () => {
     test('displays date range in header', async () => {
-      renderComponent();
+      // Pin the wall clock locally — using fake timers globally interferes
+      // with waitFor and userEvent in the other tests. Restore real timers
+      // after the assertion. The regex is month-agnostic so the test still
+      // works if the range straddles a month boundary (e.g., "Dec 31 -
+      // Jan 6, 2026").
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-08T12:00:00Z'));
+      try {
+        renderComponent();
 
-      await waitFor(() => {
-        // Should show date range like "Jan 4 - Jan 11, 2026"
-        const dateText = screen.getByText(/Jan.*-.*\d{4}/);
-        expect(dateText).toBeInTheDocument();
-      });
+        await vi.waitFor(() => {
+          const dateText = screen.getByText(
+            /[A-Z][a-z]{2} \d+\s*[-–]\s*[A-Z][a-z]{2} \d+,\s*\d{4}/,
+          );
+          expect(dateText).toBeInTheDocument();
+        });
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     test('displays timeline entries when loaded', async () => {

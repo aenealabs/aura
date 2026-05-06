@@ -200,7 +200,7 @@ describe('CollapsibleSidebar', () => {
 
     // Overview section
     expect(screen.getByText('Repositories')).toBeInTheDocument();
-    expect(screen.getByText('Environments')).toBeInTheDocument();
+    expect(screen.getByText('Sandboxes')).toBeInTheDocument();
 
     // Security section
     expect(screen.getByText('Approvals')).toBeInTheDocument();

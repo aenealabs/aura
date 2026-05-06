@@ -157,14 +157,21 @@ describe('EPSSTrendWidget', () => {
   });
 
   test('renders line chart', async () => {
-    const { container } = render(<EPSSTrendWidget />);
+    render(<EPSSTrendWidget />);
 
     await waitFor(() => {
       expect(screen.getByText('EPSS Score Trends')).toBeInTheDocument();
     });
 
-    // Check for Recharts elements
-    expect(container.querySelector('.recharts-wrapper')).toBeInTheDocument();
+    // Assert on chart-agnostic markers rather than recharts-internal CSS
+    // classes: recharts <ResponsiveContainer> requires a measurable parent
+    // and does not render its internals reliably under jsdom. The line
+    // series names (P50/P75/P90/P95) are observable text emitted by the
+    // legend regardless of layout.
+    await waitFor(() => {
+      expect(screen.getByText('P50')).toBeInTheDocument();
+      expect(screen.getByText('P95')).toBeInTheDocument();
+    });
   });
 
   test('displays refresh button', async () => {
@@ -184,14 +191,19 @@ describe('EPSSTrendWidget', () => {
   });
 
   test('displays legend', async () => {
-    const { container } = render(<EPSSTrendWidget />);
+    render(<EPSSTrendWidget />);
 
     await waitFor(() => {
       expect(screen.getByText('EPSS Score Trends')).toBeInTheDocument();
     });
 
-    // Check for legend
-    expect(container.querySelector('.recharts-legend-wrapper')).toBeInTheDocument();
+    // The widget renders three percentile series (P50, P95, P99 — see
+    // EPSSTrendWidget.jsx:233/241/249). The renders-line-chart test
+    // already covers P50/P95; assert P99 here so the two tests
+    // exercise different legend entries without overlapping.
+    await waitFor(() => {
+      expect(screen.getByText('P99')).toBeInTheDocument();
+    });
   });
 
   test('applies custom className', async () => {

@@ -2,17 +2,19 @@
 
 ## Status
 
-Accepted (Phases 1 & 2 Implemented; Phases 3-5 in progress)
+Accepted (Phases 1, 2 & 3 Implemented; Phases 4-5 in progress)
 
 Phase 1 deployed as `src/services/verification_envelope/` (consensus engine, AST normalizer, semantic equivalence checker, consensus policy with M-of-N centroid selection, DAL coverage policy stubs for the cert argument). 40 unit tests.
 
 Phase 2 deployed as `src/services/verification_envelope/coverage/` (`MCDCCoverageAdapter` protocol, `CoveragePyAdapter` open-source default, `VectorCASTAdapter` and `LDRAAdapter` subprocess shims, `CoverageGateService` orchestrator). The `TestResult` dataclass (`src/services/sandbox_test_runner.py`) gained six structural-coverage fields and an `apply_coverage()` copy-helper for stage 6 of the sandbox pipeline. 30 unit tests.
 
-Outstanding before Phase 3: formal verification gate (Z3 SMT, constraint translator C1-C4 → SMT assertions, verification auditor with proof-hash archive). Phase 4 registers the DO-178C policy profiles into the Constraint Geometry Engine via the new PolicyConstraint mechanism, plus the bidirectional traceability service. Phase 5 lands CloudFormation infrastructure (DynamoDB audit, S3 proof archive, CloudWatch dashboards).
+Phase 3 deployed as `src/services/verification_envelope/formal/` (`FormalVerificationAdapter` protocol, `ConstraintTranslator` mapping CGE C1-C4 to SMT-LIB v2 assertions, `Z3SMTAdapter` open-source default with deterministic `random_seed` pinning and a soft-import path for air-gapped builds, `VerificationGateService` orchestrator that demotes PROVED→FAILED when the translator flags any axis, `VerificationAuditor` with `InMemoryArchiveSink` and `FileSystemArchiveSink` for the proof-hash audit trail). 41 unit tests; the live-Z3 path is gated on package availability so CI without `z3-solver` still passes.
+
+Outstanding before Phase 4: registration of the DO-178C policy profiles into the Constraint Geometry Engine via the new `PolicyConstraint` mechanism, plus the bidirectional requirements traceability service (Neptune schema extension, lifecycle data templates). Phase 5 lands CloudFormation infrastructure (DynamoDB audit, S3 proof archive with KMS-CMK encryption, CloudWatch dashboards).
 
 ## Date
 
-2026-02-26 (proposed) / 2026-05-06 (Phase 1 & 2 status update)
+2026-02-26 (proposed) / 2026-05-06 (Phases 1, 2 & 3 status update)
 
 ## Reviews
 

@@ -66,3 +66,11 @@ google-cloud-aiplatform>=1.71.0 ; python_version >= "3.10"
 # soft-import guard for slim/air-gapped builds (ADR-078) so they degrade to
 # passthrough when this dep is absent rather than crashing.
 scikit-learn>=1.3
+
+# DVE Phase 3 — Formal Verification (ADR-085). z3-solver is the
+# open-source default formal-verification backend; soft-imported by
+# Z3SMTAdapter so air-gapped slim builds (ADR-078) without this
+# dependency continue to load and fall back to the SKIPPED verdict
+# until an alternative adapter (CVC5, Yices2) is configured. MIT
+# license, runs in-process, no network calls.
+z3-solver>=4.13.0

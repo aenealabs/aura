@@ -17,7 +17,7 @@ from src.services.edition_service import Edition, EditionService, get_edition_se
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/edition", tags=["edition"])
+router = APIRouter(prefix="/api/v1/edition", tags=["edition"])
 
 
 class EditionResponse(BaseModel):

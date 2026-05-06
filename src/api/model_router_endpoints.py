@@ -441,8 +441,63 @@ async def get_routing_rules() -> list[RoutingRuleModel]:
         ]
 
     except Exception as e:
+        from src.api.dev_mock_fallback import should_serve_mock
+
+        if should_serve_mock(e):
+            logger.warning(
+                "get_routing_rules: AWS unavailable, serving mock rules: %s", e
+            )
+            return _mock_routing_rules()
         logger.error(f"Failed to get routing rules: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve routing rules")
+
+
+def _mock_routing_rules() -> list[RoutingRuleModel]:
+    """Demo routing rules used when Bedrock/DynamoDB are unavailable.
+
+    Mirrors the default rule set the live router would serve, sized so the
+    Model Router page renders the rule table with realistic content.
+    """
+    samples = [
+        ("code_review", TaskComplexityEnum.SIMPLE, ModelTierEnum.FAST,
+         "Lint-style reviews and small diffs route to Haiku for speed."),
+        ("code_review", TaskComplexityEnum.COMPLEX, ModelTierEnum.ACCURATE,
+         "Cross-file refactors and security reviews escalate to Sonnet."),
+        ("vulnerability_analysis", TaskComplexityEnum.COMPLEX, ModelTierEnum.ACCURATE,
+         "All vulnerability triage runs on the accurate tier."),
+        ("documentation_generation", TaskComplexityEnum.SIMPLE, ModelTierEnum.FAST,
+         "Docstrings and changelog entries route to the fast tier."),
+        ("incident_root_cause", TaskComplexityEnum.COMPLEX, ModelTierEnum.MAXIMUM,
+         "Runtime incident RCA uses the maximum tier for breadth of reasoning."),
+        ("query_decomposition", TaskComplexityEnum.SIMPLE, ModelTierEnum.FAST,
+         "Sub-query rewrites route to the fast tier."),
+    ]
+    cost_by_tier = {
+        ModelTierEnum.FAST: 0.00025,
+        ModelTierEnum.ACCURATE: 0.003,
+        ModelTierEnum.MAXIMUM: 0.015,
+    }
+    return [
+        RoutingRuleModel(
+            id=f"rule-{i}",
+            task_type=task_type,
+            complexity=complexity,
+            tier=tier,
+            model=_tier_to_model_name(
+                next((t for t in [tier]), tier)  # passthrough; tier is enum already
+            )
+            if False
+            else {
+                ModelTierEnum.FAST: "claude-3-haiku",
+                ModelTierEnum.ACCURATE: "claude-3-5-sonnet",
+                ModelTierEnum.MAXIMUM: "claude-3-opus",
+            }[tier],
+            cost_per_1k=cost_by_tier[tier],
+            description=description,
+            enabled=True,
+        )
+        for i, (task_type, complexity, tier, description) in enumerate(samples)
+    ]
 
 
 @router.post("/rules", response_model=RoutingRuleModel, status_code=201)

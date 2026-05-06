@@ -86,9 +86,54 @@ class ProviderRepositoryResponse(BaseModel):
 # ============================================================================
 
 
-def get_oauth_svc() -> OAuthProviderService:
-    """Get the OAuth service instance."""
-    return get_oauth_service()
+def get_oauth_svc() -> OAuthProviderService | None:
+    """Get the OAuth service instance.
+
+    Returns ``None`` instead of raising when AWS clients can't be
+    constructed in local dev. Endpoints check for None and short-circuit
+    to seeded mock data via ``_mock_oauth_connections``.
+    """
+    try:
+        return get_oauth_service()
+    except Exception as e:
+        from src.api.dev_mock_fallback import should_serve_mock
+
+        if should_serve_mock(e):
+            logger.warning(
+                "get_oauth_svc: AWS unavailable, endpoints will serve mock data: %s",
+                e,
+            )
+            return None
+        raise
+
+
+def _mock_oauth_connections(provider: str | None) -> list:
+    """Demo OAuth connections used when DynamoDB is unavailable in dev."""
+    mocks = [
+        OAuthConnectionResponse(
+            connection_id="oauth-conn-github-dev",
+            provider="github",
+            provider_user_id="42424242",
+            provider_username="aenealabs-dev",
+            scopes=["repo", "read:org", "admin:repo_hook"],
+            status="active",
+            created_at="2026-04-01T08:00:00Z",
+            expires_at=None,
+        ),
+        OAuthConnectionResponse(
+            connection_id="oauth-conn-gitlab-dev",
+            provider="gitlab",
+            provider_user_id="2871",
+            provider_username="aenealabs",
+            scopes=["api", "read_repository", "write_repository"],
+            status="active",
+            created_at="2026-04-12T13:30:00Z",
+            expires_at="2026-08-12T13:30:00Z",
+        ),
+    ]
+    if provider:
+        mocks = [m for m in mocks if m.provider == provider]
+    return mocks
 
 
 # ============================================================================
@@ -207,6 +252,8 @@ async def list_connections(
     Returns:
         List of OAuth connections
     """
+    if oauth_service is None:
+        return _mock_oauth_connections(provider)
     try:
         connections = await oauth_service.list_connections(user.sub)
 

@@ -30,8 +30,8 @@ from src.services.scheduling.scheduling_service import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/schedule", tags=["scheduling"])
-queue_router = APIRouter(prefix="/queue", tags=["queue"])
+router = APIRouter(prefix="/api/v1/schedule", tags=["scheduling"])
+queue_router = APIRouter(prefix="/api/v1/queue", tags=["queue"])
 
 
 # Request/Response Models
@@ -286,8 +286,102 @@ async def list_scheduled_jobs(
         )
 
     except SchedulingServiceError as e:
+        from src.api.dev_mock_fallback import should_serve_mock
+
+        if should_serve_mock(e):
+            logger.warning(
+                "list_scheduled_jobs: AWS unavailable, returning empty list: %s", e
+            )
+            return ScheduledJobListResponse(jobs=[], next_cursor=None)
         logger.error(f"Failed to list scheduled jobs: {e}")
         raise HTTPException(status_code=500, detail="Failed to list scheduled jobs")
+
+
+# Literal-path routes MUST be declared before /{schedule_id} below so
+# FastAPI matches paths like /timeline and /job-types as literals rather
+# than parameterised job IDs. The /{schedule_id} route is greedy and would
+# otherwise swallow these.
+
+
+@router.get("/timeline", response_model=TimelineResponse)
+async def get_timeline(
+    start_date: datetime = Query(..., description="Start of time range (ISO8601)"),
+    end_date: datetime = Query(..., description="End of time range (ISO8601)"),
+    include_scheduled: bool = Query(True, description="Include scheduled jobs"),
+    include_completed: bool = Query(True, description="Include completed jobs"),
+    limit: int = Query(200, ge=1, le=500, description="Maximum entries"),
+    current_user: User = Depends(get_current_user),
+    service: SchedulingService = Depends(_get_service),
+) -> TimelineResponse:
+    """
+    Get timeline entries for visualization.
+    """
+    try:
+        organization_id = getattr(current_user, "organization_id", "default")
+
+        if start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=timezone.utc)
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+
+        entries = await service.get_timeline(
+            organization_id=organization_id,
+            start_date=start_date,
+            end_date=end_date,
+            include_scheduled=include_scheduled,
+            include_completed=include_completed,
+            limit=limit,
+        )
+
+        return TimelineResponse(
+            entries=[
+                TimelineEntryResponse(
+                    job_id=e.job_id,
+                    job_type=e.job_type,
+                    status=e.status,
+                    title=e.title,
+                    scheduled_at=e.scheduled_at,
+                    started_at=e.started_at,
+                    completed_at=e.completed_at,
+                    duration_seconds=e.duration_seconds,
+                    repository_name=e.repository_name,
+                    created_by=e.created_by,
+                )
+                for e in entries
+            ],
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    except SchedulingServiceError as e:
+        from src.api.dev_mock_fallback import should_serve_mock
+
+        if should_serve_mock(e):
+            logger.warning(
+                "get_timeline: AWS unavailable, returning empty timeline: %s", e
+            )
+            return TimelineResponse(
+                entries=[],
+                start_date=start_date,
+                end_date=end_date,
+            )
+        logger.error(f"Failed to get timeline: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get timeline")
+
+
+@router.get("/job-types", response_model=List[Dict[str, str]])
+async def get_job_types_inline() -> List[Dict[str, str]]:
+    """Available job types for the scheduling UI dropdown.
+
+    Re-declared above /{schedule_id} so the literal path matches first.
+    Recurring-task router (registered earlier) also serves a richer
+    /api/v1/schedule/job-types — that match wins because it's registered
+    in main.py before this router.
+    """
+    return [
+        {"value": jt.value, "label": jt.value.replace("_", " ").title()}
+        for jt in JobType
+    ]
 
 
 @router.get("/{schedule_id}", response_model=ScheduledJobResponse)
@@ -413,78 +507,27 @@ async def get_queue_status(
         )
 
     except SchedulingServiceError as e:
+        from src.api.dev_mock_fallback import should_serve_mock
+
+        if should_serve_mock(e):
+            logger.warning(
+                "get_queue_status: AWS unavailable, returning idle queue: %s", e
+            )
+            return QueueStatusResponse(
+                total_queued=0,
+                total_scheduled=0,
+                active_jobs=0,
+                by_priority={},
+                by_type={},
+                avg_wait_time_seconds=0,
+                throughput_per_hour=0,
+                oldest_queued_at=None,
+                next_scheduled_at=None,
+            )
         logger.error(f"Failed to get queue status: {e}")
         raise HTTPException(status_code=500, detail="Failed to get queue status")
 
 
-# Timeline Endpoint
-
-
-@router.get("/timeline", response_model=TimelineResponse)
-async def get_timeline(
-    start_date: datetime = Query(..., description="Start of time range (ISO8601)"),
-    end_date: datetime = Query(..., description="End of time range (ISO8601)"),
-    include_scheduled: bool = Query(True, description="Include scheduled jobs"),
-    include_completed: bool = Query(True, description="Include completed jobs"),
-    limit: int = Query(200, ge=1, le=500, description="Maximum entries"),
-    current_user: User = Depends(get_current_user),
-    service: SchedulingService = Depends(_get_service),
-) -> TimelineResponse:
-    """
-    Get timeline entries for visualization.
-    """
-    try:
-        organization_id = getattr(current_user, "organization_id", "default")
-
-        # Ensure timezone awareness
-        if start_date.tzinfo is None:
-            start_date = start_date.replace(tzinfo=timezone.utc)
-        if end_date.tzinfo is None:
-            end_date = end_date.replace(tzinfo=timezone.utc)
-
-        entries = await service.get_timeline(
-            organization_id=organization_id,
-            start_date=start_date,
-            end_date=end_date,
-            include_scheduled=include_scheduled,
-            include_completed=include_completed,
-            limit=limit,
-        )
-
-        return TimelineResponse(
-            entries=[
-                TimelineEntryResponse(
-                    job_id=e.job_id,
-                    job_type=e.job_type,
-                    status=e.status,
-                    title=e.title,
-                    scheduled_at=e.scheduled_at,
-                    started_at=e.started_at,
-                    completed_at=e.completed_at,
-                    duration_seconds=e.duration_seconds,
-                    repository_name=e.repository_name,
-                    created_by=e.created_by,
-                )
-                for e in entries
-            ],
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-    except SchedulingServiceError as e:
-        logger.error(f"Failed to get timeline: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get timeline")
-
-
-# Job Types Endpoint (for UI dropdown)
-
-
-@router.get("/job-types", response_model=List[Dict[str, str]])
-async def get_job_types() -> List[Dict[str, str]]:
-    """
-    Get available job types for scheduling.
-    """
-    return [
-        {"value": jt.value, "label": jt.value.replace("_", " ").title()}
-        for jt in JobType
-    ]
+# /timeline and /job-types are declared earlier in this module, before
+# the parameterised /{schedule_id} route, so FastAPI matches the literal
+# paths first. See the inline definitions above the /{schedule_id} block.

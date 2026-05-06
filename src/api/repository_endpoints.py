@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from src.api.auth import User, get_current_user
+from src.api.dev_mock_fallback import should_serve_mock
 from src.services.api_rate_limiter import (
     RateLimitResult,
     admin_rate_limit,
@@ -174,9 +175,25 @@ class IngestionStartResponse(BaseModel):
 # ============================================================================
 
 
-def get_repo_svc() -> RepositoryOnboardService:
-    """Get the repository service instance."""
-    return get_repository_service()
+def get_repo_svc() -> RepositoryOnboardService | None:
+    """Get the repository service instance.
+
+    Returns ``None`` instead of raising when the underlying AWS clients
+    cannot be constructed (no region / no credentials in local dev). The
+    endpoints below check for None and fall through to seeded mock data
+    via ``_mock_repositories``. In prod, with real credentials, the call
+    succeeds normally.
+    """
+    try:
+        return get_repository_service()
+    except Exception as e:
+        if should_serve_mock(e):
+            logger.warning(
+                "get_repo_svc: AWS unavailable, endpoints will serve mock data: %s",
+                e,
+            )
+            return None
+        raise
 
 
 # ============================================================================
@@ -204,6 +221,8 @@ async def list_repositories(
     Returns:
         List of repository information
     """
+    if repo_service is None:
+        return _mock_repositories(status, provider)
     try:
         repos = await repo_service.list_repositories(user.sub)
 
@@ -236,8 +255,74 @@ async def list_repositories(
         ]
 
     except Exception as e:
+        if should_serve_mock(e):
+            logger.warning(
+                "list_repositories: AWS unavailable, serving mock data: %s", e
+            )
+            return _mock_repositories(status, provider)
         logger.error(f"Failed to list repositories: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list repositories")
+
+
+def _mock_repositories(
+    status: str | None, provider: str | None
+) -> list["RepositoryResponse"]:
+    """Demo data used when DynamoDB/Cognito are unavailable in local dev."""
+    mock = [
+        RepositoryResponse(
+            repository_id="repo-aura-demo-1",
+            name="aenealabs/aura",
+            provider="github",
+            clone_url="https://github.com/aenealabs/aura.git",
+            branch="main",
+            languages=["python", "typescript", "yaml"],
+            scan_frequency="daily",
+            status="active",
+            last_ingestion_at="2026-05-06T15:42:00Z",
+            file_count=2487,
+            entity_count=18432,
+            webhook_active=True,
+            created_at="2026-04-01T08:00:00Z",
+            updated_at="2026-05-06T15:42:00Z",
+        ),
+        RepositoryResponse(
+            repository_id="repo-aura-demo-2",
+            name="aenealabs/example-fintech",
+            provider="github",
+            clone_url="https://github.com/aenealabs/example-fintech.git",
+            branch="main",
+            languages=["python", "javascript"],
+            scan_frequency="weekly",
+            status="active",
+            last_ingestion_at="2026-05-05T22:11:00Z",
+            file_count=341,
+            entity_count=2104,
+            webhook_active=True,
+            created_at="2026-04-12T13:30:00Z",
+            updated_at="2026-05-05T22:11:00Z",
+        ),
+        RepositoryResponse(
+            repository_id="repo-aura-demo-3",
+            name="aenealabs/legacy-monolith",
+            provider="gitlab",
+            clone_url="https://gitlab.com/aenealabs/legacy-monolith.git",
+            branch="develop",
+            languages=["java", "kotlin", "groovy"],
+            scan_frequency="weekly",
+            status="syncing",
+            last_ingestion_at=None,
+            file_count=0,
+            entity_count=0,
+            webhook_active=False,
+            created_at="2026-05-06T11:00:00Z",
+            updated_at="2026-05-06T15:30:00Z",
+        ),
+    ]
+    if status:
+        mock = [r for r in mock if r.status == status]
+    if provider:
+        mock = [r for r in mock if r.provider == provider]
+    return mock
 
 
 @router.get("/available")

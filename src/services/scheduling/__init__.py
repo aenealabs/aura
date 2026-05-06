@@ -6,6 +6,8 @@ ADR-055: Agent Scheduling View and Job Queue Management
 """
 
 from src.services.scheduling.models import (
+    JobType,
+    Priority,
     QueueStatus,
     RecurringSchedule,
     RecurringTask,
@@ -21,6 +23,8 @@ from src.services.scheduling.scheduling_service import (
 
 __all__ = [
     # Models
+    "JobType",
+    "Priority",
     "ScheduleStatus",
     "ScheduledJob",
     "ScheduleJobRequest",

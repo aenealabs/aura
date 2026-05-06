@@ -66,6 +66,8 @@ from src.api.orchestrator_settings_endpoints import (
 )
 from src.api.query_decomposition_endpoints import query_decomposition_router
 from src.api.recurring_task_endpoints import router as recurring_task_router
+from src.api.scheduling_endpoints import router as scheduling_router
+from src.api.scheduling_endpoints import queue_router as scheduling_queue_router
 from src.api.red_team_endpoints import red_team_router
 from src.api.repository_endpoints import router as repository_router
 from src.api.security_middleware import add_security_middleware
@@ -970,6 +972,16 @@ app.include_router(repository_router)
 # ============================================================================
 
 app.include_router(recurring_task_router)
+
+# ============================================================================
+# Scheduling Endpoints (ADR-055 ad-hoc and timeline-based jobs)
+# Registered after recurring_task_router so the more-specific
+# /schedule/recurring* paths there match before the parameterised
+# /schedule/{id} on the scheduling_router.
+# ============================================================================
+
+app.include_router(scheduling_router)
+app.include_router(scheduling_queue_router)
 
 # ============================================================================
 # Support Ticketing Endpoints (ADR-046 Support Ticketing Connectors)

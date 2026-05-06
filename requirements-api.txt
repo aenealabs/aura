@@ -21,7 +21,7 @@ requests>=2.33.1             # HTTP client for requests-aws4auth
 requests-aws4auth>=1.3.1     # AWS SigV4 signing for OpenSearch FGAC
 
 # Git Integration
-GitPython>=3.1.43            # Git metadata extraction
+GitPython>=3.1.50            # Git metadata extraction
 PyGithub>=2.9.1              # GitHub API integration
 
 # Authentication

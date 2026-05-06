@@ -926,23 +926,52 @@ export default function IncidentInvestigations() {
   const [showCreateTicketModal, setShowCreateTicketModal] = useState(false);
   const { toast } = useToast();
 
-  // Fetch data
-  useEffect(() => {
-    const timer = setTimeout(() => {
+  // Fetch data — calls the backend /api/v1/incidents endpoint and falls
+  // back to MOCK_INCIDENTS only if the API is unreachable. Mirrors the
+  // pattern used by ApprovalDashboard and SecurityAlertsContext so all
+  // three pages behave consistently in dev (real backend, seeded data)
+  // and in offline demos (frontend mocks).
+  const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
+
+  const fetchIncidents = async () => {
+    try {
+      const response = await fetch(`${apiBase}/incidents`);
+      if (!response.ok) {
+        throw new Error(`API responded ${response.status}`);
+      }
+      const data = await response.json();
+      setIncidents(data.incidents || []);
+    } catch (err) {
+      console.warn('Incidents API unavailable, using mock data:', err.message);
       setIncidents(MOCK_INCIDENTS);
+    } finally {
       setLoading(false);
-    }, 800);
-    return () => clearTimeout(timer);
+    }
+  };
+
+  useEffect(() => {
+    fetchIncidents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Refresh handler
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    // Simulate data refresh
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setIncidents(MOCK_INCIDENTS);
-    setIsRefreshing(false);
-    toast.success('Incident Investigations refreshed');
+    try {
+      const response = await fetch(`${apiBase}/incidents`);
+      if (!response.ok) {
+        throw new Error(`API responded ${response.status}`);
+      }
+      const data = await response.json();
+      setIncidents(data.incidents || []);
+      toast.success('Incident Investigations refreshed');
+    } catch (err) {
+      console.warn('Incidents API unavailable on refresh, using mock data:', err.message);
+      setIncidents(MOCK_INCIDENTS);
+      toast.info('Showing demo data (API unavailable)');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Filter incidents

@@ -29,6 +29,9 @@ from src.agents.ast_parser_agent import ASTParserAgent
 from src.api.agent_registry_endpoints import router as agent_registry_router
 from src.api.anomaly_triggers import AnomalyTriggers, set_triggers
 from src.api.approval_endpoints import router as approval_router
+from src.api.security_alerts_endpoints import router as security_alerts_router
+from src.api.security_incidents_endpoints import router as security_incidents_router
+from src.api.dev_mocks_endpoints import router as dev_mocks_router
 from src.api.auth import User, get_current_user, get_optional_user
 from src.api.billing_endpoints import router as billing_router
 from src.api.compliance_endpoints import router as compliance_router
@@ -857,6 +860,12 @@ async def clear_webhook_queue():
 app.include_router(approval_router)
 
 # ============================================================================
+# Security Alerts Endpoints (mounted via router)
+# ============================================================================
+
+app.include_router(security_alerts_router)
+
+# ============================================================================
 # Platform Settings Endpoints (mounted via router)
 # ============================================================================
 
@@ -864,9 +873,36 @@ app.include_router(settings_router)
 
 # ============================================================================
 # Incident Investigation Endpoints (ADR-025 Phase 4)
+# Order matters: incidents_router (legacy, has literal /investigations route)
+# must be included BEFORE security_incidents_router (which has a /{id}
+# parameterised route under the same /api/v1/incidents prefix).
 # ============================================================================
 
 app.include_router(incidents_router)
+
+# ============================================================================
+# Security Incidents Endpoints (mounted via router)
+# Shares the /api/v1/incidents prefix with the legacy router above; FastAPI
+# matches more-specific literal paths (/investigations) on the legacy router
+# first, leaving the parameterised /{id} routes here to catch generic
+# incident lookups for the IncidentInvestigations frontend page.
+# ============================================================================
+
+app.include_router(security_incidents_router)
+
+# ============================================================================
+# Dev-only mock endpoints for sections that don't yet have a real router.
+# Gated on AURA_ENABLE_DEV_MOCKS (default on). Replace with real endpoints
+# as features ship.
+# ============================================================================
+
+if os.environ.get("AURA_ENABLE_DEV_MOCKS", "true").lower() not in (
+    "0",
+    "false",
+    "no",
+    "off",
+):
+    app.include_router(dev_mocks_router)
 
 # ============================================================================
 # VS Code Extension Endpoints (ADR-028 Phase 4)

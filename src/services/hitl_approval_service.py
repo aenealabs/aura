@@ -14,7 +14,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 
@@ -269,8 +269,260 @@ class HITLApprovalService:
             self._init_mock_mode()
 
     def _init_mock_mode(self) -> None:
-        """Initialize mock mode."""
+        """Initialize mock mode and optionally seed demo approval requests.
+
+        When ``AURA_SEED_MOCK_APPROVALS`` is unset or truthy (the default in
+        local dev), the in-memory store is pre-populated with a varied set
+        of demo approval requests so the HITL Approvals page has data to
+        render. Set ``AURA_SEED_MOCK_APPROVALS=false`` to keep the store
+        empty (e.g. for unit tests that build their own fixtures).
+        """
         logger.info("Mock mode initialized (in-memory storage)")
+
+        seed_flag = os.environ.get("AURA_SEED_MOCK_APPROVALS", "true").lower()
+        if seed_flag in ("0", "false", "no", "off"):
+            return
+
+        self._seed_demo_approvals()
+        logger.info(
+            "Seeded %d demo approval requests (set AURA_SEED_MOCK_APPROVALS=false to disable)",
+            len(self.mock_store),
+        )
+
+    def _seed_demo_approvals(self) -> None:
+        """Populate ``mock_store`` with a representative set of demo data.
+
+        Generates seven PENDING entries (matching the sidebar badge), two
+        APPROVED, and one REJECTED — giving the UI populated views across
+        the All / Pending / Approved / Rejected filter tabs.
+        """
+        now = datetime.now(timezone.utc)
+        ttl_seconds = self.DEFAULT_TTL_DAYS * 24 * 60 * 60
+
+        demos: list[dict[str, Any]] = [
+            {
+                "title": "SQL injection in user search endpoint",
+                "description": "Untrusted input concatenated into a Gremlin "
+                "string in the user-search handler. Patch parameterizes the "
+                "query and adds an integration test.",
+                "severity": PatchSeverity.CRITICAL,
+                "status": ApprovalStatus.PENDING,
+                "cve": "CVE-2024-9921",
+                "file": "src/api/users.py",
+                "lines_changed": 14,
+                "sandbox_status": "running",
+                "test_results": None,
+                "created_offset_minutes": -23,
+                "generated_by": "coder-agent",
+                "requested_by": "scanner-pipeline",
+            },
+            {
+                "title": "Hardcoded AWS credential in onboarding script",
+                "description": "Static access key found in the team-invite "
+                "Lambda deploy script. Patch rotates to SSM SecureString and "
+                "removes the leaked key.",
+                "severity": PatchSeverity.CRITICAL,
+                "status": ApprovalStatus.PENDING,
+                "cve": None,
+                "file": "scripts/onboarding/invite_team.py",
+                "lines_changed": 22,
+                "sandbox_status": "queued",
+                "test_results": None,
+                "created_offset_minutes": -47,
+                "generated_by": "secrets-detector",
+                "requested_by": "scanner-pipeline",
+            },
+            {
+                "title": "Bypass-able JWT signature on /admin endpoints",
+                "description": "Algorithm allowlist accepts both HS256 and "
+                "RS256 — algorithm confusion attack possible. Patch pins to "
+                "the configured signing algorithm.",
+                "severity": PatchSeverity.HIGH,
+                "status": ApprovalStatus.PENDING,
+                "cve": "CVE-2025-30412",
+                "file": "src/services/identity/token_service.py",
+                "lines_changed": 6,
+                "sandbox_status": "passed",
+                "test_results": {"passed": 47, "failed": 0, "duration_s": 12},
+                "created_offset_minutes": -110,
+                "generated_by": "coder-agent",
+                "requested_by": "audit-finding-86",
+            },
+            {
+                "title": "Container escape risk in vuln-scan sandbox task",
+                "description": "ECS task definition lacks ReadonlyRootFilesystem "
+                "and capability drops. Patch adds the missing ECS hardening "
+                "primitives and a deny-all egress security group.",
+                "severity": PatchSeverity.HIGH,
+                "status": ApprovalStatus.PENDING,
+                "cve": None,
+                "file": "deploy/cloudformation/sandbox.yaml",
+                "lines_changed": 33,
+                "sandbox_status": "passed",
+                "test_results": {"passed": 12, "failed": 0, "duration_s": 4},
+                "created_offset_minutes": -180,
+                "generated_by": "iac-agent",
+                "requested_by": "audit-h3",
+            },
+            {
+                "title": "Path traversal in repo-clone tarball extractor",
+                "description": "Tar extraction does not validate member paths "
+                "against the destination directory. Patch wraps extraction in "
+                "the standard safe-extract helper.",
+                "severity": PatchSeverity.MEDIUM,
+                "status": ApprovalStatus.PENDING,
+                "cve": "CVE-2007-4559",
+                "file": "src/services/repository/clone.py",
+                "lines_changed": 18,
+                "sandbox_status": "passed",
+                "test_results": {"passed": 9, "failed": 0, "duration_s": 3},
+                "created_offset_minutes": -260,
+                "generated_by": "coder-agent",
+                "requested_by": "scanner-pipeline",
+            },
+            {
+                "title": "Verbose stack traces leaked on /api/v1/health failures",
+                "description": "Unhandled exception path returns the full "
+                "Python traceback in the response body. Patch wraps the "
+                "handler in the standard sanitize-and-log middleware.",
+                "severity": PatchSeverity.MEDIUM,
+                "status": ApprovalStatus.PENDING,
+                "cve": None,
+                "file": "src/api/health_endpoints.py",
+                "lines_changed": 11,
+                "sandbox_status": "passed",
+                "test_results": {"passed": 6, "failed": 0, "duration_s": 1},
+                "created_offset_minutes": -380,
+                "generated_by": "coder-agent",
+                "requested_by": "scanner-pipeline",
+            },
+            {
+                "title": "Outdated dependency: requests<2.32 (CVE-2024-35195)",
+                "description": "Requirements floor allows a vulnerable version "
+                "of requests. Patch raises the floor and confirms transitive "
+                "lock alignment.",
+                "severity": PatchSeverity.LOW,
+                "status": ApprovalStatus.PENDING,
+                "cve": "CVE-2024-35195",
+                "file": "requirements.txt",
+                "lines_changed": 2,
+                "sandbox_status": "passed",
+                "test_results": {"passed": 158, "failed": 0, "duration_s": 28},
+                "created_offset_minutes": -640,
+                "generated_by": "supply-chain-agent",
+                "requested_by": "dependabot-mirror",
+            },
+            {
+                "title": "XSS in markdown renderer for incident notes",
+                "description": "Sanitizer allowlist did not strip <script> "
+                "tags inside fenced code blocks. Patch tightens the allowlist "
+                "and adds a regression fixture.",
+                "severity": PatchSeverity.HIGH,
+                "status": ApprovalStatus.APPROVED,
+                "cve": "CVE-2024-21235",
+                "file": "src/services/incidents/markdown_render.py",
+                "lines_changed": 19,
+                "sandbox_status": "passed",
+                "test_results": {"passed": 31, "failed": 0, "duration_s": 7},
+                "created_offset_minutes": -2880,
+                "reviewed_offset_minutes": -2700,
+                "reviewer": "alice@aenealabs.com",
+                "generated_by": "coder-agent",
+                "requested_by": "scanner-pipeline",
+            },
+            {
+                "title": "Server-side request forgery in webhook proxy",
+                "description": "Webhook proxy followed redirects to internal "
+                "metadata endpoints. Patch enforces an SSRF-safe HTTP client "
+                "with allowlisted egress.",
+                "severity": PatchSeverity.HIGH,
+                "status": ApprovalStatus.APPROVED,
+                "cve": "CVE-2024-22361",
+                "file": "src/api/webhook_handler.py",
+                "lines_changed": 27,
+                "sandbox_status": "passed",
+                "test_results": {"passed": 22, "failed": 0, "duration_s": 5},
+                "created_offset_minutes": -5760,
+                "reviewed_offset_minutes": -5500,
+                "reviewer": "ben@aenealabs.com",
+                "generated_by": "coder-agent",
+                "requested_by": "audit-h-webhook",
+            },
+            {
+                "title": "Replace deprecated md5() in cache key generation",
+                "description": "Cache key generator used hashlib.md5() without "
+                "usedforsecurity=False. Patch swaps to blake2b for clarity. "
+                "Rejected: the change broke an undocumented external "
+                "consumer keyed on the legacy hash.",
+                "severity": PatchSeverity.LOW,
+                "status": ApprovalStatus.REJECTED,
+                "cve": None,
+                "file": "src/services/cache/keys.py",
+                "lines_changed": 5,
+                "sandbox_status": "passed",
+                "test_results": {"passed": 4, "failed": 0, "duration_s": 1},
+                "created_offset_minutes": -10080,
+                "reviewed_offset_minutes": -9900,
+                "reviewer": "carla@aenealabs.com",
+                "decision_reason": "Breaks public cache-key contract; "
+                "address as part of the v3 cache rev rather than a hot "
+                "patch.",
+                "generated_by": "lint-agent",
+                "requested_by": "scanner-pipeline",
+            },
+        ]
+
+        for d in demos:
+            approval_id = f"appr-demo-{uuid.uuid4().hex[:12]}"
+            patch_id = f"patch-demo-{uuid.uuid4().hex[:12]}"
+            vulnerability_id = (
+                f"vuln-{d['cve'].lower()}" if d.get("cve") else f"vuln-{uuid.uuid4().hex[:8]}"
+            )
+            created_at_dt = now + timedelta(minutes=d["created_offset_minutes"])
+            expires_at_dt = created_at_dt + timedelta(hours=self.timeout_hours)
+
+            metadata = {
+                "title": d["title"],
+                "description": d["description"],
+                "affected_file": d["file"],
+                "lines_changed": d["lines_changed"],
+                "generated_by": d["generated_by"],
+                "sandbox_status": d["sandbox_status"],
+                "test_results": d["test_results"],
+                "requested_by": d["requested_by"],
+            }
+
+            item: dict[str, Any] = {
+                "approvalId": approval_id,
+                "statusBucket": self._compute_status_bucket(
+                    d["status"].value, approval_id
+                ),
+                "patchId": patch_id,
+                "vulnerabilityId": vulnerability_id,
+                "status": d["status"].value,
+                "severity": d["severity"].value,
+                "createdAt": created_at_dt.isoformat(),
+                "expiresAt": expires_at_dt.isoformat(),
+                "reviewerEmail": d.get("reviewer"),
+                "reviewedAt": (
+                    (now + timedelta(minutes=d["reviewed_offset_minutes"])).isoformat()
+                    if "reviewed_offset_minutes" in d
+                    else None
+                ),
+                "reviewedBy": d.get("reviewer"),
+                "decisionReason": d.get("decision_reason"),
+                "sandboxTestResults": d.get("test_results") or {},
+                "patchDiff": "",
+                "originalCode": "",
+                "metadata": metadata,
+                "escalationCount": 0,
+                "lastEscalatedAt": None,
+                "warningSentAt": None,
+                "createdAtTimestamp": int(created_at_dt.timestamp()),
+                "updatedAt": int(time.time()),
+                "ttl": int(time.time()) + ttl_seconds,
+            }
+            self.mock_store[approval_id] = item
 
     def _compute_status_bucket(self, status: str, item_id: str) -> str:
         """

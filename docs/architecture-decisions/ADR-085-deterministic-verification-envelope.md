@@ -2,11 +2,15 @@
 
 ## Status
 
-Proposed
+Accepted (Phase 1 Implemented; Phases 2-5 in progress)
+
+Phase 1 deployed as `src/services/verification_envelope/` (consensus engine, AST normalizer, semantic equivalence checker, consensus policy with M-of-N centroid selection, DAL coverage policy stubs for the cert argument). 40 unit tests cover the public surface; the consensus engine is decoupled from the agent orchestrator via a generator protocol so it's wired into MetaOrchestrator on demand.
+
+Outstanding before Phase 2: structural coverage gate, MC/DC adapter pattern, sandbox stage 6 wiring. Phase 3 follows with the formal verification gate (Z3 SMT). Phase 4 registers the DO-178C policy profiles into the Constraint Geometry Engine. Phase 5 lands the CloudFormation infrastructure.
 
 ## Date
 
-2026-02-26
+2026-02-26 (proposed) / 2026-05-06 (Phase 1 status update)
 
 ## Reviews
 

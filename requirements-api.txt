@@ -49,6 +49,16 @@ networkx>=3.4.0              # Graph processing (lightweight, used in API)
 # YAML Support (config parsing)
 PyYAML>=6.0.2
 
+# Multi-vendor LLM providers. OpenAI is the public-API path for direct
+# OpenAI usage (Azure OpenAI is a separate transport handled by
+# AzureOpenAIService). google-generativeai is the public AI Studio path;
+# vertexai is the GCP-IAM-authenticated transport preferred by enterprise
+# customers. Both google packages are optional — GeminiLLMService falls
+# back to mock mode when absent.
+openai>=1.60.0
+google-generativeai>=0.8.3 ; python_version >= "3.10"
+google-cloud-aiplatform>=1.71.0 ; python_version >= "3.10"
+
 # Calibration / Explainability (ADR-068)
 # IsotonicRegression powers confidence calibration
 # (src/services/documentation/confidence_calibration.py and

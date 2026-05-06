@@ -84,7 +84,13 @@ class PatchTestRequest:
 
 @dataclass
 class TestResult:
-    """Result of sandbox test execution."""
+    """Result of sandbox test execution.
+
+    The structural-coverage fields below are populated by stage 6 of
+    the pipeline (the DVE coverage gate, ADR-085 Phase 2). They default
+    to zeroes / ``None`` for non-aviation runs so callers that ignore
+    the coverage envelope continue to work unchanged.
+    """
 
     result_id: str
     sandbox_id: str
@@ -100,6 +106,14 @@ class TestResult:
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
+    # ------------------------------------------------ ADR-085 Phase 2 fields
+    statement_coverage_pct: float = 0.0
+    decision_coverage_pct: float = 0.0
+    mcdc_coverage_pct: float = 0.0
+    structural_coverage_dal: str | None = None  # "DAL_A" .. "DAL_D" / "DEFAULT"
+    coverage_tool_used: str | None = None  # "coverage_py" / "vectorcast" / "ldra"
+    coverage_report_s3_key: str | None = None  # S3 path to full report
+
     def to_dict(self) -> dict:
         return {
             "result_id": self.result_id,
@@ -112,7 +126,50 @@ class TestResult:
             "test_duration_seconds": str(self.test_duration_seconds),
             "error_message": self.error_message,
             "created_at": self.created_at,
+            "statement_coverage_pct": self.statement_coverage_pct,
+            "decision_coverage_pct": self.decision_coverage_pct,
+            "mcdc_coverage_pct": self.mcdc_coverage_pct,
+            "structural_coverage_dal": self.structural_coverage_dal,
+            "coverage_tool_used": self.coverage_tool_used,
+            "coverage_report_s3_key": self.coverage_report_s3_key,
         }
+
+    def apply_coverage(
+        self,
+        *,
+        statement_pct: float,
+        decision_pct: float,
+        mcdc_pct: float,
+        dal_level: str,
+        tool: str,
+        report_s3_key: str | None = None,
+    ) -> "TestResult":
+        """Return a copy with the structural-coverage fields populated.
+
+        Stage 6 of the sandbox pipeline calls this after the coverage
+        gate runs. Stays as a copy-helper rather than mutating in
+        place so the original test result remains usable by any audit
+        trail already written downstream.
+        """
+        return TestResult(
+            result_id=self.result_id,
+            sandbox_id=self.sandbox_id,
+            patch_id=self.patch_id,
+            status=self.status,
+            tests_passed=self.tests_passed,
+            tests_failed=self.tests_failed,
+            tests_skipped=self.tests_skipped,
+            test_duration_seconds=self.test_duration_seconds,
+            error_message=self.error_message,
+            logs=self.logs,
+            created_at=self.created_at,
+            statement_coverage_pct=statement_pct,
+            decision_coverage_pct=decision_pct,
+            mcdc_coverage_pct=mcdc_pct,
+            structural_coverage_dal=dal_level,
+            coverage_tool_used=tool,
+            coverage_report_s3_key=report_s3_key,
+        )
 
 
 @dataclass

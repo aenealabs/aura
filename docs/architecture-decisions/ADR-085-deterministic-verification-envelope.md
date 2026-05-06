@@ -2,15 +2,17 @@
 
 ## Status
 
-Accepted (Phase 1 Implemented; Phases 2-5 in progress)
+Accepted (Phases 1 & 2 Implemented; Phases 3-5 in progress)
 
-Phase 1 deployed as `src/services/verification_envelope/` (consensus engine, AST normalizer, semantic equivalence checker, consensus policy with M-of-N centroid selection, DAL coverage policy stubs for the cert argument). 40 unit tests cover the public surface; the consensus engine is decoupled from the agent orchestrator via a generator protocol so it's wired into MetaOrchestrator on demand.
+Phase 1 deployed as `src/services/verification_envelope/` (consensus engine, AST normalizer, semantic equivalence checker, consensus policy with M-of-N centroid selection, DAL coverage policy stubs for the cert argument). 40 unit tests.
 
-Outstanding before Phase 2: structural coverage gate, MC/DC adapter pattern, sandbox stage 6 wiring. Phase 3 follows with the formal verification gate (Z3 SMT). Phase 4 registers the DO-178C policy profiles into the Constraint Geometry Engine. Phase 5 lands the CloudFormation infrastructure.
+Phase 2 deployed as `src/services/verification_envelope/coverage/` (`MCDCCoverageAdapter` protocol, `CoveragePyAdapter` open-source default, `VectorCASTAdapter` and `LDRAAdapter` subprocess shims, `CoverageGateService` orchestrator). The `TestResult` dataclass (`src/services/sandbox_test_runner.py`) gained six structural-coverage fields and an `apply_coverage()` copy-helper for stage 6 of the sandbox pipeline. 30 unit tests.
+
+Outstanding before Phase 3: formal verification gate (Z3 SMT, constraint translator C1-C4 → SMT assertions, verification auditor with proof-hash archive). Phase 4 registers the DO-178C policy profiles into the Constraint Geometry Engine via the new PolicyConstraint mechanism, plus the bidirectional traceability service. Phase 5 lands CloudFormation infrastructure (DynamoDB audit, S3 proof archive, CloudWatch dashboards).
 
 ## Date
 
-2026-02-26 (proposed) / 2026-05-06 (Phase 1 status update)
+2026-02-26 (proposed) / 2026-05-06 (Phase 1 & 2 status update)
 
 ## Reviews
 

@@ -2,6 +2,8 @@
  * Aura TypeScript SDK - Client Module
  */
 
+import { AuraClient } from './AuraClient';
+
 export {
   AuraClient,
   type AuraClientConfig,

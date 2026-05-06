@@ -25,21 +25,17 @@ import type {
   ExtensionConfig,
   ScanRequest,
   ScanResponse,
-  Finding,
   FindingsResponse,
   FindingsListResponse,
   PatchRequest,
   Patch,
   PatchResponse,
-  ApplyPatchRequest,
   ApplyPatchResponse,
-  ApprovalSummary,
   ApprovalDetail,
   ApprovalListResponse,
   ApprovalStats,
   ApprovalActionResponse,
   ApprovalStatusResponse,
-  IncidentSummary,
   IncidentDetail,
   IncidentListResponse,
   PlatformSettings,
@@ -49,11 +45,6 @@ import type {
   ExternalToolInfo,
   MCPUsageResponse,
   ConnectionTestResponse,
-  APIError,
-  Severity,
-  FindingCategory,
-  ApprovalStatus,
-  ApprovalType,
   IntegrationMode,
   FindingsFilterParams,
   ApprovalsFilterParams,
@@ -399,7 +390,7 @@ export class ExtensionAPI {
     );
   }
 
-  private buildQueryString(params?: Record<string, unknown>): string {
+  private buildQueryString(params?: object): string {
     if (!params) return '';
     const entries = Object.entries(params).filter(
       ([, value]) => value !== undefined && value !== null
@@ -485,7 +476,7 @@ export class ApprovalsAPI {
     );
   }
 
-  private buildQueryString(params?: Record<string, unknown>): string {
+  private buildQueryString(params?: object): string {
     if (!params) return '';
     const entries = Object.entries(params).filter(
       ([, value]) => value !== undefined && value !== null
@@ -549,7 +540,7 @@ export class IncidentsAPI {
     );
   }
 
-  private buildQueryString(params?: Record<string, unknown>): string {
+  private buildQueryString(params?: object): string {
     if (!params) return '';
     const entries = Object.entries(params).filter(
       ([, value]) => value !== undefined && value !== null

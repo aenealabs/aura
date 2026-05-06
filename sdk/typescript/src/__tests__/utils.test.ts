@@ -303,7 +303,11 @@ describe('Date Utilities', () => {
 
     it('returns remaining time for future dates', () => {
       const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-      expect(getTimeUntilExpiration(oneHourFromNow)).toMatch(/\d+m remaining/);
+      // Function rounds to the largest sensible unit (m/h/d), so 1 hour
+      // from now is "1h remaining" rather than "60m remaining".
+      expect(getTimeUntilExpiration(oneHourFromNow)).toMatch(
+        /\d+(m|h|d) remaining/
+      );
     });
   });
 });

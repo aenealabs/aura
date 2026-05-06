@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (Phases 1, 2 & 3 Implemented; Phases 4-5 in progress)
+Accepted (Phases 1, 2, 3 & 4 Implemented; Phase 5 in progress)
 
 Phase 1 deployed as `src/services/verification_envelope/` (consensus engine, AST normalizer, semantic equivalence checker, consensus policy with M-of-N centroid selection, DAL coverage policy stubs for the cert argument). 40 unit tests.
 
@@ -10,11 +10,13 @@ Phase 2 deployed as `src/services/verification_envelope/coverage/` (`MCDCCoverag
 
 Phase 3 deployed as `src/services/verification_envelope/formal/` (`FormalVerificationAdapter` protocol, `ConstraintTranslator` mapping CGE C1-C4 to SMT-LIB v2 assertions, `Z3SMTAdapter` open-source default with deterministic `random_seed` pinning and a soft-import path for air-gapped builds, `VerificationGateService` orchestrator that demotes PROVED→FAILED when the translator flags any axis, `VerificationAuditor` with `InMemoryArchiveSink` and `FileSystemArchiveSink` for the proof-hash audit trail). 41 unit tests; the live-Z3 path is gated on package availability so CI without `z3-solver` still passes.
 
-Outstanding before Phase 4: registration of the DO-178C policy profiles into the Constraint Geometry Engine via the new `PolicyConstraint` mechanism, plus the bidirectional requirements traceability service (Neptune schema extension, lifecycle data templates). Phase 5 lands CloudFormation infrastructure (DynamoDB audit, S3 proof archive with KMS-CMK encryption, CloudWatch dashboards).
+Phase 4 deployed: `PolicyConstraint` mechanism added to `constraint_geometry/contracts.py` and integrated into `PolicyProfile` so DAL-level profiles can impose mandatory invariants (MC/DC, formal proof, traceability, object-code verification) that force REJECT regardless of CCS. Two new built-in profiles registered: `do-178c-dal-a` (6 policy constraints, includes object-code verification) and `do-178c-dal-b` (5 constraints, no object-code requirement per DO-178C 6.4.4.2c). Bidirectional requirements traceability shipped as `src/services/verification_envelope/traceability/` (`Requirement` / `Artefact` / `TraceEdge` data model, `InMemoryRequirementStore` for tests/dev, `NeptuneRequirementStore` adapter with Gremlin query builders + in-memory fallback for Phase 5 wiring, `TraceabilityService` for graph CRUD + bidirectional gap analysis, `LifecycleDataGenerator` producing PSAC/SDP/SVP/SQAP/SAS Markdown templates from the trace graph). 38 new unit tests.
+
+Outstanding before Phase 5: live Neptune wiring for `NeptuneRequirementStore`, CloudFormation infrastructure (DynamoDB audit table for `AuditRecord`, S3 proof archive with KMS-CMK encryption, EventBridge dispatch, CloudWatch dashboards).
 
 ## Date
 
-2026-02-26 (proposed) / 2026-05-06 (Phases 1, 2 & 3 status update)
+2026-02-26 (proposed) / 2026-05-06 (Phases 1, 2, 3 & 4 status update)
 
 ## Reviews
 

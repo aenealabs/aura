@@ -14,7 +14,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from .contracts import CoherenceAction, ConstraintAxis
+from .contracts import (
+    CoherenceAction,
+    ConstraintAxis,
+    PolicyConstraint,
+    PolicyConstraintType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +70,12 @@ class PolicyProfile:
     Each profile represents an operational context. The axis weights
     control how much each constraint dimension contributes to the
     composite CCS. Thresholds control the action boundaries.
+
+    Optional ``policy_constraints`` (ADR-085 Phase 4) carry mandatory
+    invariants — MC/DC coverage, formal-proof presence, etc. — that
+    the DVE pipeline must satisfy externally before the action can
+    be AUTO_EXECUTE. Profiles without policy_constraints behave as
+    they did before Phase 4.
     """
 
     name: str
@@ -72,17 +83,34 @@ class PolicyProfile:
     axis_weights: dict[ConstraintAxis, float]
     thresholds: PolicyThresholds
     provenance_sensitivity: float = 0.5  # How much trust score affects weights
+    policy_constraints: tuple[PolicyConstraint, ...] = ()
 
     def get_axis_weight(self, axis: ConstraintAxis) -> float:
         """Get weight for a specific axis."""
         return self.axis_weights.get(axis, 1.0)
 
+    def get_policy_constraints_by_type(
+        self, constraint_type: PolicyConstraintType
+    ) -> tuple[PolicyConstraint, ...]:
+        """Filter policy constraints by type."""
+        return tuple(
+            c for c in self.policy_constraints if c.type is constraint_type
+        )
+
     def determine_action(
         self,
         ccs: float,
         provenance_adjustment: float = 0.0,
+        policy_constraint_violations: tuple[str, ...] = (),
     ) -> CoherenceAction:
-        """Determine action based on CCS and provenance."""
+        """Determine action based on CCS, provenance, and policy violations.
+
+        ``policy_constraint_violations`` is a tuple of constraint_ids
+        that the DVE pipeline reported as failed. Any non-empty
+        violation list forces REJECT regardless of the score.
+        """
+        if policy_constraint_violations:
+            return CoherenceAction.REJECT
         return self.thresholds.determine_action(ccs, provenance_adjustment)
 
 
@@ -172,12 +200,174 @@ PROFILE_SOX_COMPLIANT = PolicyProfile(
     provenance_sensitivity=0.6,
 )
 
+
+# ----------------------------------------------------------------- ADR-085
+
+# DO-178C DAL A and DAL B profiles. Both demand near-zero tolerance on
+# the formally-expressible axes (C1-C4) and impose mandatory policy
+# constraints on coverage + formal proof. DAL A additionally requires
+# object-code verification per DO-178C 6.4.4.2c.
+
+_DO178C_DAL_AXIS_WEIGHTS = {
+    ConstraintAxis.SYNTACTIC_VALIDITY: 1.5,
+    ConstraintAxis.SEMANTIC_CORRECTNESS: 1.5,
+    ConstraintAxis.SECURITY_POLICY: 1.4,
+    ConstraintAxis.OPERATIONAL_BOUNDS: 1.4,
+    ConstraintAxis.DOMAIN_COMPLIANCE: 1.3,
+    ConstraintAxis.PROVENANCE_TRUST: 1.2,
+    ConstraintAxis.TEMPORAL_VALIDITY: 1.0,
+}
+
+
+def _dal_constraint(
+    *,
+    constraint_id: str,
+    name: str,
+    description: str,
+    type_: PolicyConstraintType,
+    **parameters: object,
+) -> PolicyConstraint:
+    return PolicyConstraint(
+        constraint_id=constraint_id,
+        name=name,
+        description=description,
+        type=type_,
+        parameters=tuple(sorted(parameters.items())),
+    )
+
+
+_DAL_A_CONSTRAINTS: tuple[PolicyConstraint, ...] = (
+    _dal_constraint(
+        constraint_id="dal-a-statement-100",
+        name="100% statement coverage",
+        description="DO-178C 6.4.4.2a — every executable statement exercised by tests.",
+        type_=PolicyConstraintType.STATEMENT_COVERAGE_REQUIRED,
+        min_pct=100.0,
+    ),
+    _dal_constraint(
+        constraint_id="dal-a-decision-100",
+        name="100% decision coverage",
+        description="DO-178C 6.4.4.2b — every Boolean decision evaluated true and false.",
+        type_=PolicyConstraintType.DECISION_COVERAGE_REQUIRED,
+        min_pct=100.0,
+    ),
+    _dal_constraint(
+        constraint_id="dal-a-mcdc-100",
+        name="100% MC/DC coverage",
+        description="DO-178C 6.4.4.2c — modified condition / decision coverage.",
+        type_=PolicyConstraintType.MCDC_COVERAGE_REQUIRED,
+        min_pct=100.0,
+    ),
+    _dal_constraint(
+        constraint_id="dal-a-formal-proof",
+        name="Formal proof on C1-C4",
+        description="DO-333 supplement — formally-expressible axes proved by SMT solver.",
+        type_=PolicyConstraintType.FORMAL_PROOF_REQUIRED,
+        required_axes=("C1", "C2", "C3", "C4"),
+    ),
+    _dal_constraint(
+        constraint_id="dal-a-object-code",
+        name="Object code verification",
+        description="DO-178C 6.4.4.2c — object-code coverage equivalent to source MC/DC.",
+        type_=PolicyConstraintType.OBJECT_CODE_VERIFICATION_REQUIRED,
+        required=True,
+    ),
+    _dal_constraint(
+        constraint_id="dal-a-traceability",
+        name="HLR↔LLR↔Code↔Test traceability",
+        description="DO-178C 5.5 — bidirectional requirements traceability.",
+        type_=PolicyConstraintType.REQUIREMENTS_TRACEABILITY_REQUIRED,
+        required=True,
+    ),
+)
+
+
+_DAL_B_CONSTRAINTS: tuple[PolicyConstraint, ...] = (
+    _dal_constraint(
+        constraint_id="dal-b-statement-100",
+        name="100% statement coverage",
+        description="DO-178C 6.4.4.2a — every executable statement exercised by tests.",
+        type_=PolicyConstraintType.STATEMENT_COVERAGE_REQUIRED,
+        min_pct=100.0,
+    ),
+    _dal_constraint(
+        constraint_id="dal-b-decision-100",
+        name="100% decision coverage",
+        description="DO-178C 6.4.4.2b — every Boolean decision evaluated true and false.",
+        type_=PolicyConstraintType.DECISION_COVERAGE_REQUIRED,
+        min_pct=100.0,
+    ),
+    _dal_constraint(
+        constraint_id="dal-b-mcdc-100",
+        name="100% MC/DC coverage",
+        description="DO-178C 6.4.4.2c — modified condition / decision coverage.",
+        type_=PolicyConstraintType.MCDC_COVERAGE_REQUIRED,
+        min_pct=100.0,
+    ),
+    _dal_constraint(
+        constraint_id="dal-b-formal-proof",
+        name="Formal proof on C1-C4",
+        description="DO-333 supplement — formally-expressible axes proved by SMT solver.",
+        type_=PolicyConstraintType.FORMAL_PROOF_REQUIRED,
+        required_axes=("C1", "C2", "C3", "C4"),
+    ),
+    _dal_constraint(
+        constraint_id="dal-b-traceability",
+        name="HLR↔LLR↔Code↔Test traceability",
+        description="DO-178C 5.5 — bidirectional requirements traceability.",
+        type_=PolicyConstraintType.REQUIREMENTS_TRACEABILITY_REQUIRED,
+        required=True,
+    ),
+)
+
+
+PROFILE_DO178C_DAL_A = PolicyProfile(
+    name="do-178c-dal-a",
+    description=(
+        "DO-178C DAL A (Catastrophic). 71 objectives. Failure rate "
+        "<= 1e-9/flight hour. Statement + Decision + MC/DC + object code "
+        "coverage required, plus formal proof on C1-C4 and bidirectional "
+        "requirements traceability. Auto-execute requires near-perfect "
+        "score across all formally-expressible axes."
+    ),
+    axis_weights=_DO178C_DAL_AXIS_WEIGHTS,
+    thresholds=PolicyThresholds(
+        auto_execute_threshold=0.97,
+        review_threshold=0.85,
+        escalate_threshold=0.65,
+    ),
+    provenance_sensitivity=1.0,
+    policy_constraints=_DAL_A_CONSTRAINTS,
+)
+
+
+PROFILE_DO178C_DAL_B = PolicyProfile(
+    name="do-178c-dal-b",
+    description=(
+        "DO-178C DAL B (Hazardous). 69 objectives. Failure rate "
+        "<= 1e-7/flight hour. Statement + Decision + MC/DC coverage "
+        "required and formal proof on C1-C4. Object code verification "
+        "is not required (the principal difference from DAL A)."
+    ),
+    axis_weights=_DO178C_DAL_AXIS_WEIGHTS,
+    thresholds=PolicyThresholds(
+        auto_execute_threshold=0.93,
+        review_threshold=0.80,
+        escalate_threshold=0.55,
+    ),
+    provenance_sensitivity=0.9,
+    policy_constraints=_DAL_B_CONSTRAINTS,
+)
+
+
 # Registry of built-in profiles
 _BUILTIN_PROFILES: dict[str, PolicyProfile] = {
     "default": PROFILE_DEFAULT,
     "dod-il5": PROFILE_DOD_IL5,
     "developer-sandbox": PROFILE_DEVELOPER_SANDBOX,
     "sox-compliant": PROFILE_SOX_COMPLIANT,
+    "do-178c-dal-a": PROFILE_DO178C_DAL_A,
+    "do-178c-dal-b": PROFILE_DO178C_DAL_B,
 }
 
 

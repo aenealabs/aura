@@ -217,5 +217,13 @@ class TestPolicyProfileManager:
             profile_manager.register(fake)
 
     def test_builtin_profiles_list(self, profile_manager):
-        """Builtin profiles list returns only built-ins."""
-        assert len(profile_manager.builtin_profiles) == 4
+        """Builtin profiles list returns the four pre-Phase-4 profiles plus
+        the two DO-178C profiles registered by ADR-085 Phase 4
+        (do-178c-dal-a and do-178c-dal-b)."""
+        names = profile_manager.builtin_profiles
+        assert len(names) == 6
+        assert {"default", "dod-il5", "developer-sandbox", "sox-compliant"}.issubset(
+            set(names)
+        )
+        assert "do-178c-dal-a" in names
+        assert "do-178c-dal-b" in names

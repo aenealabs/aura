@@ -1,0 +1,267 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.6 - DVE Monitoring (CloudWatch dashboard, alarms, EventBridge)'
+
+# ADR-085 Phase 5 monitoring. Provisions:
+#   * CloudWatch dashboard surfacing the Aura/DVE namespace metrics
+#     emitted by CloudWatchMetricsPublisher (pipeline_orchestrator).
+#   * Alarms on the four certification-readiness signals:
+#       - PipelineLatencyMs p99
+#       - OverallVerdict (Rejected) rate
+#       - FormalVerificationVerdict (Failed) rate
+#       - CoverageMcdcPct dropping below 100% on DAL_A workloads
+#   * EventBridge rule mirroring rejected verdicts to an SNS alert.
+#
+# Companion template ``dve-infrastructure.yaml`` provisions the
+# DynamoDB / S3 / SQS resources.
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: Optional SNS topic ARN to receive DVE alarm notifications
+
+Conditions:
+  HasAlertTopic: !Not [!Equals [!Ref AlertTopicArn, '']]
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ==========================================================================
+  # CloudWatch Dashboard
+  # ==========================================================================
+
+  DVEDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-dve-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Pipeline Latency (p99)",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "stat": "Maximum",
+                "period": 300,
+                "metrics": [
+                  ["Aura/DVE", "PipelineLatencyMs", "Environment", "${Environment}", { "stat": "Maximum" }],
+                  [".", ".", ".", ".", { "stat": "Average" }]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Consensus Convergence Rate",
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "stat": "Average",
+                "period": 300,
+                "metrics": [
+                  ["Aura/DVE", "ConsensusConvergenceRate", "Environment", "${Environment}"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 8, "height": 6,
+              "properties": {
+                "title": "Coverage by Type",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "stat": "Average",
+                "period": 300,
+                "metrics": [
+                  ["Aura/DVE", "CoverageStatementPct", "Environment", "${Environment}"],
+                  ["Aura/DVE", "CoverageDecisionPct",  "Environment", "${Environment}"],
+                  ["Aura/DVE", "CoverageMcdcPct",      "Environment", "${Environment}"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8, "y": 6, "width": 8, "height": 6,
+              "properties": {
+                "title": "Formal Verification Verdicts",
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  ["Aura/DVE", "FormalVerificationVerdict", "Environment", "${Environment}", "Verdict", "proved"],
+                  [".", ".", ".", ".", ".", "failed"],
+                  [".", ".", ".", ".", ".", "unknown"],
+                  [".", ".", ".", ".", ".", "skipped"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16, "y": 6, "width": 8, "height": 6,
+              "properties": {
+                "title": "Overall Verdicts",
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  ["Aura/DVE", "OverallVerdict", "Environment", "${Environment}", "Verdict", "accepted"],
+                  [".", ".", ".", ".", ".", "rejected"],
+                  [".", ".", ".", ".", ".", "hitl_required"]
+                ]
+              }
+            }
+          ]
+        }
+
+  # ==========================================================================
+  # Alarms
+  # ==========================================================================
+
+  PipelineLatencyP99Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-dve-pipeline-latency-p99-${Environment}'
+      AlarmDescription: 'DVE pipeline latency p99 exceeded threshold (default 60s; tighten in prod)'
+      Namespace: Aura/DVE
+      MetricName: PipelineLatencyMs
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !If [IsProduction, 60000, 180000]
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref AWS::NoValue]
+
+  OverallVerdictRejectedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-dve-rejected-rate-${Environment}'
+      AlarmDescription: 'DVE rejected-verdict rate spike — investigate generator quality / policy drift'
+      Namespace: Aura/DVE
+      MetricName: OverallVerdict
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 2
+      Threshold: !If [IsProduction, 5, 25]
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Verdict
+          Value: rejected
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref AWS::NoValue]
+
+  FormalVerificationFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-dve-formal-failed-${Environment}'
+      AlarmDescription: 'DVE formal verification FAILED verdict observed — review constraint translator'
+      Namespace: Aura/DVE
+      MetricName: FormalVerificationVerdict
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Verdict
+          Value: failed
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref AWS::NoValue]
+
+  McdcCoverageDropAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-dve-mcdc-below-100-${Environment}'
+      AlarmDescription: 'DAL A/B MC/DC coverage dropped below 100%, indicating a coverage-gate regression'
+      Namespace: Aura/DVE
+      MetricName: CoverageMcdcPct
+      Statistic: Minimum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 100
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: DAL
+          Value: DAL_A
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref AWS::NoValue]
+
+  # ==========================================================================
+  # EventBridge — broadcast rejected verdicts on the default bus
+  # ==========================================================================
+
+  DVERejectedEventRule:
+    Type: AWS::Events::Rule
+    Condition: HasAlertTopic
+    Properties:
+      Name: !Sub '${ProjectName}-dve-rejected-${Environment}'
+      Description: 'Forward DVE rejected-verdict events for downstream processing (Lambda hook, ticketing)'
+      EventPattern:
+        source:
+          - aura.dve
+        detail-type:
+          - DVERejectedVerdict
+        detail:
+          environment:
+            - !Ref Environment
+      State: ENABLED
+      Targets:
+        - Id: NotifyOnReject
+          Arn: !Ref AlertTopicArn
+
+Outputs:
+  DVEDashboardName:
+    Description: CloudWatch dashboard surfacing DVE metrics
+    Value: !Ref DVEDashboard
+    Export:
+      Name: !Sub '${ProjectName}-dve-dashboard-${Environment}'
+
+  DVERejectedRuleArn:
+    Condition: HasAlertTopic
+    Description: EventBridge rule ARN for DVE rejected verdicts
+    Value: !GetAtt DVERejectedEventRule.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dve-rejected-rule-arn-${Environment}'

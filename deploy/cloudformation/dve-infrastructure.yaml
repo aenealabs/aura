@@ -1,0 +1,308 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 8.5 - DVE Audit Infrastructure (Verification Envelope)'
+
+# ADR-085 Phase 5 infrastructure for the Deterministic Verification
+# Envelope. Provisions:
+#   * KMS-CMK for both DynamoDB and S3 (one key per environment).
+#   * DynamoDB table for AuditRecord metadata (PK record_id, GSI on
+#     verdict / created_at, 7-year TTL).
+#   * S3 bucket for SMT proof + JSON artefacts (versioned, KMS-CMK
+#     encrypted, public access blocked, lifecycle to Glacier IR after
+#     90 days).
+#   * SQS queue for async audit dispatch (decouples the gate from
+#     archive write latency).
+#
+# Companion template ``dve-monitoring.yaml`` adds the CloudWatch
+# dashboard and alarms.
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  RetentionYears:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 30
+    Description: Years to retain audit records (DO-178C 11.0 record-keeping; 7 years is the FAA minimum for in-service aircraft)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ==========================================================================
+  # KMS Customer-Managed Key
+  # ==========================================================================
+
+  DVEAuditKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub 'KMS CMK for DVE audit records and proof archive (${Environment})'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowDynamoDBService
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:ReEncrypt*
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+          - Sid: AllowS3Service
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:ReEncrypt*
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 's3.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-085
+
+  DVEAuditKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-dve-audit-${Environment}'
+      TargetKeyId: !Ref DVEAuditKey
+
+  # ==========================================================================
+  # DynamoDB Audit Table
+  # ==========================================================================
+
+  DVEAuditTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-dve-audit-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: record_id
+          AttributeType: S
+        - AttributeName: verdict
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: record_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: verdict-timestamp-index
+          KeySchema:
+            - AttributeName: verdict
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref DVEAuditKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-085
+
+  # ==========================================================================
+  # S3 Proof Archive Bucket
+  # ==========================================================================
+
+  DVEProofBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-dve-proofs-${Environment}-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt DVEAuditKey.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionOldProofsToGlacierIR
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER_IR
+                TransitionInDays: 90
+          - Id: ExpireAfterRetentionWindow
+            Status: Enabled
+            ExpirationInDays: !Sub
+              - '${days}'
+              - days: !Select [0, !Split ['.', !Sub '${RetentionYears}.0']]
+            NoncurrentVersionExpirationInDays: 365
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-085
+
+  DVEProofBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DVEProofBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt DVEProofBucket.Arn
+              - !Sub '${DVEProofBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: DenyUnencryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:PutObject'
+            Resource: !Sub '${DVEProofBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: 'aws:kms'
+
+  # ==========================================================================
+  # SQS Async Audit Dispatch Queue
+  # ==========================================================================
+
+  DVEAuditQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-dve-audit-${Environment}'
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: !Ref DVEAuditKey
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DVEAuditDLQ.Arn
+        maxReceiveCount: 5
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-085
+
+  DVEAuditDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-dve-audit-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: !Ref DVEAuditKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-085
+
+Outputs:
+  DVEAuditKeyArn:
+    Description: KMS CMK ARN for the DVE audit infrastructure
+    Value: !GetAtt DVEAuditKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dve-audit-key-arn-${Environment}'
+
+  DVEAuditTableName:
+    Description: DynamoDB table name for AuditRecord metadata
+    Value: !Ref DVEAuditTable
+    Export:
+      Name: !Sub '${ProjectName}-dve-audit-table-${Environment}'
+
+  DVEAuditTableStreamArn:
+    Description: DynamoDB stream ARN (empty if not enabled)
+    Value: 'not-enabled'
+
+  DVEProofBucketName:
+    Description: S3 bucket holding SMT formula + JSON record artefacts
+    Value: !Ref DVEProofBucket
+    Export:
+      Name: !Sub '${ProjectName}-dve-proof-bucket-${Environment}'
+
+  DVEAuditQueueUrl:
+    Description: SQS queue URL for async audit dispatch
+    Value: !Ref DVEAuditQueue
+    Export:
+      Name: !Sub '${ProjectName}-dve-audit-queue-url-${Environment}'
+
+  DVEAuditQueueArn:
+    Description: SQS queue ARN
+    Value: !GetAtt DVEAuditQueue.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dve-audit-queue-arn-${Environment}'
+
+  DVEAuditDLQArn:
+    Description: SQS dead-letter queue ARN
+    Value: !GetAtt DVEAuditDLQ.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dve-audit-dlq-arn-${Environment}'

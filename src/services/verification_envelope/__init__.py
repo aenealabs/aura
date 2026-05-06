@@ -64,6 +64,18 @@ from src.services.verification_envelope.traceability import (
     TraceabilityReport,
     TraceabilityService,
 )
+from src.services.verification_envelope.pipeline import (
+    METRIC_NAMESPACE,
+    CloudWatchMetricsPublisher,
+    ConstitutionalReviser,
+    DVEPipeline,
+    DVEPipelineInput,
+)
+from src.services.verification_envelope.sinks import (
+    CompositeArchiveSink,
+    DynamoDBAuditSink,
+    S3ProofArchiveSink,
+)
 from src.services.verification_envelope.formal import (
     ArchiveOutcome,
     AuditRecord,
@@ -97,6 +109,14 @@ __all__ = [
     "ASTNormalizer",
     "ArchiveOutcome",
     "Artefact",
+    "CloudWatchMetricsPublisher",
+    "CompositeArchiveSink",
+    "ConstitutionalReviser",
+    "DVEPipeline",
+    "DVEPipelineInput",
+    "DynamoDBAuditSink",
+    "METRIC_NAMESPACE",
+    "S3ProofArchiveSink",
     "ArtefactType",
     "AuditRecord",
     "ConsensusOutcome",

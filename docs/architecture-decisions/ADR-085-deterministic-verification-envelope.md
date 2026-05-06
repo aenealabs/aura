@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (Phases 1, 2, 3 & 4 Implemented; Phase 5 in progress)
+Accepted (All 5 Phases Implemented)
 
 Phase 1 deployed as `src/services/verification_envelope/` (consensus engine, AST normalizer, semantic equivalence checker, consensus policy with M-of-N centroid selection, DAL coverage policy stubs for the cert argument). 40 unit tests.
 
@@ -12,11 +12,11 @@ Phase 3 deployed as `src/services/verification_envelope/formal/` (`FormalVerific
 
 Phase 4 deployed: `PolicyConstraint` mechanism added to `constraint_geometry/contracts.py` and integrated into `PolicyProfile` so DAL-level profiles can impose mandatory invariants (MC/DC, formal proof, traceability, object-code verification) that force REJECT regardless of CCS. Two new built-in profiles registered: `do-178c-dal-a` (6 policy constraints, includes object-code verification) and `do-178c-dal-b` (5 constraints, no object-code requirement per DO-178C 6.4.4.2c). Bidirectional requirements traceability shipped as `src/services/verification_envelope/traceability/` (`Requirement` / `Artefact` / `TraceEdge` data model, `InMemoryRequirementStore` for tests/dev, `NeptuneRequirementStore` adapter with Gremlin query builders + in-memory fallback for Phase 5 wiring, `TraceabilityService` for graph CRUD + bidirectional gap analysis, `LifecycleDataGenerator` producing PSAC/SDP/SVP/SQAP/SAS Markdown templates from the trace graph). 38 new unit tests.
 
-Outstanding before Phase 5: live Neptune wiring for `NeptuneRequirementStore`, CloudFormation infrastructure (DynamoDB audit table for `AuditRecord`, S3 proof archive with KMS-CMK encryption, EventBridge dispatch, CloudWatch dashboards).
+Phase 5 deployed: end-to-end pipeline orchestrator (`src/services/verification_envelope/pipeline/dve_pipeline.py`) joining N-of-M consensus → optional Constitutional AI revision → formal verification → sandbox + structural coverage, with automatic HITL escalation for diverged consensus and `UNKNOWN` formal verdicts at DAL A/B (per DO-330 §11.4); DAL detection via `get_coverage_policy().dal_level` so DAL A/B always require HITL even after gates pass. Cloud audit sinks shipped (`sinks/dynamodb_audit_sink.py` with conditional-write immutability + 7-year TTL, `sinks/s3_proof_archive_sink.py` with KMS-CMK encryption + 90-day Glacier IR transition, `sinks/composite_sink.py` with worst-outcome dominance). CloudWatch metrics publisher emits seven `Aura/DVE` namespace metrics per pipeline run (latency, convergence rate, three coverage flavors, formal verdict count, overall verdict count) with graceful degradation when boto3/CloudWatch are unavailable. Two CloudFormation templates added: `deploy/cloudformation/dve-infrastructure.yaml` (KMS-CMK with key rotation, DynamoDB table with verdict-timestamp GSI + TTL, S3 bucket with versioning + SSE-KMS bucket policy, SQS queue with DLQ) and `deploy/cloudformation/dve-monitoring.yaml` (4-widget dashboard plus four alarms: pipeline latency p99, rejected-verdict rate, formal-failed verdicts, MC/DC coverage drop on DAL A). 40 new tests (12 pipeline E2E, 8 metrics, 6 DynamoDB sink, 7 S3 sink, 7 composite sink). All 191 verification-envelope tests pass.
 
 ## Date
 
-2026-02-26 (proposed) / 2026-05-06 (Phases 1, 2, 3 & 4 status update)
+2026-02-26 (proposed) / 2026-05-06 (All 5 Phases status update)
 
 ## Reviews
 

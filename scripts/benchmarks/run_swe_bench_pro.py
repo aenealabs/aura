@@ -24,15 +24,24 @@ ends at producing the predictions JSON.
 Three modes:
 
 - ``--mode stub`` (default): no AWS needed; validates the wiring.
-- ``--mode bedrock``: real Aura+Bedrock adapter against Sonnet-class
-  models. Costs ~$3-8 for a 30-task subset; produces a submission
-  file the official Docker harness consumes.
+- ``--mode bedrock``: real Aura+Bedrock adapter; defaults to current
+  Sonnet-class flagship. Use ``--model-id`` to choose a specific
+  model (Sonnet, Haiku, Opus, or any non-Anthropic Bedrock model
+  Aura supports via its Cloud Abstraction Layer). Costs depend on
+  model choice; produces a submission file the official Docker
+  harness consumes.
 - ``--mode unofficial``: real Bedrock adapter but defaulting to a
-  cheap Haiku-class model AND running heuristic similarity scoring
-  in-process instead of the Docker harness. A 30-task run typically
-  costs under $0.25 and finishes in 5-10 minutes. Output is a
-  triage signal, NOT a correctness benchmark — see scoring.py for
-  the caveats.
+  current cheap Haiku-class model AND running heuristic similarity
+  scoring in-process instead of the Docker harness. Run typically
+  finishes in 5-10 minutes for 30 tasks. Output is a triage signal,
+  NOT a correctness benchmark — see scoring.py for the caveats.
+
+Aura is multi-provider via ADR-004's Cloud Abstraction Layer. While
+this script defaults to Bedrock-hosted Claude, the same adapter
+shape works against any LLMService implementation (Llama / Mistral
+on Bedrock, Gemini on Vertex AI, GPT-class on Azure / OpenAI).
+Substitute by injecting a different ``LLMClient`` into
+``AuraBedrockAdapter`` directly.
 
 Author: Project Aura Team
 Created: 2026-05-07
@@ -61,11 +70,17 @@ from src.benchmarks.swe_bench_pro.submission import write_metadata  # noqa: E402
 logger = logging.getLogger("aura.benchmarks.swe_bench_pro")
 
 
-# Cheap-model defaults for ``--mode unofficial``. Haiku 3.5 is roughly
-# 12x cheaper per token than Sonnet 3.5; a 30-task unofficial run
-# typically costs under $0.25.
-_UNOFFICIAL_DEFAULT_MODEL = "anthropic.claude-3-5-haiku-20241022-v1:0"
-_BEDROCK_DEFAULT_MODEL = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+# Default model SKUs. Aura is multi-provider via the Cloud Abstraction
+# Layer (ADR-004); these defaults reflect the current Claude generation
+# on Bedrock as of May 2026. Pass ``--model-id`` to override with any
+# other Bedrock model (Claude older gens, Llama, Mistral, Cohere, AI21)
+# or run against an Azure / Vertex / OpenAI deployment by injecting a
+# different LLMService.
+_UNOFFICIAL_DEFAULT_MODEL = "anthropic.claude-haiku-4-5-20251001"
+_BEDROCK_DEFAULT_MODEL = "anthropic.claude-sonnet-4-6"
+# Flagship for highest-quality runs. Opus 4.7 is premium-priced — only
+# selected explicitly via ``--model-id``, never as a default.
+_FLAGSHIP_MODEL = "anthropic.claude-opus-4-7"
 
 
 def _build_adapter(mode: str, model_id: str | None):

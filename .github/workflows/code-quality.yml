@@ -99,6 +99,12 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.event.after }}
+          # ``no-commit-to-branch`` is a LOCAL guard that prevents
+          # developers from accidentally committing directly to main.
+          # By the time CI runs, the commit already exists on main —
+          # so the hook trivially fails on every push. Skip it in CI;
+          # local enforcement is unchanged.
+          SKIP: no-commit-to-branch
         run: |
           # Resolve the diff window. Three cases:
           #   1. PR event: scope to PR base..head.

@@ -1,6 +1,6 @@
 # Project Aura
 
-**Autonomous AI-powered security remediation for enterprise codebases.**
+**Autonomous AI security platform for enterprise codebases.**
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://python.org)

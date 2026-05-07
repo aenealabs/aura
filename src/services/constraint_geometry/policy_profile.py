@@ -19,6 +19,7 @@ from .contracts import (
     ConstraintAxis,
     PolicyConstraint,
     PolicyConstraintType,
+    RegressionFloor,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,11 @@ class PolicyProfile:
     thresholds: PolicyThresholds
     provenance_sensitivity: float = 0.5  # How much trust score affects weights
     policy_constraints: tuple[PolicyConstraint, ...] = ()
+    # ADR-088 Phase 1: per-axis hard floors evaluated as a pre-check
+    # before coherence scoring. Any floor with action=REJECT that the
+    # candidate fails forces CoherenceAction.REJECT regardless of CCS.
+    # See ``regression_floor.evaluate_floors`` for semantics.
+    regression_floors: tuple[RegressionFloor, ...] = ()
 
     def get_axis_weight(self, axis: ConstraintAxis) -> float:
         """Get weight for a specific axis."""
@@ -100,14 +106,21 @@ class PolicyProfile:
         ccs: float,
         provenance_adjustment: float = 0.0,
         policy_constraint_violations: tuple[str, ...] = (),
+        regression_floor_violations_reject: bool = False,
     ) -> CoherenceAction:
         """Determine action based on CCS, provenance, and policy violations.
 
         ``policy_constraint_violations`` is a tuple of constraint_ids
         that the DVE pipeline reported as failed. Any non-empty
         violation list forces REJECT regardless of the score.
+
+        ``regression_floor_violations_reject`` (ADR-088) is True iff
+        the regression-floor evaluator returned at least one violation
+        whose action is ``RegressionFloorAction.REJECT``. Callers
+        compute this via :func:`regression_floor.violations_force_reject`
+        and pass it in so the action selector remains a pure function.
         """
-        if policy_constraint_violations:
+        if regression_floor_violations_reject or policy_constraint_violations:
             return CoherenceAction.REJECT
         return self.thresholds.determine_action(ccs, provenance_adjustment)
 

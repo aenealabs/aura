@@ -67,7 +67,13 @@ from .contracts import (
     ConstraintEdge,
     ConstraintEdgeType,
     ConstraintRule,
+    PolicyConstraint,
+    PolicyConstraintType,
     ProvenanceContext,
+    RegressionFloor,
+    RegressionFloorAction,
+    RegressionFloorComparisonMode,
+    RegressionFloorViolation,
     ResolvedConstraintSet,
     RuleCoherenceScore,
 )
@@ -100,6 +106,13 @@ from .policy_profile import (
 # Provenance Adapter
 from .provenance_adapter import ProvenanceAdapter
 
+# Regression Floor Evaluator (ADR-088 Phase 1)
+from .regression_floor import (
+    IncumbentBaseline,
+    evaluate_floors,
+    violations_force_reject,
+)
+
 __all__ = [
     # Enums
     "ConstraintAxis",
@@ -114,6 +127,15 @@ __all__ = [
     "CoherenceResult",
     "AgentOutput",
     "ProvenanceContext",
+    "PolicyConstraint",
+    "PolicyConstraintType",
+    "RegressionFloor",
+    "RegressionFloorAction",
+    "RegressionFloorComparisonMode",
+    "RegressionFloorViolation",
+    "IncumbentBaseline",
+    "evaluate_floors",
+    "violations_force_reject",
     # Configuration
     "CGEConfig",
     "CacheConfig",

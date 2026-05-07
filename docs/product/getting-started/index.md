@@ -8,9 +8,9 @@
 
 ## What is Project Aura?
 
-Project Aura is an autonomous AI-powered security platform that detects vulnerabilities, generates patches, and deploys fixes across enterprise codebases with minimal human intervention. Unlike traditional security scanners that only identify problems, Aura provides end-to-end remediation through a sophisticated multi-agent AI system.
+Project Aura is an autonomous AI security platform for enterprise codebases. It detects vulnerabilities, generates security patches, validates them in isolated sandboxes, and deploys approved fixes — all under configurable human-in-the-loop governance. Unlike traditional security scanners that stop at detection, Aura delivers end-to-end remediation through a multi-agent AI system purpose-built for security teams.
 
-Built from the ground up for regulated industries, Aura combines advanced AI capabilities with enterprise-grade compliance controls. The platform uses a hybrid graph-based architecture to understand your entire codebase, enabling context-aware security patching that traditional tools cannot match.
+Aura is built from the ground up for regulated industries, combining AI-driven remediation with enterprise-grade compliance controls. A hybrid graph-based (GraphRAG) architecture provides the deep code context required for safe, accurate security patches — context that pattern-matching scanners and general-purpose code assistants cannot replicate.
 
 Organizations using Aura typically reduce their Mean Time to Remediate (MTTR) from 45 days to under 4 hours while maintaining full audit trails for compliance requirements.
 

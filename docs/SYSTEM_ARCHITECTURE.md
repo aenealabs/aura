@@ -26,6 +26,8 @@
 
 ## High-Level Architecture
 
+Project Aura is an autonomous AI security platform. The architecture below describes how vulnerability detection, GraphRAG-driven context retrieval, multi-agent patch generation, sandbox verification, and HITL approval combine into a single security remediation pipeline for regulated enterprise codebases.
+
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────┐
 │                          Project Aura - System Overview                        │

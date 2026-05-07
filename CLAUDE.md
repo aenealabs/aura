@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code when working with code in the **Project Aura** repository.
 
-**Project Aura** is an autonomous AI SaaS platform enabling machines to reason across entire enterprise codebases through a hybrid graph-based architecture. It uses adaptive intelligence to automate security patching in sandbox environments with human-in-the-loop approval processes.
+**Project Aura** is an autonomous AI security platform for enterprise codebases. It detects vulnerabilities, generates security patches, and validates remediations in isolated sandboxes — all governed by configurable human-in-the-loop approval. A hybrid graph-based architecture (GraphRAG) gives Aura the deep code context required to produce safe, compliance-aware fixes for regulated industries.
 
 ---
 
@@ -10,9 +10,9 @@ This file provides guidance to Claude Code when working with code in the **Proje
 
 ### Core Capabilities
 
-- **Autonomous Code Intelligence:** Multi-agent system orchestrates vulnerability detection, patch generation, and remediation
-- **Hybrid GraphRAG:** Combines Neptune graph database + OpenSearch vector search for comprehensive code understanding
-- **Security-First:** NIST 800-53 aligned controls, SOX compliance requirements
+- **Autonomous Security Remediation:** Multi-agent system orchestrates vulnerability detection, security patch generation, and end-to-end remediation
+- **Hybrid GraphRAG for Security Context:** Neptune graph database + OpenSearch vector search provide the deep code understanding required for accurate, context-aware patches
+- **Security-First Compliance:** NIST 800-53 aligned controls, SOX compliance requirements
 - **HITL Workflow:** Human-in-the-loop approval for critical patches and deployments
 - **Sandbox Testing:** Isolated network environments for safe patch validation
 

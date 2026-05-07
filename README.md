@@ -95,7 +95,7 @@ A look inside the Aura Platform.
 
 ## Architecture
 
-Project Aura uses a layered architecture with specialized AI agents collaborating through structured workflows.
+Aura's security remediation pipeline is a layered architecture in which specialized AI agents collaborate through structured workflows — from vulnerability detection through GraphRAG context retrieval, patch generation, sandbox verification, and HITL approval.
 
 ```mermaid
 flowchart TD
@@ -399,6 +399,6 @@ The BSL allows you to use the source code for non-production purposes. Productio
 
 ## About
 
-**Aenea Labs** builds autonomous AI infrastructure for enterprise security teams.
+**Aenea Labs** builds the autonomous AI security platform for enterprise codebases.
 
-Project Aura is designed for organizations that need to remediate vulnerabilities at scale while maintaining full compliance audit trails. The platform is built from the ground up for regulated industries including defense, financial services, healthcare, and government contracting.
+Project Aura is designed for security teams that need to remediate vulnerabilities at scale while maintaining full compliance audit trails. The platform is purpose-built for regulated industries — defense, financial services, healthcare, and government contracting — where AI-generated code, AI agents, and software supply chains all require continuous security oversight.

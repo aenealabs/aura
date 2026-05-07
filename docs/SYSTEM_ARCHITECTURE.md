@@ -26,46 +26,76 @@
 
 ## High-Level Architecture
 
-```mermaid
-flowchart TD
-    subgraph UI[User Interface Layer]
-        direction LR
-        CKGE[CKGEConsole<br/>React]
-        ApprovalUI[Approval Dashboard<br/>Future]
-        GraphExplorer[GraphRAG Explorer<br/>Future]
-    end
-
-    subgraph Orchestration[Agent Orchestration Layer]
-        direction TB
-        S2O["System2Orchestrator · Python<br/>• Workflow Loop · Plan → Context → Code → Review → Validate<br/>• Agent Coordination<br/>• Error handling and retry logic"]
-        subgraph Workers[Worker Agents]
-            direction LR
-            CoderA[Coder] --- ReviewerA[Reviewer] --- ValidatorA[Validator] --- MonitorA[Monitor]
-        end
-        S2O --> Workers
-    end
-
-    subgraph ContextRetrieval[Context Retrieval Layer]
-        direction TB
-        CRS["ContextRetrievalService · Agentic<br/>• QueryPlanningAgent · LLM-powered strategy selection<br/>• FilesystemNavigatorAgent · pattern / semantic / git search<br/>• ResultSynthesisAgent · multi-factor ranking<br/>• Parallel multi-strategy execution"]
-    end
-
-    subgraph Data[Data and Knowledge Layer]
-        direction LR
-        Neptune[Neptune · Graph<br/>Call graphs<br/>Dependencies<br/>Inheritance]
-        OpenSearch[OpenSearch · Vectors<br/>Code embeddings<br/>Filesystem metadata]
-        DynamoDB[DynamoDB · State<br/>Sandbox state<br/>Session data]
-        S3[S3 · Artifacts<br/>Code repos<br/>Patches<br/>Reports]
-    end
-
-    subgraph LLM[AI / LLM Integration Layer]
-        direction LR
-        Claude[Bedrock · Claude<br/>Query planning<br/>Code gen<br/>Review]
-        Titan[Bedrock · Titan<br/>Code embeddings<br/>Semantic search]
-        OpenAI[OpenAI GPT-4<br/>Future · Code generation]
-    end
-
-    UI --> Orchestration --> ContextRetrieval --> Data --> LLM
+```text
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                          Project Aura - System Overview                        │
+├────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                          User Interface Layer                            │  │
+│  │  ┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐  │  │
+│  │  │    CKGEConsole     │  │  Approval          │  │  GraphRAG          │  │  │
+│  │  │      (React)       │  │  Dashboard         │  │  Explorer          │  │  │
+│  │  │                    │  │  (Future)          │  │  (Future)          │  │  │
+│  │  └────────────────────┘  └────────────────────┘  └────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                       │                                        │
+│                                       ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                       Agent Orchestration Layer                          │  │
+│  │  ┌────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │              System2Orchestrator (Python)                          │  │  │
+│  │  │  • Workflow Loop (Plan → Context → Code → Review → Validate)       │  │  │
+│  │  │  • Agent Coordination                                              │  │  │
+│  │  │  • Error Handling & Retry Logic                                    │  │  │
+│  │  └────────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                          │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
+│  │  │    Coder     │  │   Reviewer   │  │   Validator  │  │   Monitor    │  │  │
+│  │  │    Agent     │  │    Agent     │  │     Agent    │  │    Agent     │  │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                       │                                        │
+│                                       ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                      Context Retrieval Layer (NEW)                       │  │
+│  │  ┌────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │           ContextRetrievalService (Agentic)                        │  │  │
+│  │  │  • QueryPlanningAgent (LLM-powered strategy selection)             │  │  │
+│  │  │  • FilesystemNavigatorAgent (pattern/semantic/git search)          │  │  │
+│  │  │  • ResultSynthesisAgent (multi-factor ranking)                     │  │  │
+│  │  │  • Parallel multi-strategy execution                               │  │  │
+│  │  └────────────────────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                       │                                        │
+│                                       ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                        Data & Knowledge Layer                            │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
+│  │  │   Neptune    │  │  OpenSearch  │  │   DynamoDB   │  │      S3      │  │  │
+│  │  │   (Graph)    │  │   (Vectors)  │  │    (State)   │  │  (Artifacts) │  │  │
+│  │  │              │  │              │  │              │  │              │  │  │
+│  │  │ • Call       │  │ • Code       │  │ • Sandbox    │  │ • Code       │  │  │
+│  │  │   graphs     │  │   embeddings │  │   state      │  │   repos      │  │  │
+│  │  │ • Dependents │  │ • Filesystem │  │ • Session    │  │ • Patches    │  │  │
+│  │  │ • Inherits   │  │   metadata   │  │   data       │  │ • Reports    │  │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                       │                                        │
+│                                       ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                       AI / LLM Integration Layer                         │  │
+│  │  ┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐  │  │
+│  │  │      Bedrock       │  │      Bedrock       │  │      Future:       │  │  │
+│  │  │      (Claude)      │  │      (Titan)       │  │       OpenAI       │  │  │
+│  │  │                    │  │                    │  │       GPT-4        │  │  │
+│  │  │ • Query planning   │  │ • Code embeddings  │  │ • Code generation  │  │  │
+│  │  │ • Code generation  │  │ • Semantic search  │  │                    │  │  │
+│  │  │ • Review           │  │                    │  │                    │  │  │
+│  │  └────────────────────┘  └────────────────────┘  └────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -76,46 +106,40 @@ flowchart TD
 
 Project Aura supports multi-cloud deployment through a Cloud Abstraction Layer (CAL) that enables deployment to both AWS GovCloud and Azure Government.
 
-```mermaid
-flowchart TD
-    subgraph Platform[AURA PLATFORM · Cloud-Agnostic]
-        direction TB
-        subgraph BL[Business Logic Layer]
-            direction TB
-            BL1["Agent Orchestrator · Context Retrieval · LLM Service<br/>Sandbox Management · HITL Workflows · Security"]
-        end
-
-        subgraph CAL[Cloud Abstraction Layer · src/abstractions/]
-            direction LR
-            GDB[GraphDatabase<br/>Service]
-            VDB[VectorDatabase<br/>Service]
-            LLM[LLMService]
-            STO[StorageService]
-            SEC[SecretsService]
-            FAC[CloudServiceFactory]
-        end
-
-        BL --> CAL
-
-        subgraph AWS[AWS GovCloud]
-            direction TB
-            AWS1["Neptune<br/>OpenSearch<br/>Bedrock<br/>S3<br/>Secrets Manager"]
-        end
-
-        subgraph Azure[Azure Government]
-            direction TB
-            AZ1["Cosmos DB<br/>AI Search<br/>Azure OpenAI<br/>Blob Storage<br/>Key Vault"]
-        end
-
-        subgraph Mock[Mock · Tests]
-            direction TB
-            MK1["MockGraph<br/>MockVector<br/>MockLLM<br/>MockStorage<br/>MockSecrets"]
-        end
-
-        CAL --> AWS
-        CAL --> Azure
-        CAL --> Mock
-    end
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     AURA PLATFORM (Cloud-Agnostic)                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                    Business Logic Layer                           │  │
+│  │  • Agent Orchestrator    • Context Retrieval    • LLM Service     │  │
+│  │  • Sandbox Management    • HITL Workflows       • Security        │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                    │                                    │
+│                                    ▼                                    │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │              Cloud Abstraction Layer (src/abstractions/)          │  │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌─────────────────────┐  │  │
+│  │  │ GraphDatabase  │  │ VectorDatabase │  │     LLMService      │  │  │
+│  │  │    Service     │  │    Service     │  │                     │  │  │
+│  │  └────────────────┘  └────────────────┘  └─────────────────────┘  │  │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌─────────────────────┐  │  │
+│  │  │ StorageService │  │ SecretsService │  │ CloudServiceFactory │  │  │
+│  │  │                │  │                │  │                     │  │  │
+│  │  └────────────────┘  └────────────────┘  └─────────────────────┘  │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│           │                       │                       │             │
+│           ▼                       ▼                       ▼             │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐      │
+│  │  AWS GovCloud   │    │ Azure Government│    │   Mock (Tests)  │      │
+│  ├─────────────────┤    ├─────────────────┤    ├─────────────────┤      │
+│  │ Neptune         │    │ Cosmos DB       │    │ MockGraph       │      │
+│  │ OpenSearch      │    │ AI Search       │    │ MockVector      │      │
+│  │ Bedrock         │    │ Azure OpenAI    │    │ MockLLM         │      │
+│  │ S3              │    │ Blob Storage    │    │ MockStorage     │      │
+│  │ Secrets Manager │    │ Key Vault       │    │ MockSecrets     │      │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘      │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Service Abstractions
@@ -151,64 +175,91 @@ llm = factory.create_llm_service()
 
 **Strategy:** ECS Fargate for dev/sandboxes, EKS EC2 for production agents
 
-```mermaid
-flowchart TB
-    subgraph Commercial[AWS Commercial Cloud · Dev / QA]
-        direction TB
-        subgraph VPC["VPC · 10.0.0.0/16 · vpc-0123…ef0"]
-            direction TB
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                         AWS Commercial Cloud (Dev/QA)                            │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────┐        │
+│  │                    VPC (vpc-0123456789abcdef0)                        │       │
+│  │                         10.0.0.0/16                                   │       │
+│  │                                                                        │      │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │        │
+│  │  │  Dev Environment (ECS Fargate) - NOT YET DEPLOYED               │  │       │
+│  │  │                                                                  │  │      │
+│  │  │  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐     │  │         │
+│  │  │  │ dnsmasq  │  │Orchestrator│  │  Coder   │  │ Reviewer │     │  │         │
+│  │  │  │ Service  │  │  Service   │  │  Agent   │  │  Agent   │     │  │         │
+│  │  │  │          │  │            │  │          │  │          │     │  │         │
+│  │  │  │ Fargate  │  │  Fargate   │  │ Fargate  │  │ Fargate  │     │  │         │
+│  │  │  │  Task    │  │   Task     │  │  Task    │  │  Task    │     │  │         │
+│  │  │  └──────────┘  └────────────┘  └──────────┘  └──────────┘     │  │         │
+│  │  │       │              │                │             │           │  │       │
+│  │  │       └──────────────┴────────────────┴─────────────┘           │  │       │
+│  │  │                              │                                   │  │      │
+│  │  │                    AWS Cloud Map Service Discovery              │  │       │
+│  │  │                                                                  │  │      │
+│  │  │  Scaling: EventBridge (8am-6pm weekdays)                        │  │       │
+│  │  │  Capacity: FARGATE_SPOT                                         │  │       │
+│  │  └────────────────────────────────────────────────────────────────┘  │        │
+│  │                                                                        │      │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │        │
+│  │  │  Sandbox Environment (ECS Fargate) - Scale-to-zero [NOT YET DEPLOYED] │  │ │
+│  │  │                                                                  │  │      │
+│  │  │  ┌──────────────────────────────────────────────────────────┐  │  │        │
+│  │  │  │  Ephemeral Sandbox Tasks (0-10 concurrent)                │  │  │       │
+│  │  │  │  • Isolated patch testing                                 │  │  │       │
+│  │  │  │  • Maximum security (DROP ALL capabilities)               │  │  │       │
+│  │  │  │  • No external network access                             │  │  │       │
+│  │  │  │  • DynamoDB state tracking with TTL                       │  │  │       │
+│  │  │  └──────────────────────────────────────────────────────────┘  │  │        │
+│  │  └────────────────────────────────────────────────────────────────┘  │        │
+│  │                                                                        │      │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │        │
+│  │  │  OpenSearch Domain (VPC-only)                                  │  │        │
+│  │  │                                                                  │  │      │
+│  │  │  ┌──────────────────────────────────────────────────────────┐  │  │        │
+│  │  │  │  • 2x t3.small.search instances (Multi-AZ)                │  │  │       │
+│  │  │  │  • KNN vector fields (1536 dimensions, HNSW)              │  │  │       │
+│  │  │  │  • Filesystem metadata index                              │  │  │       │
+│  │  │  │  • Code embeddings                                        │  │  │       │
+│  │  │  │  • Lambda auto-index creation                             │  │  │       │
+│  │  │  └──────────────────────────────────────────────────────────┘  │  │        │
+│  │  └────────────────────────────────────────────────────────────────┘  │        │
+│  │                                                                        │      │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │        │
+│  │  │  Future: EKS Cluster (EC2 Managed Node Groups)                 │  │        │
+│  │  │                                                                  │  │      │
+│  │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │  │        │
+│  │  │  │ System Nodes │  │   App Nodes  │  │  Sandbox Nodes       │  │  │        │
+│  │  │  │ (dnsmasq,    │  │ (Production  │  │ (Ephemeral testing)  │  │           │
+│  │  │  │  CoreDNS)    │  │  agents)     │  │ (Scale-to-zero)      │  │  │        │
+│  │  │  │              │  │              │  │                      │  │  │        │
+│  │  │  │ 2x t3.medium │  │ 3-5x m5.xlarge│ │ 0-10x t3.large      │  │  │         │
+│  │  │  │ On-Demand    │  │ On-Demand    │  │ Spot instances      │  │  │         │
+│  │  │  └──────────────┘  └──────────────┘  └──────────────────────┘  │  │        │
+│  │  └────────────────────────────────────────────────────────────────┘  │        │
+│  │                                                                        │      │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │        │
+│  │  │  VPC Endpoints (9 endpoints)                                    │  │       │
+│  │  │  • S3, DynamoDB, Bedrock, CodeConnections, Logs, Secrets, ECR  │  │        │
+│  │  │  • No NAT Gateways (CMMC L3 compliant - no internet egress)    │  │        │
+│  │  └────────────────────────────────────────────────────────────────┘  │        │
+│  └──────────────────────────────────────────────────────────────────────┘        │
+│                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────┘
 
-            subgraph Dev["Dev Environment · ECS Fargate · NOT YET DEPLOYED"]
-                direction LR
-                D1[dnsmasq<br/>Service<br/>Fargate Task]
-                D2[Orchestrator<br/>Service<br/>Fargate Task]
-                D3[Coder<br/>Agent<br/>Fargate Task]
-                D4[Reviewer<br/>Agent<br/>Fargate Task]
-                DM["AWS Cloud Map · Service Discovery<br/>Scaling · EventBridge · weekday business hours<br/>Capacity · FARGATE_SPOT"]
-                D1 --- D2 --- D3 --- D4 --- DM
-            end
-
-            subgraph Sandbox["Sandbox Environment · ECS Fargate · scale-to-zero · NOT YET DEPLOYED"]
-                direction TB
-                SB1["Ephemeral Sandbox Tasks · 0–10 concurrent<br/>• Isolated patch testing<br/>• Maximum security · DROP ALL capabilities<br/>• No external network access<br/>• DynamoDB state tracking with TTL"]
-            end
-
-            subgraph OS["OpenSearch Domain · VPC-only"]
-                direction TB
-                OS1["• 2x t3.small.search · Multi-AZ<br/>• KNN vector fields · 1536 dim · HNSW<br/>• Filesystem metadata index<br/>• Code embeddings<br/>• Lambda auto-index creation"]
-            end
-
-            subgraph EKS["Future · EKS Cluster · EC2 Managed Node Groups"]
-                direction LR
-                EKS1[System Nodes<br/>dnsmasq · CoreDNS<br/>2x t3.medium On-Demand]
-                EKS2[App Nodes<br/>Production agents<br/>3–5x m5.xlarge On-Demand]
-                EKS3[Sandbox Nodes<br/>Ephemeral testing · scale-to-zero<br/>0–10x t3.large Spot]
-            end
-
-            subgraph Endpoints["VPC Endpoints · 9 endpoints"]
-                direction TB
-                EP1["S3 · DynamoDB · Bedrock · CodeConnections · Logs · Secrets · ECR<br/>No NAT Gateways · CMMC L3 compliant · no internet egress"]
-            end
-
-            Dev --> Sandbox
-            Sandbox --> OS
-            OS --> EKS
-            EKS --> Endpoints
-        end
-    end
-
-    subgraph GovCloud[AWS GovCloud · US · Future · Q2 2026]
-        direction TB
-        GC1["Similar architecture, hardened:<br/>• STIG-hardened EKS nodes · DISA STIG compliance<br/>• FIPS 140-2 mode enabled<br/>• Private VPC endpoints only<br/>• Enhanced audit logging<br/>• On-Demand instances · no Spot for production"]
-    end
-
-    Commercial --> GovCloud
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                    AWS GovCloud (US) (Future - Q2 2026)                          │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  Similar architecture with:                                                      │
+│  • STIG-hardened EKS nodes (DISA STIG compliance)                                │
+│  • FIPS 140-2 mode enabled                                                       │
+│  • Private VPC endpoints only                                                    │
+│  • Enhanced audit logging                                                        │
+│  • On-Demand instances (no Spot for production)                                  │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-**Cost Summary:**
-- **Phase 1 (Deployed):** $44/month (VPC Endpoints)
-- **Phase 2 (Ready):** $231/month (ECS Fargate dev) + $70/month (OpenSearch) = **$345/month total**
-- **Savings:** $440/month vs. always-on EKS EC2
 
 ---
 
@@ -256,34 +307,92 @@ Multi-strategy context retrieval system that combines graph, vector, filesystem,
 
 **End-to-End Flow from Query to Context**
 
-```mermaid
-flowchart TD
-    Start(["Agent request:<br/>Fix authentication vulnerability in JWT validation"])
-
-    subgraph S1["Step 1 · Query Planning"]
-        QP["QueryPlanningAgent<br/>• LLM analyses query intent<br/>• Key concepts: authentication · JWT · validation<br/>• Strategies: vector · filesystem · graph<br/>• Allocates per-strategy token budget"]
-    end
-
-    subgraph S2["Step 2 · Parallel Search Execution"]
-        direction TB
-        VS["Vector · OpenSearch KNN<br/>Embed query · KNN on docstring_embedding<br/>Returns: auth_service.py · jwt_validator.py · score 9.5"]
-        FS["Filesystem · OpenSearch metadata<br/>Pattern: **/auth/*.py · wildcard on file_path<br/>Returns: auth_service.py · auth_middleware.py · score 8.0"]
-        GS["Graph · Neptune Gremlin<br/>Functions calling JWT validation<br/>Traverse call graph<br/>Returns: login.py · api_auth.py · score 7.5"]
-    end
-
-    subgraph S3["Step 3 · Result Synthesis"]
-        RS["ResultSynthesisAgent<br/>Raw: 5 files (2 duplicates) · dedup → 3 unique<br/>Composite scores:<br/>1. auth_service.py · 24.5 · vector + filesystem + graph<br/>2. jwt_validator.py · 18.2 · vector + graph<br/>3. auth_middleware.py · 12.0 · filesystem<br/>Budget fit (50k tokens): 15k + 10k + 8k = 33k · 66%"]
-    end
-
-    subgraph S4["Step 4 · Context Response"]
-        CR["HybridContext<br/>files: 3 ranked entries · total_tokens: 33000<br/>strategies_used: vector · filesystem · graph<br/>query: original agent request"]
-    end
-
-    subgraph S5["Step 5 · Delivered to Agent Orchestrator"]
-        OA["Coder Agent receives ranked context<br/>Generates patch with high-quality context<br/>Expected · 3–5x better code understanding"]
-    end
-
-    Start --> S1 --> S2 --> S3 --> S4 --> S5
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Context Retrieval Pipeline                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Agent Request: "Fix authentication vulnerability in JWT validation"        │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  Step 1: Query Planning (QueryPlanningAgent)                           │ │
+│  │  • LLM analyzes query intent                                           │ │
+│  │  • Identifies key concepts: "authentication", "JWT", "validation"      │ │
+│  │  • Selects strategies: [vector, filesystem, graph]                     │ │
+│  │  • Allocates token budget per strategy                                 │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  Step 2: Parallel Search Execution                                     │ │
+│  │                                                                        │ │
+│  │  ┌──────────────────────────────────────────────────────────────┐      │ │
+│  │  │  Vector Search (OpenSearch KNN)                               │     │ │
+│  │  │  • Embed query: "JWT authentication validation"               │     │ │
+│  │  │  • KNN search on docstring_embedding field                    │     │ │
+│  │  │  • Returns: auth_service.py, jwt_validator.py (score: 9.5)   │      │ │
+│  │  └──────────────────────────────────────────────────────────────┘      │ │
+│  │                                                                        │ │
+│  │  ┌──────────────────────────────────────────────────────────────┐      │ │
+│  │  │  Filesystem Search (OpenSearch Metadata)                      │     │ │
+│  │  │  • Pattern: "**/auth/*.py"                                    │     │ │
+│  │  │  • Wildcard query on file_path field                          │     │ │
+│  │  │  • Returns: auth_service.py, auth_middleware.py (score: 8.0) │      │ │
+│  │  └──────────────────────────────────────────────────────────────┘      │ │
+│  │                                                                        │ │
+│  │  ┌──────────────────────────────────────────────────────────────┐      │ │
+│  │  │  Graph Search (Neptune Gremlin)                               │     │ │
+│  │  │  • Query: Functions calling JWT validation                    │     │ │
+│  │  │  • Traverse call graph                                        │     │ │
+│  │  │  • Returns: login.py, api_auth.py (score: 7.5)               │      │ │
+│  │  └──────────────────────────────────────────────────────────────┘      │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  Step 3: Result Synthesis (ResultSynthesisAgent)                       │ │
+│  │                                                                        │ │
+│  │  Raw results: 5 files (2 duplicates)                                   │ │
+│  │  After deduplication: 3 unique files                                   │ │
+│  │                                                                        │ │
+│  │  Composite scores:                                                     │ │
+│  │  1. auth_service.py: 24.5 (found by vector + filesystem + graph)       │ │
+│  │  2. jwt_validator.py: 18.2 (found by vector + graph)                   │ │
+│  │  3. auth_middleware.py: 12.0 (found by filesystem only)                │ │
+│  │                                                                        │ │
+│  │  Budget fitting (budget: 50,000 tokens):                               │ │
+│  │  • File 1: 15,000 tokens (selected)                                    │ │
+│  │  • File 2: 10,000 tokens (selected)                                    │ │
+│  │  • File 3: 8,000 tokens (selected)                                     │ │
+│  │  • Total: 33,000 tokens (66% of budget)                                │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  Step 4: Context Response                                              │ │
+│  │                                                                        │ │
+│  │  HybridContext {                                                       │ │
+│  │    files: [                                                            │ │
+│  │      {path: "auth_service.py", score: 24.5, tokens: 15000},            │ │
+│  │      {path: "jwt_validator.py", score: 18.2, tokens: 10000},           │ │
+│  │      {path: "auth_middleware.py", score: 12.0, tokens: 8000}           │ │
+│  │    ],                                                                  │ │
+│  │    total_tokens: 33000,                                                │ │
+│  │    strategies_used: ["vector", "filesystem", "graph"],                 │ │
+│  │    query: "Fix authentication vulnerability in JWT validation"         │ │
+│  │  }                                                                     │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  Delivered to Agent Orchestrator                                       │ │
+│  │  • Coder Agent receives ranked context                                 │ │
+│  │  • Generates patch with high-quality context                           │ │
+│  │  • Expected: 3-5x better code understanding                            │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -292,38 +401,108 @@ flowchart TD
 
 **Hybrid Warm Pool Architecture** (Recommended Pattern)
 
-The Agent Orchestrator uses a cost-effective warm pool deployment pattern that provides zero cold start while minimizing infrastructure costs (~$28/month vs $175/month always-on).
+The Agent Orchestrator uses a warm pool deployment pattern that provides zero cold start while minimizing always-on infrastructure footprint.
 
-```mermaid
-flowchart TD
-    subgraph API["API Layer"]
-        A1["POST /api/v1/orchestrate · submit job<br/>GET /api/v1/orchestrate/{id} · status<br/>DELETE /api/v1/orchestrate/{id} · cancel<br/>WS /api/v1/orchestrate/{id}/stream · live updates"]
-    end
-
-    subgraph Svc["OrchestrationService"]
-        S1["DynamoDB · aura-orchestrator-jobs-{env} · job state<br/>SQS · aura-orchestrator-tasks-{env} · job dispatch<br/>Dual-mode · MOCK testing / AWS production"]
-    end
-
-    subgraph Warm["Warm Pool · EKS · 1 replica"]
-        W1["orchestrator_server.py<br/>HTTP · /health/live · /health/ready · /metrics<br/>SQS consumer · long-polls every 5 s<br/>Zero cold start · always-on"]
-    end
-
-    subgraph Loop["System2Orchestrator · main loop"]
-        direction TB
-        P1["Phase 1 · PLAN<br/>Receive task · Validate via InputSanitizer · Create execution plan"]
-        P2["Phase 2 · CONTEXT · Agentic Search<br/>ContextRetrievalService.retrieve_context · multi-strategy<br/>Returns HybridContext · budget 100k tokens"]
-        P3["Phase 3 · CODE<br/>Coder Agent · LLM Claude / GPT-4 · AST validates syntax · returns unified diff"]
-        P4["Phase 4 · REVIEW<br/>Reviewer Agent · OWASP Top 10 + AI threats · code quality · review report"]
-        P5["Phase 5 · VALIDATE · Sandbox<br/>FargateSandboxOrchestrator.create_sandbox<br/>Apply patch · run test suite · collect results · destroy_sandbox"]
-        P6["Phase 6 · MONITOR<br/>Log activity · track security findings<br/>Generate comprehensive report"]
-        P1 --> P2 --> P3 --> P4 --> P5 --> P6
-    end
-
-    subgraph HITL["HITL Approval · Future"]
-        H1["Present findings to human reviewer<br/>Approval Dashboard · React UI · SNS notifications · apply patch on approval"]
-    end
-
-    API --> Svc --> Warm --> Loop --> HITL
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Agent Orchestrator Architecture                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                        API Layer                                      │  │
+│  │  POST /api/v1/orchestrate     - Submit orchestration job              │  │
+│  │  GET  /api/v1/orchestrate/{id} - Get job status                       │  │
+│  │  DELETE /api/v1/orchestrate/{id} - Cancel job                         │  │
+│  │  WS   /api/v1/orchestrate/{id}/stream - Real-time updates             │  │
+│  └────────────────────────────────┬──────────────────────────────────────┘  │
+│                                   │                                         │
+│                                   ▼                                         │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                     OrchestrationService                              │  │
+│  │  • DynamoDB: aura-orchestrator-jobs-{env} (job state)                 │  │
+│  │  • SQS: aura-orchestrator-tasks-{env} (job dispatch)                  │  │
+│  │  • Dual-mode: MOCK (testing) / AWS (production)                       │  │
+│  └────────────────────────────────┬──────────────────────────────────────┘  │
+│                                   │                                         │
+│                                   ▼                                         │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │              Warm Pool (EKS Deployment - 1 replica)                   │  │
+│  │  orchestrator_server.py:                                              │  │
+│  │  • HTTP Server: /health/live, /health/ready, /metrics                 │  │
+│  │  • SQS Consumer: Long-polls for jobs (5s interval)                    │  │
+│  │  • Zero cold start: Always-on replica waiting for work                │  │
+│  └────────────────────────────────┬──────────────────────────────────────┘  │
+│                                   │                                         │
+│                                   ▼                                         │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                    System2Orchestrator                                │  │
+│  │  Main Loop: Plan → Context → Code → Review → Validate → Monitor       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Phase 1: PLAN                                                        │  │
+│  │  • Receive task: "Fix CVE-2024-XXXX in auth module"                   │  │
+│  │  • Validate input (InputSanitizer)                                    │  │
+│  │  • Create execution plan                                              │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Phase 2: CONTEXT (Agentic Search)                                    │  │
+│  │  • ContextRetrievalService.retrieve_context()                         │  │
+│  │  • Multi-strategy search (graph + vector + filesystem + git)          │  │
+│  │  • Returns HybridContext with ranked files                            │  │
+│  │  • Context budget: 100,000 tokens                                     │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Phase 3: CODE                                                        │  │
+│  │  • Coder Agent receives context                                       │  │
+│  │  • LLM (Claude/GPT-4) generates patch                                 │  │
+│  │  • AST Parser validates syntax                                        │  │
+│  │  • Returns unified diff                                               │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Phase 4: REVIEW                                                      │  │
+│  │  • Reviewer Agent analyzes patch                                      │  │
+│  │  • Security checks (OWASP Top 10, AI-specific threats)                │  │
+│  │  • Code quality checks (complexity, maintainability)                  │  │
+│  │  • Returns review report with findings                                │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Phase 5: VALIDATE (Sandbox Testing)                                  │  │
+│  │  • FargateSandboxOrchestrator.create_sandbox()                        │  │
+│  │  • Apply patch in isolated environment                                │  │
+│  │  • Run test suite                                                     │  │
+│  │  • Collect results                                                    │  │
+│  │  • FargateSandboxOrchestrator.destroy_sandbox()                       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Phase 6: MONITOR                                                     │  │
+│  │  • Log activity (tokens used, LOC changed)                            │  │
+│  │  • Track security findings                                            │  │
+│  │  • Calculate token usage                                              │  │
+│  │  • Generate comprehensive report                                      │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  HITL (Human-in-the-Loop) Approval (Future)                           │  │
+│  │  • Present findings to human reviewer                                 │  │
+│  │  • Approval Dashboard (React UI)                                      │  │
+│  │  • SNS notifications                                                  │  │
+│  │  • Apply patch if approved                                            │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -332,43 +511,56 @@ flowchart TD
 
 **Status:** Implemented (December 15, 2025)
 
-The Agent Orchestrator supports three configurable deployment modes, allowing organizations to optimize for cost, latency, or both. Modes can be configured at the platform level or with per-organization overrides.
+The Agent Orchestrator supports three configurable deployment modes, allowing organizations to optimize for latency, throughput, or footprint. Modes can be configured at the platform level or with per-organization overrides.
 
 ### Available Modes
 
-| Mode | Base Cost | Cold Start | Best For |
+| Mode | Footprint | Cold Start | Best For |
 |------|-----------|------------|----------|
-| **On-Demand** | $0/mo | ~30 seconds | Dev/test, low volume (<100 jobs/day) |
-| **Warm Pool** | ~$28/mo | 0 seconds | Production, high volume (>500 jobs/day) |
-| **Hybrid** | ~$28/mo + burst | 0 seconds | Variable workloads, enterprise |
+| **On-Demand** | None (per-request) | ~30 seconds | Dev/test, low volume (<100 jobs/day) |
+| **Warm Pool** | 1 always-on replica | 0 seconds | Production, high volume (>500 jobs/day) |
+| **Hybrid** | Warm pool + burst | 0 seconds | Variable workloads, enterprise |
 
 ### Mode Selection Architecture
 
-```mermaid
-flowchart TD
-    subgraph Settings[Settings Layer]
-        direction LR
-        Defaults[Platform Defaults<br/>DynamoDB]
-        Overrides[Organization Overrides<br/>DynamoDB]
-        SettingsAPI[Settings API<br/>REST · Admin]
-        SettingsAPI --> Overrides --> Defaults
-    end
-
-    subgraph MTS[Mode Transition Service]
-        MT1["State machine · ACTIVE → DRAINING → COMPLETING → SCALING → ACTIVE<br/>• 5-minute cooldown · anti-thrashing<br/>• Graceful in-flight job completion<br/>• K8s warm pool scaling via RBAC"]
-    end
-
-    subgraph Modes[Deployment Modes]
-        direction LR
-        OnDemand["ON-DEMAND Mode<br/>EKS Job per request<br/>~30s cold start"]
-        Warm["WARM POOL Mode<br/>Always-on replica · 1–10<br/>0s cold start"]
-        Hybrid["HYBRID Mode<br/>Warm pool baseline + burst overflow<br/>0s pool · 30s burst"]
-    end
-
-    Settings --> MTS
-    MTS --> OnDemand
-    MTS --> Warm
-    MTS --> Hybrid
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                  Orchestrator Deployment Mode Architecture                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                         Settings Layer                                │  │
+│  │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    │  │
+│  │  │  Platform       │    │  Organization   │    │  Settings       │    │  │
+│  │  │  Defaults       │ <- │  Overrides      │ <- │  API            │    │  │
+│  │  │  (DynamoDB)     │    │  (DynamoDB)     │    │  (REST/Admin)   │    │  │
+│  │  └─────────────────┘    └─────────────────┘    └─────────────────┘    │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                     Mode Transition Service                           │  │
+│  │  State Machine: ACTIVE -> DRAINING -> COMPLETING -> SCALING -> ACTIVE │  │
+│  │  • 5-minute cooldown between changes (anti-thrashing)                 │  │
+│  │  • Graceful in-flight job completion                                  │  │
+│  │  • K8s warm pool scaling via RBAC                                     │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                    │                                        │
+│                     ┌──────────────┼──────────────┐                         │
+│                     │              │              │                         │
+│                     ▼              ▼              ▼                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────────────┐      │
+│  │  ON-DEMAND  │  │  WARM POOL  │  │          HYBRID                 │      │
+│  │  Mode       │  │  Mode       │  │          Mode                   │      │
+│  │             │  │             │  │                                 │      │
+│  │  EKS Job    │  │  Always-On  │  │  Warm Pool  │  Burst Jobs      │       │
+│  │  per        │  │  Replica    │  │  (baseline) │  (overflow)      │       │
+│  │  Request    │  │  (1-10)     │  │             │                   │      │
+│  │             │  │             │  │             │                   │      │
+│  │  ~30s start │  │  0s start   │  │  0s (pool) / 30s (burst)       │       │
+│  └─────────────┘  └─────────────┘  └─────────────────────────────────┘      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### API Endpoints
@@ -386,15 +578,14 @@ flowchart TD
 
 Organizations can override platform defaults for customized deployment modes:
 
-```mermaid
-flowchart TD
-    Default["Platform Default<br/>on_demand"]
-    OrgA["Org A · Override<br/>warm_pool"]
-    OrgB["Org B · No override<br/>uses on_demand"]
-    OrgC["Org C · Override<br/>hybrid · burst overflow"]
-    Default --> OrgA
-    Default --> OrgB
-    Default --> OrgC
+```text
+Platform Default: on_demand                       
+                                                 │
+    ├── Org A: Override -> warm_pool              
+                                                 │
+    ├── Org B: No override (uses on_demand)       
+                                                 │
+    └── Org C: Override -> hybrid + burst         
 ```
 
 ### CloudWatch Alarms
@@ -413,39 +604,97 @@ flowchart TD
 
 **Isolated Testing Environments**
 
-```mermaid
-flowchart TD
-    subgraph Orch[FargateSandboxOrchestrator · Python]
-        O1["create_sandbox · sandbox_id, patch_id, test_suite<br/>destroy_sandbox · sandbox_id<br/>get_sandbox_status · sandbox_id<br/>get_sandbox_logs · sandbox_id"]
-    end
-
-    subgraph Lifecycle[Sandbox Lifecycle]
-        L1["1 · Provision<br/>Create ECS task with sandbox Docker image<br/>Store state in DynamoDB · sandbox_id, task_arn, created_at<br/>Set TTL for auto-cleanup · 2 hours"]
-        L2["2 · Execute<br/>Apply patch to codebase<br/>Run test suite · pytest · npm test · etc.<br/>Collect results to CloudWatch Logs"]
-        L3["3 · Monitor<br/>Check task status · RUNNING / STOPPED<br/>Tail CloudWatch Logs<br/>Return results to orchestrator"]
-        L4["4 · Cleanup<br/>Stop ECS task<br/>Delete DynamoDB state<br/>Logs retained for 30 days"]
-        L1 --> L2 --> L3 --> L4
-    end
-
-    subgraph Security[Sandbox Security Isolation]
-        direction TB
-        SC1["Docker Container · Fargate Task<br/>• Linux capabilities · DROP ALL<br/>• Read-only root filesystem<br/>• Non-root user · UID 2000<br/>• No privileged mode<br/>• Temp directory · /tmp tmpfs ephemeral"]
-        SC2["Network Isolation · Security Group<br/>• Ingress · DENY ALL<br/>• Egress · ALLOW only to dnsmasq port 53<br/>• Metadata service 169.254.169.254 · BLOCKED"]
-        SC3["Resource Limits<br/>• CPU · 0.5 vCPU<br/>• Memory · 1 GB<br/>• Ephemeral storage · 20 GB<br/>• Task timeout · 30 minutes"]
-    end
-
-    Notes["Execution window · 30-minute task timeout<br/>Scalability · 0–100 concurrent sandboxes"]
-
-    Orch --> Lifecycle --> Security --> Notes
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Sandbox Architecture (ECS Fargate)                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                FargateSandboxOrchestrator (Python)                     │ │
+│  │  • create_sandbox(sandbox_id, patch_id, test_suite)                    │ │
+│  │  • destroy_sandbox(sandbox_id)                                         │ │
+│  │  • get_sandbox_status(sandbox_id)                                      │ │
+│  │  • get_sandbox_logs(sandbox_id)                                        │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  Sandbox Lifecycle:                                                    │ │
+│  │                                                                        │ │
+│  │  1. Provision:                                                         │ │
+│  │     • Create ECS task with sandbox Docker image                        │ │
+│  │     • Store state in DynamoDB (sandbox_id, task_arn, created_at)       │ │
+│  │     • Set TTL for auto-cleanup (2 hours)                               │ │
+│  │                                                                        │ │
+│  │  2. Execute:                                                           │ │
+│  │     • Apply patch to codebase                                          │ │
+│  │     • Run test suite: pytest, npm test, etc.                           │ │
+│  │     • Collect results to CloudWatch Logs                               │ │
+│  │                                                                        │ │
+│  │  3. Monitor:                                                           │ │
+│  │     • Check task status (RUNNING, STOPPED)                             │ │
+│  │     • Tail CloudWatch Logs                                             │ │
+│  │     • Return results to orchestrator                                   │ │
+│  │                                                                        │ │
+│  │  4. Cleanup:                                                           │ │
+│  │     • Stop ECS task                                                    │ │
+│  │     • Delete DynamoDB state                                            │ │
+│  │     • Logs retained for 30 days                                        │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                         │                                                   │
+│                         ▼                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  Sandbox Security Isolation:                                           │ │
+│  │                                                                        │ │
+│  │  ┌────────────────────────────────────────────────────────────────┐    │ │
+│  │  │  Docker Container (Fargate Task)                                │   │ │
+│  │  │  • Linux capabilities: DROP ALL                                 │   │ │
+│  │  │  • Read-only root filesystem                                    │   │ │
+│  │  │  • Non-root user (UID 2000)                                     │   │ │
+│  │  │  • No privileged mode                                           │   │ │
+│  │  │  • Temp directory: /tmp (tmpfs, ephemeral)                      │   │ │
+│  │  └────────────────────────────────────────────────────────────────┘    │ │
+│  │                                                                        │ │
+│  │  ┌────────────────────────────────────────────────────────────────┐    │ │
+│  │  │  Network Isolation (Security Group)                             │   │ │
+│  │  │  • Ingress: DENY ALL                                            │   │ │
+│  │  │  • Egress: ALLOW only to dnsmasq (port 53)                      │   │ │
+│  │  │  • Metadata service: 169.254.169.254 BLOCKED                    │   │ │
+│  │  └────────────────────────────────────────────────────────────────┘    │ │
+│  │                                                                        │ │
+│  │  ┌────────────────────────────────────────────────────────────────┐    │ │
+│  │  │  Resource Limits                                                │   │ │
+│  │  │  • CPU: 0.5 vCPU                                                │   │ │
+│  │  │  • Memory: 1 GB                                                 │   │ │
+│  │  │  • Ephemeral storage: 20 GB                                     │   │ │
+│  │  │  • Task timeout: 30 minutes                                     │   │ │
+│  │  └────────────────────────────────────────────────────────────────┘    │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  Execution window: 30 minutes per sandbox                                   │
+│  Scalability: 0-100 concurrent sandboxes                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **DynamoDB State Tracking:**
 
-```mermaid
-flowchart TD
-    subgraph Tbl["Sandbox State Table · aura-sandbox-state"]
-        T1["Partition key · sandbox_id · String<br/><br/>Attributes:<br/>• task_arn · ECS task ARN<br/>• patch_id · associated patch<br/>• test_suite · test command<br/>• status · PROVISIONING / RUNNING / STOPPED / FAILED<br/>• created_at · timestamp<br/>• ttl · auto-delete after 2 hours<br/>• log_group · CloudWatch Logs group name<br/><br/>TTL enabled · automatic cleanup prevents orphaned state"]
-    end
+```text
+┌────────────────────────────────────────────────────────────────┐
+│          Sandbox State Table (aura-sandbox-state)              │
+├────────────────────────────────────────────────────────────────┤
+│  Partition Key: sandbox_id (String)                            │
+│                                                                │
+│  Attributes:                                                   │
+│  • task_arn: ECS task ARN                                      │
+│  • patch_id: Associated patch                                  │
+│  • test_suite: Test command                                    │
+│  • status: PROVISIONING | RUNNING | STOPPED | FAILED           │
+│  • created_at: Timestamp                                       │
+│  • ttl: Auto-delete after 2 hours                              │
+│  • log_group: CloudWatch Logs group name                       │
+│                                                                │
+│  TTL enabled: Automatic cleanup prevents orphaned state        │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -461,8 +710,8 @@ flowchart TD
 - **Internet Access:** VPC Endpoints only (no NAT Gateway - zero trust architecture)
 
 **VPC Endpoints (No internet egress):**
-- **Gateway Endpoints:** S3, DynamoDB (no cost)
-- **Interface Endpoints ($44/month):** Bedrock Runtime, Bedrock Agent, CodeConnections, CloudWatch Logs, Secrets Manager, ECR API, ECR DKR
+- **Gateway Endpoints:** S3, DynamoDB
+- **Interface Endpoints:** Bedrock Runtime, Bedrock Agent, CodeConnections, CloudWatch Logs, Secrets Manager, ECR API, ECR DKR
 
 **3-Tier DNS Architecture (dnsmasq):**
 
@@ -482,7 +731,7 @@ flowchart TD
 - orchestrator.aura.local:8080 (Agent Orchestrator warm pool)
 - agent-orchestrator.default.svc.cluster.local:8080 (K8s ClusterIP)
 
-**Performance:** 67% faster DNS resolution, 5x cache capacity, 40% cost reduction
+**Performance:** 67% faster DNS resolution, 5x cache capacity
 
 **Detailed Documentation:** See [docs/integrations/DNSMASQ_INTEGRATION.md](integrations/DNSMASQ_INTEGRATION.md)
 
@@ -492,42 +741,78 @@ flowchart TD
 
 **Query to Patch Generation**
 
-```mermaid
-flowchart TD
-    subgraph S1["1 · User Request"]
-        U1["CKGEConsole · React UI<br/>Submit task · Fix CVE-2024-XXXX"]
-        U2["API Gateway · Future · → Lambda → SQS"]
-    end
-
-    subgraph S2["2 · Task Processing"]
-        T1["System2Orchestrator<br/>Receives task from SQS · validates via InputSanitizer · creates execution plan"]
-        T2["ContextRetrievalService · Agentic Search<br/>Query · CVE-2024-XXXX vulnerability code<br/>Multi-strategy · graph + vector + filesystem<br/>Returns HybridContext with ranked files"]
-        T1 --> T2
-    end
-
-    subgraph S3["3 · Code Generation"]
-        C1["Coder Agent<br/>Receives context · 3–5x better quality<br/>LLM generates patch · Claude via Bedrock<br/>AST Parser validates syntax<br/>Returns unified diff"]
-    end
-
-    subgraph S4["4 · Code Review"]
-        R1["Reviewer Agent<br/>Security analysis · OWASP Top 10<br/>Code quality checks<br/>Returns findings · severity CRITICAL / HIGH / MEDIUM / LOW"]
-    end
-
-    subgraph S5["5 · Sandbox Testing"]
-        SB1["FargateSandboxOrchestrator<br/>create_sandbox · sandbox_id, patch, test_suite<br/>ECS Fargate task · isolated · no external network<br/>Apply patch → run tests → collect results<br/>destroy_sandbox · returns PASS / FAIL + logs"]
-    end
-
-    subgraph S6["6 · Monitoring & Reporting"]
-        M1["Monitor Agent<br/>Log activity · tokens used · LOC changed<br/>Track security findings by severity<br/>Generate comprehensive report"]
-    end
-
-    subgraph S7["7 · HITL Approval · Future"]
-        H1["SNS notification → Email / Slack<br/>Human reviews findings · Approval Dashboard · React UI<br/>Approve / Reject<br/>If approved · apply patch to production"]
-    end
-
-    U1 --> T1
-    U2 --> T1
-    S2 --> S3 --> S4 --> S5 --> S6 --> S7
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        End-to-End Data Flow                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. User Request                                                            │
+│     │                                                                       │
+│     ├─► CKGEConsole (React UI)                                              │
+│     │   • Submit task: "Fix CVE-2024-XXXX"                                  │
+│     │                                                                       │
+│     └─► API Gateway (Future) → Lambda → SQS                                 │
+│                                                                             │
+│  2. Task Processing                                                         │
+│     │                                                                       │
+│     ├─► System2Orchestrator                                                 │
+│     │   • Receives task from SQS                                            │
+│     │   • Validates input (InputSanitizer)                                  │
+│     │   • Creates execution plan                                            │
+│     │                                                                       │
+│     └─► ContextRetrievalService (Agentic Search)                            │
+│         • Query: "CVE-2024-XXXX vulnerability code"                         │
+│         • Multi-strategy search (graph + vector + filesystem)               │
+│         • Returns HybridContext with ranked files                           │
+│                                                                             │
+│  3. Code Generation                                                         │
+│     │                                                                       │
+│     ├─► Coder Agent                                                         │
+│     │   • Receives context (3-5x better quality)                            │
+│     │   • LLM generates patch (Claude via Bedrock)                          │
+│     │   • AST Parser validates syntax                                       │
+│     │                                                                       │
+│     └─► Returns unified diff                                                │
+│                                                                             │
+│  4. Code Review                                                             │
+│     │                                                                       │
+│     ├─► Reviewer Agent                                                      │
+│     │   • Security analysis (OWASP Top 10)                                  │
+│     │   • Code quality checks                                               │
+│     │   • Generates review report                                           │
+│     │                                                                       │
+│     └─► Returns findings (severity: CRITICAL/HIGH/MEDIUM/LOW)               │
+│                                                                             │
+│  5. Sandbox Testing                                                         │
+│     │                                                                       │
+│     ├─► FargateSandboxOrchestrator                                          │
+│     │   • create_sandbox(sandbox_id, patch, test_suite)                     │
+│     │   • ECS Fargate task provisioned                                      │
+│     │   • Isolated environment (no external network)                        │
+│     │   • Apply patch → Run tests → Collect results                         │
+│     │   • destroy_sandbox(sandbox_id)                                       │
+│     │                                                                       │
+│     └─► Returns test results (PASS/FAIL + logs)                             │
+│                                                                             │
+│  6. Monitoring & Reporting                                                  │
+│     │                                                                       │
+│     ├─► Monitor Agent                                                       │
+│     │   • Log activity (tokens: 15K, LOC changed: 50)                       │
+│     │   • Track security findings (1 CRITICAL, 2 HIGH)                      │
+│     │   • Calculate token usage                                             │
+│     │                                                                       │
+│     └─► Generate comprehensive report                                       │
+│                                                                             │
+│  7. HITL Approval (Future)                                                  │
+│     │                                                                       │
+│     ├─► SNS notification → Email/Slack                                      │
+│     │   • Human reviews findings                                            │
+│     │   • Approval Dashboard (React UI)                                     │
+│     │   • Approve/Reject decision                                           │
+│     │                                                                       │
+│     └─► If approved: Apply patch to production                              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -593,22 +878,55 @@ flowchart TD
 
 **Current State (Phase 1 + Phase 2 Ready)**
 
-```mermaid
-flowchart TD
-    subgraph P1["Phase 1 · DEPLOYED ✓"]
-        P1B["AWS Commercial Cloud · us-east-1<br/>• VPC · vpc-0123…ef0<br/>• Subnets · 2 public + 2 private<br/>• VPC Endpoints · 9 · S3 · DynamoDB · Bedrock · etc.<br/>• Security Groups · 7<br/>• IAM Roles · 7 service roles<br/>• Workloads · VPC Endpoints + Flow Logs"]
-    end
-
-    subgraph P2["Phase 2 · READY FOR DEPLOYMENT"]
-        OS["OpenSearch Domain<br/>• CloudFormation · 685 lines<br/>• KNN vector index schema defined<br/>• Lambda index creator ready<br/>• Deploy script · deploy-agentic-search.sh<br/>• Status · NOT DEPLOYED"]
-        ECS["ECS Fargate Clusters<br/>• Dev cluster template · 600 lines<br/>• Services template · 700 lines<br/>• Sandbox template · 450 lines<br/>• Dockerfiles · 3<br/>• Deployment scripts · 2<br/>• Status · NOT DEPLOYED"]
-    end
-
-    subgraph P3["Phase 3 · PLANNED · Q2 2026"]
-        GC["AWS GovCloud · US · Migration<br/>• STIG-hardened EKS nodes<br/>• FIPS 140-2 mode enabled<br/>• Private VPC endpoints only<br/>• Enhanced audit logging<br/>• CMMC Level 3 certification"]
-    end
-
-    P1 --> P2 --> P3
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Deployment Status                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Phase 1: DEPLOYED ✅                                                        │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  AWS Commercial Cloud (us-east-1)                                      │ │
+│  │                                                                        │ │
+│  │  • VPC: vpc-0123456789abcdef0                                          │ │
+│  │  • Subnets: 2 public + 2 private                                       │ │
+│  │  • VPC Endpoints: 9 endpoints (S3, DynamoDB, Bedrock, etc.)            │ │
+│  │  • Security Groups: 7 groups                                           │ │
+│  │  • IAM Roles: 7 service roles                                          │ │
+│  │  • Workloads: VPC Endpoints + Flow Logs                                │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  Phase 2: READY FOR DEPLOYMENT ⚠️                                           │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  OpenSearch Domain                                                     │ │
+│  │  • CloudFormation template: 685 lines ✅                                │ │
+│  │  • KNN vector index schema defined ✅                                   │ │
+│  │  • Lambda index creator ready ✅                                        │ │
+│  │  • Deployment script: deploy-agentic-search.sh ✅                       │ │
+│  │  • Sizing: 2x t3.small.search (dev), 3x m5.large.search (prod)         │ │
+│  │  • Status: NOT DEPLOYED                                                │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  ECS Fargate Clusters                                                  │ │
+│  │  • Dev cluster template: 600 lines ✅                                   │ │
+│  │  • Services template: 700 lines ✅                                      │ │
+│  │  • Sandbox template: 450 lines ✅                                       │ │
+│  │  • Dockerfiles: 3 files ✅                                              │ │
+│  │  • Deployment scripts: 2 scripts ✅                                     │ │
+│  │  • Sizing: 4 services x 0.5 vCPU / 1 GB (dev with scaling)             │ │
+│  │  • Status: NOT DEPLOYED                                                │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  Phase 3: PLANNED (Q2 2026)                                                 │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  AWS GovCloud (US) Migration                                           │ │
+│  │  • STIG-hardened EKS nodes                                             │ │
+│  │  • FIPS 140-2 mode enabled                                             │ │
+│  │  • Private VPC endpoints only                                          │ │
+│  │  • Enhanced audit logging                                              │ │
+│  │  • CMMC Level 3 certification                                          │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -621,7 +939,7 @@ flowchart TD
 - ✅ **All 8 Infrastructure Phases Deployed** - Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security
 - ✅ **84 ADRs (83 Deployed/Accepted, 1 Proposed)** - Architecture Decision Records
 - ✅ **Full Hybrid GraphRAG Complete** - Vector + Graph + BM25 search with 5 query types (Issue #151)
-- ✅ **Agent Orchestrator Warm Pool** - Cost-effective hybrid architecture (~$28/month vs $175/month)
+- ✅ **Agent Orchestrator Warm Pool** - Hybrid architecture with zero cold start
 - ✅ **UI-Configurable Deployment Modes** - On-demand, warm pool, and hybrid with per-org overrides
 - ✅ **Cloud Abstraction Layer (ADR-004)** - Multi-cloud AWS/Azure support, 5 service abstractions
 - ✅ **Titan Neural Memory (ADR-024)** - 237 tests, 5 phases deployed, cognitive architecture operational
@@ -640,7 +958,7 @@ flowchart TD
 - **Graph Query Types:** CALL_GRAPH, DEPENDENCIES, INHERITANCE, REFERENCES, RELATED
 - **Security:** 7-layer defense-in-depth with CMMC Level 3 compliance
 - **Security Services:** Input validation, secrets detection, audit, alerts, API integration
-- **Cost Optimization:** $440/month savings through scale-to-zero and FARGATE_SPOT
+- **Resource Optimization:** Scale-to-zero for sandboxes and FARGATE_SPOT for non-production workloads
 
 **Overall Completion:** 99%
 

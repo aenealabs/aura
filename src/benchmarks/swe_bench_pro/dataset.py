@@ -171,3 +171,43 @@ def iter_tasks(
     ds = load_dataset(dataset_name, split=split)
     for row in ds:
         yield _row_to_task(dict(row))
+
+
+def load_gold_patches(
+    instance_ids: Iterable[str],
+    *,
+    dataset_name: str = DEFAULT_DATASET_NAME,
+    split: str = DEFAULT_SPLIT,
+) -> dict[str, str]:
+    """Load gold patches for the given instance ids.
+
+    Returned dict is ``{instance_id: gold_patch_text}``. Used by
+    ``scoring.score_predictions`` and NEVER by adapters — keeping the
+    gold patches in a separate code path makes accidental cheating
+    structurally impossible: an adapter that wants the gold patch
+    has to reach into a dataset module the rest of its inputs don't
+    touch, which would be obvious in review.
+
+    Missing instance ids are silently dropped from the result; the
+    scorer treats a missing gold as "no gold patch available" rather
+    than failing the whole run.
+    """
+    load_dataset = _require_datasets()
+    target_ids = set(instance_ids)
+    if not target_ids:
+        return {}
+    logger.info(
+        "Loading gold patches: dataset=%s split=%s n_targets=%d",
+        dataset_name,
+        split,
+        len(target_ids),
+    )
+    ds = load_dataset(dataset_name, split=split)
+    out: dict[str, str] = {}
+    for row in ds:
+        row_id = str(row.get("instance_id", ""))
+        if row_id in target_ids:
+            out[row_id] = str(row.get("patch", "") or "")
+            if len(out) == len(target_ids):
+                break
+    return out

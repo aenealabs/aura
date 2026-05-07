@@ -21,10 +21,18 @@ The script does NOT run the official harness — that requires Docker
 on the invoking machine and is intentionally separate. Aura's job
 ends at producing the predictions JSON.
 
-By default this uses the ``StubAdapter`` so the script is runnable
-without AWS credentials, just to validate the wiring. Pass
-``--mode bedrock`` to use the real Aura+Bedrock adapter (requires
-Bedrock-configured environment).
+Three modes:
+
+- ``--mode stub`` (default): no AWS needed; validates the wiring.
+- ``--mode bedrock``: real Aura+Bedrock adapter against Sonnet-class
+  models. Costs ~$3-8 for a 30-task subset; produces a submission
+  file the official Docker harness consumes.
+- ``--mode unofficial``: real Bedrock adapter but defaulting to a
+  cheap Haiku-class model AND running heuristic similarity scoring
+  in-process instead of the Docker harness. A 30-task run typically
+  costs under $0.25 and finishes in 5-10 minutes. Output is a
+  triage signal, NOT a correctness benchmark — see scoring.py for
+  the caveats.
 
 Author: Project Aura Team
 Created: 2026-05-07
@@ -53,22 +61,29 @@ from src.benchmarks.swe_bench_pro.submission import write_metadata  # noqa: E402
 logger = logging.getLogger("aura.benchmarks.swe_bench_pro")
 
 
+# Cheap-model defaults for ``--mode unofficial``. Haiku 3.5 is roughly
+# 12x cheaper per token than Sonnet 3.5; a 30-task unofficial run
+# typically costs under $0.25.
+_UNOFFICIAL_DEFAULT_MODEL = "anthropic.claude-3-5-haiku-20241022-v1:0"
+_BEDROCK_DEFAULT_MODEL = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+
+
 def _build_adapter(mode: str, model_id: str | None):
     """Construct the adapter the user requested."""
     if mode == "stub":
         return StubAdapter()
-    if mode == "bedrock":
+    if mode in ("bedrock", "unofficial"):
         # Lazy import so users without boto3 / Bedrock access can still
         # run the stub mode against the dataset loader.
         from src.benchmarks.swe_bench_pro.aura_adapter import (
             AuraBedrockAdapter,
         )
 
-        if not model_id:
-            raise SystemExit(
-                "--mode bedrock requires --model-id "
-                "(e.g. anthropic.claude-3-5-sonnet-20241022-v2:0)"
-            )
+        chosen = model_id or (
+            _UNOFFICIAL_DEFAULT_MODEL
+            if mode == "unofficial"
+            else _BEDROCK_DEFAULT_MODEL
+        )
 
         # Production wiring: pass the project's Bedrock LLM client. To keep
         # this script free of Bedrock SDK imports for users on the stub
@@ -78,8 +93,17 @@ def _build_adapter(mode: str, model_id: str | None):
         )
 
         client = BedrockLLMClient()  # uses AWS default credentials chain
-        return AuraBedrockAdapter(llm_client=client, model_id=model_id)
-    raise SystemExit(f"unknown --mode {mode!r}; use 'stub' or 'bedrock'")
+        # Unofficial mode caps spend hard — even cheaper-model runs can
+        # surprise an operator if the dataset has very long issues.
+        cap = 5.0 if mode == "unofficial" else 100.0
+        return AuraBedrockAdapter(
+            llm_client=client,
+            model_id=chosen,
+            run_cost_cap_usd=cap,
+        )
+    raise SystemExit(
+        f"unknown --mode {mode!r}; use 'stub', 'bedrock', or 'unofficial'"
+    )
 
 
 async def _amain(args: argparse.Namespace) -> int:
@@ -116,28 +140,54 @@ async def _amain(args: argparse.Namespace) -> int:
         meta = write_metadata(report.results, args.metadata)
         logger.info("Telemetry written to %s", meta)
 
+    from src.benchmarks.swe_bench_pro.contracts import TaskOutcome
+
+    generated_count = report.outcome_counts.get(TaskOutcome.GENERATED, 0)
     print(
         f"\nSWE-Bench Pro run summary "
         f"({adapter.model_name}, {args.mode} mode):"
     )
     print(f"  Tasks attempted:        {report.total_tasks}")
-    print(f"  Patches generated:      "
-          f"{report.outcome_counts.get('generated', 0)} "
-          f"({report.patch_generation_rate:.1%})")
+    print(
+        f"  Patches generated:      {generated_count} "
+        f"({report.patch_generation_rate:.1%})"
+    )
     for outcome, count in report.outcome_counts.items():
-        if hasattr(outcome, "value"):
-            outcome = outcome.value
-        print(f"    {outcome}: {count}")
+        outcome_label = (
+            outcome.value if hasattr(outcome, "value") else str(outcome)
+        )
+        print(f"    {outcome_label}: {count}")
     print(f"  Total cost:             ${report.total_cost_usd:.2f}")
     print(f"  Mean duration:          {report.mean_duration_seconds:.1f}s")
     print(f"  Submission file:        {out}")
-    print(
-        "\nNext step: run the official harness to evaluate correctness:\n"
-        f"  python -m swebench.harness.run_evaluation \\\n"
-        f"      --predictions_path {out} \\\n"
-        f"      --dataset_name ScaleAI/SWE-bench_Pro \\\n"
-        f"      --use_local_docker"
-    )
+
+    if args.mode == "unofficial":
+        from src.benchmarks.swe_bench_pro.dataset import load_gold_patches
+        from src.benchmarks.swe_bench_pro.scoring import score_predictions
+
+        instance_ids = [t.instance_id for t in tasks]
+        gold = load_gold_patches(instance_ids)
+        scored = score_predictions(report.predictions, gold)
+        print("\nUnofficial heuristic similarity scoring:")
+        print(f"  In-neighborhood rate:   {scored.in_neighborhood_rate:.1%} "
+              f"({scored.in_neighborhood_count}/{scored.total_tasks})")
+        print(f"  Mean file F1:           {scored.mean_file_f1:.3f}")
+        print(f"  Mean hunk overlap:      {scored.mean_hunk_overlap_rate:.3f}")
+        print(f"  Mean token Jaccard:     {scored.mean_token_jaccard:.3f}")
+        print(f"  Mean composite:         {scored.mean_composite:.3f}")
+        print(
+            "\nReminder: heuristic similarity is a TRIAGE signal, NOT a "
+            "correctness metric. For a real correctness score, run --mode "
+            "bedrock and pass predictions.json to the official harness."
+        )
+    else:
+        print(
+            "\nNext step: run the official harness to evaluate correctness:\n"
+            f"  python -m swebench.harness.run_evaluation \\\n"
+            f"      --predictions_path {out} \\\n"
+            f"      --dataset_name ScaleAI/SWE-bench_Pro \\\n"
+            f"      --use_local_docker"
+        )
     return 0
 
 
@@ -157,10 +207,15 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--mode",
-        choices=("stub", "bedrock"),
+        choices=("stub", "bedrock", "unofficial"),
         default="stub",
-        help="Adapter to use. 'stub' for wire-up validation; "
-        "'bedrock' for the real Aura+Bedrock adapter.",
+        help=(
+            "Adapter to use. 'stub' for wire-up validation; "
+            "'bedrock' for the real Aura+Bedrock adapter (Sonnet by "
+            "default; submission piped to the official Docker harness); "
+            "'unofficial' for cheap-model (Haiku) runs scored in-process "
+            "via heuristic patch-similarity (no Docker, ~$0.25 for 30 tasks)."
+        ),
     )
     p.add_argument(
         "--model-id",

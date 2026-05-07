@@ -37,6 +37,12 @@ from src.benchmarks.swe_bench_pro.contracts import (
     TaskOutcome,
 )
 from src.benchmarks.swe_bench_pro.dataset import _row_to_task
+from src.benchmarks.swe_bench_pro.scoring import (
+    HunkRange,
+    parse_unified_diff,
+    score_one,
+    score_predictions,
+)
 from src.benchmarks.swe_bench_pro.mock_adapter import (
     DeterministicMockAdapter,
     EmptyPatchAdapter,
@@ -534,3 +540,173 @@ class TestDatasetRowAdaptation:
         task = _row_to_task(row)
         assert task.extra["weird_field"] == "value"
         assert task.extra["another"] == 42
+
+
+# =============================================================================
+# Unofficial heuristic scoring
+# =============================================================================
+
+
+_GOLD_DIFF_FOO = (
+    "diff --git a/foo.py b/foo.py\n"
+    "--- a/foo.py\n"
+    "+++ b/foo.py\n"
+    "@@ -10,3 +10,4 @@\n"
+    " def bar():\n"
+    "-    return None\n"
+    "+    if value is None:\n"
+    "+        return 0\n"
+    "+    return value\n"
+)
+
+_GEN_DIFF_FOO_SAME_FILE_SAME_HUNK = (
+    "diff --git a/foo.py b/foo.py\n"
+    "--- a/foo.py\n"
+    "+++ b/foo.py\n"
+    "@@ -10,3 +10,3 @@\n"
+    " def bar():\n"
+    "-    return None\n"
+    "+    return value if value else 0\n"
+)
+
+_GEN_DIFF_DIFFERENT_FILE = (
+    "diff --git a/elsewhere.py b/elsewhere.py\n"
+    "--- a/elsewhere.py\n"
+    "+++ b/elsewhere.py\n"
+    "@@ -1,1 +1,1 @@\n"
+    "-x = 1\n"
+    "+x = 2\n"
+)
+
+
+class TestParseUnifiedDiff:
+    def test_empty_input_yields_empty_diff(self):
+        d = parse_unified_diff("")
+        assert d.is_empty
+        assert d.file_paths == frozenset()
+
+    def test_single_file_diff_extracts_file_path(self):
+        d = parse_unified_diff(_GOLD_DIFF_FOO)
+        assert d.file_paths == frozenset({"foo.py"})
+        assert len(d.files) == 1
+        assert len(d.files[0].hunks) == 1
+        assert d.files[0].hunks[0].old_start == 10
+
+    def test_multiple_files_each_get_their_own_filepatch(self):
+        text = _GOLD_DIFF_FOO + _GEN_DIFF_DIFFERENT_FILE
+        d = parse_unified_diff(text)
+        assert d.file_paths == frozenset({"foo.py", "elsewhere.py"})
+
+    def test_added_and_removed_tokens_collected(self):
+        d = parse_unified_diff(_GOLD_DIFF_FOO)
+        added = set(d.files[0].added_tokens)
+        removed = set(d.files[0].removed_tokens)
+        # Removed line was `return None`; tokens include both keywords.
+        assert "return" in removed
+        assert "None" in removed
+        # Added lines include `value`, `if`, `return`, etc.
+        assert "value" in added
+        assert "if" in added
+
+    def test_unparseable_input_returns_empty(self):
+        d = parse_unified_diff("This is not a diff at all.")
+        assert d.is_empty
+
+
+class TestHunkOverlap:
+    def test_overlapping_ranges_reported_as_overlapping(self):
+        a = HunkRange(old_start=10, old_len=5, new_start=10, new_len=5)
+        b = HunkRange(old_start=12, old_len=3, new_start=12, new_len=3)
+        assert a.overlaps(b)
+        assert b.overlaps(a)
+
+    def test_disjoint_ranges_do_not_overlap(self):
+        a = HunkRange(old_start=10, old_len=2, new_start=10, new_len=2)
+        b = HunkRange(old_start=20, old_len=2, new_start=20, new_len=2)
+        assert not a.overlaps(b)
+
+
+class TestScoreOne:
+    def test_matching_file_and_hunk_scores_high(self):
+        score = score_one(
+            "i1",
+            generated_patch=_GEN_DIFF_FOO_SAME_FILE_SAME_HUNK,
+            gold_patch=_GOLD_DIFF_FOO,
+        )
+        assert score.file_set.f1 == 1.0
+        assert score.hunk_overlap_rate == 1.0
+        assert score.composite_score > 0.5
+        assert score.is_in_neighborhood is True
+
+    def test_different_file_scores_zero(self):
+        score = score_one(
+            "i2",
+            generated_patch=_GEN_DIFF_DIFFERENT_FILE,
+            gold_patch=_GOLD_DIFF_FOO,
+        )
+        assert score.file_set.f1 == 0.0
+        assert score.hunk_overlap_rate == 0.0
+        assert score.is_in_neighborhood is False
+
+    def test_empty_generated_against_real_gold(self):
+        score = score_one(
+            "i3",
+            generated_patch="",
+            gold_patch=_GOLD_DIFF_FOO,
+        )
+        assert score.has_generated_patch is False
+        assert score.has_gold_patch is True
+        assert score.composite_score == 0.0
+
+    def test_both_empty_yields_zero_score(self):
+        # Vacuously matching but uninformative; not credited.
+        score = score_one("i4", generated_patch="", gold_patch="")
+        assert score.composite_score == 0.0
+
+
+class TestScorePredictions:
+    def test_aggregate_over_three_tasks(self):
+        gold = {
+            "i1": _GOLD_DIFF_FOO,
+            "i2": _GOLD_DIFF_FOO,
+            "i3": _GOLD_DIFF_FOO,
+        }
+        predictions = [
+            SWEBenchPrediction(
+                instance_id="i1",
+                model_patch=_GEN_DIFF_FOO_SAME_FILE_SAME_HUNK,
+                model_name_or_path="m",
+            ),
+            SWEBenchPrediction(
+                instance_id="i2",
+                model_patch=_GEN_DIFF_DIFFERENT_FILE,
+                model_name_or_path="m",
+            ),
+            SWEBenchPrediction(
+                instance_id="i3", model_patch="", model_name_or_path="m"
+            ),
+        ]
+        report = score_predictions(predictions, gold)
+        assert report.total_tasks == 3
+        assert report.in_neighborhood_count == 1
+        assert report.in_neighborhood_rate == pytest.approx(1 / 3)
+        assert report.mean_file_f1 > 0.0
+        assert report.mean_file_f1 < 1.0  # only one out of three matched
+
+    def test_empty_input_yields_empty_report(self):
+        report = score_predictions([], {})
+        assert report.total_tasks == 0
+        assert report.mean_composite == 0.0
+
+    def test_missing_gold_treated_as_no_gold(self):
+        predictions = [
+            SWEBenchPrediction(
+                instance_id="missing",
+                model_patch=_GEN_DIFF_FOO_SAME_FILE_SAME_HUNK,
+                model_name_or_path="m",
+            ),
+        ]
+        report = score_predictions(predictions, {})
+        assert report.total_tasks == 1
+        assert report.per_task[0].has_gold_patch is False
+        assert report.per_task[0].composite_score == 0.0

@@ -44,6 +44,13 @@ from .mock_adapter import (
     StubAdapter,
 )
 from .runner import RunReport, run
+from .scoring import (
+    SimilarityReport,
+    TaskSimilarityScore,
+    parse_unified_diff,
+    score_one,
+    score_predictions,
+)
 from .submission import write_submission
 
 __all__ = [
@@ -53,11 +60,16 @@ __all__ = [
     "DeterministicMockAdapter",
     "EmptyPatchAdapter",
     "RunReport",
+    "SimilarityReport",
     "StubAdapter",
     "SWEBenchPrediction",
     "SWEBenchResult",
     "SWEBenchTask",
     "TaskOutcome",
+    "TaskSimilarityScore",
+    "parse_unified_diff",
     "run",
+    "score_one",
+    "score_predictions",
     "write_submission",
 ]

@@ -237,16 +237,16 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 - **Context Retrieval Service:** `context-retrieval.aura.local:8080`
 - **Agent Orchestrator:** `orchestrator.aura.local:8080`
 
-### Current Status (As of 2026-05-06)
+### Current Status (As of 2026-05-07)
 
 - **Company:** Aenea Labs | **Domain:** aenealabs.com (Route 53)
 - **Overall Completion:** 99%
-- **Total Lines of Code:** 439,000+ lines (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure)
-- **Test Suite:** 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed) — note: 6,666 skipped includes 387 enterprise connector tests skipped on Linux CI due to mock-pollution; remediation tracked in audit
-- **Architecture Decision Records:** 88 ADRs (84 Deployed/Accepted, 1 Reserved [082], 3 Proposed [085, 087, 088])
+- **Total Lines of Code:** 375,000+ (production + infrastructure; tests counted separately)
+- **Test Suite:** 24,800+ tests (0 failures)
+- **Architecture Decision Records:** 89 ADRs (86 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089])
 - **Infrastructure:** 100% (All 9 phases deployed: Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
 - **Modular CI/CD:** 100% (38 buildspecs managing all CloudFormation templates)
-- **CloudFormation Templates:** 177 templates (counted by `AWSTemplateFormatVersion` header; 152 top-level in deploy/cloudformation/, 25 nested under deploy/multi-region/, deploy/airgap/, deploy/helm/, etc.)
+- **CloudFormation Templates:** 183 templates (24 CodeBuild + 159 infrastructure; counted by `AWSTemplateFormatVersion` header)
 - **CodeBuild Projects:** 19 projects (9 parent layers + 10 sub-layers including SSR, env-validator, and runtime-security)
 - **Network Services:** 100% (dnsmasq DNSSEC deployed to EKS, private ECR image, ECS Fargate VPC-wide DNS)
 - **LLM Integration:** 100% (Bedrock API operational, Claude 3.5 Sonnet approved and tested)
@@ -290,9 +290,12 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 - **Constraint Geometry Engine (ADR-081):** Phase 1 Deployed (Deterministic cortical discrimination, 7-axis constraint space, coherence scoring, provenance-aware weighting, 4 policy profiles, ~4.5K lines, 358 tests)
 - **Runtime Agent Security Platform (ADR-083):** 100% Deployed (Traffic interception, shadow agent detection, behavioral baselines, AURA-ATT&CK red team (97 techniques), runtime-to-code correlation via GraphRAG, E2E pipeline integrated, 7 dashboard widgets, ~10.3K lines, 1005 tests)
 - **Native Vulnerability Scanning Engine (ADR-084):** Infrastructure + UI Deployed (GraphRAG-enhanced LLM analysis, 3-phase adversarial verification, 4-layer isolation, closed-loop remediation, Titan Memory integration, ~4.9K lines foundation code, ~3K lines infrastructure, 9 stacks deployed to dev, 20 dashboard widgets, 3 pages, ~9.3K lines UI/mock data, 980 tests planned)
+- **Mythos-Class Model Scaffolding (issue #49 / ADR-049):** Inert by default (capability-tier abstraction STANDARD/ADVANCED, exploit-generation contract, separate ADVANCED-tier prompts, per-scan cost tracker, sandbox verifier wiring, `advanced_capability_enabled=False`; 48 mock-tested paths; live-model validation tracked in issue #115)
 - **Deterministic Verification Envelope (ADR-085):** Proposed (DO-178C output verification architecture, 3 pillars: N-of-M consensus generation, MC/DC structural coverage gate, Z3 formal verification; DO-330 Section 11.4 certification argument; 2 new CGE policy profiles for DAL A/B; ~4.7K lines planned, ~750 tests planned)
 - **Agentic Identity Lifecycle Controls (ADR-086):** 100% Deployed (Decommission assurance, lifecycle state machine, 15 credential enumerators, ghost agent scanner, tiered attestation, self-modification sentinel, SELF_GOVERNANCE graph edge, sentinel-to-correlator pipeline, delegation trust envelope, 7 channel verifiers, untrusted-origin profile, 1 dashboard widget, ~3.6K lines, 271 tests)
 - **Hyperscale Agent Orchestration (ADR-087):** Phase 1 Deployed (UI gating, execution tier selection, security gate validation, Integration Mode enforcement, 3 execution tiers: In-Process/Distributed Simple/Distributed Orchestrated, 3 graduated security gates, ~13.3K lines planned, ~500 lines UI deployed, 1,990 tests planned)
+- **Long-Horizon Security Campaigns (ADR-089):** Proposed; Phase 1 in-process (campaign_manager service composing existing primitives into multi-hour autonomous workloads: compliance hardening, vulnerability remediation, cross-repo chain analysis, threat hunting, Mythos exploit refinement, self-play training; orchestrator + operation ledger with idempotency contract + per-token cost tracker with 5% graceful-stop reservation + tenant cost rollup + drift detector + checkpoint store + state store with optimistic concurrency + Phase abstraction with harness-driven loop control + ComplianceHardeningWorker stub; Step Functions Standard chosen as production substrate, in-process now with same Protocols; 42 tests)
+- **SWE-Bench Pro Benchmark Adapter:** Phase 1 (`src/benchmarks/swe_bench_pro/` package: typed contracts, runner with bounded concurrency + per-task timeout, mock adapters, real Aura+Bedrock adapter with cost-cap halt, unofficial heuristic-scoring mode (file F1 + hunk overlap + token Jaccard), enhanced adapter scaffolding with GraphRAG retrieval + Reviewer pass; CLI at `scripts/benchmarks/run_swe_bench_pro.py`; defaults updated to current-gen Claude Sonnet 4.6 / Haiku 4.5; 57 tests)
 - **DEV Cost Scheduler:** Operational (`deploy/cloudformation/dev-cost-scheduler.yaml`, Layer 5.11). Multi-nodegroup off-hours scaling for EKS nodegroups. See runbook for manual override.
 - **QA Environment Kill-Switch:** Operational (`scripts/qa_killswitch.py`, 47 tests). See `docs/runbooks/QA_KILLSWITCH_RUNBOOK.md` for operations.
 - **DEV Environment Kill-Switch:** Operational (`scripts/dev_killswitch.py`, 86 tests). See `docs/runbooks/DEV_KILLSWITCH_RUNBOOK.md` for operations.

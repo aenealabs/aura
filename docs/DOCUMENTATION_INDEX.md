@@ -1,6 +1,6 @@
 # Project Aura - Documentation Index
 
-**Last Updated:** May 6, 2026
+**Last Updated:** May 7, 2026
 **Purpose:** Master index for all project documentation with clear organization
 
 ---
@@ -982,6 +982,7 @@ Detailed technical specifications for complex architectural components.
 | [architecture-decisions/ADR-086-agentic-identity-lifecycle-controls.md](architecture-decisions/ADR-086-agentic-identity-lifecycle-controls.md) | Deployed | Agentic Identity Lifecycle Controls (Decommission Assurance, Ghost Agent Scanner, Self-Modification Sentinel, Delegation Trust Envelope) |
 | [architecture-decisions/ADR-087-hyperscale-agent-orchestration.md](architecture-decisions/ADR-087-hyperscale-agent-orchestration.md) | Phase 1 Deployed | Hyperscale Agent Orchestration (3 Execution Tiers, Integration Mode Gating, Graduated Security Gates, 1,000+ Agent Scaling) |
 | [architecture-decisions/ADR-088-continuous-model-assurance.md](architecture-decisions/ADR-088-continuous-model-assurance.md) | Implemented (All 3 Phases) | Continuous Model Assurance (CGE Regression-Floor, Adapter Registry, 6-Axis MA1-MA6 Domain, Scout Agent, Model Provenance with Sigstore, Frozen Reference Oracle, Step Functions Pipeline, Zero-Egress Sandbox, Anti-Goodhart Controls, Rollback, CloudTrail Audit) |
+| [architecture-decisions/ADR-089-long-horizon-security-campaigns.md](architecture-decisions/ADR-089-long-horizon-security-campaigns.md) | Proposed (Phase 1 In-Process) | Long-Horizon Security Campaigns (Multi-Hour Autonomous Workloads, Step Functions Standard Substrate, Operation Ledger Idempotency, Per-Token Cost Tracker with Graceful-Stop Reservation, Tenant Cost Rollup, Drift Detector, Checkpoint Store, State Store with Optimistic Concurrency, Phase Abstraction with Harness-Driven Loop Control, ComplianceHardeningWorker Stub) |
 
 ### Runtime Agent Security Platform (ADR-083)
 | File | Purpose |
@@ -1030,6 +1031,17 @@ Detailed technical specifications for complex architectural components.
 | [../src/services/vulnerability_scanner/mock_data.py](../src/services/vulnerability_scanner/mock_data.py) | Enterprise mock data generator (1,999 lines) |
 | [../src/services/vulnerability_scanner/ui/types.ts](../src/services/vulnerability_scanner/ui/types.ts) | TypeScript interfaces for scanner API contracts |
 | [../src/services/vulnerability_scanner/ui/mock-data.ts](../src/services/vulnerability_scanner/ui/mock-data.ts) | TypeScript mock data (532 findings, 50 scans) |
+
+**Mythos-Class ADVANCED-Tier Scaffolding (issue #49 / ADR-049, inert by default):**
+| File | Purpose |
+|------|---------|
+| [../src/services/vulnerability_scanner/analysis/capability.py](../src/services/vulnerability_scanner/analysis/capability.py) | Capability-tier abstraction (STANDARD / ADVANCED) |
+| [../src/services/vulnerability_scanner/analysis/capability_router.py](../src/services/vulnerability_scanner/analysis/capability_router.py) | Tier router with `advanced_capability_enabled=False` default |
+| [../src/services/vulnerability_scanner/analysis/cost_tracker.py](../src/services/vulnerability_scanner/analysis/cost_tracker.py) | Per-scan cost tracker for ADVANCED-tier invocations |
+| [../src/services/vulnerability_scanner/analysis/exploit_attempt.py](../src/services/vulnerability_scanner/analysis/exploit_attempt.py) | Exploit-attempt data model |
+| [../src/services/vulnerability_scanner/analysis/exploit_generator.py](../src/services/vulnerability_scanner/analysis/exploit_generator.py) | Exploit-generation contract for Mythos-class models |
+| [../src/services/vulnerability_scanner/analysis/advanced_prompts.py](../src/services/vulnerability_scanner/analysis/advanced_prompts.py) | Separate ADVANCED-tier prompt templates |
+| [../src/services/vulnerability_scanner/verification/exploit_verifier.py](../src/services/vulnerability_scanner/verification/exploit_verifier.py) | Sandbox verifier wiring for generated exploits |
 
 ### Constraint Geometry Engine (ADR-081)
 | File | Purpose |
@@ -1363,6 +1375,44 @@ Enterprise data platform integration for threat intelligence, asset criticality,
 | [../frontend/src/components/settings/PalantirIntegrationSettings.jsx](../frontend/src/components/settings/PalantirIntegrationSettings.jsx) | 5-step configuration wizard |
 | [../frontend/src/components/integrations/IntegrationHub.jsx](../frontend/src/components/integrations/IntegrationHub.jsx) | Integration management with Palantir support |
 | [../frontend/src/components/dashboard/widgets/SyncStatusWidget.jsx](../frontend/src/components/dashboard/widgets/SyncStatusWidget.jsx) | Ontology sync status widget |
+
+### Long-Horizon Security Campaigns (ADR-089)
+
+Phase 1 in-process implementation of multi-hour autonomous security workloads. Step Functions Standard is the chosen production substrate; current code uses the same Protocols in-process.
+
+| File | Purpose |
+|------|---------|
+| [../src/services/campaign_manager/__init__.py](../src/services/campaign_manager/__init__.py) | Package initialization with exports |
+| [../src/services/campaign_manager/contracts.py](../src/services/campaign_manager/contracts.py) | Typed contracts and Protocols (CampaignSpec, PhaseResult, ledger interfaces) |
+| [../src/services/campaign_manager/exceptions.py](../src/services/campaign_manager/exceptions.py) | Campaign-specific exception hierarchy |
+| [../src/services/campaign_manager/orchestrator.py](../src/services/campaign_manager/orchestrator.py) | Campaign orchestrator with phase transitions and HITL milestone gating |
+| [../src/services/campaign_manager/operation_ledger.py](../src/services/campaign_manager/operation_ledger.py) | Operation ledger with idempotency contract for durable execution |
+| [../src/services/campaign_manager/cost_tracker.py](../src/services/campaign_manager/cost_tracker.py) | Per-token cost tracker with 5% graceful-stop reservation |
+| [../src/services/campaign_manager/tenant_cost_rollup.py](../src/services/campaign_manager/tenant_cost_rollup.py) | Tenant-level campaign cost aggregation |
+| [../src/services/campaign_manager/drift_detector.py](../src/services/campaign_manager/drift_detector.py) | Phase-output drift detection across long-running campaigns |
+| [../src/services/campaign_manager/checkpoint_store.py](../src/services/campaign_manager/checkpoint_store.py) | Phase checkpoint storage for durable resumption |
+| [../src/services/campaign_manager/state_store.py](../src/services/campaign_manager/state_store.py) | Campaign state store with optimistic concurrency control |
+| [../src/services/campaign_manager/phases/base.py](../src/services/campaign_manager/phases/base.py) | Phase abstraction with harness-driven loop control |
+| [../src/services/campaign_manager/phases/compliance_hardening.py](../src/services/campaign_manager/phases/compliance_hardening.py) | ComplianceHardeningWorker stub (NIST 800-53, SOC 2, CMMC, FedRAMP) |
+
+### SWE-Bench Pro Benchmark Adapter (Phase 1)
+
+Benchmark harness for evaluating Aura on the SWE-Bench Pro task set. Includes a real Aura+Bedrock adapter with cost-cap halt, an unofficial heuristic-scoring mode (no Docker), and an enhanced adapter scaffolding that adds GraphRAG retrieval and a Reviewer pass.
+
+| File | Purpose |
+|------|---------|
+| [../src/benchmarks/swe_bench_pro/__init__.py](../src/benchmarks/swe_bench_pro/__init__.py) | Package initialization with exports |
+| [../src/benchmarks/swe_bench_pro/contracts.py](../src/benchmarks/swe_bench_pro/contracts.py) | Typed contracts (Task, Submission, RunConfig, AdapterProtocol, scoring types) |
+| [../src/benchmarks/swe_bench_pro/dataset.py](../src/benchmarks/swe_bench_pro/dataset.py) | Dataset loader for SWE-Bench Pro tasks |
+| [../src/benchmarks/swe_bench_pro/runner.py](../src/benchmarks/swe_bench_pro/runner.py) | Bounded-concurrency runner with per-task timeout |
+| [../src/benchmarks/swe_bench_pro/scoring.py](../src/benchmarks/swe_bench_pro/scoring.py) | Heuristic scoring (file F1 + hunk overlap + token Jaccard) for unofficial mode |
+| [../src/benchmarks/swe_bench_pro/submission.py](../src/benchmarks/swe_bench_pro/submission.py) | Submission packaging and serialization |
+| [../src/benchmarks/swe_bench_pro/prompts.py](../src/benchmarks/swe_bench_pro/prompts.py) | Prompt templates for Aura and enhanced adapters |
+| [../src/benchmarks/swe_bench_pro/adapter.py](../src/benchmarks/swe_bench_pro/adapter.py) | Adapter base interface |
+| [../src/benchmarks/swe_bench_pro/mock_adapter.py](../src/benchmarks/swe_bench_pro/mock_adapter.py) | Mock adapter for tests and dry-runs |
+| [../src/benchmarks/swe_bench_pro/aura_adapter.py](../src/benchmarks/swe_bench_pro/aura_adapter.py) | Real Aura+Bedrock adapter with cost-cap halt (Sonnet 4.6 / Haiku 4.5 defaults) |
+| [../src/benchmarks/swe_bench_pro/enhanced_adapter.py](../src/benchmarks/swe_bench_pro/enhanced_adapter.py) | Enhanced adapter scaffolding (GraphRAG retrieval + Reviewer pass) |
+| [../scripts/benchmarks/run_swe_bench_pro.py](../scripts/benchmarks/run_swe_bench_pro.py) | CLI for running the benchmark across adapters and modes |
 
 ### Product Documentation (docs/product/)
 

@@ -1,6 +1,6 @@
 # Project Aura: Development Status
 
-**Last Assessment:** May 6, 2026
+**Last Assessment:** May 7, 2026
 **Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
 
 ---
@@ -10,10 +10,10 @@
 | Metric | Value |
 |--------|-------|
 | **Overall Completion** | 99% |
-| **Lines of Code** | 458,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure baseline + ~19K added for DVE, Model Assurance, HITL UI, and IaC batch) |
-| **Test Suite** | 24,500+ tests (0 failed; +191 verification_envelope, +567 model_assurance, +15 HITL UI on top of 23,761 baseline) |
-| **Architecture Decision Records** | 88 ADRs (86 Deployed/Accepted, 1 Reserved [082], 1 Proposed [087]) |
-| **CloudFormation Templates** | 183 templates (177 baseline + 2 DVE + 4 Model Assurance) |
+| **Lines of Code** | 375,000+ |
+| **Test Suite** | 24,800+ tests (0 failures) |
+| **Architecture Decision Records** | 89 ADRs (86 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089]) |
+| **CloudFormation Templates** | 183 (24 CodeBuild + 159 infrastructure) |
 | **Buildspecs** | 38 buildspec files in deploy/buildspecs/ (data, observability, serverless, sandbox-infrastructure extended for ADR-088) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
@@ -81,9 +81,11 @@
 | Self-Hosted Deployment | Complete | Podman, Windows/Linux/macOS (ADR-049) |
 | Air-Gapped & Edge | Complete | Offline model bundles, edge runtime, 200 tests (ADR-078) |
 | Developer Tools | Complete | VSCode, PyCharm, JupyterLab, Dataiku connectors (ADR-048) |
-| Native Vulnerability Scanner | Infrastructure Deployed | GraphRAG-enhanced LLM analysis (ADR-084) |
+| Native Vulnerability Scanner | Infrastructure Deployed | GraphRAG-enhanced LLM analysis (ADR-084); ADVANCED-tier (Mythos-class) scaffolding inert by default (capability router, exploit-generation contract, separate ADVANCED prompts, per-scan cost tracker, sandbox verifier, 48 mock-tested paths); live-model validation tracked in issue #115 |
 | Deterministic Verification Envelope | Complete | All 5 phases implemented: N-of-M consensus, MC/DC coverage gate, Z3 formal verification, DAL-A/DAL-B profiles, DO-178C lifecycle data, DVE pipeline orchestrator with DynamoDB/S3/CloudWatch sinks, 191 tests (ADR-085) |
 | Continuous Model Assurance | Complete | All 3 phases implemented: CGE regression-floor, Adapter Registry, 6-axis MA1-MA6 domain, Scout Agent, Model Provenance Service (Sigstore), Frozen Reference Oracle (400 cases, 10% rotation cap), Step Functions pipeline, zero-egress sandbox, anti-Goodhart controls, HuggingFace + Internal SWE-RL sources, rollback mechanism, CloudTrail audit (13 events x 6 NIST controls), GovCloud FIPS validator, 567 new tests (ADR-088) |
+| Long-Horizon Security Campaigns | Phase 1 In-Process | Campaign manager service composing existing primitives into multi-hour autonomous workloads (compliance hardening, vulnerability remediation, cross-repo chain analysis, threat hunting, Mythos exploit refinement, self-play training); orchestrator + operation ledger with idempotency contract + per-token cost tracker with 5% graceful-stop reservation + tenant cost rollup + drift detector + checkpoint store + state store with optimistic concurrency + Phase abstraction with harness-driven loop control + ComplianceHardeningWorker stub; Step Functions Standard chosen as production substrate (in-process now, same Protocols); 42 tests (ADR-089) |
+| SWE-Bench Pro Benchmark Adapter | Phase 1 | Typed contracts, runner with bounded concurrency + per-task timeout, mock adapters, real Aura+Bedrock adapter with cost-cap halt, unofficial heuristic-scoring mode (file F1 + hunk overlap + token Jaccard), enhanced adapter scaffolding (GraphRAG retrieval + Reviewer pass), CLI at scripts/benchmarks/run_swe_bench_pro.py; defaults updated to current-gen Claude (Sonnet 4.6 / Haiku 4.5); 57 tests |
 
 ### UI & Dashboard
 
@@ -123,13 +125,13 @@
 
 ## Architecture Decision Records
 
-88 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
+89 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
 
 - **ADR-004**: Cloud Abstraction Layer (Multi-cloud)
 - **ADR-024**: Titan Neural Memory Architecture
 - **ADR-032**: Configurable HITL Autonomy Framework
 - **ADR-034**: Context Engineering Framework
-- **ADR-049**: Self-Hosted Deployment (Podman)
+- **ADR-049**: Self-Hosted Deployment (Podman) and Mythos Capability Tier
 - **ADR-051**: Recursive Context & Embedding Prediction
 - **ADR-063**: Constitutional AI Integration
 - **ADR-065**: Semantic Guardrails Engine
@@ -141,3 +143,4 @@
 - **ADR-086**: Agentic Identity Lifecycle Controls (Deployed)
 - **ADR-087**: Hyperscale Agent Orchestration (Phase 1 Deployed)
 - **ADR-088**: Continuous Model Assurance (All 3 Phases Implemented)
+- **ADR-089**: Long-Horizon Security Campaigns (Proposed; Phase 1 in-process implementation)

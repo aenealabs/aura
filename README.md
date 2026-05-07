@@ -345,9 +345,9 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 
 | Metric | Value |
 |--------|-------|
-| Lines of Code | 458,000+ (DVE + Model Assurance + HITL UI + IaC additions on top of 439K baseline) |
-| Test Suite | 24,500+ tests (0 failures) |
-| Architecture Decision Records | 88 ADRs |
+| Lines of Code | 375,000+ |
+| Test Suite | 24,800+ tests (0 failures) |
+| Architecture Decision Records | 89 ADRs |
 | CloudFormation Templates | 183 (24 CodeBuild + 159 infrastructure) |
 | Infrastructure Phases | 9 of 9 complete |
 

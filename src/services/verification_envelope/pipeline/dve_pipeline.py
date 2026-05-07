@@ -127,9 +127,7 @@ class DVEPipeline:
         generator and forward the rest unchanged."""
         return cls(
             config=config,
-            consensus_service=ConsensusService(
-                config=config, generator=generator
-            ),
+            consensus_service=ConsensusService(config=config, generator=generator),
             coverage_gate=coverage_gate,
             formal_gate=formal_gate,
             constitutional_reviser=constitutional_reviser,

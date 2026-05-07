@@ -59,9 +59,7 @@ def test_dal_b_profile_lacks_object_code_constraint() -> None:
 
 def test_get_policy_constraints_by_type_filters() -> None:
     p = PROFILE_DO178C_DAL_A
-    mcdc = p.get_policy_constraints_by_type(
-        PolicyConstraintType.MCDC_COVERAGE_REQUIRED
-    )
+    mcdc = p.get_policy_constraints_by_type(PolicyConstraintType.MCDC_COVERAGE_REQUIRED)
     assert len(mcdc) == 1
     assert mcdc[0].constraint_id == "dal-a-mcdc-100"
 
@@ -85,9 +83,7 @@ def test_clean_input_routes_by_score_alone() -> None:
 def test_default_profile_unaffected_by_policy_constraints_default() -> None:
     """Profiles created without policy_constraints behave as before."""
     assert PROFILE_DEFAULT.policy_constraints == ()
-    assert (
-        PROFILE_DEFAULT.determine_action(ccs=0.85) == CoherenceAction.AUTO_EXECUTE
-    )
+    assert PROFILE_DEFAULT.determine_action(ccs=0.85) == CoherenceAction.AUTO_EXECUTE
 
 
 def test_custom_profile_can_register_with_policy_constraints() -> None:

@@ -62,9 +62,7 @@ async def test_live_path_writes_with_conditional_expression() -> None:
             self.calls.append(kwargs)
 
     client = _FakeDDB()
-    sink = DynamoDBAuditSink(
-        table_name="aura-dve-audit-test", dynamodb_client=client
-    )
+    sink = DynamoDBAuditSink(table_name="aura-dve-audit-test", dynamodb_client=client)
     assert sink.is_live is True
     outcome = await sink.archive(_record(), "(check-sat)")
     assert outcome == ArchiveOutcome.ARCHIVED
@@ -85,9 +83,7 @@ async def test_live_path_maps_record_to_dynamodb_item_form() -> None:
             self.calls.append(kwargs)
 
     client = _FakeDDB()
-    sink = DynamoDBAuditSink(
-        table_name="aura-dve-audit-test", dynamodb_client=client
-    )
+    sink = DynamoDBAuditSink(table_name="aura-dve-audit-test", dynamodb_client=client)
     await sink.archive(_record("dve-r1"), "(check-sat)")
     item = client.calls[0]["Item"]
     assert item["record_id"]["S"] == "dve-r1"
@@ -107,10 +103,15 @@ async def test_conditional_check_failure_returns_skipped() -> None:
         def put_item(self, **kwargs):  # type: ignore[no-untyped-def]
             from src.services.verification_envelope.sinks import dynamodb_audit_sink
 
-            err = dynamodb_audit_sink.ClientError(  # type: ignore[attr-defined]
-                {"Error": {"Code": "ConditionalCheckFailedException"}},
-                "PutItem",
-            ) if hasattr(dynamodb_audit_sink.ClientError, "__init__") else Exception()
+            err = (
+                dynamodb_audit_sink.ClientError(  # type: ignore[attr-defined]
+                    {"Error": {"Code": "ConditionalCheckFailedException"}},
+                    "PutItem",
+                )
+                if hasattr(dynamodb_audit_sink.ClientError, "__init__")
+                else Exception()
+            )
+
             # Simulate the ClientError shape boto raises.
             class _Err(Exception):
                 response = {"Error": {"Code": "ConditionalCheckFailedException"}}
@@ -118,9 +119,7 @@ async def test_conditional_check_failure_returns_skipped() -> None:
             raise _Err()
 
     client = _FakeDDB()
-    sink = DynamoDBAuditSink(
-        table_name="aura-dve-audit-test", dynamodb_client=client
-    )
+    sink = DynamoDBAuditSink(table_name="aura-dve-audit-test", dynamodb_client=client)
     # Patch the imported ClientError to the bare Exception so the
     # except branch matches.
     from src.services.verification_envelope.sinks import dynamodb_audit_sink as ddb_mod
@@ -141,8 +140,6 @@ async def test_unexpected_exception_returns_failed() -> None:
             raise RuntimeError("network down")
 
     client = _FakeDDB()
-    sink = DynamoDBAuditSink(
-        table_name="aura-dve-audit-test", dynamodb_client=client
-    )
+    sink = DynamoDBAuditSink(table_name="aura-dve-audit-test", dynamodb_client=client)
     outcome = await sink.archive(_record(), "(check-sat)")
     assert outcome == ArchiveOutcome.FAILED

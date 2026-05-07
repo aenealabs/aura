@@ -138,9 +138,7 @@ class VerificationGateService:
         # analysis time even when Z3 returns SAT for the conjunction).
         if result.verdict == VerificationVerdict.PROVED:
             verified = tuple(
-                axis
-                for axis, holds in translation.axis_holds.items()
-                if holds
+                axis for axis, holds in translation.axis_holds.items() if holds
             )
             failed_axes = tuple(
                 axis.value

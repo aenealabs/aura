@@ -76,9 +76,7 @@ class VectorCASTAdapter:
 
     # ------------------------------------------------------------ internals
 
-    def _analyze_sync(
-        self, request: CoverageAnalysisRequest
-    ) -> MCDCCoverageReport:
+    def _analyze_sync(self, request: CoverageAnalysisRequest) -> MCDCCoverageReport:
         sources = " ".join(shlex.quote(str(s)) for s in request.source_files)
         cmd = [
             self._binary,
@@ -150,9 +148,7 @@ class VectorCASTAdapter:
         statement = float(coverage.get("statement_pct", 0.0))
         decision = float(coverage.get("decision_pct", 0.0))
         mcdc = float(coverage.get("mcdc_pct", 0.0))
-        uncovered = tuple(
-            str(u) for u in coverage.get("uncovered_conditions", [])
-        )
+        uncovered = tuple(str(u) for u in coverage.get("uncovered_conditions", []))
 
         satisfied = request.dal_policy.is_satisfied(statement, decision, mcdc)
         return MCDCCoverageReport(
@@ -180,9 +176,7 @@ class VectorCASTAdapter:
             statement = float(metrics.get("statement_pct", 0.0))
             decision = float(metrics.get("decision_pct", 0.0))
             mcdc = float(metrics.get("mcdc_pct", 0.0))
-            uncovered = tuple(
-                str(u) for u in metrics.get("uncovered_conditions", [])
-            )
+            uncovered = tuple(str(u) for u in metrics.get("uncovered_conditions", []))
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
             return MCDCCoverageReport(
                 statement_coverage_pct=0.0,

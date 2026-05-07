@@ -98,9 +98,7 @@ class ConsensusResult:
     pairwise_similarities: tuple[tuple[float, ...], ...]
     convergence_rate: float
     audit_record_id: str
-    computed_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    computed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def needs_hitl(self) -> bool:
@@ -117,9 +115,7 @@ class ConsensusResult:
             "selection_method": self.selection_method,
             "convergence_rate": self.convergence_rate,
             "canonical_hashes": [c.canonical_hash for c in self.canonical_forms],
-            "pairwise_similarities": [
-                list(row) for row in self.pairwise_similarities
-            ],
+            "pairwise_similarities": [list(row) for row in self.pairwise_similarities],
             "computed_at": self.computed_at.isoformat(),
         }
 
@@ -168,13 +164,7 @@ class DVEResult:
     pipeline_latency_ms: float
     dal_level: str = "DEFAULT"
     audit_record_id: str = ""
-    structural_coverage: MCDCCoverageReport = field(
-        default_factory=MCDCCoverageReport
-    )
-    formal_verification: VerificationResult = field(
-        default_factory=VerificationResult
-    )
+    structural_coverage: MCDCCoverageReport = field(default_factory=MCDCCoverageReport)
+    formal_verification: VerificationResult = field(default_factory=VerificationResult)
     rejection_reason: str | None = None
-    computed_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    computed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

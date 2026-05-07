@@ -63,9 +63,7 @@ class DVEConfig:
         return cls(
             consensus_n=int(os.environ.get("DVE_CONSENSUS_N", "3")),
             consensus_m=int(os.environ.get("DVE_CONSENSUS_M", "2")),
-            consensus_temperature=float(
-                os.environ.get("DVE_CONSENSUS_TEMP", "0.2")
-            ),
+            consensus_temperature=float(os.environ.get("DVE_CONSENSUS_TEMP", "0.2")),
             consensus_max_concurrency=int(
                 os.environ.get("DVE_CONSENSUS_MAX_CONCURRENCY", "3")
             ),
@@ -98,9 +96,7 @@ class DVEConfig:
                 f"consensus_n ({self.consensus_n})"
             )
         if not 0.0 <= self.embedding_cosine_threshold <= 1.0:
-            raise ValueError(
-                "embedding_cosine_threshold must be in [0.0, 1.0]"
-            )
+            raise ValueError("embedding_cosine_threshold must be in [0.0, 1.0]")
         if self.consensus_temperature < 0.0:
             raise ValueError("consensus_temperature must be >= 0")
 

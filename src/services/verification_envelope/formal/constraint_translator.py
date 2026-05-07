@@ -205,9 +205,7 @@ class ConstraintTranslator:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if node.name.startswith("_"):
                     continue  # Private — annotations not required.
-                missing_param = [
-                    a.arg for a in node.args.args if a.annotation is None
-                ]
+                missing_param = [a.arg for a in node.args.args if a.annotation is None]
                 missing_return = node.returns is None
                 if missing_param or missing_return:
                     unannotated_fns.append(node.name)
@@ -219,9 +217,7 @@ class ConstraintTranslator:
             )
 
         block_lines: list[str] = ["(declare-const c1_holds Bool)"]
-        block_lines.append(
-            f"(assert (= c1_holds {'true' if holds else 'false'}))"
-        )
+        block_lines.append(f"(assert (= c1_holds {'true' if holds else 'false'}))")
         return holds, "\n".join(block_lines), tuple(notes)
 
     # ---------------------------------------------------------------- C2
@@ -269,9 +265,7 @@ class ConstraintTranslator:
         holds = not violations
         notes = tuple(f"C3 violation: {v}" for v in violations)
         block_lines: list[str] = ["(declare-const c3_holds Bool)"]
-        block_lines.append(
-            f"(assert (= c3_holds {'true' if holds else 'false'}))"
-        )
+        block_lines.append(f"(assert (= c3_holds {'true' if holds else 'false'}))")
         return holds, "\n".join(block_lines), notes
 
     # ---------------------------------------------------------------- C4
@@ -288,9 +282,7 @@ class ConstraintTranslator:
             if rule.axis is not ConstraintAxis.OPERATIONAL_BOUNDS:
                 continue
             for key, value in rule.metadata_dict.items():
-                if key.startswith("upper_bound_") and isinstance(
-                    value, (int, float)
-                ):
+                if key.startswith("upper_bound_") and isinstance(value, (int, float)):
                     bounds[key.removeprefix("upper_bound_")] = int(value)
 
         if not bounds:
@@ -307,9 +299,7 @@ class ConstraintTranslator:
             lines.append(f"(assert (<= {symbol} {upper}))")
             all_constraints.append(f"(<= {symbol} {upper})")
 
-        lines.append(
-            "(assert (= c4_holds (and " + " ".join(all_constraints) + ")))"
-        )
+        lines.append("(assert (= c4_holds (and " + " ".join(all_constraints) + ")))")
         return True, "\n".join(lines)
 
 

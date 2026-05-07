@@ -44,9 +44,7 @@ class LDRAAdapter:
         report_format: str = "xml",
         extra_args: tuple[str, ...] = (),
     ) -> None:
-        self._binary = binary_path or os.environ.get(
-            "LDRA_BINARY", self.DEFAULT_BINARY
-        )
+        self._binary = binary_path or os.environ.get("LDRA_BINARY", self.DEFAULT_BINARY)
         self._report_format = report_format
         self._extra_args = list(extra_args)
 
@@ -63,9 +61,7 @@ class LDRAAdapter:
 
     # ------------------------------------------------------------ internals
 
-    def _analyze_sync(
-        self, request: CoverageAnalysisRequest
-    ) -> MCDCCoverageReport:
+    def _analyze_sync(self, request: CoverageAnalysisRequest) -> MCDCCoverageReport:
         cmd = [
             self._binary,
             "--coverage=statement,branch,mcdc",
@@ -92,9 +88,7 @@ class LDRAAdapter:
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            return self._unavailable_report(
-                f"tbrun timed out after {exc.timeout}s"
-            )
+            return self._unavailable_report(f"tbrun timed out after {exc.timeout}s")
         except FileNotFoundError as exc:
             return self._unavailable_report(f"tbrun invocation failed: {exc}")
 
@@ -124,9 +118,7 @@ class LDRAAdapter:
             statement = float(metrics.get("statement_pct", 0.0))
             decision = float(metrics.get("decision_pct", 0.0))
             mcdc = float(metrics.get("mcdc_pct", 0.0))
-            uncovered = tuple(
-                str(u) for u in metrics.get("uncovered_conditions", [])
-            )
+            uncovered = tuple(str(u) for u in metrics.get("uncovered_conditions", []))
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             return MCDCCoverageReport(
                 statement_coverage_pct=0.0,

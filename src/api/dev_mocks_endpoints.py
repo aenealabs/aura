@@ -141,11 +141,26 @@ _CAPABILITY_NODES = [
     {"id": "agent.coder", "type": "agent", "label": "Coder Agent", "tier": 2},
     {"id": "agent.reviewer", "type": "agent", "label": "Reviewer Agent", "tier": 2},
     {"id": "agent.validator", "type": "agent", "label": "Validator Agent", "tier": 2},
-    {"id": "agent.runtime_incident", "type": "agent", "label": "Runtime Incident Agent", "tier": 1},
+    {
+        "id": "agent.runtime_incident",
+        "type": "agent",
+        "label": "Runtime Incident Agent",
+        "tier": 1,
+    },
     {"id": "tool.bedrock_invoke", "type": "tool", "label": "Bedrock Invoke", "tier": 3},
     {"id": "tool.neptune_query", "type": "tool", "label": "Neptune Query", "tier": 3},
-    {"id": "tool.opensearch_query", "type": "tool", "label": "OpenSearch Query", "tier": 3},
-    {"id": "tool.sandbox_dispatch", "type": "tool", "label": "Sandbox Dispatch (HITL)", "tier": 1},
+    {
+        "id": "tool.opensearch_query",
+        "type": "tool",
+        "label": "OpenSearch Query",
+        "tier": 3,
+    },
+    {
+        "id": "tool.sandbox_dispatch",
+        "type": "tool",
+        "label": "Sandbox Dispatch (HITL)",
+        "tier": 1,
+    },
     {"id": "data.repo_index", "type": "data", "label": "Repository Index", "tier": 4},
     {"id": "data.audit_log", "type": "data", "label": "Audit Log", "tier": 1},
 ]
@@ -154,12 +169,32 @@ _CAPABILITY_EDGES = [
     {"source": "agent.coder", "target": "tool.bedrock_invoke", "scope": "read_write"},
     {"source": "agent.coder", "target": "tool.neptune_query", "scope": "read_only"},
     {"source": "agent.reviewer", "target": "tool.bedrock_invoke", "scope": "read_only"},
-    {"source": "agent.reviewer", "target": "tool.opensearch_query", "scope": "read_only"},
-    {"source": "agent.validator", "target": "tool.sandbox_dispatch", "scope": "read_write"},
-    {"source": "agent.runtime_incident", "target": "data.audit_log", "scope": "read_only"},
-    {"source": "tool.bedrock_invoke", "target": "data.audit_log", "scope": "write_only"},
+    {
+        "source": "agent.reviewer",
+        "target": "tool.opensearch_query",
+        "scope": "read_only",
+    },
+    {
+        "source": "agent.validator",
+        "target": "tool.sandbox_dispatch",
+        "scope": "read_write",
+    },
+    {
+        "source": "agent.runtime_incident",
+        "target": "data.audit_log",
+        "scope": "read_only",
+    },
+    {
+        "source": "tool.bedrock_invoke",
+        "target": "data.audit_log",
+        "scope": "write_only",
+    },
     {"source": "tool.neptune_query", "target": "data.repo_index", "scope": "read_only"},
-    {"source": "tool.opensearch_query", "target": "data.repo_index", "scope": "read_only"},
+    {
+        "source": "tool.opensearch_query",
+        "target": "data.repo_index",
+        "scope": "read_only",
+    },
 ]
 
 
@@ -210,11 +245,31 @@ async def get_capability_escalation_paths(
 _KNOWLEDGE_GRAPH_NODES = [
     {"id": "file.api_main", "type": "file", "label": "src/api/main.py", "loc": 920},
     {"id": "file.auth", "type": "file", "label": "src/api/auth.py", "loc": 540},
-    {"id": "file.token_service", "type": "file", "label": "src/services/identity/token_service.py", "loc": 470},
-    {"id": "func.get_current_user", "type": "function", "label": "get_current_user", "file": "src/api/auth.py"},
-    {"id": "func.verify_token", "type": "function", "label": "verify_token", "file": "src/api/auth.py"},
+    {
+        "id": "file.token_service",
+        "type": "file",
+        "label": "src/services/identity/token_service.py",
+        "loc": 470,
+    },
+    {
+        "id": "func.get_current_user",
+        "type": "function",
+        "label": "get_current_user",
+        "file": "src/api/auth.py",
+    },
+    {
+        "id": "func.verify_token",
+        "type": "function",
+        "label": "verify_token",
+        "file": "src/api/auth.py",
+    },
     {"id": "class.User", "type": "class", "label": "User", "file": "src/api/auth.py"},
-    {"id": "class.HITLApprovalService", "type": "class", "label": "HITLApprovalService", "file": "src/services/hitl_approval_service.py"},
+    {
+        "id": "class.HITLApprovalService",
+        "type": "class",
+        "label": "HITLApprovalService",
+        "file": "src/services/hitl_approval_service.py",
+    },
 ]
 
 _KNOWLEDGE_GRAPH_EDGES = [
@@ -223,7 +278,11 @@ _KNOWLEDGE_GRAPH_EDGES = [
     {"source": "file.api_main", "target": "func.get_current_user", "type": "imports"},
     {"source": "file.auth", "target": "class.User", "type": "defines"},
     {"source": "file.auth", "target": "func.get_current_user", "type": "defines"},
-    {"source": "file.api_main", "target": "class.HITLApprovalService", "type": "imports"},
+    {
+        "source": "file.api_main",
+        "target": "class.HITLApprovalService",
+        "type": "imports",
+    },
 ]
 
 
@@ -237,7 +296,9 @@ async def get_knowledge_graph(
         "edges": _KNOWLEDGE_GRAPH_EDGES,
         "stats": {
             "files": sum(1 for n in _KNOWLEDGE_GRAPH_NODES if n["type"] == "file"),
-            "functions": sum(1 for n in _KNOWLEDGE_GRAPH_NODES if n["type"] == "function"),
+            "functions": sum(
+                1 for n in _KNOWLEDGE_GRAPH_NODES if n["type"] == "function"
+            ),
             "classes": sum(1 for n in _KNOWLEDGE_GRAPH_NODES if n["type"] == "class"),
             "edges": len(_KNOWLEDGE_GRAPH_EDGES),
         },
@@ -375,9 +436,24 @@ async def get_health_overview(
         "status": "healthy",
         "components": [
             {"id": "api", "name": "FastAPI", "status": "healthy", "latency_ms": 4},
-            {"id": "neptune", "name": "Neptune (Gremlin)", "status": "mocked", "latency_ms": 0},
-            {"id": "opensearch", "name": "OpenSearch", "status": "mocked", "latency_ms": 0},
-            {"id": "bedrock", "name": "Bedrock LLM", "status": "mocked", "latency_ms": 0},
+            {
+                "id": "neptune",
+                "name": "Neptune (Gremlin)",
+                "status": "mocked",
+                "latency_ms": 0,
+            },
+            {
+                "id": "opensearch",
+                "name": "OpenSearch",
+                "status": "mocked",
+                "latency_ms": 0,
+            },
+            {
+                "id": "bedrock",
+                "name": "Bedrock LLM",
+                "status": "mocked",
+                "latency_ms": 0,
+            },
             {"id": "dynamodb", "name": "DynamoDB", "status": "mocked", "latency_ms": 0},
         ],
         "incidents_open": 2,

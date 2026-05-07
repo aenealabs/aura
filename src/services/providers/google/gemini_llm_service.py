@@ -121,7 +121,9 @@ class GeminiLLMService(LLMService):
         prefer_vertex: bool = True,
     ) -> None:
         self.project_id = project_id or os.environ.get("GOOGLE_CLOUD_PROJECT")
-        self.location = location or os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        self.location = location or os.environ.get(
+            "GOOGLE_CLOUD_LOCATION", "us-central1"
+        )
         self.api_key = api_key or os.environ.get("GOOGLE_API_KEY")
         self.default_model = default_model
         self.prefer_vertex = prefer_vertex
@@ -327,6 +329,7 @@ class GeminiLLMService(LLMService):
         model_id = self._model_id(model_config)
 
         if self.is_mock_mode:
+
             async def _mock_stream() -> AsyncIterator[str]:
                 for chunk in (f"[mock-gemini:{model_id}]", " ", request.prompt[:80]):
                     yield chunk

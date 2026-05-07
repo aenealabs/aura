@@ -136,8 +136,11 @@ class MultiVendorLLMRouter(LLMService):
         model_config: ModelConfig | None = None,
     ) -> LLMResponse:
         provider_id, svc = self._route(request)
-        logger.debug("multi-vendor route → %s (tier=%s)",
-                     provider_id, (request.metadata or {}).get("tier"))
+        logger.debug(
+            "multi-vendor route → %s (tier=%s)",
+            provider_id,
+            (request.metadata or {}).get("tier"),
+        )
         response = await svc.invoke(request, model_config)
         # Tag the response so downstream telemetry knows which vendor served it.
         response.metadata.setdefault("_router_provider", provider_id)
@@ -198,9 +201,9 @@ class MultiVendorLLMRouter(LLMService):
     async def generate_embeddings_batch(
         self, texts: list[str], model_id: str | None = None
     ) -> list[list[float]]:
-        return await self.providers[
-            self.default_provider
-        ].generate_embeddings_batch(texts, model_id)
+        return await self.providers[self.default_provider].generate_embeddings_batch(
+            texts, model_id
+        )
 
     # ---------------------------------------------------- usage / budgets
 
@@ -211,7 +214,9 @@ class MultiVendorLLMRouter(LLMService):
         summaries = []
         for name, svc in self.providers.items():
             try:
-                summaries.append((name, await svc.get_usage_summary(start_date, end_date)))
+                summaries.append(
+                    (name, await svc.get_usage_summary(start_date, end_date))
+                )
             except Exception as e:  # pragma: no cover
                 logger.warning("usage summary for %s failed: %s", name, e)
         total_requests = sum(s.total_requests for _, s in summaries)

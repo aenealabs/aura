@@ -55,7 +55,10 @@ class CoveragePyAdapter:
         *,
         branch_coverage: bool = True,
         include_patterns: tuple[str, ...] = ("src/*",),
-        omit_patterns: tuple[str, ...] = ("*/tests/*", "*/test_*",),
+        omit_patterns: tuple[str, ...] = (
+            "*/tests/*",
+            "*/test_*",
+        ),
     ) -> None:
         self._branch_coverage = branch_coverage
         self._include_patterns = list(include_patterns)
@@ -118,9 +121,7 @@ class CoveragePyAdapter:
                     mcdc_coverage_pct=0.0,
                     dal_policy_satisfied=False,
                     coverage_tool=f"coverage_py:no_data",
-                    uncovered_conditions=(
-                        f"coverage data file unreadable: {exc}",
-                    ),
+                    uncovered_conditions=(f"coverage data file unreadable: {exc}",),
                 )
 
             try:
@@ -265,7 +266,9 @@ class CoveragePyAdapter:
             executed_branches += len(missing_branch_arcs)  # assume hit
 
         statement_pct = _percent(executed_statements, total_statements)
-        decision_pct = _percent(executed_branches, total_branches) if total_branches else 100.0
+        decision_pct = (
+            _percent(executed_branches, total_branches) if total_branches else 100.0
+        )
         return statement_pct, decision_pct
 
 

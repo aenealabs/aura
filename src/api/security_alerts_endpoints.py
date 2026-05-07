@@ -238,7 +238,10 @@ def _seed_demo_alerts() -> None:
             ],
             created_offset_minutes=-95,
             acknowledged_offset_minutes=-78,
-            metadata={"blocked_by": "ADR-065", "guardrail_layer": "embedding-similarity"},
+            metadata={
+                "blocked_by": "ADR-065",
+                "guardrail_layer": "embedding-similarity",
+            },
         ),
         _make_alert(
             title="Container escape signature observed in vuln-scan sandbox",
@@ -259,7 +262,10 @@ def _seed_demo_alerts() -> None:
             ],
             created_offset_minutes=-185,
             acknowledged_offset_minutes=-160,
-            metadata={"falco_rule": "container_escape_attempt", "sandbox_task": "vuln-scan-sb-92"},
+            metadata={
+                "falco_rule": "container_escape_attempt",
+                "sandbox_task": "vuln-scan-sb-92",
+            },
         ),
         _make_alert(
             title="WAF rate-limit threshold exceeded on /webhooks/github",
@@ -417,7 +423,9 @@ def _compute_stats(items: list[dict[str, Any]]) -> dict[str, Any]:
 async def list_alerts(
     request: Request,
     priority: str | None = Query(None, description="Filter by priority"),
-    status_filter: str | None = Query(None, alias="status", description="Filter by status"),
+    status_filter: str | None = Query(
+        None, alias="status", description="Filter by status"
+    ),
     assigned_to: str | None = Query(
         None, alias="assignedTo", description="Filter by assignee"
     ),
@@ -495,9 +503,7 @@ async def get_alert_timeline(
         {"event": "Alert Created", "timestamp": alert["created_at"]},
     ]
     if alert.get("acknowledged_at"):
-        events.append(
-            {"event": "Acknowledged", "timestamp": alert["acknowledged_at"]}
-        )
+        events.append({"event": "Acknowledged", "timestamp": alert["acknowledged_at"]})
     if alert.get("resolved_at"):
         label = "False Positive" if alert["status"] == "FALSE_POSITIVE" else "Resolved"
         events.append({"event": label, "timestamp": alert["resolved_at"]})
@@ -533,7 +539,11 @@ async def acknowledge_alert(
     alert["assigned_to"] = alert.get("assigned_to") or payload.user_id
     if payload.comment:
         alert["comments"].append(
-            {"user_id": payload.user_id, "comment": payload.comment, "timestamp": _now_iso()}
+            {
+                "user_id": payload.user_id,
+                "comment": payload.comment,
+                "timestamp": _now_iso(),
+            }
         )
     logger.info(sanitize_log(f"alert {alert_id} acknowledged by {payload.user_id}"))
     return alert
@@ -575,11 +585,17 @@ async def update_alert_status(
     alert["status"] = payload.status
     if payload.status == "ACKNOWLEDGED" and not alert.get("acknowledged_at"):
         alert["acknowledged_at"] = _now_iso()
-    if payload.status in ("RESOLVED", "FALSE_POSITIVE") and not alert.get("resolved_at"):
+    if payload.status in ("RESOLVED", "FALSE_POSITIVE") and not alert.get(
+        "resolved_at"
+    ):
         alert["resolved_at"] = _now_iso()
     if payload.comment:
         alert["comments"].append(
-            {"user_id": payload.user_id, "comment": payload.comment, "timestamp": _now_iso()}
+            {
+                "user_id": payload.user_id,
+                "comment": payload.comment,
+                "timestamp": _now_iso(),
+            }
         )
     return alert
 

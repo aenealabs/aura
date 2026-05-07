@@ -31,7 +31,6 @@ from src.api.orchestrator_settings_endpoints import (
     _hyperscale_settings,
 )
 
-
 # =============================================================================
 # Test Fixtures
 # =============================================================================
@@ -111,7 +110,9 @@ class TestHyperscaleModels:
         """Test ExecutionTier enum values."""
         assert ExecutionTier.IN_PROCESS.value == "in_process"
         assert ExecutionTier.DISTRIBUTED_SIMPLE.value == "distributed_simple"
-        assert ExecutionTier.DISTRIBUTED_ORCHESTRATED.value == "distributed_orchestrated"
+        assert (
+            ExecutionTier.DISTRIBUTED_ORCHESTRATED.value == "distributed_orchestrated"
+        )
 
     def test_security_gate_state_defaults(self):
         """Test SecurityGateState default values."""

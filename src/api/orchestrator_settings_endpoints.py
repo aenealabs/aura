@@ -757,11 +757,17 @@ class SecurityGateState(BaseModel):
 class HyperscaleSettingsResponse(BaseModel):
     """Response model for hyperscale orchestration settings."""
 
-    enabled: bool = Field(False, description="Whether hyperscale orchestration is enabled")
+    enabled: bool = Field(
+        False, description="Whether hyperscale orchestration is enabled"
+    )
     execution_tier: str = Field("in_process", description="Current execution tier")
     max_parallel_agents: int = Field(10, description="Maximum parallel agents allowed")
-    feasibility_gate_enabled: bool = Field(True, description="Whether feasibility gate is active")
-    cost_circuit_breaker_usd: float = Field(500, description="Cost circuit breaker threshold in USD")
+    feasibility_gate_enabled: bool = Field(
+        True, description="Whether feasibility gate is active"
+    )
+    cost_circuit_breaker_usd: float = Field(
+        500, description="Cost circuit breaker threshold in USD"
+    )
     security_gates: dict[str, SecurityGateState] = Field(
         default_factory=lambda: {
             "gate_1": SecurityGateState(),
@@ -777,9 +783,15 @@ class UpdateHyperscaleSettingsRequest(BaseModel):
 
     enabled: bool | None = Field(None, description="Enable/disable hyperscale")
     execution_tier: str | None = Field(None, description="Execution tier")
-    max_parallel_agents: int | None = Field(None, ge=1, le=1000, description="Max parallel agents")
-    feasibility_gate_enabled: bool | None = Field(None, description="Enable feasibility gate")
-    cost_circuit_breaker_usd: float | None = Field(None, ge=0, le=10000, description="Cost circuit breaker USD")
+    max_parallel_agents: int | None = Field(
+        None, ge=1, le=1000, description="Max parallel agents"
+    )
+    feasibility_gate_enabled: bool | None = Field(
+        None, description="Enable feasibility gate"
+    )
+    cost_circuit_breaker_usd: float | None = Field(
+        None, ge=0, le=10000, description="Cost circuit breaker USD"
+    )
 
 
 # Default hyperscale settings
@@ -803,9 +815,7 @@ DEFAULT_HYPERSCALE_SETTINGS = {
 _hyperscale_settings: dict[str, dict] = {}
 
 
-def _resolve_settings_key(
-    requested_org_id: str | None, current_user: User
-) -> str:
+def _resolve_settings_key(requested_org_id: str | None, current_user: User) -> str:
     """Validate that the caller is allowed to read/write the requested org's settings.
 
     Tenant isolation rule (audit finding C1):

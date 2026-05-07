@@ -38,9 +38,7 @@ class CompositeArchiveSink:
     def children(self) -> tuple[_ArchiveSink, ...]:
         return tuple(self._sinks)
 
-    async def archive(
-        self, record: AuditRecord, smt_assertions: str
-    ) -> ArchiveOutcome:
+    async def archive(self, record: AuditRecord, smt_assertions: str) -> ArchiveOutcome:
         outcomes: list[ArchiveOutcome] = []
         for sink in self._sinks:
             outcomes.append(await sink.archive(record, smt_assertions))

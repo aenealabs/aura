@@ -26,29 +26,19 @@ def tiny_project(tmp_path: Path) -> tuple[Path, Path]:
     ``python test_target.py`` which exits 0 when the assertion holds.
     """
     src = tmp_path / "target.py"
-    src.write_text(
-        textwrap.dedent(
-            '''
+    src.write_text(textwrap.dedent("""
             def add(a, b):
                 if a < 0:
                     return -1
                 return a + b
-            '''
-        ).strip()
-        + "\n"
-    )
+            """).strip() + "\n")
 
     runner = tmp_path / "test_target.py"
-    runner.write_text(
-        textwrap.dedent(
-            '''
+    runner.write_text(textwrap.dedent("""
             from target import add
             assert add(1, 2) == 3
             assert add(-5, 0) == -1
-            '''
-        ).strip()
-        + "\n"
-    )
+            """).strip() + "\n")
 
     return tmp_path, src
 
@@ -67,7 +57,7 @@ def _request(
 
 @pytest.mark.asyncio
 async def test_coverage_py_runs_against_real_python(
-    tiny_project: tuple[Path, Path]
+    tiny_project: tuple[Path, Path],
 ) -> None:
     cwd, src = tiny_project
     adapter = CoveragePyAdapter()
@@ -82,7 +72,7 @@ async def test_coverage_py_runs_against_real_python(
 
 @pytest.mark.asyncio
 async def test_default_policy_satisfied_when_coverage_high(
-    tiny_project: tuple[Path, Path]
+    tiny_project: tuple[Path, Path],
 ) -> None:
     cwd, src = tiny_project
     adapter = CoveragePyAdapter()
@@ -93,7 +83,7 @@ async def test_default_policy_satisfied_when_coverage_high(
 
 @pytest.mark.asyncio
 async def test_dal_a_policy_fails_with_coverage_py_alone(
-    tiny_project: tuple[Path, Path]
+    tiny_project: tuple[Path, Path],
 ) -> None:
     """coverage.py reports MC/DC=0; DAL A requires 100% MC/DC; gate fails."""
     cwd, src = tiny_project

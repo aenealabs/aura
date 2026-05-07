@@ -101,9 +101,7 @@ class InMemoryArchiveSink:
     def records(self) -> tuple[tuple[AuditRecord, str], ...]:
         return tuple(self._records)
 
-    async def archive(
-        self, record: AuditRecord, smt_assertions: str
-    ) -> ArchiveOutcome:
+    async def archive(self, record: AuditRecord, smt_assertions: str) -> ArchiveOutcome:
         self._records.append((record, smt_assertions))
         return ArchiveOutcome.ARCHIVED
 
@@ -125,9 +123,7 @@ class FileSystemArchiveSink:
         self._root = Path(root)
         self._root.mkdir(parents=True, exist_ok=True)
 
-    async def archive(
-        self, record: AuditRecord, smt_assertions: str
-    ) -> ArchiveOutcome:
+    async def archive(self, record: AuditRecord, smt_assertions: str) -> ArchiveOutcome:
         try:
             target = self._root / record.record_id
             target.mkdir(parents=True, exist_ok=True)
@@ -158,9 +154,9 @@ class VerificationAuditor:
     ) -> AuditRecord:
         record = AuditRecord(
             record_id=self._make_record_id(result),
-            request_source_file=str(request.source_file)
-            if request.source_file
-            else None,
+            request_source_file=(
+                str(request.source_file) if request.source_file else None
+            ),
             smt_formula_hash=result.smt_formula_hash,
             verdict=result.verdict.value,
             axes_in_scope=tuple(a.value for a in request.axes_in_scope),

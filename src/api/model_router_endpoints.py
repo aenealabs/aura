@@ -459,18 +459,42 @@ def _mock_routing_rules() -> list[RoutingRuleModel]:
     Model Router page renders the rule table with realistic content.
     """
     samples = [
-        ("code_review", TaskComplexityEnum.SIMPLE, ModelTierEnum.FAST,
-         "Lint-style reviews and small diffs route to Haiku for speed."),
-        ("code_review", TaskComplexityEnum.COMPLEX, ModelTierEnum.ACCURATE,
-         "Cross-file refactors and security reviews escalate to Sonnet."),
-        ("vulnerability_analysis", TaskComplexityEnum.COMPLEX, ModelTierEnum.ACCURATE,
-         "All vulnerability triage runs on the accurate tier."),
-        ("documentation_generation", TaskComplexityEnum.SIMPLE, ModelTierEnum.FAST,
-         "Docstrings and changelog entries route to the fast tier."),
-        ("incident_root_cause", TaskComplexityEnum.COMPLEX, ModelTierEnum.MAXIMUM,
-         "Runtime incident RCA uses the maximum tier for breadth of reasoning."),
-        ("query_decomposition", TaskComplexityEnum.SIMPLE, ModelTierEnum.FAST,
-         "Sub-query rewrites route to the fast tier."),
+        (
+            "code_review",
+            TaskComplexityEnum.SIMPLE,
+            ModelTierEnum.FAST,
+            "Lint-style reviews and small diffs route to Haiku for speed.",
+        ),
+        (
+            "code_review",
+            TaskComplexityEnum.COMPLEX,
+            ModelTierEnum.ACCURATE,
+            "Cross-file refactors and security reviews escalate to Sonnet.",
+        ),
+        (
+            "vulnerability_analysis",
+            TaskComplexityEnum.COMPLEX,
+            ModelTierEnum.ACCURATE,
+            "All vulnerability triage runs on the accurate tier.",
+        ),
+        (
+            "documentation_generation",
+            TaskComplexityEnum.SIMPLE,
+            ModelTierEnum.FAST,
+            "Docstrings and changelog entries route to the fast tier.",
+        ),
+        (
+            "incident_root_cause",
+            TaskComplexityEnum.COMPLEX,
+            ModelTierEnum.MAXIMUM,
+            "Runtime incident RCA uses the maximum tier for breadth of reasoning.",
+        ),
+        (
+            "query_decomposition",
+            TaskComplexityEnum.SIMPLE,
+            ModelTierEnum.FAST,
+            "Sub-query rewrites route to the fast tier.",
+        ),
     ]
     cost_by_tier = {
         ModelTierEnum.FAST: 0.00025,
@@ -483,15 +507,17 @@ def _mock_routing_rules() -> list[RoutingRuleModel]:
             task_type=task_type,
             complexity=complexity,
             tier=tier,
-            model=_tier_to_model_name(
-                next((t for t in [tier]), tier)  # passthrough; tier is enum already
-            )
-            if False
-            else {
-                ModelTierEnum.FAST: "claude-3-haiku",
-                ModelTierEnum.ACCURATE: "claude-3-5-sonnet",
-                ModelTierEnum.MAXIMUM: "claude-3-opus",
-            }[tier],
+            model=(
+                _tier_to_model_name(
+                    next((t for t in [tier]), tier)  # passthrough; tier is enum already
+                )
+                if False
+                else {
+                    ModelTierEnum.FAST: "claude-3-haiku",
+                    ModelTierEnum.ACCURATE: "claude-3-5-sonnet",
+                    ModelTierEnum.MAXIMUM: "claude-3-opus",
+                }[tier]
+            ),
             cost_per_1k=cost_by_tier[tier],
             description=description,
             enabled=True,

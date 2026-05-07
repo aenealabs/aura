@@ -137,7 +137,9 @@ class OpenAILLMService(LLMService):
                 timeout=self.request_timeout_seconds,
             )
             self._initialized = True
-            logger.info("OpenAI client initialized (default_model=%s)", self.default_model)
+            logger.info(
+                "OpenAI client initialized (default_model=%s)", self.default_model
+            )
             return True
         except Exception as e:  # pragma: no cover — network/credential failure surface
             logger.error("Failed to initialize OpenAI client: %s", e)
@@ -258,6 +260,7 @@ class OpenAILLMService(LLMService):
         model_id = self._model_id(model_config)
 
         if self.is_mock_mode:
+
             async def _mock_stream() -> AsyncIterator[str]:
                 for chunk in (f"[mock-openai:{model_id}]", " ", request.prompt[:80]):
                     yield chunk
@@ -299,9 +302,7 @@ class OpenAILLMService(LLMService):
             "You are a senior software engineer. Produce only "
             f"{language} source code, with no commentary."
         )
-        full_prompt = (
-            f"{prompt}\n\nContext:\n{context}" if context else prompt
-        )
+        full_prompt = f"{prompt}\n\nContext:\n{context}" if context else prompt
         return await self.invoke(
             LLMRequest(prompt=full_prompt, system_prompt=sys, max_tokens=max_tokens)
         )
@@ -349,7 +350,9 @@ class OpenAILLMService(LLMService):
         start_date: datetime,
         end_date: datetime,
     ) -> UsageSummary:
-        records = [r for r in self._usage_records if start_date <= r["timestamp"] <= end_date]
+        records = [
+            r for r in self._usage_records if start_date <= r["timestamp"] <= end_date
+        ]
         total_input = sum(r["input_tokens"] for r in records)
         total_output = sum(r["output_tokens"] for r in records)
         cost = 0.0

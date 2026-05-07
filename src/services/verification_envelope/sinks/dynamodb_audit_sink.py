@@ -58,18 +58,12 @@ class DynamoDBAuditSink:
         ttl_seconds: int = 7 * 365 * 24 * 60 * 60,
         fallback: InMemoryArchiveSink | None = None,
     ) -> None:
-        self._table_name = table_name or os.environ.get(
-            "DVE_AUDIT_TABLE_NAME"
-        )
+        self._table_name = table_name or os.environ.get("DVE_AUDIT_TABLE_NAME")
         self._client = dynamodb_client
         self._ttl_seconds = ttl_seconds
         self._fallback = fallback or InMemoryArchiveSink()
 
-        if (
-            self._client is None
-            and BOTO3_AVAILABLE
-            and self._table_name
-        ):
+        if self._client is None and BOTO3_AVAILABLE and self._table_name:
             try:
                 self._client = boto3.client("dynamodb")  # type: ignore[union-attr]
             except Exception as exc:  # pragma: no cover — credential failure
@@ -84,9 +78,7 @@ class DynamoDBAuditSink:
     def fallback(self) -> InMemoryArchiveSink:
         return self._fallback
 
-    async def archive(
-        self, record: AuditRecord, smt_assertions: str
-    ) -> ArchiveOutcome:
+    async def archive(self, record: AuditRecord, smt_assertions: str) -> ArchiveOutcome:
         if not self.is_live:
             return await self._fallback.archive(record, smt_assertions)
 
@@ -98,7 +90,10 @@ class DynamoDBAuditSink:
                 ConditionExpression="attribute_not_exists(record_id)",
             )
         except ClientError as exc:  # type: ignore[misc]
-            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            if (
+                exc.response.get("Error", {}).get("Code")
+                == "ConditionalCheckFailedException"
+            ):
                 logger.warning(
                     "audit record %s already archived; refusing overwrite",
                     record.record_id,
@@ -137,28 +132,15 @@ class DynamoDBAuditSink:
             "record_id": {"S": record.record_id},
             "smt_formula_hash": {"S": record.smt_formula_hash or ""},
             "verdict": {"S": record.verdict},
-            "axes_in_scope": {
-                "L": [{"S": a} for a in record.axes_in_scope]
-            },
-            "axes_verified": {
-                "L": [{"S": a} for a in record.axes_verified]
-            },
+            "axes_in_scope": {"L": [{"S": a} for a in record.axes_in_scope]},
+            "axes_verified": {"L": [{"S": a} for a in record.axes_verified]},
             "proof_hash": {"S": record.proof_hash or ""},
             "solver_version": {"S": record.solver_version},
-            "verification_time_ms": {
-                "N": str(record.verification_time_ms)
-            },
-            "counterexample": {
-                "S": record.counterexample or ""
-            },
-            "request_source_file": {
-                "S": record.request_source_file or ""
-            },
+            "verification_time_ms": {"N": str(record.verification_time_ms)},
+            "counterexample": {"S": record.counterexample or ""},
+            "request_source_file": {"S": record.request_source_file or ""},
             "metadata": {
-                "L": [
-                    {"M": {"k": {"S": k}, "v": {"S": v}}}
-                    for k, v in record.metadata
-                ]
+                "L": [{"M": {"k": {"S": k}, "v": {"S": v}}} for k, v in record.metadata]
             },
             "created_at": {"S": record.created_at},
             "ttl": {"N": str(int(time.time()) + self._ttl_seconds)},

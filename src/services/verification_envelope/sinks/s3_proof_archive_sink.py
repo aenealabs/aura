@@ -78,9 +78,7 @@ class S3ProofArchiveSink:
     def fallback(self) -> InMemoryArchiveSink:
         return self._fallback
 
-    async def archive(
-        self, record: AuditRecord, smt_assertions: str
-    ) -> ArchiveOutcome:
+    async def archive(self, record: AuditRecord, smt_assertions: str) -> ArchiveOutcome:
         if not self.is_live:
             return await self._fallback.archive(record, smt_assertions)
 

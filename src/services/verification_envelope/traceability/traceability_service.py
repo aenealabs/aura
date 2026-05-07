@@ -34,9 +34,7 @@ class _RequirementStore(Protocol):
     """Backend protocol — both in-memory and Neptune adapters satisfy it."""
 
     async def upsert_requirement(self, requirement: Requirement) -> None: ...
-    async def get_requirement(
-        self, requirement_id: str
-    ) -> Requirement | None: ...
+    async def get_requirement(self, requirement_id: str) -> Requirement | None: ...
     async def list_requirements(
         self, *, type_filter: RequirementType | None = None
     ) -> tuple[Requirement, ...]: ...
@@ -222,9 +220,7 @@ class TraceabilityService:
                 out.append(req)
         return tuple(out)
 
-    async def implementing_code(
-        self, requirement_id: str
-    ) -> tuple[Artefact, ...]:
+    async def implementing_code(self, requirement_id: str) -> tuple[Artefact, ...]:
         """Source artefacts that TRACES_TO the given requirement."""
         edges = await self._store.incoming_edges(
             requirement_id, type_filter=TraceEdgeType.TRACES_TO
@@ -236,9 +232,7 @@ class TraceabilityService:
                 out.append(art)
         return tuple(out)
 
-    async def verifying_tests(
-        self, requirement_id: str
-    ) -> tuple[Artefact, ...]:
+    async def verifying_tests(self, requirement_id: str) -> tuple[Artefact, ...]:
         """Test artefacts the requirement is VERIFIED_BY."""
         edges = await self._store.outgoing_edges(
             requirement_id, type_filter=TraceEdgeType.VERIFIED_BY

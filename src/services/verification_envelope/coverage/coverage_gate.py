@@ -160,7 +160,9 @@ class CoverageGateService:
             try:
                 if adapter.is_available:
                     return adapter
-            except Exception as exc:  # pragma: no cover — adapter availability check failure
+            except (
+                Exception
+            ) as exc:  # pragma: no cover — adapter availability check failure
                 logger.warning(
                     "adapter %s availability check raised: %s",
                     type(adapter).__name__,

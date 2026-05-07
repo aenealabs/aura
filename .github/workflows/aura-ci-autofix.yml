@@ -221,12 +221,29 @@ jobs:
             git diff --stat
           fi
 
-      - name: Create fix commit
+      - name: Resolve target branch
+        id: target
         if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          # Determine where the failed run was: PR head, feature branch,
+          # or main. We never push to main directly because it's a
+          # protected branch — instead we open a fixup PR.
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          if [ -z "$BRANCH" ]; then
+            BRANCH="main"
+          fi
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          if [ "$BRANCH" = "main" ]; then
+            echo "open_pr=true" >> $GITHUB_OUTPUT
+          else
+            echo "open_pr=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push fix to feature branch
+        if: steps.changes.outputs.has_changes == 'true' && steps.target.outputs.open_pr == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git add -A
           git commit -m "fix: auto-fix CI issues (formatting, imports)
 
@@ -234,8 +251,32 @@ jobs:
           - ${{ needs.analyze-failure.outputs.fix_type }}
 
           Triggered by: ${{ github.event.workflow_run.html_url || 'manual' }}"
+          # Push to the same branch the failed run was on. This works
+          # for feature branches but is rejected for main (protected).
+          git push origin HEAD:${{ steps.target.outputs.branch }}
 
-          git push
+      - name: Open fixup PR for protected branch
+        if: steps.changes.outputs.has_changes == 'true' && steps.target.outputs.open_pr == 'true'
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: chore/auto-fix-${{ github.event.workflow_run.id || 'manual' }}
+          base: main
+          delete-branch: true
+          commit-message: |
+            fix: auto-fix CI issues (formatting, imports)
+
+            Applied automatic fixes for: ${{ needs.analyze-failure.outputs.fix_type }}
+            Triggered by: ${{ github.event.workflow_run.html_url || 'manual' }}
+          title: 'chore: auto-fix CI drift on main'
+          body: |
+            Automated fix for formatting / import drift detected on `main`.
+
+            **Source run:** ${{ github.event.workflow_run.html_url || 'manual dispatch' }}
+            **Fix type:** ${{ needs.analyze-failure.outputs.fix_type }}
+
+            `main` is protected, so this PR is the only path back to a
+            green build. Merge after CI passes.
 
       - name: Post success comment
         if: steps.changes.outputs.has_changes == 'true' && github.event.workflow_run.pull_requests[0]

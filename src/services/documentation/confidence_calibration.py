@@ -418,14 +418,10 @@ class CalibratedConfidenceScorer:
                         if hasattr(self._calibrator, "y_thresholds_")
                         else None
                     ),
-                    "increasing_": getattr(
-                        self._calibrator, "increasing_", "auto"
-                    ),
+                    "increasing_": getattr(self._calibrator, "increasing_", "auto"),
                     "X_min_": float(getattr(self._calibrator, "X_min_", 0.0)),
                     "X_max_": float(getattr(self._calibrator, "X_max_", 1.0)),
-                    "out_of_bounds": getattr(
-                        self._calibrator, "out_of_bounds", "clip"
-                    ),
+                    "out_of_bounds": getattr(self._calibrator, "out_of_bounds", "clip"),
                     "y_min": getattr(self._calibrator, "y_min", None),
                     "y_max": getattr(self._calibrator, "y_max", None),
                 }

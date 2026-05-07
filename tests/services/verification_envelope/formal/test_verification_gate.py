@@ -21,7 +21,6 @@ from src.services.verification_envelope.formal import (
     Z3SMTAdapter,
 )
 
-
 Z3_INSTALLED = importlib.util.find_spec("z3") is not None
 
 
@@ -60,9 +59,7 @@ class _FakeAdapter:
             ConstraintAxis.OPERATIONAL_BOUNDS,
         )
 
-    async def verify(
-        self, request: FormalVerificationRequest
-    ) -> VerificationResult:
+    async def verify(self, request: FormalVerificationRequest) -> VerificationResult:
         self.calls.append(request)
         # Stamp the formula hash from the request so the gate can chain
         # the result through the auditor without surprise.
@@ -128,15 +125,9 @@ async def test_gate_demotes_proved_to_failed_when_translator_flags_axis() -> Non
 async def test_gate_records_audit_for_every_run() -> None:
     sink = InMemoryArchiveSink()
     fake = _FakeAdapter()
-    svc = VerificationGateService(
-        adapter=fake, auditor=VerificationAuditor(sink=sink)
-    )
-    await svc.verify(
-        FormalGateInput(source_code="def a(x: int) -> int: return x\n")
-    )
-    await svc.verify(
-        FormalGateInput(source_code="def b(x: int) -> int: return x\n")
-    )
+    svc = VerificationGateService(adapter=fake, auditor=VerificationAuditor(sink=sink))
+    await svc.verify(FormalGateInput(source_code="def a(x: int) -> int: return x\n"))
+    await svc.verify(FormalGateInput(source_code="def b(x: int) -> int: return x\n"))
     assert sink.count == 2
 
 
@@ -156,9 +147,7 @@ async def test_preferred_chain_picks_first_available() -> None:
 async def test_explicit_adapter_overrides_preferred_chain() -> None:
     explicit = _FakeAdapter(tool_name="explicit")
     chain_choice = _FakeAdapter(tool_name="chain")
-    svc = VerificationGateService(
-        adapter=explicit, preferred_adapters=(chain_choice,)
-    )
+    svc = VerificationGateService(adapter=explicit, preferred_adapters=(chain_choice,))
     result = await svc.verify(
         FormalGateInput(source_code="def f(x: int) -> int: return x\n")
     )

@@ -130,7 +130,9 @@ async def test_pairwise_matrix_is_symmetric() -> None:
     n = result.n_generated
     for i in range(n):
         for j in range(n):
-            assert result.pairwise_similarities[i][j] == result.pairwise_similarities[j][i]
+            assert (
+                result.pairwise_similarities[i][j] == result.pairwise_similarities[j][i]
+            )
 
 
 @pytest.mark.asyncio

@@ -74,9 +74,7 @@ async def test_generate_all_returns_five_documents() -> None:
 @pytest.mark.asyncio
 async def test_psac_includes_program_table_and_dal_level() -> None:
     svc = await _populated_service()
-    psac = LifecycleDataGenerator(svc).generate_psac(
-        _ctx(), await svc.gap_report()
-    )
+    psac = LifecycleDataGenerator(svc).generate_psac(_ctx(), await svc.gap_report())
     assert "Plan for Software Aspects of Certification" in psac.content
     assert "DAL_A" in psac.content
     assert "FADEC-X" in psac.content
@@ -87,9 +85,7 @@ async def test_psac_includes_program_table_and_dal_level() -> None:
 @pytest.mark.asyncio
 async def test_psac_includes_compliance_table() -> None:
     svc = await _populated_service()
-    psac = LifecycleDataGenerator(svc).generate_psac(
-        _ctx(), await svc.gap_report()
-    )
+    psac = LifecycleDataGenerator(svc).generate_psac(_ctx(), await svc.gap_report())
     assert "MC/DC structural coverage" in psac.content
     assert "Formal proof of C1-C4" in psac.content
     assert "Bidirectional requirements traceability" in psac.content
@@ -98,9 +94,7 @@ async def test_psac_includes_compliance_table() -> None:
 @pytest.mark.asyncio
 async def test_svp_lists_dal_coverage_table() -> None:
     svc = await _populated_service()
-    svp = LifecycleDataGenerator(svc).generate_svp(
-        _ctx(), await svc.gap_report()
-    )
+    svp = LifecycleDataGenerator(svc).generate_svp(_ctx(), await svc.gap_report())
     assert "Statement" in svp.content
     assert "MC/DC" in svp.content
     assert "Object Code" in svp.content
@@ -128,9 +122,7 @@ async def test_gap_summary_lists_findings_when_present() -> None:
         description="",
         dal_level="DAL_A",
     )
-    await svc.add_code(
-        artefact_id="code-orphan", title="x", location="src/x.py"
-    )
+    await svc.add_code(artefact_id="code-orphan", title="x", location="src/x.py")
     report = await svc.gap_report()
     sas = LifecycleDataGenerator(svc).generate_sas(_ctx(), report)
     assert "HLR-orphan" in sas.content
@@ -142,12 +134,8 @@ async def test_gap_summary_lists_findings_when_present() -> None:
 @pytest.mark.asyncio
 async def test_extra_fields_appear_in_program_table() -> None:
     svc = await _populated_service()
-    ctx = _ctx(
-        extra=(("PSAC submission date", "2026-09-01"), ("Tech POC", "K. Smith"))
-    )
-    psac = LifecycleDataGenerator(svc).generate_psac(
-        ctx, await svc.gap_report()
-    )
+    ctx = _ctx(extra=(("PSAC submission date", "2026-09-01"), ("Tech POC", "K. Smith")))
+    psac = LifecycleDataGenerator(svc).generate_psac(ctx, await svc.gap_report())
     assert "PSAC submission date" in psac.content
     assert "K. Smith" in psac.content
 

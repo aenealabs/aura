@@ -26,11 +26,11 @@ def _eval_source() -> str:
 
 
 def _wildcard_iam_source() -> str:
-    return '''
+    return """
 policy = {
     "Statement": [{"Action": "*", "Resource": "arn:aws:s3:::bucket/*"}]
 }
-'''
+"""
 
 
 # --------------------------------------------------------------------- C1

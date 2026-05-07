@@ -108,9 +108,7 @@ def test_dal_dimension_added_when_supplied() -> None:
 def test_verdict_metric_carries_verdict_dimension() -> None:
     pub = CloudWatchMetricsPublisher(cloudwatch_client=None)
     pub.publish_pipeline_result(_result(verdict=DVEOverallVerdict.REJECTED))
-    [overall] = [
-        p for p in pub.buffered_points if p["MetricName"] == "OverallVerdict"
-    ]
+    [overall] = [p for p in pub.buffered_points if p["MetricName"] == "OverallVerdict"]
     dims = {d["Name"]: d["Value"] for d in overall["Dimensions"]}
     assert dims.get("Verdict") == "rejected"
 

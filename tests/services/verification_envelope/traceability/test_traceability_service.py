@@ -165,9 +165,7 @@ async def test_gap_report_orphan_code_is_reverse_gap(
     )
     report = await svc.gap_report()
     assert report.reverse_gaps
-    assert any(
-        g.node_id == "orphan-code" for g in report.reverse_gaps
-    )
+    assert any(g.node_id == "orphan-code" for g in report.reverse_gaps)
 
 
 @pytest.mark.asyncio
@@ -180,9 +178,7 @@ async def test_gap_report_orphan_test_is_reverse_gap(
         location="tests/x.py",
     )
     report = await svc.gap_report()
-    assert any(
-        g.node_id == "orphan-test" for g in report.reverse_gaps
-    )
+    assert any(g.node_id == "orphan-test" for g in report.reverse_gaps)
 
 
 @pytest.mark.asyncio
@@ -220,6 +216,4 @@ async def test_total_gap_count_aggregates_directions(
     )
     await svc.add_code(artefact_id="orphan", title="x", location="x")
     report = await svc.gap_report()
-    assert report.total_gap_count == len(report.forward_gaps) + len(
-        report.reverse_gaps
-    )
+    assert report.total_gap_count == len(report.forward_gaps) + len(report.reverse_gaps)

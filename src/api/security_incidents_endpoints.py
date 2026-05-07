@@ -464,7 +464,9 @@ async def create_incident(
     rate_check: RateLimitResult = Depends(sensitive_rate_limit),
 ) -> dict[str, Any]:
     if payload.severity not in VALID_SEVERITIES:
-        raise HTTPException(status_code=400, detail=f"unknown severity: {payload.severity}")
+        raise HTTPException(
+            status_code=400, detail=f"unknown severity: {payload.severity}"
+        )
 
     incident_id = f"INC-{uuid.uuid4().hex[:6].upper()}"
     inc = _make_incident(

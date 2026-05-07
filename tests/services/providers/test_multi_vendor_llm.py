@@ -19,7 +19,6 @@ from src.services.providers.multi_vendor_llm_router import (
 )
 from src.services.providers.openai.openai_llm_service import OpenAILLMService
 
-
 # ---------------------------------------------------------------- providers
 
 
@@ -101,9 +100,7 @@ async def test_router_falls_back_to_default_when_tier_preferred_all_mock() -> No
         providers={PROVIDER_OPENAI: o, PROVIDER_GEMINI: g},
         default_provider=PROVIDER_OPENAI,
     )
-    resp = await router.invoke(
-        LLMRequest(prompt="hi", metadata={"tier": "accurate"})
-    )
+    resp = await router.invoke(LLMRequest(prompt="hi", metadata={"tier": "accurate"}))
     # All providers are mock so neither is "live"; router uses default.
     assert resp.metadata.get("_router_provider") == PROVIDER_OPENAI
 

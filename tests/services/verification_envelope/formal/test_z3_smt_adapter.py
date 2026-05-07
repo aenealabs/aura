@@ -19,7 +19,6 @@ from src.services.verification_envelope.formal import (
     build_request,
 )
 
-
 Z3_INSTALLED = importlib.util.find_spec("z3") is not None
 
 

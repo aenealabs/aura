@@ -70,7 +70,5 @@ class FormalVerificationAdapter(Protocol):
     def supported_axes(self) -> tuple[ConstraintAxis, ...]:
         """Constraint axes this adapter can express in its formal language."""
 
-    async def verify(
-        self, request: FormalVerificationRequest
-    ) -> VerificationResult:
+    async def verify(self, request: FormalVerificationRequest) -> VerificationResult:
         """Discharge the SMT assertions and return the verdict."""

@@ -476,7 +476,9 @@ class HITLApprovalService:
             approval_id = f"appr-demo-{uuid.uuid4().hex[:12]}"
             patch_id = f"patch-demo-{uuid.uuid4().hex[:12]}"
             vulnerability_id = (
-                f"vuln-{d['cve'].lower()}" if d.get("cve") else f"vuln-{uuid.uuid4().hex[:8]}"
+                f"vuln-{d['cve'].lower()}"
+                if d.get("cve")
+                else f"vuln-{uuid.uuid4().hex[:8]}"
             )
             created_at_dt = now + timedelta(minutes=d["created_offset_minutes"])
             expires_at_dt = created_at_dt + timedelta(hours=self.timeout_hours)

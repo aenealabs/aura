@@ -111,8 +111,6 @@ async def test_stats_reflect_state() -> None:
     await store.upsert_requirement(_hlr())
     await store.upsert_requirement(_llr())
     await store.upsert_artefact(_code())
-    await store.add_edge(
-        TraceEdge("LLR-1", "HLR-1", TraceEdgeType.DERIVED_FROM)
-    )
+    await store.add_edge(TraceEdge("LLR-1", "HLR-1", TraceEdgeType.DERIVED_FROM))
     stats = await store.stats()
     assert stats == {"requirements": 2, "artefacts": 1, "edges": 1}

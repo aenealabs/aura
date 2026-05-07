@@ -337,9 +337,7 @@ class CoherenceResult:
             "computation_time_ms": round(self.computation_time_ms, 3),
             "cache_hit": self.cache_hit,
             "provenance_adjustment": round(self.provenance_adjustment, 6),
-            "policy_constraint_violations": list(
-                self.policy_constraint_violations
-            ),
+            "policy_constraint_violations": list(self.policy_constraint_violations),
             "formal_verification_proof_hash": self.formal_verification_proof_hash,
         }
 

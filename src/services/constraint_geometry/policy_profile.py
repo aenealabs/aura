@@ -93,9 +93,7 @@ class PolicyProfile:
         self, constraint_type: PolicyConstraintType
     ) -> tuple[PolicyConstraint, ...]:
         """Filter policy constraints by type."""
-        return tuple(
-            c for c in self.policy_constraints if c.type is constraint_type
-        )
+        return tuple(c for c in self.policy_constraints if c.type is constraint_type)
 
     def determine_action(
         self,

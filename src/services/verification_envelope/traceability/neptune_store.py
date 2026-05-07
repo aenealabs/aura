@@ -114,9 +114,7 @@ class NeptuneRequirementStore:
         type_filter: TraceEdgeType | None = None,
     ) -> tuple[TraceEdge, ...]:
         if not self.is_live:
-            return await self._fallback.outgoing_edges(
-                node_id, type_filter=type_filter
-            )
+            return await self._fallback.outgoing_edges(node_id, type_filter=type_filter)
         return await self._gremlin_outgoing(node_id, type_filter)
 
     async def incoming_edges(
@@ -126,9 +124,7 @@ class NeptuneRequirementStore:
         type_filter: TraceEdgeType | None = None,
     ) -> tuple[TraceEdge, ...]:
         if not self.is_live:
-            return await self._fallback.incoming_edges(
-                node_id, type_filter=type_filter
-            )
+            return await self._fallback.incoming_edges(node_id, type_filter=type_filter)
         return await self._gremlin_incoming(node_id, type_filter)
 
     async def all_edges(self) -> tuple[TraceEdge, ...]:
@@ -171,8 +167,7 @@ class NeptuneRequirementStore:
         props = ""
         if properties:
             props = "".join(
-                f".property('{k}', {repr(v)})"
-                for k, v in sorted(properties.items())
+                f".property('{k}', {repr(v)})" for k, v in sorted(properties.items())
             )
         return (
             f"g.V().has('id', '{source_id}').as('s')"
@@ -182,7 +177,9 @@ class NeptuneRequirementStore:
 
     # ------------------- Gremlin executors (delegate to in-memory in Phase 4)
 
-    async def _gremlin_upsert_requirement(self, r: Requirement) -> None:  # pragma: no cover
+    async def _gremlin_upsert_requirement(
+        self, r: Requirement
+    ) -> None:  # pragma: no cover
         # In Phase 5 this dispatches via ``self._client``. For Phase 4
         # we mirror to the fallback so the live-vs-fallback distinction
         # is observable in tests via ``is_live`` without changing data.

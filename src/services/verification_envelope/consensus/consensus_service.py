@@ -102,13 +102,9 @@ class ConsensusService:
             selected_output = outputs[decision.selected_index]
 
         # Convergence rate is the size of the largest cluster / N.
-        convergence_rate = (
-            len(decision.converged_indices) / n if n > 0 else 0.0
-        )
+        convergence_rate = len(decision.converged_indices) / n if n > 0 else 0.0
 
-        similarity_matrix = tuple(
-            tuple(c.similarity for c in row) for row in pairwise
-        )
+        similarity_matrix = tuple(tuple(c.similarity for c in row) for row in pairwise)
 
         latency_ms = (time.time() - start) * 1000.0
         logger.info(

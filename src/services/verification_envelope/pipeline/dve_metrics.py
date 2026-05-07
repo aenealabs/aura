@@ -140,7 +140,10 @@ class CloudWatchMetricsPublisher:
                 unit="Count",
                 dims=(
                     *base_dims,
-                    {"Name": "Verdict", "Value": result.formal_verification.verdict.value},
+                    {
+                        "Name": "Verdict",
+                        "Value": result.formal_verification.verdict.value,
+                    },
                 ),
                 ts=ts,
             ),
@@ -185,9 +188,7 @@ class CloudWatchMetricsPublisher:
         """
         dims = list(self._dimensions(dal_level=None, program_id=None))
         if dimensions:
-            dims.extend(
-                {"Name": k, "Value": v} for k, v in sorted(dimensions.items())
-            )
+            dims.extend({"Name": k, "Value": v} for k, v in sorted(dimensions.items()))
         point = self._point(
             name=name,
             value=value,

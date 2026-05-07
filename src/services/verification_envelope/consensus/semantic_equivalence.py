@@ -64,9 +64,7 @@ class SemanticEquivalenceChecker:
         self._cosine_threshold = cosine_threshold
         self._enable_embedding_fallback = enable_embedding_fallback
 
-    async def check(
-        self, a: ASTCanonicalForm, b: ASTCanonicalForm
-    ) -> EquivalenceCheck:
+    async def check(self, a: ASTCanonicalForm, b: ASTCanonicalForm) -> EquivalenceCheck:
         if not (a.parse_succeeded and b.parse_succeeded):
             return EquivalenceCheck(
                 are_equivalent=False,
@@ -121,9 +119,7 @@ class SemanticEquivalenceChecker:
             are_equivalent=sim >= self._cosine_threshold,
             method="embedding_cosine",
             similarity=sim,
-            rationale=(
-                f"cosine={sim:.4f} threshold={self._cosine_threshold:.4f}"
-            ),
+            rationale=(f"cosine={sim:.4f} threshold={self._cosine_threshold:.4f}"),
         )
 
 

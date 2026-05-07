@@ -32,7 +32,6 @@ from src.services.verification_envelope.pipeline import (
     DVEPipelineInput,
 )
 
-
 # ---------------------------------------------------------------- generators
 
 
@@ -93,7 +92,9 @@ class _FakeCoverageAdapter:
 
     tool_name: str = "fake-coverage"
 
-    def __init__(self, *, report: MCDCCoverageReport, is_available: bool = True) -> None:
+    def __init__(
+        self, *, report: MCDCCoverageReport, is_available: bool = True
+    ) -> None:
         self._report = report
         self._is_available = is_available
 

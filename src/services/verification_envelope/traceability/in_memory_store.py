@@ -129,6 +129,4 @@ class InMemoryRequirementStore:
     # ----------------------------------------------------------- internals
 
     def _exists(self, node_id: str) -> bool:
-        return (
-            node_id in self._requirements or node_id in self._artefacts
-        )
+        return node_id in self._requirements or node_id in self._artefacts

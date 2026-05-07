@@ -83,9 +83,7 @@ async def test_record_object_carries_json_payload() -> None:
     client = _FakeS3()
     sink = S3ProofArchiveSink(bucket_name="b", s3_client=client)
     await sink.archive(_record("dve-r2"), "smt body")
-    record_call = next(
-        c for c in client.calls if c["Key"].endswith("record.json")
-    )
+    record_call = next(c for c in client.calls if c["Key"].endswith("record.json"))
     assert record_call["ContentType"] == "application/json"
     body = record_call["Body"]
     assert isinstance(body, bytes)
@@ -105,9 +103,7 @@ async def test_formula_object_uses_text_content_type() -> None:
     client = _FakeS3()
     sink = S3ProofArchiveSink(bucket_name="b", s3_client=client)
     await sink.archive(_record(), "(check-sat)")
-    formula_call = next(
-        c for c in client.calls if c["Key"].endswith("formula.smt2")
-    )
+    formula_call = next(c for c in client.calls if c["Key"].endswith("formula.smt2"))
     assert formula_call["ContentType"] == "text/plain"
     assert formula_call["Body"] == b"(check-sat)"
 
@@ -124,9 +120,7 @@ async def test_kms_key_id_omitted_when_unset() -> None:
     client = _FakeS3()
     # No kms_key_id supplied → bucket default key is used; SSE-KMS is
     # still demanded so a misconfigured bucket can't silently degrade.
-    sink = S3ProofArchiveSink(
-        bucket_name="b", s3_client=client, kms_key_id=None
-    )
+    sink = S3ProofArchiveSink(bucket_name="b", s3_client=client, kms_key_id=None)
     await sink.archive(_record(), "x")
     for call in client.calls:
         assert call["ServerSideEncryption"] == "aws:kms"

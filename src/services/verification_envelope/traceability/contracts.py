@@ -79,9 +79,7 @@ class Requirement:
     dal_level: str  # "DAL_A" .. "DAL_D" / "DEFAULT"
     parent_ids: tuple[str, ...] = ()  # For LLRs that derive from one+ HLRs.
     metadata: tuple[tuple[str, str], ...] = ()
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def metadata_dict(self) -> dict[str, str]:
@@ -97,9 +95,7 @@ class Artefact:
     title: str
     location: str  # Source path / test path / review URL.
     metadata: tuple[tuple[str, str], ...] = ()
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -110,9 +106,7 @@ class TraceEdge:
     target_id: str
     type: TraceEdgeType
     metadata: tuple[tuple[str, str], ...] = ()
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -171,9 +165,7 @@ class TraceabilityReport:
     requirement_count: int
     artefact_count: int
     edge_count: int
-    computed_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    computed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def is_complete(self) -> bool:

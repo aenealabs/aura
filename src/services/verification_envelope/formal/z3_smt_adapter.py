@@ -97,9 +97,7 @@ class Z3SMTAdapter:
     def supported_axes(self) -> tuple[ConstraintAxis, ...]:
         return self.SUPPORTED_AXES
 
-    async def verify(
-        self, request: FormalVerificationRequest
-    ) -> VerificationResult:
+    async def verify(self, request: FormalVerificationRequest) -> VerificationResult:
         if not self.is_available:
             return self._mock_verdict(request)
 
@@ -128,7 +126,9 @@ class Z3SMTAdapter:
         elapsed = (time.time() - start) * 1000.0
         return VerificationResult(
             verdict=verdict,
-            axes_verified=request.axes_in_scope if verdict == VerificationVerdict.PROVED else (),
+            axes_verified=(
+                request.axes_in_scope if verdict == VerificationVerdict.PROVED else ()
+            ),
             proof_hash=self._proof_hash(request, verdict),
             solver_version=self._solver_version,
             verification_time_ms=elapsed,
@@ -184,9 +184,7 @@ class Z3SMTAdapter:
         reason = solver.reason_unknown() if hasattr(solver, "reason_unknown") else ""
         return VerificationVerdict.UNKNOWN, reason or "z3 returned unknown"
 
-    def _mock_verdict(
-        self, request: FormalVerificationRequest
-    ) -> VerificationResult:
+    def _mock_verdict(self, request: FormalVerificationRequest) -> VerificationResult:
         return VerificationResult(
             verdict=VerificationVerdict.SKIPPED,
             axes_verified=(),

@@ -60,9 +60,7 @@ class LifecycleDocument:
     name: str  # "PSAC", "SDP", ...
     title: str
     content: str  # Markdown
-    generated_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class LifecycleDataGenerator:
@@ -367,16 +365,12 @@ class LifecycleDataGenerator:
         if report.forward_gaps:
             lines.append("### Forward gaps\n")
             for gap in report.forward_gaps:
-                lines.append(
-                    f"- `{gap.node_id}` ({gap.node_type}) — {gap.description}"
-                )
+                lines.append(f"- `{gap.node_id}` ({gap.node_type}) — {gap.description}")
             lines.append("")
         if report.reverse_gaps:
             lines.append("### Reverse gaps\n")
             for gap in report.reverse_gaps:
-                lines.append(
-                    f"- `{gap.node_id}` ({gap.node_type}) — {gap.description}"
-                )
+                lines.append(f"- `{gap.node_id}` ({gap.node_type}) — {gap.description}")
             lines.append("")
         return "\n".join(lines)
 

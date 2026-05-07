@@ -87,24 +87,16 @@ jobs:
             echo "needs_format=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Auto-fix Black formatting (push to main only)
-        if: steps.black-check.outputs.needs_format == 'true' && github.event_name == 'push'
+      - name: Fail on Black formatting drift
+        if: steps.black-check.outputs.needs_format == 'true'
         run: |
-          black --fast src/ tests/
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No formatting changes to commit"
-          else
-            git commit -m "style: auto-format with black"
-            git push
-          fi
-
-      - name: Fail on Black formatting (PRs only)
-        if: steps.black-check.outputs.needs_format == 'true' && github.event_name != 'push'
-        run: |
-          echo "::error::Black formatting check failed. Run 'black --fast src/ tests/' locally and commit."
+          # main is a protected branch (PRs required), so we cannot
+          # auto-push fixups. Fail the job and surface the diff so the
+          # author can run `black --fast src/ tests/` locally and amend
+          # / open a follow-up PR.
+          echo "::error::Black formatting drift detected on ${{ github.ref }}."
+          echo "::error::Run 'black --fast src/ tests/' locally and commit."
+          black --check --fast --diff src/ tests/ || true
           exit 1
 
       - name: Run Flake8 (linting)

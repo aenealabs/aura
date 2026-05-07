@@ -146,9 +146,7 @@ def _select_centroid(
                 used_embedding = True
         # Lower hash wins ties so the choice is stable.
         cur_hash = canonical_forms[i].canonical_hash
-        if score > best_score or (
-            score == best_score and cur_hash < best_hash
-        ):
+        if score > best_score or (score == best_score and cur_hash < best_hash):
             best_index = i
             best_score = score
             best_hash = cur_hash

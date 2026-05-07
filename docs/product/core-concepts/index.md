@@ -145,61 +145,42 @@ The Core Concepts documentation is designed to be read in order, with each secti
 
 Understanding how these concepts interact helps you configure Aura effectively.
 
-```
-                    ┌─────────────────────────────────────┐
-                    │      Vulnerability Detection         │
-                    └─────────────────┬───────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      HYBRID GRAPHRAG                                 │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐     │
-│  │  Neptune Graph  │  │ OpenSearch      │  │ Vector          │     │
-│  │  (Structure)    │  │ (Keywords)      │  │ (Semantics)     │     │
-│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘     │
-│           └────────────────────┼────────────────────┘               │
-│                                │                                     │
-│                      Three-Way Fusion (RRF)                         │
-└────────────────────────────────┼────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      MULTI-AGENT SYSTEM                              │
-│                                                                      │
-│  ┌───────────┐    ┌───────────┐    ┌───────────┐    ┌───────────┐  │
-│  │Orchestrator│───▶│  Coder    │───▶│ Reviewer  │───▶│ Validator │  │
-│  └───────────┘    └───────────┘    └───────────┘    └───────────┘  │
-│                                                            │         │
-└────────────────────────────────────────────────────────────┼────────┘
-                                                             │
-                                                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      CONSTITUTIONAL AI                               │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Critique Phase ──▶ Decision Gate ──▶ Revision Phase        │   │
-│  │  (16 principles)     (severity)        (if needed)          │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────┬────┘
-                                                                 │
-                                                                 ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      SANDBOX VALIDATION                              │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Isolated ECS Fargate Environment                            │   │
-│  │  - Syntax checks                                             │   │
-│  │  - Unit test execution                                       │   │
-│  │  - Security regression scanning                              │   │
-│  │  - Performance validation                                    │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────┬────┘
-                                                                 │
-                                                                 ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      HITL WORKFLOW                                   │
-│                                                                      │
-│  Autonomy Policy ──▶ Approval Gate ──▶ Human Review ──▶ Deployment  │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Detect([Vulnerability Detection])
+
+    subgraph GraphRAG[Hybrid GraphRAG]
+        direction TB
+        Neptune[Neptune Graph<br/>Structure]
+        OpenSearch[OpenSearch<br/>Keywords]
+        Vector[Vector<br/>Semantics]
+        Fusion[Three-Way Fusion · RRF]
+        Neptune --> Fusion
+        OpenSearch --> Fusion
+        Vector --> Fusion
+    end
+
+    subgraph Agents[Multi-Agent System]
+        direction LR
+        Orchestrator[Orchestrator] --> Coder[Coder] --> Reviewer[Reviewer] --> Validator[Validator]
+    end
+
+    subgraph CAI[Constitutional AI]
+        direction LR
+        Critique[Critique Phase<br/>16 principles] --> Gate[Decision Gate<br/>severity] --> Revision[Revision Phase<br/>if needed]
+    end
+
+    subgraph Sandbox[Sandbox Validation · ECS Fargate]
+        direction TB
+        SBList["Syntax checks<br/>Unit test execution<br/>Security regression scanning<br/>Performance validation"]
+    end
+
+    subgraph HITL[HITL Workflow]
+        direction LR
+        Autonomy[Autonomy Policy] --> ApprovalGate[Approval Gate] --> HumanReview[Human Review] --> Deployment[Deployment]
+    end
+
+    Detect --> GraphRAG --> Agents --> CAI --> Sandbox --> HITL
 ```
 
 ---

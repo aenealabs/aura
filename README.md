@@ -97,44 +97,42 @@ A look inside the Aura Platform.
 
 Project Aura uses a layered architecture with specialized AI agents collaborating through structured workflows.
 
-```
-                    Vulnerability Detection
-                            |
-                            v
-    +-----------------------------------------------+
-    |              HYBRID GRAPHRAG                   |
-    |                                                |
-    |   Neptune Graph    OpenSearch     BM25         |
-    |   (Structure)      (Semantics)   (Keywords)    |
-    |        \               |             /         |
-    |         \              |            /          |
-    |          Three-Way Fusion (RRF)                |
-    +------------------------|-----------------------+
-                             |
-                             v
-    +-----------------------------------------------+
-    |            MULTI-AGENT SYSTEM                  |
-    |                                                |
-    |  Orchestrator --> Coder --> Reviewer --> Validator
-    +------------------------|-----------------------+
-                             |
-                             v
-    +-----------------------------------------------+
-    |           CONSTITUTIONAL AI                    |
-    |   Critique (16 principles) --> Revision        |
-    +------------------------|-----------------------+
-                             |
-                             v
-    +-----------------------------------------------+
-    |          SANDBOX VALIDATION                    |
-    |   Syntax | Unit Tests | Security | Performance |
-    +------------------------|-----------------------+
-                             |
-                             v
-    +-----------------------------------------------+
-    |            HITL APPROVAL                       |
-    |   Policy Engine --> Human Review --> Deploy    |
-    +-----------------------------------------------+
+```mermaid
+flowchart TD
+    Detect([Vulnerability Detection])
+
+    subgraph GraphRAG[Hybrid GraphRAG]
+        direction TB
+        Neptune[Neptune Graph<br/>Structure]
+        OpenSearch[OpenSearch<br/>Semantics]
+        BM25[BM25<br/>Keywords]
+        Fusion[Three-Way Fusion · RRF]
+        Neptune --> Fusion
+        OpenSearch --> Fusion
+        BM25 --> Fusion
+    end
+
+    subgraph Agents[Multi-Agent System]
+        direction LR
+        Orchestrator[Orchestrator] --> Coder[Coder] --> Reviewer[Reviewer] --> Validator[Validator]
+    end
+
+    subgraph CAI[Constitutional AI]
+        direction LR
+        Critique[Critique<br/>16 principles] --> Revision[Revision]
+    end
+
+    subgraph Sandbox[Sandbox Validation]
+        direction LR
+        Syntax[Syntax] --- UnitTests[Unit Tests] --- Security[Security] --- Performance[Performance]
+    end
+
+    subgraph HITL[HITL Approval]
+        direction LR
+        Policy[Policy Engine] --> Review[Human Review] --> Deploy[Deploy]
+    end
+
+    Detect --> GraphRAG --> Agents --> CAI --> Sandbox --> HITL
 ```
 
 ### Core Components

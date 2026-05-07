@@ -4,8 +4,8 @@
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-23%2C761+-brightgreen.svg)](tests/)
-[![Lines of Code](https://img.shields.io/badge/Lines_of_Code-439K+-informational.svg)](docs/PROJECT_STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-24%2C500+-brightgreen.svg)](tests/)
+[![Lines of Code](https://img.shields.io/badge/Lines_of_Code-458K+-informational.svg)](docs/PROJECT_STATUS.md)
 
 Project Aura detects vulnerabilities, generates production-ready patches, validates fixes in isolated sandboxes, and queues them for human approval -- all autonomously. Unlike traditional security scanners that stop at detection, Aura provides end-to-end remediation through a multi-agent AI system built for regulated industries.
 
@@ -40,6 +40,8 @@ Then what?                                   Awaiting human approval for deploym
 - **Human-in-the-loop governance** -- configurable approval workflows with industry-specific policy presets
 - **Sandbox-first validation** -- every patch is tested in network-isolated environments before reaching human reviewers
 - **Constitutional AI guardrails** -- 16-principle critique-revision pipeline ensures safe, compliant agent behavior
+- **Aerospace / safety-critical verification** -- Deterministic Verification Envelope (ADR-085) provides DO-178C-aligned output verification via N-of-M consensus, MC/DC structural coverage, and Z3 formal verification with DAL-A/DAL-B policy profiles
+- **Continuous model assurance** -- Automated provenance verification, frozen reference oracle, anti-Goodhart controls, shadow deployment, and one-click rollback for every model swap (ADR-088)
 
 ## Platform View
 
@@ -155,7 +157,7 @@ Project Aura uses a layered architecture with specialized AI agents collaboratin
 | **Graph Database** | AWS Neptune (Gremlin query language) |
 | **Vector Search** | AWS OpenSearch with k-NN |
 | **Container Orchestration** | AWS EKS with EC2 Managed Node Groups |
-| **Infrastructure as Code** | AWS CloudFormation (155 templates) |
+| **Infrastructure as Code** | AWS CloudFormation (183 templates) |
 | **Frontend** | React 18, TypeScript, Tailwind CSS, Next.js 14 |
 | **Service Discovery** | dnsmasq (3-tier architecture with DNSSEC) |
 
@@ -335,7 +337,9 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 - **ADR-063**: Constitutional AI Integration
 - **ADR-065**: Semantic Guardrails Engine
 - **ADR-083**: Runtime Agent Security Platform
+- **ADR-085**: Deterministic Verification Envelope (DO-178C, N-of-M consensus, MC/DC, Z3 formal verification)
 - **ADR-087**: Hyperscale Agent Orchestration
+- **ADR-088**: Continuous Model Assurance (provenance, frozen oracle, anti-Goodhart, rollback)
 
 ---
 
@@ -343,11 +347,11 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 
 | Metric | Value |
 |--------|-------|
-| Lines of Code | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config) |
-| Test Suite | 23,761+ tests (0 failures) |
-| Architecture Decision Records | 87 ADRs |
-| CloudFormation Templates | 155 (24 CodeBuild + 131 infrastructure) |
-| Infrastructure Phases | 8 of 8 complete |
+| Lines of Code | 458,000+ (DVE + Model Assurance + HITL UI + IaC additions on top of 439K baseline) |
+| Test Suite | 24,500+ tests (0 failures) |
+| Architecture Decision Records | 88 ADRs |
+| CloudFormation Templates | 183 (24 CodeBuild + 159 infrastructure) |
+| Infrastructure Phases | 9 of 9 complete |
 
 ---
 

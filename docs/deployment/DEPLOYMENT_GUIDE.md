@@ -2042,8 +2042,67 @@ def _convert_floats_to_decimal(obj):
 
 ---
 
-**Deployment Guide Version:** 1.9
-**Last Updated:** January 17, 2026
+## Phase 8.5: Deterministic Verification Envelope (ADR-085)
+
+**Status:** Implemented (All 5 Phases) -- May 6, 2026
+
+The Deterministic Verification Envelope (DVE) provides DO-178C-aligned output verification across three pillars: N-of-M consensus generation, MC/DC structural coverage, and Z3 formal verification.
+
+**CloudFormation Stacks:**
+
+| Stack | Purpose |
+|-------|---------|
+| `dve-infrastructure.yaml` | Immutable DynamoDB audit sink, S3 proof archive (KMS-CMK), IAM roles |
+| `dve-monitoring.yaml` | CloudWatch `Aura/DVE` namespace metrics, alarms |
+
+**Operator Notes:**
+
+- S3 bucket naming follows `${AccountId}-${Environment}` to align with `codebuild-data.yaml` IAM ARN pattern.
+- Pipeline orchestration is performed by `DVEPipeline` with `DynamoDBAuditSink`, `S3ProofArchiveSink`, `CompositeArchiveSink`, and `CloudWatchMetricsPublisher`.
+- DAL-A and DAL-B policy profiles are registered in the Constraint Geometry Engine for activation per workload.
+
+---
+
+## Phase 8.6: Continuous Model Assurance (ADR-088)
+
+**Status:** Implemented (All 3 Phases) -- May 6, 2026
+
+Continuous Model Assurance gates every model swap with provenance verification, frozen reference oracle evaluation, anti-Goodhart controls, shadow deployment, and one-click rollback.
+
+**Sub-Layer Assignments:**
+
+| Sub-Layer | CloudFormation Stack | Parent Buildspec | Purpose |
+|-----------|----------------------|------------------|---------|
+| **2.7** | `model-assurance-storage.yaml` | `buildspec-data.yml` | DynamoDB tables (registry, oracle, runs, audit), S3 buckets (proofs, bundles), KMS-CMK |
+| **5.7** | `model-assurance-monitoring.yaml` | `buildspec-observability.yml` | CloudWatch alarms, dashboards, SNS topics, CloudTrail event subscriptions (13 event types x 6 NIST controls: CM-3, CM-5, SA-10, SI-7, RA-5, AU-3) |
+| **6.7** | `model-assurance-pipeline.yaml` | `buildspec-serverless.yml` | Step Functions state machine orchestrating Scout -> Provenance -> Frozen Oracle -> Sandbox -> Shadow -> HITL |
+| **7.7** | `model-assurance-sandbox.yaml` | `buildspec-sandbox-infrastructure.yml` | Zero-egress evaluation sandbox (ECS task def gated by `aws:RequestTag/Project`), IAM forbidden-action gate |
+
+**API Surface:**
+
+- 5 routes under `/api/v1/model-assurance/` in `src/api/model_assurance_endpoints.py`
+
+**HITL UI:**
+
+- React `ModelAssuranceQueue` page mounted at `/model-assurance`
+- Pure-SVG 6-axis radar (MA1-MA6), integrity verification badge, edge-case spotlight, cost analysis, spot-check disagreement display
+
+**Operator Notes:**
+
+- Bedrock `InvokeModel` IAM in the sandbox is restricted to provider prefixes `anthropic.*`, `amazon.*`, `meta.*` (no `foundation-model/*` wildcard).
+- Step Functions resources in `codebuild-serverless.yaml` are scoped to `arn:...stateMachine:${ProjectName}-*`.
+- ECS task-definition actions in `codebuild-serverless.yaml` use `aws:RequestTag/Project` because AWS forces `Resource: '*'` on those actions.
+- Frozen oracle rotation is capped at 10% per cycle and requires two distinct approvers.
+
+**Related Documentation:**
+
+- [ADR-085: Deterministic Verification Envelope](../architecture-decisions/ADR-085-deterministic-verification-envelope.md)
+- [ADR-088: Continuous Model Assurance](../architecture-decisions/ADR-088-continuous-model-assurance.md)
+
+---
+
+**Deployment Guide Version:** 1.10
+**Last Updated:** May 6, 2026
 **Maintainer:** Project Aura DevOps Team
 
 **Questions or Issues?** Reference the troubleshooting section above or review the comprehensive documentation in the repository.

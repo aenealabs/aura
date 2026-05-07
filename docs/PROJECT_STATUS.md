@@ -1,5 +1,6 @@
 # Project Aura: Development Status
 
+**Last Assessment:** May 6, 2026
 **Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
 
 ---
@@ -9,11 +10,11 @@
 | Metric | Value |
 |--------|-------|
 | **Overall Completion** | 99% |
-| **Lines of Code** | 439,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure) |
-| **Test Suite** | 23,761+ tests (17,095 passed, 6,666 skipped, 0 failed) |
-| **Architecture Decision Records** | 88 ADRs (84 Deployed/Accepted, 1 Reserved [082], 3 Proposed [085, 087, 088]) |
-| **CloudFormation Templates** | 177 templates (counted by `AWSTemplateFormatVersion` header; 152 top-level + 25 nested) |
-| **Buildspecs** | 38 buildspec files in deploy/buildspecs/ |
+| **Lines of Code** | 458,000+ (193K Python, 142K Tests, 53K JS/JSX, 68K Config/Infrastructure baseline + ~19K added for DVE, Model Assurance, HITL UI, and IaC batch) |
+| **Test Suite** | 24,500+ tests (0 failed; +191 verification_envelope, +567 model_assurance, +15 HITL UI on top of 23,761 baseline) |
+| **Architecture Decision Records** | 88 ADRs (86 Deployed/Accepted, 1 Reserved [082], 1 Proposed [087]) |
+| **CloudFormation Templates** | 183 templates (177 baseline + 2 DVE + 4 Model Assurance) |
+| **Buildspecs** | 38 buildspec files in deploy/buildspecs/ (data, observability, serverless, sandbox-infrastructure extended for ADR-088) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
 | **GovCloud Readiness** | 100% (all deployed services compatible) |
@@ -81,6 +82,8 @@
 | Air-Gapped & Edge | Complete | Offline model bundles, edge runtime, 200 tests (ADR-078) |
 | Developer Tools | Complete | VSCode, PyCharm, JupyterLab, Dataiku connectors (ADR-048) |
 | Native Vulnerability Scanner | Infrastructure Deployed | GraphRAG-enhanced LLM analysis (ADR-084) |
+| Deterministic Verification Envelope | Complete | All 5 phases implemented: N-of-M consensus, MC/DC coverage gate, Z3 formal verification, DAL-A/DAL-B profiles, DO-178C lifecycle data, DVE pipeline orchestrator with DynamoDB/S3/CloudWatch sinks, 191 tests (ADR-085) |
+| Continuous Model Assurance | Complete | All 3 phases implemented: CGE regression-floor, Adapter Registry, 6-axis MA1-MA6 domain, Scout Agent, Model Provenance Service (Sigstore), Frozen Reference Oracle (400 cases, 10% rotation cap), Step Functions pipeline, zero-egress sandbox, anti-Goodhart controls, HuggingFace + Internal SWE-RL sources, rollback mechanism, CloudTrail audit (13 events x 6 NIST controls), GovCloud FIPS validator, 567 new tests (ADR-088) |
 
 ### UI & Dashboard
 
@@ -91,6 +94,7 @@
 | Repository Onboarding | Complete | 5-step wizard, OAuth GitHub/GitLab (ADR-043) |
 | Guardrail Configuration UI | Complete | Compliance profiles, validation, 128 tests (ADR-069) |
 | Hyperscale Agent Orchestration | Phase 1 | UI gating, execution tier selection, security gate validation, ~500 lines UI (ADR-087) |
+| Model Assurance Queue (HITL) | Complete | React `/model-assurance` page, 6-axis radar, integrity badge, edge-case spotlight, cost analysis, 15 tests (ADR-088) |
 
 ---
 
@@ -119,7 +123,7 @@
 
 ## Architecture Decision Records
 
-87 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
+88 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
 
 - **ADR-004**: Cloud Abstraction Layer (Multi-cloud)
 - **ADR-024**: Titan Neural Memory Architecture
@@ -133,5 +137,7 @@
 - **ADR-078**: Air-Gapped & Edge Deployment
 - **ADR-083**: Runtime Agent Security Platform
 - **ADR-084**: Native Vulnerability Scanning Engine
-- **ADR-085**: Deterministic Verification Envelope (Proposed)
+- **ADR-085**: Deterministic Verification Envelope (All 5 Phases Implemented)
 - **ADR-086**: Agentic Identity Lifecycle Controls (Deployed)
+- **ADR-087**: Hyperscale Agent Orchestration (Phase 1 Deployed)
+- **ADR-088**: Continuous Model Assurance (All 3 Phases Implemented)

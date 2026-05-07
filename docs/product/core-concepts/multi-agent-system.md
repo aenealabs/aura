@@ -40,23 +40,23 @@ Aura's multi-agent approach provides:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         AGENT ORCHESTRATOR                           │
-│                                                                      │
+│                         AGENT ORCHESTRATOR                          │
+│                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐    │
-│  │                    Workflow State Machine                    │    │
-│  │                                                              │    │
+│  │                    Workflow State Machine                   │    │
+│  │                                                             │    │
 │  │  INIT → PLANNING → CONTEXT → CODE_GEN → REVIEW → VALIDATE   │    │
-│  │                                                    ↓         │    │
-│  │                                              REMEDIATION     │    │
-│  │                                                    ↓         │    │
-│  │                                               COMPLETED      │    │
+│  │                                                    ↓        │    │
+│  │                                              REMEDIATION    │    │
+│  │                                                    ↓        │    │
+│  │                                               COMPLETED     │    │
 │  └─────────────────────────────────────────────────────────────┘    │
-│                                                                      │
+│                                                                     │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                      Context Retrieval Service                 │  │
+│  │                      Context Retrieval Service                │  │
 │  │  (Hybrid GraphRAG: Neptune + OpenSearch + Three-Way Fusion)   │  │
 │  └───────────────────────────────────────────────────────────────┘  │
-│                                                                      │
+│                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
         ┌───────────────────────────┼───────────────────────────┐
@@ -317,42 +317,42 @@ The Validator Agent performs comprehensive code validation including sandbox tes
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     VALIDATION PIPELINE                      │
+│                     VALIDATION PIPELINE                     │
 ├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Layer 1: Syntax Validation                                  │
+│                                                             │
+│  Layer 1: Syntax Validation                                 │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ AST Parsing → Syntax Errors → Line/Column Location  │    │
 │  └─────────────────────────────────────────────────────┘    │
-│                           │                                  │
+│                           │                                 │
 │                    Pass?  ▼  Fail → Stop                    │
-│                                                              │
-│  Layer 2: Structure Validation                               │
+│                                                             │
+│  Layer 2: Structure Validation                              │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ Expected Elements → Function Count → Class Count    │    │
 │  └─────────────────────────────────────────────────────┘    │
-│                           │                                  │
+│                           │                                 │
 │                    Pass?  ▼  Fail → Continue with warnings  │
-│                                                              │
-│  Layer 3: Type Validation                                    │
+│                                                             │
+│  Layer 3: Type Validation                                   │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ Return Types → Argument Types → Variable Types      │    │
 │  └─────────────────────────────────────────────────────┘    │
-│                           │                                  │
+│                           │                                 │
 │                    Pass?  ▼  Fail → Continue with warnings  │
-│                                                              │
-│  Layer 4: Security Validation                                │
+│                                                             │
+│  Layer 4: Security Validation                               │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ Dangerous Patterns → Hardcoded Secrets → Injection  │    │
 │  └─────────────────────────────────────────────────────┘    │
-│                           │                                  │
+│                           │                                 │
 │                    Pass?  ▼  Fail → Stop (blocking)         │
-│                                                              │
-│  Layer 5: Sandbox Validation (Optional)                      │
+│                                                             │
+│  Layer 5: Sandbox Validation (Optional)                     │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ Unit Tests → Integration Tests → Performance Tests  │    │
 │  └─────────────────────────────────────────────────────┘    │
-│                                                              │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 

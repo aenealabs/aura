@@ -64,40 +64,40 @@ Each sandbox is a complete, isolated environment that mirrors your production co
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    PRODUCTION VPC (us-east-1)                            │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐         │
-│  │  Application    │  │  Neptune        │  │  OpenSearch     │         │
-│  │  Services       │  │  (Graph DB)     │  │  (Vector DB)    │         │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘         │
-│                                                                          │
+│                    PRODUCTION VPC (us-east-1)                           │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐          │
+│  │  Application    │  │  Neptune        │  │  OpenSearch     │          │
+│  │  Services       │  │  (Graph DB)     │  │  (Vector DB)    │          │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘          │
+│                                                                         │
 │  ══════════════════════════════════════════════════════════════════════ │
-│  │                    NO CONNECTION                                    │ │
+│  │                    NO CONNECTION                                    ││
 │  ══════════════════════════════════════════════════════════════════════ │
 └─────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    SANDBOX VPC (isolated)                                │
-│                                                                          │
+│                    SANDBOX VPC (isolated)                               │
+│                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                    Sandbox Environment                              │  │
-│  │                    sandbox-2026-01-19-abc123                        │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │  │
-│  │  │  Patched    │  │  Mock       │  │  Test       │                 │  │
-│  │  │  Code       │  │  Services   │  │  Data       │                 │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                 │  │
-│  │                                                                     │  │
+│  │                    Sandbox Environment                            │  │
+│  │                    sandbox-2026-01-19-abc123                      │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                │  │
+│  │  │  Patched    │  │  Mock       │  │  Test       │                │  │
+│  │  │  Code       │  │  Services   │  │  Data       │                │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘                │  │
+│  │                                                                   │  │
 │  │  ┌─────────────────────────────────────────────────────────────┐  │  │
-│  │  │  Fargate Task (ephemeral, auto-destroyed)                    │  │  │
-│  │  │  - CPU: 0.5 vCPU                                             │  │  │
-│  │  │  - Memory: 1 GB                                              │  │  │
-│  │  │  - Timeout: 30 minutes max                                   │  │  │
+│  │  │  Fargate Task (ephemeral, auto-destroyed)                   │  │  │
+│  │  │  - CPU: 0.5 vCPU                                            │  │  │
+│  │  │  - Memory: 1 GB                                             │  │  │
+│  │  │  - Timeout: 30 minutes max                                  │  │  │
 │  │  └─────────────────────────────────────────────────────────────┘  │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
+│                                                                         │
 │  Security Groups: DENY ALL INBOUND (except internal test traffic)       │
-│  NAT Gateway: Outbound only (package downloads)                          │
-│  VPC Peering: NONE                                                       │
-│  Transit Gateway: NONE                                                   │
+│  NAT Gateway: Outbound only (package downloads)                         │
+│  VPC Peering: NONE                                                      │
+│  Transit Gateway: NONE                                                  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -121,33 +121,33 @@ The sandbox network isolation model ensures that test environments cannot access
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    NETWORK ISOLATION MODEL                               │
+│                    NETWORK ISOLATION MODEL                              │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  LAYER 1: VPC Isolation                                                  │
+│                                                                         │
+│  LAYER 1: VPC Isolation                                                 │
 │  ─────────────────────────────────────────────────────────────────────  │
 │  - Sandbox VPC has NO peering connections to production VPC             │
-│  - No Transit Gateway attachments                                        │
+│  - No Transit Gateway attachments                                       │
 │  - Separate CIDR blocks (10.200.0.0/16 for sandbox)                     │
-│                                                                          │
-│  LAYER 2: Security Group Rules                                           │
+│                                                                         │
+│  LAYER 2: Security Group Rules                                          │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  - Default DENY ALL inbound traffic                                      │
-│  - Allow only internal sandbox-to-sandbox communication                  │
+│  - Default DENY ALL inbound traffic                                     │
+│  - Allow only internal sandbox-to-sandbox communication                 │
 │  - Outbound limited to package registries (PyPI, npm)                   │
-│                                                                          │
-│  LAYER 3: IAM Policies                                                   │
+│                                                                         │
+│  LAYER 3: IAM Policies                                                  │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  - Sandbox IAM role cannot access production resources                   │
-│  - No cross-account role assumption                                      │
+│  - Sandbox IAM role cannot access production resources                  │
+│  - No cross-account role assumption                                     │
 │  - Explicit deny policies for production S3, Neptune, OpenSearch        │
-│                                                                          │
-│  LAYER 4: DNS Isolation                                                  │
+│                                                                         │
+│  LAYER 4: DNS Isolation                                                 │
 │  ─────────────────────────────────────────────────────────────────────  │
 │  - Private hosted zone for sandbox (sandbox.aura.internal)              │
 │  - Production DNS names not resolvable from sandbox                     │
-│  - Mock endpoints resolve to local services only                         │
-│                                                                          │
+│  - Mock endpoints resolve to local services only                        │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -406,7 +406,7 @@ The validation pipeline executes all categories in a defined sequence with early
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    SANDBOX VALIDATION PIPELINE                           │
+│                    SANDBOX VALIDATION PIPELINE                          │
 └─────────────────────────────────────────────────────────────────────────┘
          │
          ▼
@@ -563,33 +563,33 @@ Sandboxes are automatically destroyed after execution to prevent resource accumu
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    SANDBOX LIFECYCLE                                     │
+│                    SANDBOX LIFECYCLE                                    │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  CREATION                                                                │
-│  ────────                                                                │
+│                                                                         │
+│  CREATION                                                               │
+│  ────────                                                               │
 │  - Trigger: Patch generated by Coder Agent                              │
-│  - Duration: ~2 minutes for provisioning                                 │
+│  - Duration: ~2 minutes for provisioning                                │
 │  - Resources: Fargate task, CloudWatch log group                        │
-│                                                                          │
-│  EXECUTION                                                               │
-│  ─────────                                                               │
+│                                                                         │
+│  EXECUTION                                                              │
+│  ─────────                                                              │
 │  - Duration: Variable (typically 5-15 minutes)                          │
-│  - Maximum: 30 minutes (hard timeout)                                    │
+│  - Maximum: 30 minutes (hard timeout)                                   │
 │  - Monitoring: CloudWatch metrics, real-time logs                       │
-│                                                                          │
-│  DESTRUCTION                                                             │
-│  ───────────                                                             │
+│                                                                         │
+│  DESTRUCTION                                                            │
+│  ───────────                                                            │
 │  - Trigger: Validation complete OR timeout reached                      │
-│  - Automatic: No manual intervention required                            │
-│  - Retention: Logs retained for 90 days (dev) / 365 days (prod)        │
-│                                                                          │
-│  COST OPTIMIZATION                                                       │
-│  ─────────────────                                                       │
+│  - Automatic: No manual intervention required                           │
+│  - Retention: Logs retained for 90 days (dev) / 365 days (prod)         │
+│                                                                         │
+│  COST OPTIMIZATION                                                      │
+│  ─────────────────                                                      │
 │  - Fargate Spot: 70% cost reduction for ephemeral tasks                 │
-│  - Auto-teardown: Prevents orphaned resources                            │
-│  - Shared VPC: Amortized networking costs                                │
-│                                                                          │
+│  - Auto-teardown: Prevents orphaned resources                           │
+│  - Shared VPC: Amortized networking costs                               │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -603,45 +603,45 @@ Every sandbox execution produces a comprehensive report for human reviewers.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    SANDBOX VALIDATION REPORT                             │
-│                    sandbox-2026-01-19-abc123                             │
+│                    SANDBOX VALIDATION REPORT                            │
+│                    sandbox-2026-01-19-abc123                            │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  SUMMARY                                                                 │
-│  ───────                                                                 │
-│  Status:           PASSED                                                │
-│  Duration:         8 minutes 23 seconds                                  │
+│                                                                         │
+│  SUMMARY                                                                │
+│  ───────                                                                │
+│  Status:           PASSED                                               │
+│  Duration:         8 minutes 23 seconds                                 │
 │  Patch ID:         patch-2026-01-19-xyz789                              │
 │  Vulnerability:    SQL Injection (CVE-2026-12345)                       │
-│                                                                          │
-│  VALIDATION RESULTS                                                      │
-│  ──────────────────                                                      │
-│  ┌────────────────────┬──────────┬───────────┬─────────────────────┐   │
-│  │ Category           │ Status   │ Duration  │ Details             │   │
-│  ├────────────────────┼──────────┼───────────┼─────────────────────┤   │
-│  │ Syntax Validation  │ PASSED   │ 12s       │ 3 files validated   │   │
-│  │ Unit Tests         │ PASSED   │ 4m 15s    │ 147/147 passed      │   │
-│  │ Security Scans     │ PASSED   │ 2m 08s    │ 0 new findings      │   │
-│  │ Performance Tests  │ PASSED   │ 1m 32s    │ +4.4% latency       │   │
-│  │ Integration Tests  │ PASSED   │ 16s       │ 12 contracts valid  │   │
-│  └────────────────────┴──────────┴───────────┴─────────────────────┘   │
-│                                                                          │
-│  METRICS                                                                 │
-│  ───────                                                                 │
-│  Test Coverage:    78.3% (baseline: 76.1%, delta: +2.2%)               │
+│                                                                         │
+│  VALIDATION RESULTS                                                     │
+│  ──────────────────                                                     │
+│  ┌────────────────────┬──────────┬───────────┬─────────────────────┐    │
+│  │ Category           │ Status   │ Duration  │ Details             │    │
+│  ├────────────────────┼──────────┼───────────┼─────────────────────┤    │
+│  │ Syntax Validation  │ PASSED   │ 12s       │ 3 files validated   │    │
+│  │ Unit Tests         │ PASSED   │ 4m 15s    │ 147/147 passed      │    │ 
+│  │ Security Scans     │ PASSED   │ 2m 08s    │ 0 new findings      │    │ 
+│  │ Performance Tests  │ PASSED   │ 1m 32s    │ +4.4% latency       │    │
+│  │ Integration Tests  │ PASSED   │ 16s       │ 12 contracts valid  │    │
+│  └────────────────────┴──────────┴───────────┴─────────────────────┘    │
+│                                                                         │
+│  METRICS                                                                │
+│  ───────                                                                │
+│  Test Coverage:    78.3% (baseline: 76.1%, delta: +2.2%)                │
 │  CPU Utilization:  34% average                                          │
-│  Memory Peak:      512 MB                                                │
+│  Memory Peak:      512 MB                                               │
 │  Network I/O:      23 MB (package downloads)                            │
-│                                                                          │
-│  ARTIFACTS                                                               │
-│  ─────────                                                               │
-│  - Full test report: s3://aura-sandbox/reports/abc123/test-report.html │
-│  - Coverage report:  s3://aura-sandbox/reports/abc123/coverage.html    │
-│  - Security report:  s3://aura-sandbox/reports/abc123/security.json    │
+│                                                                         │
+│  ARTIFACTS                                                              │
+│  ─────────                                                              │
+│  - Full test report: s3://aura-sandbox/reports/abc123/test-report.html  │
+│  - Coverage report:  s3://aura-sandbox/reports/abc123/coverage.html     │
+│  - Security report:  s3://aura-sandbox/reports/abc123/security.json     │
 │  - CloudWatch logs:  /aws/ecs/aura-sandbox/abc123                       │
-│                                                                          │
-│  RECOMMENDATION: Proceed to HITL approval                                │
-│                                                                          │
+│                                                                         │
+│  RECOMMENDATION: Proceed to HITL approval                               │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -649,45 +649,45 @@ Every sandbox execution produces a comprehensive report for human reviewers.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    SANDBOX VALIDATION REPORT                             │
-│                    sandbox-2026-01-19-def456                             │
+│                    SANDBOX VALIDATION REPORT                            │
+│                    sandbox-2026-01-19-def456                            │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  SUMMARY                                                                 │
-│  ───────                                                                 │
-│  Status:           FAILED                                                │
-│  Failed Stage:     Unit Tests                                            │
-│  Duration:         5 minutes 41 seconds                                  │
-│                                                                          │
-│  FAILURE DETAILS                                                         │
-│  ───────────────                                                         │
-│  Test:     test_user_authentication                                      │
+│                                                                         │
+│  SUMMARY                                                                │
+│  ───────                                                                │
+│  Status:           FAILED                                               │
+│  Failed Stage:     Unit Tests                                           │
+│  Duration:         5 minutes 41 seconds                                 │
+│                                                                         │
+│  FAILURE DETAILS                                                        │
+│  ───────────────                                                        │
+│  Test:     test_user_authentication                                     │
 │  File:     tests/test_auth.py:47                                        │
-│  Error:    AssertionError                                                │
-│                                                                          │
-│  Expected: status_code == 200                                            │
-│  Actual:   status_code == 401                                            │
-│                                                                          │
-│  Stack Trace:                                                            │
-│  ─────────────                                                           │
+│  Error:    AssertionError                                               │
+│                                                                         │
+│  Expected: status_code == 200                                           │
+│  Actual:   status_code == 401                                           │
+│                                                                         │
+│  Stack Trace:                                                           │
+│  ─────────────                                                          │
 │  tests/test_auth.py:47: AssertionError                                  │
 │    > assert response.status_code == 200                                 │
 │    E AssertionError: assert 401 == 200                                  │
 │    E  + where 401 = <Response [401]>.status_code                        │
-│                                                                          │
-│  ROOT CAUSE ANALYSIS                                                     │
-│  ───────────────────                                                     │
+│                                                                         │
+│  ROOT CAUSE ANALYSIS                                                    │
+│  ───────────────────                                                    │
 │  The patch modified the authentication flow in auth_service.py.         │
 │  The existing test expects a 200 response, but the patched code         │
 │  now requires an additional header that the test does not provide.      │
-│                                                                          │
-│  RECOMMENDED ACTION                                                      │
-│  ──────────────────                                                      │
+│                                                                         │
+│  RECOMMENDED ACTION                                                     │
+│  ──────────────────                                                     │
 │  Coder Agent should update the patch to maintain backward               │
-│  compatibility with existing authentication patterns.                    │
-│                                                                          │
+│  compatibility with existing authentication patterns.                   │
+│                                                                         │
 │  STATUS: Patch rejected, Coder Agent notified                           │
-│                                                                          │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 

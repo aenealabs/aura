@@ -178,7 +178,7 @@ All three retrieval methods execute concurrently:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Query: "validate auth tokens"             │
+│            Query: "validate auth tokens"                        │
 └─────────────────────────┬───────────────────────────────────────┘
                           │
           ┌───────────────┼───────────────┐
@@ -195,8 +195,8 @@ All three retrieval methods execute concurrently:
                           │
                           ▼
                 ┌─────────────────┐
-                │  RRF Fusion     │
-                │  (k=60)         │
+                │    RRF Fusion   │
+                │    (k=60)       │
                 └────────┬────────┘
                          │
                          ▼

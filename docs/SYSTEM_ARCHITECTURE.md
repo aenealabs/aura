@@ -181,67 +181,68 @@ llm = factory.create_llm_service()
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
 │  ┌──────────────────────────────────────────────────────────────────────┐        │
-│  │                    VPC (vpc-0123456789abcdef0)                        │       │
-│  │                         10.0.0.0/16                                   │       │
-│  │                                                                        │      │
+│  │                    VPC (vpc-0123456789abcdef0)                       │        │
+│  │                         10.0.0.0/16                                  │        │
+│  │                                                                      │        |
 │  │  ┌────────────────────────────────────────────────────────────────┐  │        │
-│  │  │  Dev Environment (ECS Fargate) - NOT YET DEPLOYED               │  │       │
-│  │  │                                                                  │  │      │
-│  │  │  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐     │  │         │
-│  │  │  │ dnsmasq  │  │Orchestrator│  │  Coder   │  │ Reviewer │     │  │         │
-│  │  │  │ Service  │  │  Service   │  │  Agent   │  │  Agent   │     │  │         │
-│  │  │  │          │  │            │  │          │  │          │     │  │         │
-│  │  │  │ Fargate  │  │  Fargate   │  │ Fargate  │  │ Fargate  │     │  │         │
-│  │  │  │  Task    │  │   Task     │  │  Task    │  │  Task    │     │  │         │
-│  │  │  └──────────┘  └────────────┘  └──────────┘  └──────────┘     │  │         │
-│  │  │       │              │                │             │           │  │       │
-│  │  │       └──────────────┴────────────────┴─────────────┘           │  │       │
-│  │  │                              │                                   │  │      │
-│  │  │                    AWS Cloud Map Service Discovery              │  │       │
-│  │  │                                                                  │  │      │
-│  │  │  Scaling: EventBridge (8am-6pm weekdays)                        │  │       │
-│  │  │  Capacity: FARGATE_SPOT                                         │  │       │
+│  │  │  Dev Environment (ECS Fargate) - NOT YET DEPLOYED              │  │        │
+│  │  │                                                                │  │        │
+│  │  │  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐      │  │        │
+│  │  │  │ dnsmasq  │  │Orchestrator│  │  Coder   │  │ Reviewer │      │  │        │
+│  │  │  │ Service  │  │  Service   │  │  Agent   │  │  Agent   │      │  │        │
+│  │  │  │          │  │            │  │          │  │          │      │  │        │
+│  │  │  │ Fargate  │  │  Fargate   │  │ Fargate  │  │ Fargate  │      │  │        │
+│  │  │  │  Task    │  │   Task     │  │  Task    │  │  Task    │      │  │        │
+│  │  │  └──────────┘  └────────────┘  └──────────┘  └──────────┘      │  │        │
+│  │  │       │              │                │             │          │  │        │
+│  │  │       └──────────────┴────────────────┴─────────────┘          │  │        │
+│  │  │                              │                                 │  │        │
+│  │  │                    AWS Cloud Map Service Discovery             │  │        │
+│  │  │                                                                │  │        │
+│  │  │  Scaling: EventBridge (8am-6pm weekdays)                       │  │        │
+│  │  │  Capacity: FARGATE_SPOT                                        │  │        │
 │  │  └────────────────────────────────────────────────────────────────┘  │        │
-│  │                                                                        │      │
+│  │                                                                      │        │
 │  │  ┌────────────────────────────────────────────────────────────────┐  │        │
-│  │  │  Sandbox Environment (ECS Fargate) - Scale-to-zero [NOT YET DEPLOYED] │  │ │
-│  │  │                                                                  │  │      │
+│  │  │  Sandbox Environment (ECS Fargate) - Scale-to-Zero             │  │        │
+│  │  │  [NOT YET DEPLOYED]                                            │  │        │
+│  │  │                                                                │  │        │
 │  │  │  ┌──────────────────────────────────────────────────────────┐  │  │        │
-│  │  │  │  Ephemeral Sandbox Tasks (0-10 concurrent)                │  │  │       │
-│  │  │  │  • Isolated patch testing                                 │  │  │       │
-│  │  │  │  • Maximum security (DROP ALL capabilities)               │  │  │       │
-│  │  │  │  • No external network access                             │  │  │       │
-│  │  │  │  • DynamoDB state tracking with TTL                       │  │  │       │
+│  │  │  │  Ephemeral Sandbox Tasks (0-10 concurrent)               │  │  │        │
+│  │  │  │  • Isolated patch testing                                │  │  │        │
+│  │  │  │  • Maximum security (DROP ALL capabilities)              │  │  │        │
+│  │  │  │  • No external network access                            │  │  │        │
+│  │  │  │  • DynamoDB state tracking with TTL                      │  │  │        │
 │  │  │  └──────────────────────────────────────────────────────────┘  │  │        │
 │  │  └────────────────────────────────────────────────────────────────┘  │        │
-│  │                                                                        │      │
+│  │                                                                      │        │
 │  │  ┌────────────────────────────────────────────────────────────────┐  │        │
 │  │  │  OpenSearch Domain (VPC-only)                                  │  │        │
-│  │  │                                                                  │  │      │
+│  │  │                                                                │  │        │
 │  │  │  ┌──────────────────────────────────────────────────────────┐  │  │        │
-│  │  │  │  • 2x t3.small.search instances (Multi-AZ)                │  │  │       │
-│  │  │  │  • KNN vector fields (1536 dimensions, HNSW)              │  │  │       │
-│  │  │  │  • Filesystem metadata index                              │  │  │       │
-│  │  │  │  • Code embeddings                                        │  │  │       │
-│  │  │  │  • Lambda auto-index creation                             │  │  │       │
+│  │  │  │  • 2x t3.small.search instances (Multi-AZ)               │  │  │        │
+│  │  │  │  • KNN vector fields (1536 dimensions, HNSW)             │  │  │        │
+│  │  │  │  • Filesystem metadata index                             │  │  │        │
+│  │  │  │  • Code embeddings                                       │  │  │        │
+│  │  │  │  • Lambda auto-index creation                            │  │  │        │
 │  │  │  └──────────────────────────────────────────────────────────┘  │  │        │
 │  │  └────────────────────────────────────────────────────────────────┘  │        │
-│  │                                                                        │      │
+│  │                                                                      │        │
 │  │  ┌────────────────────────────────────────────────────────────────┐  │        │
 │  │  │  Future: EKS Cluster (EC2 Managed Node Groups)                 │  │        │
-│  │  │                                                                  │  │      │
+│  │  │                                                                │  │        │
 │  │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │  │        │
 │  │  │  │ System Nodes │  │   App Nodes  │  │  Sandbox Nodes       │  │  │        │
-│  │  │  │ (dnsmasq,    │  │ (Production  │  │ (Ephemeral testing)  │  │           │
+│  │  │  │ (dnsmasq,    │  │ (Production  │  │ (Ephemeral testing)  │  │  │        │
 │  │  │  │  CoreDNS)    │  │  agents)     │  │ (Scale-to-zero)      │  │  │        │
 │  │  │  │              │  │              │  │                      │  │  │        │
-│  │  │  │ 2x t3.medium │  │ 3-5x m5.xlarge│ │ 0-10x t3.large      │  │  │         │
-│  │  │  │ On-Demand    │  │ On-Demand    │  │ Spot instances      │  │  │         │
-│  │  │  └──────────────┘  └──────────────┘  └──────────────────────┘  │  │        │
+│  │  │  │ 2x t3.medium │  │ 3-5x m5.xlarge│ │ 0-10x t3.large       │  │  │        │
+│  │  │  │ On-Demand    │  │ On-Demand    │  │ Spot instances       │  │  │        │
+│  │  │  └──────────────┘  └──────────────┘  └──────────────────────┘  │  │        │ 
 │  │  └────────────────────────────────────────────────────────────────┘  │        │
-│  │                                                                        │      │
+│  │                                                                      │        │
 │  │  ┌────────────────────────────────────────────────────────────────┐  │        │
-│  │  │  VPC Endpoints (9 endpoints)                                    │  │       │
+│  │  │  VPC Endpoints (9 endpoints)                                   │  │        │
 │  │  │  • S3, DynamoDB, Bedrock, CodeConnections, Logs, Secrets, ECR  │  │        │
 │  │  │  • No NAT Gateways (CMMC L3 compliant - no internet egress)    │  │        │
 │  │  └────────────────────────────────────────────────────────────────┘  │        │
@@ -315,82 +316,82 @@ Multi-strategy context retrieval system that combines graph, vector, filesystem,
 │  Agent Request: "Fix authentication vulnerability in JWT validation"        │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  Step 1: Query Planning (QueryPlanningAgent)                           │ │
-│  │  • LLM analyzes query intent                                           │ │
-│  │  • Identifies key concepts: "authentication", "JWT", "validation"      │ │
-│  │  • Selects strategies: [vector, filesystem, graph]                     │ │
-│  │  • Allocates token budget per strategy                                 │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 1: Query Planning (QueryPlanningAgent)                         │   │
+│  │  • LLM analyzes query intent                                         │   │
+│  │  • Identifies key concepts: "authentication", "JWT", "validation"    │   │
+│  │  • Selects strategies: [vector, filesystem, graph]                   │   │
+│  │  • Allocates token budget per strategy                               │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  Step 2: Parallel Search Execution                                     │ │
-│  │                                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────┐      │ │
-│  │  │  Vector Search (OpenSearch KNN)                               │     │ │
-│  │  │  • Embed query: "JWT authentication validation"               │     │ │
-│  │  │  • KNN search on docstring_embedding field                    │     │ │
-│  │  │  • Returns: auth_service.py, jwt_validator.py (score: 9.5)   │      │ │
-│  │  └──────────────────────────────────────────────────────────────┘      │ │
-│  │                                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────┐      │ │
-│  │  │  Filesystem Search (OpenSearch Metadata)                      │     │ │
-│  │  │  • Pattern: "**/auth/*.py"                                    │     │ │
-│  │  │  • Wildcard query on file_path field                          │     │ │
-│  │  │  • Returns: auth_service.py, auth_middleware.py (score: 8.0) │      │ │
-│  │  └──────────────────────────────────────────────────────────────┘      │ │
-│  │                                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────┐      │ │
-│  │  │  Graph Search (Neptune Gremlin)                               │     │ │
-│  │  │  • Query: Functions calling JWT validation                    │     │ │
-│  │  │  • Traverse call graph                                        │     │ │
-│  │  │  • Returns: login.py, api_auth.py (score: 7.5)               │      │ │
-│  │  └──────────────────────────────────────────────────────────────┘      │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 2: Parallel Search Execution                                   │   │
+│  │                                                                      │   │
+│  │  ┌──────────────────────────────────────────────────────────────┐    │   │
+│  │  │  Vector Search (OpenSearch KNN)                              │    │   │
+│  │  │  • Embed query: "JWT authentication validation"              │    │   │
+│  │  │  • KNN search on docstring_embedding field                   │    │   │
+│  │  │  • Returns: auth_service.py, jwt_validator.py (score: 9.5)   │    │   │
+│  │  └──────────────────────────────────────────────────────────────┘    │   │
+│  │                                                                      │   │
+│  │  ┌──────────────────────────────────────────────────────────────┐    │   │
+│  │  │  Filesystem Search (OpenSearch Metadata)                     │    │   │
+│  │  │  • Pattern: "**/auth/*.py"                                   │    │   │
+│  │  │  • Wildcard query on file_path field                         │    │   │
+│  │  │  • Returns: auth_service.py, auth_middleware.py (score: 8.0) │    │   │
+│  │  └──────────────────────────────────────────────────────────────┘    │   │
+│  │                                                                      │   │
+│  │  ┌──────────────────────────────────────────────────────────────┐    │   │
+│  │  │  Graph Search (Neptune Gremlin)                              │    │   │
+│  │  │  • Query: Functions calling JWT validation                   │    │   │
+│  │  │  • Traverse call graph                                       │    │   │
+│  │  │  • Returns: login.py, api_auth.py (score: 7.5)               │    │   │
+│  │  └──────────────────────────────────────────────────────────────┘    │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  Step 3: Result Synthesis (ResultSynthesisAgent)                       │ │
-│  │                                                                        │ │
-│  │  Raw results: 5 files (2 duplicates)                                   │ │
-│  │  After deduplication: 3 unique files                                   │ │
-│  │                                                                        │ │
-│  │  Composite scores:                                                     │ │
-│  │  1. auth_service.py: 24.5 (found by vector + filesystem + graph)       │ │
-│  │  2. jwt_validator.py: 18.2 (found by vector + graph)                   │ │
-│  │  3. auth_middleware.py: 12.0 (found by filesystem only)                │ │
-│  │                                                                        │ │
-│  │  Budget fitting (budget: 50,000 tokens):                               │ │
-│  │  • File 1: 15,000 tokens (selected)                                    │ │
-│  │  • File 2: 10,000 tokens (selected)                                    │ │
-│  │  • File 3: 8,000 tokens (selected)                                     │ │
-│  │  • Total: 33,000 tokens (66% of budget)                                │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 3: Result Synthesis (ResultSynthesisAgent)                     │   │
+│  │                                                                      │   │
+│  │  Raw results: 5 files (2 duplicates)                                 │   │
+│  │  After deduplication: 3 unique files                                 │   │
+│  │                                                                      │   │
+│  │  Composite scores:                                                   │   │
+│  │  1. auth_service.py: 24.5 (found by vector + filesystem + graph)     │   │
+│  │  2. jwt_validator.py: 18.2 (found by vector + graph)                 │   │
+│  │  3. auth_middleware.py: 12.0 (found by filesystem only)              │   │
+│  │                                                                      │   │
+│  │  Budget fitting (budget: 50,000 tokens):                             │   │
+│  │  • File 1: 15,000 tokens (selected)                                  │   │
+│  │  • File 2: 10,000 tokens (selected)                                  │   │
+│  │  • File 3: 8,000 tokens (selected)                                   │   │
+│  │  • Total: 33,000 tokens (66% of budget)                              │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  Step 4: Context Response                                              │ │
-│  │                                                                        │ │
-│  │  HybridContext {                                                       │ │
-│  │    files: [                                                            │ │
-│  │      {path: "auth_service.py", score: 24.5, tokens: 15000},            │ │
-│  │      {path: "jwt_validator.py", score: 18.2, tokens: 10000},           │ │
-│  │      {path: "auth_middleware.py", score: 12.0, tokens: 8000}           │ │
-│  │    ],                                                                  │ │
-│  │    total_tokens: 33000,                                                │ │
-│  │    strategies_used: ["vector", "filesystem", "graph"],                 │ │
-│  │    query: "Fix authentication vulnerability in JWT validation"         │ │
-│  │  }                                                                     │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 4: Context Response                                            │   │
+│  │                                                                      │   │
+│  │  HybridContext {                                                     │   │
+│  │    files: [                                                          │   │
+│  │      {path: "auth_service.py", score: 24.5, tokens: 15000},          │   │
+│  │      {path: "jwt_validator.py", score: 18.2, tokens: 10000},         │   │
+│  │      {path: "auth_middleware.py", score: 12.0, tokens: 8000}         │   │
+│  │    ],                                                                │   │
+│  │    total_tokens: 33000,                                              │   │
+│  │    strategies_used: ["vector", "filesystem", "graph"],               │   │
+│  │    query: "Fix authentication vulnerability in JWT validation"       │   │
+│  │  }                                                                   │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  Delivered to Agent Orchestrator                                       │ │
-│  │  • Coder Agent receives ranked context                                 │ │
-│  │  • Generates patch with high-quality context                           │ │
-│  │  • Expected: 3-5x better code understanding                            │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Delivered to Agent Orchestrator                                     │   │
+│  │  • Coder Agent receives ranked context                               │   │
+│  │  • Generates patch with high-quality context                         │   │
+│  │  • Expected: 3-5x better code understanding                          │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -408,99 +409,99 @@ The Agent Orchestrator uses a warm pool deployment pattern that provides zero co
 │                      Agent Orchestrator Architecture                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                        API Layer                                      │  │
-│  │  POST /api/v1/orchestrate     - Submit orchestration job              │  │
-│  │  GET  /api/v1/orchestrate/{id} - Get job status                       │  │
-│  │  DELETE /api/v1/orchestrate/{id} - Cancel job                         │  │
-│  │  WS   /api/v1/orchestrate/{id}/stream - Real-time updates             │  │
-│  └────────────────────────────────┬──────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                        API Layer                                     │   │
+│  │  POST /api/v1/orchestrate     - Submit orchestration job             │   │
+│  │  GET  /api/v1/orchestrate/{id} - Get job status                      │   │
+│  │  DELETE /api/v1/orchestrate/{id} - Cancel job                        │   │
+│  │  WS   /api/v1/orchestrate/{id}/stream - Real-time updates            │   │
+│  └────────────────────────────────┬─────────────────────────────────────┘   │
 │                                   │                                         │
 │                                   ▼                                         │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                     OrchestrationService                              │  │
-│  │  • DynamoDB: aura-orchestrator-jobs-{env} (job state)                 │  │
-│  │  • SQS: aura-orchestrator-tasks-{env} (job dispatch)                  │  │
-│  │  • Dual-mode: MOCK (testing) / AWS (production)                       │  │
-│  └────────────────────────────────┬──────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                     OrchestrationService                             │   │
+│  │  • DynamoDB: aura-orchestrator-jobs-{env} (job state)                │   │
+│  │  • SQS: aura-orchestrator-tasks-{env} (job dispatch)                 │   │ 
+│  │  • Dual-mode: MOCK (testing) / AWS (production)                      │   │
+│  └────────────────────────────────┬─────────────────────────────────────┘   │
 │                                   │                                         │
 │                                   ▼                                         │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │              Warm Pool (EKS Deployment - 1 replica)                   │  │
-│  │  orchestrator_server.py:                                              │  │
-│  │  • HTTP Server: /health/live, /health/ready, /metrics                 │  │
-│  │  • SQS Consumer: Long-polls for jobs (5s interval)                    │  │
-│  │  • Zero cold start: Always-on replica waiting for work                │  │
-│  └────────────────────────────────┬──────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │              Warm Pool (EKS Deployment - 1 replica)                  │   │
+│  │  orchestrator_server.py:                                             │   │
+│  │  • HTTP Server: /health/live, /health/ready, /metrics                │   │
+│  │  • SQS Consumer: Long-polls for jobs (5s interval)                   │   │
+│  │  • Zero cold start: Always-on replica waiting for work               │   │
+│  └────────────────────────────────┬─────────────────────────────────────┘   │
 │                                   │                                         │
 │                                   ▼                                         │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                    System2Orchestrator                                │  │
-│  │  Main Loop: Plan → Context → Code → Review → Validate → Monitor       │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                    System2Orchestrator                               │   │
+│  │  Main Loop: Plan → Context → Code → Review → Validate → Monitor      │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Phase 1: PLAN                                                        │  │
-│  │  • Receive task: "Fix CVE-2024-XXXX in auth module"                   │  │
-│  │  • Validate input (InputSanitizer)                                    │  │
-│  │  • Create execution plan                                              │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Phase 1: PLAN                                                       │   │
+│  │  • Receive task: "Fix CVE-2024-XXXX in auth module"                  │   │
+│  │  • Validate input (InputSanitizer)                                   │   │
+│  │  • Create execution plan                                             │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Phase 2: CONTEXT (Agentic Search)                                    │  │
-│  │  • ContextRetrievalService.retrieve_context()                         │  │
-│  │  • Multi-strategy search (graph + vector + filesystem + git)          │  │
-│  │  • Returns HybridContext with ranked files                            │  │
-│  │  • Context budget: 100,000 tokens                                     │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Phase 2: CONTEXT (Agentic Search)                                   │   │
+│  │  • ContextRetrievalService.retrieve_context()                        │   │
+│  │  • Multi-strategy search (graph + vector + filesystem + git)         │   │
+│  │  • Returns HybridContext with ranked files                           │   │
+│  │  • Context budget: 100,000 tokens                                    │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Phase 3: CODE                                                        │  │
-│  │  • Coder Agent receives context                                       │  │
-│  │  • LLM (Claude/GPT-4) generates patch                                 │  │
-│  │  • AST Parser validates syntax                                        │  │
-│  │  • Returns unified diff                                               │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Phase 3: CODE                                                       │   │
+│  │  • Coder Agent receives context                                      │   │
+│  │  • LLM (Claude/GPT-4) generates patch                                │   │
+│  │  • AST Parser validates syntax                                       │   │
+│  │  • Returns unified diff                                              │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Phase 4: REVIEW                                                      │  │
-│  │  • Reviewer Agent analyzes patch                                      │  │
-│  │  • Security checks (OWASP Top 10, AI-specific threats)                │  │
-│  │  • Code quality checks (complexity, maintainability)                  │  │
-│  │  • Returns review report with findings                                │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Phase 4: REVIEW                                                     │   │
+│  │  • Reviewer Agent analyzes patch                                     │   │
+│  │  • Security checks (OWASP Top 10, AI-specific threats)               │   │
+│  │  • Code quality checks (complexity, maintainability)                 │   │
+│  │  • Returns review report with findings                               │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Phase 5: VALIDATE (Sandbox Testing)                                  │  │
-│  │  • FargateSandboxOrchestrator.create_sandbox()                        │  │
-│  │  • Apply patch in isolated environment                                │  │
-│  │  • Run test suite                                                     │  │
-│  │  • Collect results                                                    │  │
-│  │  • FargateSandboxOrchestrator.destroy_sandbox()                       │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Phase 5: VALIDATE (Sandbox Testing)                                 │   │
+│  │  • FargateSandboxOrchestrator.create_sandbox()                       │   │
+│  │  • Apply patch in isolated environment                               │   │
+│  │  • Run test suite                                                    │   │
+│  │  • Collect results                                                   │   │
+│  │  • FargateSandboxOrchestrator.destroy_sandbox()                      │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Phase 6: MONITOR                                                     │  │
-│  │  • Log activity (tokens used, LOC changed)                            │  │
-│  │  • Track security findings                                            │  │
-│  │  • Calculate token usage                                              │  │
-│  │  • Generate comprehensive report                                      │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Phase 6: MONITOR                                                    │   │ 
+│  │  • Log activity (tokens used, LOC changed)                           │   │
+│  │  • Track security findings                                           │   │
+│  │  • Calculate token usage                                             │   │
+│  │  • Generate comprehensive report                                     │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  HITL (Human-in-the-Loop) Approval (Future)                           │  │
-│  │  • Present findings to human reviewer                                 │  │
-│  │  • Approval Dashboard (React UI)                                      │  │
-│  │  • SNS notifications                                                  │  │
-│  │  • Apply patch if approved                                            │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  HITL (Human-in-the-Loop) Approval (Future)                          │   │
+│  │  • Present findings to human reviewer                                │   │
+│  │  • Approval Dashboard (React UI)                                     │   │
+│  │  • SNS notifications                                                 │   │
+│  │  • Apply patch if approved                                           │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -528,23 +529,23 @@ The Agent Orchestrator supports three configurable deployment modes, allowing or
 │                  Orchestrator Deployment Mode Architecture                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                         Settings Layer                                │  │
-│  │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    │  │
-│  │  │  Platform       │    │  Organization   │    │  Settings       │    │  │
-│  │  │  Defaults       │ <- │  Overrides      │ <- │  API            │    │  │
-│  │  │  (DynamoDB)     │    │  (DynamoDB)     │    │  (REST/Admin)   │    │  │
-│  │  └─────────────────┘    └─────────────────┘    └─────────────────┘    │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                         Settings Layer                               │   │
+│  │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐   │   │
+│  │  │  Platform       │    │  Organization   │    │  Settings       │   │   │
+│  │  │  Defaults       │ <- │  Overrides      │ <- │  API            │   │   │
+│  │  │  (DynamoDB)     │    │  (DynamoDB)     │    │  (REST/Admin)   │   │   │
+│  │  └─────────────────┘    └─────────────────┘    └─────────────────┘   │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
 │                                    ▼                                        │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                     Mode Transition Service                           │  │
-│  │  State Machine: ACTIVE -> DRAINING -> COMPLETING -> SCALING -> ACTIVE │  │
-│  │  • 5-minute cooldown between changes (anti-thrashing)                 │  │
-│  │  • Graceful in-flight job completion                                  │  │
-│  │  • K8s warm pool scaling via RBAC                                     │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                     Mode Transition Service                          │   │
+│  │  State Machine: ACTIVE -> DRAINING -> COMPLETING -> SCALING -> ACTIVE│   │
+│  │  • 5-minute cooldown between changes (anti-thrashing)                │   │
+│  │  • Graceful in-flight job completion                                 │   │
+│  │  • K8s warm pool scaling via RBAC                                    │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
 │                     ┌──────────────┼──────────────┐                         │
 │                     │              │              │                         │
@@ -553,11 +554,11 @@ The Agent Orchestrator supports three configurable deployment modes, allowing or
 │  │  ON-DEMAND  │  │  WARM POOL  │  │          HYBRID                 │      │
 │  │  Mode       │  │  Mode       │  │          Mode                   │      │
 │  │             │  │             │  │                                 │      │
-│  │  EKS Job    │  │  Always-On  │  │  Warm Pool  │  Burst Jobs      │       │
-│  │  per        │  │  Replica    │  │  (baseline) │  (overflow)      │       │
+│  │  EKS Job    │  │  Always-On  │  │  Warm Pool  │  Burst Jobs       │      │
+│  │  per        │  │  Replica    │  │  (baseline) │  (overflow)       │      │
 │  │  Request    │  │  (1-10)     │  │             │                   │      │
 │  │             │  │             │  │             │                   │      │
-│  │  ~30s start │  │  0s start   │  │  0s (pool) / 30s (burst)       │       │
+│  │  ~30s start │  │  0s start   │  │  0s (pool) / 30s (burst)        │      │
 │  └─────────────┘  └─────────────┘  └─────────────────────────────────┘      │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -609,67 +610,67 @@ Platform Default: on_demand
 │                      Sandbox Architecture (ECS Fargate)                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                FargateSandboxOrchestrator (Python)                     │ │
-│  │  • create_sandbox(sandbox_id, patch_id, test_suite)                    │ │
-│  │  • destroy_sandbox(sandbox_id)                                         │ │
-│  │  • get_sandbox_status(sandbox_id)                                      │ │
-│  │  • get_sandbox_logs(sandbox_id)                                        │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                FargateSandboxOrchestrator (Python)                   │   │
+│  │  • create_sandbox(sandbox_id, patch_id, test_suite)                  │   │
+│  │  • destroy_sandbox(sandbox_id)                                       │   │
+│  │  • get_sandbox_status(sandbox_id)                                    │   │
+│  │  • get_sandbox_logs(sandbox_id)                                      │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  Sandbox Lifecycle:                                                    │ │
-│  │                                                                        │ │
-│  │  1. Provision:                                                         │ │
-│  │     • Create ECS task with sandbox Docker image                        │ │
-│  │     • Store state in DynamoDB (sandbox_id, task_arn, created_at)       │ │
-│  │     • Set TTL for auto-cleanup (2 hours)                               │ │
-│  │                                                                        │ │
-│  │  2. Execute:                                                           │ │
-│  │     • Apply patch to codebase                                          │ │
-│  │     • Run test suite: pytest, npm test, etc.                           │ │
-│  │     • Collect results to CloudWatch Logs                               │ │
-│  │                                                                        │ │
-│  │  3. Monitor:                                                           │ │
-│  │     • Check task status (RUNNING, STOPPED)                             │ │
-│  │     • Tail CloudWatch Logs                                             │ │
-│  │     • Return results to orchestrator                                   │ │
-│  │                                                                        │ │
-│  │  4. Cleanup:                                                           │ │
-│  │     • Stop ECS task                                                    │ │
-│  │     • Delete DynamoDB state                                            │ │
-│  │     • Logs retained for 30 days                                        │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Sandbox Lifecycle:                                                  │   │
+│  │                                                                      │   │ 
+│  │  1. Provision:                                                       │   │
+│  │     • Create ECS task with sandbox Docker image                      │   │
+│  │     • Store state in DynamoDB (sandbox_id, task_arn, created_at)     │   │
+│  │     • Set TTL for auto-cleanup (2 hours)                             │   │
+│  │                                                                      │   │  
+│  │  2. Execute:                                                         │   │
+│  │     • Apply patch to codebase                                        │   │
+│  │     • Run test suite: pytest, npm test, etc.                         │   │
+│  │     • Collect results to CloudWatch Logs                             │   │
+│  │                                                                      │   │
+│  │  3. Monitor:                                                         │   │
+│  │     • Check task status (RUNNING, STOPPED)                           │   │
+│  │     • Tail CloudWatch Logs                                           │   │
+│  │     • Return results to orchestrator                                 │   │
+│  │                                                                      │   │
+│  │  4. Cleanup:                                                         │   │
+│  │     • Stop ECS task                                                  │   │
+│  │     • Delete DynamoDB state                                          │   │
+│  │     • Logs retained for 30 days                                      │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  Sandbox Security Isolation:                                           │ │
-│  │                                                                        │ │
-│  │  ┌────────────────────────────────────────────────────────────────┐    │ │
-│  │  │  Docker Container (Fargate Task)                                │   │ │
-│  │  │  • Linux capabilities: DROP ALL                                 │   │ │
-│  │  │  • Read-only root filesystem                                    │   │ │
-│  │  │  • Non-root user (UID 2000)                                     │   │ │
-│  │  │  • No privileged mode                                           │   │ │
-│  │  │  • Temp directory: /tmp (tmpfs, ephemeral)                      │   │ │
-│  │  └────────────────────────────────────────────────────────────────┘    │ │
-│  │                                                                        │ │
-│  │  ┌────────────────────────────────────────────────────────────────┐    │ │
-│  │  │  Network Isolation (Security Group)                             │   │ │
-│  │  │  • Ingress: DENY ALL                                            │   │ │
-│  │  │  • Egress: ALLOW only to dnsmasq (port 53)                      │   │ │
-│  │  │  • Metadata service: 169.254.169.254 BLOCKED                    │   │ │
-│  │  └────────────────────────────────────────────────────────────────┘    │ │
-│  │                                                                        │ │
-│  │  ┌────────────────────────────────────────────────────────────────┐    │ │
-│  │  │  Resource Limits                                                │   │ │
-│  │  │  • CPU: 0.5 vCPU                                                │   │ │
-│  │  │  • Memory: 1 GB                                                 │   │ │
-│  │  │  • Ephemeral storage: 20 GB                                     │   │ │
-│  │  │  • Task timeout: 30 minutes                                     │   │ │
-│  │  └────────────────────────────────────────────────────────────────┘    │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Sandbox Security Isolation:                                         │   │
+│  │                                                                      │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │  Docker Container (Fargate Task)                               │  │   │
+│  │  │  • Linux capabilities: DROP ALL                                │  │   │
+│  │  │  • Read-only root filesystem                                   │  │   │
+│  │  │  • Non-root user (UID 2000)                                    │  │   │
+│  │  │  • No privileged mode                                          │  │   │
+│  │  │  • Temp directory: /tmp (tmpfs, ephemeral)                     │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  │                                                                      │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │  Network Isolation (Security Group)                            │  │   │
+│  │  │  • Ingress: DENY ALL                                           │  │   │
+│  │  │  • Egress: ALLOW only to dnsmasq (port 53)                     │  │   │
+│  │  │  • Metadata service: 169.254.169.254 BLOCKED                   │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  │                                                                      │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │  Resource Limits                                               │  │   │
+│  │  │  • CPU: 0.5 vCPU                                               │  │   │
+│  │  │  • Memory: 1 GB                                                │  │   │
+│  │  │  • Ephemeral storage: 20 GB                                    │  │   │
+│  │  │  • Task timeout: 30 minutes                                    │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  Execution window: 30 minutes per sandbox                                   │
 │  Scalability: 0-100 concurrent sandboxes                                    │
@@ -883,49 +884,49 @@ Platform Default: on_demand
 │                          Deployment Status                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  Phase 1: DEPLOYED ✅                                                        │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  AWS Commercial Cloud (us-east-1)                                      │ │
-│  │                                                                        │ │
-│  │  • VPC: vpc-0123456789abcdef0                                          │ │
-│  │  • Subnets: 2 public + 2 private                                       │ │
-│  │  • VPC Endpoints: 9 endpoints (S3, DynamoDB, Bedrock, etc.)            │ │
-│  │  • Security Groups: 7 groups                                           │ │
-│  │  • IAM Roles: 7 service roles                                          │ │
-│  │  • Workloads: VPC Endpoints + Flow Logs                                │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  Phase 1: DEPLOYED ✅                                                       │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  AWS Commercial Cloud (us-east-1)                                    │   │
+│  │                                                                      │   │
+│  │  • VPC: vpc-0123456789abcdef0                                        │   │
+│  │  • Subnets: 2 public + 2 private                                     │   │
+│  │  • VPC Endpoints: 9 endpoints (S3, DynamoDB, Bedrock, etc.)          │   │
+│  │  • Security Groups: 7 groups                                         │   │
+│  │  • IAM Roles: 7 service roles                                        │   │
+│  │  • Workloads: VPC Endpoints + Flow Logs                              │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  Phase 2: READY FOR DEPLOYMENT ⚠️                                           │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  OpenSearch Domain                                                     │ │
-│  │  • CloudFormation template: 685 lines ✅                                │ │
-│  │  • KNN vector index schema defined ✅                                   │ │
-│  │  • Lambda index creator ready ✅                                        │ │
-│  │  • Deployment script: deploy-agentic-search.sh ✅                       │ │
-│  │  • Sizing: 2x t3.small.search (dev), 3x m5.large.search (prod)         │ │
-│  │  • Status: NOT DEPLOYED                                                │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  OpenSearch Domain                                                   │   │
+│  │  • CloudFormation template: 685 lines ✅                             │   │
+│  │  • KNN vector index schema defined ✅                                │   │
+│  │  • Lambda index creator ready ✅                                     │   │
+│  │  • Deployment script: deploy-agentic-search.sh ✅                    │   │
+│  │  • Sizing: 2x t3.small.search (dev), 3x m5.large.search (prod)       │   │
+│  │  • Status: NOT DEPLOYED                                              │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  ECS Fargate Clusters                                                  │ │
-│  │  • Dev cluster template: 600 lines ✅                                   │ │
-│  │  • Services template: 700 lines ✅                                      │ │
-│  │  • Sandbox template: 450 lines ✅                                       │ │
-│  │  • Dockerfiles: 3 files ✅                                              │ │
-│  │  • Deployment scripts: 2 scripts ✅                                     │ │
-│  │  • Sizing: 4 services x 0.5 vCPU / 1 GB (dev with scaling)             │ │
-│  │  • Status: NOT DEPLOYED                                                │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  ECS Fargate Clusters                                                │   │
+│  │  • Dev cluster template: 600 lines ✅                                │   │
+│  │  • Services template: 700 lines ✅                                   │   │
+│  │  • Sandbox template: 450 lines ✅                                    │   │
+│  │  • Dockerfiles: 3 files ✅                                           │   │
+│  │  • Deployment scripts: 2 scripts ✅                                  │   │
+│  │  • Sizing: 4 services x 0.5 vCPU / 1 GB (dev with scaling)           │   │
+│  │  • Status: NOT DEPLOYED                                              │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  Phase 3: PLANNED (Q2 2026)                                                 │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  AWS GovCloud (US) Migration                                           │ │
-│  │  • STIG-hardened EKS nodes                                             │ │
-│  │  • FIPS 140-2 mode enabled                                             │ │
-│  │  • Private VPC endpoints only                                          │ │
-│  │  • Enhanced audit logging                                              │ │
-│  │  • CMMC Level 3 certification                                          │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  AWS GovCloud (US) Migration                                         │   │
+│  │  • STIG-hardened EKS nodes                                           │   │
+│  │  • FIPS 140-2 mode enabled                                           │   │
+│  │  • Private VPC endpoints only                                        │   │
+│  │  • Enhanced audit logging                                            │   │
+│  │  • CMMC Level 3 certification                                        │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 

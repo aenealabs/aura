@@ -101,23 +101,23 @@ Agent Output
      │
      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    CRITIQUE PHASE                            │
-│                                                              │
-│  1. Load applicable principles (filtered by domain tags)     │
+│                    CRITIQUE PHASE                           │
+│                                                             │
+│  1. Load applicable principles (filtered by domain tags)    │
 │  2. Batch principles into 2-3 LLM calls for efficiency      │
-│  3. Evaluate output against each principle                   │
-│  4. Generate critique with severity and reasoning            │
-│                                                              │
+│  3. Evaluate output against each principle                  │
+│  4. Generate critique with severity and reasoning           │
+│                                                             │
 │  Model: Claude Haiku (fast, cost-effective)                 │
 └─────────────────────────────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    DECISION GATE                             │
-│                                                              │
+│                    DECISION GATE                            │
+│                                                             │
 │  No Issues Found ──────────────────────────▶ Pass Through   │
-│                                                              │
-│  Issues Found:                                               │
+│                                                             │
+│  Issues Found:                                              │
 │    - CRITICAL severity ──▶ Block or HITL escalation         │
 │    - HIGH severity ──────▶ Revision required                │
 │    - MEDIUM/LOW severity ─▶ Flag and proceed (configurable) │
@@ -125,13 +125,13 @@ Agent Output
      │
      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    REVISION PHASE                            │
-│                                                              │
-│  1. Provide original output + critique to revision model     │
-│  2. Generate revised output addressing identified issues     │
+│                    REVISION PHASE                           │
+│                                                             │
+│  1. Provide original output + critique to revision model    │
+│  2. Generate revised output addressing identified issues    │
 │  3. Re-evaluate revised output (max 3 iterations)           │
 │  4. Return final output with revision history               │
-│                                                              │
+│                                                             │
 │  Model: Claude Sonnet (higher capability for revisions)     │
 └─────────────────────────────────────────────────────────────┘
      │
@@ -183,29 +183,29 @@ Constitutional AI integrates with Aura's multi-agent system through the `Constit
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     CODER AGENT                              │
-│                                                              │
+│                     CODER AGENT                             │
+│                                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │              ConstitutionalMixin                     │    │
-│  │                                                      │    │
+│  │              ConstitutionalMixin                    │    │
+│  │                                                     │    │
 │  │  process_with_constitutional(output)                │    │
 │  │    → Applies Security, Code Quality principles      │    │
 │  │    → Domain tags: ["code_generation", "security"]   │    │
 │  └─────────────────────────────────────────────────────┘    │
-│                                                              │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│                    REVIEWER AGENT                            │
-│                                                              │
+│                    REVIEWER AGENT                           │
+│                                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │              ConstitutionalMixin                     │    │
-│  │                                                      │    │
+│  │              ConstitutionalMixin                    │    │
+│  │                                                     │    │
 │  │  process_with_constitutional(output)                │    │
 │  │    → Applies Anti-Sycophancy, Transparency          │    │
 │  │    → Domain tags: ["review", "analysis"]            │    │
 │  └─────────────────────────────────────────────────────┘    │
-│                                                              │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 

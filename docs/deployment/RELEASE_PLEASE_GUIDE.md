@@ -54,7 +54,7 @@ Project Aura uses [Release Please](https://github.com/googleapis/release-please)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        Developer Workflow                            │
+│                        Developer Workflow                           │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
@@ -70,7 +70,7 @@ Project Aura uses [Release Please](https://github.com/googleapis/release-please)
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  3. Release Please GitHub Action runs automatically                  │
+│  3. Release Please GitHub Action runs automatically                 │
 │     - Analyzes all commits since last release                       │
 │     - Determines version bump (major/minor/patch)                   │
 │     - Creates or updates a "Release PR"                             │
@@ -87,7 +87,7 @@ Project Aura uses [Release Please](https://github.com/googleapis/release-please)
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  5. When Release PR is merged:                                      │
-│     - Git tag created (e.g., v1.4.0)                               │
+│     - Git tag created (e.g., v1.4.0)                                │
 │     - GitHub Release published                                      │
 │     - Changelog finalized                                           │
 └─────────────────────────────────────────────────────────────────────┘
@@ -532,7 +532,7 @@ Changes from before Release Please automation (v1.0.0 through v1.2.x) are preser
 │                                                                     │
 │  SCOPES (optional):                                                 │
 │  ─────────────────                                                  │
-│  agents, api, hitl, iam, cicd, sandbox, security,                  │
+│  agents, api, hitl, iam, cicd, sandbox, security,                   │
 │  observability, infra, db                                           │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘

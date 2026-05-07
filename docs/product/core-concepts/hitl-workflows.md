@@ -30,25 +30,25 @@ A defense contractor deploying to classified systems has fundamentally different
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         AUTONOMY SPECTRUM                                │
+│                         AUTONOMY SPECTRUM                               │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  FULL_HITL                                              FULL_AUTONOMOUS  │
-│      │                                                          │        │
-│      ▼                                                          ▼        │
-│  ┌────────┐  ┌────────────┐  ┌─────────────┐  ┌───────────────────┐    │
-│  │ Human  │  │   Human    │  │    Audit    │  │      Fully        │    │
-│  │Approval│  │  Approval  │  │    Only     │  │    Autonomous     │    │
-│  │  All   │  │ CRIT/HIGH  │  │  (Logging)  │  │    Operation      │    │
-│  │  Ops   │  │   Only     │  │             │  │                   │    │
-│  └────────┘  └────────────┘  └─────────────┘  └───────────────────┘    │
-│      │                                                          │        │
-│      │                                                          │        │
+│                                                                         │
+│  FULL_HITL                                              FULL_AUTONOMOUS │
+│      │                                                          │       │
+│      ▼                                                          ▼       │
+│  ┌────────┐  ┌────────────┐  ┌─────────────┐  ┌───────────────────┐     │
+│  │ Human  │  │   Human    │  │    Audit    │  │      Fully        │     │ 
+│  │Approval│  │  Approval  │  │    Only     │  │    Autonomous     │     │
+│  │  All   │  │ CRIT/HIGH  │  │  (Logging)  │  │    Operation      │     │
+│  │  Ops   │  │   Only     │  │             │  │                   │     │
+│  └────────┘  └────────────┘  └─────────────┘  └───────────────────┘     │
+│      │             |                 |                  |               │
+│      │             |                 |                  |               │
 │  Defense         Financial        Internal         Commercial           │
 │  Contractors     Services         Tools            Dev/Test             │
 │  Healthcare      Enterprise       Low-Risk         Startups             │
 │  GovCloud        Standard         Repos                                 │
-│                                                                          │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -365,46 +365,46 @@ When evaluating whether HITL approval is required, Aura follows a strict priorit
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                     POLICY RESOLUTION HIERARCHY                          │
+│                     POLICY RESOLUTION HIERARCHY                         │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
+│                                                                         │
 │  Priority 1 (Highest): GUARDRAILS                                       │
 │  ─────────────────────────────────────                                  │
 │  Always enforced, cannot be overridden                                  │
 │  Examples: production_deployment, credential_modification               │
-│                                                                          │
-│                           │                                              │
-│                           ▼                                              │
-│                                                                          │
+│                                                                         │
+│                           │                                             │
+│                           ▼                                             │
+│                                                                         │
 │  Priority 2: REPOSITORY OVERRIDES                                       │
 │  ─────────────────────────────────                                      │
 │  Per-repository configurations                                          │
-│  Example: "legacy-monolith" repo requires FULL_HITL                    │
-│                                                                          │
-│                           │                                              │
-│                           ▼                                              │
-│                                                                          │
+│  Example: "legacy-monolith" repo requires FULL_HITL                     │
+│                                                                         │
+│                           │                                             │
+│                           ▼                                             │
+│                                                                         │
 │  Priority 3: OPERATION OVERRIDES                                        │
 │  ─────────────────────────────────                                      │
 │  Per-operation type configurations                                      │
 │  Example: "encryption_change" always requires approval                  │
-│                                                                          │
-│                           │                                              │
-│                           ▼                                              │
-│                                                                          │
+│                                                                         │
+│                           │                                             │
+│                           ▼                                             │
+│                                                                         │
 │  Priority 4: SEVERITY OVERRIDES                                         │
 │  ─────────────────────────────────                                      │
 │  Per-severity level configurations                                      │
 │  Example: CRITICAL requires approval, MEDIUM is auto                    │
-│                                                                          │
-│                           │                                              │
-│                           ▼                                              │
-│                                                                          │
+│                                                                         │
+│                           │                                             │
+│                           ▼                                             │
+│                                                                         │
 │  Priority 5 (Lowest): DEFAULT LEVEL                                     │
 │  ─────────────────────────────────                                      │
 │  Policy's default autonomy level                                        │
 │  Example: HITL_CRITICAL as base policy                                  │
-│                                                                          │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -451,50 +451,50 @@ When HITL approval is required, Aura executes a structured workflow.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    STAGE 1: DETECTION & GENERATION                       │
+│                    STAGE 1: DETECTION & GENERATION                      │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  [Reviewer Agent] Detects vulnerability                                  │
-│  [Coder Agent] Generates security patch                                  │
-│  Output: Patch code, confidence score                                    │
+│  [Reviewer Agent] Detects vulnerability                                 │
+│  [Coder Agent] Generates security patch                                 │
+│  Output: Patch code, confidence score                                   │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    STAGE 2: SANDBOX VALIDATION                           │
+│                    STAGE 2: SANDBOX VALIDATION                          │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  [Sandbox Orchestrator] Provisions isolated environment                  │
-│  [Test Runner] Executes test suite                                       │
-│  - Syntax validation                                                     │
-│  - Unit tests                                                            │
-│  - Security scans                                                        │
-│  - Performance benchmarks                                                │
-│  Output: Test results (pass/fail), metrics                               │
+│  [Sandbox Orchestrator] Provisions isolated environment                 │
+│  [Test Runner] Executes test suite                                      │
+│  - Syntax validation                                                    │
+│  - Unit tests                                                           │
+│  - Security scans                                                       │
+│  - Performance benchmarks                                               │
+│  Output: Test results (pass/fail), metrics                              │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    STAGE 3: APPROVAL REQUEST                             │
+│                    STAGE 3: APPROVAL REQUEST                            │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  [HITL Service] Creates approval request                                 │
-│  [Notification Service] Alerts security team                             │
-│  - Email via SES                                                         │
-│  - Slack webhook (optional)                                              │
-│  - Dashboard notification                                                │
-│  Output: Approval ID, pending status                                     │
+│  [HITL Service] Creates approval request                                │
+│  [Notification Service] Alerts security team                            │
+│  - Email via SES                                                        │
+│  - Slack webhook (optional)                                             │
+│  - Dashboard notification                                               │
+│  Output: Approval ID, pending status                                    │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    STAGE 4: HUMAN REVIEW                                 │
+│                    STAGE 4: HUMAN REVIEW                                │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  [Approval Dashboard] Reviewer examines:                                 │
-│  - Original vulnerable code                                              │
-│  - AI-generated patch (diff view)                                        │
-│  - Sandbox test results                                                  │
-│  - Confidence score                                                      │
-│  - Context and reasoning                                                 │
-│                                                                          │
-│  DECISIONS:                                                              │
+│  [Approval Dashboard] Reviewer examines:                                │
+│  - Original vulnerable code                                             │
+│  - AI-generated patch (diff view)                                       │
+│  - Sandbox test results                                                 │
+│  - Confidence score                                                     │
+│  - Context and reasoning                                                │
+│                                                                         │
+│  DECISIONS:                                                             │
 │  [APPROVE] ──▶ Proceed to deployment                                    │
 │  [REJECT] ──▶ Patch discarded, logged                                   │
 │  [REQUEST CHANGES] ──▶ Feedback to Coder Agent                          │
@@ -506,17 +506,17 @@ When HITL approval is required, Aura executes a structured workflow.
                           │                 │
                           ▼                 ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    STAGE 5: DEPLOYMENT / CLOSURE                         │
+│                    STAGE 5: DEPLOYMENT / CLOSURE                        │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  If APPROVED:                                                            │
-│  - Deploy to production                                                  │
-│  - Monitor for 24 hours                                                  │
-│  - Record success metrics                                                │
-│                                                                          │
-│  If REJECTED:                                                            │
-│  - Log rejection reason                                                  │
-│  - Update AI feedback loop                                               │
-│  - Cleanup sandbox                                                       │
+│  If APPROVED:                                                           │
+│  - Deploy to production                                                 │
+│  - Monitor for 24 hours                                                 │
+│  - Record success metrics                                               │
+│                                                                         │
+│  If REJECTED:                                                           │
+│  - Log rejection reason                                                 │
+│  - Update AI feedback loop                                              │
+│  - Cleanup sandbox                                                      │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -526,44 +526,44 @@ Reviewers receive comprehensive information for decision-making:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    APPROVAL REQUEST: approval-2026-01-19-abc123          │
+│              APPROVAL REQUEST: approval-2026-01-19-abc123               │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  VULNERABILITY                                                           │
+│                                                                         │
+│  VULNERABILITY                                                          │
 │  ─────────────                                                          │
-│  Type:        SQL Injection                                              │
-│  Severity:    CRITICAL                                                   │
-│  File:        src/services/user_service.py                               │
-│  Line:        47                                                         │
+│  Type:        SQL Injection                                             │
+│  Severity:    CRITICAL                                                  │
+│  File:        src/services/user_service.py                              │
+│  Line:        47                                                        │
 │  CVE:         CVE-2026-12345 (if applicable)                            │
-│                                                                          │
-│  ORIGINAL CODE                                                           │
+│                                                                         │
+│  ORIGINAL CODE                                                          │
 │  ─────────────                                                          │
-│  def get_user(user_id):                                                  │
+│  def get_user(user_id):                                                 │
 │      query = f"SELECT * FROM users WHERE id = '{user_id}'"              │
 │      return db.execute(query)  # Vulnerable to injection                │
-│                                                                          │
-│  AI-GENERATED PATCH                                                      │
-│  ─────────────────                                                       │
+│                                                                         │
+│  AI-GENERATED PATCH                                                     │
+│  ─────────────────                                                      │
 │  def get_user(user_id: str) -> User:                                    │
-│      # Parameterized query prevents SQL injection                        │
+│      # Parameterized query prevents SQL injection                       │
 │      return db.query(User).filter(User.id == user_id).first()           │
-│                                                                          │
-│  AI CONFIDENCE: 0.94                                                     │
-│  REASONING: Pattern matches 847 similar remediations with 99.2%          │
-│             success rate. Using SQLAlchemy ORM for parameterization.     │
-│                                                                          │
-│  SANDBOX RESULTS                                                         │
-│  ───────────────                                                         │
-│  Unit Tests:      47/47 passed                                           │
-│  Security Scan:   No new vulnerabilities                                 │
-│  Performance:     +2ms latency (acceptable)                              │
-│  Test Report:     [View Full Report]                                     │
-│                                                                          │
+│                                                                         │
+│  AI CONFIDENCE: 0.94                                                    │
+│  REASONING: Pattern matches 847 similar remediations with 99.2%         │
+│             success rate. Using SQLAlchemy ORM for parameterization.    │
+│                                                                         │
+│  SANDBOX RESULTS                                                        │
+│  ───────────────                                                        │
+│  Unit Tests:      47/47 passed                                          │
+│  Security Scan:   No new vulnerabilities                                │
+│  Performance:     +2ms latency (acceptable)                             │
+│  Test Report:     [View Full Report]                                    │
+│                                                                         │
 │  TIMEOUT: 24 hours (expires 2026-01-20 14:32:00 UTC)                    │
-│                                                                          │
+│                                                                         │
 │  [APPROVE]    [REJECT]    [REQUEST CHANGES]                             │
-│                                                                          │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -586,14 +586,14 @@ Approval requests do not wait indefinitely. Aura implements a timeout and escala
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    ESCALATION PROCESSING FLOW                            │
+│                     ESCALATION PROCESSING FLOW                          │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
                     [Hourly EventBridge Trigger]
                                    │
                                    ▼
                     ┌──────────────────────────┐
-                    │ Scan PENDING Requests    │
+                    │  Scan PENDING Requests   │
                     └──────────────────────────┘
                                    │
          ┌─────────────────────────┼─────────────────────────┐

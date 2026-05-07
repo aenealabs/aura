@@ -4,8 +4,8 @@
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-24%2C500+-brightgreen.svg)](tests/)
-[![Lines of Code](https://img.shields.io/badge/Lines_of_Code-458K+-informational.svg)](docs/PROJECT_STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-24%2C800%2B-brightgreen.svg)](tests/)
+[![Lines of Code](https://img.shields.io/badge/Lines_of_Code-375K%2B-informational.svg)](docs/PROJECT_STATUS.md)
 
 Project Aura detects vulnerabilities, generates production-ready patches, validates fixes in isolated sandboxes, and queues them for human approval -- all autonomously. Unlike traditional security scanners that stop at detection, Aura provides end-to-end remediation through a multi-agent AI system built for regulated industries.
 

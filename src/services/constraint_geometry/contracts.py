@@ -308,7 +308,13 @@ class RegressionFloor:
 
     Floors are domain-agnostic — the same primitive serves ADR-088
     model assurance, ADR-085 DO-178C structural coverage gates, or any
-    future profile that needs hard per-axis minima.
+    future profile that needs hard per-axis minima. The ``axis`` field
+    accepts either a :class:`ConstraintAxis` (the existing CGE 7-axis
+    space) or an arbitrary hashable string identifier (e.g.
+    ``"MA1_code_comprehension"`` for ADR-088's six model-assurance
+    axes, which don't fit cleanly inside the CGE 7-axis enum). Lookup
+    is dict-keyed, so the same identifier type used to register a
+    score must be used in the floor.
 
     Floors are **immutable per evaluation run** because they are
     embedded in the frozen ``PolicyProfile``. Mid-run mutation is
@@ -324,7 +330,7 @@ class RegressionFloor:
     floor_id: str
     name: str
     description: str
-    axis: ConstraintAxis
+    axis: "ConstraintAxis | str"
     threshold: float
     comparison: RegressionFloorComparisonMode = RegressionFloorComparisonMode.ABSOLUTE
     action: RegressionFloorAction = RegressionFloorAction.REJECT
@@ -335,6 +341,21 @@ class RegressionFloor:
                 f"RegressionFloor.threshold must be in [0.0, 1.0]; "
                 f"got {self.threshold} for floor {self.floor_id!r}"
             )
+        if not isinstance(self.axis, (ConstraintAxis, str)):
+            raise TypeError(
+                f"RegressionFloor.axis must be ConstraintAxis or str; "
+                f"got {type(self.axis).__name__}"
+            )
+
+    @property
+    def axis_id(self) -> str:
+        """Canonical string identifier for this floor's axis.
+
+        Returns ``axis.value`` for ConstraintAxis members, or the raw
+        string when a custom identifier was supplied. Used by audit
+        serialisation so the wire format is always a string.
+        """
+        return self.axis.value if isinstance(self.axis, ConstraintAxis) else self.axis
 
 
 @dataclass(frozen=True)
@@ -342,7 +363,7 @@ class RegressionFloorViolation:
     """Outcome record for a single floor evaluation."""
 
     floor_id: str
-    axis: ConstraintAxis
+    axis: "ConstraintAxis | str"
     candidate_score: float
     threshold: float
     effective_threshold: float  # threshold after relative scaling
@@ -353,7 +374,11 @@ class RegressionFloorViolation:
     def to_audit_dict(self) -> dict[str, Any]:
         return {
             "floor_id": self.floor_id,
-            "axis": self.axis.value,
+            "axis": (
+                self.axis.value
+                if isinstance(self.axis, ConstraintAxis)
+                else self.axis
+            ),
             "candidate_score": round(self.candidate_score, 6),
             "threshold": round(self.threshold, 6),
             "effective_threshold": round(self.effective_threshold, 6),

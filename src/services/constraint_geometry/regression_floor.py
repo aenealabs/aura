@@ -41,6 +41,12 @@ from src.services.constraint_geometry.contracts import (
     RegressionFloorViolation,
 )
 
+# An axis identifier — either a CGE ConstraintAxis enum (existing
+# 7-axis space) or an arbitrary string ID for domains whose axes
+# don't fit inside that enum (e.g. ADR-088's six model-assurance
+# axes).
+AxisId = "ConstraintAxis | str"
+
 
 @dataclass(frozen=True)
 class IncumbentBaseline:
@@ -57,27 +63,34 @@ class IncumbentBaseline:
     that evaluation (the same behavior as the no-baseline case). This
     matches the ADR-088 v1 expectation that incumbents introduced
     after the platform ships do not retroactively gate older axes.
+
+    Axis keys may be ConstraintAxis enums (CGE/DVE callers) or strings
+    (ADR-088 model assurance). Mixed-key baselines are supported but
+    each floor must use the same axis identifier type as the baseline.
     """
 
     incumbent_id: str
-    axis_scores: tuple[tuple[ConstraintAxis, float], ...] = ()
+    axis_scores: tuple[tuple["ConstraintAxis | str", float], ...] = ()
 
     def __post_init__(self) -> None:
         for axis, score in self.axis_scores:
-            if not isinstance(axis, ConstraintAxis):
+            if not isinstance(axis, (ConstraintAxis, str)):
                 raise TypeError(
-                    f"IncumbentBaseline.axis_scores entries must use ConstraintAxis "
-                    f"keys; got {type(axis).__name__}"
+                    f"IncumbentBaseline.axis_scores entries must use "
+                    f"ConstraintAxis or str keys; got {type(axis).__name__}"
                 )
             if not _is_finite(score):
+                axis_label = (
+                    axis.value if isinstance(axis, ConstraintAxis) else axis
+                )
                 raise ValueError(
-                    f"IncumbentBaseline score for {axis.value} must be a finite "
+                    f"IncumbentBaseline score for {axis_label} must be a finite "
                     f"number; got {score!r}"
                 )
 
-    def get(self, axis: ConstraintAxis) -> float | None:
+    def get(self, axis: "ConstraintAxis | str") -> float | None:
         for ax, score in self.axis_scores:
-            if ax is axis:
+            if ax == axis:
                 return score
         return None
 
@@ -94,16 +107,17 @@ def _is_finite(value: float | int | None) -> bool:
 
 
 def _candidate_score_for(
-    axis: ConstraintAxis,
-    axis_scores: Mapping[ConstraintAxis, AxisCoherenceScore] | Mapping[ConstraintAxis, float],
+    axis: "ConstraintAxis | str",
+    axis_scores: Mapping["ConstraintAxis | str", AxisCoherenceScore | float],
 ) -> float | None:
     """Extract the candidate's raw score for ``axis``.
 
-    Accepts either a mapping of ``ConstraintAxis -> AxisCoherenceScore``
-    (the shape produced by the coherence calculator) or
-    ``ConstraintAxis -> float`` (the simpler shape used by external
-    pipelines like ADR-088 model assurance). Returns ``None`` when the
-    axis is missing — caller decides what to do.
+    Accepts either a mapping of ``axis -> AxisCoherenceScore`` (the
+    shape produced by the coherence calculator) or ``axis -> float``
+    (the simpler shape used by external pipelines like ADR-088 model
+    assurance). The mapping's key type must match the floor's
+    ``axis`` field. Returns ``None`` when the axis is missing —
+    caller decides what to do.
     """
     raw = axis_scores.get(axis)
     if raw is None:
@@ -115,8 +129,7 @@ def _candidate_score_for(
 
 def evaluate_floors(
     floors: Iterable[RegressionFloor],
-    axis_scores: Mapping[ConstraintAxis, AxisCoherenceScore]
-    | Mapping[ConstraintAxis, float],
+    axis_scores: Mapping["ConstraintAxis | str", AxisCoherenceScore | float],
     *,
     incumbent: IncumbentBaseline | None = None,
 ) -> tuple[RegressionFloorViolation, ...]:

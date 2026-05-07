@@ -395,11 +395,20 @@ class TestIncumbentBaseline:
                 axis_scores=((ConstraintAxis.SECURITY_POLICY, float("nan")),),
             )
 
-    def test_axis_must_be_constraint_axis_enum(self) -> None:
-        with pytest.raises(TypeError, match="ConstraintAxis"):
+    def test_axis_can_be_string_id(self) -> None:
+        """ADR-088 model_assurance axes use string identifiers; CGE axes
+        use ConstraintAxis enums. Both are accepted."""
+        b = IncumbentBaseline(
+            incumbent_id="ok",
+            axis_scores=(("MA1_code_comprehension", 0.8),),
+        )
+        assert b.get("MA1_code_comprehension") == 0.8
+
+    def test_axis_must_be_constraint_axis_or_string(self) -> None:
+        with pytest.raises(TypeError, match="ConstraintAxis or str"):
             IncumbentBaseline(
                 incumbent_id="bad",
-                axis_scores=(("C3", 0.5),),  # type: ignore[arg-type]
+                axis_scores=((42, 0.5),),  # type: ignore[arg-type]
             )
 
     def test_get_returns_none_for_missing_axis(self) -> None:

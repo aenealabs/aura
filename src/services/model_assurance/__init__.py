@@ -31,8 +31,25 @@ from .adapter_registry import (
     ModelRequirements,
     TokenizerType,
 )
+from .axes import (
+    AXIS_DEFINITIONS,
+    AXIS_DEFINITIONS_BY_AXIS,
+    AxisDefinition,
+    ModelAssuranceAxis,
+    default_floors,
+    default_weights,
+)
+from .scoring import (
+    AxisScore,
+    ModelAssuranceEvaluator,
+    ModelAssuranceResult,
+    ModelAssuranceVerdict,
+    make_incumbent,
+    perfect_axis_scores,
+)
 
 __all__ = [
+    # Adapter Registry
     "AdapterRegistry",
     "BUILTIN_ADAPTERS",
     "DisqualificationReason",
@@ -41,4 +58,18 @@ __all__ = [
     "ModelProvider",
     "ModelRequirements",
     "TokenizerType",
+    # 6-axis assurance domain
+    "AXIS_DEFINITIONS",
+    "AXIS_DEFINITIONS_BY_AXIS",
+    "AxisDefinition",
+    "ModelAssuranceAxis",
+    "default_floors",
+    "default_weights",
+    # Scoring
+    "AxisScore",
+    "ModelAssuranceEvaluator",
+    "ModelAssuranceResult",
+    "ModelAssuranceVerdict",
+    "make_incumbent",
+    "perfect_axis_scores",
 ]

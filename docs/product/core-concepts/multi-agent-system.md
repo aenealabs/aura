@@ -646,7 +646,7 @@ Revised Output (with audit trail)
 
 ## Related Concepts
 
-- [Autonomous Code Intelligence](./autonomous-code-intelligence.md) - AI foundations
+- [Autonomous Security Intelligence](./autonomous-security-intelligence.md) - AI foundations
 - [Hybrid GraphRAG](./hybrid-graphrag.md) - Context retrieval for agents
 - [Constitutional AI](./constitutional-ai.md) - Principled AI safety and alignment
 - [HITL Workflows](./hitl-workflows.md) - Human oversight of agent decisions

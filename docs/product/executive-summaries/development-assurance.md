@@ -477,4 +477,4 @@ For technical deep-dives, architecture reviews, or proof-of-concept engagements,
 
 ---
 
-*Aenea Labs -- Autonomous Code Intelligence for the Regulated Enterprise*
+*Aenea Labs -- Autonomous Security Intelligence for the Regulated Enterprise*

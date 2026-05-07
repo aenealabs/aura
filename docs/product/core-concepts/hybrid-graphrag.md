@@ -429,7 +429,7 @@ Set boundaries on query behavior:
 
 ## Related Concepts
 
-- [Autonomous Code Intelligence](./autonomous-code-intelligence.md) - How retrieved context is used by AI
+- [Autonomous Security Intelligence](./autonomous-security-intelligence.md) - How retrieved context is used by AI
 - [Multi-Agent System](./multi-agent-system.md) - How agents request context
 - [Sandbox Security](./sandbox-security.md) - How context informs validation
 

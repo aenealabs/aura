@@ -87,7 +87,7 @@ See `scripts/security_hooks/commit_msg_hook.py` for implementation details.
   - `docs/product/getting-started/first-project.md` - Repository onboarding walkthrough
 - **Core Concepts:**
   - `docs/product/core-concepts/index.md` - Technology pillars overview
-  - `docs/product/core-concepts/autonomous-code-intelligence.md` - LLM-powered remediation
+  - `docs/product/core-concepts/autonomous-security-intelligence.md` - LLM-powered remediation
   - `docs/product/core-concepts/hybrid-graphrag.md` - Neptune + OpenSearch architecture
   - `docs/product/core-concepts/multi-agent-system.md` - Agent orchestration
   - `docs/product/core-concepts/hitl-workflows.md` - 4 autonomy levels, 7 policy presets

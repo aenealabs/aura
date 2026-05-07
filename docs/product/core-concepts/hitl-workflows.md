@@ -757,7 +757,7 @@ The Aura Dashboard provides a visual interface for configuring HITL policies:
 
 ## Related Concepts
 
-- [Autonomous Code Intelligence](./autonomous-code-intelligence.md) - AI decision-making that triggers HITL
+- [Autonomous Security Intelligence](./autonomous-security-intelligence.md) - AI decision-making that triggers HITL
 - [Multi-Agent System](./multi-agent-system.md) - Agents that generate patches for review
 - [Sandbox Security](./sandbox-security.md) - Validation that occurs before HITL review
 - [Hybrid GraphRAG](./hybrid-graphrag.md) - Context provided to reviewers

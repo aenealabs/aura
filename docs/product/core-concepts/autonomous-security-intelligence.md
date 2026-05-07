@@ -1,4 +1,4 @@
-# Autonomous Code Intelligence
+# Autonomous Security Intelligence
 
 **Version:** 1.0
 **Last Updated:** January 2026
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Autonomous Code Intelligence is the AI foundation that powers Project Aura's ability to understand, analyze, and remediate security vulnerabilities in enterprise codebases. Unlike traditional static analysis tools that rely on pattern matching, Aura uses large language models (LLMs) to reason about code at a semantic level.
+Autonomous Security Intelligence is the AI foundation that powers Project Aura's ability to understand, analyze, and remediate security vulnerabilities in enterprise codebases. Unlike traditional static analysis tools that rely on pattern matching, Aura uses large language models (LLMs) to reason about code at a semantic level.
 
 This document explains what makes Aura "autonomous," how its AI systems work, and when human intervention is still necessary.
 

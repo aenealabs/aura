@@ -208,7 +208,7 @@ Enterprise-grade product documentation for Project Aura platform users, security
 | Document | Purpose | Lines |
 |----------|---------|-------|
 | [product/core-concepts/index.md](product/core-concepts/index.md) | Technology pillars overview, learning paths by role | 217 |
-| [product/core-concepts/autonomous-code-intelligence.md](product/core-concepts/autonomous-code-intelligence.md) | LLM-powered vulnerability detection and remediation | 326 |
+| [product/core-concepts/autonomous-security-intelligence.md](product/core-concepts/autonomous-security-intelligence.md) | LLM-powered vulnerability detection and remediation | 326 |
 | [product/core-concepts/hybrid-graphrag.md](product/core-concepts/hybrid-graphrag.md) | Neptune graph + OpenSearch vector architecture | 444 |
 | [product/core-concepts/multi-agent-system.md](product/core-concepts/multi-agent-system.md) | Orchestrator, Coder, Reviewer, Validator agents | 579 |
 | [product/core-concepts/hitl-workflows.md](product/core-concepts/hitl-workflows.md) | 4 autonomy levels, 7 policy presets, guardrails | 773 |

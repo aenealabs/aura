@@ -33,7 +33,7 @@ At its core, Aura is an AI security system that reasons about code at a semantic
 - Confidence scoring and uncertainty quantification
 - Continuous learning from remediation outcomes
 
-[Learn more about Autonomous Code Intelligence](./autonomous-code-intelligence.md)
+[Learn more about Autonomous Security Intelligence](./autonomous-security-intelligence.md)
 
 ---
 
@@ -115,7 +115,7 @@ The Core Concepts documentation is designed to be read in order, with each secti
 
 ### For Security Engineers
 
-1. **[Autonomous Code Intelligence](./autonomous-code-intelligence.md)** - Understand how AI makes security decisions
+1. **[Autonomous Security Intelligence](./autonomous-security-intelligence.md)** - Understand how AI makes security decisions
 2. **[Constitutional AI](./constitutional-ai.md)** - Learn about safety principles and anti-sycophancy
 3. **[HITL Workflows](./hitl-workflows.md)** - Configure approval policies for your organization
 4. **[Sandbox Security](./sandbox-security.md)** - Understand validation and isolation
@@ -127,14 +127,14 @@ The Core Concepts documentation is designed to be read in order, with each secti
 2. **[Multi-Agent System](./multi-agent-system.md)** - Learn about agent orchestration
 3. **[Constitutional AI](./constitutional-ai.md)** - Understand critique-revision pipeline
 4. **[Sandbox Security](./sandbox-security.md)** - Configure sandbox environments
-5. **[Autonomous Code Intelligence](./autonomous-code-intelligence.md)** - Tune AI parameters
+5. **[Autonomous Security Intelligence](./autonomous-security-intelligence.md)** - Tune AI parameters
 
 ### For Compliance Officers
 
 1. **[Constitutional AI](./constitutional-ai.md)** - Review AI safety principles and audit trails
 2. **[HITL Workflows](./hitl-workflows.md)** - Configure governance policies
 3. **[Sandbox Security](./sandbox-security.md)** - Understand security boundaries
-4. **[Autonomous Code Intelligence](./autonomous-code-intelligence.md)** - Review AI decision-making
+4. **[Autonomous Security Intelligence](./autonomous-security-intelligence.md)** - Review AI decision-making
 5. **[Multi-Agent System](./multi-agent-system.md)** - Understand audit capabilities
 
 ---
@@ -187,7 +187,7 @@ flowchart TD
 
 | Concept | Primary Value | Key Decision |
 |---------|---------------|--------------|
-| **Autonomous Code Intelligence** | AI-powered security remediation | Confidence thresholds, model selection |
+| **Autonomous Security Intelligence** | AI-powered security remediation | Confidence thresholds, model selection |
 | **Hybrid GraphRAG** | Deep code understanding | Index configuration, retrieval weights |
 | **Multi-Agent System** | Specialized, robust processing | Agent configuration, communication patterns |
 | **Constitutional AI** | Principled safety and transparency | Failure policies, principle priorities |

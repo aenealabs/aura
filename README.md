@@ -312,7 +312,7 @@ All deployment options support AWS GovCloud regions for government workloads.
 
 ### Core Concepts
 
-- [Autonomous Code Intelligence](docs/product/core-concepts/autonomous-code-intelligence.md) -- LLM-powered remediation
+- [Autonomous Security Intelligence](docs/product/core-concepts/autonomous-security-intelligence.md) -- LLM-powered remediation
 - [Hybrid GraphRAG](docs/product/core-concepts/hybrid-graphrag.md) -- Neptune + OpenSearch architecture
 - [Multi-Agent System](docs/product/core-concepts/multi-agent-system.md) -- Agent orchestration
 - [HITL Workflows](docs/product/core-concepts/hitl-workflows.md) -- Autonomy levels and policy presets

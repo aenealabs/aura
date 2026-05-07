@@ -813,7 +813,7 @@ All sandbox executions produce audit evidence:
 
 - [HITL Workflows](./hitl-workflows.md) - Human approval that follows sandbox validation
 - [Multi-Agent System](./multi-agent-system.md) - Validator Agent that orchestrates sandbox testing
-- [Autonomous Code Intelligence](./autonomous-code-intelligence.md) - AI that generates patches for validation
+- [Autonomous Security Intelligence](./autonomous-security-intelligence.md) - AI that generates patches for validation
 - [Hybrid GraphRAG](./hybrid-graphrag.md) - Context used to configure sandbox tests
 
 ---

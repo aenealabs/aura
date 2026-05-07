@@ -2,7 +2,30 @@
 
 ## Status
 
-Accepted (Phase 1 Implemented; Phases 2 & 3 Tracked in #111 / #112)
+Accepted (Phases 1 & 2 Implemented; Phase 3 Tracked in #112)
+
+Phase 2 deployed (issue #111): five sub-phases committed across
+e114fcc → 77c2f84 → ea0b863 → d96f191 → b9831ff. New
+``src/services/supply_chain/model_provenance/`` package
+(~1,140 LOC) for ModelProvenanceService with Sigstore-style
+signature verification, allowlisted registries, license denylist,
+six-component trust score, and sticky-quarantine; new
+``src/services/model_assurance/frozen_oracle/`` (~1,350 LOC) for
+the deterministic 400+ case anchor with rotation policy enforcing
+the 10% churn cap + two-approval gate, plus AST/static-analysis/
+compile/pinned-LLM judges with the recursive-degradation guard
+asserted at construction; new ``pipeline`` sub-package (~880 LOC)
+with the synchronous PipelineOrchestrator that mirrors the Step
+Functions ASL state-machine builder so the local test path and
+production state machine stay in lockstep through 7 stages and 5
+decision values; new ``sandbox`` sub-package (~480 LOC) with the
+zero-egress Bedrock-only allowlist, IAM forbidden-action gate,
+and no-orphan teardown invariant; new ``report`` sub-package
+(~610 LOC) producing the 8-section Shadow Deployment Report with
+both IntegrityEnvelope (per-report tamper detection) and
+EvaluationIntegrityEnvelope (per-run scoring-criteria seal). 173
+new tests across all five sub-phases; 1,022 / 1,022 pass with
+zero regressions on Phase 1's 154 tests.
 
 Phase 1 deployed (issue #110): regression floor primitive added to
 ``src/services/constraint_geometry/`` as a domain-agnostic CGE

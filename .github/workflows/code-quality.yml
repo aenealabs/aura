@@ -61,6 +61,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        # fetch-depth: 0 retrieves full history so the diff-scoped
+        # pre-commit step below can resolve `${{ github.event.before }}`
+        # / PR base SHAs. The default depth=1 makes HEAD~1 unreachable
+        # and breaks `pre-commit run --from-ref`.
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
@@ -89,17 +95,42 @@ jobs:
 
       - name: Run pre-commit on changed files
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
         run: |
-          # PR events: scope to PR base..head. Push events: last commit only.
-          if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ] && [ "$BASE_SHA" != "$HEAD_SHA" ]; then
-            echo "Running pre-commit against PR diff $BASE_SHA..$HEAD_SHA"
-            pre-commit run --from-ref "$BASE_SHA" --to-ref "$HEAD_SHA" --show-diff-on-failure
+          # Resolve the diff window. Three cases:
+          #   1. PR event: scope to PR base..head.
+          #   2. Push event: scope to before..after (the SHAs GitHub
+          #      reports for the push). For brand-new branch pushes
+          #      `before` is all-zeros — fall through to (3).
+          #   3. Fallback: scope to HEAD's parent (HEAD^) only if it
+          #      resolves; otherwise lint the entire diff against the
+          #      empty tree (i.e. "everything in HEAD"). Never pass
+          #      HEAD~1 unguarded — shallow clones don't resolve it.
+          set -euo pipefail
+          ZERO=0000000000000000000000000000000000000000
+
+          if [ -n "${PR_BASE:-}" ] && [ -n "${PR_HEAD:-}" ]; then
+            FROM="$PR_BASE"
+            TO="$PR_HEAD"
+            echo "Pre-commit scope: PR diff $FROM..$TO"
+          elif [ -n "${PUSH_BEFORE:-}" ] && [ "$PUSH_BEFORE" != "$ZERO" ]; then
+            FROM="$PUSH_BEFORE"
+            TO="${PUSH_AFTER:-HEAD}"
+            echo "Pre-commit scope: push diff $FROM..$TO"
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            FROM="$(git rev-parse HEAD^)"
+            TO="HEAD"
+            echo "Pre-commit scope: HEAD^..HEAD ($FROM..$TO)"
           else
-            echo "Running pre-commit against last commit (HEAD~1..HEAD)"
-            pre-commit run --from-ref HEAD~1 --to-ref HEAD --show-diff-on-failure
+            echo "Pre-commit scope: initial commit — running --all-files"
+            pre-commit run --all-files --show-diff-on-failure
+            exit $?
           fi
+
+          pre-commit run --from-ref "$FROM" --to-ref "$TO" --show-diff-on-failure
 
       - name: Run Black (formatting check)
         id: black-check

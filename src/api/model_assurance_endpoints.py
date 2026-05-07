@@ -29,6 +29,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from src.api.log_sanitizer import sanitize_log
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -229,7 +231,11 @@ def get_report(report_id: str) -> ReportEnvelope:
 def approve_report(report_id: str, body: ApprovalRequest) -> ActionResponse:
     if not _STORE.remove(report_id):
         raise HTTPException(status_code=404, detail=f"report {report_id!r} not found")
-    logger.info("model-assurance report %s approved (notes=%r)", report_id, body.notes)
+    logger.info(
+        "model-assurance report %s approved (notes=%s)",
+        sanitize_log(report_id),
+        sanitize_log(body.notes),
+    )
     # Production wiring: this is where we'd write the new ConfigRevision
     # to the revisions DDB table and emit the AuditEvent for HITL_APPROVED.
     return ActionResponse(
@@ -244,7 +250,9 @@ def reject_report(report_id: str, body: RejectionRequest) -> ActionResponse:
     if not _STORE.remove(report_id):
         raise HTTPException(status_code=404, detail=f"report {report_id!r} not found")
     logger.info(
-        "model-assurance report %s rejected (reason=%r)", report_id, body.reason
+        "model-assurance report %s rejected (reason=%s)",
+        sanitize_log(report_id),
+        sanitize_log(body.reason),
     )
     # Production wiring: candidate enters sticky quarantine via the
     # ProvenanceService.quarantine_store; AuditEvent HITL_REJECTED emitted.

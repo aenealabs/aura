@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel
 
 from src.api.auth import User, get_current_user
+from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -497,8 +498,8 @@ async def report_client_error(
     summary = (payload.message or payload.error or "<no message>")[:200]
     logger.warning(
         "frontend client error: %s | url=%s | ua=%s",
-        summary,
-        payload.url,
-        (payload.user_agent or "")[:80],
+        sanitize_log(summary),
+        sanitize_log(payload.url),
+        sanitize_log((payload.user_agent or "")[:80]),
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

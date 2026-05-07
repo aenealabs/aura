@@ -224,11 +224,18 @@ jobs:
       - name: Resolve target branch
         id: target
         if: steps.changes.outputs.has_changes == 'true'
+        env:
+          # CWE-78 mitigation: branch names from workflow_run are
+          # attacker-controlled (forks can name branches anything,
+          # including shell metacharacters). Pass via env so the shell
+          # sees a properly-quoted variable rather than substituting the
+          # raw value into the script body before execution.
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           # Determine where the failed run was: PR head, feature branch,
           # or main. We never push to main directly because it's a
           # protected branch — instead we open a fixup PR.
-          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          BRANCH="$HEAD_BRANCH"
           if [ -z "$BRANCH" ]; then
             BRANCH="main"
           fi

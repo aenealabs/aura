@@ -1,6 +1,6 @@
 # ADR-089: Long-Horizon Security Campaigns
 
-**Status:** Proposed 
+**Status:** Proposed
 **Date:** 2026-05-07
 **Author:** Project Aura Team
 **Related ADRs:** ADR-024 (Titan Neural Memory), ADR-032 (Configurable HITL),

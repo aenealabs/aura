@@ -20,7 +20,14 @@ import logging
 import os
 import shutil
 import subprocess
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # noqa: F401  -- ET.ParseError used in except clauses
+
+# defusedxml hardens parsing against XML-bomb / external-entity / quadratic-
+# blowup attacks. LDRA reports are vendor-tool output (low risk) but the
+# defusedxml swap is a one-liner with no behavior change and gives
+# defense-in-depth for the case where a corrupted intermediate file or a
+# tampered LDRA output reaches the parser.
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 
 from src.services.verification_envelope.contracts import MCDCCoverageReport
 from src.services.verification_envelope.coverage.mcdc_adapter import (
@@ -133,7 +140,7 @@ class LDRAAdapter:
         self, raw: str, request: CoverageAnalysisRequest
     ) -> MCDCCoverageReport:
         try:
-            root = ET.fromstring(raw)
+            root = _safe_fromstring(raw)
         except ET.ParseError as exc:
             return MCDCCoverageReport(
                 statement_coverage_pct=0.0,

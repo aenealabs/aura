@@ -158,13 +158,13 @@ flowchart TB
         subgraph VPC["VPC · 10.0.0.0/16 · vpc-0123…ef0"]
             direction TB
 
-            subgraph Dev["Dev Environment · ECS Fargate · ~$231/mo · NOT YET DEPLOYED"]
+            subgraph Dev["Dev Environment · ECS Fargate · NOT YET DEPLOYED"]
                 direction LR
                 D1[dnsmasq<br/>Service<br/>Fargate Task]
                 D2[Orchestrator<br/>Service<br/>Fargate Task]
                 D3[Coder<br/>Agent<br/>Fargate Task]
                 D4[Reviewer<br/>Agent<br/>Fargate Task]
-                DM["AWS Cloud Map · Service Discovery<br/>Scaling: EventBridge · 8am–6pm weekdays<br/>Capacity: FARGATE_SPOT · 70% cost savings"]
+                DM["AWS Cloud Map · Service Discovery<br/>Scaling · EventBridge · weekday business hours<br/>Capacity · FARGATE_SPOT"]
                 D1 --- D2 --- D3 --- D4 --- DM
             end
 
@@ -173,7 +173,7 @@ flowchart TB
                 SB1["Ephemeral Sandbox Tasks · 0–10 concurrent<br/>• Isolated patch testing<br/>• Maximum security · DROP ALL capabilities<br/>• No external network access<br/>• DynamoDB state tracking with TTL"]
             end
 
-            subgraph OS["OpenSearch Domain · VPC-only · ~$70/mo dev"]
+            subgraph OS["OpenSearch Domain · VPC-only"]
                 direction TB
                 OS1["• 2x t3.small.search · Multi-AZ<br/>• KNN vector fields · 1536 dim · HNSW<br/>• Filesystem metadata index<br/>• Code embeddings<br/>• Lambda auto-index creation"]
             end
@@ -185,7 +185,7 @@ flowchart TB
                 EKS3[Sandbox Nodes<br/>Ephemeral testing · scale-to-zero<br/>0–10x t3.large Spot]
             end
 
-            subgraph Endpoints["VPC Endpoints · 9 endpoints · ~$44/mo"]
+            subgraph Endpoints["VPC Endpoints · 9 endpoints"]
                 direction TB
                 EP1["S3 · DynamoDB · Bedrock · CodeConnections · Logs · Secrets · ECR<br/>No NAT Gateways · CMMC L3 compliant · no internet egress"]
             end
@@ -315,7 +315,7 @@ flowchart TD
         P3["Phase 3 · CODE<br/>Coder Agent · LLM Claude / GPT-4 · AST validates syntax · returns unified diff"]
         P4["Phase 4 · REVIEW<br/>Reviewer Agent · OWASP Top 10 + AI threats · code quality · review report"]
         P5["Phase 5 · VALIDATE · Sandbox<br/>FargateSandboxOrchestrator.create_sandbox<br/>Apply patch · run test suite · collect results · destroy_sandbox"]
-        P6["Phase 6 · MONITOR<br/>Log activity · track security findings · cost $0.05/1k tokens · comprehensive report"]
+        P6["Phase 6 · MONITOR<br/>Log activity · track security findings<br/>Generate comprehensive report"]
         P1 --> P2 --> P3 --> P4 --> P5 --> P6
     end
 
@@ -360,9 +360,9 @@ flowchart TD
 
     subgraph Modes[Deployment Modes]
         direction LR
-        OnDemand["ON-DEMAND Mode<br/>EKS Job per request<br/>$0/mo · ~30s cold start"]
-        Warm["WARM POOL Mode<br/>Always-on replica · 1–10<br/>~$28/mo · 0s cold start"]
-        Hybrid["HYBRID Mode<br/>Warm pool baseline + burst overflow<br/>~$28/mo + $0.15 / burst job<br/>0s pool · 30s burst"]
+        OnDemand["ON-DEMAND Mode<br/>EKS Job per request<br/>~30s cold start"]
+        Warm["WARM POOL Mode<br/>Always-on replica · 1–10<br/>0s cold start"]
+        Hybrid["HYBRID Mode<br/>Warm pool baseline + burst overflow<br/>0s pool · 30s burst"]
     end
 
     Settings --> MTS
@@ -388,10 +388,10 @@ Organizations can override platform defaults for customized deployment modes:
 
 ```mermaid
 flowchart TD
-    Default["Platform Default<br/>on_demand · $0/mo"]
-    OrgA["Org A · Override<br/>warm_pool · $28/mo"]
+    Default["Platform Default<br/>on_demand"]
+    OrgA["Org A · Override<br/>warm_pool"]
     OrgB["Org B · No override<br/>uses on_demand"]
-    OrgC["Org C · Override<br/>hybrid · $28/mo + burst"]
+    OrgC["Org C · Override<br/>hybrid · burst overflow"]
     Default --> OrgA
     Default --> OrgB
     Default --> OrgC
@@ -434,7 +434,7 @@ flowchart TD
         SC3["Resource Limits<br/>• CPU · 0.5 vCPU<br/>• Memory · 1 GB<br/>• Ephemeral storage · 20 GB<br/>• Task timeout · 30 minutes"]
     end
 
-    Notes["Cost · ~$0.02 per sandbox · 30-minute execution<br/>Scalability · 0–100 concurrent sandboxes"]
+    Notes["Execution window · 30-minute task timeout<br/>Scalability · 0–100 concurrent sandboxes"]
 
     Orch --> Lifecycle --> Security --> Notes
 ```
@@ -518,7 +518,7 @@ flowchart TD
     end
 
     subgraph S6["6 · Monitoring & Reporting"]
-        M1["Monitor Agent<br/>Log activity · tokens 15K · LOC changed 50<br/>Track security findings · 1 CRITICAL · 2 HIGH<br/>Calculate cost · ~$0.75 · generate comprehensive report"]
+        M1["Monitor Agent<br/>Log activity · tokens used · LOC changed<br/>Track security findings by severity<br/>Generate comprehensive report"]
     end
 
     subgraph S7["7 · HITL Approval · Future"]
@@ -596,21 +596,19 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph P1["Phase 1 · DEPLOYED ✓"]
-        P1B["AWS Commercial Cloud · us-east-1<br/>• VPC · vpc-0123…ef0<br/>• Subnets · 2 public + 2 private<br/>• VPC Endpoints · 9 (S3 · DynamoDB · Bedrock · etc.)<br/>• Security Groups · 7<br/>• IAM Roles · 7 service roles<br/>• Cost · ~$44/mo · VPC Endpoints + Flow Logs"]
+        P1B["AWS Commercial Cloud · us-east-1<br/>• VPC · vpc-0123…ef0<br/>• Subnets · 2 public + 2 private<br/>• VPC Endpoints · 9 · S3 · DynamoDB · Bedrock · etc.<br/>• Security Groups · 7<br/>• IAM Roles · 7 service roles<br/>• Workloads · VPC Endpoints + Flow Logs"]
     end
 
     subgraph P2["Phase 2 · READY FOR DEPLOYMENT"]
-        OS["OpenSearch Domain<br/>• CloudFormation · 685 lines<br/>• KNN vector index schema defined<br/>• Lambda index creator ready<br/>• Deploy script · deploy-agentic-search.sh<br/>• Estimated cost · $70/mo dev · $213/mo prod<br/>• Status · NOT DEPLOYED"]
-        ECS["ECS Fargate Clusters<br/>• Dev cluster template · 600 lines<br/>• Services template · 700 lines<br/>• Sandbox template · 450 lines<br/>• Dockerfiles · 3<br/>• Deployment scripts · 2<br/>• Estimated cost · ~$231/mo dev with scaling<br/>• Status · NOT DEPLOYED"]
+        OS["OpenSearch Domain<br/>• CloudFormation · 685 lines<br/>• KNN vector index schema defined<br/>• Lambda index creator ready<br/>• Deploy script · deploy-agentic-search.sh<br/>• Status · NOT DEPLOYED"]
+        ECS["ECS Fargate Clusters<br/>• Dev cluster template · 600 lines<br/>• Services template · 700 lines<br/>• Sandbox template · 450 lines<br/>• Dockerfiles · 3<br/>• Deployment scripts · 2<br/>• Status · NOT DEPLOYED"]
     end
 
     subgraph P3["Phase 3 · PLANNED · Q2 2026"]
         GC["AWS GovCloud · US · Migration<br/>• STIG-hardened EKS nodes<br/>• FIPS 140-2 mode enabled<br/>• Private VPC endpoints only<br/>• Enhanced audit logging<br/>• CMMC Level 3 certification"]
     end
 
-    Cost["Monthly cost when fully deployed<br/>• Phase 1 · $44 · running today<br/>• Phase 2 · $345 · OpenSearch $70 + ECS Fargate $231 + Misc $44<br/>• Total · ~$389/mo dev environment<br/>• Savings · ~$440/mo vs. always-on EKS"]
-
-    P1 --> P2 --> P3 --> Cost
+    P1 --> P2 --> P3
 ```
 
 ---

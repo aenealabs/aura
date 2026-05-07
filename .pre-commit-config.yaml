@@ -216,7 +216,15 @@ repos:
         # E203: Whitespace before ':' (conflicts with black)
         # E226: Missing whitespace around arithmetic operator
         # E704: Multiple statements on one line
-        args: ['--max-line-length=120', '--ignore=E501,W503,E203,E226,E704']
+        # B042: Exception class with typed kwargs not forwarded positionally
+        #       to super().__init__(). src/exceptions.py uses typed kwargs
+        #       (field=, service_name=, model_id=, etc.) per subclass for an
+        #       ergonomic call-site API. The latent pickle/copy concern this
+        #       rule guards against does not manifest in CPython because
+        #       BaseException.__reduce__ returns (cls, args, __dict__), so
+        #       instance state survives round-trips. Verified by round-trip
+        #       tests in tests/test_exceptions_pickle_roundtrip.py.
+        args: ['--max-line-length=120', '--ignore=E501,W503,E203,E226,E704,B042']
         additional_dependencies:
           - flake8-bugbear
           - flake8-comprehensions

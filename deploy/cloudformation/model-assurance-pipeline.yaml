@@ -1,0 +1,564 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.7 - Model Assurance Pipeline (ADR-088 Step Functions + Lambda)'
+
+# ADR-088 evaluation pipeline. Provisions:
+#   * Seven Lambda functions, one per PipelineStage. Each ships
+#     a placeholder ``index.py`` that the codebuild-application
+#     layer overwrites with the real package code at deploy time
+#     (the standard project pattern — CFN owns the function ARNs +
+#     IAM, application CodeBuild owns the code).
+#   * One IAM execution role shared across all seven Lambdas. The
+#     role's permissions are minimum-viable for the placeholder
+#     code and are tightened by the application layer.
+#   * Step Functions state machine wiring the seven stages with the
+#     three Choice routings from the ASL builder
+#     (``src/services/model_assurance/pipeline/state_machine_definition.py``).
+#   * EventBridge rule that fires the state machine on
+#     ``ModelCandidateDetected`` events from the Scout Agent.
+#
+# Cross-stack dependencies (resolved via Fn::ImportValue, NOT
+# Fn::GetAtt — see CLAUDE.md's bootstrap-safety rule):
+#   * model-assurance-storage stack must be deployed first. This
+#     stack imports the four DynamoDB table ARNs and the two S3
+#     bucket names. Layer 2 deploys before Layer 6 in every
+#     buildspec, so the order is enforced by CodeBuild.
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  LambdaRuntime:
+    Type: String
+    Default: python3.11
+    AllowedValues:
+      - python3.11
+      - python3.12
+    Description: Lambda runtime version
+
+Resources:
+  # ==========================================================================
+  # Shared Lambda execution role
+  # ==========================================================================
+
+  PipelineLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-model-assurance-pipeline-lambda-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: ModelAssuranceTableAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:DeleteItem
+                Resource:
+                  - Fn::ImportValue: !Sub '${ProjectName}-model-assurance-revisions-table-arn-${Environment}'
+                  - Fn::ImportValue: !Sub '${ProjectName}-model-assurance-quarantine-table-arn-${Environment}'
+                  - Fn::ImportValue: !Sub '${ProjectName}-model-assurance-audit-table-arn-${Environment}'
+                  - Fn::ImportValue: !Sub '${ProjectName}-model-assurance-scout-state-table-arn-${Environment}'
+                  - !Sub
+                    - '${TableArn}/index/*'
+                    - TableArn:
+                        Fn::ImportValue: !Sub '${ProjectName}-model-assurance-audit-table-arn-${Environment}'
+        - PolicyName: ModelAssuranceBucketAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - Fn::ImportValue: !Sub '${ProjectName}-model-assurance-oracle-bucket-arn-${Environment}'
+                  - Fn::ImportValue: !Sub '${ProjectName}-model-assurance-reports-bucket-arn-${Environment}'
+                  - !Sub
+                    - '${BucketArn}/*'
+                    - BucketArn:
+                        Fn::ImportValue: !Sub '${ProjectName}-model-assurance-oracle-bucket-arn-${Environment}'
+                  - !Sub
+                    - '${BucketArn}/*'
+                    - BucketArn:
+                        Fn::ImportValue: !Sub '${ProjectName}-model-assurance-reports-bucket-arn-${Environment}'
+        - PolicyName: ModelAssuranceKMSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                Resource:
+                  - Fn::ImportValue: !Sub '${ProjectName}-model-assurance-key-arn-${Environment}'
+        - PolicyName: ModelAssuranceMetricsAndEvents
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # cloudwatch:PutMetricData does NOT support resource-level
+              # IAM per AWS docs. The ``cloudwatch:namespace`` condition
+              # is the AWS-recommended scoping mechanism and confines
+              # this role to the Aura/ModelAssurance namespace only.
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': Aura/ModelAssurance
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  # ==========================================================================
+  # Stage Lambda functions (placeholder code)
+  # ==========================================================================
+  #
+  # The placeholder body is a single-line stub:
+  #     def handler(event, context):
+  #         return {"statusCode": 200, "stage": __file__}
+  # Real package code is laid down by the codebuild-application
+  # layer, which packages src/services/model_assurance/* into the
+  # Lambda zip and updates each function's code via UpdateFunctionCode.
+  # CFN then no longer mutates the code (we use UpdateReplacePolicy
+  # via property-only updates that exclude Code on subsequent runs).
+
+  AdapterDisqualificationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-ma-adapter-disqualification-${Environment}'
+      Role: !GetAtt PipelineLambdaRole.Arn
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              # ADR-088 Phase 1.2 Adapter Registry stage.
+              # Replaced by codebuild-application during deployment.
+              return {"statusCode": 200, "stage": "adapter_disqualification"}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  ProvenanceFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-ma-provenance-${Environment}'
+      Role: !GetAtt PipelineLambdaRole.Arn
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Timeout: 60
+      MemorySize: 1024
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {"statusCode": 200, "stage": "provenance"}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  SandboxFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-ma-sandbox-${Environment}'
+      Role: !GetAtt PipelineLambdaRole.Arn
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Timeout: 300
+      MemorySize: 1024
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {"statusCode": 200, "stage": "sandbox"}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  OracleFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-ma-oracle-${Environment}'
+      Role: !GetAtt PipelineLambdaRole.Arn
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Timeout: 900
+      MemorySize: 3008
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {"statusCode": 200, "stage": "oracle"}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  CGEScoringFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-ma-cge-scoring-${Environment}'
+      Role: !GetAtt PipelineLambdaRole.Arn
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Timeout: 60
+      MemorySize: 1024
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {"statusCode": 200, "stage": "cge_scoring"}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  ReportFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-ma-report-${Environment}'
+      Role: !GetAtt PipelineLambdaRole.Arn
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Timeout: 60
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {"statusCode": 200, "stage": "report"}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  HitlQueueFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-ma-hitl-queue-${Environment}'
+      Role: !GetAtt PipelineLambdaRole.Arn
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {"statusCode": 200, "stage": "hitl_queued"}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  # ==========================================================================
+  # Step Functions state machine
+  # ==========================================================================
+
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-model-assurance-pipeline-sfn-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeStageLambdas
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt AdapterDisqualificationFunction.Arn
+                  - !GetAtt ProvenanceFunction.Arn
+                  - !GetAtt SandboxFunction.Arn
+                  - !GetAtt OracleFunction.Arn
+                  - !GetAtt CGEScoringFunction.Arn
+                  - !GetAtt ReportFunction.Arn
+                  - !GetAtt HitlQueueFunction.Arn
+
+  PipelineStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ProjectName}-model-assurance-pipeline-${Environment}'
+      RoleArn: !GetAtt StateMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "ADR-088 Continuous Model Assurance pipeline",
+          "StartAt": "adapter_disqualification",
+          "TimeoutSeconds": 3600,
+          "States": {
+            "adapter_disqualification": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${AdapterDisqualificationFunction.Arn}", "Payload.$": "$"},
+              "ResultPath": "$.adapter_disqualification",
+              "Retry": [{"ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0}],
+              "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "InfrastructureError", "ResultPath": "$.error"}],
+              "Next": "AdapterDecision"
+            },
+            "AdapterDecision": {
+              "Type": "Choice",
+              "Choices": [
+                {"Variable": "$.adapter_disqualification.Payload.disqualified", "BooleanEquals": true, "Next": "Disqualified"}
+              ],
+              "Default": "provenance"
+            },
+            "provenance": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${ProvenanceFunction.Arn}", "Payload.$": "$"},
+              "ResultPath": "$.provenance",
+              "Retry": [{"ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0}],
+              "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "InfrastructureError", "ResultPath": "$.error"}],
+              "Next": "ProvenanceDecision"
+            },
+            "ProvenanceDecision": {
+              "Type": "Choice",
+              "Choices": [
+                {"Variable": "$.provenance.Payload.verdict", "StringEquals": "quarantined", "Next": "Quarantined"},
+                {"Variable": "$.provenance.Payload.verdict", "StringEquals": "rejected", "Next": "Rejected"}
+              ],
+              "Default": "sandbox"
+            },
+            "sandbox": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${SandboxFunction.Arn}", "Payload.$": "$"},
+              "ResultPath": "$.sandbox",
+              "Retry": [{"ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0}],
+              "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "InfrastructureError", "ResultPath": "$.error"}],
+              "Next": "oracle"
+            },
+            "oracle": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${OracleFunction.Arn}", "Payload.$": "$"},
+              "ResultPath": "$.oracle",
+              "Retry": [{"ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0}],
+              "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "InfrastructureError", "ResultPath": "$.error"}],
+              "Next": "cge_scoring"
+            },
+            "cge_scoring": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${CGEScoringFunction.Arn}", "Payload.$": "$"},
+              "ResultPath": "$.cge_scoring",
+              "Retry": [{"ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0}],
+              "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "InfrastructureError", "ResultPath": "$.error"}],
+              "Next": "FloorViolationCheck"
+            },
+            "FloorViolationCheck": {
+              "Type": "Choice",
+              "Choices": [
+                {"Variable": "$.cge_scoring.Payload.verdict", "StringEquals": "reject", "Next": "Rejected"}
+              ],
+              "Default": "report"
+            },
+            "report": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${ReportFunction.Arn}", "Payload.$": "$"},
+              "ResultPath": "$.report",
+              "Retry": [{"ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0}],
+              "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "InfrastructureError", "ResultPath": "$.error"}],
+              "Next": "hitl_queued"
+            },
+            "hitl_queued": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${HitlQueueFunction.Arn}", "Payload.$": "$"},
+              "ResultPath": "$.hitl_queued",
+              "Retry": [{"ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0}],
+              "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "InfrastructureError", "ResultPath": "$.error"}],
+              "End": true
+            },
+            "Disqualified": {
+              "Type": "Pass",
+              "Result": {"decision": "disqualified"},
+              "ResultPath": "$.decision",
+              "End": true
+            },
+            "Quarantined": {
+              "Type": "Pass",
+              "Result": {"decision": "quarantined"},
+              "ResultPath": "$.decision",
+              "End": true
+            },
+            "Rejected": {
+              "Type": "Pass",
+              "Result": {"decision": "rejected"},
+              "ResultPath": "$.decision",
+              "End": true
+            },
+            "InfrastructureError": {
+              "Type": "Pass",
+              "Result": {"decision": "infrastructure_error"},
+              "ResultPath": "$.decision",
+              "End": true
+            }
+          }
+        }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  # ==========================================================================
+  # EventBridge — fire pipeline on Scout candidate-detected events
+  # ==========================================================================
+
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ma-eventbridge-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartStateMachine
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref PipelineStateMachine
+
+  CandidateDetectedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-model-assurance-candidate-detected-${Environment}'
+      Description: 'Triggers the assurance pipeline on Scout-Agent ModelCandidateDetected events'
+      EventPattern:
+        source:
+          - aura.model_assurance.scout
+        detail-type:
+          - ModelCandidateDetected
+      State: ENABLED
+      Targets:
+        - Id: PipelineStateMachineTarget
+          Arn: !Ref PipelineStateMachine
+          RoleArn: !GetAtt EventBridgeRole.Arn
+
+Outputs:
+  StateMachineArn:
+    Description: Step Functions state machine ARN for the assurance pipeline
+    Value: !Ref PipelineStateMachine
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-state-machine-arn-${Environment}'
+
+  PipelineLambdaRoleArn:
+    Description: Shared Lambda execution role ARN
+    Value: !GetAtt PipelineLambdaRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-pipeline-lambda-role-arn-${Environment}'
+
+  AdapterDisqualificationFunctionArn:
+    Description: Adapter disqualification Lambda ARN
+    Value: !GetAtt AdapterDisqualificationFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ma-adapter-disqualification-arn-${Environment}'
+
+  ProvenanceFunctionArn:
+    Value: !GetAtt ProvenanceFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ma-provenance-arn-${Environment}'
+
+  SandboxFunctionArn:
+    Value: !GetAtt SandboxFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ma-sandbox-arn-${Environment}'
+
+  OracleFunctionArn:
+    Value: !GetAtt OracleFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ma-oracle-arn-${Environment}'
+
+  CGEScoringFunctionArn:
+    Value: !GetAtt CGEScoringFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ma-cge-scoring-arn-${Environment}'
+
+  ReportFunctionArn:
+    Value: !GetAtt ReportFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ma-report-arn-${Environment}'
+
+  HitlQueueFunctionArn:
+    Value: !GetAtt HitlQueueFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ma-hitl-queue-arn-${Environment}'

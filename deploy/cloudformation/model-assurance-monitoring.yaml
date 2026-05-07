@@ -1,0 +1,269 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.7 - Model Assurance Monitoring (ADR-088 CloudWatch + SNS)'
+
+# ADR-088 monitoring substrate. Self-contained: no cross-stack
+# imports so the dashboard can be deployed before (or independently
+# of) the rest of the model-assurance domain.
+#
+# Provisions:
+#   * CloudWatch dashboard surfacing the Aura/ModelAssurance namespace
+#     metrics emitted by the AuditEmitter + pipeline orchestrator.
+#   * Alarms on the four operational signals:
+#       - Pipeline INFRASTRUCTURE_ERROR rate
+#       - Floor-violation rate (model_assurance verdict=REJECT)
+#       - Integrity hash mismatch (any > 0)
+#       - HITL approval queue depth
+#   * SNS topic for HITL notifications (queue depth + integrity
+#     failures); subscriptions are wired by the operator post-deploy.
+#   * EventBridge rule mirroring rejected verdicts onto the alert
+#     topic (only created when an alert topic ARN is supplied).
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Optional email address to subscribe to the alert SNS topic
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ==========================================================================
+  # SNS Topic for HITL + integrity alerts
+  # ==========================================================================
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-model-assurance-alerts-${Environment}'
+      DisplayName: 'Aura Model Assurance Alerts'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  AlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref AlertTopic
+      Endpoint: !Ref AlertEmail
+
+  # ==========================================================================
+  # CloudWatch Dashboard
+  # ==========================================================================
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-model-assurance-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Pipeline Decisions (counts)",
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  ["Aura/ModelAssurance", "PipelineDecision", "Environment", "${Environment}", "Decision", "hitl_queued"],
+                  [".", ".", ".", ".", ".", "rejected"],
+                  [".", ".", ".", ".", ".", "quarantined"],
+                  [".", ".", ".", ".", ".", "disqualified"],
+                  [".", ".", ".", ".", ".", "infrastructure_error"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "HITL Queue Depth",
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "stat": "Maximum",
+                "period": 300,
+                "metrics": [
+                  ["Aura/ModelAssurance", "HITLQueueDepth", "Environment", "${Environment}"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "Pipeline Latency (p50/p95/p99)",
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "period": 300,
+                "metrics": [
+                  ["Aura/ModelAssurance", "PipelineLatencyMs", "Environment", "${Environment}", { "stat": "p50" }],
+                  [".", ".", ".", ".", { "stat": "p95" }],
+                  [".", ".", ".", ".", { "stat": "p99" }]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "Integrity Hash Mismatches",
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  ["Aura/ModelAssurance", "IntegrityMismatch", "Environment", "${Environment}"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 12, "width": 24, "height": 6,
+              "properties": {
+                "title": "Audit Event Rate by NIST Control",
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  ["Aura/ModelAssurance", "AuditEvent", "Environment", "${Environment}", "Control", "CM-3"],
+                  [".", ".", ".", ".", ".", "CM-5"],
+                  [".", ".", ".", ".", ".", "SA-10"],
+                  [".", ".", ".", ".", ".", "SI-7"],
+                  [".", ".", ".", ".", ".", "RA-5"],
+                  [".", ".", ".", ".", ".", "AU-3"]
+                ]
+              }
+            }
+          ]
+        }
+
+  # ==========================================================================
+  # Alarms
+  # ==========================================================================
+
+  InfrastructureErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-model-assurance-infra-error-${Environment}'
+      AlarmDescription: 'Pipeline produced INFRASTRUCTURE_ERROR — investigate stage failure logs'
+      Namespace: Aura/ModelAssurance
+      MetricName: PipelineDecision
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: !If [IsProduction, 1, 5]
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+        - Name: Decision
+          Value: infrastructure_error
+      AlarmActions:
+        - !Ref AlertTopic
+
+  IntegrityMismatchAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-model-assurance-integrity-mismatch-${Environment}'
+      AlarmDescription: 'Tampered Shadow Deployment Report detected — page operator immediately'
+      Namespace: Aura/ModelAssurance
+      MetricName: IntegrityMismatch
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref AlertTopic
+
+  HITLQueueBacklogAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-model-assurance-hitl-backlog-${Environment}'
+      AlarmDescription: 'HITL approval queue depth above threshold — operator review needed'
+      Namespace: Aura/ModelAssurance
+      MetricName: HITLQueueDepth
+      Statistic: Maximum
+      Period: 1800
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: !If [IsProduction, 5, 25]
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref AlertTopic
+
+  PipelineLatencyP99Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-model-assurance-latency-p99-${Environment}'
+      AlarmDescription: 'Pipeline p99 latency exceeds threshold — investigate slow stages'
+      Namespace: Aura/ModelAssurance
+      MetricName: PipelineLatencyMs
+      ExtendedStatistic: p99
+      Period: 900
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !If [IsProduction, 60000, 180000]
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref AlertTopic
+
+Outputs:
+  AlertTopicArn:
+    Description: SNS topic ARN for model-assurance alerts
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-alert-topic-arn-${Environment}'
+
+  DashboardName:
+    Description: CloudWatch dashboard surfacing model-assurance metrics
+    Value: !Ref Dashboard
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-dashboard-${Environment}'

@@ -1,0 +1,508 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.7 - Model Assurance Storage (ADR-088 KMS + DynamoDB + S3 Object Lock)'
+
+# ADR-088 Phase 2/3 storage substrate. Provisions:
+#   * KMS-CMK for the entire model-assurance domain (one key per env).
+#   * Four DynamoDB tables:
+#       - revisions       (rollback history; PK=revision_id, GSI on
+#                          created_at; 7y TTL)
+#       - quarantine      (sticky model quarantine; PK=model_id;
+#                          TTL on lift_at)
+#       - audit           (CloudTrail-style assurance events; PK=event_id,
+#                          GSIs on correlation_id and event_type;
+#                          7y TTL)
+#       - scout-state     (Scout Agent dedup state; PK=candidate_id)
+#   * Two S3 buckets with Object Lock (compliance mode):
+#       - frozen-oracle   (golden test set + Lambda judge artefacts)
+#       - shadow-reports  (sealed Shadow Deployment Reports)
+#
+# Bootstrap-safety: this stack is intentionally self-contained — no
+# Fn::ImportValue dependencies. It can be deployed standalone in a
+# fresh account before any other ADR-088 stack exists. Downstream
+# stacks (model-assurance-pipeline, -sandbox) import the exports here.
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  AuditRetentionYears:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 30
+    Description: Years to retain assurance audit records (NIST AU-3 minimum)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ==========================================================================
+  # KMS Customer-Managed Key
+  # ==========================================================================
+
+  ModelAssuranceKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub 'KMS CMK for the ADR-088 model-assurance domain (${Environment})'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowDynamoDBService
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:ReEncrypt*
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+          - Sid: AllowS3Service
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:ReEncrypt*
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 's3.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  ModelAssuranceKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-model-assurance-${Environment}'
+      TargetKeyId: !Ref ModelAssuranceKey
+
+  # ==========================================================================
+  # DynamoDB — Revisions (rollback history)
+  # ==========================================================================
+
+  RevisionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-model-assurance-revisions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: revision_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: revision_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: created-at-index
+          KeySchema:
+            - AttributeName: created_at
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref ModelAssuranceKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  # ==========================================================================
+  # DynamoDB — Quarantine (sticky model rejection)
+  # ==========================================================================
+
+  QuarantineTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-model-assurance-quarantine-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: model_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: model_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: lift_at_ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref ModelAssuranceKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  # ==========================================================================
+  # DynamoDB — Audit trail (NIST AU-3 record-keeping)
+  # ==========================================================================
+
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-model-assurance-audit-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: event_id
+          AttributeType: S
+        - AttributeName: correlation_id
+          AttributeType: S
+        - AttributeName: event_type
+          AttributeType: S
+        - AttributeName: occurred_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: event_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: correlation-id-index
+          KeySchema:
+            - AttributeName: correlation_id
+              KeyType: HASH
+            - AttributeName: occurred_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: event-type-index
+          KeySchema:
+            - AttributeName: event_type
+              KeyType: HASH
+            - AttributeName: occurred_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref ModelAssuranceKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  # ==========================================================================
+  # DynamoDB — Scout dedup state
+  # ==========================================================================
+
+  ScoutStateTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-model-assurance-scout-state-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: candidate_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: candidate_id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref ModelAssuranceKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  # ==========================================================================
+  # S3 — Frozen Reference Oracle bucket (Object Lock compliance mode)
+  # ==========================================================================
+
+  FrozenOracleBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      # Bucket name uses ${AccountId}-${Environment} order so it
+      # matches the codebuild-data IAM policy ARN pattern
+      # ``aura-*-${AccountId}-${Environment}``. Reversing to
+      # ${Environment}-${AccountId} would silently fail with
+      # AccessDenied at first deploy.
+      BucketName: !Sub '${ProjectName}-model-assurance-oracle-${AWS::AccountId}-${Environment}'
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: COMPLIANCE
+            Years: !Ref AuditRetentionYears
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt ModelAssuranceKey.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  FrozenOracleBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrozenOracleBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt FrozenOracleBucket.Arn
+              - !Sub '${FrozenOracleBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: DenyUnencryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:PutObject'
+            Resource: !Sub '${FrozenOracleBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: 'aws:kms'
+
+  # ==========================================================================
+  # S3 — Shadow Deployment Reports bucket (Object Lock compliance mode)
+  # ==========================================================================
+
+  ShadowReportsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-model-assurance-reports-${AWS::AccountId}-${Environment}'
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: COMPLIANCE
+            Years: !Ref AuditRetentionYears
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt ModelAssuranceKey.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacierIR
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER_IR
+                TransitionInDays: 90
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  ShadowReportsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ShadowReportsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt ShadowReportsBucket.Arn
+              - !Sub '${ShadowReportsBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: DenyUnencryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:PutObject'
+            Resource: !Sub '${ShadowReportsBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: 'aws:kms'
+
+Outputs:
+  ModelAssuranceKeyArn:
+    Description: KMS CMK ARN for the model-assurance domain
+    Value: !GetAtt ModelAssuranceKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-key-arn-${Environment}'
+
+  ModelAssuranceKeyId:
+    Description: KMS CMK ID (for IAM policy conditions)
+    Value: !Ref ModelAssuranceKey
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-key-id-${Environment}'
+
+  RevisionsTableName:
+    Description: DynamoDB table name for ConfigRevision history
+    Value: !Ref RevisionsTable
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-revisions-table-${Environment}'
+
+  RevisionsTableArn:
+    Description: DynamoDB table ARN for ConfigRevision history
+    Value: !GetAtt RevisionsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-revisions-table-arn-${Environment}'
+
+  QuarantineTableName:
+    Description: DynamoDB table name for sticky model quarantine
+    Value: !Ref QuarantineTable
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-quarantine-table-${Environment}'
+
+  QuarantineTableArn:
+    Description: DynamoDB table ARN for sticky model quarantine
+    Value: !GetAtt QuarantineTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-quarantine-table-arn-${Environment}'
+
+  AuditTableName:
+    Description: DynamoDB table name for assurance audit events
+    Value: !Ref AuditTable
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-audit-table-${Environment}'
+
+  AuditTableArn:
+    Description: DynamoDB table ARN for assurance audit events
+    Value: !GetAtt AuditTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-audit-table-arn-${Environment}'
+
+  ScoutStateTableName:
+    Description: DynamoDB table name for Scout Agent dedup state
+    Value: !Ref ScoutStateTable
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-scout-state-table-${Environment}'
+
+  ScoutStateTableArn:
+    Description: DynamoDB table ARN for Scout Agent dedup state
+    Value: !GetAtt ScoutStateTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-scout-state-table-arn-${Environment}'
+
+  FrozenOracleBucketName:
+    Description: S3 bucket holding the golden reference oracle artefacts
+    Value: !Ref FrozenOracleBucket
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-oracle-bucket-${Environment}'
+
+  FrozenOracleBucketArn:
+    Description: ARN of the frozen oracle bucket
+    Value: !GetAtt FrozenOracleBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-oracle-bucket-arn-${Environment}'
+
+  ShadowReportsBucketName:
+    Description: S3 bucket holding sealed Shadow Deployment Reports
+    Value: !Ref ShadowReportsBucket
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-reports-bucket-${Environment}'
+
+  ShadowReportsBucketArn:
+    Description: ARN of the shadow-reports bucket
+    Value: !GetAtt ShadowReportsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-reports-bucket-arn-${Environment}'

@@ -166,7 +166,9 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub '${ProjectName}-dve-proofs-${Environment}-${AWS::AccountId}'
+      # Account-then-env naming order matches the codebuild-data IAM
+      # policy ARN pattern ``aura-*-${AccountId}-${Environment}``.
+      BucketName: !Sub '${ProjectName}-dve-proofs-${AWS::AccountId}-${Environment}'
       VersioningConfiguration:
         Status: Enabled
       BucketEncryption:

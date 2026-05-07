@@ -223,6 +223,11 @@ export default function CollapsibleSidebar() {
                 badgeColor="warning"
               />
               <SidebarItem
+                icon={<ShieldCheckIcon className="w-5 h-5" />}
+                text="Model Assurance"
+                to="/model-assurance"
+              />
+              <SidebarItem
                 icon={<ExclamationTriangleIcon className="w-5 h-5" />}
                 text="Incidents"
                 to="/incidents"

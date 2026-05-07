@@ -55,6 +55,7 @@ from src.api.incidents import router as incidents_router
 from src.api.integration_endpoints import integration_router
 from src.api.log_sanitizer import sanitize_log
 from src.api.marketplace_endpoints import router as marketplace_router
+from src.api.model_assurance_endpoints import router as model_assurance_router
 from src.api.model_router_endpoints import router as model_router_router
 from src.api.oauth_endpoints import router as oauth_router
 from src.api.onboarding_endpoints import router as onboarding_router
@@ -1065,6 +1066,12 @@ app.include_router(compliance_router)
 # ============================================================================
 
 app.include_router(model_router_router)
+
+# ============================================================================
+# Model Assurance Endpoints (ADR-088 - HITL approval queue)
+# ============================================================================
+
+app.include_router(model_assurance_router)
 
 # ============================================================================
 # Trace Explorer Endpoints (Issue #30 - OpenTelemetry Visualization)

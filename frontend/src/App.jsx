@@ -30,6 +30,9 @@ const Dashboard = lazy(() => import('./components/Dashboard'));
 const CKGEConsole = lazy(() => import('./components/CKGEConsole'));
 const ActivityDetail = lazy(() => import('./components/ActivityDetail'));
 const ApprovalDashboard = lazy(() => import('./components/ApprovalDashboard'));
+const ModelAssuranceQueue = lazy(() =>
+  import('./components/modelAssurance/ModelAssuranceQueue'),
+);
 const IncidentInvestigations = lazy(() => import('./components/IncidentInvestigations'));
 const SecurityAlertsPanel = lazy(() => import('./components/SecurityAlertsPanel'));
 const SettingsPage = lazy(() => import('./components/SettingsPage'));
@@ -304,6 +307,16 @@ export default function App() {
                               <ProtectedRoute requiredRole={['admin', 'security-engineer']}>
                                 <SuspenseWrapper name="Approvals">
                                   <ApprovalDashboard />
+                                </SuspenseWrapper>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/model-assurance"
+                            element={
+                              <ProtectedRoute requiredRole={['admin']}>
+                                <SuspenseWrapper name="ModelAssurance">
+                                  <ModelAssuranceQueue />
                                 </SuspenseWrapper>
                               </ProtectedRoute>
                             }

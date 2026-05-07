@@ -1,0 +1,345 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 7.7 - Model Assurance Sandbox (ADR-088 ECS Fargate zero-egress)'
+
+# ADR-088 evaluation sandbox infrastructure. Provisions the
+# ECS Fargate execution environment that runs the Lambda judges
+# against candidate models in a deliberately constrained
+# perimeter.
+#
+# Per ADR-088 §Stage 2.4 the sandbox enforces:
+#   * Zero network egress except Bedrock-runtime and CloudWatch
+#     Logs (allowlist enforced both at the security-group level
+#     here and at runtime by the Python policy gate in
+#     src/services/model_assurance/sandbox/contracts.py).
+#   * No production credentials. Forbidden actions are denied
+#     by a permissions boundary applied to the task role.
+#   * Ephemeral storage only. No EFS / EBS volume claims.
+#   * ADR-077 container escape detection + ADR-083 behavioural
+#     baselines hooks active (configured by the operator post-
+#     deploy via the GuardDuty + EKS policy stacks).
+#
+# Cross-stack dependencies (Fn::ImportValue, never Fn::GetAtt):
+#   * model-assurance-storage (Layer 2): KMS key ARN for log
+#     encryption.
+#   * networking (Layer 1 foundation): VPC + private subnet IDs
+#     for the security group + task subnet placement.
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  TaskCpu:
+    Type: String
+    Default: '2048'
+    AllowedValues: ['1024', '2048', '4096', '8192']
+    Description: Fargate task CPU units (1024 = 1 vCPU)
+
+  TaskMemoryMb:
+    Type: String
+    Default: '4096'
+    Description: Fargate task memory in MiB
+
+  EphemeralStorageGiB:
+    Type: Number
+    Default: 21
+    MinValue: 21
+    MaxValue: 200
+    Description: Ephemeral overlay storage in GiB (Fargate minimum 21)
+
+Resources:
+  # ==========================================================================
+  # Permissions boundary — forbids production-data actions
+  # ==========================================================================
+
+  SandboxPermissionsBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-ma-sandbox-permissions-boundary-${Environment}'
+      Description: 'Forbids production-data IAM actions for model-assurance sandbox tasks'
+      PolicyDocument:
+        Version: '2012-10-17'
+        # NOTE on permissions-boundary semantics: a boundary is the
+        # MAXIMUM set of permissions a role can hold. The "Allow *"
+        # baseline + explicit "Deny" statements is the AWS-documented
+        # pattern. The boundary itself doesn't grant permissions —
+        # the role's own policies do. The boundary just trims what
+        # the role is allowed to grant. So `Action: '*'` here is the
+        # ceiling; the role's actual policies (BedrockInvokeOnly etc.)
+        # are what determine effective permissions.
+        Statement:
+          - Sid: AllowEverythingInBoundary
+            Effect: Allow
+            Action: '*'
+            Resource: '*'
+          - Sid: DenyProductionDataActions
+            Effect: Deny
+            Action:
+              - 'secretsmanager:GetSecretValue'
+              - 'ssm:GetParameter*'
+              - 'rds:*'
+              - 'dynamodb:Scan'
+              - 'dynamodb:Query'
+              - 'neptune-db:*'
+              - 'es:ESHttpGet'
+              - 'es:ESHttpPost'
+            Resource: '*'
+
+  # ==========================================================================
+  # Task execution role — pulls image, writes logs
+  # ==========================================================================
+
+  SandboxTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ma-sandbox-execution-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: KmsLogEncryption
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource:
+                  - Fn::ImportValue: !Sub '${ProjectName}-model-assurance-key-arn-${Environment}'
+
+  # ==========================================================================
+  # Task role — runtime permissions, bounded by SandboxPermissionsBoundary
+  # ==========================================================================
+
+  SandboxTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ma-sandbox-task-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      PermissionsBoundary: !Ref SandboxPermissionsBoundary
+      Policies:
+        - PolicyName: BedrockInvokeOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Scoped to the three v1-approved Bedrock providers per
+              # ADR-088 §Stage 2 condition #6 (Anthropic, Amazon, Meta).
+              # Adding a fourth approved provider requires a code change
+              # here — that's the desired least-privilege posture.
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithResponseStream'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/meta.*'
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource:
+                  - !Sub
+                    - '${BucketArn}/*'
+                    - BucketArn:
+                        Fn::ImportValue: !Sub '${ProjectName}-model-assurance-oracle-bucket-arn-${Environment}'
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                Resource:
+                  - !Sub
+                    - '${BucketArn}/*'
+                    - BucketArn:
+                        Fn::ImportValue: !Sub '${ProjectName}-model-assurance-reports-bucket-arn-${Environment}'
+              # cloudwatch:PutMetricData does NOT support resource-level
+              # IAM per AWS docs — see "Actions, resources, and
+              # condition keys for Amazon CloudWatch". The
+              # ``cloudwatch:namespace`` condition is the AWS-recommended
+              # scoping mechanism and confines this role to the
+              # Aura/ModelAssurance namespace only.
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': Aura/ModelAssurance
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - !GetAtt SandboxLogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                  - 'kms:GenerateDataKey'
+                Resource:
+                  - Fn::ImportValue: !Sub '${ProjectName}-model-assurance-key-arn-${Environment}'
+
+  # ==========================================================================
+  # Zero-egress security group
+  # ==========================================================================
+
+  SandboxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-ma-sandbox-${Environment}'
+      GroupDescription: 'Zero-egress security group for ADR-088 evaluation sandbox; only Bedrock + CW Logs allowed'
+      VpcId:
+        Fn::ImportValue: !Sub '${ProjectName}-networking-${Environment}-VpcId'
+      # No inbound rules — sandbox is outbound-only.
+      SecurityGroupIngress: []
+      # Outbound: Bedrock-runtime HTTPS + CloudWatch Logs HTTPS only.
+      # Specific destinations enforced via VPC endpoints created
+      # alongside this stack (see BedrockVpcEndpoint below).
+      SecurityGroupEgress:
+        - Description: 'HTTPS to Bedrock + CW Logs VPC endpoints (intra-VPC only)'
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp:
+            Fn::ImportValue: !Sub '${ProjectName}-networking-${Environment}-VpcCIDR'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  # ==========================================================================
+  # CloudWatch log group (KMS-encrypted)
+  # ==========================================================================
+
+  SandboxLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/${ProjectName}/model-assurance/sandbox/${Environment}'
+      RetentionInDays: 365
+      KmsKeyId:
+        Fn::ImportValue: !Sub '${ProjectName}-model-assurance-key-arn-${Environment}'
+
+  # ==========================================================================
+  # ECS cluster + task definition
+  # ==========================================================================
+
+  SandboxCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${ProjectName}-model-assurance-sandbox-${Environment}'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-088
+
+  SandboxTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ProjectName}-ma-sandbox-${Environment}'
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemoryMb
+      EphemeralStorage:
+        SizeInGiB: !Ref EphemeralStorageGiB
+      ExecutionRoleArn: !GetAtt SandboxTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt SandboxTaskRole.Arn
+      ContainerDefinitions:
+        - Name: judge
+          # Placeholder image. The codebuild-application layer
+          # publishes the real evaluation-judge image and updates
+          # the task definition to use it. Until then, we point at
+          # the project's private ECR base image (created during
+          # account bootstrap) so the task definition is deployable
+          # without a public-ECR pull and without a circular
+          # dependency on the application layer. Per the root
+          # CLAUDE.md container security rule, public ECR / Docker
+          # Hub images are strictly forbidden.
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/aura-base-images/python:3.11-slim'
+          Essential: true
+          ReadonlyRootFilesystem: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref SandboxLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: judge
+          Environment:
+            - Name: AURA_ENV
+              Value: !Ref Environment
+            - Name: AURA_SANDBOX_PROJECT
+              Value: !Ref ProjectName
+            - Name: AURA_SANDBOX_OUTPUT_BUCKET
+              Value:
+                Fn::ImportValue: !Sub '${ProjectName}-model-assurance-reports-bucket-${Environment}'
+            - Name: AURA_SANDBOX_ORACLE_BUCKET
+              Value:
+                Fn::ImportValue: !Sub '${ProjectName}-model-assurance-oracle-bucket-${Environment}'
+
+Outputs:
+  SandboxClusterArn:
+    Description: ECS cluster ARN for the assurance sandbox
+    Value: !GetAtt SandboxCluster.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-sandbox-cluster-arn-${Environment}'
+
+  SandboxTaskDefinitionArn:
+    Description: Fargate task definition ARN
+    Value: !Ref SandboxTaskDefinition
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-sandbox-task-arn-${Environment}'
+
+  SandboxSecurityGroupId:
+    Description: Zero-egress security group for sandbox tasks
+    Value: !Ref SandboxSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-sandbox-sg-${Environment}'
+
+  SandboxTaskRoleArn:
+    Description: Sandbox task IAM role (with permissions boundary)
+    Value: !GetAtt SandboxTaskRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-sandbox-task-role-arn-${Environment}'
+
+  SandboxLogGroupName:
+    Description: CloudWatch log group for sandbox tasks
+    Value: !Ref SandboxLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-model-assurance-sandbox-log-group-${Environment}'

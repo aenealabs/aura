@@ -43,6 +43,8 @@ phases:
       - cfn-lint deploy/cloudformation/runtime-security-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Runtime Security DynamoDB template has warnings (non-blocking)"
       - cfn-lint deploy/cloudformation/ai-security-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "AI Security DynamoDB template has warnings (non-blocking)"
       - cfn-lint deploy/cloudformation/memory-evolution-dynamodb.yaml --ignore-checks W2001,W3002,W3005 || echo "Memory Evolution DynamoDB template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/dve-infrastructure.yaml --ignore-checks W2001,W3002,W3005,W7001 || echo "DVE Infrastructure template has warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/model-assurance-storage.yaml --ignore-checks W2001,W3002,W3005,W7001 || echo "Model Assurance Storage template has warnings (non-blocking)"
       - echo "✓ Template validation complete"
 
   build:
@@ -157,6 +159,12 @@ phases:
 
       - echo "Deploying Memory Evolution DynamoDB (ADR-080)..."
       - aws cloudformation deploy --stack-name ${PROJECT_NAME}-memory-evolution-dynamodb-${ENVIRONMENT} --template-file deploy/cloudformation/memory-evolution-dynamodb.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-080 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying DVE Audit Infrastructure (ADR-085 Phase 5)..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-dve-infrastructure-${ENVIRONMENT} --template-file deploy/cloudformation/dve-infrastructure.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-085 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
+
+      - echo "Deploying Model Assurance Storage (ADR-088)..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-model-assurance-storage-${ENVIRONMENT} --template-file deploy/cloudformation/model-assurance-storage.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=data ADR=ADR-088 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset
 
   post_build:
     commands:

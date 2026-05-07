@@ -819,6 +819,25 @@ phases:
           --region $AWS_DEFAULT_REGION
         echo "Constitutional AI Evaluation deployment complete"
 
+      # Deploy Model Assurance Pipeline (Layer 6.7 - ADR-088)
+      # Step Functions state machine + 7 stage Lambdas + EventBridge rule.
+      # Imports DynamoDB + S3 + KMS from model-assurance-storage (Layer 2,
+      # already deployed by buildspec-data.yml). Lambda code is placeholder
+      # at this layer; the application layer overwrites it via UpdateFunctionCode.
+      - |
+        MA_PIPELINE_STACK="${PROJECT_NAME}-model-assurance-pipeline-${ENVIRONMENT}"
+        echo "Deploying Model Assurance Pipeline (Layer 6.7 / ADR-088)..."
+        cfn-lint deploy/cloudformation/model-assurance-pipeline.yaml --ignore-checks W3002,W1020,W7001 || echo "warnings (non-blocking)"
+        aws cloudformation deploy \
+          --stack-name $MA_PIPELINE_STACK \
+          --template-file deploy/cloudformation/model-assurance-pipeline.yaml \
+          --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=6.7 ADR=ADR-088 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+        echo "Model Assurance Pipeline deployment complete"
+
   post_build:
     commands:
       - echo "=========================================="
@@ -868,6 +887,7 @@ artifacts:
     - deploy/cloudformation/gpu-scheduler-infrastructure.yaml
     - deploy/cloudformation/constitutional-audit-queue.yaml
     - deploy/cloudformation/constitutional-ai-evaluation.yaml
+    - deploy/cloudformation/model-assurance-pipeline.yaml
     - src/lambda/threat_intelligence_processor.py
     - src/lambda/approval_callback_handler.py
     - src/lambda/orchestrator_dispatcher.py

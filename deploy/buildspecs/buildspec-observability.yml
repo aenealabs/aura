@@ -536,6 +536,23 @@ phases:
           echo "Skipping Cost Scheduler - not applicable for $ENVIRONMENT"
         fi
 
+      # Deploy DVE Monitoring (ADR-085 Phase 5) — depends on dve-infrastructure (data layer)
+      - echo "Deploying DVE Monitoring Stack..."
+      - DVE_MONITORING_STACK="${PROJECT_NAME}-dve-monitoring-${ENVIRONMENT}"
+      - |
+        ALERT_TOPIC_ARN=$(aws cloudformation describe-stacks --stack-name $MONITORING_STACK \
+          --query 'Stacks[0].Outputs[?OutputKey==`AlertTopicArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION 2>/dev/null || echo "")
+        aws cloudformation deploy \
+          --stack-name $DVE_MONITORING_STACK \
+          --template-file deploy/cloudformation/dve-monitoring.yaml \
+          --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME AlertTopicArn=${ALERT_TOPIC_ARN:-""} \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability ADR=ADR-085 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset --region $AWS_DEFAULT_REGION
+
+      # Deploy Model Assurance Monitoring (ADR-088) — self-contained
+      - echo "Deploying Model Assurance Monitoring Stack..."
+      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-model-assurance-monitoring-${ENVIRONMENT} --template-file deploy/cloudformation/model-assurance-monitoring.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME AlertEmail=${ALERT_EMAIL:-""} --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability ADR=ADR-088 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset --region $AWS_DEFAULT_REGION
+
   post_build:
     commands:
       - echo "Observability layer deployment completed!"

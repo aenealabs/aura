@@ -256,6 +256,54 @@ Resources:
                   StringLike:
                     ses:FromAddress: !Sub '${ProjectName}-*@*'
 
+              # Step Functions (ADR-088 model-assurance pipeline state
+              # machine; future ADRs will add more state machines here).
+              # Scoped to the project's stack-name pattern.
+              - Effect: Allow
+                Action:
+                  - states:CreateStateMachine
+                  - states:DeleteStateMachine
+                  - states:UpdateStateMachine
+                  - states:DescribeStateMachine
+                  - states:DescribeStateMachineForExecution
+                  - states:ListStateMachines
+                  - states:TagResource
+                  - states:UntagResource
+                  - states:ListTagsForResource
+                Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-*'
+
+              # ECS cluster lifecycle (ADR-088 model-assurance sandbox).
+              # Cluster actions support resource-level IAM, so they
+              # are scoped to the project's stack-name pattern.
+              - Effect: Allow
+                Action:
+                  - ecs:CreateCluster
+                  - ecs:DeleteCluster
+                  - ecs:DescribeClusters
+                  - ecs:UpdateClusterSettings
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                  - ecs:ListTagsForResource
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-*'
+
+              # ECS task-definition lifecycle.
+              # Per AWS IAM documentation, ``ecs:RegisterTaskDefinition``,
+              # ``ecs:DeregisterTaskDefinition``, and
+              # ``ecs:DescribeTaskDefinition`` do NOT support resource-
+              # level IAM and require ``Resource: '*'``. The action is
+              # constrained via ``aws:RequestTag/Project`` so foreign
+              # workloads can't piggy-back on this role to register a
+              # task definition that isn't part of this project.
+              - Effect: Allow
+                Action:
+                  - ecs:RegisterTaskDefinition
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:DescribeTaskDefinition
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'aws:RequestTag/Project': !Ref ProjectName
+
   ServerlessCodeBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:

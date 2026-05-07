@@ -85,6 +85,19 @@ phases:
           "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
           "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.4 DeployTimestamp=${DEPLOY_TIMESTAMP}"
 
+      # Model Assurance Sandbox (Layer 7.7 - ADR-088)
+      # Imports KMS + S3 from model-assurance-storage (Layer 2 — already
+      # deployed). Imports VpcId + VpcCIDR from networking (Layer 1).
+      # Cross-layer ordering enforced by CodeBuild dispatch.
+      - |
+        echo "Deploying Model Assurance Sandbox (ADR-088)..."
+        cfn-lint deploy/cloudformation/model-assurance-sandbox.yaml --ignore-checks W3002,W1020,W7001 || echo "warnings (non-blocking)"
+        cfn_deploy_stack \
+          "${PROJECT_NAME}-model-assurance-sandbox-${ENVIRONMENT}" \
+          "deploy/cloudformation/model-assurance-sandbox.yaml" \
+          "Environment=${ENVIRONMENT} ProjectName=${PROJECT_NAME}" \
+          "Project=${PROJECT_NAME} Environment=${ENVIRONMENT} Layer=7.7 ADR=ADR-088 DeployTimestamp=${DEPLOY_TIMESTAMP}"
+
   post_build:
     commands:
       - echo "Sandbox core infrastructure deployment complete"

@@ -98,7 +98,7 @@ Enterprise controls ensure safe and compliant operation:
 - **Audit Logging** - Immutable records of all decisions and actions
 - **Notification Services** - Multi-channel alerts via email, Slack, and Teams
 
-![Platform Architecture](../images/placeholder-architecture-overview.png)
+> **Screenshot:** High-level Project Aura platform architecture showing the User Interface, Agent Orchestration, Hybrid GraphRAG, Sandbox, and HITL Approval layers and how they connect.
 
 ---
 

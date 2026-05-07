@@ -151,7 +151,7 @@ The approval queue displays all patches awaiting human review.
 
 2. Or click the **Pending Approvals** notification badge
 
-![Approval Queue](../images/placeholder-approval-queue.png)
+> **Screenshot:** Approval queue with pending patches sorted by wait time, each row showing vulnerability, severity, repo, agent confidence, and a Review button.
 
 ### Queue Layout
 
@@ -207,7 +207,7 @@ Before approving any patch, verify:
 
 ### Review Panel Sections
 
-![Patch Review Panel](../images/placeholder-patch-review-panel.png)
+> **Screenshot:** Patch review panel with four sections: Vulnerability Context, Proposed Patch (unified diff), Sandbox Test Results, and the Approve / Reject / Request Changes action bar.
 
 **1. Vulnerability Context**
 

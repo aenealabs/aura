@@ -53,7 +53,7 @@ When you first sign in to Aura, you see a default dashboard configured for your 
 
 3. Your role's default dashboard is displayed
 
-![Default Dashboard](../images/placeholder-default-dashboard.png)
+> **Screenshot:** Default dashboard layout with the out-of-box widgets (Vulnerability Summary, Recent Activity, Approval Queue, Sandbox Status, Trend Charts).
 
 ### Switching to a Different Default
 
@@ -88,7 +88,7 @@ If your role does not match your actual responsibilities:
    - **+ Add Widget** button displays
    - **Save** and **Cancel** buttons appear
 
-![Dashboard Edit Mode](../images/placeholder-dashboard-edit-mode.png)
+> **Screenshot:** Dashboard edit mode with widgets shown in an editable grid; each widget displays drag handles, resize controls, and a remove button.
 
 ### Adding Widgets
 
@@ -130,7 +130,7 @@ If your role does not match your actual responsibilities:
 
 5. Click **Add to Dashboard** to place it
 
-![Widget Library](../images/placeholder-widget-library.png)
+> **Screenshot:** Widget library panel showing all 25 available widgets grouped into 5 categories (Security, Operations, Performance, Compliance, Custom).
 
 ### Arranging Widgets
 
@@ -194,7 +194,7 @@ Many widgets support customization options.
 
 2. The configuration panel opens:
 
-![Widget Configuration](../images/placeholder-widget-config.png)
+> **Screenshot:** Widget configuration panel for the selected widget, with fields for title, data source, time range, filters, refresh interval, and visualization type.
 
 **Common Configuration Options:**
 
@@ -239,7 +239,7 @@ For advanced users, Aura provides a custom widget builder to create specialized 
 
 3. The custom widget builder opens
 
-![Custom Widget Builder](../images/placeholder-custom-widget-builder.png)
+> **Screenshot:** Custom widget builder with a query editor (data source + filters), visualization picker (bar/line/table/single-stat), and live preview.
 
 ### Creating a Custom Widget
 
@@ -334,7 +334,7 @@ Share your custom dashboards with team members.
 
 3. The Share Dashboard modal opens
 
-![Share Dashboard Modal](../images/placeholder-share-dashboard.png)
+> **Screenshot:** Share Dashboard modal with options to share with specific users, teams, or generate a read-only link, plus permission controls (view / edit / clone).
 
 **Share with Specific Users:**
 
@@ -410,7 +410,7 @@ Generate automated dashboard reports delivered via email.
 
 3. Configure the schedule:
 
-![Schedule Report Modal](../images/placeholder-schedule-report.png)
+> **Screenshot:** Schedule Report modal allowing the user to email the dashboard as a PDF on a recurring cadence (daily/weekly/monthly), with recipient and format controls.
 
 **Schedule Options:**
 

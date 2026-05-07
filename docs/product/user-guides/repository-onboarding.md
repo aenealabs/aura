@@ -50,7 +50,7 @@ For enterprise deployments, GitHub Enterprise Server and GitLab Self-Managed are
 
 The first step establishes a secure connection between Aura and your source control provider.
 
-![Connect Provider Step](../images/placeholder-connect-provider.png)
+> **Screenshot:** Onboarding wizard step 1 — Connect Provider — with cards for GitHub, GitLab, and Bitbucket and a primary 'Connect' action for each.
 
 **To connect via OAuth:**
 
@@ -106,7 +106,7 @@ The first step establishes a secure connection between Aura and your source cont
 
 After successful authentication, Aura retrieves your available repositories.
 
-![Select Repositories Step](../images/placeholder-select-repositories.png)
+> **Screenshot:** Onboarding wizard step 2 — Select Repositories — listing every repo the user has access to with checkboxes, language indicators, and size/last-updated metadata.
 
 **To select repositories:**
 
@@ -146,7 +146,7 @@ After successful authentication, Aura retrieves your available repositories.
 
 Configure how Aura analyzes each selected repository.
 
-![Configure Analysis Step](../images/placeholder-configure-analysis.png)
+> **Screenshot:** Onboarding wizard step 3 — Configure Analysis — exposing scan depth, schedule, branch selection, autonomy level, and excluded paths.
 
 **Configuration options per repository:**
 
@@ -200,7 +200,7 @@ Configure how Aura analyzes each selected repository.
 
 Review your selections before starting the ingestion process.
 
-![Review Step](../images/placeholder-review-step.png)
+> **Screenshot:** Onboarding wizard step 4 — Review — summarizing every choice the user made (provider, repos, analysis settings) before final confirmation.
 
 **Review summary includes:**
 
@@ -242,7 +242,7 @@ Webhooks will be created in your repositories.
 
 Aura clones, parses, and indexes your repositories.
 
-![Completion Step](../images/placeholder-completion-step.png)
+> **Screenshot:** Onboarding wizard step 5 — Completion — confirming the repositories are queued for initial scan and showing what to expect next.
 
 **Ingestion phases:**
 

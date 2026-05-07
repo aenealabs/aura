@@ -36,7 +36,7 @@ After signing in to Aura, you land on the Dashboard, your command center for sec
 
 ### Dashboard Overview
 
-![Dashboard Overview](../images/placeholder-dashboard-overview.png)
+> **Screenshot:** Main dashboard after first login, with the empty-state widget prompting the user to connect their first repository.
 
 The Dashboard displays four key sections:
 
@@ -126,7 +126,7 @@ After adding the repository:
 
 4. Click **Save Settings**
 
-![Project Settings](../images/placeholder-project-settings.png)
+> **Screenshot:** Project settings panel for the newly connected repository, showing scan schedule, autonomy level, language detection, and notification preferences.
 
 ---
 
@@ -161,7 +161,7 @@ Vulnerabilities Found: 3
 Estimated Time Remaining: 2 minutes
 ```
 
-![Scan Progress](../images/placeholder-scan-progress-detailed.png)
+> **Screenshot:** Detailed scan progress view with per-stage status (Repository Cloning, Language Detection, AST Parsing, Embedding Generation, Graph Construction, Vulnerability Analysis) and percentage complete.
 
 ### Understanding Scan Phases
 
@@ -183,7 +183,7 @@ Once the scan completes, you will see a summary of findings.
 
 ### Results Summary
 
-![Scan Results Summary](../images/placeholder-scan-results-summary.png)
+> **Screenshot:** Scan results summary card showing total vulnerabilities by severity, files affected, lines scanned, and links to drill into each finding.
 
 The sample repository typically contains these vulnerability types:
 
@@ -214,7 +214,7 @@ The sample repository typically contains these vulnerability types:
 
 Selecting a vulnerability opens the detail panel:
 
-![Vulnerability Detail](../images/placeholder-vulnerability-detail.png)
+> **Screenshot:** Vulnerability detail panel showing the affected code snippet with the vulnerable lines highlighted, CVE/CWE references, severity rationale, and recommended remediation strategy.
 
 **Sections:**
 
@@ -294,7 +294,7 @@ Patch Generation: In Progress
 [10:32:05] Orchestrator: Patch ready for approval
 ```
 
-![Patch Generation Progress](../images/placeholder-patch-generation-progress.png)
+> **Screenshot:** Patch generation progress with each agent phase displayed as a step (Plan, Context Retrieval, Code Generation, Review, Sandbox Validation), current step highlighted with elapsed time.
 
 ### Understanding Agent Roles
 
@@ -322,7 +322,7 @@ After generation completes, the patch enters the approval queue.
 
 ### Approval Dashboard Layout
 
-![Approval Dashboard](../images/placeholder-approval-dashboard.png)
+> **Screenshot:** Approval dashboard listing all patches awaiting human review, with columns for vulnerability, severity, repository, generated-by, and wait time.
 
 The approval dashboard uses a master-detail layout:
 
@@ -470,7 +470,7 @@ After approval:
 3. Your CI/CD pipeline runs automatically
 4. The vulnerability status updates to **Remediated (Pending Merge)**
 
-![Approval Confirmation](../images/placeholder-approval-confirmation.png)
+> **Screenshot:** Approval confirmation modal asking the reviewer to confirm they have verified the patch, with a comment field for approval notes.
 
 ---
 
@@ -494,7 +494,7 @@ The Dashboard Activity Feed shows progress:
 
 In your source control provider:
 
-![Pull Request](../images/placeholder-pull-request.png)
+> **Screenshot:** GitHub pull request created by Aura with the patch diff, a description summarizing the vulnerability and fix, and links to the sandbox test results.
 
 The PR includes:
 - Descriptive title with vulnerability reference
@@ -519,7 +519,7 @@ After merging:
    - One fewer vulnerability in the count
    - Trend chart shows remediation progress
 
-![Remediation Complete](../images/placeholder-remediation-complete.png)
+> **Screenshot:** Remediation-complete view showing the closed vulnerability, merged PR link, time-to-remediate, and a button to scan the next finding.
 
 ---
 

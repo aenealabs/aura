@@ -73,7 +73,7 @@ View and manage organization settings:
 
 3. Enter invitation details:
 
-![Invite Member Modal](../images/placeholder-invite-member.png)
+> **Screenshot:** Invite Member modal with fields for email address, role selection, team assignment, and an optional welcome message.
 
 | Field | Description |
 |-------|-------------|
@@ -451,7 +451,7 @@ The audit log records all significant actions in your organization for complianc
 
 2. Browse recent activity:
 
-![Audit Log](../images/placeholder-audit-log.png)
+> **Screenshot:** Audit log table showing recent activity rows with timestamp, user, action type (e.g., PATCH_APPROVED, VULN_DETECTED), and details columns.
 
 | Timestamp | User | Action | Details |
 |-----------|------|--------|---------|

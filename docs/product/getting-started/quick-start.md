@@ -31,7 +31,7 @@ If you do not have an account yet, contact your organization administrator or vi
 
 3. Complete MFA verification if enabled for your account.
 
-![Sign In Screen](../images/placeholder-sign-in.png)
+> **Screenshot:** The Project Aura sign-in page with options to authenticate via GitHub, GitLab, or company SSO.
 
 After successful authentication, you will land on the **Dashboard**.
 
@@ -54,7 +54,7 @@ After successful authentication, you will land on the **Dashboard**.
    - Review the requested permissions
    - Select **Authorize Aura**
 
-   ![GitHub Authorization](../images/placeholder-github-auth.png)
+   > **Screenshot:** GitHub OAuth authorization screen requesting read access to repositories and metadata for code analysis.
 
 4. After authorization, select the repository you want to onboard:
    - Use the search field to filter repositories
@@ -95,7 +95,7 @@ After connecting a repository, Aura automatically initiates an initial scan. You
 
 6. Click **Start Scan**.
 
-![Scan Progress](../images/placeholder-scan-progress.png)
+> **Screenshot:** Initial repository scan in progress, with a status bar showing files indexed, embeddings generated, and graph relationships extracted.
 
 The scan progress indicator shows:
 - Files analyzed
@@ -121,7 +121,7 @@ Once the scan completes, review the findings:
    - **Location** - File path and line number
    - **CVE Reference** - If applicable
 
-![Scan Results](../images/placeholder-scan-results.png)
+> **Screenshot:** Scan results dashboard listing detected vulnerabilities grouped by severity (Critical/High/Medium/Low), each with a CVE link and affected file.
 
 ---
 
@@ -142,7 +142,7 @@ Aura can automatically generate patches for many vulnerability types. To initiat
 
    Typical patch generation takes 1-5 minutes depending on complexity.
 
-![Patch Generation Progress](../images/placeholder-patch-generation.png)
+> **Screenshot:** Patch generation view showing the multi-agent workflow advancing through Plan → Context → Code → Review → Validate phases for the selected vulnerability.
 
 ---
 
@@ -160,7 +160,7 @@ After sandbox testing completes successfully, the patch enters the approval queu
    - **Sandbox Results** - Test pass/fail status
    - **Deployment Plan** - Target branch and merge strategy
 
-   ![Approval View](../images/placeholder-approval-view.png)
+   > **Screenshot:** Approval interface displaying the proposed patch as a unified diff, review-agent findings, sandbox test results, and Approve/Reject controls.
 
 4. Review each section carefully:
    - Does the patch address the vulnerability correctly?
@@ -188,7 +188,7 @@ After approval, Aura deploys the patch:
 
 4. Once merged, the vulnerability status updates to **Patched**.
 
-![Deployment Complete](../images/placeholder-deployment-complete.png)
+> **Screenshot:** Deployment confirmation screen showing the merged pull request URL and a summary of remediation activity (vulnerabilities patched, tokens used, tests passed).
 
 ---
 

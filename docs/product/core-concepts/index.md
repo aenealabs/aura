@@ -23,8 +23,6 @@ Understanding these concepts will help you:
 
 Project Aura is built on six interconnected technology pillars that work together to enable autonomous, secure code remediation.
 
-![Core Technology Pillars](../images/placeholder-core-pillars.png)
-
 ### 1. Autonomous Code Intelligence
 
 At its core, Aura is an AI system that understands code at a deep level. Unlike traditional security tools that rely on pattern matching, Aura uses large language models (LLMs) to reason about code structure, intent, and security implications.

@@ -96,8 +96,6 @@ Code and documentation are converted into high-dimensional vectors (embeddings) 
 - **Pattern matching**: Identify code that follows similar patterns
 - **Contextual retrieval**: Pull relevant context for patch generation
 
-![Embedding Space](../images/placeholder-embedding-space.png)
-
 ---
 
 ## How the System Learns

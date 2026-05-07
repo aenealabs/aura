@@ -62,8 +62,6 @@ Aura's hybrid approach achieves 22-25% improvement in retrieval accuracy compare
 
 Aura's Hybrid GraphRAG consists of three main components.
 
-![Hybrid GraphRAG Architecture](../images/placeholder-graphrag-architecture.png)
-
 ### 1. Neptune Graph Database
 
 AWS Neptune stores structural code relationships as a property graph.

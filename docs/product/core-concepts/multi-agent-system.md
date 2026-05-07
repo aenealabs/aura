@@ -36,8 +36,6 @@ Aura's multi-agent approach provides:
 
 ## Agent Architecture Overview
 
-![Multi-Agent Architecture](../images/placeholder-agent-architecture.png)
-
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         AGENT ORCHESTRATOR                          │

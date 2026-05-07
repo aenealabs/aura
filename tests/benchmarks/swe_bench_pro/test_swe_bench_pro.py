@@ -710,3 +710,308 @@ class TestScorePredictions:
         assert report.total_tasks == 1
         assert report.per_task[0].has_gold_patch is False
         assert report.per_task[0].composite_score == 0.0
+
+
+# =============================================================================
+# Enhanced adapter (GraphRAG retrieval + Reviewer pass)
+# =============================================================================
+
+
+from src.benchmarks.swe_bench_pro.enhanced_adapter import (  # noqa: E402
+    AuraEnhancedAdapter,
+    CannedRetriever,
+    NullReviewer,
+    NullRetriever,
+    ReviewResult,
+    ScriptedReviewer,
+    StubReviewer,
+    StubRetriever,
+)
+
+
+class _RecordingLLM:
+    """LLM client that returns scripted responses and records every call."""
+
+    def __init__(self, responses: list[dict[str, Any]]) -> None:
+        self._responses = list(responses)
+        self.calls: list[dict[str, Any]] = []
+
+    async def invoke(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        if not self._responses:
+            raise RuntimeError("recording LLM ran out of scripted responses")
+        return self._responses.pop(0)
+
+
+class TestEnhancedAdapterDefaults:
+    @pytest.mark.asyncio
+    async def test_null_components_match_bare_adapter_behavior(self):
+        # NullRetriever + NullReviewer => exactly one Coder call, no review.
+        client = _RecordingLLM(
+            [
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                }
+            ]
+        )
+        adapter = AuraEnhancedAdapter(llm_client=client, model_id="m")
+        prediction = await adapter.solve(_task(instance_id="t1"))
+        assert prediction.model_patch.startswith("diff --git")
+        assert prediction.aura_metadata["passes"] == 1
+        assert prediction.aura_metadata["had_repo_context"] is False
+        assert (
+            prediction.aura_metadata["review_triggered_revision"] is False
+        )
+        assert len(client.calls) == 1
+
+
+class TestEnhancedAdapterRetrieval:
+    @pytest.mark.asyncio
+    async def test_retrieved_context_appears_in_prompt(self):
+        client = _RecordingLLM(
+            [
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 200,
+                    "output_tokens": 50,
+                }
+            ]
+        )
+        retriever = StubRetriever(
+            "<class>UserService</class>\n<method>validate_token</method>"
+        )
+        adapter = AuraEnhancedAdapter(
+            llm_client=client, model_id="m", retriever=retriever
+        )
+        await adapter.solve(_task(instance_id="t-ctx"))
+        # The context string should be embedded in the user prompt.
+        prompt = client.calls[0]["user_prompt"]
+        assert "validate_token" in prompt or "UserService" in prompt
+        assert retriever.calls == 1
+
+    @pytest.mark.asyncio
+    async def test_per_task_canned_retriever(self):
+        client = _RecordingLLM(
+            [
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 150,
+                    "output_tokens": 50,
+                },
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                },
+            ]
+        )
+        retriever = CannedRetriever({"a": "specific-context-A"})
+        adapter = AuraEnhancedAdapter(
+            llm_client=client, model_id="m", retriever=retriever
+        )
+        await adapter.solve(_task(instance_id="a"))
+        await adapter.solve(_task(instance_id="b"))  # no canned context
+        assert "specific-context-A" in client.calls[0]["user_prompt"]
+        # Second task's prompt should NOT contain the canned context.
+        assert "specific-context-A" not in client.calls[1]["user_prompt"]
+
+
+class TestEnhancedAdapterReviewer:
+    @pytest.mark.asyncio
+    async def test_no_revision_when_reviewer_passes(self):
+        client = _RecordingLLM(
+            [
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                }
+            ]
+        )
+        adapter = AuraEnhancedAdapter(
+            llm_client=client, model_id="m", reviewer=NullReviewer()
+        )
+        prediction = await adapter.solve(_task())
+        assert prediction.aura_metadata["passes"] == 1
+        assert (
+            prediction.aura_metadata["review_triggered_revision"] is False
+        )
+        assert len(client.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_revision_loop_when_reviewer_flags(self):
+        client = _RecordingLLM(
+            [
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                },
+                {
+                    "content": (
+                        "diff --git a/file.py b/file.py\n"
+                        "--- a/file.py\n"
+                        "+++ b/file.py\n"
+                        "@@ -1,1 +1,1 @@\n"
+                        "-old\n"
+                        "+revised\n"
+                    ),
+                    "input_tokens": 250,
+                    "output_tokens": 80,
+                },
+            ]
+        )
+        adapter = AuraEnhancedAdapter(
+            llm_client=client,
+            model_id="m",
+            reviewer=StubReviewer(
+                revision_required=True,
+                critique="missed null check on line 5",
+                confidence=0.7,
+            ),
+        )
+        prediction = await adapter.solve(_task(instance_id="rev1"))
+        assert prediction.aura_metadata["passes"] == 2
+        assert (
+            prediction.aura_metadata["review_triggered_revision"] is True
+        )
+        assert "revised" in prediction.model_patch
+        # Revision prompt MUST surface the critique to the model.
+        revision_prompt = client.calls[1]["user_prompt"]
+        assert "missed null check on line 5" in revision_prompt
+
+    @pytest.mark.asyncio
+    async def test_empty_revision_falls_back_to_draft(self):
+        # Reviewer flags revision; Coder revision returns empty (declined).
+        # Adapter must fall back to the draft rather than emit an empty patch.
+        client = _RecordingLLM(
+            [
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                },
+                {
+                    "content": "I'm sorry, I can't produce a revised diff.",
+                    "input_tokens": 80,
+                    "output_tokens": 30,
+                },
+            ]
+        )
+        adapter = AuraEnhancedAdapter(
+            llm_client=client,
+            model_id="m",
+            reviewer=StubReviewer(revision_required=True, critique="bad"),
+        )
+        prediction = await adapter.solve(_task(instance_id="rev2"))
+        assert prediction.model_patch.startswith("diff --git")
+        assert prediction.aura_metadata["revision_was_empty"] is True
+        # The metadata should still record both passes occurred.
+        assert prediction.aura_metadata["passes"] == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_draft_skips_reviewer(self):
+        # If the Coder declines on the first pass, there's nothing to review.
+        client = _RecordingLLM(
+            [
+                {
+                    "content": "",
+                    "input_tokens": 50,
+                    "output_tokens": 0,
+                }
+            ]
+        )
+        reviewer = StubReviewer(revision_required=True, critique="x")
+        adapter = AuraEnhancedAdapter(
+            llm_client=client, model_id="m", reviewer=reviewer
+        )
+        prediction = await adapter.solve(_task())
+        assert prediction.model_patch == ""
+        assert prediction.aura_metadata["passes"] == 1
+        # Reviewer was never invoked.
+        assert reviewer.calls == 0
+        # No second LLM call either.
+        assert len(client.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_scripted_per_task_review(self):
+        scripts = {
+            "needs-revision": ReviewResult(
+                revision_required=True, critique="missed edge case"
+            ),
+            "passes-clean": ReviewResult(
+                revision_required=False, critique=""
+            ),
+        }
+        client = _RecordingLLM(
+            [
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                },
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 200,
+                    "output_tokens": 60,
+                },
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                },
+            ]
+        )
+        adapter = AuraEnhancedAdapter(
+            llm_client=client,
+            model_id="m",
+            reviewer=ScriptedReviewer(scripts),
+        )
+        p1 = await adapter.solve(_task(instance_id="needs-revision"))
+        p2 = await adapter.solve(_task(instance_id="passes-clean"))
+        assert p1.aura_metadata["passes"] == 2
+        assert p2.aura_metadata["passes"] == 1
+        # 3 LLM calls total: 2 for revision-loop task, 1 for clean task.
+        assert len(client.calls) == 3
+
+
+class TestEnhancedAdapterCostTracking:
+    @pytest.mark.asyncio
+    async def test_cost_aggregates_across_passes(self):
+        # Both passes should contribute to total cost.
+        client = _RecordingLLM(
+            [
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 1000,
+                    "output_tokens": 500,
+                },
+                {
+                    "content": _VALID_DIFF,
+                    "input_tokens": 800,
+                    "output_tokens": 400,
+                },
+            ]
+        )
+        adapter = AuraEnhancedAdapter(
+            llm_client=client,
+            model_id="m",
+            reviewer=StubReviewer(revision_required=True, critique="x"),
+        )
+        await adapter.solve(_task())
+        # Two recorded invocations, total cost = sum of both.
+        assert adapter.total_cost_usd > 0
+
+    @pytest.mark.asyncio
+    async def test_cost_cap_blocks_pre_flight(self):
+        # Tight cap; pre-flight refuses.
+        client = _RecordingLLM([])  # no responses needed
+        adapter = AuraEnhancedAdapter(
+            llm_client=client,
+            model_id="m",
+            run_cost_cap_usd=0.0001,
+        )
+        with pytest.raises(AdapterError):
+            await adapter.solve(_task())

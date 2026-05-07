@@ -1,7 +1,18 @@
-"""Scout Agent — Bedrock candidate discovery (ADR-088 Phase 1.4)."""
+"""Scout Agent — model candidate discovery.
+
+Phase 1.4 covers Bedrock; Phase 3.2 adds HuggingFace + internal
+SWE-RL sources plus the GovCloud air-gap import path.
+"""
 
 from __future__ import annotations
 
+from .airgap_importer import (
+    AirgapBundleInput,
+    AirgapBundleStatus,
+    AirgapImportRecord,
+    import_bundle,
+    import_many,
+)
 from .bedrock_client import (
     BedrockListClient,
     BedrockListResponse,
@@ -17,6 +28,21 @@ from .events import (
     EligibilityFlag,
     ModelCandidateDetected,
     make_event,
+)
+from .huggingface_client import (
+    HF_AVAILABLE,
+    HuggingFaceListClient,
+    HuggingFaceListResponse,
+    HuggingFaceModelSummary,
+    synthesize_hf_summary,
+    to_bedrock_compatible_summary as hf_to_bedrock_compatible_summary,
+)
+from .internal_client import (
+    InternalListResponse,
+    InternalModelClient,
+    InternalModelSummary,
+    synthesize_internal_summary,
+    to_bedrock_compatible_summary as internal_to_bedrock_compatible_summary,
 )
 from .scout_agent import (
     CandidateEventSink,
@@ -54,4 +80,21 @@ __all__ = [
     "InMemoryEventSink",
     "EventBridgeSink",
     "synthesize_default_requirements",
+    # Phase 3.2
+    "HF_AVAILABLE",
+    "HuggingFaceListClient",
+    "HuggingFaceListResponse",
+    "HuggingFaceModelSummary",
+    "synthesize_hf_summary",
+    "hf_to_bedrock_compatible_summary",
+    "InternalModelClient",
+    "InternalListResponse",
+    "InternalModelSummary",
+    "synthesize_internal_summary",
+    "internal_to_bedrock_compatible_summary",
+    "AirgapBundleInput",
+    "AirgapBundleStatus",
+    "AirgapImportRecord",
+    "import_bundle",
+    "import_many",
 ]

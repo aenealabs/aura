@@ -2,7 +2,33 @@
 
 ## Status
 
-Accepted (Phases 1 & 2 Implemented; Phase 3 Tracked in #112)
+Accepted (All 3 Phases Implemented)
+
+Phase 3 deployed (issue #112): five sub-phases committed across
+6d27219 → 38eca9d → 64985bc → f29882c → 5f4e840. New
+``src/services/model_assurance/anti_goodhart/`` package (~470 LOC)
+with CronSeedSource (cron-bucketed + salted; agent cannot
+influence which seed value comes next), AdversarialAugmentation
+3-tier dedup pipeline producing RotationProposals for the
+Phase 2.2 two-approval gate, and SpotCheckSamplingPlan with
+5% per-domain stratified sampling. Scout extensions (~430 LOC)
+add HuggingFaceListClient (curated allowlist polling),
+InternalModelClient (SWE-RL checkpoint monitor), and
+airgap_importer (signature + expiry verification for the GovCloud
+ferry path). New ``rollback`` package (~290 LOC) with
+RevisionHistory append-only log and RollbackService supporting
+one-step / two-step / explicit-target reversion plus the
+TARGET_MODEL_UNAVAILABLE branch when a prior model has been
+retired. New ``audit`` package (~370 LOC) emitting 13 event types
+× 6 NIST 800-53 controls (CM-3, CM-5, SA-10, SI-7, RA-5, AU-3)
+to CloudTrail Lake via EventBridge with tolerant fan-out. New
+``govcloud`` package (~270 LOC) with is_fips_endpoint() validator
+(commercial FIPS markers + us-gov-* region prefix) and
+run_load_test harness recording p50/p95/p99/max latency and
+error tolerance. 139 new tests across 5 sub-phases; 1,161 / 1,161
+pass with zero regressions on Phase 1 (154) or Phase 2 (274).
+HITL Approval UI (React frontend) and CloudFormation
+infrastructure deferred to a follow-on UI/IaC batch.
 
 Phase 2 deployed (issue #111): five sub-phases committed across
 e114fcc → 77c2f84 → ea0b863 → d96f191 → b9831ff. New
@@ -51,7 +77,7 @@ soft-imported boto3 + per-sink failure isolation. 154 new tests across
 
 ## Date
 
-2026-05-05 (proposed) / 2026-05-06 (Phase 1 implemented)
+2026-05-05 (proposed) / 2026-05-06 (All 3 Phases implemented)
 
 ## Reviews
 

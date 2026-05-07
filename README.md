@@ -41,12 +41,54 @@ Then what?                                   Awaiting human approval for deploym
 - **Sandbox-first validation** -- every patch is tested in network-isolated environments before reaching human reviewers
 - **Constitutional AI guardrails** -- 16-principle critique-revision pipeline ensures safe, compliant agent behavior
 
-**Screenshot of AI Trust Center**
+## Platform View
 
+A look inside the Aura Platform.
 
 <p align="center">
-  <img src="assets/logo/aura-ai-trust-center.jpeg" alt="Aura AI Trust Center" width="600">
+  <img src="assets/logo/Main Dashboard.png" alt="Main Dashboard" width="800">
 </p>
+
+<p align="center">
+  <img src="assets/logo/Vulnerability Scanner.png" alt="Vulnerability Scanner" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/logo/HITL Approvals.png" alt="HITL Approvals" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/logo/Mission Control.png" alt="Mission Control" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/logo/AI Trust Center.png" alt="AI Trust Center" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/logo/Explainability Dashboard.png" alt="Explainability Dashboard" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/logo/Red Team Dashboard.png" alt="Red Team Dashboard" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/logo/Agent Registry.png" alt="Agent Registry" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/logo/Autonomous Policies.png" alt="Autonomous Policies" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/logo/Guardrails Settings.png" alt="Guardrails Settings" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/logo/Platform Settings.png" alt="Platform Settings" width="800">
+</p>
+
 ---
 
 ## Architecture

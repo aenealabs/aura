@@ -30,7 +30,6 @@ from pathlib import Path
 from src.services.verification_envelope.contracts import MCDCCoverageReport
 from src.services.verification_envelope.coverage.mcdc_adapter import (
     CoverageAnalysisRequest,
-    MCDCCoverageAdapter,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,7 +119,7 @@ class CoveragePyAdapter:
                     decision_coverage_pct=0.0,
                     mcdc_coverage_pct=0.0,
                     dal_policy_satisfied=False,
-                    coverage_tool=f"coverage_py:no_data",
+                    coverage_tool="coverage_py:no_data",
                     uncovered_conditions=(f"coverage data file unreadable: {exc}",),
                 )
 

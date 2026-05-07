@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, AsyncIterator
 
 from src.abstractions.llm_service import (

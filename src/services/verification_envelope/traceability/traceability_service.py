@@ -34,29 +34,39 @@ class _RequirementStore(Protocol):
     """Backend protocol — both in-memory and Neptune adapters satisfy it."""
 
     async def upsert_requirement(self, requirement: Requirement) -> None: ...
+
     async def get_requirement(self, requirement_id: str) -> Requirement | None: ...
+
     async def list_requirements(
         self, *, type_filter: RequirementType | None = None
     ) -> tuple[Requirement, ...]: ...
+
     async def upsert_artefact(self, artefact: Artefact) -> None: ...
+
     async def get_artefact(self, artefact_id: str) -> Artefact | None: ...
+
     async def list_artefacts(
         self, *, type_filter: ArtefactType | None = None
     ) -> tuple[Artefact, ...]: ...
+
     async def add_edge(self, edge: TraceEdge) -> None: ...
+
     async def outgoing_edges(
         self,
         node_id: str,
         *,
         type_filter: TraceEdgeType | None = None,
     ) -> tuple[TraceEdge, ...]: ...
+
     async def incoming_edges(
         self,
         node_id: str,
         *,
         type_filter: TraceEdgeType | None = None,
     ) -> tuple[TraceEdge, ...]: ...
+
     async def all_edges(self) -> tuple[TraceEdge, ...]: ...
+
     async def stats(self) -> dict[str, int]: ...
 
 

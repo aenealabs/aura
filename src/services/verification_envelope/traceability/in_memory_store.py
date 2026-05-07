@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Iterable
 
 from src.services.verification_envelope.traceability.contracts import (
     Artefact,

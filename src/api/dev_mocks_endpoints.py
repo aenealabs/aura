@@ -19,7 +19,6 @@ When a feature gets a real router, simply remove its block from this module.
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 

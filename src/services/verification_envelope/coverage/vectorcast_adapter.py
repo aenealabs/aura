@@ -34,7 +34,6 @@ import os
 import shlex
 import shutil
 import subprocess
-from pathlib import Path
 
 from src.services.verification_envelope.contracts import MCDCCoverageReport
 from src.services.verification_envelope.coverage.mcdc_adapter import (

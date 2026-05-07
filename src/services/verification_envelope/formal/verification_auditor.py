@@ -21,15 +21,14 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from src.services.verification_envelope.contracts import (
     VerificationResult,
-    VerificationVerdict,
 )
 from src.services.verification_envelope.formal.formal_adapter import (
     FormalVerificationRequest,

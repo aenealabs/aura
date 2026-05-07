@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Sequence
+from typing import Awaitable, Callable
 
 from src.services.verification_envelope.contracts import (
     ConsensusOutcome,

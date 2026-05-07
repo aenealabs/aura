@@ -21,7 +21,6 @@ import os
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
-from pathlib import Path
 
 from src.services.verification_envelope.contracts import MCDCCoverageReport
 from src.services.verification_envelope.coverage.mcdc_adapter import (

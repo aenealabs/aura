@@ -39,7 +39,6 @@ import asyncio
 import hashlib
 import logging
 import time
-from typing import Any
 
 from src.services.constraint_geometry.contracts import ConstraintAxis
 from src.services.verification_envelope.contracts import (

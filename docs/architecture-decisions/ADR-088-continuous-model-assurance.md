@@ -2,11 +2,33 @@
 
 ## Status
 
-Proposed
+Accepted (Phase 1 Implemented; Phases 2 & 3 Tracked in #111 / #112)
+
+Phase 1 deployed (issue #110): regression floor primitive added to
+``src/services/constraint_geometry/`` as a domain-agnostic CGE
+extension (RegressionFloor accepts ConstraintAxis or string axis IDs;
+ABSOLUTE and RELATIVE_TO_INCUMBENT comparison; REJECT and
+QUARANTINE_FLAG actions; PolicyProfile.determine_action gains a
+keyword-only floor-violation parameter that short-circuits to REJECT).
+New ``src/services/model_assurance/`` package with:
+``adapter_registry`` (ModelAdapter + ModelRequirements + AdapterRegistry
+seeded with Claude 3.5 Sonnet, 3 Haiku, 3 Opus); the six-axis assurance
+domain (MA1 Code Comprehension, MA2 Vulnerability Detection Recall,
+MA3 Patch Functional Correctness, MA4 Patch Security Equivalence,
+MA5 Latency / Token Efficiency [relative], MA6 Guardrail Compliance)
+with default floors matching §Stage 5 floor table, weights summing to
+6.9, ModelAssuranceEvaluator producing ACCEPT / REJECT / TIE_REJECT /
+INFERIOR / NO_INCUMBENT_HITL verdicts (ties reject — incumbent holds);
+and the ``scout`` sub-package — Bedrock ListFoundationModels poller
+with ThrottlingException retry/backoff, GovCloud partition awareness
+via operator-curated commercial-catalog snapshot, sticky rejection,
+ModelCandidateDetected event schema (v1.0), and EventBridge sink with
+soft-imported boto3 + per-sink failure isolation. 154 new tests across
+4 sub-phases. Total commit chain: 439ade0 → 1487bdf → 8c44371 → e6996bc.
 
 ## Date
 
-2026-05-05
+2026-05-05 (proposed) / 2026-05-06 (Phase 1 implemented)
 
 ## Reviews
 

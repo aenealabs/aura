@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from src.api.log_sanitizer import sanitize_log
 from src.services.integrations.export_authorization_service import (
     ExportAuthorizationService,
     ExportDataType,
@@ -24,7 +25,6 @@ from src.services.integrations.export_authorization_service import (
     ExportScope,
 )
 from src.services.integrations.secrets_prescan_filter import SecretsPrescanFilter
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/export", tags=["export"])

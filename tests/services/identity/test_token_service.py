@@ -10,8 +10,8 @@ avoiding cryptography backend conflicts with cryptography>=42.0.0.
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
 import jwt
+import pytest
 
 from src.services.identity.models import AuthResult, IdentityProviderConfig, IdPType
 from src.services.identity.token_service import (

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.api.log_sanitizer import sanitize_log
 from src.services.execution_checkpoint_service import (
     CheckpointStatus,
     ExecutionCheckpointService,
@@ -20,7 +21,6 @@ from src.services.execution_checkpoint_service import (
     TrustRule,
     autonomy_level_to_intervention_mode,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

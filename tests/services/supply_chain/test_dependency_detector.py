@@ -275,9 +275,7 @@ class TestDependencyConfusionDetector:
 
     def test_detector_disabled(self, test_config):
         """Test detector when disabled."""
-        from src.services.supply_chain import (
-            set_supply_chain_config,
-        )
+        from src.services.supply_chain import set_supply_chain_config
         from src.services.supply_chain.config import SupplyChainConfig
 
         config = SupplyChainConfig.for_testing()

@@ -30,9 +30,7 @@ from src.services.constitutional_ai.guardrails_fast_path import (
     FastPathResult,
     GuardrailsFastPath,
 )
-from src.services.constitutional_ai.models import (
-    ConstitutionalContext,
-)
+from src.services.constitutional_ai.models import ConstitutionalContext
 from src.services.constitutional_ai.tiered_critique import (
     CritiqueTier,
     filter_principles_by_tier,

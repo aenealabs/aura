@@ -195,6 +195,16 @@ from .registry import (
     get_capability_registry,
     reset_capability_registry,
 )
+from .self_modification_sentinel import (  # ADR-086 Self-Modification Sentinel
+    GovernanceArtifactClass,
+    GovernanceWriteEvent,
+    SelfModificationSentinel,
+    SentinelAlert,
+    SentinelVerdict,
+    WriteAction,
+    get_self_modification_sentinel,
+    reset_self_modification_sentinel,
+)
 from .simulator import (  # ADR-070 Policy Simulator
     PolicyDifference,
     PolicySimulator,
@@ -206,16 +216,6 @@ from .simulator import (  # ADR-070 Policy Simulator
     ToolInvocation,
     get_policy_simulator,
     reset_policy_simulator,
-)
-from .self_modification_sentinel import (  # ADR-086 Self-Modification Sentinel
-    GovernanceArtifactClass,
-    GovernanceWriteEvent,
-    SelfModificationSentinel,
-    SentinelAlert,
-    SentinelVerdict,
-    WriteAction,
-    get_self_modification_sentinel,
-    reset_self_modification_sentinel,
 )
 from .statistical_detector import (  # ADR-072 Statistical Detector
     BaselineService,

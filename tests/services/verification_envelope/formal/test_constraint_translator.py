@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from src.services.constraint_geometry.contracts import (
-    ConstraintAxis,
-    ConstraintRule,
-)
+from src.services.constraint_geometry.contracts import ConstraintAxis, ConstraintRule
 from src.services.verification_envelope.formal import (
     ConstraintTranslator,
     TranslationContext,

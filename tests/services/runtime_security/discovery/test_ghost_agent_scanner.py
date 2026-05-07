@@ -11,9 +11,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.services.runtime_security.discovery.credential_enumerators.enumerators import (
+    BaselineRecordEnumerator,
     IAMRoleEnumerator,
     MCPTokenEnumerator,
-    BaselineRecordEnumerator,
 )
 from src.services.runtime_security.discovery.credential_enumerators.registry import (
     EnumeratorRegistry,

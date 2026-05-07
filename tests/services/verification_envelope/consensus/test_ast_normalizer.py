@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from src.services.verification_envelope.consensus.ast_normalizer import (
-    ASTNormalizer,
-)
+from src.services.verification_envelope.consensus.ast_normalizer import ASTNormalizer
 
 
 def test_identical_source_yields_identical_canonical_hash() -> None:

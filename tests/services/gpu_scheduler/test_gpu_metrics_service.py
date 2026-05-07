@@ -11,9 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.services.cloudwatch_metrics_publisher import (
-    CloudWatchMetricsPublisher,
-)
+from src.services.cloudwatch_metrics_publisher import CloudWatchMetricsPublisher
 from src.services.gpu_scheduler.gpu_metrics_service import (
     GPUBudgetStatus,
     GPUCostMetrics,

@@ -11,10 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.services.alignment.reversibility import (
-    ActionClass,
-    RollbackPlan,
-)
+from src.services.alignment.reversibility import ActionClass, RollbackPlan
 from src.services.alignment.rollback_service import (
     RollbackCapability,
     RollbackExecution,

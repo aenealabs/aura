@@ -21,10 +21,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from src.services.identity.base_provider import (
-    AuthenticationError,
-    ConfigurationError,
-)
+from src.services.identity.base_provider import AuthenticationError, ConfigurationError
 from src.services.identity.base_provider import ConnectionError as IdPConnectionError
 from src.services.identity.base_provider import (
     IdentityProvider,

@@ -28,11 +28,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.services.billing_service import (
-    USAGE_PRICING,
-    BillingPlan,
-    BillingService,
-)
+from src.services.billing_service import USAGE_PRICING, BillingPlan, BillingService
 from src.services.usage_analytics_service import MetricType, UsageAnalyticsService
 
 # =============================================================================

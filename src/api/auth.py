@@ -20,9 +20,9 @@ from functools import lru_cache
 from typing import Any, cast
 
 import httpx
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-import jwt
 from jwt.exceptions import PyJWTError
 from pydantic import BaseModel
 

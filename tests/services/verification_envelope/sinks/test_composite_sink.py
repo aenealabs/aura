@@ -11,9 +11,7 @@ from src.services.verification_envelope.formal.verification_auditor import (
     AuditRecord,
     InMemoryArchiveSink,
 )
-from src.services.verification_envelope.sinks.composite_sink import (
-    CompositeArchiveSink,
-)
+from src.services.verification_envelope.sinks.composite_sink import CompositeArchiveSink
 
 
 def _record() -> AuditRecord:

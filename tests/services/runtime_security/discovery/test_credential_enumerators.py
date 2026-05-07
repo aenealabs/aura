@@ -34,8 +34,8 @@ from src.services.runtime_security.discovery.credential_enumerators.enumerators 
     PalantirAIPTokenEnumerator,
     ProvenanceRecordEnumerator,
     ReMemGrantEnumerator,
-    SSMParameterEnumerator,
     SecretsManagerEnumerator,
+    SSMParameterEnumerator,
     register_all_enumerators,
 )
 

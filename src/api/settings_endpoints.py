@@ -29,6 +29,7 @@ from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from src.api.log_sanitizer import sanitize_log
 from src.config.integration_config import (
     CustomerMCPBudget,
     ExternalToolCategory,
@@ -41,7 +42,6 @@ from src.services.settings_persistence_service import (
     DEFAULT_PLATFORM_SETTINGS,
     get_settings_service,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from src.services.verification_envelope.consensus.ast_normalizer import (
-    ASTNormalizer,
-)
+from src.services.verification_envelope.consensus.ast_normalizer import ASTNormalizer
 from src.services.verification_envelope.consensus.consensus_policy import (
     evaluate_convergence,
 )

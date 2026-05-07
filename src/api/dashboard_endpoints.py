@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user
+from src.api.log_sanitizer import sanitize_log
 from src.services.dashboard import (
     CustomWidget,
     CustomWidgetCreate,
@@ -70,7 +71,6 @@ from src.services.dashboard.exceptions import (
     DashboardValidationError,
     ShareNotFoundError,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

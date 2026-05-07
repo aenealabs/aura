@@ -36,6 +36,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user
+from src.api.log_sanitizer import sanitize_log
 
 # ADR-060: Enterprise Diagram Generation
 from src.services.diagrams import (
@@ -73,7 +74,6 @@ from src.services.documentation.documentation_agent import (
     DocumentationAgent,
     create_documentation_agent,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

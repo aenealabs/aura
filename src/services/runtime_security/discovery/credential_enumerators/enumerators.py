@@ -31,11 +31,7 @@ Created: 2026-04-06
 import logging
 from typing import Any, Optional
 
-from .registry import (
-    CredentialRecord,
-    CredentialStatus,
-    EnumerationResult,
-)
+from .registry import CredentialRecord, CredentialStatus, EnumerationResult
 
 logger = logging.getLogger(__name__)
 

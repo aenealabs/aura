@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.services.gpu_scheduler.exceptions import (
-    TemplateNotFoundError,
-)
+from src.services.gpu_scheduler.exceptions import TemplateNotFoundError
 from src.services.gpu_scheduler.job_template_service import GPUJobTemplateService
 from src.services.gpu_scheduler.models import (
     EmbeddingJobConfig,

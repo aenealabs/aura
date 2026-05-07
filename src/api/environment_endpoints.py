@@ -22,6 +22,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Qu
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user
+from src.api.log_sanitizer import sanitize_log
 from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
 from src.services.environment_provisioning_service import (
     EnvironmentConfig,
@@ -34,7 +35,6 @@ from src.services.environment_provisioning_service import (
     TestEnvironment,
     create_environment_service,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

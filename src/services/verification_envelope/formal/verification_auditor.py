@@ -27,9 +27,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from src.services.verification_envelope.contracts import (
-    VerificationResult,
-)
+from src.services.verification_envelope.contracts import VerificationResult
 from src.services.verification_envelope.formal.formal_adapter import (
     FormalVerificationRequest,
 )

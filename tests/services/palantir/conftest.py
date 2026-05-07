@@ -11,9 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.services.palantir.base_adapter import (
-    EnterpriseDataPlatformAdapter,
-)
+from src.services.palantir.base_adapter import EnterpriseDataPlatformAdapter
 from src.services.palantir.circuit_breaker import (
     PalantirCircuitBreaker,
     PalantirCircuitBreakerRegistry,

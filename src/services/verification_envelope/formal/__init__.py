@@ -29,9 +29,7 @@ from src.services.verification_envelope.formal.verification_gate import (
     FormalGateResult,
     VerificationGateService,
 )
-from src.services.verification_envelope.formal.z3_smt_adapter import (
-    Z3SMTAdapter,
-)
+from src.services.verification_envelope.formal.z3_smt_adapter import Z3SMTAdapter
 
 __all__ = [
     "ArchiveOutcome",

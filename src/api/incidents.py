@@ -18,6 +18,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+
 from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)

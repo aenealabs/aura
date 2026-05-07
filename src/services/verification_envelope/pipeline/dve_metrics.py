@@ -19,9 +19,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.services.verification_envelope.contracts import (
-    DVEResult,
-)
+from src.services.verification_envelope.contracts import DVEResult
 
 logger = logging.getLogger(__name__)
 

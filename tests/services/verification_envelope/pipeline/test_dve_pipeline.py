@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from src.services.constraint_geometry.contracts import ConstraintAxis
 from src.services.verification_envelope.config import DVEConfig
 from src.services.verification_envelope.contracts import (
     DVEOverallVerdict,
@@ -26,11 +27,7 @@ from src.services.verification_envelope.formal import (
 from src.services.verification_envelope.formal.formal_adapter import (
     FormalVerificationRequest,
 )
-from src.services.constraint_geometry.contracts import ConstraintAxis
-from src.services.verification_envelope.pipeline import (
-    DVEPipeline,
-    DVEPipelineInput,
-)
+from src.services.verification_envelope.pipeline import DVEPipeline, DVEPipelineInput
 
 # ---------------------------------------------------------------- generators
 

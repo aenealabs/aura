@@ -40,9 +40,7 @@ from src.services.devops.incident_pattern_analyzer import (
     IncidentSeverity,
     IncidentStatus,
 )
-from src.services.devops.resource_topology_mapper import (
-    TopologySnapshot,
-)
+from src.services.devops.resource_topology_mapper import TopologySnapshot
 
 # Use forked mode on non-Linux to prevent state pollution
 # On Linux (CI), run normally and rely on conftest.py cleanup

@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from src.api.anomaly_triggers import get_triggers
 from src.api.dependencies import get_hitl_service, get_notification_service
+from src.api.log_sanitizer import sanitize_log
 from src.services.api_rate_limiter import (
     RateLimitResult,
     critical_rate_limit,
@@ -34,7 +35,6 @@ from src.services.hitl_approval_service import (
     HITLApprovalService,
     PatchSeverity,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

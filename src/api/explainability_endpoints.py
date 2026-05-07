@@ -23,8 +23,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user
-from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
 from src.api.log_sanitizer import sanitize_log
+from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
 
 logger = logging.getLogger(__name__)
 

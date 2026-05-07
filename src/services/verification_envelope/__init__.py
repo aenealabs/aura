@@ -38,6 +38,17 @@ from src.services.verification_envelope.consensus import (
     SemanticEquivalenceChecker,
     evaluate_convergence,
 )
+from src.services.verification_envelope.contracts import (
+    ASTCanonicalForm,
+    ConsensusOutcome,
+    ConsensusResult,
+    DVEOverallVerdict,
+    DVEResult,
+    EquivalenceCheck,
+    MCDCCoverageReport,
+    VerificationResult,
+    VerificationVerdict,
+)
 from src.services.verification_envelope.coverage import (
     CoverageAnalysisRequest,
     CoverageGateInput,
@@ -47,34 +58,6 @@ from src.services.verification_envelope.coverage import (
     LDRAAdapter,
     MCDCCoverageAdapter,
     VectorCASTAdapter,
-)
-from src.services.verification_envelope.traceability import (
-    Artefact,
-    ArtefactType,
-    InMemoryRequirementStore,
-    LifecycleContext,
-    LifecycleDataGenerator,
-    LifecycleDocument,
-    NeptuneRequirementStore,
-    Requirement,
-    RequirementType,
-    TraceEdge,
-    TraceEdgeType,
-    TraceabilityGap,
-    TraceabilityReport,
-    TraceabilityService,
-)
-from src.services.verification_envelope.pipeline import (
-    METRIC_NAMESPACE,
-    CloudWatchMetricsPublisher,
-    ConstitutionalReviser,
-    DVEPipeline,
-    DVEPipelineInput,
-)
-from src.services.verification_envelope.sinks import (
-    CompositeArchiveSink,
-    DynamoDBAuditSink,
-    S3ProofArchiveSink,
 )
 from src.services.verification_envelope.formal import (
     ArchiveOutcome,
@@ -92,16 +75,33 @@ from src.services.verification_envelope.formal import (
     VerificationGateService,
     Z3SMTAdapter,
 )
-from src.services.verification_envelope.contracts import (
-    ASTCanonicalForm,
-    ConsensusOutcome,
-    ConsensusResult,
-    DVEOverallVerdict,
-    DVEResult,
-    EquivalenceCheck,
-    MCDCCoverageReport,
-    VerificationResult,
-    VerificationVerdict,
+from src.services.verification_envelope.pipeline import (
+    METRIC_NAMESPACE,
+    CloudWatchMetricsPublisher,
+    ConstitutionalReviser,
+    DVEPipeline,
+    DVEPipelineInput,
+)
+from src.services.verification_envelope.sinks import (
+    CompositeArchiveSink,
+    DynamoDBAuditSink,
+    S3ProofArchiveSink,
+)
+from src.services.verification_envelope.traceability import (
+    Artefact,
+    ArtefactType,
+    InMemoryRequirementStore,
+    LifecycleContext,
+    LifecycleDataGenerator,
+    LifecycleDocument,
+    NeptuneRequirementStore,
+    Requirement,
+    RequirementType,
+    TraceabilityGap,
+    TraceabilityReport,
+    TraceabilityService,
+    TraceEdge,
+    TraceEdgeType,
 )
 
 __all__ = [

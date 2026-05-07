@@ -12,15 +12,8 @@ import hashlib
 from typing import Any, Optional
 
 from .config import PolyglotConfig, get_polyglot_config
-from .contracts import (
-    FederatedQueryPlan,
-    GraphQuery,
-    GraphQueryResult,
-    ShardConfig,
-)
-from .exceptions import (
-    ShardNotFoundError,
-)
+from .contracts import FederatedQueryPlan, GraphQuery, GraphQueryResult, ShardConfig
+from .exceptions import ShardNotFoundError
 
 
 class NeptuneShardRouter:

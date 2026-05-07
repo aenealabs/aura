@@ -15,10 +15,7 @@ import pytest
 
 from src.services.constraint_geometry.config import CGEConfig
 from src.services.constraint_geometry.constraint_graph import ConstraintGraphResolver
-from src.services.constraint_geometry.contracts import (
-    CoherenceAction,
-    ConstraintAxis,
-)
+from src.services.constraint_geometry.contracts import CoherenceAction, ConstraintAxis
 from src.services.constraint_geometry.embedding_cache import EmbeddingCache
 from src.services.constraint_geometry.engine import (
     ConstraintGeometryEngine,

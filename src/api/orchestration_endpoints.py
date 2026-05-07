@@ -32,6 +32,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user, verify_token
+from src.api.log_sanitizer import sanitize_log
 from src.services.orchestration_service import (
     JobPriority,
     JobStatus,
@@ -40,7 +41,6 @@ from src.services.orchestration_service import (
     OrchestrationService,
     create_orchestration_service,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

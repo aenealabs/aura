@@ -210,11 +210,7 @@ from .firmware_analyzer import (
 # =============================================================================
 # Metrics
 # =============================================================================
-from .metrics import (
-    AirGapMetricsPublisher,
-    get_airgap_metrics,
-    reset_airgap_metrics,
-)
+from .metrics import AirGapMetricsPublisher, get_airgap_metrics, reset_airgap_metrics
 
 __all__ = [
     # Legacy exports

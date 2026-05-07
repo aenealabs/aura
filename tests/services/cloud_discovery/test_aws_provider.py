@@ -24,10 +24,7 @@ from src.services.cloud_discovery.credential_proxy import (
     CredentialProxyService,
 )
 from src.services.cloud_discovery.exceptions import GovCloudUnavailableError
-from src.services.cloud_discovery.types import (
-    CloudProvider,
-    CloudResourceType,
-)
+from src.services.cloud_discovery.types import CloudProvider, CloudResourceType
 
 
 class TestAWSDiscoveryProvider:

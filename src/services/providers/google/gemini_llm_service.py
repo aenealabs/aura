@@ -47,8 +47,8 @@ GENAI_AVAILABLE = False
 
 try:
     import vertexai  # type: ignore[import-not-found]
-    from vertexai.preview.generative_models import (  # type: ignore[import-not-found]
-        GenerativeModel as VertexGenerativeModel,
+    from vertexai.preview.generative_models import (
+        GenerativeModel as VertexGenerativeModel,  # type: ignore[import-not-found]
     )
 
     VERTEXAI_AVAILABLE = True

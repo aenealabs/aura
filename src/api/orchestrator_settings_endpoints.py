@@ -34,6 +34,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user, require_admin
+from src.api.log_sanitizer import sanitize_log
 from src.services.api_rate_limiter import (
     RateLimitResult,
     admin_rate_limit,
@@ -49,7 +50,6 @@ from src.services.settings_persistence_service import (
     SettingsPersistenceService,
     create_settings_persistence_service,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

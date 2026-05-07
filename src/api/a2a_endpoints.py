@@ -34,8 +34,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src.config import get_integration_config
 from src.api.log_sanitizer import sanitize_log
+from src.config import get_integration_config
 
 logger = logging.getLogger(__name__)
 

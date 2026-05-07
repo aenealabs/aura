@@ -107,11 +107,7 @@ from .exceptions import (
 )
 
 # Services
-from .neptune_sharding import (
-    NeptuneShardRouter,
-    get_shard_router,
-    reset_shard_router,
-)
+from .neptune_sharding import NeptuneShardRouter, get_shard_router, reset_shard_router
 
 __all__ = [
     # Contracts

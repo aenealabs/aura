@@ -20,10 +20,7 @@ import pytest
 from src.services.constraint_geometry.coherence_calculator import CoherenceCalculator
 from src.services.constraint_geometry.config import CacheConfig, CGEConfig
 from src.services.constraint_geometry.constraint_graph import ConstraintGraphResolver
-from src.services.constraint_geometry.contracts import (
-    AgentOutput,
-    ProvenanceContext,
-)
+from src.services.constraint_geometry.contracts import AgentOutput, ProvenanceContext
 from src.services.constraint_geometry.embedding_cache import EmbeddingCache
 from src.services.constraint_geometry.engine import ConstraintGeometryEngine
 from src.services.constraint_geometry.policy_profile import PolicyProfileManager

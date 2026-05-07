@@ -342,9 +342,7 @@ class SemanticGuardrailsHook:
             )
 
         try:
-            from src.services.llm_prompt_sanitizer import (
-                SanitizationAction,
-            )
+            from src.services.llm_prompt_sanitizer import SanitizationAction
             from src.services.llm_prompt_sanitizer import (
                 ThreatLevel as SanitizerThreatLevel,
             )

@@ -25,10 +25,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from .credential_enumerators.registry import (
-    EnumeratorRegistry,
-    get_enumerator_registry,
-)
+from .credential_enumerators.registry import EnumeratorRegistry, get_enumerator_registry
 from .lifecycle_state_machine import (
     DecommissionTrigger,
     LifecycleState,

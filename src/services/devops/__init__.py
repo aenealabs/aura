@@ -44,9 +44,7 @@ from .devops_agent_orchestrator import (
     TriageAction,
     TriageResult,
 )
-from .incident_pattern_analyzer import (
-    AlertSeverity,
-)
+from .incident_pattern_analyzer import AlertSeverity
 from .incident_pattern_analyzer import Incident as AnalyzerIncident
 from .incident_pattern_analyzer import (
     IncidentCategory,

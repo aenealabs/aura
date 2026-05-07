@@ -33,10 +33,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from src.services.semantic_guardrails.contracts import (
-    RecommendedAction,
-    ThreatLevel,
-)
+from src.services.semantic_guardrails.contracts import RecommendedAction, ThreatLevel
 from src.services.semantic_guardrails.engine import (
     SemanticGuardrailsEngine,
     reset_guardrails_engine,
@@ -45,9 +42,7 @@ from src.services.semantic_guardrails.metrics import (
     GuardrailsMetricsPublisher,
     reset_metrics_publisher,
 )
-from src.services.semantic_guardrails.multi_turn_tracker import (
-    reset_multi_turn_tracker,
-)
+from src.services.semantic_guardrails.multi_turn_tracker import reset_multi_turn_tracker
 
 # Environment flag for real AWS E2E tests (CI/CD)
 # When False, tests use moto mocking (local development)

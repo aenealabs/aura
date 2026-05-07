@@ -28,12 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.agents.base_agent import (
-    AgentResult,
-    AgentTask,
-    BaseAgent,
-    MCPEnabledAgent,
-)
+from src.agents.base_agent import AgentResult, AgentTask, BaseAgent, MCPEnabledAgent
 from src.services.execution_checkpoint_service import (
     ActionType,
     CheckpointAction,

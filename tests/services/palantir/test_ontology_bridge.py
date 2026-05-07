@@ -8,14 +8,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.services.palantir.ontology_bridge import (
-    ObjectSyncState,
-    SyncStateStore,
-)
-from src.services.palantir.types import (
-    PalantirObjectType,
-    SyncStatus,
-)
+from src.services.palantir.ontology_bridge import ObjectSyncState, SyncStateStore
+from src.services.palantir.types import PalantirObjectType, SyncStatus
 
 # =============================================================================
 # SyncStateStore Tests

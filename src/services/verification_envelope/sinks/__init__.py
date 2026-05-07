@@ -15,9 +15,7 @@ All cloud sinks soft-import ``boto3``; air-gapped builds and CI without
 credentials degrade to an in-memory fallback automatically.
 """
 
-from src.services.verification_envelope.sinks.composite_sink import (
-    CompositeArchiveSink,
-)
+from src.services.verification_envelope.sinks.composite_sink import CompositeArchiveSink
 from src.services.verification_envelope.sinks.dynamodb_audit_sink import (
     DynamoDBAuditSink,
 )

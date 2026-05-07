@@ -19,9 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, get_current_user
+from src.api.log_sanitizer import sanitize_log
 from src.services.api_rate_limiter import RateLimitResult, standard_rate_limit
 from src.services.oauth_provider_service import OAuthProviderService, get_oauth_service
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

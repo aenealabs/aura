@@ -27,9 +27,7 @@ from datetime import datetime, timezone
 from typing import Awaitable, Callable, Sequence
 
 from src.services.verification_envelope.config import DVEConfig
-from src.services.verification_envelope.consensus.ast_normalizer import (
-    ASTNormalizer,
-)
+from src.services.verification_envelope.consensus.ast_normalizer import ASTNormalizer
 from src.services.verification_envelope.consensus.consensus_policy import (
     evaluate_convergence,
 )

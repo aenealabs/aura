@@ -7,9 +7,7 @@ from typing import Any
 
 import pytest
 
-from src.services.gpu_scheduler.exceptions import (
-    ScheduleNotFoundError,
-)
+from src.services.gpu_scheduler.exceptions import ScheduleNotFoundError
 from src.services.gpu_scheduler.models import (
     EmbeddingJobConfig,
     GPUJobType,

@@ -8,10 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.services.authorization import (
-    AuthorizationDecision,
-    ClearanceLevel,
-)
+from src.services.authorization import AuthorizationDecision, ClearanceLevel
 from src.services.authorization.abac_middleware import (
     ABACAccessDenied,
     ABACMiddleware,

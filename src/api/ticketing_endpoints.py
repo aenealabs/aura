@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.api.log_sanitizer import sanitize_log
 from src.services.api_rate_limiter import admin_rate_limit, standard_rate_limit
 from src.services.ticketing import (
     TicketCreate,
@@ -37,7 +38,6 @@ from src.services.ticketing import (
     TicketUpdate,
     get_ticketing_connector,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

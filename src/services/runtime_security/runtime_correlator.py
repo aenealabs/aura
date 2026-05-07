@@ -26,9 +26,7 @@ from .contracts import (
     RuntimeEvent,
     Severity,
 )
-from .exceptions import (
-    EventParsingError,
-)
+from .exceptions import EventParsingError
 from .metrics import get_runtime_security_metrics
 
 logger = logging.getLogger(__name__)

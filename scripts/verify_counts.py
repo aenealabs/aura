@@ -87,7 +87,10 @@ def find_claimed_count(path: Path, label_pattern: str) -> int | None:
 
 def main() -> int:
     if not ADR_DIR.is_dir() or not CFN_DIR.is_dir() or not BUILDSPEC_DIR.is_dir():
-        print("ERROR: expected directories not found; repo layout changed?", file=sys.stderr)
+        print(
+            "ERROR: expected directories not found; repo layout changed?",
+            file=sys.stderr,
+        )
         return 2
 
     adr_actual = count_adrs()
@@ -160,7 +163,9 @@ def main() -> int:
         claimed = c.claimed if c.claimed is not None else "<missing>"
         print(f"{c.source:<30} {c.name:<45} {str(claimed):>8} {c.actual:>8}")
     print()
-    print("Update the relevant docs (or the regex in this script if the format changed).")
+    print(
+        "Update the relevant docs (or the regex in this script if the format changed)."
+    )
     return 1
 
 

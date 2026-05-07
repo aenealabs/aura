@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from src.api.auth import User, require_role
+from src.api.log_sanitizer import sanitize_log
 from src.services.identity.audit_service import get_audit_service
 from src.services.identity.base_provider import IdentityProviderFactory
 from src.services.identity.idp_config_service import get_idp_config_service
@@ -26,7 +27,6 @@ from src.services.identity.models import (
     IdentityProviderConfig,
     IdPType,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

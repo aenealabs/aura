@@ -23,6 +23,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.api.log_sanitizer import sanitize_log
 from src.services.recurring_task_service import (
     JobType,
     RecurringTask,
@@ -31,7 +32,6 @@ from src.services.recurring_task_service import (
     get_recurring_task_service,
     validate_cron_expression,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

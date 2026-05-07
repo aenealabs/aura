@@ -20,10 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from src.services.constraint_geometry.contracts import (
-    ConstraintAxis,
-    ConstraintRule,
-)
+from src.services.constraint_geometry.contracts import ConstraintAxis, ConstraintRule
 from src.services.verification_envelope.contracts import VerificationResult
 
 

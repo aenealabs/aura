@@ -27,9 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from src.services.verification_envelope.traceability.contracts import (
-    TraceabilityReport,
-)
+from src.services.verification_envelope.traceability.contracts import TraceabilityReport
 from src.services.verification_envelope.traceability.traceability_service import (
     TraceabilityService,
 )

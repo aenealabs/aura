@@ -11,10 +11,7 @@ from src.services.explainability.confidence import (
     reset_confidence_quantifier,
 )
 from src.services.explainability.config import ConfidenceConfig
-from src.services.explainability.contracts import (
-    AlternativesReport,
-    ReasoningChain,
-)
+from src.services.explainability.contracts import AlternativesReport, ReasoningChain
 
 
 class TestConfidenceQuantifier:

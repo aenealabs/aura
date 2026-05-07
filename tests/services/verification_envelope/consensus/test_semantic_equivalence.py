@@ -6,9 +6,7 @@ from typing import Sequence
 
 import pytest
 
-from src.services.verification_envelope.consensus.ast_normalizer import (
-    ASTNormalizer,
-)
+from src.services.verification_envelope.consensus.ast_normalizer import ASTNormalizer
 from src.services.verification_envelope.consensus.semantic_equivalence import (
     SemanticEquivalenceChecker,
 )

@@ -29,9 +29,6 @@ from src.agents.ast_parser_agent import ASTParserAgent
 from src.api.agent_registry_endpoints import router as agent_registry_router
 from src.api.anomaly_triggers import AnomalyTriggers, set_triggers
 from src.api.approval_endpoints import router as approval_router
-from src.api.security_alerts_endpoints import router as security_alerts_router
-from src.api.security_incidents_endpoints import router as security_incidents_router
-from src.api.dev_mocks_endpoints import router as dev_mocks_router
 from src.api.auth import User, get_current_user, get_optional_user
 from src.api.billing_endpoints import router as billing_router
 from src.api.compliance_endpoints import router as compliance_router
@@ -39,6 +36,7 @@ from src.api.customer_health_endpoints import router as customer_health_router
 from src.api.dashboard_endpoints import router as dashboard_router
 from src.api.dashboard_endpoints import widget_router
 from src.api.dependencies import set_anomaly_detector, set_monitoring_integration
+from src.api.dev_mocks_endpoints import router as dev_mocks_router
 from src.api.disaster_recovery_endpoints import router as dr_router
 from src.api.documentation_endpoints import router as documentation_router
 from src.api.edition_endpoints import router as edition_router
@@ -55,21 +53,24 @@ from src.api.health_endpoints import HealthCheckEndpoints
 from src.api.health_metrics_endpoints import router as health_metrics_router
 from src.api.incidents import router as incidents_router
 from src.api.integration_endpoints import integration_router
+from src.api.log_sanitizer import sanitize_log
 from src.api.marketplace_endpoints import router as marketplace_router
 from src.api.model_router_endpoints import router as model_router_router
 from src.api.oauth_endpoints import router as oauth_router
 from src.api.onboarding_endpoints import router as onboarding_router
 from src.api.orchestration_endpoints import router as orchestration_router
+from src.api.orchestrator_settings_endpoints import hyperscale_router
 from src.api.orchestrator_settings_endpoints import (
-    hyperscale_router,
     router as orchestrator_settings_router,
 )
 from src.api.query_decomposition_endpoints import query_decomposition_router
 from src.api.recurring_task_endpoints import router as recurring_task_router
-from src.api.scheduling_endpoints import router as scheduling_router
-from src.api.scheduling_endpoints import queue_router as scheduling_queue_router
 from src.api.red_team_endpoints import red_team_router
 from src.api.repository_endpoints import router as repository_router
+from src.api.scheduling_endpoints import queue_router as scheduling_queue_router
+from src.api.scheduling_endpoints import router as scheduling_router
+from src.api.security_alerts_endpoints import router as security_alerts_router
+from src.api.security_incidents_endpoints import router as security_incidents_router
 from src.api.security_middleware import add_security_middleware
 from src.api.settings_endpoints import router as settings_router
 from src.api.sla_endpoints import router as sla_router
@@ -89,7 +90,6 @@ from src.services.database_connections import (
 from src.services.git_ingestion_service import GitIngestionService
 from src.services.observability_service import get_monitor, start_event_loop_monitor
 from src.services.realtime_monitoring_integration import RealTimeMonitoringIntegration
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

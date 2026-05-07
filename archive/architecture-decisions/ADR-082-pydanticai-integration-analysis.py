@@ -843,9 +843,7 @@ def build_document():
     # SECTION 3: MACY - SYSTEMS ARCHITECTURE
     # ═══════════════════════════════════════════════════════════════════════
     story.append(Paragraph("3. Systems Architecture Analysis", s["SectionH1"]))
-    story.append(
-        Paragraph("Analyst: Systems Architecture Review", s["DocSubtitle"])
-    )
+    story.append(Paragraph("Analyst: Systems Architecture Review", s["DocSubtitle"]))
 
     story.append(
         Paragraph(
@@ -1383,9 +1381,7 @@ def build_document():
     # SECTION 5: SUE - PRODUCT STRATEGY
     # ═══════════════════════════════════════════════════════════════════════
     story.append(Paragraph("5. Product Strategy Analysis", s["SectionH1"]))
-    story.append(
-        Paragraph("Analyst: Product Strategy Review", s["DocSubtitle"])
-    )
+    story.append(Paragraph("Analyst: Product Strategy Review", s["DocSubtitle"]))
 
     story.append(Paragraph("5.1 Build vs. Adopt: ROI Analysis", s["SectionH2"]))
     story.append(

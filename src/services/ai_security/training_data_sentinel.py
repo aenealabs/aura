@@ -31,10 +31,7 @@ from .contracts import (
     ThreatSeverity,
     TrainingSample,
 )
-from .exceptions import (
-    DatasetNotFoundError,
-    TooManySamplesError,
-)
+from .exceptions import DatasetNotFoundError, TooManySamplesError
 
 # PII detection patterns
 PII_PATTERNS = {

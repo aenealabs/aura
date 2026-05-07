@@ -155,8 +155,7 @@ async def run_pipeline_demo():
 
     # Summary
     print_header("PIPELINE EXECUTION SUMMARY")
-    print(
-        f"""
+    print(f"""
     Threat Reports Gathered:    {len(threat_reports)}
     Recommendations Generated:  {len(recommendations)}
     ADR Triggers Identified:    {len(trigger_events)}
@@ -167,8 +166,7 @@ async def run_pipeline_demo():
 
     Status: Pipeline execution complete
     Note: ADRs generated with 'Proposed' status pending review
-    """
-    )
+    """)
 
     return {
         "threat_reports": len(threat_reports),

@@ -36,6 +36,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
+from src.services.verification_envelope.config import DVEConfig
+from src.services.verification_envelope.consensus.consensus_service import (
+    ConsensusService,
+    GeneratorFn,
+)
 from src.services.verification_envelope.contracts import (
     ConsensusOutcome,
     ConsensusResult,
@@ -44,11 +49,6 @@ from src.services.verification_envelope.contracts import (
     MCDCCoverageReport,
     VerificationResult,
     VerificationVerdict,
-)
-from src.services.verification_envelope.config import DVEConfig
-from src.services.verification_envelope.consensus.consensus_service import (
-    ConsensusService,
-    GeneratorFn,
 )
 from src.services.verification_envelope.coverage.coverage_gate import (
     CoverageGateInput,

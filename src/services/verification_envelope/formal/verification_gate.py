@@ -20,10 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-from src.services.constraint_geometry.contracts import (
-    ConstraintAxis,
-    ConstraintRule,
-)
+from src.services.constraint_geometry.contracts import ConstraintAxis, ConstraintRule
 from src.services.verification_envelope.contracts import (
     VerificationResult,
     VerificationVerdict,
@@ -40,9 +37,7 @@ from src.services.verification_envelope.formal.verification_auditor import (
     AuditRecord,
     VerificationAuditor,
 )
-from src.services.verification_envelope.formal.z3_smt_adapter import (
-    Z3SMTAdapter,
-)
+from src.services.verification_envelope.formal.z3_smt_adapter import Z3SMTAdapter
 
 logger = logging.getLogger(__name__)
 

@@ -10,10 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.services.capability_governance import (
-    CapabilityCheckResult,
-    CapabilityDecision,
-)
+from src.services.capability_governance import CapabilityCheckResult, CapabilityDecision
 from src.services.capability_governance.metrics import (
     CapabilityMetricsPublisher,
     MetricName,

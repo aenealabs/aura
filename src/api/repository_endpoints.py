@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.api.auth import User, get_current_user
 from src.api.dev_mock_fallback import should_serve_mock
+from src.api.log_sanitizer import sanitize_log
 from src.services.api_rate_limiter import (
     RateLimitResult,
     admin_rate_limit,
@@ -34,7 +35,6 @@ from src.services.repository_onboard_service import (
     RepositoryOnboardService,
     get_repository_service,
 )
-from src.api.log_sanitizer import sanitize_log
 
 logger = logging.getLogger(__name__)
 

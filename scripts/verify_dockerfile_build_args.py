@@ -116,7 +116,9 @@ def main() -> int:
         rel = spec.relative_to(REPO_ROOT)
         print(f"{rel}:{line}: {reason}")
     print()
-    print("Every CI/CD container build MUST pass --build-arg *_BASE_IMAGE=<private-ecr-uri>")
+    print(
+        "Every CI/CD container build MUST pass --build-arg *_BASE_IMAGE=<private-ecr-uri>"
+    )
     print("(see CLAUDE.md > Container Security).")
     return 1
 

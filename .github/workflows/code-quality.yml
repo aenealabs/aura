@@ -78,6 +78,29 @@ jobs:
           pip install 'pydantic[email]'  # Required for email validation in tests
 
       # --- LINTING (always runs) ---
+      # Two layers:
+      #   1. Direct black/flake8 below — fast bare-config sanity gate.
+      #   2. pre-commit run scoped to the diff — same hooks devs run
+      #      locally (.pre-commit-config.yaml). Scoped to changed files
+      #      so pre-existing repo-wide violations don't block PRs while
+      #      we adopt the gate; new issues from this push/PR still fail.
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      - name: Run pre-commit on changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # PR events: scope to PR base..head. Push events: last commit only.
+          if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ] && [ "$BASE_SHA" != "$HEAD_SHA" ]; then
+            echo "Running pre-commit against PR diff $BASE_SHA..$HEAD_SHA"
+            pre-commit run --from-ref "$BASE_SHA" --to-ref "$HEAD_SHA" --show-diff-on-failure
+          else
+            echo "Running pre-commit against last commit (HEAD~1..HEAD)"
+            pre-commit run --from-ref HEAD~1 --to-ref HEAD --show-diff-on-failure
+          fi
+
       - name: Run Black (formatting check)
         id: black-check
         run: |

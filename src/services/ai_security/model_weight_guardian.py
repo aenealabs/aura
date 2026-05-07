@@ -387,7 +387,7 @@ class ModelWeightGuardian:
         for access in recent_accesses:
             by_accessor[access.accessor_identity].append(access)
 
-        for accessor, accesses in by_accessor.items():
+        for _accessor, accesses in by_accessor.items():
             # Detect potential exfiltration
             export_count = sum(
                 1
@@ -509,7 +509,7 @@ class ModelWeightGuardian:
         )
 
         # Calculate statistics
-        unique_accessors = set(a.accessor_identity for a in history)
+        unique_accessors = {a.accessor_identity for a in history}
         blocked_accesses = sum(1 for a in history if not a.approved)
 
         # Count by access type

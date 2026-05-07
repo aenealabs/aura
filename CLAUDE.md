@@ -50,15 +50,19 @@ This file provides guidance to Claude Code when working with code in the **Proje
 **Enforcement:** A pre-commit hook automatically strips AI attribution from commit messages:
 
 ```bash
-# Install the hook (required once per clone)
-pre-commit install --hook-type commit-msg
+# Install both hook types (required once per clone)
+pre-commit install                          # pre-commit + pre-push (lint, format, secrets)
+pre-commit install --hook-type commit-msg   # commit-msg (AI attribution stripper)
 
-# The hook runs automatically on every commit
+# The hooks run automatically on every commit / push.
 # Manual test:
 python -m scripts.security_hooks.commit_msg_hook <commit-msg-file>
+pre-commit run --all-files                  # validate the full repo on demand
 ```
 
 See `scripts/security_hooks/commit_msg_hook.py` for implementation details.
+
+**CI also runs pre-commit scoped to the diff** (see `.github/workflows/code-quality.yml`) so violations are caught even if a developer skipped local install.
 
 ---
 

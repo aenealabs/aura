@@ -46,10 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from src.services.constraint_geometry.contracts import (
-    ConstraintAxis,
-    ConstraintRule,
-)
+from src.services.constraint_geometry.contracts import ConstraintAxis, ConstraintRule
 from src.services.verification_envelope.formal.formal_adapter import (
     FormalVerificationRequest,
 )
@@ -183,7 +180,7 @@ class ConstraintTranslator:
             smt_assertions=smt,
             axes_in_scope=axes,
             axis_holds=axis_holds,
-            notes=tuple([*c1_notes, *c3_notes]),
+            notes=(*c1_notes, *c3_notes),
         )
 
     # ---------------------------------------------------------------- C1

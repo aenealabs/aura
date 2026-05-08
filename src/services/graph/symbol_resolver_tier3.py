@@ -44,14 +44,29 @@ import hashlib
 import json
 import logging
 import re
+import uuid
 from dataclasses import dataclass, field
 from typing import Iterable, Protocol
 
 from src.agents.ast_parser_agent import CodeEntity, CodeRelationship
 from src.services.graph.edge_labels import EdgeLabel
 from src.services.graph.fqn import compute_fqn
+from src.services.graph.symbol_resolver_queue import (
+    ResolutionRequest,
+    compute_context_hash,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class ResolutionPublisher(Protocol):
+    """Sink for ResolutionRequest payloads in queue mode.
+
+    Production wires this to an SQS-backed implementation; tests
+    inject a fake that records published requests.
+    """
+
+    def publish(self, request: ResolutionRequest) -> None: ...
 
 
 # Discrete verification status replacing the float-confidence model.
@@ -99,6 +114,11 @@ class Tier3Stats:
     cache_hits: int = 0
     budget_exhausted: int = 0
     still_unresolved: int = 0
+    # Phase 4c.2: in queue mode, the resolver publishes a
+    # ResolutionRequest per unresolved edge and emits a placeholder
+    # ``unverified`` edge while the worker pool resolves async.
+    published_to_queue: int = 0
+    publish_failed: int = 0
 
 
 class _BedrockGenerate(Protocol):
@@ -158,17 +178,38 @@ class Tier3LLMResolver:
         operation: str = "graph_symbol_resolution",
         max_candidates: int = _MAX_CANDIDATES,
         max_tokens: int = 256,
+        publisher: ResolutionPublisher | None = None,
+        tenant_id: str = "default",
     ):
+        """
+        Args:
+          bedrock_generate: Inline LLM client. When set, the resolver
+            calls Bedrock directly (Phase 4c.1 behaviour).
+          publisher: Queue producer for distributed mode (Phase
+            4c.2). When set, the resolver writes ResolutionRequest
+            records to the queue and emits placeholder ``unverified``
+            edges that the worker pool resolves asynchronously. If
+            both ``publisher`` and ``bedrock_generate`` are set, the
+            publisher wins and the inline client is unused.
+          tenant_id: Per-tenant identifier carried in queue payloads
+            for the cost-ceiling tracker (Phase 4c.2.4).
+        """
         self.bedrock_generate = bedrock_generate
         self.secrets_scanner = secrets_scanner
         self.call_budget = call_budget
         self.operation = operation
         self.max_candidates = max_candidates
         self.max_tokens = max_tokens
+        self.publisher = publisher
+        self.tenant_id = tenant_id
 
     @property
     def llm_available(self) -> bool:
-        return self.bedrock_generate is not None
+        return self.bedrock_generate is not None or self.publisher is not None
+
+    @property
+    def queue_mode(self) -> bool:
+        return self.publisher is not None
 
     async def resolve(
         self,
@@ -216,6 +257,19 @@ class Tier3LLMResolver:
 
             snippet = self._extract_snippet(rel, source_reader)
             if snippet and self._secret_prescan_blocks(snippet, rel.file_path, stats):
+                out.append(self._with_status(rel, UNVERIFIED))
+                continue
+
+            # Phase 4c.2: queue mode short-circuits before any inline
+            # LLM invocation. Publish a ResolutionRequest and emit a
+            # placeholder ``unverified`` edge that the worker pool
+            # resolves asynchronously. The producer keeps the
+            # ingestion job's hot path deterministic; Bedrock latency
+            # never blocks ingest.
+            if self.queue_mode:
+                self._publish_resolution_request(
+                    rel, candidates, snippet, repo_id, stats
+                )
                 out.append(self._with_status(rel, UNVERIFIED))
                 continue
 
@@ -344,6 +398,44 @@ class Tier3LLMResolver:
             stats.secret_prescan_blocked += 1
             return True
         return False
+
+    # -- Queue dispatch (Phase 4c.2) ------------------------------------
+
+    def _publish_resolution_request(
+        self,
+        rel: CodeRelationship,
+        candidates: list[CodeEntity],
+        snippet: str | None,
+        repo_id: str,
+        stats: Tier3Stats,
+    ) -> None:
+        """Send a ResolutionRequest to the worker queue.
+
+        The producer never raises out of the resolve loop: a publish
+        failure is logged and counted, and the placeholder
+        ``unverified`` edge is still emitted so ingestion progresses.
+        Worker retries / DLQ handling cover the failure path.
+        """
+        snippet_hash = (
+            hashlib.sha256(snippet.encode("utf-8")).hexdigest() if snippet else None
+        )
+        request = ResolutionRequest.build(
+            request_id=f"{repo_id}:{uuid.uuid4().hex[:12]}",
+            tenant_id=self.tenant_id,
+            repo_id=repo_id,
+            relationship=rel,
+            candidates=candidates,
+            snippet_hash=snippet_hash,
+        )
+        try:
+            assert self.publisher is not None  # narrowed by queue_mode check
+            self.publisher.publish(request)
+            stats.published_to_queue += 1
+        except Exception as e:
+            logger.warning(
+                f"Failed to publish ResolutionRequest " f"{request.request_id}: {e}"
+            )
+            stats.publish_failed += 1
 
     # -- LLM invocation -------------------------------------------------
 

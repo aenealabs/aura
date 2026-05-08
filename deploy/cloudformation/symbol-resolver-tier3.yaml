@@ -1,0 +1,330 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.20 - Symbol Resolver Tier 3 (Async LLM Symbol Resolution)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+  ClusterName:
+    Type: String
+    Description: ECS cluster the worker service joins.
+  WorkerImageUri:
+    Type: String
+    Description: Private ECR URI for the symbol-resolver worker image.
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets for the Fargate task ENIs.
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Description: Security groups granting Bedrock + Neptune egress.
+  DesiredCount:
+    Type: Number
+    Default: 2
+    MinValue: 0
+    MaxValue: 50
+  MinCapacity:
+    Type: Number
+    Default: 0
+  MaxCapacity:
+    Type: Number
+    Default: 50
+  TaskCpu:
+    Type: String
+    Default: "1024"
+  TaskMemory:
+    Type: String
+    Default: "2048"
+  BedrockRegion:
+    Type: String
+    Default: us-east-1
+
+Resources:
+  # ---------------------------------------------------------------
+  # SQS resolution queue + DLQ
+  # ---------------------------------------------------------------
+  ResolverDlq:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "aura-symbol-resolver-dlq-${Environment}"
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+
+  ResolverQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "aura-symbol-resolver-${Environment}"
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400  # 24 hours
+      KmsMasterKeyId: alias/aws/sqs
+      ReceiveMessageWaitTimeSeconds: 20  # Long polling
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ResolverDlq.Arn
+        maxReceiveCount: 3
+
+  # ---------------------------------------------------------------
+  # DynamoDB tables: content-addressed cache + per-tenant cost ceiling
+  # ---------------------------------------------------------------
+  ResolutionCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "aura-symbol-resolution-cache-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: context_hash
+          AttributeType: S
+        - AttributeName: closure_fingerprint
+          AttributeType: S
+      KeySchema:
+        - AttributeName: context_hash
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: ClosureFingerprintIndex
+          KeySchema:
+            - AttributeName: closure_fingerprint
+              KeyType: HASH
+          Projection:
+            ProjectionType: KEYS_ONLY
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  ResolutionCostTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "aura-symbol-resolution-cost-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  # ---------------------------------------------------------------
+  # IAM: task role for the worker (least privilege)
+  # ---------------------------------------------------------------
+  WorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "aura-symbol-resolver-task-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SqsConsume
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt ResolverQueue.Arn
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt ResolverDlq.Arn
+        - PolicyName: BedrockInvoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}::foundation-model/*"
+        - PolicyName: DynamoDbCache
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:DeleteItem
+                Resource:
+                  - !GetAtt ResolutionCacheTable.Arn
+                  - !Sub "${ResolutionCacheTable.Arn}/index/*"
+                  - !GetAtt ResolutionCostTable.Arn
+        - PolicyName: NeptuneWriteback
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: neptune-db:connect
+                Resource: !Sub "arn:${AWS::Partition}:neptune-db:${AWS::Region}:${AWS::AccountId}:*/database"
+
+  WorkerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "aura-symbol-resolver-exec-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ---------------------------------------------------------------
+  # ECS task definition + service
+  # ---------------------------------------------------------------
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aura/symbol-resolver/${Environment}"
+      RetentionInDays: 30
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "aura-symbol-resolver-${Environment}"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt WorkerExecutionRole.Arn
+      TaskRoleArn: !GetAtt WorkerTaskRole.Arn
+      ContainerDefinitions:
+        - Name: resolver-worker
+          Image: !Ref WorkerImageUri
+          Essential: true
+          Environment:
+            - Name: AURA_RESOLVER_QUEUE_URL
+              Value: !Ref ResolverQueue
+            - Name: AURA_RESOLVER_DLQ_URL
+              Value: !Ref ResolverDlq
+            - Name: AURA_RESOLVER_REGION
+              Value: !Ref BedrockRegion
+            - Name: AURA_RESOLVER_CACHE_TABLE
+              Value: !Ref ResolutionCacheTable
+            - Name: AURA_RESOLVER_COST_TABLE
+              Value: !Ref ResolutionCostTable
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: worker
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "aura-symbol-resolver-${Environment}"
+      Cluster: !Ref ClusterName
+      LaunchType: FARGATE
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref WorkerTaskDefinition
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 50
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Ref SubnetIds
+          SecurityGroups: !Ref SecurityGroupIds
+      EnableExecuteCommand: true
+
+  # ---------------------------------------------------------------
+  # Autoscaling on queue depth
+  # ---------------------------------------------------------------
+  AutoScaleTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: !Ref MaxCapacity
+      MinCapacity: !Ref MinCapacity
+      ResourceId: !Sub "service/${ClusterName}/${WorkerService.Name}"
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      RoleARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"
+
+  AutoScalePolicyQueueDepth:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "${WorkerService.Name}-queue-depth"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref AutoScaleTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 25  # Messages-per-task target
+        CustomizedMetricSpecification:
+          MetricName: ApproximateNumberOfMessagesVisible
+          Namespace: AWS/SQS
+          Dimensions:
+            - Name: QueueName
+              Value: !GetAtt ResolverQueue.QueueName
+          Statistic: Average
+
+  # ---------------------------------------------------------------
+  # CloudWatch alarms
+  # ---------------------------------------------------------------
+  AlarmDlqDepth:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "aura-symbol-resolver-dlq-${Environment}"
+      AlarmDescription: DLQ accumulating poison or unparseable messages
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ResolverDlq.QueueName
+      TreatMissingData: notBreaching
+
+  AlarmQueueAge:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "aura-symbol-resolver-queue-age-${Environment}"
+      AlarmDescription: Resolution requests aging beyond SLO
+      MetricName: ApproximateAgeOfOldestMessage
+      Namespace: AWS/SQS
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 600
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ResolverQueue.QueueName
+      TreatMissingData: notBreaching
+
+Outputs:
+  QueueUrl:
+    Value: !Ref ResolverQueue
+    Export:
+      Name: !Sub "${AWS::StackName}-QueueUrl"
+  DlqUrl:
+    Value: !Ref ResolverDlq
+    Export:
+      Name: !Sub "${AWS::StackName}-DlqUrl"
+  CacheTableName:
+    Value: !Ref ResolutionCacheTable
+    Export:
+      Name: !Sub "${AWS::StackName}-CacheTable"
+  CostTableName:
+    Value: !Ref ResolutionCostTable
+    Export:
+      Name: !Sub "${AWS::StackName}-CostTable"
+  ServiceName:
+    Value: !GetAtt WorkerService.Name
+    Export:
+      Name: !Sub "${AWS::StackName}-ServiceName"

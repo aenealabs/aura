@@ -121,9 +121,69 @@ The register is the source of truth for tracked deps. Don't:
 
 The audit's value is the diff against the register. If the register is wrong or stale, the audit's signal is wrong too.
 
+## Publishing a Security Advisory (the outbound bridge)
+
+The audit detects. `SECURITY.md` describes how customers consume our advisories. This section is the connecting playbook: when a triaged finding warrants a customer-visible advisory, how do we publish it.
+
+See the worked example: [`docs/security/SAMPLE_ADVISORY_TJ_ACTIONS.md`](../security/SAMPLE_ADVISORY_TJ_ACTIONS.md) (a backfilled GHSA for the `tj-actions/changed-files` swap, formatted exactly as a real advisory would read).
+
+### When to publish
+
+Publish a GHSA when **all** of the following are true:
+
+1. The vulnerability affects a **shipped** Aura release (anything tagged on `main`). Findings against `main` HEAD that haven't shipped yet do not need an advisory; the patch lands before the release notes do.
+2. The vulnerability is **reachable** in Aura's actual call paths. Most upstream CVEs are not. The audit's triage step (the runbook decision tree above) determines reachability.
+3. The vulnerability is **actionable** by self-hosted operators. If the only mitigation is "wait for the next release we already shipped," there's no operator action required and the regular release notes are enough.
+
+When in doubt: publish. A purely-informational advisory ("this CVE was reported upstream; not exploitable in Aura") still lets compliance teams at customer organizations close the loop with a citable reference.
+
+### Who decides severity
+
+Severity is the audit owner's call, with these defaults:
+
+- **Upstream CVSS** is the starting point. Adjust *down* (not up) if Aura's usage of the affected code path is bounded (e.g., upstream RCE that we only exercise behind authenticated admin paths).
+- **Critical / High** require a second reviewer (typically the security lead) before publishing.
+- **Medium / Low** can be published by the audit owner unilaterally.
+
+The qualitative severity must match the *Severity Classification* table in `SECURITY.md` so customers see a consistent vocabulary across inbound and outbound disclosures.
+
+### Drafting and publishing
+
+1. **Draft** in the GitHub Security Advisories UI: `https://github.com/aenealabs/aura/security/advisories/new`. Use the worked example linked above as the formatting template.
+2. **Cross-link** the patched release in the advisory body. The patched release is whatever Release Please cuts after the `security:` commit lands.
+3. **Tag the commit** that fixes the issue with a `security:` prefix so Release Please surfaces it in the **Security** section of `CHANGELOG.md`. Include the GHSA URL in the commit body.
+4. **Approval gate**:
+   - Critical / High: second reviewer signs off in the draft GHSA before clicking Publish.
+   - Medium / Low: audit owner publishes directly.
+5. **Request a CVE** during the GHSA flow if the vulnerability is in code we author and upstream hasn't already issued one. For third-party CVEs, just reference the upstream CVE ID; don't request a duplicate.
+6. **Publish**. The GHSA hits the Atom feed and Dependabot scanners automatically.
+
+### What goes in the advisory
+
+The required fields, with our conventions:
+
+| Field | Convention |
+|---|---|
+| Title | `<component> -- <one-line summary>` (e.g., `tj-actions/changed-files -- supply-chain compromise (CVE-2025-30066)`) |
+| Affected versions | Aura release range (e.g., `<= v1.7.0`). Use semver ranges when the audit can determine a clean cutoff; otherwise list specific versions. |
+| Patched versions | The first Aura release containing the fix. |
+| CVE | Upstream CVE if one exists. Don't coin our own. |
+| Severity / CVSS | Per *Who decides severity* above. |
+| Description | What the upstream vulnerability is, how Aura uses (or doesn't use) the affected component, and the resulting impact on a self-hosted Aura operator. |
+| Mitigation | Update path; any workaround for operators who cannot update immediately. |
+| Acknowledgements | Upstream researcher / reporter (if known). |
+
+### Post-publication
+
+- Add a short note to the audit register entry in `docs/security/DEPENDENCY_RISK_REGISTER.md` (in the `Replacement Decisions Made` table) if this advisory was tied to a Replace-Now action.
+- The recurring audit's next run will see the patched dep in `requirements*.txt` / `package-lock.json` and the previous CVE will drop from the report -- this is the normal closure signal.
+
 ## References
 
 - Register: `docs/security/DEPENDENCY_RISK_REGISTER.md`
 - Script: `scripts/security/dep_risk_audit.py`
 - Workflow: `.github/workflows/dependency-risk-audit.yml`
-- Tracking issue: [#138](https://github.com/aenealabs/aura/issues/138)
+- Disclosure policy (inbound + advisory consumer guidance): [`SECURITY.md`](../../SECURITY.md)
+- Worked-example advisory (dry-run for `tj-actions/changed-files`): [`docs/security/SAMPLE_ADVISORY_TJ_ACTIONS.md`](../security/SAMPLE_ADVISORY_TJ_ACTIONS.md)
+- Tracking issue (audit feed): [#138](https://github.com/aenealabs/aura/issues/138)
+- Tracking issue (advisory pipeline): [#141](https://github.com/aenealabs/aura/issues/141)

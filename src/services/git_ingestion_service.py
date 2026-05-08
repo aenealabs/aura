@@ -29,6 +29,10 @@ from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
 from src.services.graph.fqn import FQNBuilder
 from src.services.graph.symbol_resolver import Tier1SymbolResolver
 from src.services.graph.symbol_resolver_tier2 import Tier2SymbolResolver
+from src.services.graph.symbol_resolver_tier3 import (
+    FilesystemSourceReader,
+    Tier3LLMResolver,
+)
 from src.services.observability_service import ObservabilityService, get_monitor
 from src.services.secure_command_executor import (
     SecureCommandExecutor,
@@ -155,6 +159,8 @@ class GitIngestionService:
         max_concurrent_index: int | None = None,
         opensearch_bulk_size: int | None = None,
         max_content_size_bytes: int | None = None,
+        bedrock_service=None,
+        secrets_scanner=None,
     ):
         """
         Initialize Git Ingestion Service.
@@ -183,6 +189,11 @@ class GitIngestionService:
         self.ast_parser = ast_parser
         self.persistence = persistence_service
         self.monitor = observability_service or get_monitor()
+        # ADR-090 Phase 4c.1: Tier 3 LLM resolver dependencies. Both
+        # are optional; absence makes Tier 3 a no-op while the
+        # deterministic tiers still run.
+        self.bedrock_service = bedrock_service
+        self.secrets_scanner = secrets_scanner
 
         # Clone directory management
         self.clone_dir = (
@@ -1127,12 +1138,13 @@ class GitIngestionService:
             # targets, (b) Pyright LSP type inference when the
             # binary is on PATH. The composer is purely in-process;
             # the Pyright stage is a no-op if the binary is missing.
+            repo_root = self._repo_root_for_url(repository_url)
             tier2 = Tier2SymbolResolver()
             relationships, t2_stats = tier2.resolve(
                 entities,
                 relationships,
                 repo_id=repo_id,
-                repo_root=self._repo_root_for_url(repository_url),
+                repo_root=repo_root,
             )
             logger.info(
                 f"Tier 2 resolution: "
@@ -1143,6 +1155,43 @@ class GitIngestionService:
                 f"pyright_unavailable={t2_stats.pyright_unavailable}, "
                 f"still_unresolved={t2_stats.still_unresolved}"
             )
+
+            # Phase 4c.1: Tier 3 LLM disambiguation runs in-process
+            # for the residue still-unresolved by deterministic tiers.
+            # Soft dependency on Bedrock; absence leaves edges as
+            # raw-name CALLS and increments llm_unavailable so
+            # operators see the absorption ceiling. Phase 4c.2 will
+            # move this stage onto ECS Fargate workers behind SQS.
+            if self.bedrock_service is not None:
+                bedrock_generate = getattr(self.bedrock_service, "generate", None)
+                if bedrock_generate is not None:
+                    tier3 = Tier3LLMResolver(
+                        bedrock_generate=bedrock_generate,
+                        secrets_scanner=self.secrets_scanner,
+                    )
+                    source_reader = (
+                        FilesystemSourceReader(repo_root)
+                        if repo_root is not None
+                        else None
+                    )
+                    relationships, t3_stats = await tier3.resolve(
+                        entities,
+                        relationships,
+                        repo_id=repo_id,
+                        source_reader=source_reader,
+                    )
+                    logger.info(
+                        f"Tier 3 resolution: "
+                        f"llm_invoked={t3_stats.llm_invoked}, "
+                        f"verified={t3_stats.llm_resolved_verified}, "
+                        f"plausible={t3_stats.llm_resolved_plausible}, "
+                        f"none={t3_stats.llm_returned_none}, "
+                        f"invalid={t3_stats.llm_invalid_response}, "
+                        f"secret_blocked={t3_stats.secret_prescan_blocked}, "
+                        f"cache_hits={t3_stats.cache_hits}, "
+                        f"budget_exhausted={t3_stats.budget_exhausted}, "
+                        f"still_unresolved={t3_stats.still_unresolved}"
+                    )
 
         # Upsert path: clear stale outgoing edges before re-adding entities.
         # Vertices and incoming edges are preserved; only outgoing edges

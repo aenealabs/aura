@@ -500,7 +500,7 @@ STACK_DEFINITIONS = [
     },
     # -----------------------------------------------------------------------
     # Phase 7: Layer 4 - Application Services (10 stacks, parallel)
-    # (Keeping: cognito, marketplace, diagram-service-*, idp-infrastructure,
+    # (Keeping: cognito, diagram-service-*, idp-infrastructure,
     #  customer-onboarding)
     # -----------------------------------------------------------------------
     {
@@ -665,7 +665,6 @@ PROTECTED_STACKS = frozenset(
         f"{PROJECT_NAME}-memory-evolution-dynamodb-{ENVIRONMENT}",
         # Application (identity & config)
         f"{PROJECT_NAME}-cognito-{ENVIRONMENT}",
-        f"{PROJECT_NAME}-marketplace-{ENVIRONMENT}",
         f"{PROJECT_NAME}-iam-diagram-service-{ENVIRONMENT}",
         f"{PROJECT_NAME}-diagram-service-ssm-{ENVIRONMENT}",
         f"{PROJECT_NAME}-idp-infrastructure-{ENVIRONMENT}",

@@ -47,8 +47,8 @@ jobs:
           chmod +x scripts/cfn-lint-wrapper.sh
 
           # Run on all templates and capture output
-          # Exclude: archive/ (old templates), marketplace.yaml (uses !Sub as dict key which cfn-lint can't parse)
-          TEMPLATES=$(find deploy/cloudformation -name "*.yaml" -not -path "*/archive/*" -not -name "marketplace.yaml" | sort)
+          # Exclude: archive/ (old templates including the retired marketplace.yaml -- see #136)
+          TEMPLATES=$(find deploy/cloudformation -name "*.yaml" -not -path "*/archive/*" | sort)
           TEMPLATE_COUNT=$(echo "$TEMPLATES" | wc -l)
           echo "Found $TEMPLATE_COUNT templates to validate"
 

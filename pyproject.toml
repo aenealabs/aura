@@ -248,6 +248,11 @@ addopts = [
     "--cov=src",
     "--cov-report=term-missing",
     "--cov-report=html",
+    # Performance benchmarks (#117) run on a dedicated workflow with
+    # a pinned runner. Excluding them from default collection keeps
+    # the main PR pipeline fast and prevents CI-variance noise from
+    # flapping perf assertions.
+    "--ignore=tests/performance",
 ]
 markers = [
     # Test type markers (REQUIRED on test modules for clarity)

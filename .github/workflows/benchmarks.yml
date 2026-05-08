@@ -1,0 +1,73 @@
+name: Performance Benchmarks
+
+# ADR-090 ingestion performance gates (#117).
+#
+# Runs the tests/performance/ suite on a pinned runner where CI variance
+# is bounded. PR-blocking on regression. Separate from code-quality.yml
+# so contributors do not pay the benchmark cost on every PR.
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    # Only trigger when something perf-relevant changes. Documentation-
+    # only PRs do not need to wait on benchmarks.
+    paths:
+      - 'src/agents/ast_parser_agent.py'
+      - 'src/services/git_ingestion_service.py'
+      - 'src/services/graph/**'
+      - 'src/services/neptune_graph_service.py'
+      - 'tests/performance/**'
+      - 'pyproject.toml'
+      - '.github/workflows/benchmarks.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ingestion-benchmarks:
+    name: ADR-090 Ingestion Benchmarks
+    # Pinned runner for stable CPU + memory characteristics. Per #117:
+    # the benchmark workflow runs on ubuntu-latest-large because the
+    # default ubuntu-latest runner has too much variance for sub-20%
+    # regression detection.
+    runs-on: ubuntu-latest-large
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt || true
+          pip install pytest pytest-asyncio pytest-benchmark
+
+      - name: Run ingestion benchmarks
+        run: |
+          # --no-cov: coverage instrumentation perturbs timings.
+          # -m performance: gate the suite on the marker.
+          # tests/performance/: explicit path because pyproject.toml
+          # addopts excludes this directory from default collection.
+          pytest tests/performance/ -m performance --no-cov -v
+
+      - name: Surface baselines on regression
+        if: failure()
+        run: |
+          echo '::warning::Ingestion benchmark regressed beyond the configured threshold.'
+          echo '::warning::See tests/performance/README.md for the rebaseline procedure.'
+          echo ''
+          echo 'Current baselines:'
+          cat tests/performance/baselines.json

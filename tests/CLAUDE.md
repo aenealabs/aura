@@ -25,6 +25,19 @@ pytest -n auto                         # Parallel execution
 pytest -m integration                  # Integration tests only
 ```
 
+`tests/performance/` is excluded from default collection via
+`--ignore=tests/performance` in `pyproject.toml` `addopts`. It runs on
+the dedicated `.github/workflows/benchmarks.yml` workflow on a pinned
+runner. Local invocation:
+
+```bash
+pytest tests/performance/ -m performance --no-cov -v
+```
+
+To update perf baselines after a deliberate perf-relevant change, see
+`tests/performance/README.md` -- the rebaseline procedure requires
+three runs on the target environment plus explicit reviewer sign-off.
+
 ---
 
 ## Test File Conventions

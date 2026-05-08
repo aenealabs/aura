@@ -83,18 +83,46 @@ Merged ahead of this ADR:
 
 ### Phase 1 — Entity ID Migration (PRECONDITION)
 
-**This must ship before any new edge writers.** Replace
-`{file_path}::{name}` with SCIP-style fully qualified names of the
-form `{scheme} {package} {version} {symbol_descriptor}`.
-`symbol_descriptor` encodes namespace, class, method, and overload.
-`file_path` and `line_number` become mutable properties, not identity.
-Renames update properties; edges remain valid.
+**This must ship before any new edge writers.** The current
+`{file_path}::{name}` scheme collides on overloads, nested classes, and
+cross-repo file-path overlaps. Replace it with SCIP-inspired fully
+qualified names. We do not target SCIP wire compatibility; we adopt its
+properties (stability across non-rename edits, uniqueness under
+overloading, location-independent identity, repo-scoped namespace).
 
-Includes a one-shot idempotent migration script
-(`scripts/migrate_entity_ids_adr090.py`) that derives FQN IDs from the
-existing graph using Python `ast` reconstruction and writes new edges
-referencing them. Old IDs retained as a `legacy_entity_id` property
-during the migration window for audit and rollback.
+**Aura FQN format:**
+
+```
+{scheme}:{repo_id}:{module_path}:{symbol_path}#{kind}[@{disambiguator}]
+```
+
+| Component | Source | Example |
+|---|---|---|
+| `scheme` | language | `python`, `typescript`, `javascript` |
+| `repo_id` | already in metadata; **repo-scoped (no cross-repo unification)** | `owner/repo` |
+| `module_path` | derived from file path, stripping `src/` / `lib/` / `app/` and the file extension | `myapp.services.auth` |
+| `symbol_path` | dotted chain of all enclosing scopes | `User.verify_token` |
+| `kind` | maps to existing `type` property | `class`, `function`, `method`, `variable`, `import` |
+| `disambiguator` | **integer suffix in declaration order** (`@0`, `@1`, ...) for overloads, decorator-produced duplicates, dynamic class generation | `@1` |
+
+**FQN computation lives in `src/services/graph/fqn.py`** as a single
+source of truth, imported by `ASTParserAgent`, `NeptuneGraphService`,
+and the migration script.
+
+**Migration mechanics.** Gremlin edges reference internal vertex IDs,
+not the `entity_id` property — so the migration is a property-add, not
+a vertex-replacement. The one-shot idempotent script
+(`scripts/migrate_entity_ids_adr090.py`) walks every `CodeEntity`
+vertex, computes the FQN from existing properties (`file_path`, `name`,
+`parent`, `type`, `metadata.repository`), and writes a new `fqn`
+property. Vertices already carrying `fqn` are skipped. Read paths then
+prefer `fqn` lookup over `entity_id` lookup with a fallback during the
+dual-write window.
+
+**Rollout: backfill all existing graphs before Phase 2 ships.** Phase 2
+starts on a clean v2 schema. Phase 1 timeline absorbs the migration
+window; subsequent phases are not gated on the lazy-backfill priority
+queue described later in this ADR.
 
 ### Phase 2 — Python Within-File Edges (Deterministic)
 
@@ -124,18 +152,46 @@ Three-tier resolver in priority order:
 from Phase 2 `IMPORTS` edges. Resolve qualified names. Emit cross-file
 `CALLS` edges where unambiguous.
 
-**Tier 2 — Static type inference.** Run Pyright in dump mode against
-ambiguous call sites. Pyright resolves an estimated 80–95% of
-"ambiguous" cases deterministically.
+**Tier 2 — Static type inference (Pyright).** Pyright resolves an
+estimated 80–95% of "ambiguous" cases deterministically by inferring
+the type of the call receiver and looking up the method in the type's
+MRO. Pyre and Jedi were evaluated and rejected: Pyre's inference is
+less aggressive on dynamic dispatch (the cases we care about most),
+and Jedi's lower accuracy would push enough work back to Tier 3 to
+defeat the cost rationale for Tier 2.
+
+Integration: **subprocess JSON output for the Phase 4 alpha**, migrated
+to **Pyright Language Server (LSP) for production** once resolution
+accuracy is validated. The LSP daemon amortizes cold-start cost across
+many resolutions; the alpha-via-subprocess step de-risks the LSP
+integration.
+
+**Invocation scope: per-package within a repo.** Pyright is loaded
+with a package-scoped `pyrightconfig.json`; memory is bounded by the
+largest package, not the whole monorepo. This matches how enterprise
+monorepos are actually structured.
+
+**Timeout: 500ms hard cap per call site, fall through to LLM on
+expiry.** Most warm Pyright queries return in <50ms; the 500ms cap
+catches outliers without dragging the worker. Pyright crashes,
+"`Any`"-only inference, and missing-Pyright-binary all also fall
+through to Tier 3. Pyright is a soft dependency: the pipeline must run
+without it, just more expensively.
 
 **Tier 3 — LLM disambiguation, decoupled from hot path.**
 
 For residual ambiguity:
 
-1. Ingestion writes a `needs_resolution` marker to a queue and **does
-   not block**.
-2. A separate `SymbolResolverWorker` pool drains the queue with its own
-   concurrency, budget, and circuit breaker.
+1. Ingestion writes a `needs_resolution` marker to **SQS Standard** and
+   **does not block**. Step Functions was evaluated and rejected:
+   per-state-transition cost (~$25/M) at the expected 3–8M resolutions
+   per cold scan would add $75K–$200K of orchestration overhead, and
+   each resolution is a single Bedrock call with no branching value
+   from orchestration.
+2. A separate `SymbolResolverWorker` pool, deployed on **ECS Fargate
+   with long-polling SQS receive**, drains the queue. Workers are
+   persistent, autoscaled on `ApproximateNumberOfMessagesVisible`, and
+   reuse Bedrock connections across messages.
 3. The worker invokes Bedrock with **constrained output** — the model
    selects an index from a closed candidate set produced by Tiers 1+2;
    it cannot emit targets not in the AST candidate list (defense vs.
@@ -151,6 +207,23 @@ For residual ambiguity:
    `CALLS` (deterministic + Tier 2) versus `CALLS_INFERRED` (Tier 3
    LLM). Filter pushdown on labels is index-backed in Neptune;
    `outE('CALLS')` for high-trust traversals stays cheap.
+7. **Circuit breaker is per-worker, per-Bedrock-region.** Each worker
+   tracks 429/5xx rate independently for its assigned region. No shared
+   state, no coordination point that itself can fail.
+8. **Degraded-mode default: emit `unverified` edges and continue.**
+   When the breaker opens, ingestion never stalls — `CALLS_INFERRED`
+   edges are written with `resolution_method=deferred` and
+   `verification_status=unverified`, and a self-healing re-resolution
+   job retries them when the breaker closes. ADR-068 reasoning chains
+   see the lower-confidence signal natively.
+9. **Worker writes resolved edges directly to Neptune.** Lowest
+   latency, simplest data flow, fewest moving parts. Audit-trail
+   requirements are met by structured worker logs (prompt_hash,
+   model_id, verification_status, cost_usd) routed to the immutable
+   audit store, not by an event-bus hop.
+
+Failed messages route to a DLQ; a DLQ-drain job emits `unverified`
+edges so resolution failures degrade rather than disappear.
 
 Cache: content-addressed by
 `hash(call_site_AST + transitive_closure_hash(imported_modules_referenced))`.
@@ -174,10 +247,70 @@ Vertices use separate labels: `ConfigParameter`, `KMSAlias`,
 `FEATURE_GATED_BY`.
 
 **ABAC gate (ADR-073).** Phase 5 edges form a secret-topology graph
-(MITRE T1580 + T1083 surface). Reads require a
-`clearance:secrets-topology` ABAC attribute. Default-deny for service
-accounts that do not need them. A separate Neptune query role with
-CloudTrail-level logging is provisioned.
+(MITRE T1580 + T1083 surface). The deployed ADR-073 ABAC vocabulary is
+reused — no new attribute scheme is introduced.
+
+**Enforcement: Pattern A (edge-property filter, hardened).** Every
+Phase 5 edge carries a `sensitivity` property. Traversal queries
+include a clearance filter that excludes edges above the caller's
+clearance. Pattern A is the practical choice given Neptune's lack of
+native label-scoped IAM permissions; Pattern B (separate traversal
+source) and Pattern C (separate Neptune cluster) were considered and
+rejected on operational-cost grounds.
+
+**Sensitivity tiering** (cybersecurity review, grounded in NIST and
+MITRE):
+
+| Edge | Sensitivity | Rationale |
+|---|---|---|
+| `USES_KMS_KEY` | RESTRICTED | NIST SP 800-57 Pt.1 §5.3; MITRE T1552.004. Direct cryptographic-material map. |
+| `READS_CONFIG` | RESTRICTED | NIST 800-53 SC-28/SC-12; OWASP ASVS V6.4. SSM SecureStrings can hold any secret; we cannot disambiguate at ingest, so the reference graph is treated as secret-adjacent. |
+| `DEPENDS_ON_ENV` | CONFIDENTIAL | Names only, but T1580 + T1083 cloud-recon surface. |
+| `FEATURE_GATED_BY` | CONFIDENTIAL | Reveals kill-switches and unreleased paths; SOX-adjacent material non-public information. |
+
+Per-instance dynamic classification (deriving sensitivity from the
+referenced parameter's content) was considered and rejected: it turns
+an authorization decision into a data-quality problem with no upper
+bound on blast radius (NIST AC-3, AC-4 expect deterministic mediation).
+Path forward to per-instance classification requires a ground-truth
+parameter classifier with a measured false-negative rate.
+
+**Filter location: `context_retrieval_service` traversal wrapper.**
+A single chokepoint where all callers (agents, API, internal services)
+hit the same filter logic. Direct `NeptuneGraphService.find_related_code`
+calls outside this wrapper are blocked by a contract test.
+
+**Caller experience on near-miss traversal: silent filter + audit log.**
+A low-clearance caller whose traversal would have crossed a Phase 5
+edge sees the edge filtered without a metadata flag advertising its
+existence. The attempt is logged to the ADR-072 anomaly detector for
+pattern analysis. Hard-failing the query was rejected because it
+breaks legitimate adjacent queries.
+
+**Defense-in-depth controls (all six layered regardless of tiering):**
+
+1. **Fail-closed default.** Edge missing `sensitivity` property →
+   treated as TOP_LEVEL. Write-time guard rejects Phase 5 edges
+   without a `sensitivity` value.
+2. **Per-traversal audit.** Caller identity, clearance, edge type,
+   and decision (allow/deny) routed to CloudTrail and immutable S3.
+   NIST AU-2, AU-9.
+3. **ADR-072 volume anomaly detection.** A single principal pulling
+   above a threshold of `USES_KMS_KEY` edges in a window flags as
+   T1580 reconnaissance behavior.
+4. **SSM-toggleable kill-switch.** A boolean SSM parameter forces all
+   Phase 5 edges to RESTRICTED globally — incident-response toggle,
+   not a code deploy.
+5. **ADR-067 quarterly re-scoring hook.** Provenance review re-classifies
+   high-traffic Phase 5 edges; misclassifications are corrected before
+   they're queried in anger.
+6. **Honeypot edges (ADR-072).** Synthetic `USES_KMS_KEY` edges seeded
+   to non-existent KMS aliases. Any traversal is high-confidence
+   reconnaissance signal.
+
+A per-tenant kill-switch for Phase 5 ingestion (separate from the
+global SSM filter override) follows the existing DEV/QA killswitch
+pattern.
 
 ### Phase 6 — Runtime Edges (Out of Scope, Documented Here)
 
@@ -335,12 +468,26 @@ remains for two more weeks; then the alias is removed.
 
 ### Architectural prevention of contract divergence
 
-- Single `EdgeLabel` str-enum imported by both write and read paths.
-- AST-lint script rejects string-literal edge labels outside the enum
-  module — runs in pre-commit and CI.
+- Single `EdgeLabel(str, Enum)` in `src/services/graph/edge_labels.py`,
+  imported by both write paths (`NeptuneGraphService.add_relationship`)
+  and read paths (`context_retrieval_service._get_relationship_types`).
+- `NeptuneGraphService.add_relationship()` validates the supplied
+  label against the enum and raises `NeptuneError` for unknown labels.
+- **AST-lint** (`scripts/lint_edge_labels.py`) rejects string-literal
+  arguments to `add_relationship` and to any function whose parameter
+  is named `relationship` or `edge_label`, with an allowlist for test
+  fixtures and docstrings. **Targeted detection**, not broad
+  upper-snake-case scanning, to keep the false-positive rate low.
+- **Enforced in both pre-commit and CI** — local feedback catches
+  violations before push; CI catches anything that bypasses pre-commit.
 - Belt-and-suspenders introspection test: every
   `_get_relationship_types` return value has at least one writer
   (property test, not grep).
+
+The enum and lint ship as a **standalone quick-win PR before Phase 1
+begins**. This protects the Phase 1 entity-ID migration writers from
+re-introducing string-literal edge labels and ensures every subsequent
+phase is built on a clean contract foundation.
 
 ### Per-phase tests
 
@@ -476,11 +623,13 @@ Required dashboard before Phase 2 ships:
 | Phase | Status | LOC est. | Test files | Sequencing |
 |---|---|---|---|---|
 | 0 (hotfix) | **Delivered** | ~250 | extended existing | shipped |
+| **Quick-win PR: EdgeLabel enum + AST-lint** | Proposed | 250–400 | new `test_edge_labels.py`, `test_lint_edge_labels.py` | **next, before Phase 1** |
 | 1 (entity ID) | Proposed | 800–1200 | new `test_entity_id_migration.py` | precondition |
 | 2 (Python intra) | Proposed | 400–700 | extend AST + ingestion tests | after 1 |
 | 3 (JS/TS) | Proposed | 600–900 | new `test_treesitter_parser.py` | after 1; parallel to 2 |
 | 4 (cross-file) | Proposed | 1500–2500 | new `test_symbol_resolver.py` + LLM test layers | after 2 |
 | 5 (config) | Proposed | 800–1300 | new `test_config_dependency_agent.py` | after 1; parallel to 2/3 |
 
-The Phase 4 estimate accounts for the SQS / queue worker pool, circuit
-breaker, and content-addressed cache.
+The Phase 4 estimate accounts for the SQS Standard queue, ECS Fargate
+worker pool with long-polling, per-worker per-region Bedrock circuit
+breaker, content-addressed cache, and Pyright LSP integration.

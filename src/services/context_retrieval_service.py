@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from src.services.bedrock_llm_service import BedrockLLMService
 
 from src.agents.filesystem_navigator_agent import FileMatch, FilesystemNavigatorAgent
+from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
 
 
 class GraphQueryType(Enum):
@@ -495,12 +496,24 @@ class ContextRetrievalService:
         return unique_results[:max_results]
 
     def _get_relationship_types(self, query_type: GraphQueryType) -> list[str] | None:
-        """Get Neptune relationship types for a query type."""
+        """Get Neptune edge labels to filter by, for a given query type.
+
+        Per ADR-090, edge labels are sourced from the EdgeLabel enum
+        (canonical) and LegacyAlias (backward-compat during migration).
+        Pre-ADR labels EXTENDS, IMPLEMENTS, REQUIRES, and CALLED_BY are
+        intentionally absent: they were never written by any code path,
+        so querying for them was always a no-op. CALLED_BY in
+        particular is now a computed view via Gremlin `inE('CALLS')`
+        rather than a materialized edge.
+        """
         # Use string keys to avoid pytest-forked enum identity issues
         relationship_map: dict[str, list[str] | None] = {
-            "call_graph": ["CALLS", "CALLED_BY"],
-            "dependencies": ["IMPORTS", "DEPENDS_ON", "REQUIRES"],
-            "inheritance": ["EXTENDS", "IMPLEMENTS", "INHERITS"],
+            "call_graph": [EdgeLabel.CALLS.value],
+            "dependencies": [
+                EdgeLabel.IMPORTS.value,
+                LegacyAlias.DEPENDS_ON.value,
+            ],
+            "inheritance": [EdgeLabel.INHERITS.value],
             "references": None,  # All relationships
             "related": None,  # All relationships
         }

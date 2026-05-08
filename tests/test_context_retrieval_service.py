@@ -727,7 +727,12 @@ class TestGraphSearch:
         assert query_type.value == "related"
 
     def test_get_relationship_types_call_graph(self):
-        """Test relationship types for call graph."""
+        """Test relationship types for call graph.
+
+        Per ADR-090, CALLED_BY is a computed view via Gremlin
+        `inE('CALLS')` rather than a materialized edge label, so the
+        read-side mapping returns only CALLS.
+        """
         # Get GraphQueryType from the same module as the service
         from src.services.context_retrieval_service import GraphQueryType
 
@@ -737,19 +742,22 @@ class TestGraphSearch:
                 types = self.service._get_relationship_types(qt)
                 assert types is not None
                 assert "CALLS" in types
-                assert "CALLED_BY" in types
                 break
 
     def test_get_relationship_types_inheritance(self):
-        """Test relationship types for inheritance."""
+        """Test relationship types for inheritance.
+
+        Per ADR-090, EXTENDS and IMPLEMENTS were never written by any
+        producer and have been removed from the canonical edge set;
+        INHERITS carries a `kind` property to disambiguate when needed.
+        """
         from src.services.context_retrieval_service import GraphQueryType
 
         for qt in GraphQueryType:
             if qt.value == "inheritance":
                 types = self.service._get_relationship_types(qt)
                 assert types is not None
-                assert "EXTENDS" in types
-                assert "IMPLEMENTS" in types
+                assert "INHERITS" in types
                 break
 
     def test_get_relationship_types_references_returns_none(self):

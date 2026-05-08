@@ -113,6 +113,24 @@ repos:
         always_run: true
         description: "Strip AI attribution from commit messages"
 
+      # Edge Label Contract Lint (ADR-090)
+      # Rejects string-literal edge labels that bypass the canonical
+      # EdgeLabel enum at src/services/graph/edge_labels.py.
+      - id: aura-edge-label-lint
+        name: Aura Edge Label Contract Lint
+        entry: python -m scripts.lint_edge_labels
+        language: python
+        types: [python]
+        pass_filenames: true
+        exclude: |
+          (?x)^(
+            src/services/graph/edge_labels\.py|
+            tests/.*|
+            archive/.*|
+            scripts/lint_edge_labels\.py
+          )$
+        description: "Reject string-literal edge labels outside the EdgeLabel enum"
+
   # ==========================================================================
   # Standard Python Hooks
   # ==========================================================================

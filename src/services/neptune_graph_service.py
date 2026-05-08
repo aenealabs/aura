@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from src.services.graph.edge_labels import is_known_label
+
 logger = logging.getLogger(__name__)
 
 # Enable nested event loops for gremlin-python compatibility with FastAPI/uvicorn
@@ -421,12 +423,27 @@ class NeptuneGraphService:
         Args:
             from_entity: Source entity ID
             to_entity: Target entity ID
-            relationship: Relationship type ('CALLS', 'IMPORTS', 'INHERITS', etc.)
+            relationship: Relationship type. Must be a member of EdgeLabel
+                (canonical, per ADR-090) or LegacyAlias (deprecated but
+                accepted during the migration window). Unknown labels are
+                rejected; new label types require updating
+                src/services/graph/edge_labels.py.
             metadata: Additional edge metadata
 
         Returns:
             True if successful
+
+        Raises:
+            NeptuneError: If `relationship` is not a known edge label.
         """
+        if not is_known_label(relationship):
+            raise NeptuneError(
+                f"Unknown edge label: {relationship!r}. Add it to "
+                "src/services/graph/edge_labels.py (EdgeLabel for new "
+                "canonical labels, LegacyAlias for backward-compat) "
+                "before writing it to the graph."
+            )
+
         if self.mode == NeptuneMode.MOCK:
             self.mock_edges.append(
                 {

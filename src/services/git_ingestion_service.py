@@ -25,6 +25,7 @@ from typing import Any
 from git import GitCommandError, InvalidGitRepositoryError, Repo
 
 from src.services.github_app_auth import GitHubAppAuth, get_github_app_auth
+from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
 from src.services.observability_service import ObservabilityService, get_monitor
 from src.services.secure_command_executor import (
     SecureCommandExecutor,
@@ -884,7 +885,7 @@ class GitIngestionService:
                     self.neptune.add_relationship(
                         from_entity=entity.name,
                         to_entity=dep,
-                        relationship="DEPENDS_ON",
+                        relationship=LegacyAlias.DEPENDS_ON.value,
                         metadata={"repository": repo_id},
                     )
 
@@ -892,7 +893,7 @@ class GitIngestionService:
                 self.neptune.add_relationship(
                     from_entity=entity.parent_entity,
                     to_entity=entity.name,
-                    relationship="CONTAINS",
+                    relationship=EdgeLabel.CONTAINS.value,
                     metadata={"repository": repo_id},
                 )
 

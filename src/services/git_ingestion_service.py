@@ -28,6 +28,7 @@ from src.services.github_app_auth import GitHubAppAuth, get_github_app_auth
 from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
 from src.services.graph.fqn import FQNBuilder
 from src.services.graph.symbol_resolver import Tier1SymbolResolver
+from src.services.graph.symbol_resolver_tier2 import Tier2SymbolResolver
 from src.services.observability_service import ObservabilityService, get_monitor
 from src.services.secure_command_executor import (
     SecureCommandExecutor,
@@ -1108,8 +1109,8 @@ class GitIngestionService:
         # before writing edges. The resolver runs purely in-process on
         # the entity / relationship lists; no Neptune round trips.
         if relationships:
-            resolver = Tier1SymbolResolver()
-            relationships, stats = resolver.resolve(
+            tier1 = Tier1SymbolResolver()
+            relationships, stats = tier1.resolve(
                 entities, relationships, repo_id=repo_id
             )
             logger.info(
@@ -1119,6 +1120,28 @@ class GitIngestionService:
                 f"{stats.module_prefix_resolved} module-prefix, "
                 f"{stats.ambiguous_skipped} ambiguous, "
                 f"{stats.unresolved} unresolved"
+            )
+
+            # Phase 4b: Tier 2 takes the still-unresolved set and
+            # applies (a) class-hierarchy traversal for self.method
+            # targets, (b) Pyright LSP type inference when the
+            # binary is on PATH. The composer is purely in-process;
+            # the Pyright stage is a no-op if the binary is missing.
+            tier2 = Tier2SymbolResolver()
+            relationships, t2_stats = tier2.resolve(
+                entities,
+                relationships,
+                repo_id=repo_id,
+                repo_root=self._repo_root_for_url(repository_url),
+            )
+            logger.info(
+                f"Tier 2 resolution: "
+                f"self_method={t2_stats.self_method_resolved}, "
+                f"inherited={t2_stats.self_method_via_inheritance}, "
+                f"pyright_resolved={t2_stats.pyright_resolved}, "
+                f"pyright_timeouts={t2_stats.pyright_timed_out}, "
+                f"pyright_unavailable={t2_stats.pyright_unavailable}, "
+                f"still_unresolved={t2_stats.still_unresolved}"
             )
 
         # Upsert path: clear stale outgoing edges before re-adding entities.
@@ -1491,6 +1514,23 @@ class GitIngestionService:
         if len(parts) >= 2:
             return f"{parts[-2]}-{parts[-1]}"
         return hashlib.sha256(repository_url.encode()).hexdigest()[:16]
+
+    def _repo_root_for_url(self, repository_url: str) -> Path | None:
+        """Resolve the local clone path for a repository URL.
+
+        Returns ``None`` when the clone directory does not exist
+        (incremental ingest paths supply ``repository_url`` as the
+        local path itself, in which case we use it directly). Tier 2
+        Pyright uses this as the workspace root for LSP requests.
+        """
+        local_candidate = Path(repository_url)
+        if local_candidate.exists() and local_candidate.is_dir():
+            return local_candidate
+        repo_id = self._url_to_repo_id(repository_url)
+        clone_path = self.clone_dir / repo_id
+        if clone_path.exists():
+            return clone_path
+        return None
 
     def _get_auth_header(self, url: str) -> str | None:
         """Get authentication header for git operations.

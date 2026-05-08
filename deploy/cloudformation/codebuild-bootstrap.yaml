@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Bootstrap Layer CodeBuild Project (Layer 0: Deploys All 18 CodeBuild Projects)'
+Description: 'Project Aura - Bootstrap Layer CodeBuild Project (Layer 0: Deploys All 24 CodeBuild Projects)'
 
 # =============================================================================
 # BOOTSTRAP LAYER - ONE-TIME MANUAL DEPLOYMENT
@@ -10,7 +10,7 @@ Description: 'Project Aura - Bootstrap Layer CodeBuild Project (Layer 0: Deploys
 # DEPLOYMENT SEQUENCE:
 #   1. Manual: Deploy this template (codebuild-bootstrap.yaml) - ONE TIME
 #   2. Manual: Create SSM parameter /aura/global/codeconnections-arn
-#   3. Trigger: aura-bootstrap-deploy-{env} - deploys all 18 CodeBuild projects
+#   3. Trigger: aura-bootstrap-deploy-{env} - deploys all 24 CodeBuild projects
 #   4. Trigger: aura-foundation-deploy-{env} - deploys Foundation infrastructure
 #   5. Trigger: Remaining layers (data, compute, application, etc.)
 #
@@ -204,7 +204,7 @@ Resources:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: !Sub '${ProjectName}-bootstrap-deploy-${Environment}'
-      Description: 'Project Aura - Bootstrap Layer (Layer 0: Deploys All 18 CodeBuild Projects)'
+      Description: 'Project Aura - Bootstrap Layer (Layer 0: Deploys All 24 CodeBuild Projects)'
       ServiceRole: !GetAtt BootstrapCodeBuildRole.Arn
       Artifacts:
         Type: S3

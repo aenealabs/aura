@@ -200,7 +200,7 @@ print_next_steps() {
     echo "BOOTSTRAP COMPLETE - NEXT STEPS"
     echo "=========================================="
     echo ""
-    echo "All 20 CodeBuild projects have been deployed."
+    echo "All 24 CodeBuild projects have been deployed."
     echo ""
     echo "Deploy infrastructure layers in order:"
     echo ""

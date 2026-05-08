@@ -27,6 +27,7 @@ from git import GitCommandError, InvalidGitRepositoryError, Repo
 from src.services.github_app_auth import GitHubAppAuth, get_github_app_auth
 from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
 from src.services.graph.fqn import FQNBuilder
+from src.services.graph.symbol_resolver import Tier1SymbolResolver
 from src.services.observability_service import ObservabilityService, get_monitor
 from src.services.secure_command_executor import (
     SecureCommandExecutor,
@@ -999,12 +1000,14 @@ class GitIngestionService:
     def _add_relationship_to_graph(
         self, relationship, repo_id: str, branch: str
     ) -> None:
-        """Write a Phase 2 parser-emitted relationship to Neptune.
+        """Write a parser-emitted relationship to Neptune.
 
-        Source and target endpoint references match the existing
-        ``add_relationship`` semantics (raw name strings); cross-file
-        endpoint resolution is Phase 4 work and lifts these to
-        canonical FQNs once available.
+        Per ADR-090 Phase 4a, endpoints prefer the canonical FQN
+        populated by the symbol resolver and fall back to the raw
+        name when the resolver could not match (cross-package or
+        ambiguous targets). The Gremlin lookup OR-matches by ``fqn``
+        and ``entity_id`` so either endpoint form resolves to the
+        same vertex.
         """
         try:
             metadata = {
@@ -1012,9 +1015,11 @@ class GitIngestionService:
                 "branch": branch,
                 **(relationship.properties or {}),
             }
+            from_endpoint = relationship.source_fqn or relationship.source_name
+            to_endpoint = relationship.target_fqn or relationship.target_name
             self.neptune.add_relationship(
-                from_entity=relationship.source_name,
-                to_entity=relationship.target_name,
+                from_entity=from_endpoint,
+                to_entity=to_endpoint,
                 relationship=relationship.relationship,
                 metadata=metadata,
             )
@@ -1098,6 +1103,23 @@ class GitIngestionService:
         """
         repo_id = self._url_to_repo_id(repository_url)
         fqn_builder = FQNBuilder(repo_id=repo_id)
+
+        # Phase 4a: resolve cross-file CALLS targets to canonical FQNs
+        # before writing edges. The resolver runs purely in-process on
+        # the entity / relationship lists; no Neptune round trips.
+        if relationships:
+            resolver = Tier1SymbolResolver()
+            relationships, stats = resolver.resolve(
+                entities, relationships, repo_id=repo_id
+            )
+            logger.info(
+                f"Tier 1 resolution: {stats.calls_seen} calls, "
+                f"{stats.same_file_resolved} same-file, "
+                f"{stats.direct_import_resolved} direct-import, "
+                f"{stats.module_prefix_resolved} module-prefix, "
+                f"{stats.ambiguous_skipped} ambiguous, "
+                f"{stats.unresolved} unresolved"
+            )
 
         # Upsert path: clear stale outgoing edges before re-adding entities.
         # Vertices and incoming edges are preserved; only outgoing edges

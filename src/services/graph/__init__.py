@@ -16,6 +16,12 @@ from src.services.graph.fqn import (
     derive_scheme,
 )
 
+# symbol_resolver is intentionally NOT re-exported here: it depends on
+# CodeEntity / CodeRelationship from src.agents.ast_parser_agent, which
+# in turn imports from src.services.graph for EdgeLabel. Re-exporting
+# would create a circular import. Consumers import the resolver from
+# src.services.graph.symbol_resolver directly.
+
 __all__ = [
     "EdgeLabel",
     "FQNBuilder",

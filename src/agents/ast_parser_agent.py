@@ -72,9 +72,13 @@ class CodeRelationship:
     so the ingestion pipeline can write canonical edge labels rather
     than reconstructing them from the entity-level ``dependencies``
     field. Source is always intra-file and identified by name plus
-    enclosing scope chain. Target may be intra-file (resolvable to a
-    same-file entity) or cross-file (a bare name to be resolved by
-    Phase 4).
+    enclosing scope chain.
+
+    Per ADR-090 Phase 4a, the optional ``source_fqn`` and ``target_fqn``
+    fields are populated by the symbol resolver. When set, the
+    ingestion pipeline uses them as canonical Gremlin endpoints; when
+    ``None``, it falls back to the raw ``source_name`` / ``target_name``
+    (legacy entity_id matching during the migration window).
     """
 
     source_name: str
@@ -83,6 +87,8 @@ class CodeRelationship:
     relationship: str  # EdgeLabel value: CALLS, INHERITS, IMPORTS
     properties: dict[str, Any] = field(default_factory=dict)
     file_path: str = ""
+    source_fqn: str | None = None
+    target_fqn: str | None = None
 
 
 class ASTParserAgent:

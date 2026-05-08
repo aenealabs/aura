@@ -496,9 +496,20 @@ class NeptuneGraphService:
             safe_relationship = escape_gremlin_string(relationship)
             created_at = datetime.now(timezone.utc).isoformat()
 
+            # Per ADR-090 Phase 4a, endpoints are matched by FQN OR
+            # legacy entity_id so the migration window can resolve
+            # either form. The OR predicate is index-backed in
+            # Neptune; the cost is one extra property check per
+            # endpoint.
             query = f"""
-            g.V().has('entity_id', '{safe_from}').as('from')
-             .V().has('entity_id', '{safe_to}').as('to')
+            g.V().or(
+                __.has('fqn', '{safe_from}'),
+                __.has('entity_id', '{safe_from}')
+            ).as('from')
+             .V().or(
+                __.has('fqn', '{safe_to}'),
+                __.has('entity_id', '{safe_to}')
+             ).as('to')
              .addE('{safe_relationship}').from('from').to('to')
              .property('created_at', '{created_at}')
             """

@@ -251,6 +251,102 @@ class TestFQNAssignment:
         assert any(fqn and fqn.endswith("@2") for fqn in fqns)
 
 
+class TestPhase4aResolution:
+    """End-to-end: parser output flows through Tier1SymbolResolver before Neptune writes."""
+
+    @pytest.mark.asyncio
+    async def test_resolver_populates_target_fqn_for_resolvable_calls(
+        self, service, mock_neptune
+    ):
+        # Two same-file functions; main calls helper -> resolver should
+        # produce target_fqn pointing at helper.
+        entities = [
+            CodeEntity(
+                name="helper",
+                entity_type="function",
+                file_path="myapp/utils.py",
+                line_number=1,
+            ),
+            CodeEntity(
+                name="main",
+                entity_type="function",
+                file_path="myapp/utils.py",
+                line_number=5,
+            ),
+        ]
+        relationships = [
+            CodeRelationship(
+                source_name="main",
+                source_parent_chain=(),
+                target_name="helper",
+                relationship=EdgeLabel.CALLS.value,
+                file_path="myapp/utils.py",
+            )
+        ]
+
+        await service._populate_graph(
+            entities,
+            "https://github.com/owner/repo",
+            "main",
+            relationships=relationships,
+        )
+
+        # The resolver populated target_fqn, and _add_relationship_to_graph
+        # passed it as the to_endpoint. The repo_id embedded in the FQN
+        # is whatever GitIngestionService._url_to_repo_id derived from
+        # the repository_url; we assert structurally rather than
+        # hard-coding the conversion.
+        rel_calls = [
+            call
+            for call in mock_neptune.add_relationship.call_args_list
+            if call.kwargs.get("relationship") == EdgeLabel.CALLS.value
+        ]
+        assert rel_calls
+        to_endpoints = {call.kwargs.get("to_entity") for call in rel_calls}
+        assert any(
+            ep and ep.startswith("python:") and ":myapp.utils:helper#function" in ep
+            for ep in to_endpoints
+        )
+
+    @pytest.mark.asyncio
+    async def test_unresolved_target_falls_back_to_raw_name(
+        self, service, mock_neptune
+    ):
+        entities = [
+            CodeEntity(
+                name="main",
+                entity_type="function",
+                file_path="myapp/runner.py",
+                line_number=1,
+            ),
+        ]
+        relationships = [
+            CodeRelationship(
+                source_name="main",
+                source_parent_chain=(),
+                target_name="external_thing",
+                relationship=EdgeLabel.CALLS.value,
+                file_path="myapp/runner.py",
+            )
+        ]
+
+        await service._populate_graph(
+            entities,
+            "https://github.com/owner/repo",
+            "main",
+            relationships=relationships,
+        )
+
+        # Unresolved target falls back to the raw name.
+        rel_calls = [
+            call
+            for call in mock_neptune.add_relationship.call_args_list
+            if call.kwargs.get("relationship") == EdgeLabel.CALLS.value
+        ]
+        assert rel_calls
+        assert rel_calls[0].kwargs.get("to_entity") == "external_thing"
+
+
 class TestParserOutputThreading:
     @pytest.mark.asyncio
     async def test_parse_files_with_relationships_returns_both(

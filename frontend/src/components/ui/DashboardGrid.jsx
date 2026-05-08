@@ -4,7 +4,7 @@ import {
   useContainerWidth,
   useResponsiveLayout,
   verticalCompactor,
-} from 'react-grid-layout';
+} from '../../lib/grid-layout';
 import {
   Cog6ToothIcon,
   CheckIcon,

@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useMemo, memo } from 'react';
-import GridLayout from 'react-grid-layout';
+import GridLayout from '../../lib/grid-layout';
 import {
   PlusIcon,
   Cog6ToothIcon,

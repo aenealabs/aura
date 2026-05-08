@@ -178,6 +178,22 @@ The required fields, with our conventions:
 - Add a short note to the audit register entry in `docs/security/DEPENDENCY_RISK_REGISTER.md` (in the `Replacement Decisions Made` table) if this advisory was tied to a Replace-Now action.
 - The recurring audit's next run will see the patched dep in `requirements*.txt` / `package-lock.json` and the previous CVE will drop from the report -- this is the normal closure signal.
 
+### Mistakes and rollback
+
+GitHub's REST API does **not** support `DELETE` on security advisories (verified during pipeline validation for #141: `DELETE /repos/{owner}/{repo}/security-advisories/{ghsa_id}` returns 404). Only state transitions are supported: `draft` -> `triage` -> `published` -> `closed`.
+
+If a draft is filed in error:
+
+1. `gh api -X PATCH /repos/aenealabs/aura/security-advisories/{ghsa_id} -f state=closed` -- this archives the draft. It remains in the repo's internal Security > Advisories list but is filtered from the active set. **Drafts and closed advisories that were never published do not appear in any public feed** (GHSA Atom, Dependabot database, npm audit / pip-audit results).
+2. Update the summary and description (PATCH) to clearly identify it as a closed test artifact, so anyone navigating the Security tab months later understands what they're seeing.
+
+If an advisory is filed in error after publication:
+
+1. PATCH state to `closed` and set `withdrawn_at` -- this is the GitHub-supported analogue of "withdraw a CVE." Customer scanners that already ingested the advisory will see the withdrawal on their next sync; this is a noisier event than never-published, so publish carefully.
+2. File a follow-up commit / advisory documenting the withdrawal and reason.
+
+The lesson: drafts are cheap to start, expensive to fully unwind. Use the markdown template at `docs/security/SAMPLE_ADVISORY_TJ_ACTIONS.md` to draft and review the advisory text before opening the GHSA UI.
+
 ## References
 
 - Register: `docs/security/DEPENDENCY_RISK_REGISTER.md`

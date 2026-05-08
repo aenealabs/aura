@@ -3,6 +3,11 @@ description: PEP-420 namespace package layout (no __init__.py required
   at parent levels). The FQN derivation must produce
   python:repo:myorg.widgets.button:Button#class without surprise.
 language: python
+# ADR-090 Phase 4c.1 confidence calibration tag (#118). Used by
+# tests/integration/graph/test_confidence_calibration.py to classify
+# fixtures as ambiguous / unambiguous for the Mann-Whitney U
+# separation assertion.
+calibration: unambiguous
 expected_entities:
   - {file: myorg/widgets/button.py, name: Button, type: class}
   - {file: myorg/widgets/button.py, name: render, type: method, parent: Button}

@@ -3,6 +3,12 @@ description: getattr-based and dict-of-callables dispatch. Tier 1
   must NOT resolve these (would be a precision regression);
   Tier 2/3 are expected to handle them.
 language: python
+# ADR-090 Phase 4c.1 confidence calibration tag (#118). Used by
+# tests/integration/graph/test_confidence_calibration.py to classify
+# fixtures as ambiguous / unambiguous for the Mann-Whitney U
+# separation assertion. New manifests can opt in by adding this
+# field; absence means the manifest is not scored for calibration.
+calibration: ambiguous
 expected_entities:
   - {file: dispatch.py, name: HANDLERS, type: variable}
   - {file: dispatch.py, name: Dispatcher, type: class}

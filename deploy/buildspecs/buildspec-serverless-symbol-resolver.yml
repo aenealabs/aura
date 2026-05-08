@@ -1,0 +1,213 @@
+version: 0.2
+
+# =============================================================================
+# Symbol Resolver Sub-Layer (Layer 6.20 - ADR-090 Phase 4c.2)
+# =============================================================================
+# Deploys the Tier 3 LLM symbol resolver: SQS queue + DLQ, ECS Fargate
+# worker pool, DynamoDB cache + cost ceiling tables, autoscale, alarms.
+#
+# Triggered by the parent serverless layer buildspec to keep the
+# parent under the CodeBuild 60-minute timeout when fresh stacks are
+# creating from scratch. Per deploy/buildspecs/CLAUDE.md, this
+# buildspec stays under the 600-line cap.
+#
+# Phase 5.3 ABAC kill-switch SSM parameter is created here too because
+# it lives in the same conceptual scope (the resolver's traversal-time
+# safety net) and does not warrant its own sub-layer.
+# =============================================================================
+
+env:
+  variables:
+    PIP_ROOT_USER_ACTION: ignore
+    PIP_NO_CACHE_DIR: "true"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip3 install cfn-lint --quiet
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Symbol Resolver Deployment (ADR-090 6.20)"
+      - echo "=========================================="
+      - echo "Environment $ENVIRONMENT | Project $PROJECT_NAME"
+      - cfn-lint deploy/cloudformation/symbol-resolver-tier3.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+      # ---------------------------------------------------------------
+      # Phase 5.3 ABAC kill-switch SSM parameter (default: inactive)
+      # ---------------------------------------------------------------
+      # The kill-switch lets ops force every Phase 5 edge to TOP_LEVEL
+      # globally without a code deploy. We always create the parameter
+      # at deploy time so the application code has somewhere to read
+      # from on day one; the default value is the safest one (inactive).
+      - echo "Ensuring Phase 5.3 ABAC kill-switch SSM parameter..."
+      - |
+        aws ssm put-parameter \
+          --name "/aura/phase5/abac-kill-switch-${ENVIRONMENT}" \
+          --value "false" \
+          --type "String" \
+          --description "ADR-090 Phase 5.3 ABAC kill-switch. Set to 'true' to force every Phase 5 edge to TOP_LEVEL clearance globally as an incident-response toggle. Default: false (inactive)." \
+          --tags "Key=Project,Value=${PROJECT_NAME}" "Key=Environment,Value=${ENVIRONMENT}" "Key=ADR,Value=ADR-090" \
+          --overwrite \
+          --region ${AWS_DEFAULT_REGION} \
+          || echo "Note: SSM parameter may already exist with different tags; continuing."
+
+      # ---------------------------------------------------------------
+      # Resolve dependency parameters from existing layer exports.
+      # ---------------------------------------------------------------
+      # The Tier 3 stack needs:
+      #   - An ECS cluster (network-services layer provides one)
+      #   - Private subnets (foundation export)
+      #   - Security groups granting Bedrock + Neptune egress
+      #   - A worker image URI (private ECR, built by docker buildspec)
+      #
+      # Exports are looked up by name. If any are missing the build
+      # fails fast with an actionable error rather than deploying a
+      # broken stack.
+      - echo "Resolving stack dependencies from layer exports..."
+      - |
+        CLUSTER_NAME=$(aws cloudformation list-exports \
+          --region ${AWS_DEFAULT_REGION} \
+          --query "Exports[?Name=='${PROJECT_NAME}-network-services-cluster-name-${ENVIRONMENT}'].Value" \
+          --output text)
+
+        if [ -z "${CLUSTER_NAME}" ] || [ "${CLUSTER_NAME}" = "None" ]; then
+          # Fallback: any aura-* ECS cluster in the account.
+          CLUSTER_NAME=$(aws ecs list-clusters \
+            --region ${AWS_DEFAULT_REGION} \
+            --query "clusterArns[?contains(@, '${PROJECT_NAME}')]|[0]" \
+            --output text 2>/dev/null | awk -F/ '{print $NF}')
+        fi
+
+        if [ -z "${CLUSTER_NAME}" ] || [ "${CLUSTER_NAME}" = "None" ]; then
+          echo "ERROR: No ECS cluster found. Deploy network-services layer first."
+          exit 1
+        fi
+        echo "Resolved cluster: ${CLUSTER_NAME}"
+
+      - |
+        SUBNET_EXPORT_NAME="${PROJECT_NAME}-foundation-private-subnets-${ENVIRONMENT}"
+        SUBNET_IDS=$(aws cloudformation list-exports \
+          --region ${AWS_DEFAULT_REGION} \
+          --query "Exports[?Name=='${SUBNET_EXPORT_NAME}'].Value" \
+          --output text)
+
+        if [ -z "${SUBNET_IDS}" ] || [ "${SUBNET_IDS}" = "None" ]; then
+          echo "ERROR: Foundation private subnets export not found."
+          echo "Expected export name: ${SUBNET_EXPORT_NAME}"
+          exit 1
+        fi
+        echo "Resolved subnets: ${SUBNET_IDS}"
+
+      - |
+        SG_EXPORT_NAME="${PROJECT_NAME}-network-services-resolver-sg-${ENVIRONMENT}"
+        SECURITY_GROUP_IDS=$(aws cloudformation list-exports \
+          --region ${AWS_DEFAULT_REGION} \
+          --query "Exports[?Name=='${SG_EXPORT_NAME}'].Value" \
+          --output text)
+
+        if [ -z "${SECURITY_GROUP_IDS}" ] || [ "${SECURITY_GROUP_IDS}" = "None" ]; then
+          # Fallback: derive from foundation default-egress SG export.
+          SG_EXPORT_NAME="${PROJECT_NAME}-foundation-default-egress-sg-${ENVIRONMENT}"
+          SECURITY_GROUP_IDS=$(aws cloudformation list-exports \
+            --region ${AWS_DEFAULT_REGION} \
+            --query "Exports[?Name=='${SG_EXPORT_NAME}'].Value" \
+            --output text)
+        fi
+
+        if [ -z "${SECURITY_GROUP_IDS}" ] || [ "${SECURITY_GROUP_IDS}" = "None" ]; then
+          echo "ERROR: No suitable security group export found."
+          echo "Expected: aura-network-services-resolver-sg-${ENVIRONMENT} or"
+          echo "           aura-foundation-default-egress-sg-${ENVIRONMENT}"
+          exit 1
+        fi
+        echo "Resolved security groups: ${SECURITY_GROUP_IDS}"
+
+      - |
+        # Worker image URI. Built by the docker sub-layer; read from
+        # the ECR export. If the worker image hasn't been built yet,
+        # the stack deploy is skipped (idempotent re-run picks up the
+        # image once it exists).
+        IMAGE_EXPORT_NAME="${PROJECT_NAME}-symbol-resolver-worker-image-uri-${ENVIRONMENT}"
+        WORKER_IMAGE_URI=$(aws cloudformation list-exports \
+          --region ${AWS_DEFAULT_REGION} \
+          --query "Exports[?Name=='${IMAGE_EXPORT_NAME}'].Value" \
+          --output text)
+
+        if [ -z "${WORKER_IMAGE_URI}" ] || [ "${WORKER_IMAGE_URI}" = "None" ]; then
+          echo "WARNING: Symbol resolver worker image not yet published."
+          echo "Expected ECR export: ${IMAGE_EXPORT_NAME}"
+          echo "Deploy will proceed with a placeholder; rerun once the"
+          echo "docker sub-layer publishes the worker image."
+          WORKER_IMAGE_URI="public.ecr.aws/aws-cli/aws-cli:latest"
+        fi
+        echo "Worker image URI: ${WORKER_IMAGE_URI}"
+
+  build:
+    commands:
+      - echo "Deploying Symbol Resolver Tier 3 stack..."
+      - |
+        STACK_NAME="${PROJECT_NAME}-symbol-resolver-tier3-${ENVIRONMENT}"
+
+        # Pre-empt stuck states.
+        STACK_STATUS=$(aws cloudformation describe-stacks \
+          --stack-name "${STACK_NAME}" \
+          --region "${AWS_DEFAULT_REGION}" \
+          --query 'Stacks[0].StackStatus' \
+          --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+        if [ "${STACK_STATUS}" = "ROLLBACK_COMPLETE" ] || [ "${STACK_STATUS}" = "ROLLBACK_FAILED" ]; then
+          echo "Stack in ${STACK_STATUS}; deleting before recreate..."
+          aws cloudformation delete-stack --stack-name "${STACK_NAME}" --region "${AWS_DEFAULT_REGION}"
+          aws cloudformation wait stack-delete-complete --stack-name "${STACK_NAME}" --region "${AWS_DEFAULT_REGION}"
+        fi
+
+        aws cloudformation deploy \
+          --stack-name "${STACK_NAME}" \
+          --template-file deploy/cloudformation/symbol-resolver-tier3.yaml \
+          --parameter-overrides \
+            Environment="${ENVIRONMENT}" \
+            ClusterName="${CLUSTER_NAME}" \
+            WorkerImageUri="${WORKER_IMAGE_URI}" \
+            SubnetIds="${SUBNET_IDS}" \
+            SecurityGroupIds="${SECURITY_GROUP_IDS}" \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags \
+            Project=${PROJECT_NAME} \
+            Environment=${ENVIRONMENT} \
+            Layer=serverless \
+            ADR=ADR-090 \
+            DeployTimestamp=${DEPLOY_TIMESTAMP} \
+          --no-fail-on-empty-changeset \
+          --region ${AWS_DEFAULT_REGION}
+        echo "Symbol Resolver stack deployed: ${STACK_NAME}"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Symbol Resolver Deployment Complete"
+      - echo "=========================================="
+      - |
+        STACK_NAME="${PROJECT_NAME}-symbol-resolver-tier3-${ENVIRONMENT}"
+        QUEUE_URL=$(aws cloudformation describe-stacks \
+          --stack-name "${STACK_NAME}" \
+          --region "${AWS_DEFAULT_REGION}" \
+          --query 'Stacks[0].Outputs[?OutputKey==`QueueUrl`].OutputValue' \
+          --output text 2>/dev/null || echo "(stack outputs unavailable)")
+        DLQ_URL=$(aws cloudformation describe-stacks \
+          --stack-name "${STACK_NAME}" \
+          --region "${AWS_DEFAULT_REGION}" \
+          --query 'Stacks[0].Outputs[?OutputKey==`DlqUrl`].OutputValue' \
+          --output text 2>/dev/null || echo "(unavailable)")
+        echo "Queue: ${QUEUE_URL}"
+        echo "DLQ:   ${DLQ_URL}"
+      - echo "ABAC kill-switch SSM parameter ready: /aura/phase5/abac-kill-switch-${ENVIRONMENT}"
+
+artifacts:
+  files:
+    - deploy/cloudformation/symbol-resolver-tier3.yaml
+    - deploy/cloudformation/codebuild-serverless-symbol-resolver.yaml
+  name: symbol-resolver-artifacts

@@ -951,6 +951,139 @@ class NeptuneGraphService:
             raise NeptuneError(f"Failed to delete outgoing edges for file: {e}") from e
 
     # =========================================================================
+    # Phase 5 (ADR-090) Config-layer vertex writers
+    # =========================================================================
+
+    def add_config_parameter(
+        self,
+        name: str,
+        kind: str = "ssm",
+        sensitivity: str = "restricted",
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Materialize a ConfigParameter vertex.
+
+        Args:
+            name: SSM parameter path or environment variable name (the
+                edge target string emitted by ConfigDependencyAgent).
+            kind: ``ssm`` or ``env`` -- discriminator stored as a
+                vertex property so a single label covers both.
+            sensitivity: ABAC sensitivity for read access. Defaults to
+                ``restricted`` per Sally's Phase 5 tiering.
+            metadata: Additional properties (e.g. ``arn`` for ARNed
+                parameters, ``region`` for cross-region SSM lookups).
+
+        Returns:
+            Vertex identifier (the parameter name itself, namespaced
+            by kind for collision resistance).
+        """
+        return self._add_phase5_vertex(
+            label="ConfigParameter",
+            name=name,
+            kind=kind,
+            sensitivity=sensitivity,
+            metadata=metadata,
+        )
+
+    def add_kms_alias(
+        self,
+        alias: str,
+        sensitivity: str = "restricted",
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Materialize a KMSAlias vertex.
+
+        Stores both ``alias/...`` strings and full key ARNs under a
+        single label; the ``arn`` property carries the full ARN when
+        the call site referenced it explicitly.
+        """
+        return self._add_phase5_vertex(
+            label="KMSAlias",
+            name=alias,
+            kind="kms",
+            sensitivity=sensitivity,
+            metadata=metadata,
+        )
+
+    def add_feature_flag(
+        self,
+        flag_name: str,
+        sensitivity: str = "confidential",
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Materialize a FeatureFlag vertex."""
+        return self._add_phase5_vertex(
+            label="FeatureFlag",
+            name=flag_name,
+            kind="flag",
+            sensitivity=sensitivity,
+            metadata=metadata,
+        )
+
+    def _add_phase5_vertex(
+        self,
+        label: str,
+        name: str,
+        kind: str,
+        sensitivity: str,
+        metadata: dict[str, Any] | None,
+    ) -> str:
+        """Shared writer for Phase 5 vertex labels.
+
+        Per ADR-090 Thread 4 (Tom's review), Phase 5 types ride on
+        their own labels rather than a shared CodeEntity property
+        bucket: label-scoped Gremlin queries (``hasLabel``) are
+        index-backed in Neptune and the property sets are disjoint.
+
+        ``entity_id`` is the bare ``name`` so the parser-emitted
+        relationship targets match a vertex without prefix munging.
+        Cross-label collisions (an SSM path and an env var with the
+        same name) are rare and operationally meaningful — a
+        deployment that materializes the same value through both
+        channels should appear connected in the graph.
+        """
+        vertex_id = name
+        meta = metadata or {}
+
+        if self.mode == NeptuneMode.MOCK:
+            self.mock_graph[vertex_id] = {
+                "id": vertex_id,
+                "label": label,
+                "name": name,
+                "kind": kind,
+                "sensitivity": sensitivity,
+                "metadata": meta,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            logger.info(f"[MOCK] Added {label} vertex: {vertex_id}")
+            return vertex_id
+
+        try:
+            safe_id = escape_gremlin_string(vertex_id)
+            safe_name = escape_gremlin_string(name)
+            safe_kind = escape_gremlin_string(kind)
+            safe_sensitivity = escape_gremlin_string(sensitivity)
+            query = (
+                f"g.addV('{label}')"
+                f".property('entity_id', '{safe_id}')"
+                f".property('name', '{safe_name}')"
+                f".property('kind', '{safe_kind}')"
+                f".property('sensitivity', '{safe_sensitivity}')"
+                f".property('created_at', "
+                f"'{datetime.now(timezone.utc).isoformat()}')"
+            )
+            for key, value in meta.items():
+                safe_key = escape_gremlin_string(str(key))
+                safe_value = escape_gremlin_string(str(value))
+                query += f".property('{safe_key}', '{safe_value}')"
+            self.client.submit(query).all().result()
+            logger.info(f"Added {label} vertex: {vertex_id}")
+            return vertex_id
+        except Exception as e:
+            logger.error(f"Failed to add {label} vertex: {e}")
+            raise NeptuneError(f"Failed to add {label} vertex: {e}") from e
+
+    # =========================================================================
     # Infrastructure Resource Methods (ADR-056 - Documentation Agent)
     # =========================================================================
 

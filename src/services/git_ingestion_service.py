@@ -27,6 +27,12 @@ from git import GitCommandError, InvalidGitRepositoryError, Repo
 from src.services.github_app_auth import GitHubAppAuth, get_github_app_auth
 from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
 from src.services.graph.fqn import FQNBuilder
+from src.services.graph.config_dependency_agent import (
+    VERTEX_CONFIG_PARAMETER,
+    VERTEX_FEATURE_FLAG,
+    VERTEX_KMS_ALIAS,
+    ConfigDependencyAgent,
+)
 from src.services.graph.symbol_resolver import Tier1SymbolResolver
 from src.services.graph.symbol_resolver_tier2 import Tier2SymbolResolver
 from src.services.graph.symbol_resolver_tier3 import (
@@ -412,6 +418,14 @@ class GitIngestionService:
                 f"{len(relationships)} relationships"
             )
 
+            # Step 3b (Phase 5): scan for config-layer dependencies and
+            # extend the relationship list with READS_CONFIG /
+            # DEPENDS_ON_ENV / USES_KMS_KEY / FEATURE_GATED_BY edges.
+            phase5_relationships = await self._scan_config_dependencies(
+                files_to_process, repo_path, entities
+            )
+            relationships.extend(phase5_relationships)
+
             # Step 4: Populate Neptune graph
             job.status = IngestionStatus.INDEXING_GRAPH
             self._update_job_status_in_persistence(job_id, job.status)
@@ -577,6 +591,12 @@ class GitIngestionService:
                 files_to_process, repo_path
             )
             job.entities_indexed = len(entities)
+
+            # Phase 5 config-dependency scan over the changed files.
+            phase5_relationships = await self._scan_config_dependencies(
+                files_to_process, repo_path, entities
+            )
+            relationships.extend(phase5_relationships)
 
             # Update graph (upsert)
             job.status = IngestionStatus.INDEXING_GRAPH
@@ -1051,6 +1071,99 @@ class GitIngestionService:
                 self._add_relationship_to_graph, relationship, repo_id, branch
             )
 
+    def _collect_phase5_vertex_writes(self, relationships) -> list:
+        """Build asyncio tasks materializing Phase 5 vertices.
+
+        Inspects each Phase 5 edge for its ``vertex_label`` property
+        (set by :class:`ConfigDependencyAgent`) and dispatches to the
+        appropriate writer on :class:`NeptuneGraphService`. Vertices
+        are deduped so a config parameter referenced by ten call
+        sites only writes once. Sensitivity flows from the edge's
+        property to the vertex so query-time ABAC has a consistent
+        gate regardless of which edge brought it into the graph.
+        """
+        seen: set[tuple[str, str]] = set()
+        tasks = []
+        for rel in relationships:
+            label = rel.properties.get("vertex_label")
+            if label not in {
+                VERTEX_CONFIG_PARAMETER,
+                VERTEX_KMS_ALIAS,
+                VERTEX_FEATURE_FLAG,
+            }:
+                continue
+            target = rel.target_name
+            kind = rel.properties.get("kind", "ssm")
+            sensitivity = rel.properties.get("sensitivity", "restricted")
+            key = (label, target)
+            if key in seen:
+                continue
+            seen.add(key)
+            if label == VERTEX_CONFIG_PARAMETER:
+                writer = self.neptune.add_config_parameter
+                tasks.append(
+                    asyncio.to_thread(
+                        writer,
+                        name=target,
+                        kind=kind,
+                        sensitivity=sensitivity,
+                    )
+                )
+            elif label == VERTEX_KMS_ALIAS:
+                tasks.append(
+                    asyncio.to_thread(
+                        self.neptune.add_kms_alias,
+                        alias=target,
+                        sensitivity=sensitivity,
+                    )
+                )
+            elif label == VERTEX_FEATURE_FLAG:
+                tasks.append(
+                    asyncio.to_thread(
+                        self.neptune.add_feature_flag,
+                        flag_name=target,
+                        sensitivity=sensitivity,
+                    )
+                )
+        return tasks
+
+    async def _scan_config_dependencies(
+        self,
+        files_to_process,
+        repo_path,
+        entities,
+    ) -> list:
+        """Run :class:`ConfigDependencyAgent` over the parsed files.
+
+        Returns a list of :class:`CodeRelationship` records carrying
+        Phase 5 edge labels. The agent is purely deterministic in
+        Phase 5.1; failures are logged but never raised because a
+        config-extraction miss is recoverable on the next ingest.
+        """
+        sources: dict[str, str] = {}
+        for path in files_to_process:
+            try:
+                content = await asyncio.to_thread(self._read_file_content, path)
+            except Exception:
+                continue
+            if not content:
+                continue
+            sources[str(path.relative_to(repo_path))] = content
+        if not sources:
+            return []
+        agent = ConfigDependencyAgent()
+        relationships, stats = await asyncio.to_thread(
+            agent.scan_repo, entities, sources
+        )
+        logger.info(
+            f"Phase 5 config scan: env={stats.env_vars_emitted}, "
+            f"ssm={stats.ssm_params_emitted}, "
+            f"kms={stats.kms_aliases_emitted}, "
+            f"flags={stats.feature_flags_emitted}, "
+            f"files={stats.files_scanned}"
+        )
+        return relationships
+
     async def _delete_removed_files(self, removed_files: list[str]) -> None:
         """Drop graph entities and vector embeddings for files removed
         from the repository.
@@ -1210,6 +1323,20 @@ class GitIngestionService:
                     logger.warning(
                         f"Failed to clear outgoing edges for {file_path}: {result}"
                     )
+
+        # Phase 5 (ADR-090): materialize ConfigParameter / KMSAlias /
+        # FeatureFlag vertices for any Phase 5 edges in the relationship
+        # set. The vertex is written before its inbound edges so the
+        # add_relationship endpoint lookup resolves on first try.
+        if relationships and self.neptune is not None:
+            phase5_tasks = self._collect_phase5_vertex_writes(relationships)
+            if phase5_tasks:
+                phase5_results = await asyncio.gather(
+                    *phase5_tasks, return_exceptions=True
+                )
+                for result in phase5_results:
+                    if isinstance(result, Exception):
+                        logger.warning(f"Phase 5 vertex write failed: {result}")
 
         # Process entities concurrently with limited parallelism. We
         # must write entities before edges so vertex endpoints exist.

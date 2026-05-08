@@ -108,7 +108,106 @@ check_prerequisites() {
         exit 1
     fi
 
+    # Bedrock model access preflight (commercial regions only; GovCloud
+    # has its own model approval flow and skips this check).
+    if [[ ! "${REGION}" =~ ^us-gov- ]]; then
+        if ! aws bedrock list-foundation-models --region "${REGION}" &> /dev/null; then
+            log_warning "Cannot list Bedrock foundation models in ${REGION}."
+            echo "    The application layer will fail at runtime if Bedrock model"
+            echo "    access has not been requested in the AWS console:"
+            echo "      AWS Console > Bedrock > Model access > Request access"
+            echo "    Required models (per CLAUDE.md):"
+            echo "      - Anthropic Claude Sonnet 4.6 (claude-sonnet-4-6)"
+            echo "      - Anthropic Claude Haiku 4.5 (claude-haiku-4-5-20251001)"
+            echo "    Bootstrap will continue, but plan to approve access before"
+            echo "    starting the deployment-pipeline state machine."
+        else
+            log_success "Bedrock API reachable in ${REGION}"
+        fi
+    fi
+
     log_success "Prerequisites check passed"
+}
+
+bootstrap_ecr_base_images() {
+    log_info "Bootstrapping ECR private base images..."
+
+    # The aura-ecr-base-images-{env} stack provides the private base
+    # image repositories. CLAUDE.md mandates that every container
+    # build use private ECR base images, so we deploy this stack
+    # before any layer build that depends on it.
+    local STACK_NAME="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
+    local TEMPLATE_FILE="${REPO_ROOT}/deploy/cloudformation/ecr-base-images.yaml"
+
+    if [ ! -f "${TEMPLATE_FILE}" ]; then
+        log_warning "ecr-base-images.yaml not found; skipping base image bootstrap."
+        log_warning "Layer builds may fail later if private base images are required."
+        return 0
+    fi
+
+    # Deploy the ECR repository stack (idempotent).
+    aws cloudformation deploy \
+        --stack-name "${STACK_NAME}" \
+        --template-file "${TEMPLATE_FILE}" \
+        --parameter-overrides \
+            Environment="${ENVIRONMENT}" \
+            ProjectName="${PROJECT_NAME}" \
+        --capabilities CAPABILITY_NAMED_IAM \
+        --tags Project="${PROJECT_NAME}" Environment="${ENVIRONMENT}" Layer=bootstrap \
+        --no-fail-on-empty-changeset \
+        --region "${REGION}" \
+        || { log_error "ECR base images stack deploy failed"; exit 1; }
+
+    log_success "ECR base images stack deployed: ${STACK_NAME}"
+
+    # Pull-and-push approved upstream images to the private repos.
+    # bootstrap-base-images.sh handles the runtime detection (podman
+    # vs docker) and the version pinning per CVE patch cycle.
+    local PUSH_SCRIPT="${SCRIPT_DIR}/bootstrap-base-images.sh"
+    if [ -x "${PUSH_SCRIPT}" ]; then
+        log_info "Pulling and pushing approved base images to private ECR..."
+        if AWS_REGION="${REGION}" "${PUSH_SCRIPT}" "${ENVIRONMENT}"; then
+            log_success "Private base images populated"
+        else
+            log_warning "Private base image push failed; layer builds may fail."
+            log_warning "Re-run manually: AWS_REGION=${REGION} ${PUSH_SCRIPT} ${ENVIRONMENT}"
+        fi
+    else
+        log_warning "bootstrap-base-images.sh not found or not executable; skipping image push."
+        log_warning "Run manually before triggering layer builds:"
+        log_warning "  AWS_REGION=${REGION} ${PUSH_SCRIPT} ${ENVIRONMENT}"
+    fi
+}
+
+deploy_deployment_pipeline() {
+    log_info "Deploying single-trigger deployment pipeline (Layer 6.11)..."
+
+    # The deployment-pipeline.yaml Step Functions stack is what makes
+    # the streamlined deploy a single command. Bootstrap provisions
+    # the CodeBuild projects; this stack provisions the orchestrator
+    # that invokes them in dependency order.
+    local STACK_NAME="${PROJECT_NAME}-deployment-pipeline-${ENVIRONMENT}"
+    local TEMPLATE_FILE="${REPO_ROOT}/deploy/cloudformation/deployment-pipeline.yaml"
+
+    if [ ! -f "${TEMPLATE_FILE}" ]; then
+        log_warning "deployment-pipeline.yaml not found; skipping orchestrator deploy."
+        log_warning "Operator must trigger each layer's CodeBuild project manually."
+        return 0
+    fi
+
+    aws cloudformation deploy \
+        --stack-name "${STACK_NAME}" \
+        --template-file "${TEMPLATE_FILE}" \
+        --parameter-overrides \
+            Environment="${ENVIRONMENT}" \
+            ProjectName="${PROJECT_NAME}" \
+        --capabilities CAPABILITY_NAMED_IAM \
+        --tags Project="${PROJECT_NAME}" Environment="${ENVIRONMENT}" Layer=serverless \
+        --no-fail-on-empty-changeset \
+        --region "${REGION}" \
+        || { log_error "Deployment pipeline deploy failed"; exit 1; }
+
+    log_success "Deployment pipeline deployed: ${STACK_NAME}"
 }
 
 deploy_bootstrap_stack() {
@@ -195,14 +294,39 @@ trigger_bootstrap_build() {
 }
 
 print_next_steps() {
+    local STATE_MACHINE_ARN
+    STATE_MACHINE_ARN=$(aws cloudformation describe-stacks \
+        --stack-name "${PROJECT_NAME}-deployment-pipeline-${ENVIRONMENT}" \
+        --region "${REGION}" \
+        --query 'Stacks[0].Outputs[?OutputKey==`StateMachineArn`].OutputValue' \
+        --output text 2>/dev/null || echo "")
+
     echo ""
     echo "=========================================="
     echo "BOOTSTRAP COMPLETE - NEXT STEPS"
     echo "=========================================="
     echo ""
     echo "All 24 CodeBuild projects have been deployed."
+    echo "Deployment pipeline state machine is ready."
     echo ""
-    echo "Deploy infrastructure layers in order:"
+    echo "STREAMLINED DEPLOY (recommended):"
+    echo ""
+    if [ -n "${STATE_MACHINE_ARN}" ] && [ "${STATE_MACHINE_ARN}" != "None" ]; then
+        echo "  aws stepfunctions start-execution \\"
+        echo "    --state-machine-arn ${STATE_MACHINE_ARN} \\"
+        echo "    --input '{\"environment\": \"${ENVIRONMENT}\", \"region\": \"${REGION}\"}' \\"
+        echo "    --region ${REGION}"
+    else
+        echo "  # State machine ARN not yet available; rerun bootstrap or"
+        echo "  # check the deployment-pipeline stack outputs."
+        echo "  aws stepfunctions list-state-machines --region ${REGION} \\"
+        echo "    --query \"stateMachines[?contains(name, '${PROJECT_NAME}-deployment-pipeline')].stateMachineArn\""
+    fi
+    echo ""
+    echo "Or, equivalently, use the wrapper:"
+    echo "  ./deploy.sh deploy ${ENVIRONMENT}"
+    echo ""
+    echo "MANUAL LAYER-BY-LAYER (if the state machine is unavailable):"
     echo ""
     echo "  # Layer 1: Foundation (VPC, IAM, KMS, Security Groups)"
     echo "  aws codebuild start-build --project-name ${PROJECT_NAME}-foundation-deploy-${ENVIRONMENT} --region ${REGION}"
@@ -221,16 +345,18 @@ print_next_steps() {
     echo ""
     echo "  # Layer 6: Serverless (Lambda, Step Functions)"
     echo "  aws codebuild start-build --project-name ${PROJECT_NAME}-serverless-deploy-${ENVIRONMENT} --region ${REGION}"
+    echo "  aws codebuild start-build --project-name ${PROJECT_NAME}-serverless-symbol-resolver-deploy-${ENVIRONMENT} --region ${REGION}"
     echo ""
     echo "  # Layer 7: Sandbox (HITL, Ephemeral Environments)"
     echo "  aws codebuild start-build --project-name ${PROJECT_NAME}-sandbox-deploy-${ENVIRONMENT} --region ${REGION}"
     echo ""
-    echo "  # Layer 8: Security (GuardDuty, Config)"
+    echo "  # Layer 8: Security (GuardDuty, Config) + ADR-083 + ADR-084"
     echo "  aws codebuild start-build --project-name ${PROJECT_NAME}-security-deploy-${ENVIRONMENT} --region ${REGION}"
+    echo "  aws codebuild start-build --project-name ${PROJECT_NAME}-runtime-security-deploy-${ENVIRONMENT} --region ${REGION}"
+    echo "  aws codebuild start-build --project-name ${PROJECT_NAME}-vuln-scan-deploy-${ENVIRONMENT} --region ${REGION}"
     echo ""
-    echo "For full deployment guide, see:"
-    echo "  docs/deployment/CICD_SETUP_GUIDE.md"
-    echo "  docs/operations/BOOTSTRAP_GUIDE.md"
+    echo "For the full deployment guide, see:"
+    echo "  docs/deployment/DEPLOYMENT_GUIDE.md (canonical)"
     echo ""
 }
 
@@ -263,10 +389,21 @@ main() {
     echo "=========================================="
     echo ""
 
-    # Execute bootstrap steps
+    # Execute bootstrap steps in dependency order:
+    #   1. Preflight every implicit prerequisite (AWS creds,
+    #      CodeConnection, Bedrock model access).
+    #   2. Bootstrap private ECR base images BEFORE any layer build
+    #      runs (CLAUDE.md mandates private ECR for all containers).
+    #   3. Deploy the bootstrap CodeBuild stack and run it; this
+    #      provisions the 24 layer CodeBuild projects.
+    #   4. Deploy the deployment-pipeline state machine so the
+    #      operator has a single command to drive the rest.
+    #   5. Print the streamlined start-execution invocation.
     check_prerequisites
+    bootstrap_ecr_base_images
     deploy_bootstrap_stack
     trigger_bootstrap_build
+    deploy_deployment_pipeline
     print_next_steps
 
     log_success "Bootstrap complete!"

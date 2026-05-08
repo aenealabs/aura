@@ -770,8 +770,9 @@ class NeptuneGraphService:
 
         # Real Neptune operation
         try:
+            safe_file_path = escape_gremlin_string(file_path)
             query = f"""
-            g.V().has('file_path', '{file_path}').drop()
+            g.V().has('file_path', '{safe_file_path}').drop()
             """
 
             self.client.submit(query).all().result()
@@ -781,6 +782,96 @@ class NeptuneGraphService:
         except Exception as e:
             logger.error(f"Failed to delete file entities from Neptune: {e}")
             raise NeptuneError(f"Failed to delete file entities: {e}") from e
+
+    def delete_outgoing_edges_for_entity(self, entity_id: str) -> int:
+        """
+        Delete only outgoing edges from an entity, preserving the vertex
+        and any incoming edges.
+
+        Used by incremental re-ingest to clear stale outgoing relationships
+        before rewriting them. Unlike delete_entity, this preserves cross-file
+        edges that point INTO this entity from elsewhere in the graph.
+
+        Args:
+            entity_id: Entity identifier
+
+        Returns:
+            Number of outgoing edges deleted in mock mode; -1 in real Neptune
+            mode (drop() does not return a count).
+        """
+        if self.mode == NeptuneMode.MOCK:
+            before = len(self.mock_edges)
+            self.mock_edges = [
+                edge for edge in self.mock_edges if edge.get("from") != entity_id
+            ]
+            deleted = before - len(self.mock_edges)
+            logger.info(
+                f"[MOCK] Deleted {deleted} outgoing edges from entity: {entity_id}"
+            )
+            return deleted
+
+        try:
+            safe_entity_id = escape_gremlin_string(entity_id)
+            query = f"""
+            g.V().has('entity_id', '{safe_entity_id}').outE().drop()
+            """
+
+            self.client.submit(query).all().result()
+            logger.info(f"Deleted outgoing edges from entity: {entity_id}")
+            return -1
+
+        except Exception as e:
+            logger.error(f"Failed to delete outgoing edges from Neptune: {e}")
+            raise NeptuneError(f"Failed to delete outgoing edges: {e}") from e
+
+    def delete_outgoing_edges_for_file(self, file_path: str) -> int:
+        """
+        Delete outgoing edges from every entity whose file_path matches.
+
+        Used by incremental re-ingest when a file is re-parsed: clears stale
+        outgoing relationships for all entities defined in the file before
+        new edges are written. Vertices and incoming cross-file edges are
+        preserved.
+
+        Args:
+            file_path: Source file path
+
+        Returns:
+            Number of outgoing edges deleted in mock mode; -1 in real Neptune
+            mode (drop() does not return a count).
+        """
+        if self.mode == NeptuneMode.MOCK:
+            file_entity_ids = {
+                eid
+                for eid, entity in self.mock_graph.items()
+                if entity.get("file_path") == file_path
+            }
+            before = len(self.mock_edges)
+            self.mock_edges = [
+                edge
+                for edge in self.mock_edges
+                if edge.get("from") not in file_entity_ids
+            ]
+            deleted = before - len(self.mock_edges)
+            logger.info(
+                f"[MOCK] Deleted {deleted} outgoing edges from "
+                f"{len(file_entity_ids)} entities in file: {file_path}"
+            )
+            return deleted
+
+        try:
+            safe_file_path = escape_gremlin_string(file_path)
+            query = f"""
+            g.V().has('file_path', '{safe_file_path}').outE().drop()
+            """
+
+            self.client.submit(query).all().result()
+            logger.info(f"Deleted outgoing edges for file: {file_path}")
+            return -1
+
+        except Exception as e:
+            logger.error(f"Failed to delete outgoing edges for file: {e}")
+            raise NeptuneError(f"Failed to delete outgoing edges for file: {e}") from e
 
     # =========================================================================
     # Infrastructure Resource Methods (ADR-056 - Documentation Agent)

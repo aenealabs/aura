@@ -496,6 +496,7 @@ class GitIngestionService:
         repository_path: str | Path,
         changed_files: list[str],
         commit_hash: str | None = None,
+        removed_files: list[str] | None = None,
     ) -> IngestionResult:
         """
         Incremental ingestion for changed files (webhook-triggered).
@@ -504,6 +505,10 @@ class GitIngestionService:
             repository_path: Path to the local repository
             changed_files: List of changed file paths (relative to repo root)
             commit_hash: Commit hash that triggered the change
+            removed_files: Files removed from the repository in this change.
+                Their entities (and connected edges) are dropped from Neptune,
+                and their embeddings are dropped from OpenSearch. Defaults to
+                an empty list when omitted.
 
         Returns:
             IngestionResult with statistics
@@ -511,6 +516,7 @@ class GitIngestionService:
         start_time = datetime.now()
         repo_path = Path(repository_path)
         job_id = self._generate_job_id(str(repo_path), commit_hash or "incremental")
+        removed_files = removed_files or []
 
         # Record request metric
         self.monitor.record_request("ingestion.incremental")
@@ -526,6 +532,12 @@ class GitIngestionService:
         self._persist_job(job)  # Save to DynamoDB
 
         try:
+            # Cascading deletion for removed files. Runs before re-parse so
+            # the rest of the job sees a clean slate and partial failures
+            # leave a consistent state.
+            if removed_files:
+                await self._delete_removed_files(removed_files)
+
             # Filter to supported files only
             files_to_process = [
                 repo_path / f
@@ -892,6 +904,42 @@ class GitIngestionService:
         async with self._graph_semaphore:
             await asyncio.to_thread(self._add_entity_to_graph, entity, repo_id, branch)
 
+    async def _delete_removed_files(self, removed_files: list[str]) -> None:
+        """Drop graph entities and vector embeddings for files removed
+        from the repository.
+
+        Each file's vertices are dropped from Neptune (which cascades to
+        edges connected on either side, since the entities themselves no
+        longer exist) and its documents are dropped from OpenSearch.
+
+        Failures are logged but do not abort ingestion: a stale embedding
+        or vertex is recoverable on the next full ingest, but failing
+        the entire incremental job because of a single store hiccup is
+        worse for operators.
+        """
+        for file_path in removed_files:
+            if self.neptune is not None:
+                try:
+                    await asyncio.to_thread(
+                        self.neptune.delete_entities_by_file, file_path
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to delete graph entities for removed file "
+                        f"{file_path}: {e}"
+                    )
+
+            if self.opensearch is not None:
+                try:
+                    await asyncio.to_thread(
+                        self.opensearch.delete_by_file_path, file_path
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to delete embeddings for removed file "
+                        f"{file_path}: {e}"
+                    )
+
     async def _populate_graph(
         self,
         entities: list,
@@ -904,8 +952,32 @@ class GitIngestionService:
         Offloads blocking Neptune calls to thread pool to avoid blocking
         the event loop. Entities are processed concurrently with limited
         parallelism controlled by _graph_semaphore.
+
+        When upsert=True (incremental re-ingest), outgoing edges of every
+        entity in each affected file are deleted before new edges are
+        written. This prevents stale-edge accumulation across re-ingests
+        while preserving incoming cross-file edges that point INTO entities
+        in the affected files.
         """
         repo_id = self._url_to_repo_id(repository_url)
+
+        # Upsert path: clear stale outgoing edges before re-adding entities.
+        # Vertices and incoming edges are preserved; only outgoing edges
+        # owned by entities in re-parsed files are dropped.
+        if upsert and self.neptune is not None:
+            unique_files = {entity.file_path for entity in entities}
+            clear_tasks = [
+                asyncio.to_thread(
+                    self.neptune.delete_outgoing_edges_for_file, file_path
+                )
+                for file_path in unique_files
+            ]
+            clear_results = await asyncio.gather(*clear_tasks, return_exceptions=True)
+            for file_path, result in zip(unique_files, clear_results):
+                if isinstance(result, Exception):
+                    logger.warning(
+                        f"Failed to clear outgoing edges for {file_path}: {result}"
+                    )
 
         # Process entities concurrently with limited parallelism
         tasks = [

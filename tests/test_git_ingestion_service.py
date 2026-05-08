@@ -157,6 +157,9 @@ def mock_neptune():
     mock.add_code_entity = MagicMock(return_value="entity-123")
     mock.add_relationship = MagicMock(return_value=True)
     mock.delete_by_repository = MagicMock(return_value=10)
+    mock.delete_entities_by_file = MagicMock(return_value=2)
+    mock.delete_outgoing_edges_for_file = MagicMock(return_value=3)
+    mock.delete_outgoing_edges_for_entity = MagicMock(return_value=1)
     return mock
 
 
@@ -166,6 +169,7 @@ def mock_opensearch():
     mock = MagicMock()
     mock.index_embedding = MagicMock(return_value=True)
     mock.delete_by_repository = MagicMock(return_value=5)
+    mock.delete_by_file_path = MagicMock(return_value=4)
     return mock
 
 
@@ -999,6 +1003,190 @@ class TestIngestChanges:
 
             # Should still succeed (errors are logged but not fatal)
             assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_ingest_changes_processes_removed_files(
+        self,
+        service,
+        mock_neptune,
+        mock_opensearch,
+        mock_ast_parser,
+    ):
+        """Removed files trigger Neptune entity deletion and OpenSearch
+        embedding deletion (Phase 0 of ADR-090)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            (temp_path / "kept.py").write_text("class Kept: pass")
+
+            await service.ingest_changes(
+                repository_path=temp_path,
+                changed_files=["kept.py"],
+                removed_files=["dropped.py", "also_dropped.py"],
+            )
+
+            # Both removed files cleaned from Neptune
+            neptune_calls = [
+                call.args[0]
+                for call in mock_neptune.delete_entities_by_file.call_args_list
+            ]
+            assert "dropped.py" in neptune_calls
+            assert "also_dropped.py" in neptune_calls
+
+            # And from OpenSearch
+            opensearch_calls = [
+                call.args[0]
+                for call in mock_opensearch.delete_by_file_path.call_args_list
+            ]
+            assert "dropped.py" in opensearch_calls
+            assert "also_dropped.py" in opensearch_calls
+
+    @pytest.mark.asyncio
+    async def test_ingest_changes_no_removed_files_skips_deletion(
+        self, service, mock_neptune, mock_opensearch, mock_ast_parser
+    ):
+        """When removed_files is omitted, no deletion calls occur."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            (temp_path / "app.py").write_text("class App: pass")
+
+            await service.ingest_changes(
+                repository_path=temp_path,
+                changed_files=["app.py"],
+            )
+
+            mock_neptune.delete_entities_by_file.assert_not_called()
+            mock_opensearch.delete_by_file_path.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ingest_changes_continues_on_deletion_failure(
+        self, service, mock_neptune, mock_opensearch, mock_ast_parser
+    ):
+        """A failure in removed-file cleanup is logged but does not
+        abort the rest of the incremental job."""
+        mock_neptune.delete_entities_by_file.side_effect = Exception(
+            "neptune transient"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            (temp_path / "app.py").write_text("class App: pass")
+
+            result = await service.ingest_changes(
+                repository_path=temp_path,
+                changed_files=["app.py"],
+                removed_files=["gone.py"],
+            )
+
+            # Job still succeeded
+            assert result.success is True
+            # Neptune deletion was attempted
+            mock_neptune.delete_entities_by_file.assert_called_once_with("gone.py")
+
+    @pytest.mark.asyncio
+    async def test_ingest_changes_upsert_clears_outgoing_edges(
+        self, service, mock_neptune, mock_ast_parser
+    ):
+        """Incremental re-ingest clears outgoing edges from re-parsed
+        files before writing new ones (Phase 0 of ADR-090)."""
+        from src.agents.ast_parser_agent import CodeEntity
+
+        mock_ast_parser.parse_file.return_value = [
+            CodeEntity(
+                name="Updated",
+                entity_type="class",
+                file_path="updated.py",
+                line_number=1,
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            (temp_path / "updated.py").write_text("class Updated: pass")
+
+            await service.ingest_changes(
+                repository_path=temp_path,
+                changed_files=["updated.py"],
+            )
+
+            # Outgoing edges of the re-parsed file's entities were cleared
+            mock_neptune.delete_outgoing_edges_for_file.assert_called()
+            cleared_files = [
+                call.args[0]
+                for call in mock_neptune.delete_outgoing_edges_for_file.call_args_list
+            ]
+            assert "updated.py" in cleared_files
+
+
+class TestPopulateGraphUpsert:
+    """Test _populate_graph upsert semantics (Phase 0 of ADR-090)."""
+
+    @pytest.mark.asyncio
+    async def test_full_ingest_does_not_clear_edges(
+        self, service, mock_neptune, mock_ast_parser
+    ):
+        """Full ingest (upsert=False) does not invoke edge clearing."""
+        from src.agents.ast_parser_agent import CodeEntity
+
+        entities = [
+            CodeEntity(
+                name="Fresh",
+                entity_type="class",
+                file_path="fresh.py",
+                line_number=1,
+            )
+        ]
+
+        await service._populate_graph(
+            entities, "https://github.com/o/r", "main", upsert=False
+        )
+
+        mock_neptune.delete_outgoing_edges_for_file.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_upsert_clears_unique_files_only_once(
+        self, service, mock_neptune, mock_ast_parser
+    ):
+        """Multiple entities in the same file produce one clear call per file."""
+        from src.agents.ast_parser_agent import CodeEntity
+
+        entities = [
+            CodeEntity(name="A", entity_type="class", file_path="x.py", line_number=1),
+            CodeEntity(name="B", entity_type="class", file_path="x.py", line_number=10),
+            CodeEntity(name="C", entity_type="class", file_path="y.py", line_number=1),
+        ]
+
+        await service._populate_graph(
+            entities, "https://github.com/o/r", "main", upsert=True
+        )
+
+        cleared = {
+            call.args[0]
+            for call in mock_neptune.delete_outgoing_edges_for_file.call_args_list
+        }
+        assert cleared == {"x.py", "y.py"}
+
+    @pytest.mark.asyncio
+    async def test_upsert_continues_when_clear_fails(
+        self, service, mock_neptune, mock_ast_parser
+    ):
+        """Edge-clear failures are logged but do not abort population."""
+        from src.agents.ast_parser_agent import CodeEntity
+
+        mock_neptune.delete_outgoing_edges_for_file.side_effect = Exception(
+            "transient neptune error"
+        )
+
+        entities = [
+            CodeEntity(name="A", entity_type="class", file_path="x.py", line_number=1)
+        ]
+
+        # Should not raise
+        await service._populate_graph(
+            entities, "https://github.com/o/r", "main", upsert=True
+        )
+
+        # Add was still attempted
+        mock_neptune.add_code_entity.assert_called()
 
 
 # =============================================================================

@@ -662,6 +662,96 @@ class TestNeptuneDeleteOperations:
         assert len(remaining_edges) == 0
 
 
+class TestDeleteOutgoingEdges:
+    """Tests for surgical outgoing-edge deletion (Phase 0 of ADR-090)."""
+
+    def test_delete_outgoing_edges_for_entity_drops_only_outgoing(self):
+        """Outgoing edges are removed; incoming edges are preserved."""
+        service = NeptuneGraphService(mode=NeptuneMode.MOCK)
+
+        id_a = service.add_code_entity("A", "function", "a.py", 1)
+        id_b = service.add_code_entity("B", "function", "b.py", 1)
+        id_c = service.add_code_entity("C", "function", "c.py", 1)
+
+        service.add_relationship(id_a, id_b, "CALLS")
+        service.add_relationship(id_a, id_c, "IMPORTS")
+        service.add_relationship(id_c, id_a, "CALLS")  # incoming to A
+
+        deleted = service.delete_outgoing_edges_for_entity(id_a)
+
+        assert deleted == 2
+        # A's vertex still present
+        assert id_a in service.mock_graph
+        # No outgoing edges from A
+        outgoing = [e for e in service.mock_edges if e["from"] == id_a]
+        assert outgoing == []
+        # Incoming edge to A preserved
+        incoming = [e for e in service.mock_edges if e["to"] == id_a]
+        assert len(incoming) == 1
+
+    def test_delete_outgoing_edges_for_entity_no_edges(self):
+        """Deleting from an entity with no outgoing edges returns 0."""
+        service = NeptuneGraphService(mode=NeptuneMode.MOCK)
+        entity_id = service.add_code_entity("Lonely", "function", "x.py", 1)
+
+        deleted = service.delete_outgoing_edges_for_entity(entity_id)
+
+        assert deleted == 0
+
+    def test_delete_outgoing_edges_for_entity_unknown_id(self):
+        """Unknown entity_id is a no-op, not an error."""
+        service = NeptuneGraphService(mode=NeptuneMode.MOCK)
+        service.add_code_entity("A", "function", "a.py", 1)
+
+        deleted = service.delete_outgoing_edges_for_entity("does-not-exist")
+
+        assert deleted == 0
+
+    def test_delete_outgoing_edges_for_file_clears_all_entities(self):
+        """All entities in a file have their outgoing edges cleared."""
+        service = NeptuneGraphService(mode=NeptuneMode.MOCK)
+
+        id_a = service.add_code_entity("A", "function", "target.py", 1)
+        id_b = service.add_code_entity("B", "function", "target.py", 10)
+        id_c = service.add_code_entity("C", "function", "other.py", 1)
+
+        service.add_relationship(id_a, id_c, "CALLS")
+        service.add_relationship(id_b, id_c, "CALLS")
+        service.add_relationship(id_c, id_a, "CALLS")  # incoming to target.py
+
+        deleted = service.delete_outgoing_edges_for_file("target.py")
+
+        assert deleted == 2
+        # All entity vertices preserved
+        assert id_a in service.mock_graph
+        assert id_b in service.mock_graph
+        # Incoming edge from other.py to target.py preserved
+        incoming = [e for e in service.mock_edges if e["to"] == id_a]
+        assert len(incoming) == 1
+
+    def test_delete_outgoing_edges_for_file_no_match(self):
+        """Unknown file path is a no-op."""
+        service = NeptuneGraphService(mode=NeptuneMode.MOCK)
+        service.add_code_entity("A", "function", "a.py", 1)
+
+        deleted = service.delete_outgoing_edges_for_file("missing.py")
+
+        assert deleted == 0
+
+    def test_delete_outgoing_edges_preserves_unrelated_files(self):
+        """Edges in unrelated files are not affected."""
+        service = NeptuneGraphService(mode=NeptuneMode.MOCK)
+
+        id_a = service.add_code_entity("A", "function", "a.py", 1)
+        id_b = service.add_code_entity("B", "function", "b.py", 1)
+        service.add_relationship(id_a, id_b, "CALLS")
+
+        service.delete_outgoing_edges_for_file("other.py")
+
+        # a.py edge intact
+        assert any(e["from"] == id_a and e["to"] == id_b for e in service.mock_edges)
+
+
 class TestEscapeGremlinString:
     """Tests for escape_gremlin_string utility function."""
 

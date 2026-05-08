@@ -13,6 +13,7 @@ from enum import Enum
 from typing import Any
 
 from src.services.graph.edge_labels import is_known_label
+from src.services.graph.fqn import compute_fqn
 
 logger = logging.getLogger(__name__)
 
@@ -340,17 +341,41 @@ class NeptuneGraphService:
         """
         entity_id = f"{file_path}::{name}"
 
+        # ADR-090 Phase 1: compute fqn property when repo_id is available.
+        # Callers may pre-compute and pass via metadata["fqn"]; otherwise
+        # we derive a best-effort FQN from the data we have. The single-
+        # parent limitation (no nested-class chain) is a pre-existing
+        # schema constraint; Phase 2 of ADR-090 emits a full parent_chain
+        # at parse time. Disambiguation is also deferred to Phase 2 since
+        # add_code_entity has no collision context here.
+        meta = metadata or {}
+        fqn: str | None = meta.get("fqn")
+        if fqn is None:
+            repo_id = meta.get("repository")
+            if repo_id:
+                parent_chain: tuple[str, ...] = (parent,) if parent else ()
+                fqn = compute_fqn(
+                    name=name,
+                    kind=entity_type,
+                    file_path=file_path,
+                    repo_id=str(repo_id),
+                    parent_chain=parent_chain,
+                )
+
         if self.mode == NeptuneMode.MOCK:
-            self.mock_graph[entity_id] = {
+            entity_record: dict[str, Any] = {
                 "id": entity_id,
                 "name": name,
                 "type": entity_type,
                 "file_path": file_path,
                 "line_number": line_number,
                 "parent": parent,
-                "metadata": metadata or {},
+                "metadata": meta,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
+            if fqn is not None:
+                entity_record["fqn"] = fqn
+            self.mock_graph[entity_id] = entity_record
 
             # Add edge to parent if exists
             if parent:
@@ -383,6 +408,10 @@ class NeptuneGraphService:
              .property('line_number', {line_number})
              .property('created_at', '{datetime.now(timezone.utc).isoformat()}')
             """
+
+            if fqn is not None:
+                safe_fqn = escape_gremlin_string(fqn)
+                query += f".property('fqn', '{safe_fqn}')"
 
             if parent:
                 safe_parent = escape_gremlin_string(parent)
@@ -573,21 +602,40 @@ class NeptuneGraphService:
 
     def get_entity_by_id(self, entity_id: str) -> dict[str, Any] | None:
         """
-        Retrieve a code entity by its ID.
+        Retrieve a code entity by its identifier.
+
+        Per ADR-090 Phase 1, the lookup prefers the canonical ``fqn``
+        property and falls back to the legacy ``entity_id`` property
+        when no FQN match exists. This dual-write read path lets pre-
+        and post-migration code share the same API while the
+        migration window is active.
 
         Args:
-            entity_id: Entity ID
+            entity_id: Either an Aura FQN (preferred) or the legacy
+                ``{file_path}::{name}`` identifier.
 
         Returns:
-            Entity dict or None if not found
+            Entity dict or None if not found.
         """
         if self.mode == NeptuneMode.MOCK:
+            # Prefer FQN match: scan by fqn property first.
+            for entity in self.mock_graph.values():
+                if entity.get("fqn") == entity_id:
+                    return entity
+            # Fall back to legacy entity_id.
             return self.mock_graph.get(entity_id)
 
         # Real Neptune query
         try:
-            safe_entity_id = escape_gremlin_string(entity_id)
-            query = f"g.V().has('entity_id', '{safe_entity_id}').valueMap(true)"
+            safe_id = escape_gremlin_string(entity_id)
+            # Prefer FQN, fall back to entity_id. Gremlin ``or`` predicate
+            # combines both in one round trip.
+            query = (
+                f"g.V().or("
+                f"__.has('fqn', '{safe_id}'), "
+                f"__.has('entity_id', '{safe_id}')"
+                f").limit(1).valueMap(true)"
+            )
             result = self.client.submit(query).all().result()
 
             if not result:
@@ -600,6 +648,7 @@ class NeptuneGraphService:
                 "type": vertex.get("type", [""])[0],
                 "file_path": vertex.get("file_path", [""])[0],
                 "line_number": vertex.get("line_number", [0])[0],
+                "fqn": vertex.get("fqn", [None])[0],
             }
 
         except Exception as e:

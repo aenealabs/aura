@@ -8,5 +8,20 @@ rejected by scripts/lint_edge_labels.py.
 """
 
 from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
+from src.services.graph.fqn import (
+    FQNBuilder,
+    FQNComponents,
+    compute_fqn,
+    derive_module_path,
+    derive_scheme,
+)
 
-__all__ = ["EdgeLabel", "LegacyAlias"]
+__all__ = [
+    "EdgeLabel",
+    "FQNBuilder",
+    "FQNComponents",
+    "LegacyAlias",
+    "compute_fqn",
+    "derive_module_path",
+    "derive_scheme",
+]

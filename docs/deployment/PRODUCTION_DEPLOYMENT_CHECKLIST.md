@@ -1,5 +1,14 @@
 # Project Aura - Production Deployment Checklist
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Pre-deploy and post-deploy checklist for production releases.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Last Updated:** 2026-01-15
 **Target Environment:** AWS Commercial Cloud (dev/qa) → AWS GovCloud (production)
 

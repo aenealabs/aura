@@ -1,5 +1,14 @@
 # Deployment Methods Guide
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Reference comparison of deployment approaches (legacy single-stack vs. modular CodeBuild vs. state-machine).
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 This document identifies all Project Aura services and their deployment methods, commands, and dependencies.
 
 ## Overview

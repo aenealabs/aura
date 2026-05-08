@@ -1,5 +1,14 @@
 # Container Build Best Practices
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Container build security and conventions; private ECR base image policy; ARM/x86 cross-compile guidance.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Project Aura - Dockerfile Standards for Clean CI/CD Builds**
 
 **Last Updated:** January 4, 2026

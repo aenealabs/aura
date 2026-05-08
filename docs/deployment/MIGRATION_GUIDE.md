@@ -1,5 +1,14 @@
 # AWS Account Migration Guide
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Cross-account / cross-region migration (one-time per migration; not part of the normal deploy chain).
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Project Aura - Org Management Account to Dedicated Workload Account**
 
 **Version:** 1.0

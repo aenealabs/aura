@@ -1,5 +1,14 @@
 # Deployment Pipeline Architecture
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Step Functions state-machine deep-dive: states, parallel branches, dependency edges, failure-handling patterns.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Last Updated:** 2026-01-09
 **Status:** Designed, Ready for Implementation
 **Author:** Engineering Team

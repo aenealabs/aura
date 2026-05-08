@@ -1,5 +1,14 @@
 # Project Aura - Resource Deployment Audit
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Per-resource audit of what is deployed in each environment (snapshot; refreshed periodically).
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Last Updated:** 2026-01-15
 **Purpose:** Comprehensive documentation of all AWS resources and their deployment methods for platform support team
 **Audit Status:** All templates have deployment coverage (verified 2026-01-15)

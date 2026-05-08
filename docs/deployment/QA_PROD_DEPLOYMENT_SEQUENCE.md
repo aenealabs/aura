@@ -1,5 +1,14 @@
 # QA/PROD Environment Deployment Sequence
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** QA → production promotion sequence and gating.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Project Aura - Fresh Account Deployment Guide**
 
 **Version:** 1.0

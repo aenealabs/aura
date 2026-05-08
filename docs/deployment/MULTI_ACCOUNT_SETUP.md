@@ -1,5 +1,14 @@
 # Multi-Account Setup Guide
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Multi-account / cross-account role setup that must run in the management account before per-environment deploys.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Project Aura - AWS Organizations & Environment Isolation**
 
 **Version:** 1.0

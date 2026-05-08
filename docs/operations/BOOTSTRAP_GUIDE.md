@@ -1,5 +1,12 @@
 # Project Aura - Fresh Account Bootstrap Guide
 
+> **Canonical doc:** [docs/deployment/DEPLOYMENT_GUIDE.md](../deployment/DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Detailed walkthrough of the bootstrap step
+> internals (CodeConnection setup, IAM role provisioning, ECR base
+> image policy, Bedrock model approval flow). The streamlined
+> one-command flow (`./deploy/deploy.sh deploy <env>`) invokes this
+> automatically.
+
 **Document Version:** 1.0
 **Last Updated:** 2026-01-09
 **Classification:** Operations / Deployment

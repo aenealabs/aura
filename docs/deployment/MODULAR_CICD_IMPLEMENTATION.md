@@ -1,4 +1,13 @@
 # Modular CI/CD Architecture - Implementation Guide
+
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Implementation history of the modular CI/CD architecture; kept for context, not as deploy instructions.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
 **Project Aura - AWS Well-Architected Compliant Pipeline**
 
 **Status:** CodeBuild Infrastructure Complete (5/5 projects) | Cloud Deployments (3/5 phases deployed)

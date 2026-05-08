@@ -1,39 +1,124 @@
-# Modular CI/CD Deployment Guide
-**Project Aura - Step-by-Step Deployment Instructions**
+# Project Aura Deployment Guide (Canonical)
+**One-Command Deployment Reference**
 
 **Target Audience:** DevOps Engineers, Platform Team, Data Team
-**Prerequisites:** AWS Account, AWS CLI configured, AWS SSO access
-**Estimated Time:** 30 minutes total (Foundation: 10 min, Data: 20 min)
+**Prerequisites:** AWS Account, AWS CLI configured, AWS SSO access, GitHub
+CodeConnection ARN in SSM
+**Estimated Time:** 30–60 minutes for a clean-account dev deploy
+
+> **This is the canonical deployment doc.** Other deployment-related
+> docs in `docs/deployment/` cover specialized topics (multi-account,
+> production checklist, GitHub Actions, etc.) and link back here for
+> the streamlined flow.
 
 ---
 
 ## Quick Start (TL;DR)
 
-> **Multi-Account Setup:** For QA/PROD environments in separate AWS accounts, see [MULTI_ACCOUNT_SETUP.md](./MULTI_ACCOUNT_SETUP.md) first.
+The platform deploys with one command:
 
 ```bash
-# Set your AWS profile (use standardized naming: aura-admin-{env})
-export AWS_PROFILE=aura-admin  # or: AdministratorAccess-<YOUR_ACCOUNT_ID>
-export ENV=dev
-
-# Step 0: Deploy Account Bootstrap (new environments only)
-# See "Phase 0: Account Bootstrap" section for full parameters
-aws cloudformation deploy \
-  --template-file deploy/cloudformation/account-bootstrap.yaml \
-  --stack-name aura-account-bootstrap-${ENV} \
-  --parameter-overrides Environment=${ENV} ... \
-  --capabilities CAPABILITY_NAMED_IAM
-
-# Step 1: Deploy Foundation Layer CodeBuild
-./deploy-foundation-codebuild.sh ${ENV}
-
-# Step 2: Deploy Data Layer CodeBuild
-./deploy-data-codebuild.sh ${ENV}
-
-# Step 3: Trigger builds
-./trigger-foundation-build.sh ${ENV}
-./trigger-data-build.sh ${ENV}
+# Single-command clean-account deploy
+ALERT_EMAIL=ops@example.com ./deploy/deploy.sh deploy dev
 ```
+
+That command runs:
+
+1. **Bootstrap** (`deploy/scripts/bootstrap-fresh-account.sh`) — preflights
+   AWS credentials, GitHub CodeConnection, and Bedrock model access;
+   populates private ECR base images; deploys all 24 layer CodeBuild
+   projects; deploys the deployment-pipeline state machine.
+2. **Streamlined deploy** — starts the deployment-pipeline Step
+   Functions execution and waits for it to complete.
+
+The state machine deploys layers in dependency order:
+
+```
+foundation → data → compute → [application | observability | (serverless → symbol-resolver)]
+                              → sandbox → [security | runtime-security | vuln-scan]
+```
+
+### One-time per-account prerequisites
+
+The bootstrap script preflights these and fails loudly if they're
+missing. Set them up once, then `./deploy.sh deploy` works
+end-to-end.
+
+| Prerequisite | Why | How to provision |
+|---|---|---|
+| AWS CLI + credentials | Every AWS API call | `aws configure` |
+| GitHub CodeConnection ARN | CodeBuild source pulls | AWS Console → CodeBuild → Settings → Connections; store ARN at SSM `/aura/global/codeconnections-arn` |
+| Bedrock model access | Application layer LLM calls | AWS Console → Bedrock → Model access (request Claude Sonnet 4.6 + Haiku 4.5 per `CLAUDE.md`) |
+| `ALERT_EMAIL` env var | Budget + alarm SNS subscriptions | Set when invoking `./deploy.sh deploy` |
+
+> **Multi-Account Setup:** For QA/PROD environments in separate AWS
+> accounts, see [MULTI_ACCOUNT_SETUP.md](./MULTI_ACCOUNT_SETUP.md)
+> for the cross-account role setup that must run before `./deploy.sh
+> deploy <env>` in the target account.
+
+### Other commands
+
+```bash
+# Re-run state machine after fixing a failed step (skips bootstrap)
+./deploy/deploy.sh redeploy dev
+
+# Show latest state-machine execution status
+./deploy/deploy.sh status dev
+
+# cfn-lint every CloudFormation template
+./deploy/deploy.sh validate
+
+# Tear down an environment (with confirmation; not fully automated)
+./deploy/deploy.sh destroy dev
+
+# Help
+./deploy/deploy.sh help
+```
+
+### What's deployed
+
+After a successful run, the state machine has provisioned every layer
+including the recently-added ADR components:
+
+- **ADR-083 Runtime Agent Security Platform** (Layer 8 sub-layer)
+- **ADR-084 Native Vulnerability Scanning Engine** (Layer 8 sub-layer)
+- **ADR-090 Phase 4c.2 Tier 3 Symbol Resolver** (Layer 6.20 sub-layer)
+- **ADR-088 Continuous Model Assurance** (folded into data /
+  observability / sandbox / serverless layers)
+
+### ADR-090 Phase 5 specifics
+
+The Phase 5 ABAC kill-switch SSM parameter is created automatically
+by the symbol-resolver sub-layer at:
+
+```
+/aura/phase5/abac-kill-switch-{env}
+```
+
+It defaults to `false` (inactive). Flip to `true` as an
+incident-response toggle to force every Phase 5 edge to TOP_LEVEL
+clearance globally without a code deploy.
+
+For the entity-ID migration script (one-shot, idempotent), see
+`scripts/migrate_entity_ids_adr090.py` and ADR-090 Phase 1 in
+`docs/architecture-decisions/ADR-090-graphrag-ingestion-edge-completeness.md`.
+
+---
+
+## Legacy manual flow (reference only)
+
+> **The sections below describe the pre-streamlined manual flow** (one
+> CodeBuild trigger per layer). They are kept for ops engineers who
+> need to run a single layer in isolation while debugging. For
+> day-to-day deploys, use the one-command flow in the TL;DR above.
+>
+> **Do not follow the legacy `./deploy-*-codebuild.sh` and
+> `./trigger-*-build.sh` references in the body below as a sequence.**
+> Those scripts are partial and the canonical script names live in
+> `deploy/scripts/` (no `trigger-*` scripts exist; use
+> `aws codebuild start-build --project-name aura-<layer>-deploy-<env>`
+> directly when triggering a single layer manually). The streamlined
+> `./deploy.sh deploy <env>` covers the full sequence.
 
 ---
 

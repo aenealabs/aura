@@ -1,5 +1,14 @@
 # Buildspec Complexity Analysis
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Buildspec topology rationale (parent → sub-child pattern, 600-line cap, CodeBuild timeout mitigation).
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 Analysis of 11 CloudFormation templates without deployment pipelines and assessment of existing buildspec complexity to determine the best deployment strategy.
 
 **Analysis Date:** 2025-12-09

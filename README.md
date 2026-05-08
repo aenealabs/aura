@@ -247,11 +247,13 @@ pytest tests/
 ### Deploy to AWS
 
 ```bash
-# Deploy foundation layer
-./deploy/scripts/deploy-foundation-codebuild.sh
+# One-command clean-account deploy (bootstrap + state machine)
+ALERT_EMAIL=ops@example.com ./deploy/deploy.sh deploy dev
 ```
 
-See the [Installation Guide](docs/product/getting-started/installation.md) for SaaS, Kubernetes, and Podman deployment options, and the [Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md) for complete AWS infrastructure setup.
+The single command runs bootstrap (24 layer CodeBuild projects + private ECR base images + deployment-pipeline state machine) and then triggers the state machine to deploy every layer in dependency order.
+
+See the [Installation Guide](docs/product/getting-started/installation.md) for SaaS, Kubernetes, and Podman deployment options, and the [Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md) for the canonical AWS infrastructure deploy reference.
 
 ---
 

@@ -1,5 +1,14 @@
 # CodeBuild Bootstrap Guide
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Bootstrap script internals: what each step in `bootstrap-fresh-account.sh` does and why.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Last Updated:** January 2, 2026
 **Purpose:** Reference for CodeBuild project deployment paths (bootstrap vs auto-deployed)
 **Audience:** Platform development teams, DevOps engineers

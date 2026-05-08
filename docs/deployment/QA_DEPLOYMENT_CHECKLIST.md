@@ -1,5 +1,14 @@
 # QA Deployment Checklist
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** QA pre-deploy checklist.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Last Updated:** 2026-01-11
 **Environment:** QA (Commercial AWS)
 **Region:** us-east-1

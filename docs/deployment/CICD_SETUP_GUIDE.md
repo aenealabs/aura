@@ -1,5 +1,14 @@
 # Project Aura - CI/CD Pipeline Setup Guide
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Detailed CodeBuild and state-machine setup walkthrough; CodeConnections, IAM, and per-layer specifics.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Last Updated:** 2026-01-11
 **Pipeline:** AWS CodeBuild + Step Functions (Modular 8-Layer Architecture + Automated Pipeline)
 **Validation:** 3-Gate Smoke Test System + Image Account Validation

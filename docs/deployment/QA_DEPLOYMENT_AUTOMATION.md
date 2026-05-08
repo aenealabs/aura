@@ -1,5 +1,14 @@
 # QA Deployment Automation Guide
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** QA-specific automation scripts and scheduling specifics.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Last Updated:** 2026-01-11
 **Status:** Infrastructure Ready, Kubernetes Automation Complete, Image Validation Enhanced
 **Author:** Engineering Team

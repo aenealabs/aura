@@ -1,5 +1,14 @@
 # GitHub Actions Setup Guide
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** GitHub Actions alternative for CI/CD; complements but does not replace the CodeBuild-based deploy chain.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 **Project Aura - Automated Code Quality and Documentation Checks**
 
 This guide explains the GitHub Actions workflows configured for Project Aura to ensure code quality, security, and compliance from Day 1.

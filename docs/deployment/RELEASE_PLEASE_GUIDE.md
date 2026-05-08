@@ -1,5 +1,14 @@
 # Release Please - Automated Changelog & Release Management
 
+> **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+> **This doc covers:** Release Please configuration for auto-changelog and release tagging; complements rather than gates deploys.
+>
+> For the streamlined one-command deploy (`./deploy/deploy.sh
+> deploy <env>`) and the prerequisites-and-bootstrap quickstart,
+> read DEPLOYMENT_GUIDE.md first; this doc assumes that
+> baseline.
+
+
 > **Document Version:** 1.0
 > **Last Updated:** December 4, 2025
 > **Status:** Active

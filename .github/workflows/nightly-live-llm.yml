@@ -42,9 +42,11 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # pytest + pytest-asyncio are pinned in requirements.txt;
+          # the live-LLM smoke uses only stdlib + the project's own
+          # BedrockLLMService -- no extra test deps.
           pip install --upgrade pip
-          pip install -r requirements.txt || true
-          pip install pytest pytest-asyncio
+          pip install -r requirements.txt
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

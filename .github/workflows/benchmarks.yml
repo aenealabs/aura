@@ -51,9 +51,12 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # pytest + pytest-asyncio are pinned in requirements.txt;
+          # the perf suite uses only stdlib timing primitives
+          # (time.perf_counter, statistics, resource) -- no
+          # pytest-benchmark or other external bench libraries.
           pip install --upgrade pip
-          pip install -r requirements.txt || true
-          pip install pytest pytest-asyncio pytest-benchmark
+          pip install -r requirements.txt
 
       - name: Run ingestion benchmarks
         run: |

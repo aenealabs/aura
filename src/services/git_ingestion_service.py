@@ -26,6 +26,7 @@ from git import GitCommandError, InvalidGitRepositoryError, Repo
 
 from src.services.github_app_auth import GitHubAppAuth, get_github_app_auth
 from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
+from src.services.graph.fqn import FQNBuilder
 from src.services.observability_service import ObservabilityService, get_monitor
 from src.services.secure_command_executor import (
     SecureCommandExecutor,
@@ -389,14 +390,21 @@ class GitIngestionService:
             # Step 3: Parse code structure (AST)
             job.status = IngestionStatus.PARSING
             self._update_job_status_in_persistence(job_id, job.status)
-            entities = await self._parse_files(files_to_process, repo_path)
+            entities, relationships = await self._parse_files_with_relationships(
+                files_to_process, repo_path
+            )
             job.entities_indexed = len(entities)
-            logger.info(f"Parsed {len(entities)} code entities")
+            logger.info(
+                f"Parsed {len(entities)} code entities and "
+                f"{len(relationships)} relationships"
+            )
 
             # Step 4: Populate Neptune graph
             job.status = IngestionStatus.INDEXING_GRAPH
             self._update_job_status_in_persistence(job_id, job.status)
-            await self._populate_graph(entities, repository_url, branch)
+            await self._populate_graph(
+                entities, repository_url, branch, relationships=relationships
+            )
             logger.info("Neptune graph populated")
 
             # Step 5: Generate embeddings and index in OpenSearch
@@ -552,14 +560,20 @@ class GitIngestionService:
             # Parse changed files
             job.status = IngestionStatus.PARSING
             self._update_job_status_in_persistence(job_id, job.status)
-            entities = await self._parse_files(files_to_process, repo_path)
+            entities, relationships = await self._parse_files_with_relationships(
+                files_to_process, repo_path
+            )
             job.entities_indexed = len(entities)
 
             # Update graph (upsert)
             job.status = IngestionStatus.INDEXING_GRAPH
             self._update_job_status_in_persistence(job_id, job.status)
             await self._populate_graph(
-                entities, str(repo_path), "incremental", upsert=True
+                entities,
+                str(repo_path),
+                "incremental",
+                upsert=True,
+                relationships=relationships,
             )
 
             # Update embeddings
@@ -815,19 +829,50 @@ class GitIngestionService:
         """
         return await asyncio.to_thread(self._discover_files_sync, repo_path)
 
-    def _parse_single_file(self, file_path: Path, repo_path: Path) -> list:
-        """Parse a single file using AST parser (sync implementation)."""
+    def _parse_single_file(self, file_path: Path, repo_path: Path) -> tuple:
+        """Parse a single file using AST parser (sync implementation).
+
+        Returns ``(entities, relationships)`` per ADR-090 Phase 2. Both
+        lists have ``file_path`` rewritten to be relative to the repo
+        root so the rest of the pipeline can construct repo-scoped
+        identifiers.
+
+        Falls back to the legacy ``parse_file`` path when the parser
+        does not support ``parse_file_with_relationships`` or returns
+        a non-tuple shape (the latter covers test mocks that auto-
+        synthesize attributes via ``MagicMock``).
+        """
         try:
-            entities = self.ast_parser.parse_file(file_path)
-            # Update file paths to be relative
+            entities, relationships = self._invoke_parser(file_path)
+
+            relative_path = str(file_path.relative_to(repo_path))
             for entity in entities:
-                entity.file_path = str(file_path.relative_to(repo_path))
-            return entities
+                entity.file_path = relative_path
+            for rel in relationships:
+                rel.file_path = relative_path
+            return entities, relationships
         except Exception as e:
             logger.warning(f"Failed to parse {file_path}: {e}")
-            return []
+            return [], []
 
-    async def _parse_file_with_limit(self, file_path: Path, repo_path: Path) -> list:
+    def _invoke_parser(self, file_path: Path) -> tuple[list, list]:
+        """Invoke the parser, preferring the relationship-aware path.
+
+        Returns a strict ``(entities, relationships)`` tuple. Wraps
+        AttributeError, TypeError, and ValueError so that mocks
+        without an explicitly-configured
+        ``parse_file_with_relationships`` (or legacy parsers without
+        the method at all) fall back to the entity-only path.
+        """
+        try:
+            result = self.ast_parser.parse_file_with_relationships(file_path)
+            entities, relationships = result  # raises if shape is wrong
+            return list(entities), list(relationships)
+        except (AttributeError, TypeError, ValueError):
+            entities = self.ast_parser.parse_file(file_path)
+            return list(entities), []
+
+    async def _parse_file_with_limit(self, file_path: Path, repo_path: Path) -> tuple:
         """Parse a single file with concurrency limiting."""
         async with self._parse_semaphore:
             return await asyncio.to_thread(
@@ -835,34 +880,76 @@ class GitIngestionService:
             )
 
     async def _parse_files(self, files: list[Path], repo_path: Path) -> list:
-        """Parse files using AST parser.
+        """Parse files using AST parser, returning a flat entity list.
 
-        Offloads blocking AST parsing to thread pool to avoid blocking
-        the event loop. Files are parsed concurrently using asyncio.gather,
-        with concurrency limited by _parse_semaphore.
+        Maintained for backward compatibility with the full-ingest and
+        incremental-ingest paths that today only consume entities.
+        Relationship-aware callers should use
+        :meth:`_parse_files_with_relationships`.
         """
-        all_entities = []
+        entities, _ = await self._parse_files_with_relationships(files, repo_path)
+        return entities
 
-        # Parse files concurrently with limited parallelism
+    async def _parse_files_with_relationships(
+        self, files: list[Path], repo_path: Path
+    ) -> tuple[list, list]:
+        """Parse files concurrently and return ``(entities, relationships)``."""
+        all_entities: list = []
+        all_relationships: list = []
+
         tasks = [
             self._parse_file_with_limit(file_path, repo_path) for file_path in files
         ]
-
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for result in results:
             if isinstance(result, Exception):
                 logger.warning(f"Parse task failed: {result}")
-            elif result:
-                all_entities.extend(result)
+                continue
+            if not result:
+                continue
+            entities, relationships = result
+            all_entities.extend(entities)
+            all_relationships.extend(relationships)
 
-        return all_entities
+        return all_entities, all_relationships
 
-    def _add_entity_to_graph(self, entity, repo_id: str, branch: str) -> None:
-        """Add a single entity to Neptune graph (sync implementation)."""
+    def _add_entity_to_graph(
+        self,
+        entity,
+        repo_id: str,
+        branch: str,
+        fqn_builder: FQNBuilder | None = None,
+    ) -> None:
+        """Add a single entity to Neptune graph (sync implementation).
+
+        When ``fqn_builder`` is supplied (Phase 2 onward), the canonical
+        FQN is computed here using the entity's full ``parent_chain``
+        and passed via metadata so :class:`NeptuneGraphService` does
+        not have to reconstruct it from a single-parent reference.
+        """
         try:
-            # Create unique entity ID
+            # Create unique entity ID (legacy format, retained for
+            # backward compat during the FQN migration window).
             entity_id = f"{repo_id}::{entity.file_path}::{entity.name}"
+
+            metadata: dict[str, Any] = {
+                "repository": repo_id,
+                "branch": branch,
+                "entity_id": entity_id,
+                **(entity.attributes or {}),
+            }
+
+            if fqn_builder is not None:
+                parent_chain = getattr(entity, "parent_chain", ()) or ()
+                if not parent_chain and entity.parent_entity:
+                    parent_chain = (entity.parent_entity,)
+                metadata["fqn"] = fqn_builder.build(
+                    name=entity.name,
+                    kind=entity.entity_type,
+                    file_path=entity.file_path,
+                    parent_chain=tuple(parent_chain),
+                )
 
             # Add entity to graph
             self.neptune.add_code_entity(
@@ -871,15 +958,11 @@ class GitIngestionService:
                 file_path=entity.file_path,
                 line_number=entity.line_number,
                 parent=entity.parent_entity,
-                metadata={
-                    "repository": repo_id,
-                    "branch": branch,
-                    "entity_id": entity_id,
-                    **(entity.attributes or {}),
-                },
+                metadata=metadata,
             )
 
-            # Add relationships
+            # Legacy structural edges, retained until Phase 2 fully
+            # supersedes them via parser-emitted relationships.
             if entity.dependencies:
                 for dep in entity.dependencies:
                     self.neptune.add_relationship(
@@ -900,10 +983,56 @@ class GitIngestionService:
         except Exception as e:
             logger.warning(f"Failed to add entity {entity.name}: {e}")
 
-    async def _add_entity_with_limit(self, entity, repo_id: str, branch: str) -> None:
+    async def _add_entity_with_limit(
+        self,
+        entity,
+        repo_id: str,
+        branch: str,
+        fqn_builder: FQNBuilder | None = None,
+    ) -> None:
         """Add entity to graph with concurrency limiting."""
         async with self._graph_semaphore:
-            await asyncio.to_thread(self._add_entity_to_graph, entity, repo_id, branch)
+            await asyncio.to_thread(
+                self._add_entity_to_graph, entity, repo_id, branch, fqn_builder
+            )
+
+    def _add_relationship_to_graph(
+        self, relationship, repo_id: str, branch: str
+    ) -> None:
+        """Write a Phase 2 parser-emitted relationship to Neptune.
+
+        Source and target endpoint references match the existing
+        ``add_relationship`` semantics (raw name strings); cross-file
+        endpoint resolution is Phase 4 work and lifts these to
+        canonical FQNs once available.
+        """
+        try:
+            metadata = {
+                "repository": repo_id,
+                "branch": branch,
+                **(relationship.properties or {}),
+            }
+            self.neptune.add_relationship(
+                from_entity=relationship.source_name,
+                to_entity=relationship.target_name,
+                relationship=relationship.relationship,
+                metadata=metadata,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to add relationship "
+                f"{relationship.source_name} -[{relationship.relationship}]-> "
+                f"{relationship.target_name}: {e}"
+            )
+
+    async def _add_relationship_with_limit(
+        self, relationship, repo_id: str, branch: str
+    ) -> None:
+        """Add relationship to graph with concurrency limiting."""
+        async with self._graph_semaphore:
+            await asyncio.to_thread(
+                self._add_relationship_to_graph, relationship, repo_id, branch
+            )
 
     async def _delete_removed_files(self, removed_files: list[str]) -> None:
         """Drop graph entities and vector embeddings for files removed
@@ -947,8 +1076,9 @@ class GitIngestionService:
         repository_url: str,
         branch: str,
         upsert: bool = False,
+        relationships: list | None = None,
     ):
-        """Populate Neptune graph with code entities.
+        """Populate Neptune graph with code entities and relationships.
 
         Offloads blocking Neptune calls to thread pool to avoid blocking
         the event loop. Entities are processed concurrently with limited
@@ -959,8 +1089,15 @@ class GitIngestionService:
         written. This prevents stale-edge accumulation across re-ingests
         while preserving incoming cross-file edges that point INTO entities
         in the affected files.
+
+        Per ADR-090 Phase 2, ``relationships`` carries parser-emitted
+        edges (CALLS, INHERITS, IMPORTS) which are written after entities
+        so source vertices exist by the time edges reference them. A
+        per-job :class:`FQNBuilder` ensures every entity receives a
+        canonical FQN that disambiguates overloads in declaration order.
         """
         repo_id = self._url_to_repo_id(repository_url)
+        fqn_builder = FQNBuilder(repo_id=repo_id)
 
         # Upsert path: clear stale outgoing edges before re-adding entities.
         # Vertices and incoming edges are preserved; only outgoing edges
@@ -980,17 +1117,27 @@ class GitIngestionService:
                         f"Failed to clear outgoing edges for {file_path}: {result}"
                     )
 
-        # Process entities concurrently with limited parallelism
-        tasks = [
-            self._add_entity_with_limit(entity, repo_id, branch) for entity in entities
+        # Process entities concurrently with limited parallelism. We
+        # must write entities before edges so vertex endpoints exist.
+        entity_tasks = [
+            self._add_entity_with_limit(entity, repo_id, branch, fqn_builder)
+            for entity in entities
         ]
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Log any failures
-        for result in results:
+        entity_results = await asyncio.gather(*entity_tasks, return_exceptions=True)
+        for result in entity_results:
             if isinstance(result, Exception):
-                logger.warning(f"Graph population task failed: {result}")
+                logger.warning(f"Graph entity write failed: {result}")
+
+        # Phase 2 relationships are written after entities are in place.
+        if relationships:
+            rel_tasks = [
+                self._add_relationship_with_limit(rel, repo_id, branch)
+                for rel in relationships
+            ]
+            rel_results = await asyncio.gather(*rel_tasks, return_exceptions=True)
+            for result in rel_results:
+                if isinstance(result, Exception):
+                    logger.warning(f"Graph relationship write failed: {result}")
 
     def _read_file_content(self, file_path: Path) -> str | None:
         """Read file content synchronously with streaming for large files.

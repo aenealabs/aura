@@ -13,11 +13,12 @@ Version: 2.0
 import ast
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from src.config.paths import get_sample_project_path
+from src.services.graph.edge_labels import EdgeLabel
 
 from .agent_orchestrator import InputSanitizer
 
@@ -33,6 +34,7 @@ class CodeEntity:
     file_path: str
     line_number: int
     parent_entity: str | None = None
+    parent_chain: tuple[str, ...] = ()
     dependencies: list[str] | None = None
     attributes: dict[str, Any] | None = None
 
@@ -41,6 +43,27 @@ class CodeEntity:
             self.dependencies = []
         if self.attributes is None:
             self.attributes = {}
+
+
+@dataclass
+class CodeRelationship:
+    """An edge between two code entities, emitted by the parser.
+
+    Per ADR-090 Phase 2, parsers emit relationships alongside entities
+    so the ingestion pipeline can write canonical edge labels rather
+    than reconstructing them from the entity-level ``dependencies``
+    field. Source is always intra-file and identified by name plus
+    enclosing scope chain. Target may be intra-file (resolvable to a
+    same-file entity) or cross-file (a bare name to be resolved by
+    Phase 4).
+    """
+
+    source_name: str
+    source_parent_chain: tuple[str, ...]
+    target_name: str
+    relationship: str  # EdgeLabel value: CALLS, INHERITS, IMPORTS
+    properties: dict[str, Any] = field(default_factory=dict)
+    file_path: str = ""
 
 
 class ASTParserAgent:
@@ -66,58 +89,111 @@ class ASTParserAgent:
 
     def parse_file(self, file_path: str | Path) -> list[CodeEntity]:
         """
-        Parse a single source code file
+        Parse a single source code file.
 
         Args:
             file_path: Path to the source file
 
         Returns:
-            List of CodeEntity objects representing parsed elements
+            List of CodeEntity objects representing parsed elements.
+            For richer output (entities + relationships) use
+            :meth:`parse_file_with_relationships`.
+        """
+        entities, _ = self.parse_file_with_relationships(file_path)
+        return entities
+
+    def parse_file_with_relationships(
+        self, file_path: str | Path
+    ) -> tuple[list[CodeEntity], list[CodeRelationship]]:
+        """Parse a file and emit both entities and relationships.
+
+        Per ADR-090 Phase 2, the parser is the source of truth for the
+        canonical edge labels (CALLS, INHERITS, IMPORTS) that the
+        ingestion pipeline writes to Neptune. Source entities are
+        always intra-file and identified by name plus enclosing scope
+        chain. Targets may be intra-file or unresolved cross-file
+        references; Phase 4 cross-file resolution turns the latter
+        into qualified targets.
         """
         try:
             path: Path = Path(file_path) if isinstance(file_path, str) else file_path
             if not path.exists():
                 logger.error(f"File not found: {path}")
-                return []
+                return [], []
 
             if path.suffix not in self.supported_extensions:
                 logger.warning(f"Unsupported file extension: {path.suffix}")
-                return []
+                return [], []
 
             logger.info(f"Parsing file: {path}")
 
             content = path.read_text(encoding="utf-8")
 
-            # Parse based on file type
             if path.suffix == ".py":
-                entities = self._parse_python_file(content, str(path))
+                entities, relationships = self._parse_python_with_relationships(
+                    content, str(path)
+                )
             elif path.suffix in {".js", ".jsx", ".ts", ".tsx"}:
                 entities = self._parse_js_file(content, str(path))
+                relationships = []
             else:
-                entities = []
+                entities, relationships = [], []
 
             self.parsed_files.append(str(path))
             self.code_entities.extend(entities)
 
-            logger.info(f"Parsed {len(entities)} entities from {path}")
-            return entities
+            logger.info(
+                f"Parsed {len(entities)} entities and {len(relationships)} "
+                f"relationships from {path}"
+            )
+            return entities, relationships
 
         except Exception as e:
             logger.error(f"Error parsing file {path}: {e!s}")
-            return []
+            return [], []
 
-    def _parse_python_file(
+    def _parse_python_file(self, content: str, file_path: str) -> list[CodeEntity]:
+        """Parse Python source code, returning entities only.
+
+        Backward-compat shim that delegates to the relationship-aware
+        parser and discards the relationship output.
+        """
+        entities, _ = self._parse_python_with_relationships(content, file_path)
+        return entities
+
+    def _parse_python_with_relationships(
         self, content: str, file_path: str
-    ) -> list[CodeEntity]:  # noqa: PLR0912
-        """
-        Parse Python source code using AST
+    ) -> tuple[list[CodeEntity], list[CodeRelationship]]:
+        """Parse Python source and emit canonical Phase 2 edges.
 
-        FIX: Completely rewrote the broken parent-checking logic.
-        Now uses a proper visitor pattern to track parent-child relationships.
+        Uses a proper :class:`ast.NodeVisitor` so the enclosing scope
+        chain is tracked accurately for nested classes, methods, and
+        call sites within methods. The visitor populates two parallel
+        lists in declaration order: entities and relationships. The
+        relationship list contains:
 
-        PERFORMANCE FIX: Optimized from O(2n) to O(n) by combining two AST walks into one.
-        Critical for enterprise codebases with 100M+ LOC.
+        - One ``INHERITS`` per class base (``kind`` extends).
+        - One ``IMPORTS`` per ``import`` / ``from-import`` alias.
+        - One ``CALLS`` per ``ast.Call`` whose enclosing function or
+          method is a known entity, with the call-site line as a
+          property.
         """
+        try:
+            tree = ast.parse(content)
+        except SyntaxError as e:
+            logger.error(f"Syntax error in Python file {file_path}: {e!s}")
+            return [], []
+
+        visitor = _PythonScopeVisitor(file_path=file_path, agent=self)
+        visitor.visit(tree)
+        return visitor.entities, visitor.relationships
+
+    # The original _parse_python_file body is preserved below for
+    # tests that exercise the (now-shimmed) entity-only path. New code
+    # should call _parse_python_with_relationships.
+    def _parse_python_file_legacy(
+        self, content: str, file_path: str
+    ) -> list[CodeEntity]:  # noqa: PLR0912 - retained for diff continuity
         try:
             tree = ast.parse(content)
             entities = []
@@ -471,6 +547,235 @@ class ASTParserAgent:
 def sanitize_for_graph_id(input_string: str) -> str:
     """Legacy compatibility function for external usage"""
     return InputSanitizer.sanitize_for_graph_id(input_string)
+
+
+def _sanitize_dotted_name(name: str) -> str:
+    """Sanitize a possibly-dotted name without collapsing the dots.
+
+    Edge target names carry semantic meaning when they contain dots
+    (``module.Submodule.Class``, ``self.method``); the dot is the
+    boundary between identifiers, not part of any single one. This
+    helper sanitizes each segment with the standard graph-id rules
+    while preserving the dotted structure.
+    """
+    if not name:
+        return name
+    parts = name.split(".")
+    return ".".join(InputSanitizer.sanitize_for_graph_id(part) for part in parts)
+
+
+class _PythonScopeVisitor(ast.NodeVisitor):
+    """Scope-aware visitor that emits Phase 2 entities and relationships.
+
+    Tracks the enclosing class chain so methods land with the right
+    parent, and the enclosing function so call sites can name their
+    caller. The visitor is single-pass; declaration order is
+    preserved, which is important for the integer-suffix
+    disambiguation strategy in :class:`src.services.graph.fqn.FQNBuilder`.
+    """
+
+    def __init__(self, file_path: str, agent: "ASTParserAgent"):
+        self.file_path = file_path
+        self.agent = agent
+        self.entities: list[CodeEntity] = []
+        self.relationships: list[CodeRelationship] = []
+        # Stack of enclosing class names, root-most first.
+        self._class_stack: list[str] = []
+        # Current enclosing function/method, if any. Used to attribute
+        # CALLS edges to their caller.
+        self._function_stack: list[tuple[str, tuple[str, ...]]] = []
+
+    # -- Class definitions -----------------------------------------------
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        sanitized = InputSanitizer.sanitize_for_graph_id(node.name)
+        parent_chain = tuple(self._class_stack)
+
+        entity = self.agent._create_class_entity(node, self.file_path)
+        entity.parent_entity = parent_chain[-1] if parent_chain else None
+        entity.parent_chain = parent_chain
+        self.entities.append(entity)
+
+        # INHERITS edges, one per declared base. Bare ast.Name bases are
+        # the common shape (``class Foo(Bar):``); ast.Attribute covers
+        # ``class Foo(module.Base):`` patterns. Other base shapes
+        # (subscripted generics, calls) are skipped — they cannot be
+        # rendered as a single target name and are better resolved
+        # by Phase 4 cross-file resolution. Target names preserve any
+        # dots in the attribute chain because they carry semantic
+        # meaning (module path) that downstream FQN matching depends
+        # on; only the per-segment identifiers are sanitized.
+        for base in node.bases:
+            base_name = self._render_base_name(base)
+            if not base_name:
+                continue
+            self.relationships.append(
+                CodeRelationship(
+                    source_name=sanitized,
+                    source_parent_chain=parent_chain,
+                    target_name=_sanitize_dotted_name(base_name),
+                    relationship=EdgeLabel.INHERITS.value,
+                    properties={"kind": "extends", "line": node.lineno},
+                    file_path=self.file_path,
+                )
+            )
+
+        # Recurse into the class body with this class on the stack so
+        # nested classes and methods see the right parent chain.
+        self._class_stack.append(sanitized)
+        try:
+            for item in node.body:
+                self.visit(item)
+        finally:
+            self._class_stack.pop()
+
+    # -- Function/method definitions -------------------------------------
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._handle_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._handle_function(node)
+
+    def _handle_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        sanitized = InputSanitizer.sanitize_for_graph_id(node.name)
+        parent_chain = tuple(self._class_stack)
+
+        if self._class_stack:
+            entity = self.agent._create_function_entity(node, self.file_path)
+            entity.entity_type = "method"
+            entity.parent_entity = parent_chain[-1]
+        else:
+            entity = self.agent._create_function_entity(node, self.file_path)
+        entity.parent_chain = parent_chain
+        self.entities.append(entity)
+
+        self._function_stack.append((sanitized, parent_chain))
+        try:
+            for item in node.body:
+                self.visit(item)
+        finally:
+            self._function_stack.pop()
+
+    # -- Imports ---------------------------------------------------------
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            entity = self.agent._create_import_entity(alias, node, self.file_path)
+            self.entities.append(entity)
+            target_module = alias.name
+            self.relationships.append(
+                CodeRelationship(
+                    source_name=entity.name,
+                    source_parent_chain=(),
+                    target_name=_sanitize_dotted_name(target_module),
+                    relationship=EdgeLabel.IMPORTS.value,
+                    properties={"line": node.lineno},
+                    file_path=self.file_path,
+                )
+            )
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        module_name = node.module or ""
+        for alias in node.names:
+            entity = self.agent._create_import_entity(
+                alias, node, self.file_path, module_name
+            )
+            self.entities.append(entity)
+            # The IMPORTS edge target is the source module being
+            # imported from, not the leaf symbol.
+            target_module = module_name or alias.name
+            if not target_module:
+                continue
+            self.relationships.append(
+                CodeRelationship(
+                    source_name=entity.name,
+                    source_parent_chain=(),
+                    target_name=_sanitize_dotted_name(target_module),
+                    relationship=EdgeLabel.IMPORTS.value,
+                    properties={"line": node.lineno},
+                    file_path=self.file_path,
+                )
+            )
+
+    # -- Module-level assignments ----------------------------------------
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        # Only emit variable entities at module scope to match the
+        # legacy parser's behaviour. Class/function-local assignments
+        # are noise for the graph today.
+        if not self._class_stack and not self._function_stack:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    entity = self.agent._create_variable_entity(
+                        target, node, self.file_path
+                    )
+                    self.entities.append(entity)
+        self.generic_visit(node)
+
+    # -- Call sites ------------------------------------------------------
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if self._function_stack:
+            caller_name, caller_parent_chain = self._function_stack[-1]
+            target = self._render_call_target(node.func)
+            if target:
+                self.relationships.append(
+                    CodeRelationship(
+                        source_name=caller_name,
+                        source_parent_chain=caller_parent_chain,
+                        target_name=_sanitize_dotted_name(target),
+                        relationship=EdgeLabel.CALLS.value,
+                        properties={"call_site_line": node.lineno},
+                        file_path=self.file_path,
+                    )
+                )
+        # Recurse so nested calls (`f(g(x))`) attribute correctly to
+        # the same caller.
+        self.generic_visit(node)
+
+    # -- Helpers ---------------------------------------------------------
+
+    @staticmethod
+    def _render_base_name(node: ast.expr) -> str | None:
+        """Render a class-base AST node as a single name string.
+
+        Returns None for shapes the parser cannot represent as a
+        deterministic target (e.g. ``Generic[T]``). These are skipped
+        rather than guessed.
+        """
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            return _PythonScopeVisitor._render_attribute_chain(node)
+        return None
+
+    @staticmethod
+    def _render_call_target(node: ast.expr) -> str | None:
+        """Render the callee of an ``ast.Call`` as a name string.
+
+        Bare names (``foo(...)``) and dotted accesses (``obj.method(...)``,
+        ``module.func(...)``) produce a name; expressions whose head is
+        a more complex shape (a call, a subscript) are skipped because
+        a single edge target name would be misleading.
+        """
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            return _PythonScopeVisitor._render_attribute_chain(node)
+        return None
+
+    @staticmethod
+    def _render_attribute_chain(node: ast.Attribute) -> str | None:
+        parts: list[str] = []
+        current: ast.expr = node
+        while isinstance(current, ast.Attribute):
+            parts.append(current.attr)
+            current = current.value
+        if isinstance(current, ast.Name):
+            parts.append(current.id)
+            return ".".join(reversed(parts))
+        return None
 
 
 def main():

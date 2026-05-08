@@ -237,7 +237,7 @@ async def main():
     print(f"Connecting to OpenSearch: {opensearch_endpoint}")
 
     # Create OpenSearch client
-    # Note: In production, use AWS IAM auth with AWS4Auth
+    # Note: In production, use AWS IAM auth via botocore SigV4Auth
     opensearch_client = AsyncOpenSearch(
         hosts=[{'host': opensearch_endpoint, 'port': 443}],
         use_ssl=True,

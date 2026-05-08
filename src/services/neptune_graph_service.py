@@ -4,6 +4,8 @@ Production-ready Gremlin client for knowledge graph operations
 with connection pooling, retry logic, and cost optimization.
 """
 
+import asyncio
+import concurrent.futures
 import hashlib
 import logging
 import os
@@ -17,19 +19,6 @@ from src.services.graph.fqn import compute_fqn
 
 logger = logging.getLogger(__name__)
 
-# Enable nested event loops for gremlin-python compatibility with FastAPI/uvicorn
-# The gremlin-python library uses aiohttp internally and calls run_until_complete()
-# which fails inside an already running async event loop without this patch.
-try:
-    import nest_asyncio
-
-    nest_asyncio.apply()
-    logger.debug("nest_asyncio applied for gremlin-python compatibility")
-except ImportError:
-    logger.warning(
-        "nest_asyncio not available - Neptune queries may fail in async contexts"
-    )
-
 # Gremlin Python imports (will be installed when deploying to AWS)
 try:
     from gremlin_python.driver import client, serializer
@@ -38,6 +27,82 @@ try:
 except ImportError:
     GREMLIN_AVAILABLE = False
     logger.warning("Gremlin Python not available - using mock mode")
+
+
+# Shared thread pool for dispatching Gremlin calls when the caller is
+# running inside an asyncio event loop. gremlin-python's sync API
+# internally calls ``loop.run_until_complete()`` on its aiohttp future;
+# under FastAPI / uvicorn that loop is already running and the
+# re-entrant call fails. Dispatching to a worker thread (which has no
+# running loop of its own) lets gremlin-python's run_until_complete
+# succeed without us depending on the deprecated nest_asyncio package.
+#
+# Pool size is intentionally modest -- gremlin-python releases the GIL
+# during aiohttp I/O, so concurrency is bounded by Neptune's own
+# connection pool, not by us.
+_GREMLIN_DISPATCH_EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _get_gremlin_dispatch_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """Lazy singleton accessor for the Gremlin thread-dispatch pool."""
+    global _GREMLIN_DISPATCH_EXECUTOR
+    if _GREMLIN_DISPATCH_EXECUTOR is None:
+        _GREMLIN_DISPATCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+            max_workers=10, thread_name_prefix="gremlin-dispatch"
+        )
+    return _GREMLIN_DISPATCH_EXECUTOR
+
+
+class _ThreadDispatchedSubmitResult:
+    """Lazy wrapper that mirrors gremlin-python's ``submit(...).all().result()``
+    chain but defers the actual blocking call to a worker thread when
+    the caller is running inside an asyncio event loop.
+
+    The chain ``submit(q).all().result()`` is the only gremlin-python
+    surface the rest of this module uses, so wrapping just these two
+    levels (``submit -> SubmitResult`` and ``.all() -> self`` plus
+    ``.result() -> Any``) is sufficient.
+    """
+
+    def __init__(self, real_client: Any, query: str) -> None:
+        self._client = real_client
+        self._query = query
+
+    def all(self) -> "_ThreadDispatchedSubmitResult":
+        # gremlin-python's ``.all()`` returns a future-like that
+        # ``.result()`` then blocks on; collapse the chain since this
+        # wrapper always materialises via ``.result()``.
+        return self
+
+    def result(self) -> Any:
+        try:
+            asyncio.get_running_loop()
+            in_event_loop = True
+        except RuntimeError:
+            in_event_loop = False
+
+        if in_event_loop:
+            future = _get_gremlin_dispatch_executor().submit(
+                lambda: self._client.submit(self._query).all().result()
+            )
+            return future.result()
+        return self._client.submit(self._query).all().result()
+
+
+class _ThreadDispatchedGremlinClient:
+    """Wrap a gremlin-python ``client.Client`` so ``submit()`` calls
+    return a thread-dispatching shim. The wrapper's surface is a
+    strict subset of the real client (``submit``, ``close``) -- the
+    only methods this module uses."""
+
+    def __init__(self, real_client: Any) -> None:
+        self._client = real_client
+
+    def submit(self, query: str) -> _ThreadDispatchedSubmitResult:
+        return _ThreadDispatchedSubmitResult(self._client, query)
+
+    def close(self) -> None:
+        return self._client.close()
 
 
 class NeptuneMode(Enum):
@@ -158,15 +223,22 @@ class NeptuneGraphService:
                 url = f"ws://{self.endpoint}:{self.port}/gremlin"
                 logger.info(f"Connecting to Neptune: {url}")
 
-            # Create Gremlin client
-            self.client = client.Client(
+            # Create Gremlin client. Wrap in a thread-dispatching shim
+            # so blocking submit() calls run on a worker thread when
+            # invoked from an asyncio event loop -- the alternative
+            # (nest_asyncio) was removed in favour of this approach
+            # to drop a single-maintainer dependency.
+            real_client = client.Client(
                 url,
                 "g",
                 pool_size=self.max_connections,
                 message_serializer=serializer.GraphSONSerializersV3d0(),
             )
+            self.client = _ThreadDispatchedGremlinClient(real_client)
 
-            # Test connection (requires nest_asyncio for async event loop compatibility)
+            # Test connection. Routes through the thread-dispatch
+            # wrapper, so this call works whether we're in a sync or
+            # async context.
             self.client.submit("g.V().limit(1)").all().result()
             logger.info("Neptune connection established successfully")
 

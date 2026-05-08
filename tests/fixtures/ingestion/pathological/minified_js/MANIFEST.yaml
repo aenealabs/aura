@@ -1,0 +1,12 @@
+name: minified_js
+description: Minified single-line JS. tree-sitter must parse
+  classes, functions, and method calls without crashing. The
+  fixture is the ground-truth output for the JS regression suite.
+language: javascript
+expected_entities:
+  - {file: bundle.js, name: a, type: function}
+  - {file: bundle.js, name: c, type: function}
+  - {file: bundle.js, name: W, type: class}
+  - {file: bundle.js, name: render, type: method, parent: W}
+known_failure_modes:
+  - "Pre-Phase-3 regex parser would lose method context."

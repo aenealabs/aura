@@ -1,0 +1,183 @@
+{
+  "edges": [
+    {
+      "from": "handle",
+      "metadata": {
+        "call_site_line": 21,
+        "repository": "owner-golden-small"
+      },
+      "relationship": "CALLS",
+      "to": "int"
+    },
+    {
+      "from": "handle",
+      "metadata": {
+        "call_site_line": 21,
+        "repository": "owner-golden-small"
+      },
+      "relationship": "CALLS",
+      "to": "os.environ.get"
+    },
+    {
+      "from": "handle",
+      "metadata": {
+        "call_site_line": 20,
+        "repository": "owner-golden-small"
+      },
+      "relationship": "CALLS",
+      "to": "python:owner-golden-small:myapp.api:Base.shared#method"
+    },
+    {
+      "from": "handle",
+      "metadata": {
+        "call_site_line": 19,
+        "repository": "owner-golden-small"
+      },
+      "relationship": "CALLS",
+      "to": "python:owner-golden-small:myapp.api:helper#import"
+    },
+    {
+      "from": "Base",
+      "metadata": {
+        "repository": "owner-golden-small"
+      },
+      "relationship": "CONTAINS",
+      "to": "shared"
+    },
+    {
+      "from": "Handler",
+      "metadata": {
+        "repository": "owner-golden-small"
+      },
+      "relationship": "CONTAINS",
+      "to": "handle"
+    },
+    {
+      "from": "Handler",
+      "metadata": {
+        "repository": "owner-golden-small"
+      },
+      "relationship": "DEPENDS_ON",
+      "to": "Base"
+    },
+    {
+      "from": "handle",
+      "metadata": {
+        "kind": "env",
+        "language": "python",
+        "line": 21,
+        "repository": "owner-golden-small",
+        "sensitivity": "confidential",
+        "vertex_label": "ConfigParameter"
+      },
+      "relationship": "DEPENDS_ON_ENV",
+      "to": "DATABASE_URL"
+    },
+    {
+      "from": "myapp/api.py::Base",
+      "metadata": {},
+      "relationship": "HAS_METHOD",
+      "to": "myapp/api.py::shared"
+    },
+    {
+      "from": "myapp/api.py::Handler",
+      "metadata": {},
+      "relationship": "HAS_METHOD",
+      "to": "myapp/api.py::handle"
+    },
+    {
+      "from": "helper",
+      "metadata": {
+        "line": 9,
+        "repository": "owner-golden-small"
+      },
+      "relationship": "IMPORTS",
+      "to": "myapp.utils"
+    },
+    {
+      "from": "os",
+      "metadata": {
+        "line": 7,
+        "repository": "owner-golden-small"
+      },
+      "relationship": "IMPORTS",
+      "to": "os"
+    },
+    {
+      "from": "Handler",
+      "metadata": {
+        "kind": "extends",
+        "line": 17,
+        "repository": "owner-golden-small"
+      },
+      "relationship": "INHERITS",
+      "to": "Base"
+    }
+  ],
+  "vertices": [
+    {
+      "id": "myapp/api.py::Base",
+      "kind": null,
+      "label": null,
+      "name": "Base",
+      "sensitivity": null,
+      "type": "class"
+    },
+    {
+      "id": "myapp/api.py::Handler",
+      "kind": null,
+      "label": null,
+      "name": "Handler",
+      "sensitivity": null,
+      "type": "class"
+    },
+    {
+      "id": "myapp/api.py::handle",
+      "kind": null,
+      "label": null,
+      "name": "handle",
+      "sensitivity": null,
+      "type": "method"
+    },
+    {
+      "id": "myapp/api.py::helper",
+      "kind": null,
+      "label": null,
+      "name": "helper",
+      "sensitivity": null,
+      "type": "import"
+    },
+    {
+      "id": "myapp/api.py::os",
+      "kind": null,
+      "label": null,
+      "name": "os",
+      "sensitivity": null,
+      "type": "import"
+    },
+    {
+      "id": "myapp/api.py::shared",
+      "kind": null,
+      "label": null,
+      "name": "shared",
+      "sensitivity": null,
+      "type": "method"
+    },
+    {
+      "id": "myapp/utils.py::helper",
+      "kind": null,
+      "label": null,
+      "name": "helper",
+      "sensitivity": null,
+      "type": "function"
+    },
+    {
+      "id": "DATABASE_URL",
+      "kind": "env",
+      "label": "ConfigParameter",
+      "name": "DATABASE_URL",
+      "sensitivity": "confidential",
+      "type": null
+    }
+  ]
+}

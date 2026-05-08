@@ -24,6 +24,11 @@ if TYPE_CHECKING:
 
 from src.agents.filesystem_navigator_agent import FileMatch, FilesystemNavigatorAgent
 from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
+from src.services.graph.phase5_abac_filter import (
+    PHASE5_EDGE_LABELS,
+    SENSITIVITY_RANK,
+    apply_phase5_filter,
+)
 
 
 class GraphQueryType(Enum):
@@ -431,6 +436,7 @@ class ContextRetrievalService:
         terms: list[str],
         query_type: GraphQueryType,
         max_results: int = 50,
+        caller_clearance: str = "internal",
     ) -> list[dict[str, Any]]:
         """
         Execute Gremlin query against Neptune.
@@ -439,20 +445,35 @@ class ContextRetrievalService:
             terms: Entity names to search for
             query_type: Type of structural query
             max_results: Maximum number of results
+            caller_clearance: ADR-073 clearance level for the caller
+                (``public`` / ``internal`` / ``confidential`` /
+                ``restricted`` / ``top_level``). Phase 5 edges above
+                this level are filtered from results per ADR-090
+                Phase 5.3 Pattern A enforcement. Defaults to
+                ``internal`` -- the safe baseline that excludes both
+                CONFIDENTIAL and RESTRICTED Phase 5 edges; higher
+                clearance must be supplied explicitly by the caller.
 
         Returns:
-            List of entity dictionaries from graph
+            List of entity dictionaries from graph.
         """
         if not terms:
             return []
 
         results = []
 
+        # Per ADR-090 Phase 5.3, query-time filtering removes Phase 5
+        # edge labels above the caller's clearance from the
+        # relationship_types argument so Neptune never returns them
+        # in the first place. apply_phase5_filter then re-checks any
+        # raw Gremlin output as defense-in-depth.
+        relationship_types = self._clearance_filtered_relationship_types(
+            query_type, caller_clearance
+        )
+
         # Try to use Neptune client methods if available
         if hasattr(self.neptune, "find_related_code"):
             # Use NeptuneGraphService API
-            relationship_types = self._get_relationship_types(query_type)
-
             for term in terms[:5]:  # Limit terms to prevent slow queries
                 try:
                     related = self.neptune.find_related_code(
@@ -481,6 +502,13 @@ class ContextRetrievalService:
             try:
                 raw_results = await self.neptune.execute(gremlin_query)
                 results = self._parse_gremlin_results(raw_results)
+                # Defense-in-depth: re-filter any Phase 5 edges that
+                # leaked through (raw Gremlin queries are not bound
+                # by relationship_types). The result is the silent-
+                # filter contract from Sally's review.
+                results, _filter_stats = apply_phase5_filter(
+                    results, caller_clearance=caller_clearance
+                )
             except Exception as e:
                 logger.warning(f"Gremlin query execution failed: {e}")
 
@@ -494,6 +522,50 @@ class ContextRetrievalService:
                 unique_results.append(r)
 
         return unique_results[:max_results]
+
+    def _clearance_filtered_relationship_types(
+        self,
+        query_type: GraphQueryType,
+        caller_clearance: str,
+    ) -> list[str] | None:
+        """Return ``_get_relationship_types`` minus Phase 5 edges above clearance.
+
+        Per ADR-090 Phase 5.3 Pattern A enforcement, Phase 5 edges
+        carry a default sensitivity (USES_KMS_KEY + READS_CONFIG =
+        ``restricted``; DEPENDS_ON_ENV + FEATURE_GATED_BY =
+        ``confidential``). When the caller's clearance is below an
+        edge's required sensitivity, the label is stripped from the
+        Gremlin filter so Neptune never returns it. ``None`` (the
+        REFERENCES / RELATED catch-all) is left unchanged because it
+        signals "all edge types"; Phase 5 edges in that result set
+        are filtered by the defense-in-depth :func:`apply_phase5_filter`
+        pass on raw Gremlin output.
+        """
+        types = self._get_relationship_types(query_type)
+        if types is None:
+            return None
+        caller_rank = SENSITIVITY_RANK.get(caller_clearance, SENSITIVITY_RANK["public"])
+        # Phase 5 default sensitivities map directly to the rank
+        # ordering. We compute the floor of "what Phase 5 labels can
+        # this caller see" once per call.
+        confidential_rank = SENSITIVITY_RANK["confidential"]
+        restricted_rank = SENSITIVITY_RANK["restricted"]
+        confidential_phase5 = {
+            EdgeLabel.DEPENDS_ON_ENV.value,
+            EdgeLabel.FEATURE_GATED_BY.value,
+        }
+        restricted_phase5 = {
+            EdgeLabel.READS_CONFIG.value,
+            EdgeLabel.USES_KMS_KEY.value,
+        }
+        filtered = []
+        for label in types:
+            if label in confidential_phase5 and caller_rank < confidential_rank:
+                continue
+            if label in restricted_phase5 and caller_rank < restricted_rank:
+                continue
+            filtered.append(label)
+        return filtered
 
     def _get_relationship_types(self, query_type: GraphQueryType) -> list[str] | None:
         """Get Neptune edge labels to filter by, for a given query type.

@@ -1,0 +1,18 @@
+name: dynamic_dispatch
+description: getattr-based and dict-of-callables dispatch. Tier 1
+  must NOT resolve these (would be a precision regression);
+  Tier 2/3 are expected to handle them.
+language: python
+expected_entities:
+  - {file: dispatch.py, name: HANDLERS, type: variable}
+  - {file: dispatch.py, name: Dispatcher, type: class}
+  - {file: dispatch.py, name: dispatch, type: method, parent: Dispatcher}
+  - {file: dispatch.py, name: call_via_dict, type: method, parent: Dispatcher}
+  - {file: dispatch.py, name: handle_ping, type: method, parent: Dispatcher}
+  - {file: dispatch.py, name: handle_pong, type: method, parent: Dispatcher}
+expected_edges_unresolved_at_tier1:
+  - {source: dispatch, target: getattr, kind: dynamic_dispatch}
+  - {source: call_via_dict, target: HANDLERS, kind: subscript_call}
+known_failure_modes:
+  - "Tier 1 must not guess; an over-eager resolver here is a
+    precision bug, not a recall miss."

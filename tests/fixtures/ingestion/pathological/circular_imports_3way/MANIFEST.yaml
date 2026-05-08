@@ -1,0 +1,19 @@
+name: circular_imports_3way
+description: Three-way circular import (a -> b -> c -> a). Tests
+  that ingestion does not infinite-loop and that each cross-module
+  edge is emitted exactly once.
+language: python
+expected_entities:
+  - {file: module_a.py, name: A, type: class}
+  - {file: module_a.py, name: hop, type: method, parent: A}
+  - {file: module_b.py, name: B, type: class}
+  - {file: module_b.py, name: hop_back, type: method, parent: B}
+  - {file: module_c.py, name: C, type: class}
+  - {file: module_c.py, name: tail, type: method, parent: C}
+expected_edges:
+  - {source: hop, target: module_b, label: CALLS}
+  - {source: hop_back, target: module_c, label: CALLS}
+  - {source: C, target: module_a.A, label: INHERITS}
+known_failure_modes:
+  - "Pre-Phase-2 parser would emit duplicate vertices on re-ingest."
+  - "Pre-Phase-0 stale-edge accumulator would compound on each cycle."

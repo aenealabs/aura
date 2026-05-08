@@ -1,0 +1,11 @@
+name: namespace_packages
+description: PEP-420 namespace package layout (no __init__.py required
+  at parent levels). The FQN derivation must produce
+  python:repo:myorg.widgets.button:Button#class without surprise.
+language: python
+expected_entities:
+  - {file: myorg/widgets/button.py, name: Button, type: class}
+  - {file: myorg/widgets/button.py, name: render, type: method, parent: Button}
+known_failure_modes:
+  - "FQN derivation that requires __init__.py would silently drop
+    these entities."

@@ -1,0 +1,14 @@
+name: reexport_chains
+description: __init__ re-exports from middle which re-exports from
+  leaf. Tier 1 deterministic resolver should follow direct imports
+  and resolve `helper_fn` to leaf.helper_fn when an importer uses
+  `from . import helper_fn`. Star imports are deliberately the harder
+  case Tier 1 cannot fully traverse.
+language: python
+expected_entities:
+  - {file: leaf.py, name: Helper, type: class}
+  - {file: leaf.py, name: do, type: method, parent: Helper}
+  - {file: leaf.py, name: helper_fn, type: function}
+known_failure_modes:
+  - "Star imports cannot be tracked statically; expect leaf-anchored
+    edges only."

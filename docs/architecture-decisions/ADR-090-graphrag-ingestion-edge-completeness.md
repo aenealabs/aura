@@ -1,7 +1,8 @@
 # ADR-090: GraphRAG Ingestion Edge Completeness
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-05-08
+**Accepted:** 2026-05-08
 **Author:** Project Aura Team
 **Related ADRs:** ADR-049 (Mythos Capability Tier), ADR-063 (Constitutional AI),
 ADR-065 (Semantic Guardrails), ADR-066 (Agent Capability Governance),
@@ -64,6 +65,40 @@ caching the prior key remains broken.
 Close the contract gap in six phases, governed by a single canonical edge
 schema documented in this ADR and enforced by a type-system-backed
 contract test that prevents recurrence.
+
+## Delivered Phases
+
+| Phase | Status | Commit |
+|---|---|---|
+| 0 -- Stale-edge / orphan-vertex hotfix | Delivered | `e62f7db` |
+| EdgeLabel enum + AST-lint | Delivered | `a376797` |
+| 1 -- SCIP-style FQN entity IDs + migration | Delivered | `50e89a2` |
+| 2 -- Python intra-file CALLS / INHERITS / IMPORTS | Delivered | `4bf49be` |
+| 3 -- JS / TS via tree-sitter | Delivered | `47a7f43` |
+| 4a -- Tier 1 deterministic resolver | Delivered | `019332e` |
+| 4b -- Tier 2 self-method + Pyright LSP | Delivered | `d8d5413` |
+| 4c.1 -- Tier 3 in-process LLM | Delivered | `698e310` |
+| 4c.2 -- Tier 3 distributed (SQS + ECS) | Delivered | `c429348` |
+| 5 -- Config-layer dependencies + ABAC filter | Delivered | `d712371` |
+| 5.3 wrapper integration + chokepoint contract | Delivered | (closeout) |
+| 6 -- Runtime edges | Out of scope (ADR-083) | n/a |
+
+Closeout test infrastructure delivered alongside Phase 5.3:
+
+- **Centralized pathological fixture set** under
+  `tests/fixtures/ingestion/pathological/` with per-fixture
+  `MANIFEST.yaml` declaring expected entities and edges.
+- **Golden-graph regression harness** at
+  `tests/integration/graph/test_golden_graph_regression.py`
+  with snapshot at `tests/fixtures/ingestion/golden_snapshots/small.json`;
+  regenerate via `GOLDEN_GRAPH_UPDATE=1 pytest -k golden_graph_small`.
+- **Cross-phase integration test** at
+  `tests/integration/graph/test_full_pipeline_phase0_to_phase5.py`
+  driving every phase end-to-end against a Neptune mock.
+- **ABAC chokepoint contract** at
+  `tests/architecture/test_abac_chokepoint.py` -- AST scan that
+  rejects any direct `find_related_code` call outside the
+  allow-listed wrapper modules.
 
 ### Phase 0 — Stale-Edge Hotfix (DELIVERED)
 

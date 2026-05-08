@@ -24,6 +24,25 @@ from .agent_orchestrator import InputSanitizer
 
 logger = logging.getLogger(__name__)
 
+# Phase 3 (ADR-090): tree-sitter is the canonical JS/TS parser. The
+# regex implementation below is retained only as a fallback for
+# environments where tree-sitter or its language bindings cannot be
+# imported (constrained CI images, local sandboxes that strip the
+# native bindings). Production deployments pin both packages.
+try:
+    import tree_sitter
+    import tree_sitter_javascript
+
+    _JS_LANGUAGE = tree_sitter.Language(tree_sitter_javascript.language())
+    _TREE_SITTER_JS_AVAILABLE = True
+except Exception:  # pragma: no cover - defensive at import time
+    _JS_LANGUAGE = None
+    _TREE_SITTER_JS_AVAILABLE = False
+    logger.info(
+        "tree-sitter JavaScript bindings unavailable; "
+        "JS/TS parsing will fall back to regex"
+    )
+
 
 @dataclass
 class CodeEntity:
@@ -134,8 +153,9 @@ class ASTParserAgent:
                     content, str(path)
                 )
             elif path.suffix in {".js", ".jsx", ".ts", ".tsx"}:
-                entities = self._parse_js_file(content, str(path))
-                relationships = []
+                entities, relationships = self._parse_js_with_relationships(
+                    content, str(path)
+                )
             else:
                 entities, relationships = [], []
 
@@ -251,6 +271,43 @@ class ASTParserAgent:
         except SyntaxError as e:
             logger.error(f"Syntax error in Python file {file_path}: {e!s}")
             return []
+
+    def _parse_js_with_relationships(
+        self, content: str, file_path: str
+    ) -> tuple[list[CodeEntity], list[CodeRelationship]]:
+        """Parse JS/TS source via tree-sitter, falling back to regex.
+
+        Per ADR-090 Phase 3, tree-sitter is the canonical JS/TS parser
+        and emits the same CodeEntity / CodeRelationship shape as the
+        Python visitor. The regex parser remains a degraded-mode
+        fallback for environments without the native bindings; in that
+        mode no relationships are emitted (the regex matcher cannot
+        track scope).
+
+        ``.ts`` and ``.tsx`` files are parsed with the JavaScript
+        grammar. TypeScript-specific shapes (type annotations,
+        interfaces, generic parameters) are absorbed by the parser as
+        ERROR nodes and ignored; the structural skeleton (classes,
+        methods, functions, imports, calls) parses correctly.
+        """
+        if _TREE_SITTER_JS_AVAILABLE:
+            try:
+                return self._parse_js_tree_sitter(content, file_path)
+            except Exception as e:
+                logger.warning(
+                    f"tree-sitter parse failed for {file_path}, "
+                    f"falling back to regex: {e}"
+                )
+        return self._parse_js_file(content, file_path), []
+
+    def _parse_js_tree_sitter(
+        self, content: str, file_path: str
+    ) -> tuple[list[CodeEntity], list[CodeRelationship]]:
+        parser = tree_sitter.Parser(_JS_LANGUAGE)
+        tree = parser.parse(content.encode("utf-8"))
+        visitor = _TreeSitterJSVisitor(file_path=file_path)
+        visitor.visit(tree.root_node)
+        return visitor.entities, visitor.relationships
 
     def _parse_js_file(self, content: str, file_path: str) -> list[CodeEntity]:
         """Parse JavaScript/TypeScript source code using regex (simplified)"""
@@ -547,6 +604,419 @@ class ASTParserAgent:
 def sanitize_for_graph_id(input_string: str) -> str:
     """Legacy compatibility function for external usage"""
     return InputSanitizer.sanitize_for_graph_id(input_string)
+
+
+class _TreeSitterJSVisitor:
+    """Walks a tree-sitter JavaScript/TypeScript parse tree.
+
+    Emits entities and relationships matching the Phase 2 Python
+    visitor's shape, so the ingestion pipeline can treat both
+    languages uniformly. Scope is tracked via class and function
+    stacks; CALLS are attributed to the innermost enclosing function
+    or method; INHERITS edges come from `class_heritage`; IMPORTS
+    edges come from `import_statement` source strings.
+
+    The visitor is conservative: nodes whose target name cannot be
+    rendered as a single dotted identifier (subscripts, call-chain
+    heads, complex destructuring) are skipped rather than guessed.
+    Phase 4 cross-file resolution will turn the unresolved targets
+    into qualified references.
+    """
+
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self.entities: list[CodeEntity] = []
+        self.relationships: list[CodeRelationship] = []
+        self._class_stack: list[str] = []
+        self._function_stack: list[tuple[str, tuple[str, ...]]] = []
+
+    # -- Public entry ----------------------------------------------------
+
+    def visit(self, node) -> None:
+        if node is None:
+            return
+        method = getattr(self, f"visit_{node.type}", None)
+        if method is not None:
+            method(node)
+            return
+        # Default traversal: visit every named child.
+        for child in node.named_children:
+            self.visit(child)
+
+    # -- Class / method / function definitions ---------------------------
+
+    def visit_class_declaration(self, node) -> None:
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            for child in node.named_children:
+                self.visit(child)
+            return
+        class_name = self._text(name_node)
+        sanitized = InputSanitizer.sanitize_for_graph_id(class_name)
+        parent_chain = tuple(self._class_stack)
+
+        entity = CodeEntity(
+            name=sanitized,
+            entity_type="class",
+            file_path=self.file_path,
+            line_number=self._line(node),
+            parent_entity=parent_chain[-1] if parent_chain else None,
+            parent_chain=parent_chain,
+            attributes={"language": "javascript"},
+        )
+        self.entities.append(entity)
+
+        # INHERITS edges from `class_heritage` (the `extends X` clause).
+        # tree-sitter-javascript represents this as an unnamed
+        # `extends_clause` containing an identifier or member expression.
+        heritage = self._first_child_of_type(node, "class_heritage")
+        if heritage is not None:
+            for base in self._iter_heritage_targets(heritage):
+                self.relationships.append(
+                    CodeRelationship(
+                        source_name=sanitized,
+                        source_parent_chain=parent_chain,
+                        target_name=_sanitize_dotted_name(base),
+                        relationship=EdgeLabel.INHERITS.value,
+                        properties={"kind": "extends", "line": self._line(node)},
+                        file_path=self.file_path,
+                    )
+                )
+
+        # Recurse into the class body so methods see the right parent.
+        body = node.child_by_field_name("body")
+        if body is not None:
+            self._class_stack.append(sanitized)
+            try:
+                for child in body.named_children:
+                    self.visit(child)
+            finally:
+                self._class_stack.pop()
+
+    def visit_method_definition(self, node) -> None:
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            return
+        method_name = self._text(name_node)
+        sanitized = InputSanitizer.sanitize_for_graph_id(method_name)
+        parent_chain = tuple(self._class_stack)
+
+        entity = CodeEntity(
+            name=sanitized,
+            entity_type="method",
+            file_path=self.file_path,
+            line_number=self._line(node),
+            parent_entity=parent_chain[-1] if parent_chain else None,
+            parent_chain=parent_chain,
+            attributes={"language": "javascript"},
+        )
+        self.entities.append(entity)
+
+        body = node.child_by_field_name("body")
+        if body is not None:
+            self._function_stack.append((sanitized, parent_chain))
+            try:
+                self._walk_body(body)
+            finally:
+                self._function_stack.pop()
+
+    def visit_function_declaration(self, node) -> None:
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            return
+        func_name = self._text(name_node)
+        sanitized = InputSanitizer.sanitize_for_graph_id(func_name)
+        parent_chain = tuple(self._class_stack)
+
+        entity = CodeEntity(
+            name=sanitized,
+            entity_type="function",
+            file_path=self.file_path,
+            line_number=self._line(node),
+            parent_chain=parent_chain,
+            attributes={"language": "javascript"},
+        )
+        self.entities.append(entity)
+
+        body = node.child_by_field_name("body")
+        if body is not None:
+            self._function_stack.append((sanitized, parent_chain))
+            try:
+                self._walk_body(body)
+            finally:
+                self._function_stack.pop()
+
+    def visit_lexical_declaration(self, node) -> None:
+        # const/let bindings; declarators may hold arrow_function values
+        # which we treat as function entities. Module-scope plain values
+        # become variable entities; in-function variables are ignored to
+        # match the Python visitor's behaviour.
+        for declarator in node.named_children:
+            if declarator.type != "variable_declarator":
+                continue
+            self._handle_variable_declarator(declarator)
+
+    def visit_variable_declaration(self, node) -> None:
+        # `var` declarations follow the same shape as lexical_declaration.
+        self.visit_lexical_declaration(node)
+
+    def _handle_variable_declarator(self, declarator) -> None:
+        name_node = declarator.child_by_field_name("name")
+        value_node = declarator.child_by_field_name("value")
+        if name_node is None:
+            return
+        var_name = self._text(name_node)
+        sanitized = InputSanitizer.sanitize_for_graph_id(var_name)
+
+        # Arrow function bindings produce a function entity rather than
+        # a variable, matching `const f = () => {}` semantics.
+        if value_node is not None and value_node.type == "arrow_function":
+            parent_chain = tuple(self._class_stack)
+            entity = CodeEntity(
+                name=sanitized,
+                entity_type="function",
+                file_path=self.file_path,
+                line_number=self._line(declarator),
+                parent_chain=parent_chain,
+                attributes={"language": "javascript", "arrow_function": True},
+            )
+            self.entities.append(entity)
+
+            body = value_node.child_by_field_name("body")
+            if body is not None:
+                self._function_stack.append((sanitized, parent_chain))
+                try:
+                    self._walk_body(body)
+                finally:
+                    self._function_stack.pop()
+            return
+
+        # Module-scope variables only.
+        if not self._class_stack and not self._function_stack:
+            self.entities.append(
+                CodeEntity(
+                    name=sanitized,
+                    entity_type="variable",
+                    file_path=self.file_path,
+                    line_number=self._line(declarator),
+                    attributes={"language": "javascript"},
+                )
+            )
+
+    # -- Imports ---------------------------------------------------------
+
+    def visit_import_statement(self, node) -> None:
+        # The source is the string literal. Specifiers expand to one
+        # entity per imported binding, with a shared IMPORTS edge per
+        # specifier targeting the source module. Module specifiers
+        # are JS-style path strings (``./foo``, ``react``,
+        # ``@scope/pkg``) and are preserved verbatim as edge targets;
+        # the dots they contain are path components, not identifier
+        # separators.
+        source_node = node.child_by_field_name("source")
+        if source_node is None:
+            return
+        source_module = self._strip_quotes(self._text(source_node))
+        if not source_module:
+            return
+
+        names = list(self._iter_import_specifiers(node))
+        if not names:
+            # Side-effect-only import: ``import "./polyfills";``
+            entity = CodeEntity(
+                name=InputSanitizer.sanitize_for_graph_id(
+                    self._import_entity_name(source_module)
+                ),
+                entity_type="import",
+                file_path=self.file_path,
+                line_number=self._line(node),
+                attributes={
+                    "language": "javascript",
+                    "source_module": source_module,
+                    "side_effect_only": True,
+                },
+            )
+            self.entities.append(entity)
+            self.relationships.append(
+                CodeRelationship(
+                    source_name=entity.name,
+                    source_parent_chain=(),
+                    target_name=source_module,
+                    relationship=EdgeLabel.IMPORTS.value,
+                    properties={"line": self._line(node)},
+                    file_path=self.file_path,
+                )
+            )
+            return
+
+        for binding_name in names:
+            entity = CodeEntity(
+                name=InputSanitizer.sanitize_for_graph_id(binding_name),
+                entity_type="import",
+                file_path=self.file_path,
+                line_number=self._line(node),
+                attributes={
+                    "language": "javascript",
+                    "source_module": source_module,
+                    "original_name": binding_name,
+                },
+            )
+            self.entities.append(entity)
+            self.relationships.append(
+                CodeRelationship(
+                    source_name=entity.name,
+                    source_parent_chain=(),
+                    target_name=source_module,
+                    relationship=EdgeLabel.IMPORTS.value,
+                    properties={"line": self._line(node)},
+                    file_path=self.file_path,
+                )
+            )
+
+    @staticmethod
+    def _import_entity_name(source_module: str) -> str:
+        """Derive a stable entity name for a side-effect-only import.
+
+        ``./polyfills`` produces ``polyfills``; ``@scope/pkg`` produces
+        ``pkg``; ``react`` stays ``react``. The full source string
+        remains on the IMPORTS edge target and the entity attributes.
+        """
+        cleaned = source_module.lstrip("./@")
+        # Take the trailing path segment.
+        if "/" in cleaned:
+            cleaned = cleaned.rsplit("/", 1)[-1]
+        return cleaned or source_module
+
+    # -- Function bodies / call sites -----------------------------------
+
+    def _walk_body(self, body_node) -> None:
+        """Walk a statement_block (or expression body) collecting calls."""
+        for child in body_node.named_children:
+            self._walk_for_calls(child)
+            # Also let other handlers recurse into nested classes /
+            # functions defined inside this body.
+            if child.type in {
+                "class_declaration",
+                "function_declaration",
+                "lexical_declaration",
+                "variable_declaration",
+                "method_definition",
+            }:
+                self.visit(child)
+
+    def _walk_for_calls(self, node) -> None:
+        if node is None:
+            return
+        if node.type == "call_expression":
+            self._record_call(node)
+        for child in node.named_children:
+            # Don't recurse into nested function definitions; their
+            # bodies are visited via their own scope frame.
+            if child.type in {
+                "function_declaration",
+                "method_definition",
+                "arrow_function",
+                "function_expression",
+            }:
+                continue
+            self._walk_for_calls(child)
+
+    def _record_call(self, node) -> None:
+        if not self._function_stack:
+            return
+        callee_node = node.child_by_field_name("function")
+        if callee_node is None:
+            return
+        target = self._render_callee(callee_node)
+        if not target:
+            return
+        caller_name, caller_parent_chain = self._function_stack[-1]
+        self.relationships.append(
+            CodeRelationship(
+                source_name=caller_name,
+                source_parent_chain=caller_parent_chain,
+                target_name=_sanitize_dotted_name(target),
+                relationship=EdgeLabel.CALLS.value,
+                properties={"call_site_line": self._line(node)},
+                file_path=self.file_path,
+            )
+        )
+
+    # -- Helpers ---------------------------------------------------------
+
+    def _text(self, node) -> str:
+        try:
+            return node.text.decode("utf-8")
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _line(node) -> int:
+        # tree-sitter is 0-indexed; align with Python ast (1-indexed).
+        return node.start_point[0] + 1
+
+    @staticmethod
+    def _first_child_of_type(node, type_name: str):
+        for child in node.named_children:
+            if child.type == type_name:
+                return child
+        return None
+
+    def _iter_heritage_targets(self, heritage_node):
+        """Yield heritage target names from a class_heritage node."""
+        for child in heritage_node.named_children:
+            text = self._render_callee(child)
+            if text:
+                yield text
+
+    def _render_callee(self, node) -> str | None:
+        if node.type == "identifier":
+            return self._text(node)
+        if node.type == "member_expression":
+            obj = node.child_by_field_name("object")
+            prop = node.child_by_field_name("property")
+            if obj is None or prop is None:
+                return None
+            obj_text = self._render_callee(obj)
+            prop_text = self._text(prop)
+            if obj_text and prop_text:
+                return f"{obj_text}.{prop_text}"
+            return None
+        return None
+
+    def _iter_import_specifiers(self, node):
+        """Yield local binding names from an import_statement.
+
+        Covers default, named, and namespace imports.
+        """
+        clause = self._first_child_of_type(node, "import_clause")
+        if clause is None:
+            return
+        for child in clause.named_children:
+            if child.type == "identifier":
+                # `import Foo from "./foo";`
+                yield self._text(child)
+            elif child.type == "namespace_import":
+                # `import * as Foo from "./foo";`
+                ident = self._first_child_of_type(child, "identifier")
+                if ident is not None:
+                    yield self._text(ident)
+            elif child.type == "named_imports":
+                # `import { Foo, Bar as Baz } from "./foo";`
+                for specifier in child.named_children:
+                    if specifier.type == "import_specifier":
+                        alias = specifier.child_by_field_name("alias")
+                        name = specifier.child_by_field_name("name")
+                        if alias is not None:
+                            yield self._text(alias)
+                        elif name is not None:
+                            yield self._text(name)
+
+    @staticmethod
+    def _strip_quotes(s: str) -> str:
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in {"'", '"', "`"}:
+            return s[1:-1]
+        return s
 
 
 def _sanitize_dotted_name(name: str) -> str:

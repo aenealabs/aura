@@ -534,6 +534,32 @@ Resources:
                               "Parameters": {
                                 "ProjectName": "${ProjectName}-serverless-deploy-${Environment}"
                               },
+                              "ResultPath": "$.serverlessBuild",
+                              "Next": "DeploySymbolResolverLayer"
+                            },
+                            "DeploySymbolResolverLayer": {
+                              "Type": "Task",
+                              "Comment": "ADR-090 Layer 6.20 sub-layer (Tier 3 LLM symbol resolver). Runs after the parent serverless layer publishes the network-services and SQS exports the resolver depends on. Non-blocking on failure: a Tier 3 outage degrades graph queries but does not block the rest of the platform deploy.",
+                              "Resource": "arn:${AWS::Partition}:states:::codebuild:startBuild.sync",
+                              "Parameters": {
+                                "ProjectName": "${ProjectName}-serverless-symbol-resolver-deploy-${Environment}"
+                              },
+                              "Catch": [
+                                {
+                                  "ErrorEquals": ["States.ALL"],
+                                  "ResultPath": "$.symbolResolverError",
+                                  "Next": "SymbolResolverFailed"
+                                }
+                              ],
+                              "End": true
+                            },
+                            "SymbolResolverFailed": {
+                              "Type": "Pass",
+                              "Comment": "Symbol resolver deployment failed - non-blocking",
+                              "Result": {
+                                "status": "FAILED",
+                                "message": "Symbol resolver (ADR-090 6.20) deployment failed (non-blocking)"
+                              },
                               "End": true
                             }
                           }
@@ -553,7 +579,7 @@ Resources:
                     },
                     "DeploySecuritySubLayers": {
                       "Type": "Parallel",
-                      "Comment": "Layer 8 Security and ADR-083 Runtime Security deploy in parallel",
+                      "Comment": "Layer 8 Security, ADR-083 Runtime Security, and ADR-084 Vulnerability Scanner deploy in parallel",
                       "Branches": [
                         {
                           "StartAt": "DeploySecurityLayer",
@@ -592,6 +618,36 @@ Resources:
                               "Result": {
                                 "status": "FAILED",
                                 "message": "Runtime security deployment failed (non-blocking)"
+                              },
+                              "End": true
+                            }
+                          }
+                        },
+                        {
+                          "StartAt": "DeployVulnScanLayer",
+                          "States": {
+                            "DeployVulnScanLayer": {
+                              "Type": "Task",
+                              "Comment": "ADR-084 Native Vulnerability Scanning Engine. Deploys in parallel with Security and Runtime Security; non-blocking on failure so a scanner outage does not block the rest of the platform deploy.",
+                              "Resource": "arn:${AWS::Partition}:states:::codebuild:startBuild.sync",
+                              "Parameters": {
+                                "ProjectName": "${ProjectName}-vuln-scan-deploy-${Environment}"
+                              },
+                              "Catch": [
+                                {
+                                  "ErrorEquals": ["States.ALL"],
+                                  "ResultPath": "$.vulnScanError",
+                                  "Next": "VulnScanFailed"
+                                }
+                              ],
+                              "End": true
+                            },
+                            "VulnScanFailed": {
+                              "Type": "Pass",
+                              "Comment": "Vulnerability scanner deployment failed - non-blocking",
+                              "Result": {
+                                "status": "FAILED",
+                                "message": "Vulnerability scanner (ADR-084) deployment failed (non-blocking)"
                               },
                               "End": true
                             }

@@ -1,0 +1,86 @@
+name: Nightly Live-LLM Smoke
+
+# ADR-090 Tier 3 resolver live-Bedrock smoke (#120, P2).
+#
+# Catches model-version regressions and Bedrock API drift that mocked
+# tests miss by construction. Opt-in nightly run on a separate workflow
+# so PR pipeline cost is unaffected. Hard cost cap of USD 0.50 per run
+# enforced inside the test.
+
+on:
+  schedule:
+    # 09:00 UTC daily (off-peak for us-east-1; misses heavy diurnal
+    # Bedrock contention windows).
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # for AWS OIDC role assumption
+  issues: write    # to post the summary as a comment on the tracking issue
+
+concurrency:
+  # Only one live-LLM smoke at a time so the cost cap is per-run not
+  # per-concurrent-run.
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Tier 3 Live-LLM Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt || true
+          pip install pytest pytest-asyncio
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AURA_LIVE_LLM_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Run live-LLM smoke
+        env:
+          # Required by tests/live/test_tier3_live_llm.py module-level
+          # skip; the test will not run without this set.
+          AWS_BEDROCK_AVAILABLE: '1'
+        run: |
+          # --no-cov: this hits a real external service; coverage
+          # numbers from a single test file are meaningless.
+          # tests/live/: explicit path because pyproject.toml addopts
+          # ignores this directory in the default collection.
+          # -m live_llm: belt-and-suspenders gate alongside the
+          # module-level pytestmark.
+          pytest tests/live/ -m live_llm --no-cov -v
+
+      - name: Post summary to tracking issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Read the GITHUB_STEP_SUMMARY content the test wrote and
+          # post it as a comment on the tracking issue (#120). Fail
+          # softly if posting fails -- the workflow run itself is the
+          # source of truth.
+          if [ -f "$GITHUB_STEP_SUMMARY" ]; then
+            BODY="$(cat "$GITHUB_STEP_SUMMARY")"
+            STATUS_LINE="**Workflow status: ${{ job.status }}**"
+            COMMENT="${STATUS_LINE}\n\n${BODY}\n\n_See run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}_"
+            echo -e "$COMMENT" | gh issue comment 120 \
+              --repo ${{ github.repository }} \
+              --body-file - || \
+              echo '::warning::Failed to post summary to issue #120; check workflow logs.'
+          fi

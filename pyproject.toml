@@ -253,6 +253,9 @@ addopts = [
     # the main PR pipeline fast and prevents CI-variance noise from
     # flapping perf assertions.
     "--ignore=tests/performance",
+    # Live-LLM tests (#120) hit real Bedrock and cost real money.
+    # Excluded from default collection; nightly workflow opts in.
+    "--ignore=tests/live",
 ]
 markers = [
     # Test type markers (REQUIRED on test modules for clarity)
@@ -265,6 +268,7 @@ markers = [
     "smoke: Smoke tests for production validation (run before deployment)",
     "performance: Performance and SLA validation tests",
     "deployment: Post-deployment validation tests",
+    "live_llm: Opt-in tests that hit real Bedrock (#120). Skip unless AWS_BEDROCK_AVAILABLE=1 is set.",
 
     # Infrastructure markers
     "aws_integration: Tests requiring mocked AWS services via moto",

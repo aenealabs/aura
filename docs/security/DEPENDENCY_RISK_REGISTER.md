@@ -28,8 +28,6 @@ The headline list. These are the deps that will hurt the platform if we don't ac
 
 | Package | Surface | Tier | Reason | Mitigation |
 | --- | --- | --- | --- | --- |
-| `tj-actions/changed-files` (GitHub Action) | CI | **Replace-Now** | CVE-2025-30066 (March 2025 supply-chain compromise; maintainer's release tag was rewritten to exfiltrate secrets). Action is single-maintainer with a documented incident. | Replace with `dorny/paths-filter` or built-in `git diff` in a custom step. Already pinned to a SHA (`9426d40962ed5378910ee2e21d5f8c6fcbf2dd96`) which is safe; tracked for swap on next CI refresh. |
-| `google-generativeai` | Python (API runtime) | **Replace-Now** | Deprecated by Google in favor of `google-genai` (the unified Gemini SDK). Old SDK is end-of-life; new features land only in the replacement. | Migrate imports from `google.generativeai` to `google.genai`. Tracked: file follow-up issue. |
 | `nest-asyncio` | Python (API runtime) | **At-Risk** | Single-maintainer (erdewit), maintenance tempo has slowed; the package itself is a workaround for an asyncio limitation that gremlinpython forces on us. | Long-term: replace with explicit thread-pool dispatch for gremlin-python calls (gremlin's blocking I/O is the actual problem, not our event loop). Vendor in-tree as a fallback; the package is ~150 lines. |
 | `gremlinpython` | Python (API runtime) | **At-Risk** | Apache TinkerPop project, but the Python binding has historically thin maintenance compared to the Java reference. Tied to Neptune. | Track upstream cadence. If it slows further, evaluate Neptune's HTTP API as a fallback transport (already supported by Neptune). |
 | `requests-aws4auth` | Python (API runtime) | **At-Risk** | Single-maintainer, low release cadence. Used for OpenSearch FGAC SigV4 signing. | Replaceable with botocore's `SigV4Auth` directly (~30 lines); abstraction already lives in our OpenSearch client wrapper. |
@@ -131,6 +129,8 @@ Output is posted as a comment on the tracking issue (`#138`). New high or critic
 | Decision | Date | Rationale |
 | --- | --- | --- |
 | Replaced `python-jose` with `PyJWT[crypto]` | Pre-existing | `python-jose` had unpatched CVEs and a maintainer who explicitly stated they were no longer maintaining; PyJWT has corporate-backed crypto via the `cryptography` package. |
+| Replaced `tj-actions/changed-files` with native `git diff` step | 2026-05-08 | CVE-2025-30066 supply-chain compromise; single-maintainer action with documented incident. Replaced with a custom bash step in `.github/workflows/aura-security-review.yml` that uses `git diff --name-only` and grep filtering. Same outputs (`any_changed`, `all_changed_files`) so downstream steps unchanged. Closes #139. |
+| Replaced `google-generativeai` with `google-genai` | 2026-05-08 | Old SDK deprecated by Google in 2025 SDK consolidation; new features land only in the unified `google-genai` package. Migrated `GeminiLLMService` from the `genai.configure(...) -> GenerativeModel(...).generate_content(...)` shape to `genai.Client(api_key=...).models.generate_content(model=..., contents=..., config=...)`. New focused test (`test_gemini_genai_backend_uses_new_client_models_shape`) validates the call boundary even when no real Gemini credentials are present. Closes #140. |
 
 (Add to this table when a Replace-Now decision is executed.)
 

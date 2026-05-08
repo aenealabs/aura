@@ -58,13 +58,39 @@ jobs:
 
       - name: Get changed files
         id: changed-files
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
-        with:
-          files: |
-            src/**/*.py
-            tests/**/*.py
-            deploy/**/*.yaml
-            deploy/**/*.yml
+        # Native replacement for the deprecated single-maintainer
+        # tj-actions/changed-files action (CVE-2025-30066 supply-chain
+        # history). Uses git diff scoped to the PR base..head range,
+        # filtered to the same glob set the previous step matched, and
+        # emits the same outputs (any_changed, all_changed_files) so
+        # downstream steps continue to work unchanged. Workflow only
+        # triggers on pull_request and workflow_dispatch (see `on:`),
+        # so the two cases are exhaustive.
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            # workflow_dispatch: review the latest commit only.
+            BASE="HEAD~1"
+            HEAD="HEAD"
+          fi
+          ALL=$(git diff --name-only "$BASE" "$HEAD" || true)
+          # Glob set: src/**/*.py, tests/**/*.py, deploy/**/*.yaml,
+          # deploy/**/*.yml -- matches the previous action's `files`
+          # input.
+          FILTERED=$(printf '%s\n' "$ALL" \
+            | grep -E '^(src/.*\.py|tests/.*\.py|deploy/.*\.(yaml|yml))$' \
+            || true)
+          if [ -z "$FILTERED" ]; then
+            echo "any_changed=false" >> "$GITHUB_OUTPUT"
+            echo "all_changed_files=" >> "$GITHUB_OUTPUT"
+          else
+            echo "any_changed=true" >> "$GITHUB_OUTPUT"
+            FLAT=$(printf '%s' "$FILTERED" | tr '\n' ' ')
+            echo "all_changed_files=$FLAT" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Get PR diff
         id: pr-diff

@@ -5,14 +5,16 @@ are supported:
 
 - **Vertex AI** (``vertexai.preview.generative_models``) — preferred for
   enterprise / GCP-resident customers, uses GCP IAM via ADC.
-- **google-generativeai** — public AI Studio API path; uses an API key.
+- **google-genai** — public AI Studio API path; uses an API key. This
+  is the unified Gemini SDK that replaced the deprecated
+  ``google-generativeai`` package per Google's 2025 SDK consolidation.
 
 Both SDKs are imported softly so the module loads in slim/air-gapped
 builds. When neither is available the service operates in mock mode,
 matching the AzureOpenAI / OpenAI patterns.
 
 Why both: Vertex is what regulated customers will deploy against (GCP
-DLP/IAM/audit); google-generativeai is the lower-friction path for dev
+DLP/IAM/audit); google-genai is the lower-friction path for dev
 and the public-cloud SaaS edition. The public API surface is the same
 because Gemini's prompt + system-instruction model is identical across
 both transports.
@@ -57,7 +59,7 @@ except ImportError:  # pragma: no cover — depends on env
     VertexGenerativeModel = None  # type: ignore[assignment]
 
 try:
-    import google.generativeai as genai  # type: ignore[import-not-found]
+    from google import genai  # type: ignore[import-not-found]
 
     GENAI_AVAILABLE = True
 except ImportError:  # pragma: no cover
@@ -66,7 +68,7 @@ except ImportError:  # pragma: no cover
 
 if not (VERTEXAI_AVAILABLE or GENAI_AVAILABLE):
     logger.warning(
-        "Neither vertexai nor google-generativeai installed; "
+        "Neither vertexai nor google-genai installed; "
         "GeminiLLMService will run in mock mode"
     )
 
@@ -131,6 +133,11 @@ class GeminiLLMService(LLMService):
         self._mode: str = "mock"  # "vertex" | "genai" | "mock"
         self._initialized = False
         self._usage_records: list[dict[str, Any]] = []
+        # google-genai uses an explicit Client object rather than the
+        # module-level configure() pattern of the deprecated SDK. The
+        # client is constructed in initialize() when the genai backend
+        # is selected and kept here for the lifetime of the service.
+        self._genai_client: Any = None
 
     @property
     def is_mock_mode(self) -> bool:
@@ -165,8 +172,8 @@ class GeminiLLMService(LLMService):
                     self.location,
                 )
             elif backend == "genai":
-                genai.configure(api_key=self.api_key)  # type: ignore[union-attr]
-                logger.info("google-generativeai client initialized via API key")
+                self._genai_client = genai.Client(api_key=self.api_key)  # type: ignore[union-attr]
+                logger.info("google-genai client initialized via API key")
 
             self._initialized = True
             return True
@@ -179,6 +186,7 @@ class GeminiLLMService(LLMService):
     async def shutdown(self) -> None:
         self._initialized = False
         self._mode = "mock"
+        self._genai_client = None
 
     # -------------------------------------------------------------- helpers
 
@@ -235,8 +243,8 @@ class GeminiLLMService(LLMService):
                 metadata={"_mock": True, "_provider": "gemini", "_backend": "mock"},
             )
 
-        # Vertex and google-generativeai have nearly identical surface for
-        # the relevant call. Route via _mode.
+        # Vertex and google-genai have similar but not identical surface.
+        # Route via _mode and use each SDK's own call shape.
         try:
             if self._mode == "vertex":
                 content, in_tok, out_tok, finish = await self._invoke_vertex(
@@ -298,16 +306,21 @@ class GeminiLLMService(LLMService):
         model_id: str,
         model_config: ModelConfig | None,
     ) -> tuple[str, int, int, str]:
+        # google-genai uses ``client.models.generate_content`` with the
+        # generation parameters (and any system_instruction) bundled
+        # into a single ``config`` dict, replacing the
+        # ``GenerativeModel(...).generate_content(...)`` shape of the
+        # deprecated SDK.
         import asyncio
 
         def _call() -> Any:
-            kwargs: dict[str, Any] = {}
+            config: dict[str, Any] = self._generation_config(request, model_config)
             if request.system_prompt:
-                kwargs["system_instruction"] = request.system_prompt
-            model = genai.GenerativeModel(model_id, **kwargs)  # type: ignore[union-attr]
-            return model.generate_content(
-                request.prompt,
-                generation_config=self._generation_config(request, model_config),
+                config["system_instruction"] = request.system_prompt
+            return self._genai_client.models.generate_content(  # type: ignore[union-attr]
+                model=model_id,
+                contents=request.prompt,
+                config=config,
             )
 
         result = await asyncio.to_thread(_call)
@@ -338,22 +351,33 @@ class GeminiLLMService(LLMService):
                 yield c
             return
 
-        # Both backends expose stream=True on generate_content; the call is sync
-        # and yields chunks, so we drive the iterator from a thread.
+        # The two backends have different streaming entry points:
+        # Vertex still exposes ``stream=True`` on ``generate_content``
+        # via the GenerativeModel object; google-genai uses a dedicated
+        # ``generate_content_stream`` method on ``client.models``.
+        # Both calls are sync and yield chunks, so we drive the
+        # iterator from a thread.
         import asyncio
 
         def _start_stream() -> Any:
-            kwargs: dict[str, Any] = {}
-            if request.system_prompt:
-                kwargs["system_instruction"] = request.system_prompt
             if self._mode == "vertex":
+                kwargs: dict[str, Any] = {}
+                if request.system_prompt:
+                    kwargs["system_instruction"] = request.system_prompt
                 model = VertexGenerativeModel(model_id, **kwargs)  # type: ignore[misc]
-            else:
-                model = genai.GenerativeModel(model_id, **kwargs)  # type: ignore[union-attr]
-            return model.generate_content(
-                request.prompt,
-                generation_config=self._generation_config(request, model_config),
-                stream=True,
+                return model.generate_content(
+                    request.prompt,
+                    generation_config=self._generation_config(request, model_config),
+                    stream=True,
+                )
+            # google-genai
+            config: dict[str, Any] = self._generation_config(request, model_config)
+            if request.system_prompt:
+                config["system_instruction"] = request.system_prompt
+            return self._genai_client.models.generate_content_stream(  # type: ignore[union-attr]
+                model=model_id,
+                contents=request.prompt,
+                config=config,
             )
 
         stream = await asyncio.to_thread(_start_stream)

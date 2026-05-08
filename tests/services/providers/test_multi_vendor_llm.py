@@ -47,6 +47,73 @@ async def test_gemini_mock_mode_initializes_and_invokes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_gemini_genai_backend_uses_new_client_models_shape() -> None:
+    """The genai backend must call the unified-SDK shape:
+    ``client.models.generate_content(model=..., contents=..., config=...)``.
+
+    This is the migration target from the deprecated google-generativeai
+    SDK (``GenerativeModel(...).generate_content(...)``) to the unified
+    google-genai SDK. The test stitches a fake client/models/response
+    chain so the call boundary is validated even though no real Bedrock
+    credentials are present.
+    """
+    from unittest.mock import MagicMock
+
+    from src.services.providers.google import gemini_llm_service as svc_mod
+
+    # Capture the kwargs the service hands to the SDK.
+    captured: dict[str, object] = {}
+
+    fake_response = MagicMock()
+    fake_response.text = "from-fake-genai"
+    fake_response.usage_metadata = MagicMock(
+        prompt_token_count=12, candidates_token_count=7
+    )
+    fake_response.candidates = [MagicMock(finish_reason="stop")]
+
+    def fake_generate_content(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return fake_response
+
+    fake_client = MagicMock()
+    fake_client.models.generate_content.side_effect = fake_generate_content
+
+    # Force the genai branch by short-circuiting the soft-imports and
+    # initialization path. The service ends up in ``_mode == "genai"``
+    # with our fake client wired in.
+    svc = GeminiLLMService(api_key="fake-key", project_id=None, prefer_vertex=False)
+    svc._mode = "genai"
+    svc._initialized = True
+    svc._genai_client = fake_client
+
+    # Patch the module-level GENAI_AVAILABLE so health_check looks
+    # consistent post-call.
+    saved_available = svc_mod.GENAI_AVAILABLE
+    svc_mod.GENAI_AVAILABLE = True
+    try:
+        resp = await svc.invoke(
+            LLMRequest(prompt="ping", system_prompt="you are a tester", max_tokens=64)
+        )
+    finally:
+        svc_mod.GENAI_AVAILABLE = saved_available
+
+    # Verify: new SDK call shape used (model=, contents=, config=).
+    assert captured["model"] == svc.default_model
+    assert captured["contents"] == "ping"
+    config = captured["config"]
+    assert isinstance(config, dict)
+    assert config["system_instruction"] == "you are a tester"
+    assert config["max_output_tokens"] == 64
+
+    # Verify: response surface translated correctly.
+    assert resp.content == "from-fake-genai"
+    assert resp.input_tokens == 12
+    assert resp.output_tokens == 7
+    assert resp.finish_reason == "stop"
+    assert resp.metadata["_backend"] == "genai"
+
+
+@pytest.mark.asyncio
 async def test_openai_streaming_mock() -> None:
     svc = OpenAILLMService(api_key=None)
     await svc.initialize()

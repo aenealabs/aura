@@ -20,10 +20,15 @@ Parameters:
       (DR-1 / #144). Production environments only; dev/qa do not pay
       replica costs.
 
+  DRAlertTopicArn:
+    Type: String
+    Default: ''
+    Description: |
+      Optional SNS topic ARN for DR alert routing (DR-9 / #152).
+
 Conditions:
-  # DR-1 (#144): replicate Tier 1 GlobalTables to the secondary region in
-  # production only.
   IsProduction: !Equals [!Ref Environment, prod]
+  HasDRAlertTopic: !Not [!Equals [!Ref DRAlertTopicArn, '']]
 
 Resources:
   # Repositories Table - Stores connected repository metadata
@@ -119,6 +124,14 @@ Resources:
       Threshold: 300000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
 
   # OAuth Connections Table - Stores OAuth provider connections
   OAuthConnectionsTable:
@@ -216,6 +229,14 @@ Resources:
       Threshold: 300000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
 
   # Repository Ingestion Jobs Table - Tracks repository ingestion job status
   RepositoryIngestionJobsTable:

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Layer 2.7 - S3 CRR Destination Buckets (Secondary Region for DR-5/#148)'
+Description: 'Project Aura - Layer 2.21 - S3 CRR Destinations (Secondary Region)'
 
 # =============================================================================
 # Purpose

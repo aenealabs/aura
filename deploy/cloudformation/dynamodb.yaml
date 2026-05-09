@@ -21,10 +21,19 @@ Parameters:
       (DR-1 / #144). Production environments only; dev/qa do not pay
       replica costs.
 
+  DRAlertTopicArn:
+    Type: String
+    Default: ''
+    Description: |
+      Optional SNS topic ARN for DR alert routing (DR-9 / #152).
+      Default empty -- replication-lag alarms have no action target
+      unless this is supplied.
+
 Conditions:
   # DR-1 (#144): replicate Tier 1 GlobalTables to the secondary region in
   # production only.
   IsProduction: !Equals [!Ref Environment, prod]
+  HasDRAlertTopic: !Not [!Equals [!Ref DRAlertTopicArn, '']]
 
 Resources:
   # Cost Tracking Table
@@ -317,6 +326,14 @@ Resources:
       Threshold: 300000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
 
   # Platform Settings Table
   PlatformSettingsTable:
@@ -396,6 +413,14 @@ Resources:
       Threshold: 300000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
 
   # Anomaly Audit Trail Table
   AnomaliesTable:
@@ -506,6 +531,14 @@ Resources:
       Threshold: 300000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
 
   # Autonomy Policies Table - stores organization autonomy configurations
   AutonomyPoliciesTable:
@@ -585,6 +618,14 @@ Resources:
       Threshold: 300000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
 
   # Autonomy Policy Audit Table - audit trail for policy changes
   PolicyAuditTable:

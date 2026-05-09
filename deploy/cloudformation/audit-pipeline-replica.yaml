@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Layer 5.X - Audit Pipeline Replica Bucket (Secondary Region for DR-1.1/#154)'
+Description: 'Project Aura - Layer 5.13 - Audit Pipeline Replica (Secondary Region)'
 
 # =============================================================================
 # Purpose

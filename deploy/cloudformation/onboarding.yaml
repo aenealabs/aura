@@ -19,8 +19,15 @@ Parameters:
       Secondary AWS region for Tier 1 DynamoDB Global Tables replication
       (DR-1 / #144). Production environments only.
 
+  DRAlertTopicArn:
+    Type: String
+    Default: ''
+    Description: |
+      Optional SNS topic ARN for DR alert routing (DR-9 / #152).
+
 Conditions:
   IsProduction: !Equals [!Ref Environment, prod]
+  HasDRAlertTopic: !Not [!Equals [!Ref DRAlertTopicArn, '']]
 
 Resources:
   # User Onboarding State Table - Stores user onboarding progress
@@ -107,6 +114,14 @@ Resources:
       Threshold: 300000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
 
   # Team Invitations Table - Stores pending team invitations
   TeamInvitationsTable:
@@ -208,6 +223,14 @@ Resources:
       Threshold: 300000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
 
   # S3 Bucket for Onboarding Videos
   OnboardingVideosBucket:

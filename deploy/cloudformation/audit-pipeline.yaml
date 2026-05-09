@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Layer 5.X - Audit Pipeline (Streams + Kinesis + Firehose + S3 Object Lock for DR-1.1/#154)'
+Description: 'Project Aura - Layer 5.12 - Audit Pipeline (Compliance Streams)'
 
 # =============================================================================
 # Purpose

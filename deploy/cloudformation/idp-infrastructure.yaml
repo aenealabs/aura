@@ -21,8 +21,20 @@ Parameters:
       Native Secrets Manager replicas are created in this region for
       production environments only.
 
+  DRAlertTopicArn:
+    Type: String
+    Default: ''
+    Description: |
+      Optional SNS topic ARN for DR alert routing (DR-9 / #152).
+      Default empty -- replication-lag alarms have no action target
+      unless this is supplied. Pass via:
+        --parameter-overrides DRAlertTopicArn=$(aws cloudformation
+        list-exports --query "Exports[?Name=='aura-dr-alert-topic-arn-${ENV}'].Value | [0]"
+        --output text)
+
 Conditions:
   IsProduction: !Equals [!Ref Environment, prod]
+  HasDRAlertTopic: !Not [!Equals [!Ref DRAlertTopicArn, '']]
 
 Resources:
   # ===========================================================================
@@ -146,6 +158,14 @@ Resources:
       Threshold: 300000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
 
   # ===========================================================================
   # IdP Audit Log Table

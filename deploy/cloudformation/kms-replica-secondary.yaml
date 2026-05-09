@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Layer 1.X - KMS Auth Credentials Key (Secondary Region for DR-1.0/#153)'
+Description: 'Project Aura - Layer 1.10 - KMS Auth Credentials (Secondary Region)'
 
 # =============================================================================
 # Purpose

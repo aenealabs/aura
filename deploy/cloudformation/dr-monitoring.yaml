@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Layer 5.X - DR Monitoring (Drift Detection + Cross-Region Observability for DR-9/#152)'
+Description: 'Project Aura - Layer 5.14 - DR Monitoring (Drift + Observability)'
 
 # =============================================================================
 # Purpose

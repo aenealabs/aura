@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.11 - VPC Foundation (Secondary Region)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Minimum-viable VPC in the secondary region (default us-west-2) for the
+# DR initiative (#143). Unblocks DR-3 (Neptune cross-region, #146) and
+# DR-4 (OpenSearch CCR, #147), both of which need VPC-resident database
+# clusters in the secondary region.
+#
+# Deliberate non-goals (deferred to DR-7 / #150 orchestration):
+#   - No Internet Gateway. The data plane (Neptune, OpenSearch) does not
+#     need internet egress from the secondary region until application-
+#     layer failover lands.
+#   - No NAT Gateway. NAT is ~$33/month/AZ -- waste until DR-7 needs it.
+#   - No public subnets. Application failover ingress is DR-7's call.
+#   - No service-specific subnet groups (Neptune / OpenSearch). Those land
+#     with their respective service sub-issues.
+#
+# Production-only: foundation resources are gated on IsProduction. dev/qa
+# do not run cross-region replication and should not pay for an unused VPC.
+#
+# Manual deploy until DR-7 orchestration:
+#
+#   aws cloudformation deploy \
+#       --stack-name aura-networking-secondary-prod \
+#       --template-file deploy/cloudformation/networking-secondary.yaml \
+#       --parameter-overrides Environment=prod ProjectName=aura \
+#       --capabilities CAPABILITY_NAMED_IAM \
+#       --region us-west-2 \
+#       --no-fail-on-empty-changeset
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  VpcCIDR:
+    Type: String
+    Default: 10.1.0.0/16
+    AllowedPattern: ^(10\.)([0-9]{1,3}\.){2}(0\/16)$
+    Description: |
+      Secondary-region VPC CIDR. Default 10.1.0.0/16 deliberately
+      non-overlapping with primary 10.0.0.0/16 to keep VPC peering
+      / Transit Gateway options open without re-numbering later.
+
+  AvailabilityZones:
+    Type: CommaDelimitedList
+    Default: us-west-2a,us-west-2b,us-west-2c
+    Description: Three AZs in the secondary region (HA-ready)
+
+  PrivateSubnet1CIDR:
+    Type: String
+    Default: 10.1.10.0/24
+    Description: CIDR for private subnet in AZ-a
+
+  PrivateSubnet2CIDR:
+    Type: String
+    Default: 10.1.11.0/24
+    Description: CIDR for private subnet in AZ-b
+
+  PrivateSubnet3CIDR:
+    Type: String
+    Default: 10.1.12.0/24
+    Description: CIDR for private subnet in AZ-c
+
+  FlowLogRetentionDays:
+    Type: Number
+    Default: 90
+    AllowedValues: [30, 60, 90, 180, 365]
+    Description: |
+      VPC Flow Logs retention. Defaults to 90 days (matches primary
+      networking flow-log convention for non-prod, sufficient for
+      operational forensics; SIEM exports handle longer retention).
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Condition: IsProduction
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpc-${Environment}-dr'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Role
+          Value: dr-secondary
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: IsProduction
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-1-${Environment}-dr'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Role
+          Value: dr-secondary
+        - Key: Tier
+          Value: private
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: IsProduction
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-2-${Environment}-dr'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Role
+          Value: dr-secondary
+        - Key: Tier
+          Value: private
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Condition: IsProduction
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet3CIDR
+      AvailabilityZone: !Select [2, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-3-${Environment}-dr'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Role
+          Value: dr-secondary
+        - Key: Tier
+          Value: private
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: IsProduction
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-rt-${Environment}-dr'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Role
+          Value: dr-secondary
+
+  PrivateSubnet1RouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: IsProduction
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateSubnet2RouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: IsProduction
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  PrivateSubnet3RouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: IsProduction
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet3
+
+  # ===========================================================================
+  # VPC Flow Logs - security visibility / NIST AU-2 alignment
+  # ===========================================================================
+  FlowLogRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-vpc-flowlog-secondary-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FlowLogPublishing
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vpc-flow-logs/${ProjectName}-secondary-${Environment}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  FlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProduction
+    Properties:
+      LogGroupName: !Sub '/aws/vpc-flow-logs/${ProjectName}-secondary-${Environment}'
+      RetentionInDays: !Ref FlowLogRetentionDays
+
+  VPCFlowLog:
+    Type: AWS::EC2::FlowLog
+    Condition: IsProduction
+    Properties:
+      ResourceType: VPC
+      ResourceId: !Ref VPC
+      TrafficType: ALL
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref FlowLogGroup
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Role
+          Value: dr-secondary
+
+Outputs:
+  VpcId:
+    Condition: IsProduction
+    Description: Secondary-region VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${ProjectName}-secondary-vpc-id-${Environment}'
+
+  VpcCIDR:
+    Condition: IsProduction
+    Description: Secondary-region VPC CIDR
+    Value: !Ref VpcCIDR
+    Export:
+      Name: !Sub '${ProjectName}-secondary-vpc-cidr-${Environment}'
+
+  PrivateSubnetIds:
+    Condition: IsProduction
+    Description: Comma-delimited list of private subnet IDs
+    Value: !Join [',', [!Ref PrivateSubnet1, !Ref PrivateSubnet2, !Ref PrivateSubnet3]]
+    Export:
+      Name: !Sub '${ProjectName}-secondary-private-subnet-ids-${Environment}'
+
+  PrivateSubnet1Id:
+    Condition: IsProduction
+    Description: Private subnet 1 ID (us-west-2a)
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub '${ProjectName}-secondary-private-subnet-1-${Environment}'
+
+  PrivateSubnet2Id:
+    Condition: IsProduction
+    Description: Private subnet 2 ID (us-west-2b)
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub '${ProjectName}-secondary-private-subnet-2-${Environment}'
+
+  PrivateSubnet3Id:
+    Condition: IsProduction
+    Description: Private subnet 3 ID (us-west-2c)
+    Value: !Ref PrivateSubnet3
+    Export:
+      Name: !Sub '${ProjectName}-secondary-private-subnet-3-${Environment}'
+
+  PrivateRouteTableId:
+    Condition: IsProduction
+    Description: Private route table ID (for downstream service templates)
+    Value: !Ref PrivateRouteTable
+    Export:
+      Name: !Sub '${ProjectName}-secondary-private-rt-${Environment}'

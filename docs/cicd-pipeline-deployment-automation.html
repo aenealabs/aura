@@ -172,7 +172,7 @@
 <!-- Section 1: Overview -->
 <section id="overview">
 <h2>Pipeline Architecture Overview</h2>
-<p style="margin-bottom:16px;color:var(--text-secondary);">Project Aura uses an enterprise-grade, modular CI/CD architecture powered by AWS CodeBuild and CloudFormation. The system manages 24 CodeBuild projects across a 9-layer deployment cascade with 3-gate validation, automated versioning via Release Please, and comprehensive security controls at every stage.</p>
+<p style="margin-bottom:16px;color:var(--text-secondary);">Project Aura uses an enterprise-grade, modular CI/CD architecture powered by AWS CodeBuild and CloudFormation. The system manages 25 CodeBuild projects across a 9-layer deployment cascade with 3-gate validation, automated versioning via Release Please, and comprehensive security controls at every stage.</p>
 
 <div class="callout">
   <div class="callout-title">Single Source of Truth</div>
@@ -350,7 +350,7 @@
 <table>
   <thead><tr><th>Sub-Layer</th><th>Project Name</th><th>Purpose</th></tr></thead>
   <tbody>
-    <tr><td>0</td><td><code>aura-bootstrap-deploy-{env}</code></td><td>One-time: deploys all 24 CodeBuild projects</td></tr>
+    <tr><td>0</td><td><code>aura-bootstrap-deploy-{env}</code></td><td>One-time: deploys all 25 CodeBuild projects</td></tr>
     <tr><td>1.7</td><td><code>aura-network-services-deploy-{env}</code></td><td>dnsmasq ECS Fargate VPC-wide DNS</td></tr>
     <tr><td>1.9</td><td><code>aura-docker-deploy-{env}</code></td><td>Container image builds for ECR</td></tr>
     <tr><td>3.5</td><td><code>aura-k8s-deploy-{env}</code></td><td>Kubernetes manifest deployment</td></tr>
@@ -385,25 +385,21 @@
     <tr><td><code>buildspec-serverless.yml</code></td><td>416</td><td>6</td><td>Lambda, Step Functions, EventBridge</td></tr>
     <tr><td><code>buildspec-sandbox.yml</code></td><td>441</td><td>7</td><td>HITL Workflow, Self-Play, ECS Sandbox, Service Catalog</td></tr>
     <tr><td><code>buildspec-security.yml</code></td><td>364</td><td>8</td><td>AWS Config (18 rules), GuardDuty, Drift Detection</td></tr>
-    <tr><td><code>buildspec-bootstrap.yml</code></td><td>287</td><td>0</td><td>All 24 CodeBuild project stacks</td></tr>
+    <tr><td><code>buildspec-bootstrap.yml</code></td><td>287</td><td>0</td><td>All 25 CodeBuild project stacks</td></tr>
     <tr><td><code>buildspec-vuln-scan.yml</code></td><td>238</td><td>9</td><td>Scanning engine infrastructure (9 stacks)</td></tr>
   </tbody>
 </table>
 
-<h3>Sub-Layer &amp; Service Buildspecs (28 additional)</h3>
+<h3>Sub-Layer &amp; Service Buildspecs</h3>
 <div class="two-col">
   <div>
     <h4>Application Sub-layers</h4>
     <table>
       <tbody>
-        <tr><td><code>buildspec-application-bedrock.yml</code></td><td>106</td></tr>
-        <tr><td><code>buildspec-application-ecr.yml</code></td><td>179</td></tr>
-        <tr><td><code>buildspec-application-irsa.yml</code></td><td>209</td></tr>
-        <tr><td><code>buildspec-application-k8s.yml</code></td><td>224</td></tr>
-        <tr><td><code>buildspec-application-identity.yml</code></td><td>98</td></tr>
-        <tr><td><code>buildspec-coordinator.yml</code></td><td>313</td></tr>
-        <tr><td><code>buildspec-frontend.yml</code></td><td>89</td></tr>
-        <tr><td><code>buildspec-marketing.yml</code></td><td>142</td></tr>
+        <tr><td><code>buildspec-application-identity.yml</code></td></tr>
+        <tr><td><code>buildspec-coordinator.yml</code></td></tr>
+        <tr><td><code>buildspec-frontend.yml</code></td></tr>
+        <tr><td><code>buildspec-marketing.yml</code></td></tr>
       </tbody>
     </table>
   </div>
@@ -411,23 +407,20 @@
     <h4>Serverless Sub-layers</h4>
     <table>
       <tbody>
-        <tr><td><code>buildspec-serverless-lambdas.yml</code></td><td>298</td></tr>
-        <tr><td><code>buildspec-serverless-stacks.yml</code></td><td>276</td></tr>
-        <tr><td><code>buildspec-serverless-scheduling.yml</code></td><td>42</td></tr>
-        <tr><td><code>buildspec-serverless-security.yml</code></td><td>289</td></tr>
-        <tr><td><code>buildspec-serverless-documentation.yml</code></td><td>187</td></tr>
-        <tr><td><code>buildspec-chat-assistant.yml</code></td><td>123</td></tr>
-        <tr><td><code>buildspec-runbook-agent.yml</code></td><td>298</td></tr>
-        <tr><td><code>buildspec-incident-response.yml</code></td><td>312</td></tr>
-        <tr><td><code>buildspec-env-validator.yml</code></td><td>89</td></tr>
+        <tr><td><code>buildspec-serverless-documentation.yml</code></td></tr>
+        <tr><td><code>buildspec-serverless-symbol-resolver.yml</code></td></tr>
+        <tr><td><code>buildspec-chat-assistant.yml</code></td></tr>
+        <tr><td><code>buildspec-runbook-agent.yml</code></td></tr>
+        <tr><td><code>buildspec-incident-response.yml</code></td></tr>
+        <tr><td><code>buildspec-env-validator.yml</code></td></tr>
       </tbody>
     </table>
   </div>
 </div>
 
 <div class="callout">
-  <div class="callout-title">Buildspec Size Limit: 600 Lines Maximum</div>
-  Prevents hitting AWS CodeBuild service limits. The largest buildspec is <code>buildspec-application.yml</code> at 1,820 lines (pre-modularization; split into sub-buildspecs for execution).
+  <div class="callout-title">Buildspec Runtime Budget (May 2026 update under #131)</div>
+  The original 600-line cap on buildspecs was replaced with a runtime-budget rule per <code>deploy/buildspecs/CLAUDE.md</code> Critical Rule 4: each parent layer buildspec sets <code>TimeoutInMinutes</code> to at least 2&times; observed cold-start p95 (default <code>480</code> minutes &mdash; CodeBuild's 8h max &mdash; for parents running &gt;50 sequential <code>cloudformation deploy</code> calls). Line count is a poor proxy for risk because <code>cloudformation deploy --no-fail-on-empty-changeset</code> is idempotent. Critical Rule 5: parent &rarr; sub-layer CodeBuild nesting via <code>aws codebuild start-build</code> is forbidden; only <code>bootstrap &rarr; parent</code> 1-level chain is allowed; sub-layer indirection (when genuinely required) goes through Step Functions per the <code>codebuild-serverless-symbol-resolver</code> reference model.
 </div>
 </section>
 
@@ -833,7 +826,7 @@
 
 <div class="callout success">
   <div class="callout-title">Pipeline Summary</div>
-  Project Aura's CI/CD system is a comprehensive, production-grade automation platform: 24 CodeBuild projects managing a 9-layer deployment cascade, 38 buildspecs with 3-gate validation, 168 CloudFormation templates with idempotent state machine handling, 6 GitHub Actions workflows for code quality and automated releases, 18 pre-commit hooks for security enforcement, and cost optimization saving $453+/month across environments.
+  Project Aura's CI/CD system is a comprehensive, production-grade automation platform: 25 CodeBuild projects managing a 9-layer deployment cascade, 28 buildspecs with 3-gate validation, 170 CloudFormation templates with idempotent state machine handling, 6 GitHub Actions workflows for code quality and automated releases, 18 pre-commit hooks for security enforcement, and cost optimization saving $453+/month across environments.
 </div>
 </section>
 

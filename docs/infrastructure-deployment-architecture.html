@@ -341,13 +341,13 @@
 <!-- ============================================================ -->
 <section id="cicd">
   <h2>CI/CD Pipeline</h2>
-  <p class="desc">Modular layer-based CodeBuild cascade with 20 projects, 38 buildspecs, and a 3-gate validation system. CodeBuild is the single source of truth — manual deployments are prohibited.</p>
+  <p class="desc">Modular layer-based CodeBuild cascade with 25 projects, 28 buildspecs, and a 3-gate validation system. CodeBuild is the single source of truth — manual deployments are prohibited.</p>
 
   <div class="callout warn">
-    <strong>Critical Rules:</strong> (1) CodeBuild is the ONLY authorized deployment method. (2) Never trigger CodeBuild while another build is running. (3) No manual CloudFormation deployments. (4) Max 600 lines per buildspec.
+    <strong>Critical Rules:</strong> (1) CodeBuild is the ONLY authorized deployment method. (2) Never trigger CodeBuild while another build is running. (3) No manual CloudFormation deployments. (4) Buildspec runtime budget: <code>TimeoutInMinutes</code> &ge; 2&times; cold-start p95 (default <code>480</code> minutes); see <code>deploy/buildspecs/CLAUDE.md</code> Critical Rule 4 for the runtime-budget rule that replaced the prior 600-line cap. (5) No parent &rarr; sub-layer CodeBuild nesting via <code>aws codebuild start-build</code>; only <code>bootstrap &rarr; parent</code> is allowed; sub-layer indirection goes through Step Functions.
   </div>
 
-  <h3>CodeBuild Projects (20 Total)</h3>
+  <h3>CodeBuild Projects (25 Total)</h3>
   <div class="card-grid">
     <div class="card">
       <div class="card-title">9 Parent Layer Projects</div>

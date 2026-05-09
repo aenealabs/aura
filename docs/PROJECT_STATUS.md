@@ -1,7 +1,7 @@
 # Project Aura: Development Status
 
-**Last Assessment:** May 7, 2026
-**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
+**Last Assessment:** May 9, 2026
+**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) at 11/13 sub-issues closed.
 
 ---
 
@@ -12,7 +12,7 @@
 | **Overall Completion** | 99% |
 | **Lines of Code** | 375,000+ |
 | **Test Suite** | 24,800+ tests (0 failures) |
-| **Architecture Decision Records** | 89 ADRs (86 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089]) |
+| **Architecture Decision Records** | 91 ADRs (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089]; ADR-090 GraphRAG ingestion edge completeness + ADR-091 Cognito cross-region DR added in May 2026) |
 | **CloudFormation Templates** | 183 (24 CodeBuild + 159 infrastructure) |
 | **Buildspecs** | 38 buildspec files in deploy/buildspecs/ (data, observability, serverless, sandbox-infrastructure extended for ADR-088) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
@@ -71,6 +71,24 @@
 | Self-Play SWE-RL | Complete | Dual-role self-play training pipeline, 354 tests (ADR-050) |
 | GPU Workload Scheduler | Complete | Self-service GPU jobs, queue management, 391 tests (ADR-061) |
 | Constraint Geometry Engine | Phase 1 | 7-axis constraint space, 358 tests (ADR-081) |
+
+### Disaster Recovery (Umbrella #143)
+
+| Sub-Issue | Status | Details |
+|-----------|--------|---------|
+| DR-1 (#144) | Closed | DynamoDB Global Tables for 7 Tier 1 tables (4 templates: idp-infrastructure, dynamodb, repository-tables, onboarding); per-region CMKs for auth tables; replication-lag alarms (5min) |
+| DR-1.0 (#153) | Closed | Cross-region foundation: per-region CMKs (NOT MRKs) for replicated auth tables -- `kms.yaml` AuthCredentialsKMSKey + `kms-replica-secondary.yaml` (Layer 1.10) AuthCredentialsReplicaKey |
+| DR-1.1 (#154) | Closed | Audit-shape tables: 3 tables (IdPAuditTable, AutonomyDecisionsTable, PolicyAuditTable) keep regional shape; Streams -> Kinesis -> Firehose -> S3 Object Lock (governance, ~7yr) via `audit-pipeline.yaml` (Layer 5.12) + CRR via `audit-pipeline-replica.yaml` (Layer 5.13) |
+| DR-1.2 (#155) | Closed | AnomaliesTable + CodebaseMetadataTable reclassified to Tier 1 Global Tables |
+| DR-2 (#145) | Closed | Cognito DR via Lambda-based mirror to DDB Global Table + standby pool + hydrator Lambda + force re-auth (ADR-091; runbook: `COGNITO_FAILOVER_RUNBOOK.md`); 4 templates (`cognito.yaml` modified, `cognito-secondary.yaml` Layer 4.14, `cognito-dr-hydrator.yaml` Layer 6.21, `user-mirror-table.yaml` Layer 2.22); per-region CMKs for mirror table |
+| DR-3 (#146) | Closed | Neptune cross-region failover via existing AWS Backup + `NEPTUNE_FAILOVER_RUNBOOK.md` (CFN does not support Neptune Global Database -- verified May 2026) |
+| DR-3.0 (#156) | Closed | Secondary-region VPC foundation (`networking-secondary.yaml`, Layer 1.11): 10.1.0.0/16 in us-west-2, 3 private subnets, VPC Flow Logs, prod-only |
+| DR-4 (#147) | Closed | OpenSearch cross-region failover via AWS Backup hourly snapshots + cross-region copy + `OPENSEARCH_FAILOVER_RUNBOOK.md` (HourlyBackupPlan extended with CopyActions; OpenSearchBackupSelection added) |
+| DR-5 (#148) | Closed | S3 cross-region replication on `ArtifactsBucket` + `CodeRepositoryBucket` (`s3.yaml` modified, `s3-replica.yaml` Layer 2.21); constructed-ARN replication role |
+| DR-6 (#149) | Closed | Secrets Manager native multi-region replicas for 10 Tier 1 secrets (Bedrock config, API keys, JWT signing keys, IdP credentials) |
+| DR-9 (#152) | Closed | Cross-region drift detection + observability: `dr-monitoring.yaml` (Layer 5.14) deploys SNS topic, weekly drift-detection Lambda, cross-region CloudWatch dashboard |
+| DR-7 (#150) | Open | Multi-region failover orchestration pipeline (Route 53 health checks, cutover Step Functions, codifies the 3 failover runbooks) |
+| DR-8 (#151) | Open | DR compliance controls (Sally's seven: two-person integrity on prod failover, pre-signed change-sets, session recording, NIST CP-2/CP-9/CP-10 evidence) -- depends on DR-7 |
 
 ### Integrations & Deployment
 

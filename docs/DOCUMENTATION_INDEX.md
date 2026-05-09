@@ -1,6 +1,6 @@
 # Project Aura - Documentation Index
 
-**Last Updated:** May 7, 2026
+**Last Updated:** May 9, 2026
 **Purpose:** Master index for all project documentation with clear organization
 
 ---
@@ -387,6 +387,9 @@ Technical documentation for developers, cybersecurity professionals, and IT admi
 | [runbooks/STEP_FUNCTIONS_ECS_INTEGRATION.md](runbooks/STEP_FUNCTIONS_ECS_INTEGRATION.md) | Step Functions ECS integration troubleshooting (sync vs async output structures) |
 | [runbooks/QA_KILLSWITCH_RUNBOOK.md](runbooks/QA_KILLSWITCH_RUNBOOK.md) | QA environment kill-switch: full shutdown/restore procedure, cost savings |
 | [runbooks/DEV_KILLSWITCH_RUNBOOK.md](runbooks/DEV_KILLSWITCH_RUNBOOK.md) | DEV environment kill-switch: full shutdown/restore (80 stacks, significant monthly savings) |
+| [runbooks/NEPTUNE_FAILOVER_RUNBOOK.md](runbooks/NEPTUNE_FAILOVER_RUNBOOK.md) | DR-3 (#146): Neptune cross-region failover via AWS Backup snapshot restore (CFN does not support Neptune Global Database) |
+| [runbooks/OPENSEARCH_FAILOVER_RUNBOOK.md](runbooks/OPENSEARCH_FAILOVER_RUNBOOK.md) | DR-4 (#147): OpenSearch cross-region failover via AWS Backup hourly snapshots with cross-region copy |
+| [runbooks/COGNITO_FAILOVER_RUNBOOK.md](runbooks/COGNITO_FAILOVER_RUNBOOK.md) | DR-2 (#145): Cognito cross-region failover via Lambda-based user-mirror Global Table + standby pool + hydrator (ADR-091) |
 
 ### Operations (docs/operations/)
 | File | Purpose |

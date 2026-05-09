@@ -239,13 +239,13 @@ Resources:
 
   # Codebase Metadata Table
   CodebaseMetadataTable:
-    Type: AWS::DynamoDB::Table
-    # DR-1.2 PR1 (#155): prep for type-swap to AWS::DynamoDB::GlobalTable.
-    # Reverts to Retain on the new GlobalTable resource in PR2. Reclassified
-    # to Tier 1 per Macy's review (rebuild = full re-ingestion of every
-    # onboarded customer repo).
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    Type: AWS::DynamoDB::GlobalTable
+    # DR-1.2 PR2 (#155): Tier 1 GlobalTable. Customer codebase metadata.
+    # Rebuild cost = full re-ingestion of every onboarded customer repo;
+    # cannot meet RTO 1h without cross-region replication. AWS-managed
+    # encryption (no CMK; metadata not auth credentials).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-codebase-metadata-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -264,20 +264,59 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
-      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
-      # Enables 35-day continuous backups with 1-second granularity
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
       SSESpecification:
         SSEEnabled: true
-        SSEType: KMS
-      Tags:
-        - Key: Name
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          Tags:
+            - Key: Name
+              Value: !Sub '${ProjectName}-codebase-metadata-${Environment}'
+            - Key: Project
+              Value: !Ref ProjectName
+            - Key: Environment
+              Value: !Ref Environment
+        - !If
+          - IsProduction
+          - Region: !Ref SecondaryRegion
+            PointInTimeRecoverySpecification:
+              PointInTimeRecoveryEnabled: true
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-codebase-metadata-${Environment}-dr'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Role
+                Value: dr-replica
+          - !Ref AWS::NoValue
+
+  # ===========================================================================
+  # Replication-lag alarm for CodebaseMetadataTable (DR-9 partial / #152)
+  # ===========================================================================
+  CodebaseMetadataReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-codebase-metadata-replication-lag-${Environment}'
+      AlarmDescription: 'CodebaseMetadataTable cross-region replication latency exceeded 5min threshold'
+      Namespace: AWS/DynamoDB
+      MetricName: ReplicationLatency
+      Dimensions:
+        - Name: TableName
           Value: !Sub '${ProjectName}-codebase-metadata-${Environment}'
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: Environment
-          Value: !Ref Environment
+        - Name: ReceivingRegion
+          Value: !Ref SecondaryRegion
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
 
   # Platform Settings Table
   PlatformSettingsTable:
@@ -360,12 +399,13 @@ Resources:
 
   # Anomaly Audit Trail Table
   AnomaliesTable:
-    Type: AWS::DynamoDB::Table
-    # DR-1.2 PR1 (#155): prep for type-swap to AWS::DynamoDB::GlobalTable.
-    # Reverts to Retain on the new GlobalTable resource in PR2. Reclassified
-    # to Tier 1 per Macy's review (ADR-072 detection ground truth).
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    Type: AWS::DynamoDB::GlobalTable
+    # DR-1.2 PR2 (#155): Tier 1 GlobalTable. ADR-072 detection ground truth.
+    # AWS-managed encryption (no CMK; not auth credentials). Note: this is
+    # a detection log, not an audit log -- AutonomyDecisionsTable / IdPAuditTable
+    # / PolicyAuditTable are the audit-shape tables (DR-1.1 / #154).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-anomalies-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -415,20 +455,57 @@ Resources:
         Enabled: true
       StreamSpecification:
         StreamViewType: NEW_AND_OLD_IMAGES
-      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
-      # Enables 35-day continuous backups with 1-second granularity
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
       SSESpecification:
         SSEEnabled: true
-        SSEType: KMS
-      Tags:
-        - Key: Name
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          Tags:
+            - Key: Name
+              Value: !Sub '${ProjectName}-anomalies-${Environment}'
+            - Key: Project
+              Value: !Ref ProjectName
+            - Key: Environment
+              Value: !Ref Environment
+        - !If
+          - IsProduction
+          - Region: !Ref SecondaryRegion
+            PointInTimeRecoverySpecification:
+              PointInTimeRecoveryEnabled: true
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-anomalies-${Environment}-dr'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Role
+                Value: dr-replica
+          - !Ref AWS::NoValue
+
+  # ===========================================================================
+  # Replication-lag alarm for AnomaliesTable (DR-9 partial / #152)
+  # ===========================================================================
+  AnomaliesReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-anomalies-replication-lag-${Environment}'
+      AlarmDescription: 'AnomaliesTable cross-region replication latency exceeded 5min threshold'
+      Namespace: AWS/DynamoDB
+      MetricName: ReplicationLatency
+      Dimensions:
+        - Name: TableName
           Value: !Sub '${ProjectName}-anomalies-${Environment}'
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: Environment
-          Value: !Ref Environment
+        - Name: ReceivingRegion
+          Value: !Ref SecondaryRegion
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
 
   # Autonomy Policies Table - stores organization autonomy configurations
   AutonomyPoliciesTable:

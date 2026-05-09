@@ -41,7 +41,7 @@ Two columns: **Recovery Strategy (Deployed)** is what is actually in CloudFormat
 |-----------|------|-----|-----|------------------------------|----------------------------|----------------|
 | API Gateway | 1 | 1h | N/A | Multi-AZ failover | Multi-AZ + cross-region failover via Route 53 | DR-7 |
 | Authentication (Cognito) | 1 | 1h | 15m | Single-region Cognito (no replication) | Cognito user pool replication | DR-2 |
-| DynamoDB | 1 | 1h | 15m | PITR + AWS Backup + **Global Tables** for 7 in-scope Tier 1 tables (DR-1 main) | PITR + Global Tables for all Tier 1 tables (DR-1.1 audit-shape + DR-1.2 reclassification) | DR-1 (closed); DR-1.1 + DR-1.2 in flight |
+| DynamoDB | 1 | 1h | 15m | PITR + AWS Backup + **Global Tables** for 9 Tier 1 tables (DR-1 main + DR-1.2) | PITR + Global Tables for all Tier 1 tables (DR-1.1 audit-shape) | DR-1 + DR-1.2 (closed); DR-1.1 in flight |
 | Neptune | 2 | 4h | 1h | AWS Backup with cross-region copy (prod) | AWS Backup + cross-region read replica or Global DB | DR-3 |
 | OpenSearch | 2 | 4h | 1h | AWS Backup snapshots | AWS Backup + cross-cluster replication (CCR) | DR-4 |
 | EKS Control Plane | 2 | 4h | N/A | AWS managed (multi-AZ) | AWS managed + secondary-region warm cluster | DR-7 |

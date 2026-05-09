@@ -1,7 +1,7 @@
 # Project Aura: Development Status
 
 **Last Assessment:** May 9, 2026
-**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward).
+**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues + 5 follow-ups closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward, orphan stacks wired). May 9, 2026 documentation + security pass closed an additional 4 doc-refresh follow-ups (#158, #159, #160, #161) and 2 CodeQL alerts (#271 critical code injection, #272 medium unpinned action). Issue #142 (eslint-plugin-react swap) reviewed and deferred per its own trigger conditions.
 
 ---
 
@@ -99,7 +99,7 @@
 - Hourly Neptune backup selection (currently daily; closes the Tier 2 RPO 1h gap that's documented in `NEPTUNE_FAILOVER_RUNBOOK.md`)
 - Pre-staged secondary-region service foundation templates for Neptune + OpenSearch (subnet groups + security groups; shaves ~10 min off RTO per the runbooks)
 
-### Buildspec Line-Cap Remediation (Umbrella #131 -- COMPLETE, all 4 sub-issues + 1 follow-up closed)
+### Buildspec Line-Cap Remediation (Umbrella #131 -- COMPLETE, all 4 sub-issues + 5 follow-ups closed)
 
 | Sub-Issue | Status | Outcome |
 |-----------|--------|---------|
@@ -109,12 +109,32 @@
 | #134 (sandbox, 685 lines) | Closed | `TimeoutInMinutes: 45 → 480` on `codebuild-sandbox.yaml`. Buildspec retained at 685 lines. 3 empty scaffolds deleted. |
 | #135 (observability, 615 lines) | Closed | `TimeoutInMinutes: 20 → 480` on `codebuild-observability.yaml`. Buildspec retained at 615 lines. No scaffolds existed for this layer. |
 | #157 (orphan sub-layer wiring) | Closed | Step Functions invocation added for `aura-application-identity-deploy-{env}` (LOUD-FAIL: IdP is on the customer auth path) and `aura-serverless-documentation-deploy-{env}` (non-blocking, ADR-056). Retry blocks added to all three sub-layer states (incl. backfill on symbol-resolver). Pass-state observability now emits structured `{subLayer, status, executionArn, cause}` instead of static text. Reviewed by Tara + Macy in parallel; loud-fail vs non-blocking split per Macy's review. |
+| #158 (HTML marketing artifacts) | Closed | `cicd-pipeline-deployment-automation.html` + `infrastructure-deployment-architecture.html` surgically updated: deleted-buildspec rows removed, `symbol-resolver` row added, "600 lines" callout replaced with the runtime-budget rule + Critical Rule 5, count claims refreshed (24→25 CodeBuild, 38→28 buildspecs, 168→170 CFN templates, 20→25 projects). Both files still parse via Python `html.parser`. |
+| #159 (SYSTEM_ARCHITECTURE.md ASCII diagrams) | Closed | Three stale labels in the "Hybrid Deployment Architecture" diagram updated with width-preserving replacements (84-char width preserved, box-drawing pipes still column-aligned): "Dev Environment (ECS Fargate) - NOT YET DEPLOYED" → "Deployed (Layer 6)"; "[NOT YET DEPLOYED]" → "[Deployed -- Layer 7]"; "Future: EKS Cluster" → "EKS Cluster (Layer 3 - EC2 Managed Node Groups)". Line 91 "Future: OpenAI GPT-4" deliberately retained as accurate roadmap entry. |
+| #160 (ADR-074 stale buildspec reference) | Closed | Audit revealed deeper issue: `iam-palantir-integration.yaml` was an orphan stack -- never deployed by any buildspec. ADR-074's "CI/CD Integration" section updated with status-note callout explaining what was deleted/never-existed; bullet list rewritten as "current (manual)" vs "target (per #161)"; historical decision rationale preserved untouched. Filed #161 as the wiring follow-up. |
+| #161 (Palantir IAM wiring) | Closed | Single-line addition to `buildspec-application.yml` Phase 3.12 (Layer 4 parent buildspec) deploying `iam-palantir-integration.yaml`. cfn-lint validation added to pre_build phase. No new CodeBuild project required; no parent → sub-layer nesting introduced. Buildspec line count 1,049 → 1,075 (well within runtime-budget rule). OIDC params left at empty defaults; IRSA wiring deferred until a production Palantir engagement requires it. ADR-074 status-note rewritten to record closure. |
 
 **Buildspec follow-ups (tracked separately, not blocking the umbrella close):**
 - Optional: add `aws stepfunctions validate-state-machine-definition` step to the cfn-lint wrapper or pre-commit (Macy's optional add for catching ASL JSON-shape issues earlier). ~5 lines.
 - Inline parallelism (`xargs -P` or background jobs) inside parent buildspecs to reduce cold-start runtime. Tara's optional optimization; defer until measurements show the timeout-extended buildspecs are slow enough to need it.
 - Promoting the cold-start path to Step Functions Standard for true parallel orchestration with retry. Defer until inline parallelism proves insufficient.
-- Bootstrap drill on a fresh DEV account to confirm `idp-infrastructure` + `cloud-discovery` + `calibration-pipeline` land end-to-end without manual intervention. Recommended next time a DEV account is rebuilt.
+- Bootstrap drill on a fresh DEV account to confirm `idp-infrastructure` + `cloud-discovery` + `calibration-pipeline` + `iam-palantir-integration` land end-to-end without manual intervention. Recommended next time a DEV account is rebuilt.
+- ASCII-diagram refresh of the remaining "Hybrid Deployment Architecture" / "Sandbox Infrastructure" boxes in `SYSTEM_ARCHITECTURE.md` (current diagrams are now factually accurate post-#159 but could benefit from a structural redraw if the diagram-as-doc surface is taken seriously).
+- Real OIDC param wiring on `iam-palantir-integration.yaml` (`EKSOIDCProviderArn`, `EKSOIDCIssuer`) when a production Palantir engagement requires Cognito-federated AIP access.
+
+### May 9, 2026 Documentation & Security Pass
+
+| Track | Status | Outcome |
+|-------|--------|---------|
+| Marcus thorough doc refresh | Complete (commit `c8a2cee`) | 10 files updated across `README.md`, `SECURITY.md`, `DOCUMENTATION_INDEX.md`, `SYSTEM_ARCHITECTURE.md`, `BUILDSPEC_COMPLEXITY_ANALYSIS.md`, `DEPLOYMENT_GUIDE.md`, `RESOURCE_DEPLOYMENT_AUDIT.md`, `DEPENDENCY_RISK_REGISTER.md`, `disaster-recovery.md`, `frontend/CLAUDE.md`. ADR count `89 → 91`; SECURITY.md SaaS DR scope-statement rewritten to reflect now-audit-defensible posture (closes the DR-8 follow-up); `--legacy-peer-deps` workaround section now explicitly cites #142 trigger-gating. Marcus reviewed but did NOT touch: `PROJECT_STATUS.md` (already canonical), all `docs/runbooks/*` (already accurate), all support/architecture sub-files lacking DR/buildspec content, `CHANGELOG.md` (auto-generated). |
+| CodeQL alert #271 (Critical code injection) | Closed (commit `53adf3d`) | `aura-ci-autofix.yml` "Push fix to feature branch" step env-var'd 3 interpolations (`TARGET_BRANCH`, `FIX_TYPE`, `WORKFLOW_RUN_URL`); consumer side now matches the input-side hardening already in the `target` step. Alert auto-closed by CodeQL re-scan with `state: fixed`. |
+| CodeQL alert #272 (Medium unpinned action) | Closed (commit `53adf3d`) | `aws-actions/configure-aws-credentials@v4` pinned to commit SHA `7474bc4690e29a8392af63c5b98e7449536d5c3a` (v4.3.1) following the existing repo pattern (every other action was already SHA-pinned). |
+| #142 eslint-plugin-react swap | Deferred (issue stays open as tracking artifact) | Trigger-condition assessment posted: trigger 1 (6mo silence from issue filing) earliest fires ~2026-11-08; `eslint-plugin-react` still at 7.37.5 (peer caps `^9.7`); no CI escape from `--legacy-peer-deps`. Per the issue's own logic: "track, not do" until triggers fire. Forward-looking note recorded that swap scope is smaller than the issue body anticipated (`grep -rln "eslint-disable.*react/" frontend/src` returns zero hits). #138's recurring dependency audit is the detection mechanism for trigger 1. |
+
+**Documentation & security follow-ups (tracked separately):**
+- HTML marketing artifacts in `docs/` would benefit from auto-regeneration from a markdown source-of-truth if a build process is ever introduced; current refresh was surgical-edit only (commit `9cb9044`).
+- ASCII diagram structural refresh in `SYSTEM_ARCHITECTURE.md` (also listed under buildspec follow-ups above).
+- Pre-existing modified files in working tree noted by Marcus and left untouched: `elasticache.yaml`, `govcloud.json`, `TITANS_MIRAS_ANALYSIS.md`, `trustCenterExport.js`, `contracts.py`, untracked `robots.txt` -- none related to this session's work.
 
 ### Integrations & Deployment
 

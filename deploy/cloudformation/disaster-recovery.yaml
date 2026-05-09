@@ -11,9 +11,9 @@ Description: 'Project Aura - Layer 5.5 - Disaster Recovery (AWS Backup)'
 # - Cross-region backup copy (production only)
 #
 # RTO/RPO Targets:
-# - Neptune: RPO 24h, RTO 4h
+# - Neptune: RPO 24h, RTO 4h (daily AWS Backup; hourly improvement tracked separately)
 # - DynamoDB: RPO 1h, RTO 1h (PITR separate)
-# - OpenSearch: RPO 24h, RTO 4h (via S3 snapshots)
+# - OpenSearch: RPO 1h, RTO 4h (DR-4 / #147: hourly AWS Backup with cross-region copy)
 # - S3: RPO 0, RTO 1h (CRR separate)
 # - EKS: N/A, RTO 2h (GitOps redeploy)
 #
@@ -181,6 +181,16 @@ Resources:
               Project: !Ref ProjectName
               Environment: !Ref Environment
               BackupType: Hourly
+            # Cross-region copy for production (DR-4 / #147 closes Tier 2 RPO 1h gap)
+            # Secondary-region recovery points retained 14 days -- twice the primary
+            # window to preserve restore options if a regional outage spans days.
+            CopyActions:
+              !If
+                - EnableCrossRegion
+                - - DestinationBackupVaultArn: !Sub 'arn:${AWS::Partition}:backup:${DRRegion}:${AWS::AccountId}:backup-vault:${ProjectName}-dr-vault-${Environment}'
+                    Lifecycle:
+                      DeleteAfterDays: 14
+                - !Ref AWS::NoValue
       BackupPlanTags:
         Project: !Ref ProjectName
         Environment: !Ref Environment
@@ -233,6 +243,23 @@ Resources:
           - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-hitl-approvals-${Environment}'
           - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-incident-investigations-${Environment}'
           - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-anomalies-${Environment}'
+
+  # ===========================================================================
+  # Backup Selection - OpenSearch (Hourly - Production only) - DR-4 / #147
+  # ===========================================================================
+  # Closes DR-4: Tier 2 RPO 1h / RTO 4h via AWS Backup hourly snapshots with
+  # cross-region copy. AWS Backup supports OpenSearch domains since Sept 2022.
+  # Failover procedure documented in docs/runbooks/OPENSEARCH_FAILOVER_RUNBOOK.md.
+  OpenSearchBackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Condition: IsProduction
+    Properties:
+      BackupPlanId: !Ref HourlyBackupPlan
+      BackupSelection:
+        SelectionName: !Sub '${ProjectName}-opensearch-hourly-selection'
+        IamRoleArn: !GetAtt BackupServiceRole.Arn
+        Resources:
+          - !Sub 'arn:${AWS::Partition}:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-${Environment}'
 
   # ===========================================================================
   # CloudWatch Alarms for Backup Monitoring

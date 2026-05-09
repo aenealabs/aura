@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.22 - User Mirror Table (Cognito Cross-Region DR)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# DynamoDB Global Table that mirrors Cognito user state from the primary user
+# pool (us-east-1) to the secondary region (us-west-2). On regional failover,
+# a hydrator Lambda (Layer 6.21, cognito-dr-hydrator.yaml) reads this table and
+# rebuilds users in the standby Cognito pool (Layer 4.14, cognito-secondary.yaml).
+#
+# DR-2 (#145), ADR-091. Companion to:
+#   - kms.yaml (Layer 1.X): UserMirrorKMSKey -- per-region CMK (us-east-1)
+#   - kms-replica-secondary.yaml (Layer 1.10): UserMirrorReplicaKey (us-west-2)
+#   - cognito.yaml (Layer 4.4): PostConfirmation / PostAuthentication triggers
+#     write into this table
+#   - cognito-secondary.yaml (Layer 4.14): standby user pool
+#   - cognito-dr-hydrator.yaml (Layer 6.21): hydrator Lambda
+#
+# Schema (minimal PII per Sally's NIST review):
+#   PK: sub (Cognito user UUID)
+#   email             - required, used by AdminCreateUser at hydration
+#   groups            - string set, replayed via AdminAddUserToGroup
+#   created_at        - ISO 8601, audit trail
+#   last_modified     - ISO 8601, drift detection signal
+#   mfa_enabled_flag  - boolean (NOT the MFA secret -- IA-5(7) compliance)
+#   dr_eligible       - boolean, per-tenant residency gate (default true)
+#
+# What is intentionally NOT replicated:
+#   - Password hashes (Cognito does not expose them; users reset on failover)
+#   - MFA secrets (TOTP/WebAuthn pool-bound; users re-enroll on failover)
+#   - Custom attributes beyond the minimum listed above
+#   - Phone numbers, addresses (PII minimization)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: |
+      Secondary AWS region for the user-mirror Global Table replica
+      (DR-2 / #145). Default us-west-2 matches the rest of the DR
+      initiative.
+
+  DRAlertTopicArn:
+    Type: String
+    Default: ''
+    Description: |
+      Optional SNS topic ARN for replication-lag alarms (provisioned
+      by dr-monitoring.yaml under DR-9 / #152). When empty the alarm
+      is created but has no actions wired -- state is observable via
+      the CloudWatch console.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasDRAlertTopic: !Not [!Equals [!Ref DRAlertTopicArn, '']]
+
+Resources:
+  UserMirrorTable:
+    Type: AWS::DynamoDB::GlobalTable
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-user-mirror-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sub
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sub
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Email lookup for support / drift-detection: "given an email, what's
+        # the sub?" Used by the hydrator's reconciliation pass.
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      # StreamSpecification is REQUIRED on GlobalTable -- powers cross-region
+      # replication. No application-layer stream consumers on this table.
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+      Replicas:
+        # Primary region replica. Uses the regional CMK alias from kms.yaml
+        # (DR-2 / ADR-091). Per-region key, NOT an MRK -- consistent with
+        # DR-1.0 SC-12 guidance.
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          SSESpecification:
+            KMSMasterKeyId: !Sub 'alias/${ProjectName}-user-mirror-${Environment}'
+          Tags:
+            - Key: Name
+              Value: !Sub '${ProjectName}-user-mirror-${Environment}'
+            - Key: Project
+              Value: !Ref ProjectName
+            - Key: Environment
+              Value: !Ref Environment
+            - Key: Component
+              Value: cognito-dr
+            - Key: DataClassification
+              Value: Restricted
+        # Secondary region replica (production only). Uses the regional CMK
+        # alias from kms-replica-secondary.yaml.
+        - !If
+          - IsProduction
+          - Region: !Ref SecondaryRegion
+            PointInTimeRecoverySpecification:
+              PointInTimeRecoveryEnabled: true
+            SSESpecification:
+              KMSMasterKeyId: !Sub 'alias/${ProjectName}-user-mirror-${Environment}-dr'
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-user-mirror-${Environment}-dr'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Component
+                Value: cognito-dr
+              - Key: DataClassification
+                Value: Restricted
+              - Key: Role
+                Value: dr-replica
+          - !Ref AWS::NoValue
+
+  # ===========================================================================
+  # Replication-lag alarm (DR-9 / #152 pattern, DR-2 instance)
+  # ===========================================================================
+  # Sally's NIST review explicitly called for this: "add a CloudWatch metric
+  # on PostConfirmation -> Global Table replication lag and alarm above 60
+  # seconds." 60s threshold (vs. 5min for other Tier 1 tables) because the
+  # mirror is the only path closing the new-user RPO gap; longer lag widens
+  # the failover-time-to-re-register exposure window.
+  UserMirrorReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-user-mirror-replication-lag-${Environment}'
+      AlarmDescription: 'UserMirrorTable cross-region replication latency exceeded 60s threshold (per Sally NIST review, DR-2 / #145)'
+      Namespace: AWS/DynamoDB
+      MetricName: ReplicationLatency
+      Dimensions:
+        - Name: TableName
+          Value: !Sub '${ProjectName}-user-mirror-${Environment}'
+        - Name: ReceivingRegion
+          Value: !Ref SecondaryRegion
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 60000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+
+Outputs:
+  UserMirrorTableName:
+    Description: Cognito user-mirror Global Table name (DR-2 / #145, ADR-091)
+    Value: !Sub '${ProjectName}-user-mirror-${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-user-mirror-table-name-${Environment}'
+
+  UserMirrorTableArn:
+    Description: Cognito user-mirror Global Table ARN (primary region)
+    Value: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-user-mirror-${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-user-mirror-table-arn-${Environment}'
+
+  UserMirrorTableStreamArn:
+    Description: Cognito user-mirror Global Table Stream ARN (primary region)
+    Value: !GetAtt UserMirrorTable.StreamArn
+    Export:
+      Name: !Sub '${ProjectName}-user-mirror-table-stream-arn-${Environment}'

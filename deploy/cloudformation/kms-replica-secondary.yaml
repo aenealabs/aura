@@ -129,6 +129,87 @@ Resources:
       AliasName: !Sub 'alias/${ProjectName}-auth-credentials-${Environment}-dr'
       TargetKeyId: !Ref AuthCredentialsReplicaKey
 
+  # ===========================================================================
+  # User Mirror Replica Key (DR-2 / #145, ADR-091)
+  # ===========================================================================
+  # Same pattern as AuthCredentialsReplicaKey above: independent secondary-
+  # region CMK (NOT an MRK) for the secondary-region replica of the Cognito
+  # user-mirror Global Table. The mirror table carries authenticator-adjacent
+  # data (group membership), so per-region key separation is required per
+  # NIST 800-53 SC-12.
+  UserMirrorReplicaKey:
+    Type: AWS::KMS::Key
+    Condition: IsProduction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} user-mirror table encryption key (secondary region, DR-2 / ADR-091)'
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+
+          - Sid: AllowCloudFormationTagManagement
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:TagResource, kms:UntagResource, kms:ListResourceTags]
+            Resource: '*'
+
+          - Sid: AllowCodeBuildKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Create*, kms:Describe*, kms:Enable*, kms:List*, kms:Put*, kms:Update*, kms:Revoke*, kms:Disable*, kms:Get*, kms:Delete*, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          - Sid: AllowDynamoDBServiceSecondaryRegion
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+                aws:SourceRegion: !Ref AWS::Region
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: UserMirrorEncryption
+        - Key: DataClassification
+          Value: Restricted
+        - Key: Role
+          Value: dr-replica-key
+        - Key: ReplicationPair
+          Value: !Sub '${ProjectName}-user-mirror-${Environment}'
+
+  UserMirrorReplicaKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: IsProduction
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-user-mirror-${Environment}-dr'
+      TargetKeyId: !Ref UserMirrorReplicaKey
+
 Outputs:
   AuthCredentialsReplicaKeyArn:
     Condition: IsProduction
@@ -143,3 +224,17 @@ Outputs:
     Value: !Ref AuthCredentialsReplicaKey
     Export:
       Name: !Sub '${ProjectName}-auth-credentials-replica-kms-key-id-${Environment}'
+
+  UserMirrorReplicaKeyArn:
+    Condition: IsProduction
+    Description: KMS key ARN for secondary-region user-mirror Global Table replica (DR-2 / #145, ADR-091)
+    Value: !GetAtt UserMirrorReplicaKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-user-mirror-replica-kms-key-arn-${Environment}'
+
+  UserMirrorReplicaKeyId:
+    Condition: IsProduction
+    Description: KMS key ID for secondary-region user-mirror Global Table replica (DR-2 / #145, ADR-091)
+    Value: !Ref UserMirrorReplicaKey
+    Export:
+      Name: !Sub '${ProjectName}-user-mirror-replica-kms-key-id-${Environment}'

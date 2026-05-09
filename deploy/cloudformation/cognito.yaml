@@ -106,6 +106,15 @@ Resources:
       # Deletion protection
       DeletionProtection: !If [IsProduction, 'ACTIVE', 'INACTIVE']
 
+      # DR-2 (#145) / ADR-091: replicate user state to user-mirror Global Table
+      # via PostConfirmation + PostAuthentication triggers. Production-only
+      # (the mirror table's secondary replica is also production-only).
+      LambdaConfig: !If
+        - IsProduction
+        - PostConfirmation: !GetAtt UserSyncFunction.Arn
+          PostAuthentication: !GetAtt UserSyncFunction.Arn
+        - !Ref AWS::NoValue
+
       UserPoolTags:
         Project: !Ref ProjectName
         Environment: !Ref Environment
@@ -211,6 +220,277 @@ Resources:
       Description: Read-only access
       UserPoolId: !Ref UserPool
       Precedence: 30
+
+  # ===========================================================================
+  # User Mirror Sync Lambda (DR-2 / #145, ADR-091)
+  # ===========================================================================
+  # Cognito PostConfirmation + PostAuthentication trigger. Mirrors user state
+  # into the user-mirror DynamoDB Global Table (Layer 2.22) which replicates
+  # to us-west-2. On regional failover, the hydrator Lambda (Layer 6.21)
+  # rebuilds users in the standby pool from this mirror.
+  #
+  # Production-only: the mirror table's secondary replica only exists in
+  # production, and dev/qa do not run failover drills.
+  #
+  # Failure mode: the Lambda NEVER fails the auth event due to a mirror error.
+  # The mirror is best-effort; an inability to write to DDB does not block
+  # the user from authenticating. Replication-lag alarm + drift detection
+  # provide the post-hoc visibility.
+  UserSyncFunctionRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-cognito-user-sync-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: UserMirrorWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-user-mirror-${Environment}'
+        - PolicyName: CognitoUserRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Constructed ARN with userpool/* wildcard to break the
+              # circular dependency: UserPool's LambdaConfig refs the
+              # function's Arn, the function's role can't ref UserPool.Arn.
+              # Scope is contained by the Lambda's USER_POOL_ID env var --
+              # the function only ever queries its own pool.
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminGetUser
+                  - cognito-idp:AdminListGroupsForUser
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+        - PolicyName: KMSDataKey
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:GenerateDataKey
+                  - kms:Decrypt
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+                  StringLike:
+                    kms:RequestAlias: !Sub 'alias/${ProjectName}-user-mirror-${Environment}'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  UserSyncFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProduction
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-cognito-user-sync-${Environment}'
+      RetentionInDays: 90
+
+  UserSyncFunction:
+    Type: AWS::Lambda::Function
+    Condition: IsProduction
+    DependsOn: UserSyncFunctionLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-cognito-user-sync-${Environment}'
+      Description: 'Cognito PostConfirmation + PostAuthentication trigger; mirrors user state to user-mirror Global Table for cross-region DR (DR-2 / #145, ADR-091)'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt UserSyncFunctionRole.Arn
+      Timeout: 10
+      MemorySize: 256
+      ReservedConcurrentExecutions: 50
+      Environment:
+        Variables:
+          TABLE_NAME: !Sub '${ProjectName}-user-mirror-${Environment}'
+          LOG_LEVEL: INFO
+      Code:
+        ZipFile: |
+          """Cognito user-mirror sync trigger.
+
+          Writes minimal user state (sub, email, groups, mfa_enabled_flag,
+          timestamps, dr_eligible) to the user-mirror DynamoDB Global Table
+          on PostConfirmation and PostAuthentication. Best-effort: never
+          fails the auth event due to a mirror error.
+
+          Compliance bake-ins (per Sally's NIST review, ADR-091):
+            - mfa_enabled_flag is the boolean fact, NOT the MFA secret
+              (IA-5(7): no embedded authenticators)
+            - PII is minimized: sub, email, groups only -- no phone, no
+              custom attributes beyond the schema
+            - dr_eligible defaults to True; per-tenant residency gating
+              is the integration point for future multi-tenant work
+          """
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+          TABLE_NAME = os.environ['TABLE_NAME']
+
+          logger = logging.getLogger()
+          logger.setLevel(LOG_LEVEL)
+
+          ddb = boto3.resource('dynamodb')
+          table = ddb.Table(TABLE_NAME)
+          cognito = boto3.client('cognito-idp')
+
+
+          def _now():
+              return datetime.now(timezone.utc).isoformat()
+
+
+          def _list_groups(user_pool_id, username):
+              try:
+                  resp = cognito.admin_list_groups_for_user(
+                      UserPoolId=user_pool_id,
+                      Username=username,
+                  )
+                  return sorted({g['GroupName'] for g in resp.get('Groups', [])})
+              except ClientError as exc:
+                  logger.error('admin_list_groups_for_user failed: %s', exc)
+                  return []
+
+
+          def _mfa_enabled(user_pool_id, username):
+              try:
+                  resp = cognito.admin_get_user(
+                      UserPoolId=user_pool_id,
+                      Username=username,
+                  )
+                  return bool(resp.get('UserMFASettingList'))
+              except ClientError as exc:
+                  logger.error('admin_get_user failed: %s', exc)
+                  return False
+
+
+          def _on_post_confirmation(event, sub, email, now):
+              try:
+                  table.put_item(
+                      Item={
+                          'sub': sub,
+                          'email': email,
+                          'groups': [],
+                          'created_at': now,
+                          'last_modified': now,
+                          'mfa_enabled_flag': False,
+                          'dr_eligible': True,
+                      },
+                      ConditionExpression='attribute_not_exists(sub)',
+                  )
+                  logger.info('PostConfirmation mirror write sub=%s', sub)
+              except ClientError as exc:
+                  if exc.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+                      logger.info('PostConfirmation mirror skip (already exists) sub=%s', sub)
+                  else:
+                      logger.error('PostConfirmation mirror write failed: %s', exc)
+
+
+          def _on_post_authentication(event, sub, email, now):
+              username = event.get('userName')
+              user_pool_id = event.get('userPoolId')
+              groups = _list_groups(user_pool_id, username) if (username and user_pool_id) else []
+              mfa = _mfa_enabled(user_pool_id, username) if (username and user_pool_id) else False
+              try:
+                  table.update_item(
+                      Key={'sub': sub},
+                      UpdateExpression=(
+                          'SET email = :email, '
+                          '#g = :groups, '
+                          'last_modified = :now, '
+                          'mfa_enabled_flag = :mfa, '
+                          'dr_eligible = if_not_exists(dr_eligible, :true), '
+                          'created_at = if_not_exists(created_at, :now)'
+                      ),
+                      ExpressionAttributeNames={'#g': 'groups'},
+                      ExpressionAttributeValues={
+                          ':email': email,
+                          ':groups': groups,
+                          ':now': now,
+                          ':mfa': mfa,
+                          ':true': True,
+                      },
+                  )
+                  logger.info(
+                      'PostAuthentication mirror update sub=%s groups=%s mfa=%s',
+                      sub, groups, mfa,
+                  )
+              except ClientError as exc:
+                  logger.error('PostAuthentication mirror update failed: %s', exc)
+
+
+          def handler(event, context):
+              try:
+                  trigger = event.get('triggerSource', '')
+                  attrs = event.get('request', {}).get('userAttributes', {})
+                  sub = attrs.get('sub')
+                  email = attrs.get('email')
+
+                  if not sub or not email:
+                      logger.warning('missing sub or email; trigger=%s', trigger)
+                      return event
+
+                  now = _now()
+                  if trigger.startswith('PostConfirmation'):
+                      _on_post_confirmation(event, sub, email, now)
+                  elif trigger.startswith('PostAuthentication'):
+                      _on_post_authentication(event, sub, email, now)
+                  else:
+                      logger.warning('unhandled trigger=%s', trigger)
+              except Exception:
+                  # Never block the auth event for a mirror failure.
+                  logger.exception('user-mirror sync exception')
+
+              return event
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cognito-dr
+
+  UserSyncFunctionPermissionPostConfirmation:
+    Type: AWS::Lambda::Permission
+    Condition: IsProduction
+    Properties:
+      FunctionName: !Ref UserSyncFunction
+      Action: lambda:InvokeFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
+
+  # CFN models PostConfirmation and PostAuthentication permissions as the
+  # same SourceArn (the user pool); a single Permission would suffice but
+  # keeping them named for clarity in CloudTrail audit reads.
+  UserSyncFunctionPermissionPostAuthentication:
+    Type: AWS::Lambda::Permission
+    Condition: IsProduction
+    Properties:
+      FunctionName: !Ref UserSyncFunction
+      Action: lambda:InvokeFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
 
   # ===========================================================================
   # SSM Parameters for App Configuration

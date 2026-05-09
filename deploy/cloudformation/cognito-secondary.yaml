@@ -1,0 +1,257 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.14 - Cognito (Secondary Region Standby Pool)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Standby Cognito user pool in the SECONDARY region (default us-west-2). Stays
+# empty under normal operation; populated by the hydrator Lambda (Layer 6.21,
+# cognito-dr-hydrator.yaml) only at failover time.
+#
+# DR-2 (#145), ADR-091. Companion to:
+#   - cognito.yaml (Layer 4.4): primary user pool with PostConfirmation /
+#     PostAuthentication triggers writing to user-mirror-table.yaml
+#   - user-mirror-table.yaml (Layer 2.22): DDB Global Table with the user
+#     state replicated to us-west-2
+#   - cognito-dr-hydrator.yaml (Layer 6.21): hydrator Lambda that scans the
+#     mirror table at failover and creates users here via AdminCreateUser
+#     plus AdminAddUserToGroup plus AdminResetUserPassword (forced reset on
+#     first post-failover login)
+#
+# This template is deployed to the SECONDARY region. Until DR-7 (#150) lands
+# an orchestration pipeline, deploy manually:
+#
+#   aws cloudformation deploy \
+#       --stack-name aura-cognito-secondary-prod \
+#       --template-file deploy/cloudformation/cognito-secondary.yaml \
+#       --parameter-overrides Environment=prod ProjectName=aura \
+#       --capabilities CAPABILITY_NAMED_IAM \
+#       --region us-west-2 \
+#       --no-fail-on-empty-changeset
+#
+# Production-only: dev/qa do not run cross-region failover drills, and an
+# unused Cognito user pool is wasteful infrastructure.
+#
+# Configuration parity with primary: this template MIRRORS the primary pool's
+# password policy, MFA settings, account recovery, schema, app client config,
+# and groups. Drift between primary and secondary is detected by the weekly
+# drift detector that DR-9 / dr-monitoring.yaml deploys.
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  CallbackURLs:
+    Type: CommaDelimitedList
+    Default: 'https://app.aenealabs.com/auth/callback,http://localhost:5173/auth/callback'
+    Description: OAuth callback URLs (must mirror primary cognito.yaml)
+
+  LogoutURLs:
+    Type: CommaDelimitedList
+    Default: 'https://app.aenealabs.com,http://localhost:5173'
+    Description: Post-logout redirect URLs (must mirror primary cognito.yaml)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # Standby User Pool -- mirror of primary cognito.yaml UserPool
+  # ===========================================================================
+  StandbyUserPool:
+    Type: AWS::Cognito::UserPool
+    Condition: IsProduction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: !Sub '${ProjectName}-users-${Environment}-dr'
+
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+
+      # MFA OPTIONAL by default. Operator may flip to REQUIRED via the failover
+      # runbook before redirecting traffic if the primary pool was REQUIRED at
+      # the time of failure.
+      MfaConfiguration: OPTIONAL
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+
+      UserPoolAddOns:
+        AdvancedSecurityMode: ENFORCED
+
+      DeletionProtection: ACTIVE
+
+      UserPoolTags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+        Role: dr-standby
+
+  StandbyUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Condition: IsProduction
+    Properties:
+      Domain: !Sub '${ProjectName}-${Environment}-${AWS::AccountId}-dr'
+      UserPoolId: !Ref StandbyUserPool
+
+  StandbyUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Condition: IsProduction
+    Properties:
+      ClientName: !Sub '${ProjectName}-frontend-${Environment}-dr'
+      UserPoolId: !Ref StandbyUserPool
+
+      GenerateSecret: false
+
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+
+      CallbackURLs: !Ref CallbackURLs
+      LogoutURLs: !Ref LogoutURLs
+      SupportedIdentityProviders:
+        - COGNITO
+
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      EnablePropagateAdditionalUserContextData: false
+
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+
+      ReadAttributes:
+        - email
+        - email_verified
+        - name
+        - custom:role
+      WriteAttributes:
+        - email
+        - name
+        - custom:role
+
+  StandbyAdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Condition: IsProduction
+    Properties:
+      GroupName: admin
+      Description: Platform administrators with full access
+      UserPoolId: !Ref StandbyUserPool
+      Precedence: 1
+
+  StandbySecurityEngineerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Condition: IsProduction
+    Properties:
+      GroupName: security-engineer
+      Description: Security engineers with HITL approval access
+      UserPoolId: !Ref StandbyUserPool
+      Precedence: 10
+
+  StandbyDeveloperGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Condition: IsProduction
+    Properties:
+      GroupName: developer
+      Description: Developers with read access
+      UserPoolId: !Ref StandbyUserPool
+      Precedence: 20
+
+  StandbyViewerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Condition: IsProduction
+    Properties:
+      GroupName: viewer
+      Description: Read-only access
+      UserPoolId: !Ref StandbyUserPool
+      Precedence: 30
+
+Outputs:
+  StandbyUserPoolId:
+    Condition: IsProduction
+    Description: Standby Cognito User Pool ID (DR-2 / #145, ADR-091)
+    Value: !Ref StandbyUserPool
+    Export:
+      Name: !Sub '${ProjectName}-standby-user-pool-id-${Environment}'
+
+  StandbyUserPoolArn:
+    Condition: IsProduction
+    Description: Standby Cognito User Pool ARN
+    Value: !GetAtt StandbyUserPool.Arn
+    Export:
+      Name: !Sub '${ProjectName}-standby-user-pool-arn-${Environment}'
+
+  StandbyUserPoolClientId:
+    Condition: IsProduction
+    Description: Standby Cognito User Pool Client ID (for frontend post-failover)
+    Value: !Ref StandbyUserPoolClient
+    Export:
+      Name: !Sub '${ProjectName}-standby-user-pool-client-id-${Environment}'
+
+  StandbyUserPoolDomain:
+    Condition: IsProduction
+    Description: Standby Cognito Hosted UI Domain
+    Value: !Sub '${ProjectName}-${Environment}-${AWS::AccountId}-dr.auth.${AWS::Region}.amazoncognito.com'
+    Export:
+      Name: !Sub '${ProjectName}-standby-cognito-domain-${Environment}'
+
+  StandbyIssuerURL:
+    Condition: IsProduction
+    Description: Standby Cognito Issuer URL (for JWT validation post-failover)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${StandbyUserPool}'
+    Export:
+      Name: !Sub '${ProjectName}-standby-cognito-issuer-${Environment}'

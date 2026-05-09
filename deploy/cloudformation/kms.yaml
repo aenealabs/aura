@@ -588,6 +588,86 @@ Resources:
       AliasName: !Sub 'alias/${ProjectName}-auth-credentials-${Environment}'
       TargetKeyId: !Ref AuthCredentialsKMSKey
 
+  # ===========================================================================
+  # User Mirror KMS Key (DR-2 / #145, ADR-091)
+  # ===========================================================================
+  # Per-region customer-managed key for the user-mirror DynamoDB Global Table
+  # that mirrors Cognito user state into us-west-2 for cross-region failover.
+  # The mirror table carries authenticator-adjacent data (group membership,
+  # which drives authorization), so per-region CMK is required per Sally's
+  # NIST 800-53 SC-12 guidance: "do not share keys across regions."
+  #
+  # Single-region key (NOT a multi-region key). The secondary-region replica
+  # has its own independent key in deploy/cloudformation/kms-replica-secondary.yaml.
+  UserMirrorKMSKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} user-mirror table encryption key (DR-2 / #145, ADR-091)'
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+
+          - Sid: AllowCloudFormationTagManagement
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:TagResource, kms:UntagResource, kms:ListResourceTags]
+            Resource: '*'
+
+          - Sid: AllowCodeBuildKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Create*, kms:Describe*, kms:Enable*, kms:List*, kms:Put*, kms:Update*, kms:Revoke*, kms:Disable*, kms:Get*, kms:Delete*, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          - Sid: AllowDynamoDBServiceRegional
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+                aws:SourceRegion: !Ref AWS::Region
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: UserMirrorEncryption
+        - Key: DataClassification
+          Value: Restricted
+        - Key: ReplicationPair
+          Value: !Sub '${ProjectName}-user-mirror-${Environment}'
+
+  UserMirrorKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-user-mirror-${Environment}'
+      TargetKeyId: !Ref UserMirrorKMSKey
+
 # =============================================================================
 # Outputs - Export key ARNs for consumer stacks
 # =============================================================================
@@ -651,3 +731,15 @@ Outputs:
     Value: !Ref AuthCredentialsKMSKey
     Export:
       Name: !Sub '${ProjectName}-auth-credentials-kms-key-id-${Environment}'
+
+  UserMirrorKMSKeyArn:
+    Description: KMS key ARN for the Cognito user-mirror DynamoDB Global Table (DR-2 / #145, ADR-091)
+    Value: !GetAtt UserMirrorKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-user-mirror-kms-key-arn-${Environment}'
+
+  UserMirrorKMSKeyId:
+    Description: KMS key ID for the Cognito user-mirror DynamoDB Global Table (DR-2 / #145, ADR-091)
+    Value: !Ref UserMirrorKMSKey
+    Export:
+      Name: !Sub '${ProjectName}-user-mirror-kms-key-id-${Environment}'

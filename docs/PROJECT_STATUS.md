@@ -1,7 +1,7 @@
 # Project Aura: Development Status
 
 **Last Assessment:** May 9, 2026
-**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**.
+**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward).
 
 ---
 
@@ -14,7 +14,7 @@
 | **Test Suite** | 24,800+ tests (0 failures) |
 | **Architecture Decision Records** | 91 ADRs (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089]; ADR-090 GraphRAG ingestion edge completeness + ADR-091 Cognito cross-region DR added in May 2026) |
 | **CloudFormation Templates** | 183 (24 CodeBuild + 159 infrastructure) |
-| **Buildspecs** | 38 buildspec files in deploy/buildspecs/ (data, observability, serverless, sandbox-infrastructure extended for ADR-088) |
+| **Buildspecs** | 28 buildspec files in deploy/buildspecs/ (down from 38 after #131 cleanup -- 11 dead scaffolds deleted, -1,467 LOC) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
 | **GovCloud Readiness** | 100% (all deployed services compatible) |
@@ -98,6 +98,21 @@
 - `SECURITY.md` SaaS DR scope-statement update reflecting the now-audit-defensible posture
 - Hourly Neptune backup selection (currently daily; closes the Tier 2 RPO 1h gap that's documented in `NEPTUNE_FAILOVER_RUNBOOK.md`)
 - Pre-staged secondary-region service foundation templates for Neptune + OpenSearch (subnet groups + security groups; shaves ~10 min off RTO per the runbooks)
+
+### Buildspec Line-Cap Remediation (Umbrella #131 -- COMPLETE, all 4 sub-issues closed)
+
+| Sub-Issue | Status | Outcome |
+|-----------|--------|---------|
+| #131 (umbrella) | Closed | 600-line cap rule replaced with runtime-budget rule in `deploy/buildspecs/CLAUDE.md` (cold-start `TimeoutInMinutes` is the actual constraint, not line count). New rule: parent → sub-layer CodeBuild nesting forbidden; only `bootstrap → parent` 1-level chain allowed. Sub-layer indirection (when genuinely required) goes through Step Functions, following the `codebuild-serverless-symbol-resolver.yaml` model. |
+| #132 (application, 1,049 lines) | Closed | `TimeoutInMinutes: 20 → 480` on `codebuild-application.yaml`. Buildspec retained at 1,049 lines (within new runtime-budget rule). 4 empty scaffold buildspecs deleted. |
+| #133 (serverless, 903 lines) | Closed | `TimeoutInMinutes: 45 → 480` on `codebuild-serverless.yaml`. Buildspec retained at 903 lines. 3 empty scaffolds + 1 orphan deleted (orphan was duplicate work the parent already runs at lines 723-748). |
+| #134 (sandbox, 685 lines) | Closed | `TimeoutInMinutes: 45 → 480` on `codebuild-sandbox.yaml`. Buildspec retained at 685 lines. 3 empty scaffolds deleted. |
+| #135 (observability, 615 lines) | Closed | `TimeoutInMinutes: 20 → 480` on `codebuild-observability.yaml`. Buildspec retained at 615 lines. No scaffolds existed for this layer. |
+
+**Buildspec follow-ups (tracked separately, not blocking the umbrella close):**
+- #157: Wire orphaned sub-layer CodeBuild projects (`application-identity`, `serverless-documentation`) via Step Functions deployment pipeline -- pre-existing gap unrelated to the cap remediation. Reference model: `codebuild-serverless-symbol-resolver.yaml`.
+- Inline parallelism (`xargs -P` or background jobs) inside parent buildspecs to reduce cold-start runtime. Tara's optional optimization; defer until measurements show the timeout-extended buildspecs are slow enough to need it.
+- Promoting the cold-start path to Step Functions Standard for true parallel orchestration with retry. Defer until inline parallelism proves insufficient.
 
 ### Integrations & Deployment
 

@@ -17,6 +17,16 @@ repositories {
     mavenCentral()
 }
 
+// Java toolchain -- declarative + portable. Gradle auto-provisions JDK 17 if
+// the local one differs. Replaces the prior hardcoded `org.gradle.java.home`
+// in gradle.properties (was an Apple Silicon Homebrew path; broke CI runners
+// and any non-Mac dev). Surfaced by CodeQL Java autobuild failure 2026-04-02.
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+
 dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 }

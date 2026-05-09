@@ -63,6 +63,7 @@ phases:
       - cfn-lint deploy/cloudformation/env-validator-irsa.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
       - cfn-lint deploy/cloudformation/iam-diagram-service.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
       - cfn-lint deploy/cloudformation/diagram-service-ssm.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/iam-palantir-integration.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
 
       # Get dependency stack outputs
       - echo "Retrieving dependency stack outputs..."
@@ -905,6 +906,31 @@ phases:
           --region $AWS_DEFAULT_REGION
 
         echo "Diagram Service SSM Parameters deployed"
+
+      # ============================================
+      # PHASE 3.12: Deploy Palantir AIP Integration IAM (ADR-074, #161)
+      # ============================================
+      # Closes #161 -- previously orphan stack (ADR-074 originally claimed
+      # deployment via buildspec-application-irsa.yml, deleted under #131).
+      # OIDC params left at default empty (IRSA wiring deferred until a
+      # production Palantir engagement requires it; the IAM template
+      # supports the empty-string default via the HasOIDCProvider condition).
+      - |
+        echo "Deploying Palantir AIP Integration IAM..."
+        PALANTIR_IAM_STACK="${PROJECT_NAME}-iam-palantir-integration-${ENVIRONMENT}"
+
+        aws cloudformation deploy \
+          --stack-name $PALANTIR_IAM_STACK \
+          --template-file deploy/cloudformation/iam-palantir-integration.yaml \
+          --parameter-overrides \
+            ProjectName=$PROJECT_NAME \
+            Environment=$ENVIRONMENT \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=4.13 ADR=ADR-074 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --no-fail-on-empty-changeset \
+          --region $AWS_DEFAULT_REGION
+
+        echo "Palantir AIP Integration IAM deployed"
 
   post_build:
     commands:

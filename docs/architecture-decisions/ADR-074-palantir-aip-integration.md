@@ -1529,24 +1529,20 @@ Documentation:
 
 ### CI/CD Integration
 
-> **Status note (May 9, 2026, post-#131):** This section as originally authored
-> referenced `buildspec-application-irsa.yml` as the deployment path for the
-> Palantir IAM template. That buildspec was deleted under #131 (it was an empty
-> scaffold with 0 `cloudformation deploy` calls -- never functional). The
-> `aura-application-irsa-deploy-${Environment}` CodeBuild project the original
-> wording named also does not exist in the repo. The IAM template is therefore
-> currently an **orphan stack** -- deployed only via the manual
-> `aws cloudformation deploy` command shown in the "Deployment Commands"
-> section below. Wiring the template into the standard deployment pipeline is
-> tracked as a follow-up under #161 (recommended path: add a single
-> `cloudformation deploy` call to `buildspec-application.yml`, the Layer 4
-> parent buildspec, since the IAM template carries Layer 4.13 in its
-> description and logically belongs in the application layer).
+> **Status note (May 9, 2026):** This section was originally authored referencing
+> `buildspec-application-irsa.yml` as the deployment path. That buildspec was
+> deleted under #131 (empty scaffold, never functional), leaving the IAM template
+> as an orphan stack. #161 closed that gap by adding the deploy to
+> `buildspec-application.yml` Phase 3.12 (Layer 4 parent buildspec, single-line
+> addition). No new CodeBuild project required; the parent → sub-layer
+> CodeBuild nesting forbidden by #131 Critical Rule 5 is preserved.
 
 The Palantir integration IAM template is deployed via:
-- **Buildspec (current):** Manual deployment via the command in the next subsection. No automated path until #161 closes.
-- **Buildspec (target, per #161):** `deploy/buildspecs/buildspec-application.yml` (parent layer, single-line addition). No new CodeBuild project required; respects the "no parent -> sub-layer CodeBuild nesting" rule from #131 Critical Rule 5.
-- **Trigger (target):** Part of standard application layer deployment
+- **Buildspec:** `deploy/buildspecs/buildspec-application.yml` (Phase 3.12, after Diagram Service SSM Parameters)
+- **CodeBuild Project:** `aura-application-deploy-${Environment}` (the standard application-layer CodeBuild project; no separate sub-layer project)
+- **Trigger:** Part of the standard application layer deployment cascade orchestrated by `deployment-pipeline.yaml`
+- **Stack name:** `${ProjectName}-iam-palantir-integration-${Environment}`
+- **OIDC parameters:** Left at default empty (`EKSOIDCProviderArn`, `EKSOIDCIssuer`). The template's `HasOIDCProvider` condition cleanly skips IRSA configuration when these are empty. Wire actual OIDC values when a production Palantir engagement requires IRSA-based federation; track separately if pursued.
 
 ### Deployment Commands
 

@@ -13,6 +13,19 @@ Parameters:
     Default: aura
     Description: Project name
 
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: |
+      Secondary AWS region for Tier 1 DynamoDB Global Tables replication
+      (DR-1 / #144). Production environments only; dev/qa do not pay
+      replica costs.
+
+Conditions:
+  # DR-1 (#144): replicate Tier 1 GlobalTables to the secondary region in
+  # production only.
+  IsProduction: !Equals [!Ref Environment, prod]
+
 Resources:
   # Cost Tracking Table
   CostTrackingTable:
@@ -264,11 +277,13 @@ Resources:
 
   # Platform Settings Table
   PlatformSettingsTable:
-    Type: AWS::DynamoDB::Table
-    # DR-1 PR1 (#144): prep for type-swap to AWS::DynamoDB::GlobalTable.
-    # Reverts to Retain on the new GlobalTable resource in PR3.
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    Type: AWS::DynamoDB::GlobalTable
+    # DR-1 PR3 (#144): Tier 1 GlobalTable. Replicates to ${SecondaryRegion}
+    # in production. AWS-managed encryption (no customer-managed CMK) since
+    # this table holds tenant config, not auth credentials. Returns to
+    # Retain (safe default).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-platform-settings-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -282,20 +297,39 @@ Resources:
           KeyType: HASH
         - AttributeName: settings_key
           KeyType: RANGE
-      # Point-in-Time Recovery enabled for all environments (DR Issue #14)
-      # Enables 35-day continuous backups with 1-second granularity
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+      # StreamSpecification is REQUIRED on GlobalTable; powers replication.
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
       SSESpecification:
         SSEEnabled: true
-        SSEType: KMS
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-platform-settings-${Environment}'
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: Environment
-          Value: !Ref Environment
+      Replicas:
+        # Primary region replica.
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          Tags:
+            - Key: Name
+              Value: !Sub '${ProjectName}-platform-settings-${Environment}'
+            - Key: Project
+              Value: !Ref ProjectName
+            - Key: Environment
+              Value: !Ref Environment
+        # Secondary region replica (production only).
+        - !If
+          - IsProduction
+          - Region: !Ref SecondaryRegion
+            PointInTimeRecoverySpecification:
+              PointInTimeRecoveryEnabled: true
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-platform-settings-${Environment}-dr'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Role
+                Value: dr-replica
+          - !Ref AWS::NoValue
 
   # Anomaly Audit Trail Table
   AnomaliesTable:
@@ -368,11 +402,11 @@ Resources:
 
   # Autonomy Policies Table - stores organization autonomy configurations
   AutonomyPoliciesTable:
-    Type: AWS::DynamoDB::Table
-    # DR-1 PR1 (#144): prep for type-swap to AWS::DynamoDB::GlobalTable.
-    # Reverts to Retain on the new GlobalTable resource in PR3.
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    Type: AWS::DynamoDB::GlobalTable
+    # DR-1 PR3 (#144): Tier 1 GlobalTable (ADR-032 HITL policies).
+    # Replicates to ${SecondaryRegion} in production. AWS-managed encryption.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-autonomy-policies-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -391,18 +425,36 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
       SSESpecification:
         SSEEnabled: true
-        SSEType: KMS
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-autonomy-policies-${Environment}'
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: Environment
-          Value: !Ref Environment
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          Tags:
+            - Key: Name
+              Value: !Sub '${ProjectName}-autonomy-policies-${Environment}'
+            - Key: Project
+              Value: !Ref ProjectName
+            - Key: Environment
+              Value: !Ref Environment
+        - !If
+          - IsProduction
+          - Region: !Ref SecondaryRegion
+            PointInTimeRecoverySpecification:
+              PointInTimeRecoveryEnabled: true
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-autonomy-policies-${Environment}-dr'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Role
+                Value: dr-replica
+          - !Ref AWS::NoValue
 
   # Autonomy Policy Audit Table - audit trail for policy changes
   PolicyAuditTable:

@@ -2,6 +2,17 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: 'Project Aura - Layer 2.2 - S3 (Object Storage)'
 
 Parameters:
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: |
+      Secondary AWS region for S3 CRR (DR-5 / #148). The replica buckets
+      (created by deploy/cloudformation/s3-replica.yaml in the secondary
+      region) must already exist before this stack creates the
+      ReplicationConfiguration. Used here only for documentation and
+      tagging; the destination bucket ARN is constructed from the
+      naming convention since S3 ARNs are region-less.
+
   Environment:
     Type: String
     Default: dev
@@ -28,6 +39,26 @@ Resources:
               SSEAlgorithm: AES256
       VersioningConfiguration:
         Status: Enabled
+      # DR-5 (#148): Tier 3 customer artifacts replicate to the
+      # secondary region via S3 CRR in production. Destination bucket
+      # is created by deploy/cloudformation/s3-replica.yaml deployed
+      # in ${SecondaryRegion}; bucket ARNs are region-less so the
+      # name pattern resolves cleanly.
+      ReplicationConfiguration: !If
+        - IsProduction
+        - Role: !GetAtt S3ReplicationRole.Arn
+          Rules:
+            - Id: ReplicateArtifactsToSecondary
+              Status: Enabled
+              Priority: 1
+              Filter:
+                Prefix: ''
+              DeleteMarkerReplication:
+                Status: Disabled
+              Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-artifacts-${AWS::AccountId}-${Environment}-dr"
+                StorageClass: STANDARD
+        - !Ref AWS::NoValue
       LifecycleConfiguration:
         Rules:
           - Id: DeleteOldVersions
@@ -65,6 +96,23 @@ Resources:
               SSEAlgorithm: AES256
       VersioningConfiguration:
         Status: Enabled
+      # DR-5 (#148): Tier 3 customer code copies replicate to the
+      # secondary region via S3 CRR in production.
+      ReplicationConfiguration: !If
+        - IsProduction
+        - Role: !GetAtt S3ReplicationRole.Arn
+          Rules:
+            - Id: ReplicateCodeRepoToSecondary
+              Status: Enabled
+              Priority: 1
+              Filter:
+                Prefix: ''
+              DeleteMarkerReplication:
+                Status: Disabled
+              Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-code-repo-${AWS::AccountId}-${Environment}-dr"
+                StorageClass: STANDARD
+        - !Ref AWS::NoValue
       LifecycleConfiguration:
         Rules:
           - Id: DeleteOldVersions
@@ -197,6 +245,68 @@ Resources:
           Value: !Ref ProjectName
         - Key: Environment
           Value: !Ref Environment
+
+  # ===========================================================================
+  # S3 CRR Replication Role (DR-5 / #148, prod only)
+  # ===========================================================================
+  # IAM role assumed by S3 to replicate ArtifactsBucket and CodeRepositoryBucket
+  # to their -dr counterparts in ${SecondaryRegion}. The destination buckets are
+  # created by deploy/cloudformation/s3-replica.yaml deployed in the secondary
+  # region (manual deploy until DR-7 / #150 lands an orchestration pipeline).
+  S3ReplicationRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub "${ProjectName}-s3-replication-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # Source ARNs constructed by name pattern (not !GetAtt) to avoid the
+        # circular dependency: the bucket's ReplicationConfiguration.Role
+        # references this role, so this role cannot reference the bucket via
+        # GetAtt without forming a cycle. S3 ARNs are region-less so the
+        # constructed pattern matches exactly what !GetAtt would yield.
+        - PolicyName: ReplicationSourceRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetReplicationConfiguration, s3:ListBucket]
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-artifacts-${AWS::AccountId}-${Environment}"
+                  - !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-code-repo-${AWS::AccountId}-${Environment}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObjectVersionForReplication
+                  - s3:GetObjectVersionAcl
+                  - s3:GetObjectVersionTagging
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-artifacts-${AWS::AccountId}-${Environment}/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-code-repo-${AWS::AccountId}-${Environment}/*"
+        - PolicyName: ReplicationDestinationWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ReplicateObject
+                  - s3:ReplicateDelete
+                  - s3:ReplicateTags
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-artifacts-${AWS::AccountId}-${Environment}-dr/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-code-repo-${AWS::AccountId}-${Environment}-dr/*"
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ReplicationDestinationRegion
+          Value: !Ref SecondaryRegion
 
 Outputs:
   ArtifactsBucketName:

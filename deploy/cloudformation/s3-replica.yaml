@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.7 - S3 CRR Destination Buckets (Secondary Region for DR-5/#148)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Destination buckets for S3 Cross-Region Replication (CRR) of Tier 3 customer
+# artifacts from the primary region. S3 CRR requires the destination bucket to
+# pre-exist with versioning enabled before the source can declare replication;
+# this template creates those destinations.
+#
+# Deployment: this template is deployed to the SECONDARY region (default
+# us-west-2). The primary region's s3.yaml stack references the destination
+# bucket ARNs by name pattern (S3 bucket ARNs are region-less so the cross-
+# region reference does not require Fn::ImportValue).
+#
+# Until the orchestration pipeline (DR-7 / #150) lands, this template is
+# deployed manually:
+#
+#   aws cloudformation deploy \
+#       --stack-name aura-s3-replica-prod \
+#       --template-file deploy/cloudformation/s3-replica.yaml \
+#       --parameter-overrides Environment=prod ProjectName=aura \
+#       --capabilities CAPABILITY_NAMED_IAM \
+#       --region us-west-2 \
+#       --no-fail-on-empty-changeset
+#
+# Resources are gated on IsProduction so dev/qa do not pay for unused replicas.
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Conditions:
+  # DR-5 (#148): replicate Tier 3 customer artifacts only in production. dev/qa
+  # have no DR commitments and would pay storage + replication costs otherwise.
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  ArtifactsReplicaBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsProduction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      # Naming: matches the primary bucket pattern with a -dr suffix so the
+      # ARN is constructable from primary-stack parameters without having to
+      # cross-region import the value.
+      BucketName: !Sub "${ProjectName}-artifacts-${AWS::AccountId}-${Environment}-dr"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        # Versioning is REQUIRED on CRR destination buckets.
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: STANDARD_IA
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-artifacts-${Environment}-dr"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Role
+          Value: dr-replica
+        - Key: ReplicationSource
+          Value: !Sub "${ProjectName}-artifacts-${AWS::AccountId}-${Environment}"
+
+  CodeRepositoryReplicaBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsProduction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${ProjectName}-code-repo-${AWS::AccountId}-${Environment}-dr"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-code-repo-${Environment}-dr"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Role
+          Value: dr-replica
+        - Key: ReplicationSource
+          Value: !Sub "${ProjectName}-code-repo-${AWS::AccountId}-${Environment}"
+
+Outputs:
+  ArtifactsReplicaBucketArn:
+    Condition: IsProduction
+    Description: ARN of the artifacts replica bucket
+    Value: !GetAtt ArtifactsReplicaBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ArtifactsReplicaBucketArn"
+
+  CodeRepositoryReplicaBucketArn:
+    Condition: IsProduction
+    Description: ARN of the code repository replica bucket
+    Value: !GetAtt CodeRepositoryReplicaBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeRepositoryReplicaBucketArn"

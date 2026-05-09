@@ -45,7 +45,7 @@ Two columns: **Recovery Strategy (Deployed)** is what is actually in CloudFormat
 | Neptune | 2 | 4h | 1h | AWS Backup with cross-region copy (prod) | AWS Backup + cross-region read replica or Global DB | DR-3 |
 | OpenSearch | 2 | 4h | 1h | AWS Backup snapshots | AWS Backup + cross-cluster replication (CCR) | DR-4 |
 | EKS Control Plane | 2 | 4h | N/A | AWS managed (multi-AZ) | AWS managed + secondary-region warm cluster | DR-7 |
-| S3 (Artifacts) | 3 | 8h | 4h | AWS Backup vault (no CRR currently) | Cross-region replication on artifact buckets | DR-5 |
+| S3 (Artifacts) | 3 | 8h | 4h | CRR on `ArtifactsBucket` + `CodeRepositoryBucket` (prod only); AWS Backup vault for the rest | Same; per-bucket follow-ups for other-template Tier-relevant buckets | DR-5 (closed; follow-ups for non-`s3.yaml` buckets) |
 | Secrets Manager | 1 | 1h | N/A | Native multi-region replicas (10 Tier 1 secrets, prod only) | Same | DR-6 (closed) |
 | CloudWatch Logs | 4 | 24h | 24h | S3 export (verify per log group) | S3 export with cross-region replicated bucket | DR-5 |
 
@@ -57,6 +57,7 @@ What customers can rely on today:
 - **DynamoDB PITR** is enabled on Tier 1 tables.
 - **Multi-AZ** failover is implicit in the EKS / API Gateway / Neptune / OpenSearch deployments within the primary region.
 - **Secrets Manager native multi-region replicas** for the 10 Tier 1 secrets (Bedrock config in `secrets.yaml` and `aura-bedrock-infrastructure.yaml`, API keys, DB encryption key, JWT signing secret, JWT signing key for IdP, plus the 4 IdP credential templates: LDAP, OIDC, SAML, PingID). Production environments only; gated on `IsProduction` so dev/qa do not pay replica costs. Replicas use the secondary region's AWS-managed default key, consistent with primary-region encryption (per-region customer-managed CMKs are tracked as a separate hardening pass). Closed by DR-6 (#149).
+- **S3 Cross-Region Replication** on the two Tier 3 customer-data buckets in `s3.yaml`: `ArtifactsBucket` (analysis outputs, generated reports) and `CodeRepositoryBucket` (uploaded customer code). Production environments only; gated on `IsProduction`. Destination buckets live in `deploy/cloudformation/s3-replica.yaml` deployed manually to the secondary region (default `us-west-2`); orchestration of the cross-region deploy is tracked under DR-7 (#150). Replication uses S3-managed AES256 encryption matching the primary buckets. Closed by DR-5 (#148). Other buckets in the deploy chain (model-assurance, red-team, vuln-scan, calibration-pipeline, sandbox) are tracked as separate per-template follow-ups -- their owners decide whether their data is Tier-relevant.
 
 ### Currently NOT Operational
 
@@ -66,7 +67,7 @@ What the original document claimed but is not yet deployed:
 - Cognito user pool replication (DR-2).
 - Neptune cross-region read replica or Global Database (DR-3).
 - OpenSearch cross-cluster replication (DR-4).
-- S3 cross-region replication on artifact buckets (DR-5).
+- ~~S3 cross-region replication on artifact buckets (DR-5).~~ **DONE for the two `s3.yaml` Tier 3 buckets -- closed by DR-5 (#148).** Per-template follow-ups for other-template artifact buckets (model-assurance, red-team, vuln-scan, calibration-pipeline) tracked separately.
 - ~~Secrets Manager multi-region replicas for the Tier 1 secrets the failover path will need (DR-6).~~ **DONE -- closed by DR-6 (#149).** See "Currently Operational Capabilities" above.
 - Multi-region failover orchestration (Route 53 failover records, the actual decision-and-cutover Lambda, drift detection on cross-region resources). The previous orchestration stub (`multi-region-global.yaml`) was detection / notification only and has been archived (DR-7).
 - Sally's compliance controls for DR operations: two-person integrity on prod failover deploys, pre-signed change-sets, session recording, evidence-package generation for NIST CP-2/CP-9/CP-10 audit trail (DR-8).

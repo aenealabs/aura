@@ -122,6 +122,11 @@ Resources:
                   - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-cognito-hydrator-trigger-${Environment}'
                   - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-cognito-ssm-cutover-${Environment}'
                   - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-data-plane-secret-cutover-${Environment}'
+                  # DR-8 / #151: evidence-package generator. ARN is constructed
+                  # rather than imported so this template can deploy before
+                  # dr-compliance-controls.yaml; first execution will catch
+                  # the error and fall through to NotifyFailure cleanly.
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-dr-evidence-package-${Environment}'
         - PolicyName: PublishSNS
           PolicyDocument:
             Version: '2012-10-17'
@@ -184,6 +189,7 @@ Resources:
         HydratorTriggerArn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-cognito-hydrator-trigger-${Environment}'
         CognitoSSMCutoverArn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-cognito-ssm-cutover-${Environment}'
         DataPlaneSecretCutoverArn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-data-plane-secret-cutover-${Environment}'
+        EvidencePackageArn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-dr-evidence-package-${Environment}'
         ApprovalTimeout: !Ref HITLApprovalTimeoutSeconds
       DefinitionString: !Sub |
         {
@@ -403,6 +409,32 @@ Resources:
                 "Subject": "Aura DR: failover complete",
                 "Message.$": "States.Format('Multi-region failover complete. Operator: {}. Execution: {}.', $.operator, $$.Execution.Name)"
               },
+              "ResultPath": null,
+              "Next": "CaptureEvidenceSuccess"
+            },
+
+            "CaptureEvidenceSuccess": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!EvidencePackageArn}",
+                "Payload": {
+                  "execution_arn.$": "$$.Execution.Id",
+                  "kind": "drill",
+                  "operator.$": "$.operator",
+                  "notes": "failover pipeline reached NotifyComplete"
+                }
+              },
+              "ResultPath": "$.evidence",
+              "Catch": [
+                {"ErrorEquals": ["States.ALL"], "ResultPath": "$.evidence_error", "Next": "EvidenceSkipped"}
+              ],
+              "End": true
+            },
+
+            "EvidenceSkipped": {
+              "Type": "Pass",
+              "Comment": "Evidence-package Lambda not deployed yet; logged via Catch.",
               "End": true
             },
 
@@ -428,6 +460,26 @@ Resources:
                 "Subject": "Aura DR: rollback complete",
                 "Message.$": "States.Format('Multi-region failover rolled back. Operator: {}. Execution: {}.', $.operator, $$.Execution.Name)"
               },
+              "ResultPath": null,
+              "Next": "CaptureEvidenceRollback"
+            },
+
+            "CaptureEvidenceRollback": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!EvidencePackageArn}",
+                "Payload": {
+                  "execution_arn.$": "$$.Execution.Id",
+                  "kind": "rollback",
+                  "operator.$": "$.operator",
+                  "notes": "failover pipeline rollback completed"
+                }
+              },
+              "ResultPath": "$.evidence",
+              "Catch": [
+                {"ErrorEquals": ["States.ALL"], "ResultPath": "$.evidence_error", "Next": "EvidenceSkipped"}
+              ],
               "End": true
             },
 
@@ -439,6 +491,26 @@ Resources:
                 "Subject": "Aura DR: pipeline FAILURE",
                 "Message.$": "States.Format('Failover pipeline failed. Operator: {}. Execution: {}. Error: {}', $.operator, $$.Execution.Name, $.error)"
               },
+              "ResultPath": null,
+              "Next": "CaptureEvidenceFailure"
+            },
+
+            "CaptureEvidenceFailure": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!EvidencePackageArn}",
+                "Payload": {
+                  "execution_arn.$": "$$.Execution.Id",
+                  "kind": "failure",
+                  "operator.$": "$.operator",
+                  "notes": "failover pipeline failed -- see execution history for cause"
+                }
+              },
+              "ResultPath": "$.evidence",
+              "Catch": [
+                {"ErrorEquals": ["States.ALL"], "ResultPath": "$.evidence_error", "Next": "FailFinal"}
+              ],
               "Next": "FailFinal"
             },
 

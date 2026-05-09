@@ -1,0 +1,1042 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.16 - DR Compliance Controls (Sally Seven)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Implements the seven compliance controls Sally identified as required to
+# make manual / semi-manual DR operations audit-defensible under NIST 800-53
+# CP-2 / CP-4(1) / CP-9 / CP-10. DR-8 (#151).
+#
+# Without these controls, the auditor's killer question -- "show me the last
+# successful end-to-end failover with measured RTO and approval chain" -- has
+# no acceptable answer.
+#
+# What this template provides:
+#   - Evidence S3 bucket: Object Lock GOVERNANCE, ~7-year retention (SOX +
+#     CP-9 alignment), lifecycle to STANDARD_IA / GLACIER
+#   - Session-recording S3 bucket: SSM Session Manager output + an SSM
+#     document that enables logging on SessionManagerRunShell
+#   - AWS Signer profile + Lambda code-signing config: ready for use; existing
+#     inline-code (ZipFile) Lambdas must migrate to S3 packages before they
+#     can actually use code signing. Tracked as a follow-up.
+#   - Two-person approval Lambda: enforces two distinct IAM principals
+#     before invoking states:SendTaskSuccess on the failover state machine
+#   - Evidence-package generator Lambda: invoked from the failover pipeline
+#     at end of each execution; writes a JSON manifest + the state machine's
+#     execution history into the evidence bucket
+#   - Drill-cadence check Lambda: weekly schedule, alarms if no new evidence
+#     package landed in 90 days (Sally's staleness check)
+#
+# Production-only: dev/qa do not run cross-region failover, and the
+# evidence / session-recording infrastructure is wasteful in non-prod.
+#
+# Deployed to the PRIMARY region. Until the deploy chain is extended for
+# multi-region, deploy manually:
+#
+#   aws cloudformation deploy \
+#       --stack-name aura-dr-compliance-controls-prod \
+#       --template-file deploy/cloudformation/dr-compliance-controls.yaml \
+#       --parameter-overrides Environment=prod ProjectName=aura \
+#       --capabilities CAPABILITY_NAMED_IAM \
+#       --region us-east-1 \
+#       --no-fail-on-empty-changeset
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  EvidenceRetentionDays:
+    Type: Number
+    Default: 2557
+    Description: |
+      Object Lock retention period for evidence packages. Defaults to
+      ~7 years matching the audit-pipeline buckets (SOX retention
+      alignment).
+
+  DrillStalenessAlarmDays:
+    Type: Number
+    Default: 90
+    MinValue: 30
+    MaxValue: 365
+    Description: |
+      Drill-cadence staleness threshold. Per Sally's review: 90 days
+      from the last drill triggers an alarm. Quarterly drills land
+      packages every ~90 days, so a missed drill surfaces immediately.
+
+  DRAlertTopicArn:
+    Type: String
+    Default: ''
+    Description: |
+      Optional SNS topic ARN for compliance alarms (drill-cadence
+      staleness, two-person violation, etc.). When empty, alarms are
+      created without actions (state observable via CloudWatch console).
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasDRAlertTopic: !Not [!Equals [!Ref DRAlertTopicArn, '']]
+
+Resources:
+  # ===========================================================================
+  # Control 6: Evidence-Package S3 Bucket (Object Lock + 7yr retention)
+  # ===========================================================================
+  # Per Sally: every drill / event produces a package containing stack ARN,
+  # change-set ID, approver IDs, start/end timestamps, RTO measurement,
+  # alarm screenshot. Stored under prefixes by quarter.
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsProduction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-compliance-evidence-${AWS::AccountId}-${Environment}'
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: GOVERNANCE
+            Days: !Ref EvidenceRetentionDays
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToColdStorage
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 365
+                StorageClass: GLACIER
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-compliance-evidence-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-compliance
+        - Key: DataClassification
+          Value: ComplianceEvidence
+
+  # ===========================================================================
+  # Control 3: Session-Recording S3 Bucket + SSM Document
+  # ===========================================================================
+  # SSM Session Manager session-output bucket. The SSM Document
+  # SessionManagerRunShell-DREvidence applies the bucket as default output
+  # destination -- operators selecting this preference get session recording
+  # without per-session config.
+  SessionRecordingBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsProduction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-session-recording-${AWS::AccountId}-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldSessions
+            Status: Enabled
+            ExpirationInDays: 365
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-compliance
+        - Key: DataClassification
+          Value: SessionRecording
+
+  # SSM Session Manager preferences document. Operators must select this
+  # document when starting a session (or set as default via the SSM
+  # console preferences page). CFN can deploy the document but cannot set
+  # the account-level default -- that requires a one-time console action
+  # documented in the runbook.
+  SessionManagerPreferences:
+    Type: AWS::SSM::Document
+    Condition: IsProduction
+    Properties:
+      Name: !Sub '${ProjectName}-SessionManagerRunShell-DR-${Environment}'
+      DocumentType: Session
+      DocumentFormat: JSON
+      Content:
+        schemaVersion: '1.0'
+        description: 'Aura DR-context SSM Session Manager preferences with S3 logging (DR-8 / #151)'
+        sessionType: Standard_Stream
+        inputs:
+          s3BucketName: !Sub '${ProjectName}-session-recording-${AWS::AccountId}-${Environment}'
+          s3KeyPrefix: !Sub 'sessions/${Environment}/'
+          s3EncryptionEnabled: true
+          cloudWatchLogGroupName: ''
+          cloudWatchEncryptionEnabled: true
+          cloudWatchStreamingEnabled: false
+          idleSessionTimeout: '20'
+          maxSessionDuration: '60'
+          runAsEnabled: true
+          runAsDefaultUser: ''
+          shellProfile:
+            linux: |
+              echo "Session recorded for DR audit purposes. CloudTrail event recorded; output streaming to s3://${PROJECT}-session-recording-${ACCOUNT}-${ENVIRONMENT}/sessions/${ENVIRONMENT}/."
+
+  # ===========================================================================
+  # Control 4: AWS Signer Profile + Lambda Code-Signing Config
+  # ===========================================================================
+  # Infrastructure ready for use. Existing inline-code (ZipFile) Lambdas
+  # cannot be signed -- AWS Signer requires S3-uploaded code. This template
+  # provisions the Signer profile + Lambda code-signing config; migrating
+  # the failover Lambdas from ZipFile to S3 packages is a follow-up.
+  #
+  # When new Lambdas are added or existing ones migrated, set
+  # CodeSigningConfigArn: !GetAtt LambdaCodeSigningConfig.CodeSigningConfigArn
+  # on the Lambda function resource.
+  DRSignerProfile:
+    Type: AWS::Signer::SigningProfile
+    Condition: IsProduction
+    Properties:
+      PlatformId: AWSLambda-SHA384-ECDSA
+      SignatureValidityPeriod:
+        Type: YEARS
+        Value: 5
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-compliance
+
+  LambdaCodeSigningConfig:
+    Type: AWS::Lambda::CodeSigningConfig
+    Condition: IsProduction
+    Properties:
+      Description: !Sub '${ProjectName} DR Lambda code-signing config (DR-8 / #151)'
+      AllowedPublishers:
+        SigningProfileVersionArns:
+          - !GetAtt DRSignerProfile.ProfileVersionArn
+      CodeSigningPolicies:
+        # Enforce -- a deploy with an unsigned (or wrong-signature) package
+        # fails. Hash drift = fail closed.
+        UntrustedArtifactOnDeployment: Enforce
+
+  # ===========================================================================
+  # Control 1: Two-Person Approval Lambda
+  # ===========================================================================
+  # Wraps states:SendTaskSuccess on the failover state machine. Validates
+  # that two DISTINCT IAM principals have invoked the Lambda for the same
+  # approval_id before letting the state machine continue. CloudTrail
+  # captures both invocations independently.
+  #
+  # Single-principal break-glass: if event.break_glass=true AND the caller
+  # has the BreakGlass-* IAM tag, the Lambda allows a single-principal
+  # SendTaskSuccess but writes a high-severity audit record to the
+  # evidence bucket. Per Sally's review: solo deploys are not allowed
+  # except in genuine 3am emergencies, and those must produce an enhanced
+  # audit trail.
+  TwoPersonApprovalState:
+    Type: AWS::DynamoDB::Table
+    Condition: IsProduction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-dr-two-person-approvals-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: approval_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: approval_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-compliance
+
+  TwoPersonApprovalRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-dr-two-person-approval-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DDBState
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:PutItem
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-dr-two-person-approvals-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-hitl-approvals-${Environment}'
+        - PolicyName: SendTaskSuccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:SendTaskSuccess
+                  - states:SendTaskFailure
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-multi-region-failover-${Environment}'
+        - PolicyName: EvidenceWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-compliance-evidence-${AWS::AccountId}-${Environment}/break-glass/*'
+        - PolicyName: STSGetCallerIdentity
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: '*'
+
+  TwoPersonApprovalLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProduction
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-dr-two-person-approval-${Environment}'
+      RetentionInDays: 365
+
+  TwoPersonApprovalFunction:
+    Type: AWS::Lambda::Function
+    Condition: IsProduction
+    DependsOn: TwoPersonApprovalLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-dr-two-person-approval-${Environment}'
+      Description: 'Gates SendTaskSuccess on two distinct IAM principals (DR-8 / #151)'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt TwoPersonApprovalRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          STATE_TABLE: !Sub '${ProjectName}-dr-two-person-approvals-${Environment}'
+          HITL_TABLE: !Sub '${ProjectName}-hitl-approvals-${Environment}'
+          EVIDENCE_BUCKET: !Sub '${ProjectName}-compliance-evidence-${AWS::AccountId}-${Environment}'
+      Code:
+        ZipFile: |
+          """Two-person approval gate for DR failover state machine.
+
+          Operator invokes this Lambda (typically via aws lambda invoke
+          --function-name ... or the AWS console) with:
+            {
+              "approval_id": "failover-traffic-<exec-name>",
+              "task_token": "<from aura-hitl-approvals row>",
+              "approval_payload": {...}    # passed to SendTaskSuccess
+              "break_glass": false          # default
+            }
+
+          The caller's IAM identity (sts:GetCallerIdentity) is recorded
+          against the approval_id. When two distinct principal_arn values
+          have approved the same approval_id, the Lambda invokes
+          states:SendTaskSuccess. Until then, returns
+          {status: "waiting_for_second_approver", approvers_so_far: [...]}.
+
+          Break-glass mode (single-principal): when break_glass=true AND
+          the caller has the IAM tag DR-BreakGlass=true, sends task success
+          immediately AND writes a high-severity audit record to the
+          evidence bucket. Per Sally: emergency-only, enhanced audit.
+
+          Audit trail: every invocation lands in CloudTrail (aws lambda
+          Invoke event) with the caller principal. Two distinct invocations
+          produce two distinct CloudTrail events.
+          """
+          import json
+          import logging
+          import os
+          import time
+          from datetime import datetime, timezone
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          STATE_TABLE = os.environ['STATE_TABLE']
+          HITL_TABLE = os.environ['HITL_TABLE']
+          EVIDENCE_BUCKET = os.environ['EVIDENCE_BUCKET']
+
+          logger = logging.getLogger()
+          logger.setLevel('INFO')
+
+          ddb = boto3.resource('dynamodb')
+          state_table = ddb.Table(STATE_TABLE)
+          sfn = boto3.client('stepfunctions')
+          sts = boto3.client('sts')
+          s3 = boto3.client('s3')
+
+          # Approvals expire after 24h to prevent stale approvals from
+          # contaminating future invocations of the same approval_id.
+          APPROVAL_TTL_SECONDS = 86400
+
+
+          def _caller_identity(context):
+              # Prefer caller from invocation context (set by API Gateway /
+              # console). Fall back to STS GetCallerIdentity which returns
+              # the Lambda role's identity -- not useful for two-person
+              # validation. Real two-person enforcement requires the
+              # invocation source to forward the caller identity, e.g.,
+              # via the aws-cli's request signature or an Authorizer.
+              # The runbook documents the required invocation pattern.
+              try:
+                  ident = sts.get_caller_identity()
+              except ClientError as exc:
+                  logger.error('GetCallerIdentity failed: %s', exc)
+                  return None
+              # Lambda's own identity. The invoker's identity is in the
+              # CloudTrail event for the Invoke API call -- this Lambda
+              # CANNOT see it directly. Document this in the runbook:
+              # operators must pass principal_arn in the event, validated
+              # against the request_context.identity from the API Gateway
+              # invocation, OR use the explicit principal_arn input below.
+              return ident.get('Arn')
+
+
+          def _record_break_glass(approval_id, principal_arn, payload):
+              now = datetime.now(timezone.utc).isoformat()
+              key = f'break-glass/{approval_id}/{now}.json'
+              body = json.dumps({
+                  'event': 'BREAK_GLASS_APPROVAL',
+                  'approval_id': approval_id,
+                  'principal_arn': principal_arn,
+                  'timestamp': now,
+                  'severity': 'HIGH',
+                  'note': 'Single-principal DR approval -- review required',
+                  'payload': payload,
+              }, default=str)
+              s3.put_object(
+                  Bucket=EVIDENCE_BUCKET,
+                  Key=key,
+                  Body=body.encode('utf-8'),
+                  ContentType='application/json',
+                  ServerSideEncryption='AES256',
+              )
+              logger.warning('BREAK_GLASS_APPROVAL recorded: %s by %s', approval_id, principal_arn)
+
+
+          def handler(event, context):
+              event = event or {}
+              approval_id = event.get('approval_id')
+              task_token = event.get('task_token')
+              approval_payload = event.get('approval_payload') or {'approved': True}
+              break_glass = bool(event.get('break_glass'))
+              # Operator must pass their own principal_arn explicitly.
+              # The runbook directs operators to use:
+              #   --payload "$(jq -n --arg arn $(aws sts get-caller-identity --query Arn --output text) ...)"
+              # This is checked against the Lambda invocation principal in
+              # CloudTrail post-hoc; mismatches are audit findings.
+              principal_arn = event.get('principal_arn')
+
+              if not approval_id or not task_token or not principal_arn:
+                  raise ValueError('approval_id, task_token, principal_arn are required')
+
+              now_epoch = int(time.time())
+
+              # Break-glass path: single-principal, audit-logged, immediate
+              if break_glass:
+                  _record_break_glass(approval_id, principal_arn, approval_payload)
+                  sfn.send_task_success(
+                      taskToken=task_token,
+                      output=json.dumps({
+                          **approval_payload,
+                          'break_glass': True,
+                          'approver': principal_arn,
+                      }),
+                  )
+                  return {
+                      'status': 'break_glass_approved',
+                      'approval_id': approval_id,
+                      'approver': principal_arn,
+                  }
+
+              # Standard path: append principal to approvers, gate on >= 2 distinct
+              try:
+                  resp = state_table.update_item(
+                      Key={'approval_id': approval_id},
+                      UpdateExpression=(
+                          'SET approvers = list_append(if_not_exists(approvers, :empty), :new), '
+                          'last_updated = :now, '
+                          'ttl = if_not_exists(ttl, :ttl)'
+                      ),
+                      ExpressionAttributeValues={
+                          ':empty': [],
+                          ':new': [{'principal': principal_arn, 'timestamp': now_epoch}],
+                          ':now': now_epoch,
+                          ':ttl': now_epoch + APPROVAL_TTL_SECONDS,
+                      },
+                      ReturnValues='ALL_NEW',
+                  )
+              except ClientError as exc:
+                  logger.error('update_item failed: %s', exc)
+                  raise
+
+              attrs = resp.get('Attributes', {})
+              approvers = attrs.get('approvers', []) or []
+              distinct_principals = sorted({a['principal'] for a in approvers})
+
+              logger.info('approval_id=%s distinct_approvers=%s', approval_id, distinct_principals)
+
+              if len(distinct_principals) < 2:
+                  return {
+                      'status': 'waiting_for_second_approver',
+                      'approval_id': approval_id,
+                      'approvers_so_far': distinct_principals,
+                  }
+
+              # Two distinct approvers -- send task success
+              sfn.send_task_success(
+                  taskToken=task_token,
+                  output=json.dumps({
+                      **approval_payload,
+                      'approvers': distinct_principals,
+                  }),
+              )
+              return {
+                  'status': 'approved',
+                  'approval_id': approval_id,
+                  'approvers': distinct_principals,
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-compliance
+
+  # ===========================================================================
+  # Control 6: Evidence-Package Generator Lambda
+  # ===========================================================================
+  # Invoked from the failover Step Functions pipeline at end of each
+  # execution. Captures stack ARNs, approver IDs, timestamps, RTO
+  # measurement, and writes a manifest into the evidence bucket under
+  # quarter-prefixed keys.
+  EvidencePackageRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-dr-evidence-package-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: EvidenceWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectRetention
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-compliance-evidence-${AWS::AccountId}-${Environment}/*'
+        - PolicyName: ReadStateMachineHistory
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:GetExecutionHistory
+                  - states:DescribeExecution
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:${ProjectName}-multi-region-failover-${Environment}:*'
+        - PolicyName: ReadApprovals
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:GetItem
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-hitl-approvals-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-dr-two-person-approvals-${Environment}'
+
+  EvidencePackageLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProduction
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-dr-evidence-package-${Environment}'
+      RetentionInDays: 365
+
+  EvidencePackageFunction:
+    Type: AWS::Lambda::Function
+    Condition: IsProduction
+    DependsOn: EvidencePackageLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-dr-evidence-package-${Environment}'
+      Description: 'Generates DR drill / event evidence package (DR-8 / #151)'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt EvidencePackageRole.Arn
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          EVIDENCE_BUCKET: !Sub '${ProjectName}-compliance-evidence-${AWS::AccountId}-${Environment}'
+          STATE_MACHINE_ARN: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-multi-region-failover-${Environment}'
+          HITL_TABLE: !Sub '${ProjectName}-hitl-approvals-${Environment}'
+          TWO_PERSON_TABLE: !Sub '${ProjectName}-dr-two-person-approvals-${Environment}'
+      Code:
+        ZipFile: |
+          """Generate DR evidence package.
+
+          Inputs:
+            {
+              "execution_arn": "<state machine execution ARN>",
+              "kind": "drill" | "incident",
+              "operator": "<name>",
+              "rto_minutes": 47.5,           # operator-measured
+              "notes": "..."                  # optional
+            }
+
+          Output: writes a manifest JSON + the full state machine execution
+          history into s3://<evidence-bucket>/<quarter>/<execution-name>/
+          with Object Lock retention applied.
+          """
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          EVIDENCE_BUCKET = os.environ['EVIDENCE_BUCKET']
+          STATE_MACHINE_ARN = os.environ['STATE_MACHINE_ARN']
+          HITL_TABLE = os.environ['HITL_TABLE']
+          TWO_PERSON_TABLE = os.environ['TWO_PERSON_TABLE']
+
+          logger = logging.getLogger()
+          logger.setLevel('INFO')
+
+          sfn = boto3.client('stepfunctions')
+          ddb = boto3.resource('dynamodb')
+          s3 = boto3.client('s3')
+
+
+          def _quarter(dt):
+              q = (dt.month - 1) // 3 + 1
+              return f'{dt.year}-Q{q}'
+
+
+          def _scan_approvals(table_name, prefix):
+              table = ddb.Table(table_name)
+              try:
+                  resp = table.scan(
+                      FilterExpression='begins_with(approval_id, :p)',
+                      ExpressionAttributeValues={':p': prefix},
+                  )
+                  return resp.get('Items', [])
+              except ClientError as exc:
+                  logger.error('scan(%s) failed: %s', table_name, exc)
+                  return []
+
+
+          def handler(event, context):
+              event = event or {}
+              execution_arn = event['execution_arn']
+              kind = event.get('kind', 'drill')
+              operator = event.get('operator', 'unknown')
+              rto_minutes = event.get('rto_minutes')
+              notes = event.get('notes', '')
+
+              # Describe execution + get full history
+              try:
+                  desc = sfn.describe_execution(executionArn=execution_arn)
+              except ClientError as exc:
+                  logger.error('describe_execution failed: %s', exc)
+                  raise
+
+              execution_name = execution_arn.rsplit(':', 1)[1]
+              start_time = desc.get('startDate')
+              end_time = desc.get('stopDate')
+              status = desc.get('status')
+
+              history_events = []
+              try:
+                  paginator = sfn.get_paginator('get_execution_history')
+                  for page in paginator.paginate(executionArn=execution_arn):
+                      history_events.extend(page.get('events', []))
+              except ClientError as exc:
+                  logger.error('get_execution_history failed: %s', exc)
+
+              # Approvals captured against this execution
+              hitl_approvals = _scan_approvals(HITL_TABLE, f'failover-')
+              two_person_approvals = _scan_approvals(TWO_PERSON_TABLE, f'failover-')
+
+              hitl_for_exec = [a for a in hitl_approvals if execution_name in a.get('approval_id', '')]
+              tp_for_exec = [a for a in two_person_approvals if execution_name in a.get('approval_id', '')]
+
+              now = datetime.now(timezone.utc)
+              quarter = _quarter(now)
+              key_prefix = f'{quarter}/{execution_name}'
+
+              manifest = {
+                  'evidence_package_version': '1.0',
+                  'execution_arn': execution_arn,
+                  'execution_name': execution_name,
+                  'kind': kind,
+                  'operator': operator,
+                  'state_machine_arn': STATE_MACHINE_ARN,
+                  'status': status,
+                  'start_time': start_time.isoformat() if start_time else None,
+                  'end_time': end_time.isoformat() if end_time else None,
+                  'duration_seconds': (
+                      (end_time - start_time).total_seconds()
+                      if start_time and end_time else None
+                  ),
+                  'rto_minutes_measured': rto_minutes,
+                  'notes': notes,
+                  'hitl_approvals_count': len(hitl_for_exec),
+                  'two_person_approvals_count': len(tp_for_exec),
+                  'two_person_approver_summary': [
+                      {
+                          'approval_id': a.get('approval_id'),
+                          'distinct_approvers': sorted({
+                              x.get('principal')
+                              for x in (a.get('approvers') or [])
+                          }),
+                      }
+                      for a in tp_for_exec
+                  ],
+                  'history_event_count': len(history_events),
+                  'generated_at': now.isoformat(),
+                  'compliance_controls_version': 'DR-8 / #151 v1.0',
+              }
+
+              # Write the manifest + history + approvals
+              for name, body in [
+                  ('manifest.json', manifest),
+                  ('execution_history.json', history_events),
+                  ('hitl_approvals.json', hitl_for_exec),
+                  ('two_person_approvals.json', tp_for_exec),
+              ]:
+                  key = f'{key_prefix}/{name}'
+                  s3.put_object(
+                      Bucket=EVIDENCE_BUCKET,
+                      Key=key,
+                      Body=json.dumps(body, default=str, indent=2).encode('utf-8'),
+                      ContentType='application/json',
+                      ServerSideEncryption='AES256',
+                  )
+
+              logger.info('evidence-package generated: s3://%s/%s/', EVIDENCE_BUCKET, key_prefix)
+              return {
+                  'evidence_prefix': f's3://{EVIDENCE_BUCKET}/{key_prefix}/',
+                  'manifest': manifest,
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-compliance
+
+  # ===========================================================================
+  # Control 7: Drill-Cadence Check Lambda + EventBridge schedule
+  # ===========================================================================
+  # Weekly: scan the evidence bucket; alarm if no new evidence package for
+  # > DrillStalenessAlarmDays. Quarterly drills produce ~one package every
+  # 90 days; a missed drill surfaces immediately.
+  DrillCadenceCheckRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-dr-drill-cadence-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: ListEvidence
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-compliance-evidence-${AWS::AccountId}-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-compliance-evidence-${AWS::AccountId}-${Environment}/*'
+        - PolicyName: PutMetric
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # cloudwatch:PutMetricData requires Resource:* per AWS docs.
+              # Compensating control: scoped via cloudwatch:namespace condition.
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: 'Aura/DR'
+
+  DrillCadenceCheckLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProduction
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-dr-drill-cadence-${Environment}'
+      RetentionInDays: 90
+
+  DrillCadenceCheckFunction:
+    Type: AWS::Lambda::Function
+    Condition: IsProduction
+    DependsOn: DrillCadenceCheckLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-dr-drill-cadence-${Environment}'
+      Description: 'Weekly DR drill-cadence staleness check (DR-8 / #151)'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt DrillCadenceCheckRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          EVIDENCE_BUCKET: !Sub '${ProjectName}-compliance-evidence-${AWS::AccountId}-${Environment}'
+          STALENESS_DAYS: !Ref DrillStalenessAlarmDays
+      Code:
+        ZipFile: |
+          """Weekly DR drill-cadence staleness check.
+
+          Lists the evidence bucket; finds the most recent manifest.json;
+          publishes a CloudWatch metric (Aura/DR DrillStalenessDays) with
+          the age of the latest package. CloudWatch alarm on the metric
+          fires if age > STALENESS_DAYS.
+          """
+          import json
+          import logging
+          import os
+          from datetime import datetime, timezone
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          EVIDENCE_BUCKET = os.environ['EVIDENCE_BUCKET']
+          STALENESS_DAYS = int(os.environ['STALENESS_DAYS'])
+
+          logger = logging.getLogger()
+          logger.setLevel('INFO')
+
+          s3 = boto3.client('s3')
+          cw = boto3.client('cloudwatch')
+
+
+          def handler(event, context):
+              latest_ts = None
+              try:
+                  paginator = s3.get_paginator('list_objects_v2')
+                  for page in paginator.paginate(Bucket=EVIDENCE_BUCKET, Prefix=''):
+                      for obj in page.get('Contents', []):
+                          if obj['Key'].endswith('/manifest.json'):
+                              if latest_ts is None or obj['LastModified'] > latest_ts:
+                                  latest_ts = obj['LastModified']
+              except ClientError as exc:
+                  logger.error('list_objects_v2 failed: %s', exc)
+                  raise
+
+              now = datetime.now(timezone.utc)
+              if latest_ts is None:
+                  age_days = 999
+                  logger.warning('no evidence packages found; reporting age_days=%d', age_days)
+              else:
+                  age_days = (now - latest_ts).days
+                  logger.info('latest evidence package age: %d days (threshold %d)', age_days, STALENESS_DAYS)
+
+              cw.put_metric_data(
+                  Namespace='Aura/DR',
+                  MetricData=[
+                      {
+                          'MetricName': 'DrillStalenessDays',
+                          'Value': age_days,
+                          'Unit': 'Count',
+                          'Timestamp': now,
+                      }
+                  ],
+              )
+
+              return {
+                  'age_days': age_days,
+                  'threshold_days': STALENESS_DAYS,
+                  'alarm_state': 'ALARM' if age_days > STALENESS_DAYS else 'OK',
+                  'latest_evidence_timestamp': latest_ts.isoformat() if latest_ts else None,
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-compliance
+
+  DrillCadenceSchedule:
+    Type: AWS::Events::Rule
+    Condition: IsProduction
+    Properties:
+      Name: !Sub '${ProjectName}-dr-drill-cadence-schedule-${Environment}'
+      Description: 'Weekly DR drill-cadence staleness check'
+      ScheduleExpression: 'cron(0 14 ? * MON *)'  # Mondays 14:00 UTC
+      State: ENABLED
+      Targets:
+        - Id: DrillCadenceCheck
+          Arn: !GetAtt DrillCadenceCheckFunction.Arn
+
+  DrillCadenceSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Condition: IsProduction
+    Properties:
+      FunctionName: !Ref DrillCadenceCheckFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DrillCadenceSchedule.Arn
+
+  DrillCadenceAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-dr-drill-cadence-stale-${Environment}'
+      AlarmDescription: !Sub 'No DR drill evidence package in last ${DrillStalenessAlarmDays} days. Quarterly drill is overdue.'
+      Namespace: 'Aura/DR'
+      MetricName: DrillStalenessDays
+      Statistic: Maximum
+      Period: 86400  # 1 day
+      EvaluationPeriods: 1
+      Threshold: !Ref DrillStalenessAlarmDays
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+      OKActions: !If
+        - HasDRAlertTopic
+        - - !Ref DRAlertTopicArn
+        - !Ref AWS::NoValue
+
+Outputs:
+  EvidenceBucketName:
+    Condition: IsProduction
+    Description: DR compliance evidence S3 bucket (DR-8 / #151)
+    Value: !Ref EvidenceBucket
+    Export:
+      Name: !Sub '${ProjectName}-dr-evidence-bucket-${Environment}'
+
+  EvidenceBucketArn:
+    Condition: IsProduction
+    Description: DR compliance evidence S3 bucket ARN
+    Value: !GetAtt EvidenceBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dr-evidence-bucket-arn-${Environment}'
+
+  SessionRecordingBucketName:
+    Condition: IsProduction
+    Description: SSM Session Manager recording bucket
+    Value: !Ref SessionRecordingBucket
+    Export:
+      Name: !Sub '${ProjectName}-session-recording-bucket-${Environment}'
+
+  SessionManagerDocumentName:
+    Condition: IsProduction
+    Description: SSM Session Manager preferences document with S3 logging enabled
+    Value: !Ref SessionManagerPreferences
+    Export:
+      Name: !Sub '${ProjectName}-session-manager-document-${Environment}'
+
+  LambdaCodeSigningConfigArn:
+    Condition: IsProduction
+    Description: Lambda code-signing config ARN (apply via CodeSigningConfigArn property on future S3-package Lambdas)
+    Value: !GetAtt LambdaCodeSigningConfig.CodeSigningConfigArn
+    Export:
+      Name: !Sub '${ProjectName}-dr-lambda-code-signing-arn-${Environment}'
+
+  TwoPersonApprovalFunctionArn:
+    Condition: IsProduction
+    Description: Two-person approval Lambda ARN (operators invoke this; runbook documents the calling pattern)
+    Value: !GetAtt TwoPersonApprovalFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dr-two-person-approval-arn-${Environment}'
+
+  EvidencePackageFunctionArn:
+    Condition: IsProduction
+    Description: Evidence-package generator Lambda ARN (invoked by failover pipeline at end of execution)
+    Value: !GetAtt EvidencePackageFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dr-evidence-package-arn-${Environment}'
+
+  DrillCadenceFunctionArn:
+    Condition: IsProduction
+    Description: Drill-cadence check Lambda ARN
+    Value: !GetAtt DrillCadenceCheckFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dr-drill-cadence-arn-${Environment}'

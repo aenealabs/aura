@@ -1,18 +1,112 @@
 name: Dependency Risk Audit
 
+# Recurring weekly audit per docs/security/DEPENDENCY_RISK_REGISTER.md.
+#
+# Runs pip-audit + npm audit + a maintainer-staleness check against the
+# Watch / At-Risk tiers from the register. Posts the report as a comment
+# on the tracking issue.
+
 on:
+  schedule:
+    # 14:00 UTC every Monday (start-of-week, off-peak in us-east-1).
+    - cron: '0 14 * * 1'
   workflow_dispatch:
+  pull_request:
+    # Run on PRs that touch deps so reviewers see the impact of the change.
+    paths:
+      - 'requirements*.txt'
+      - 'deploy/docker/**/requirements*.txt'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'docs/security/DEPENDENCY_RISK_REGISTER.md'
+      - '.github/workflows/dependency-risk-audit.yml'
+      - 'scripts/security/dep_risk_audit.py'
 
 permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   audit:
+    name: Dependency Risk Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
-      - run: echo "node only"
+
+      - name: Install audit tools
+        run: |
+          # pip-audit: PyPA official tool for Python CVE scanning.
+          # No other audit deps -- the script uses stdlib only and
+          # the npm CLI ships with the runner.
+          pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Install project deps for staleness check
+        run: |
+          # Staleness check uses `pip show` to read installed metadata,
+          # so we install the tracked Watch / At-Risk packages. This
+          # is intentionally narrow -- the audit doesn't need the full
+          # project install, only the deps it tracks for staleness.
+          pip install -r requirements.txt || true
+
+      - name: Install frontend deps for npm audit
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run audit
+        run: |
+          REPORT_PATH="reports/dep-audit-$(date -u +%Y-%m-%d).md"
+          mkdir -p reports
+          python -m scripts.security.dep_risk_audit --output "$REPORT_PATH"
+          echo "REPORT_PATH=$REPORT_PATH" >> $GITHUB_ENV
+          # Surface the report into the workflow summary so a quick
+          # glance at the run page tells the story.
+          cat "$REPORT_PATH" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload audit report artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-risk-audit-${{ github.run_number }}
+          path: ${{ env.REPORT_PATH }}
+          retention-days: 90
+
+      - name: Post report to tracking issue
+        # Skip on PRs (the workflow summary covers it) and on
+        # workflow_dispatch (the operator can read the run page).
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Tracking issue is #138 (created when this workflow lands).
+          # If the issue doesn't exist, fail soft -- the report is
+          # still in the artifact and the workflow summary.
+          if gh issue view 138 --repo ${{ github.repository }} > /dev/null 2>&1; then
+            COMMENT="$(printf '%s\n\n_Run: %s/%s/actions/runs/%s_\n' \
+              "$(cat "$REPORT_PATH")" \
+              "${{ github.server_url }}" \
+              "${{ github.repository }}" \
+              "${{ github.run_id }}")"
+            echo "$COMMENT" | gh issue comment 138 \
+              --repo ${{ github.repository }} \
+              --body-file - || \
+              echo '::warning::Failed to post audit report to issue #138'
+          else
+            echo '::warning::Tracking issue #138 not found; report is in artifacts only.'
+          fi

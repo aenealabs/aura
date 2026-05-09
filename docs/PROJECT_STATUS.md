@@ -1,7 +1,7 @@
 # Project Aura: Development Status
 
 **Last Assessment:** May 9, 2026
-**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) at 11/13 sub-issues closed.
+**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**.
 
 ---
 
@@ -72,7 +72,7 @@
 | GPU Workload Scheduler | Complete | Self-service GPU jobs, queue management, 391 tests (ADR-061) |
 | Constraint Geometry Engine | Phase 1 | 7-axis constraint space, 358 tests (ADR-081) |
 
-### Disaster Recovery (Umbrella #143)
+### Disaster Recovery (Umbrella #143 -- COMPLETE, all 13 sub-issues closed)
 
 | Sub-Issue | Status | Details |
 |-----------|--------|---------|
@@ -86,9 +86,18 @@
 | DR-4 (#147) | Closed | OpenSearch cross-region failover via AWS Backup hourly snapshots + cross-region copy + `OPENSEARCH_FAILOVER_RUNBOOK.md` (HourlyBackupPlan extended with CopyActions; OpenSearchBackupSelection added) |
 | DR-5 (#148) | Closed | S3 cross-region replication on `ArtifactsBucket` + `CodeRepositoryBucket` (`s3.yaml` modified, `s3-replica.yaml` Layer 2.21); constructed-ARN replication role |
 | DR-6 (#149) | Closed | Secrets Manager native multi-region replicas for 10 Tier 1 secrets (Bedrock config, API keys, JWT signing keys, IdP credentials) |
+| DR-7 (#150) | Closed | Multi-region failover orchestration pipeline: `multi-region-failover.yaml` (Layer 5.15) provides Route 53 health checks + failover records + 3 cutover Lambdas (Cognito hydrator trigger, Cognito SSM cutover, data-plane secret cutover); `multi-region-pipeline.yaml` (Layer 6.22) is a Step Functions Standard state machine with HITL approval gates at every destructive step + dual execution modes (failover / rollback); operator runbook `MULTI_REGION_DR_OPERATIONS.md` composes the per-service runbooks into a single sequence |
+| DR-8 (#151) | Closed | NIST 800-53 compliance controls (Sally's seven): `dr-compliance-controls.yaml` (Layer 5.16) deploys evidence S3 bucket (Object Lock GOVERNANCE 7yr) + evidence-package generator Lambda (wired into pipeline at every terminal state) + two-person approval Lambda (gates SendTaskSuccess on two distinct IAM principals + break-glass mode) + AWS Signer profile + Lambda code-signing config (infrastructure ready) + SSM Session Manager S3-logged session-recording bucket + custom session preferences SSM document + drill-cadence check Lambda (weekly EventBridge, alarm > 90d). Operator guide: `DR_COMPLIANCE_CONTROLS_GUIDE.md`. Auditor's killer question -- *"show me the last successful end-to-end failover with measured RTO and approval chain"* -- now answered with `s3://aura-compliance-evidence-{account}-prod/<quarter>/<execution>/manifest.json`. |
 | DR-9 (#152) | Closed | Cross-region drift detection + observability: `dr-monitoring.yaml` (Layer 5.14) deploys SNS topic, weekly drift-detection Lambda, cross-region CloudWatch dashboard |
-| DR-7 (#150) | Open | Multi-region failover orchestration pipeline (Route 53 health checks, cutover Step Functions, codifies the 3 failover runbooks) |
-| DR-8 (#151) | Open | DR compliance controls (Sally's seven: two-person integrity on prod failover, pre-signed change-sets, session recording, NIST CP-2/CP-9/CP-10 evidence) -- depends on DR-7 |
+
+**DR follow-ups (tracked separately, not blocking the umbrella close):**
+- IAM policy split for DR-8 Control 2 (release-manager vs on-call roles)
+- S3-package migration for the ~6 inline-code failover Lambdas to actually use the DR-8 Control 4 Signer profile
+- `aws:RequestedRegion` conditions on failover Lambda assume-role policies (DR-8 Control 5)
+- One-time SSM Session Manager default-document console selection
+- `SECURITY.md` SaaS DR scope-statement update reflecting the now-audit-defensible posture
+- Hourly Neptune backup selection (currently daily; closes the Tier 2 RPO 1h gap that's documented in `NEPTUNE_FAILOVER_RUNBOOK.md`)
+- Pre-staged secondary-region service foundation templates for Neptune + OpenSearch (subnet groups + security groups; shaves ~10 min off RTO per the runbooks)
 
 ### Integrations & Deployment
 

@@ -390,6 +390,8 @@ Technical documentation for developers, cybersecurity professionals, and IT admi
 | [runbooks/NEPTUNE_FAILOVER_RUNBOOK.md](runbooks/NEPTUNE_FAILOVER_RUNBOOK.md) | DR-3 (#146): Neptune cross-region failover via AWS Backup snapshot restore (CFN does not support Neptune Global Database) |
 | [runbooks/OPENSEARCH_FAILOVER_RUNBOOK.md](runbooks/OPENSEARCH_FAILOVER_RUNBOOK.md) | DR-4 (#147): OpenSearch cross-region failover via AWS Backup hourly snapshots with cross-region copy |
 | [runbooks/COGNITO_FAILOVER_RUNBOOK.md](runbooks/COGNITO_FAILOVER_RUNBOOK.md) | DR-2 (#145): Cognito cross-region failover via Lambda-based user-mirror Global Table + standby pool + hydrator (ADR-091) |
+| [runbooks/MULTI_REGION_DR_OPERATIONS.md](runbooks/MULTI_REGION_DR_OPERATIONS.md) | DR-7 (#150): End-to-end multi-region failover orchestration -- prerequisites, 4-phase failover sequence (initiate / data-plane / traffic / rollback), drill cadence; composes the Neptune / OpenSearch / Cognito per-service runbooks |
+| [runbooks/DR_COMPLIANCE_CONTROLS_GUIDE.md](runbooks/DR_COMPLIANCE_CONTROLS_GUIDE.md) | DR-8 (#151): NIST 800-53 compliance controls (Sally's seven) -- two-person approval, evidence packages, drill-cadence enforcement, Signer profile, session recording |
 
 ### Operations (docs/operations/)
 | File | Purpose |

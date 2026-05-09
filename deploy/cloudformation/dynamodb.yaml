@@ -265,8 +265,10 @@ Resources:
   # Platform Settings Table
   PlatformSettingsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    # DR-1 PR1 (#144): prep for type-swap to AWS::DynamoDB::GlobalTable.
+    # Reverts to Retain on the new GlobalTable resource in PR3.
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub '${ProjectName}-platform-settings-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -367,8 +369,10 @@ Resources:
   # Autonomy Policies Table - stores organization autonomy configurations
   AutonomyPoliciesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    # DR-1 PR1 (#144): prep for type-swap to AWS::DynamoDB::GlobalTable.
+    # Reverts to Retain on the new GlobalTable resource in PR3.
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub '${ProjectName}-autonomy-policies-${Environment}'
       BillingMode: PAY_PER_REQUEST

@@ -16,8 +16,10 @@ Resources:
   # Repositories Table - Stores connected repository metadata
   RepositoriesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    # DR-1 PR1 (#144): prep for type-swap to AWS::DynamoDB::GlobalTable.
+    # Reverts to Retain on the new GlobalTable resource in PR4.
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub '${ProjectName}-repositories-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -65,8 +67,10 @@ Resources:
   # OAuth Connections Table - Stores OAuth provider connections
   OAuthConnectionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    # DR-1 PR1 (#144): prep for type-swap to AWS::DynamoDB::GlobalTable.
+    # Reverts to Retain on the new GlobalTable resource in PR4.
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub '${ProjectName}-oauth-connections-${Environment}'
       BillingMode: PAY_PER_REQUEST

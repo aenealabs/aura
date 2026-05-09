@@ -32,8 +32,14 @@ Resources:
   # Supports multiple IdPs per org with priority-based routing
   IdPConfigurationsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    # DR-1 PR1 (#144): DeletionPolicy=Delete prepares this Tier 1 table for the
+    # two-phase type-swap to AWS::DynamoDB::GlobalTable. Reverts to Retain on
+    # the new GlobalTable resource once PR2 ships. With no production data,
+    # the delete-on-stack-update is acceptable; without this prep, the type
+    # swap fails because CFN would retain the physical table while trying to
+    # create a new GlobalTable with the same name. See Tara's review.
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub '${ProjectName}-idp-configurations-${Environment}'
       BillingMode: PAY_PER_REQUEST

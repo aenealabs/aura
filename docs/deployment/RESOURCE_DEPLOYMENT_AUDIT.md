@@ -8,6 +8,7 @@
 > read DEPLOYMENT_GUIDE.md first; this doc assumes that
 > baseline.
 
+> **Buildspec topology note (May 2026):** Per the #131 buildspec line-cap remediation, the modular sub-buildspecs referenced throughout this audit (`buildspec-application-bedrock.yml`, `buildspec-application-ecr.yml`, `buildspec-application-irsa.yml`, `buildspec-application-k8s.yml`, `buildspec-serverless-lambdas.yml`, `buildspec-serverless-stacks.yml`, `buildspec-serverless-security.yml`, `buildspec-serverless-scheduling.yml`, `buildspec-sandbox-infrastructure.yml`, `buildspec-sandbox-catalog.yml`, `buildspec-sandbox-advanced.yml`) were **deleted as dead code** -- they were empty scaffolds that the parent CodeBuild projects never invoked. Each parent-layer buildspec (`buildspec-application.yml`, `buildspec-serverless.yml`, `buildspec-sandbox.yml`) now deploys its full layer in a single buildspec, with `TimeoutInMinutes: 480` (cold-start runtime budget) replacing the prior 600-line cap. References to the deleted files in this snapshot should be read as "the parent layer's single buildspec deploys this resource." Sub-layer indirection now flows through Step Functions when genuinely required (see `codebuild-serverless-symbol-resolver.yaml`, `application-identity`, `serverless-documentation`).
 
 **Last Updated:** 2026-01-15
 **Purpose:** Comprehensive documentation of all AWS resources and their deployment methods for platform support team

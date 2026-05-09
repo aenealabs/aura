@@ -52,6 +52,6 @@
 
 **Why:** `eslint-plugin-react@7.37.5` (latest, last released 2025-04-03) caps its peer-eslint range at `^9.7`. Our project uses `eslint@10.x` (GA 2026-02-06). Upstream has not shipped eslint@10 peer support; without `--legacy-peer-deps`, npm refuses to resolve.
 
-**Tracked as:** At-Risk in `docs/security/DEPENDENCY_RISK_REGISTER.md`. Replacement plan: swap to `@eslint-react/eslint-plugin` (active fork, native eslint@10 support) — see follow-up issue.
+**Tracked as:** At-Risk in `docs/security/DEPENDENCY_RISK_REGISTER.md`. Replacement plan: swap to `@eslint-react/eslint-plugin` (active fork, native eslint@10 support) — tracked as issue #142, **deferred per its own trigger conditions** (no date-based deadline). The swap fires when *any one* of: (a) `eslint-plugin-react` goes >18 months without an eslint@10 peer-support release, (b) a CVE lands without an upstream fix, or (c) `eslint@9.x` reaches EOL. Re-evaluation runs on the weekly #138 dependency-risk audit cycle.
 
 **Caveat of the workaround:** `--legacy-peer-deps` is not scoped — it silences *all* peer-dep conflicts, not just this one. If a future PR introduces an unrelated peer-dep regression, the flag will paper over it. When picking up this directory, do a one-time `npm install` *without* the flag to verify no new conflicts have been masked, then proceed with `--legacy-peer-deps` for routine work.

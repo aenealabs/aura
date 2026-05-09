@@ -1,7 +1,7 @@
 # Disaster Recovery
 
-**Version:** 1.1
-**Last Updated:** May 2026
+**Version:** 1.2
+**Last Updated:** May 9, 2026
 **Product:** Project Aura by Aenea Labs
 
 ---
@@ -16,7 +16,7 @@
 
 This document describes Project Aura's disaster recovery (DR) strategy, including backup procedures, recovery objectives, and failover processes. The DR architecture is designed to meet enterprise requirements for business continuity.
 
-> **State of this document (May 2026):** Sections below are split into **Current** (what is deployed and verifiable today) and **Target** (what is committed but not yet implemented). The split was added during a May 2026 honesty pass after a deploy-chain audit found the multi-region orchestration template (`multi-region-global.yaml`) was detection / notification only -- no actual failover capability. The template has been archived. Tier 1 RTO/RPO targets are aspirational pending the implementation tracked under the DR initiative (umbrella issue).
+> **State of this document (May 9, 2026):** Sections below are split into **Current** (what is deployed and verifiable today) and **Target** (what is committed but not yet implemented). The Current/Target split was added during a May 2026 honesty pass after a deploy-chain audit found the original multi-region orchestration template (`multi-region-global.yaml`) was detection / notification only -- no actual failover capability. That template has been archived and replaced by `multi-region-failover.yaml` (Layer 5.15) + `multi-region-pipeline.yaml` (Layer 6.22) under DR-7. The DR umbrella initiative (#143) closed all 13 sub-issues by May 9, 2026; the Tier 1 RTO/RPO targets are now backed by deployed infrastructure, not aspirational. Cross-region runbooks, evidence-package generation, and HITL-gated Step Functions failover orchestration are operational. The Current/Target split is preserved below as a historical record of the work delivered.
 
 ---
 
@@ -81,14 +81,14 @@ What the original document claimed but is not yet deployed:
 - ~~Secrets Manager multi-region replicas for the Tier 1 secrets the failover path will need (DR-6).~~ **DONE -- closed by DR-6 (#149).** See "Currently Operational Capabilities" above.
 - ~~Multi-region failover orchestration (Route 53 failover records, the actual decision-and-cutover Lambda, drift detection on cross-region resources). The previous orchestration stub (`multi-region-global.yaml`) was detection / notification only and has been archived (DR-7).~~ **Closed via DR-7 (#150)** -- `multi-region-failover.yaml` (Layer 5.15, Route 53 health checks + failover records + cutover Lambdas) and `multi-region-pipeline.yaml` (Layer 6.22, Step Functions orchestrator with HITL approval gates) deployed together with `docs/runbooks/MULTI_REGION_DR_OPERATIONS.md`.
 - ~~Sally's compliance controls for DR operations: two-person integrity on prod failover deploys, pre-signed change-sets, session recording, evidence-package generation for NIST CP-2/CP-9/CP-10 audit trail (DR-8).~~ **Closed via DR-8 (#151)** -- 7 controls deployed via `dr-compliance-controls.yaml` (Layer 5.16) + `multi-region-pipeline.yaml` evidence-capture states. Operator guide: `docs/runbooks/DR_COMPLIANCE_CONTROLS_GUIDE.md`.
-- Drift detection + observability federation across regions (DR-9).
+- ~~Drift detection + observability federation across regions (DR-9).~~ **Closed via DR-9 (#152)** -- `dr-monitoring.yaml` (Layer 5.14) deploys SNS topic, weekly drift-detection Lambda, and cross-region CloudWatch dashboard; nine replication-lag alarms (5min threshold, 1/3 of RPO 15min budget) wired to the DR alert SNS.
 
-Each gap is tracked as a sub-issue under the umbrella DR initiative. Until the matched sub-issue closes, the corresponding Tier-1 RTO commitment is **aspirational, not contractual**.
+**The DR initiative (#143) is closed (May 2026): all 13 sub-issues resolved.** The Tier-1 RTO/RPO commitments are now backed by deployed infrastructure, not just aspirational targets. The "Currently Operational Capabilities" section above describes the deployed posture.
 
 ### Audit / Compliance Posture
 
 - The **Backup tier** (AWS Backup vault + PITR + cross-region backup copy) is audit-defensible today: deployments are codified, backups are enumerable via the AWS Backup API, restore procedures are documented and tested.
-- The **Failover tier** (sub-1h RTO via cross-region active-passive) is now audit-defensible. The full DR initiative (#143) is closed; auditors asking *"show me the last successful end-to-end failover with measured RTO and approval chain"* are answered with `s3://aura-compliance-evidence-{account}-prod/<quarter>/<execution-name>/manifest.json` produced by DR-8's evidence-package generator. The `SECURITY.md` SaaS DR scope statement should be updated to reflect this; track as a follow-up.
+- The **Failover tier** (sub-1h RTO via cross-region active-passive) is now audit-defensible. The full DR initiative (#143) is closed; auditors asking *"show me the last successful end-to-end failover with measured RTO and approval chain"* are answered with `s3://aura-compliance-evidence-{account}-prod/<quarter>/<execution-name>/manifest.json` produced by DR-8's evidence-package generator. The `SECURITY.md` SaaS DR scope statement was updated in May 2026 to reflect this audit-defensible posture.
 
 ---
 

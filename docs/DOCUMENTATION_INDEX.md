@@ -490,27 +490,18 @@ Documentation and modular buildspec architecture for CodeBuild deployments.
 |------|---------|
 | [../deploy/buildspecs/README.md](../deploy/buildspecs/README.md) | Modular buildspec architecture documentation |
 
-**Application Layer Sub-Buildspecs (Layer 4):**
-| File | Purpose |
-|------|---------|
-| [../deploy/buildspecs/buildspec-application-ecr.yml](../deploy/buildspecs/buildspec-application-ecr.yml) | ECR repositories, dnsmasq image build (Layer 4.1) |
-| [../deploy/buildspecs/buildspec-application-bedrock.yml](../deploy/buildspecs/buildspec-application-bedrock.yml) | Bedrock, Cognito, Guardrails, Onboarding (Layer 4.2) |
-| [../deploy/buildspecs/buildspec-application-irsa.yml](../deploy/buildspecs/buildspec-application-irsa.yml) | IRSA roles for EKS workloads (Layer 4.3) |
-| [../deploy/buildspecs/buildspec-application-k8s.yml](../deploy/buildspecs/buildspec-application-k8s.yml) | Kubernetes manifest deployments (Layer 4.4) |
+**Parent-Layer Buildspecs:**
 
-**Serverless Layer Sub-Buildspecs (Layer 6):**
-| File | Purpose |
-|------|---------|
-| [../deploy/buildspecs/buildspec-serverless-security.yml](../deploy/buildspecs/buildspec-serverless-security.yml) | Permission boundary, IAM alerting (Layer 6.0) |
-| [../deploy/buildspecs/buildspec-serverless-lambdas.yml](../deploy/buildspecs/buildspec-serverless-lambdas.yml) | Lambda packaging and S3 upload (Layer 6.1) |
-| [../deploy/buildspecs/buildspec-serverless-stacks.yml](../deploy/buildspecs/buildspec-serverless-stacks.yml) | All serverless CloudFormation stacks (Layer 6.2) |
+> **Note (May 2026):** Per #131, the modular sub-buildspec scaffolds for Application (Layer 4), Serverless (Layer 6), and Sandbox (Layer 7) were deleted as dead code. Each parent-layer CodeBuild project now deploys its full layer in a single buildspec, with `TimeoutInMinutes: 480` (cold-start runtime budget) replacing the prior 600-line cap. Sub-layer indirection now flows through Step Functions when genuinely required (see `codebuild-serverless-symbol-resolver.yaml` model and `application-identity` / `serverless-documentation` in `deployment-pipeline.yaml`).
 
-**Sandbox Layer Sub-Buildspecs (Layer 7):**
 | File | Purpose |
 |------|---------|
-| [../deploy/buildspecs/buildspec-sandbox-infrastructure.yml](../deploy/buildspecs/buildspec-sandbox-infrastructure.yml) | Core sandbox, state table, IAM roles (Layer 7.1-7.4) |
-| [../deploy/buildspecs/buildspec-sandbox-catalog.yml](../deploy/buildspecs/buildspec-sandbox-catalog.yml) | Service Catalog, Approval, Monitoring, Budgets (Layer 7.4-7.7) |
-| [../deploy/buildspecs/buildspec-sandbox-advanced.yml](../deploy/buildspecs/buildspec-sandbox-advanced.yml) | Scheduler, Namespace Controller, Marketplace (Layer 7.8-7.10) |
+| [../deploy/buildspecs/buildspec-application.yml](../deploy/buildspecs/buildspec-application.yml) | Application layer (ECR, Bedrock, Cognito, IRSA, Kubernetes manifests) |
+| [../deploy/buildspecs/buildspec-application-identity.yml](../deploy/buildspecs/buildspec-application-identity.yml) | IdP infrastructure sub-layer (loud-fail; on customer auth path) |
+| [../deploy/buildspecs/buildspec-serverless.yml](../deploy/buildspecs/buildspec-serverless.yml) | Serverless layer (permission boundary, Lambda packaging, all serverless stacks) |
+| [../deploy/buildspecs/buildspec-serverless-symbol-resolver.yml](../deploy/buildspecs/buildspec-serverless-symbol-resolver.yml) | Symbol-resolver sub-layer wired via Step Functions |
+| [../deploy/buildspecs/buildspec-serverless-documentation.yml](../deploy/buildspecs/buildspec-serverless-documentation.yml) | Documentation sub-layer (non-blocking per ADR-056) |
+| [../deploy/buildspecs/buildspec-sandbox.yml](../deploy/buildspecs/buildspec-sandbox.yml) | Sandbox layer (core sandbox, state table, IAM, Service Catalog, scheduler, namespace controller, marketplace) |
 
 **Shared Utility Scripts (deploy/scripts/):**
 | File | Purpose |

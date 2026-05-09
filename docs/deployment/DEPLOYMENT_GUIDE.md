@@ -2161,7 +2161,7 @@ Continuous Model Assurance gates every model swap with provenance verification, 
 | **2.7** | `model-assurance-storage.yaml` | `buildspec-data.yml` | DynamoDB tables (registry, oracle, runs, audit), S3 buckets (proofs, bundles), KMS-CMK |
 | **5.7** | `model-assurance-monitoring.yaml` | `buildspec-observability.yml` | CloudWatch alarms, dashboards, SNS topics, CloudTrail event subscriptions (13 event types x 6 NIST controls: CM-3, CM-5, SA-10, SI-7, RA-5, AU-3) |
 | **6.7** | `model-assurance-pipeline.yaml` | `buildspec-serverless.yml` | Step Functions state machine orchestrating Scout -> Provenance -> Frozen Oracle -> Sandbox -> Shadow -> HITL |
-| **7.7** | `model-assurance-sandbox.yaml` | `buildspec-sandbox-infrastructure.yml` | Zero-egress evaluation sandbox (ECS task def gated by `aws:RequestTag/Project`), IAM forbidden-action gate |
+| **7.7** | `model-assurance-sandbox.yaml` | `buildspec-sandbox.yml` | Zero-egress evaluation sandbox (ECS task def gated by `aws:RequestTag/Project`), IAM forbidden-action gate |
 
 **API Surface:**
 
@@ -2186,8 +2186,8 @@ Continuous Model Assurance gates every model swap with provenance verification, 
 
 ---
 
-**Deployment Guide Version:** 1.10
-**Last Updated:** May 6, 2026
+**Deployment Guide Version:** 1.11
+**Last Updated:** May 9, 2026
 **Maintainer:** Project Aura DevOps Team
 
 **Questions or Issues?** Reference the troubleshooting section above or review the comprehensive documentation in the repository.

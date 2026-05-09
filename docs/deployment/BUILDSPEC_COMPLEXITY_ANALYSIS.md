@@ -1,13 +1,14 @@
 # Buildspec Complexity Analysis
 
 > **Canonical doc:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
-> **This doc covers:** Buildspec topology rationale (parent → sub-child pattern, 600-line cap, CodeBuild timeout mitigation).
+> **This doc covers:** Buildspec topology rationale (parent -> sub-child pattern, runtime-budget rule, CodeBuild timeout mitigation).
 >
 > For the streamlined one-command deploy (`./deploy/deploy.sh
 > deploy <env>`) and the prerequisites-and-bootstrap quickstart,
 > read DEPLOYMENT_GUIDE.md first; this doc assumes that
 > baseline.
 
+> **Status update (May 2026):** Per the #131 buildspec line-cap remediation, the original 600-line cap rule referenced throughout this document has been **superseded** by a runtime-budget rule. Cold-start `TimeoutInMinutes` (now 480 on each of the four parent CodeBuild projects: application, serverless, sandbox, observability) is the actual constraint, not line count. Eleven empty sub-layer scaffold buildspecs were deleted (-1,467 LOC). Parent -> sub-layer CodeBuild nesting is forbidden going forward; sub-layer indirection (when genuinely required) flows through Step Functions instead, following the `codebuild-serverless-symbol-resolver.yaml` model. See `deploy/buildspecs/CLAUDE.md` Critical Rules 4 and 5 for the current canonical guidance. The body of this document is preserved as a historical record of the original Phase 2 modularization analysis.
 
 Analysis of 11 CloudFormation templates without deployment pipelines and assessment of existing buildspec complexity to determine the best deployment strategy.
 

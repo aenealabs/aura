@@ -112,7 +112,9 @@ To keep the producer-side surface focused, the following are explicitly **not** 
 
 Multi-region disaster recovery (active failover, cross-region replication, RTO / RPO commitments documented in `docs/support/architecture/disaster-recovery.md`) applies to the Aenea Labs SaaS deployment only. **Self-hosted Aura customers (ADR-049) are responsible for their own continuity planning** per their deployment model -- their RTO / RPO depends on their own backup, replication, and failover setup, which is outside the Aura platform's purview.
 
-The DR doc's component table distinguishes deployed capabilities from target / aspirational capabilities. Self-hosted operators reading the DR doc should treat the entire document as guidance for one possible deployment topology (the one Aenea Labs runs), not as a contract about what their own deployment delivers.
+The DR initiative (umbrella issue #143) is **complete -- all 13 sub-issues closed (May 2026)**. SaaS DR posture is now audit-defensible: every regional failover runs through a Step Functions Standard pipeline (`multi-region-pipeline.yaml`, Layer 6.22) with HITL approval gates at every destructive step, and an evidence-package generator Lambda (DR-8 / #151) writes a manifest, state-machine history, and approval chain into `s3://aura-compliance-evidence-{account}-prod/<quarter>/<execution>/manifest.json` with Object Lock GOVERNANCE 7-year retention. Auditors asking "show me the last successful end-to-end failover with measured RTO and approval chain" can be answered directly from that bucket. Per-service runbooks: `NEPTUNE_FAILOVER_RUNBOOK.md`, `OPENSEARCH_FAILOVER_RUNBOOK.md`, `COGNITO_FAILOVER_RUNBOOK.md`. Operator runbook composing them: `MULTI_REGION_DR_OPERATIONS.md`. Compliance controls guide: `DR_COMPLIANCE_CONTROLS_GUIDE.md`.
+
+Self-hosted operators reading the DR doc should treat it as guidance for one possible deployment topology (the one Aenea Labs runs), not as a contract about what their own deployment delivers.
 
 ## Security Design Principles
 

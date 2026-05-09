@@ -340,6 +340,7 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 - **ADR-085**: Deterministic Verification Envelope (DO-178C, N-of-M consensus, MC/DC, Z3 formal verification)
 - **ADR-087**: Hyperscale Agent Orchestration
 - **ADR-088**: Continuous Model Assurance (provenance, frozen oracle, anti-Goodhart, rollback)
+- **ADR-091**: Cognito Cross-Region Disaster Recovery (Lambda-based mirror to DDB Global Table, standby pool, force re-auth on failover)
 
 ---
 
@@ -349,7 +350,7 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 |--------|-------|
 | Lines of Code | 375,000+ |
 | Test Suite | 24,800+ tests (0 failures) |
-| Architecture Decision Records | 89 ADRs |
+| Architecture Decision Records | 91 ADRs |
 | CloudFormation Templates | 183 (24 CodeBuild + 159 infrastructure) |
 | Infrastructure Phases | 9 of 9 complete |
 

@@ -1,9 +1,9 @@
 # Project Aura - System Architecture
 
-**Version:** 2.6
-**Last Updated:** February 11, 2026
-**Status:** All 9 Phases Deployed (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
-**ADRs:** 84 Architecture Decision Records (83 Deployed/Accepted, 1 Proposed)
+**Version:** 2.7
+**Last Updated:** May 9, 2026
+**Status:** All 9 Phases Deployed (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**.
+**ADRs:** 91 Architecture Decision Records (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089])
 
 ---
 
@@ -879,14 +879,16 @@ Platform Default: on_demand
 
 ## Deployment Topology
 
-**Current State (Phase 1 + Phase 2 Ready)**
+**Current State (All 9 Phases Deployed; DR initiative #143 closed May 2026)**
+
+> **Note:** The diagrams below were authored in late 2025 and retained for historical reference of the original Phase 1 / Phase 2 split. The deployment state has since advanced -- all 9 infrastructure phases (Foundation through Scanning Engine) are deployed, and the Disaster Recovery umbrella (#143) closed all 13 sub-issues in May 2026. See `docs/PROJECT_STATUS.md` for the current canonical state.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          Deployment Status                                  │
+│                Deployment Status (Historical Snapshot)                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  Phase 1: DEPLOYED ✅                                                       │
+│  Phase 1: DEPLOYED                                                          │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │  AWS Commercial Cloud (us-east-1)                                    │   │
 │  │                                                                      │   │
@@ -898,7 +900,7 @@ Platform Default: on_demand
 │  │  • Workloads: VPC Endpoints + Flow Logs                              │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  Phase 2: READY FOR DEPLOYMENT ⚠️                                           │
+│  Phase 2: SUPERSEDED (now deployed)                                         │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │  OpenSearch Domain                                                   │   │
 │  │  • CloudFormation template: 685 lines ✅                             │   │
@@ -936,23 +938,25 @@ Platform Default: on_demand
 
 ## Summary
 
-**Project Aura System Architecture - February 11, 2026**
+**Project Aura System Architecture - May 9, 2026**
 
 **Key Achievements:**
-- ✅ **All 8 Infrastructure Phases Deployed** - Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security
-- ✅ **84 ADRs (83 Deployed/Accepted, 1 Proposed)** - Architecture Decision Records
-- ✅ **Full Hybrid GraphRAG Complete** - Vector + Graph + BM25 search with 5 query types (Issue #151)
-- ✅ **Agent Orchestrator Warm Pool** - Hybrid architecture with zero cold start
-- ✅ **UI-Configurable Deployment Modes** - On-demand, warm pool, and hybrid with per-org overrides
-- ✅ **Cloud Abstraction Layer (ADR-004)** - Multi-cloud AWS/Azure support, 5 service abstractions
-- ✅ **Titan Neural Memory (ADR-024)** - 237 tests, 5 phases deployed, cognitive architecture operational
-- ✅ **Context Engineering (ADR-034)** - 7 services deployed: scoring, registry, stack, retrieval, hoprag, mcp, summarization
-- ✅ **AWS Agent Parity (ADR-037)** - 27 services total: AgentCore, Security, DevOps, Transform, Phase 2
-- ✅ **EKS Cluster Operational** - EC2 Managed Node Groups for GovCloud compatibility
-- ✅ **Security Services Deployed** - 5 Python services, 328 tests, CloudFormation infrastructure
-- ✅ **IAM Permissions Scoped** - Neptune/RDS and OpenSearch permissions scoped to project-specific ARNs
-- ✅ **8,113 Tests Passing** - Comprehensive test coverage including 328 security tests
-- ✅ **Comprehensive Documentation** - Security incident response, developer guidelines, compliance mapping
+- **All 9 Infrastructure Phases Deployed** - Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine
+- **91 ADRs** - Architecture Decision Records (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089]); ADR-090 GraphRAG ingestion edge completeness and ADR-091 Cognito cross-region DR added in May 2026
+- **Disaster Recovery initiative complete** - Umbrella #143 closed with all 13 sub-issues; SaaS now has audit-defensible cross-region failover with HITL gates and evidence packages (DR-1 DynamoDB Global Tables, DR-2 Cognito Lambda mirror per ADR-091, DR-3 Neptune AWS Backup CRR, DR-4 OpenSearch hourly snapshot CRR, DR-5 S3 CRR, DR-6 Secrets Manager multi-region replicas, DR-7 Step Functions failover pipeline, DR-8 NIST 800-53 evidence packages, DR-9 drift detection)
+- **Buildspec line-cap remediation complete** - Umbrella #131 closed; runtime-budget rule (cold-start `TimeoutInMinutes` 480) replaces 600-line cap; 11 dead scaffold buildspecs deleted (-1,467 LOC); parent->sub-layer CodeBuild nesting forbidden; sub-layer indirection now flows through Step Functions (#157 wired application-identity loud-fail and serverless-documentation non-blocking)
+- **Full Hybrid GraphRAG Complete** - Vector + Graph + BM25 search with 5 query types (Issue #151)
+- **Agent Orchestrator Warm Pool** - Hybrid architecture with zero cold start
+- **UI-Configurable Deployment Modes** - On-demand, warm pool, and hybrid with per-org overrides
+- **Cloud Abstraction Layer (ADR-004)** - Multi-cloud AWS/Azure support, 5 service abstractions
+- **Titan Neural Memory (ADR-024)** - 237 tests, 5 phases deployed, cognitive architecture operational
+- **Context Engineering (ADR-034)** - 7 services deployed: scoring, registry, stack, retrieval, hoprag, mcp, summarization
+- **AWS Agent Parity (ADR-037)** - 27 services total: AgentCore, Security, DevOps, Transform, Phase 2
+- **EKS Cluster Operational** - EC2 Managed Node Groups for GovCloud compatibility
+- **Security Services Deployed** - 5 Python services, 328 tests, CloudFormation infrastructure
+- **IAM Permissions Scoped** - Neptune/RDS and OpenSearch permissions scoped to project-specific ARNs
+- **24,800+ Tests Passing** - Comprehensive test coverage (0 failures) including 328 security-specific tests
+- **Comprehensive Documentation** - Security incident response, developer guidelines, compliance mapping
 
 **Architecture Highlights:**
 - **Hybrid Deployment:** ECS Fargate (dev/sandboxes) + EKS EC2 (production)
@@ -978,7 +982,7 @@ Platform Default: on_demand
 
 ---
 
-**Document Version:** 2.6
-**Last Updated:** February 11, 2026
+**Document Version:** 2.7
+**Last Updated:** May 9, 2026
 **Status:** Current and Accurate
-**ADRs:** 84 Architecture Decision Records (83 Deployed/Accepted, 1 Proposed)
+**ADRs:** 91 Architecture Decision Records (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089])

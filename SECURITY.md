@@ -108,6 +108,12 @@ To keep the producer-side surface focused, the following are explicitly **not** 
 - **SaaS customers**: advisories are informational. Our deployment fix is your fix; the next deploy of `aura.aenealabs.com` (typically hours after the patch lands) protects you implicitly. The advisory still publishes so your security team has an auditable record.
 - **Self-hosted (ADR-049) customers**: advisories are actionable. The patched release is on the registry; you decide when to pull and redeploy. The advisory tells you what's affected, how severe it is, and what's mitigated.
 
+### Disaster-recovery scope: SaaS only
+
+Multi-region disaster recovery (active failover, cross-region replication, RTO / RPO commitments documented in `docs/support/architecture/disaster-recovery.md`) applies to the Aenea Labs SaaS deployment only. **Self-hosted Aura customers (ADR-049) are responsible for their own continuity planning** per their deployment model -- their RTO / RPO depends on their own backup, replication, and failover setup, which is outside the Aura platform's purview.
+
+The DR doc's component table distinguishes deployed capabilities from target / aspirational capabilities. Self-hosted operators reading the DR doc should treat the entire document as guidance for one possible deployment topology (the one Aenea Labs runs), not as a contract about what their own deployment delivers.
+
 ## Security Design Principles
 
 Project Aura follows these security principles:

@@ -97,6 +97,29 @@ Resources:
                 Value: dr-replica
           - !Ref AWS::NoValue
 
+  # ===========================================================================
+  # Replication-lag alarm for RepositoriesTable (DR-9 partial / #152)
+  # ===========================================================================
+  RepositoriesReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-repositories-replication-lag-${Environment}'
+      AlarmDescription: 'RepositoriesTable cross-region replication latency exceeded 5min threshold'
+      Namespace: AWS/DynamoDB
+      MetricName: ReplicationLatency
+      Dimensions:
+        - Name: TableName
+          Value: !Sub '${ProjectName}-repositories-${Environment}'
+        - Name: ReceivingRegion
+          Value: !Ref SecondaryRegion
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
   # OAuth Connections Table - Stores OAuth provider connections
   OAuthConnectionsTable:
     Type: AWS::DynamoDB::GlobalTable
@@ -170,6 +193,29 @@ Resources:
               - Key: Role
                 Value: dr-replica
           - !Ref AWS::NoValue
+
+  # ===========================================================================
+  # Replication-lag alarm for OAuthConnectionsTable (DR-9 partial / #152)
+  # ===========================================================================
+  OAuthConnectionsReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-oauth-connections-replication-lag-${Environment}'
+      AlarmDescription: 'OAuthConnectionsTable cross-region replication latency exceeded 5min threshold'
+      Namespace: AWS/DynamoDB
+      MetricName: ReplicationLatency
+      Dimensions:
+        - Name: TableName
+          Value: !Sub '${ProjectName}-oauth-connections-${Environment}'
+        - Name: ReceivingRegion
+          Value: !Ref SecondaryRegion
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
 
   # Repository Ingestion Jobs Table - Tracks repository ingestion job status
   RepositoryIngestionJobsTable:

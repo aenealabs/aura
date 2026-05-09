@@ -85,6 +85,29 @@ Resources:
                 Value: dr-replica
           - !Ref AWS::NoValue
 
+  # ===========================================================================
+  # Replication-lag alarm for UserOnboardingTable (DR-9 partial / #152)
+  # ===========================================================================
+  UserOnboardingReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-user-onboarding-replication-lag-${Environment}'
+      AlarmDescription: 'UserOnboardingTable cross-region replication latency exceeded 5min threshold'
+      Namespace: AWS/DynamoDB
+      MetricName: ReplicationLatency
+      Dimensions:
+        - Name: TableName
+          Value: !Sub '${ProjectName}-user-onboarding-${Environment}'
+        - Name: ReceivingRegion
+          Value: !Ref SecondaryRegion
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
   # Team Invitations Table - Stores pending team invitations
   TeamInvitationsTable:
     Type: AWS::DynamoDB::GlobalTable
@@ -162,6 +185,29 @@ Resources:
               - Key: Role
                 Value: dr-replica
           - !Ref AWS::NoValue
+
+  # ===========================================================================
+  # Replication-lag alarm for TeamInvitationsTable (DR-9 partial / #152)
+  # ===========================================================================
+  TeamInvitationsReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-team-invitations-replication-lag-${Environment}'
+      AlarmDescription: 'TeamInvitationsTable cross-region replication latency exceeded 5min threshold'
+      Namespace: AWS/DynamoDB
+      MetricName: ReplicationLatency
+      Dimensions:
+        - Name: TableName
+          Value: !Sub '${ProjectName}-team-invitations-${Environment}'
+        - Name: ReceivingRegion
+          Value: !Ref SecondaryRegion
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
 
   # S3 Bucket for Onboarding Videos
   OnboardingVideosBucket:

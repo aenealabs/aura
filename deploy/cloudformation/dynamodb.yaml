@@ -331,6 +331,29 @@ Resources:
                 Value: dr-replica
           - !Ref AWS::NoValue
 
+  # ===========================================================================
+  # Replication-lag alarm for PlatformSettingsTable (DR-9 partial / #152)
+  # ===========================================================================
+  PlatformSettingsReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-platform-settings-replication-lag-${Environment}'
+      AlarmDescription: 'PlatformSettingsTable cross-region replication latency exceeded 5min threshold'
+      Namespace: AWS/DynamoDB
+      MetricName: ReplicationLatency
+      Dimensions:
+        - Name: TableName
+          Value: !Sub '${ProjectName}-platform-settings-${Environment}'
+        - Name: ReceivingRegion
+          Value: !Ref SecondaryRegion
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
   # Anomaly Audit Trail Table
   AnomaliesTable:
     Type: AWS::DynamoDB::Table
@@ -455,6 +478,29 @@ Resources:
               - Key: Role
                 Value: dr-replica
           - !Ref AWS::NoValue
+
+  # ===========================================================================
+  # Replication-lag alarm for AutonomyPoliciesTable (DR-9 partial / #152)
+  # ===========================================================================
+  AutonomyPoliciesReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-autonomy-policies-replication-lag-${Environment}'
+      AlarmDescription: 'AutonomyPoliciesTable cross-region replication latency exceeded 5min threshold'
+      Namespace: AWS/DynamoDB
+      MetricName: ReplicationLatency
+      Dimensions:
+        - Name: TableName
+          Value: !Sub '${ProjectName}-autonomy-policies-${Environment}'
+        - Name: ReceivingRegion
+          Value: !Ref SecondaryRegion
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
 
   # Autonomy Policy Audit Table - audit trail for policy changes
   PolicyAuditTable:

@@ -508,6 +508,30 @@ Resources:
                               "Parameters": {
                                 "ProjectName": "${ProjectName}-application-deploy-${Environment}"
                               },
+                              "ResultPath": "$.applicationBuild",
+                              "Next": "DeployApplicationIdentity"
+                            },
+                            "DeployApplicationIdentity": {
+                              "Type": "Task",
+                              "Comment": "ADR-054 Multi-IdP infrastructure sub-layer. Runs after the parent application layer. LOUD-FAIL on error (Macy review, #157): IdP is on the customer auth path; silent failure means users locked out at next login with no deploy-time signal. No Catch -- failures bubble up to the state machine for explicit operator alarm via SNS.",
+                              "Resource": "arn:${AWS::Partition}:states:::codebuild:startBuild.sync",
+                              "Parameters": {
+                                "ProjectName": "${ProjectName}-application-identity-deploy-${Environment}"
+                              },
+                              "Retry": [
+                                {
+                                  "ErrorEquals": ["States.TaskFailed"],
+                                  "IntervalSeconds": 30,
+                                  "MaxAttempts": 2,
+                                  "BackoffRate": 2.0
+                                },
+                                {
+                                  "ErrorEquals": ["States.Timeout", "CodeBuild.AWSCodeBuildException"],
+                                  "IntervalSeconds": 60,
+                                  "MaxAttempts": 1
+                                }
+                              ],
+                              "ResultPath": "$.applicationIdentityBuild",
                               "End": true
                             }
                           }
@@ -535,6 +559,48 @@ Resources:
                                 "ProjectName": "${ProjectName}-serverless-deploy-${Environment}"
                               },
                               "ResultPath": "$.serverlessBuild",
+                              "Next": "DeployServerlessDocumentation"
+                            },
+                            "DeployServerlessDocumentation": {
+                              "Type": "Task",
+                              "Comment": "ADR-056 Cloud Discovery + Calibration Pipeline sub-layer. Runs after the parent serverless layer publishes its exports. Non-blocking on failure: operational support (cloud discovery + calibration), not platform-critical. Failure routes to ServerlessDocumentationFailed Pass state, which then continues to symbol-resolver -- the two sub-layers are independent and shouldn't gate each other.",
+                              "Resource": "arn:${AWS::Partition}:states:::codebuild:startBuild.sync",
+                              "Parameters": {
+                                "ProjectName": "${ProjectName}-serverless-documentation-deploy-${Environment}"
+                              },
+                              "Retry": [
+                                {
+                                  "ErrorEquals": ["States.TaskFailed"],
+                                  "IntervalSeconds": 30,
+                                  "MaxAttempts": 2,
+                                  "BackoffRate": 2.0
+                                },
+                                {
+                                  "ErrorEquals": ["States.Timeout", "CodeBuild.AWSCodeBuildException"],
+                                  "IntervalSeconds": 60,
+                                  "MaxAttempts": 1
+                                }
+                              ],
+                              "Catch": [
+                                {
+                                  "ErrorEquals": ["States.ALL"],
+                                  "ResultPath": "$.serverlessDocumentationError",
+                                  "Next": "ServerlessDocumentationFailed"
+                                }
+                              ],
+                              "ResultPath": "$.documentationBuild",
+                              "Next": "DeploySymbolResolverLayer"
+                            },
+                            "ServerlessDocumentationFailed": {
+                              "Type": "Pass",
+                              "Comment": "Cloud discovery / calibration pipeline deploy failed - non-blocking. Continues to symbol-resolver.",
+                              "Parameters": {
+                                "subLayer": "serverless-documentation",
+                                "status": "skipped-on-failure",
+                                "executionArn.$": "$$.Execution.Id",
+                                "cause.$": "$.serverlessDocumentationError.Cause"
+                              },
+                              "ResultPath": "$.documentationBuild",
                               "Next": "DeploySymbolResolverLayer"
                             },
                             "DeploySymbolResolverLayer": {
@@ -544,6 +610,19 @@ Resources:
                               "Parameters": {
                                 "ProjectName": "${ProjectName}-serverless-symbol-resolver-deploy-${Environment}"
                               },
+                              "Retry": [
+                                {
+                                  "ErrorEquals": ["States.TaskFailed"],
+                                  "IntervalSeconds": 30,
+                                  "MaxAttempts": 2,
+                                  "BackoffRate": 2.0
+                                },
+                                {
+                                  "ErrorEquals": ["States.Timeout", "CodeBuild.AWSCodeBuildException"],
+                                  "IntervalSeconds": 60,
+                                  "MaxAttempts": 1
+                                }
+                              ],
                               "Catch": [
                                 {
                                   "ErrorEquals": ["States.ALL"],
@@ -551,14 +630,17 @@ Resources:
                                   "Next": "SymbolResolverFailed"
                                 }
                               ],
+                              "ResultPath": "$.symbolResolverBuild",
                               "End": true
                             },
                             "SymbolResolverFailed": {
                               "Type": "Pass",
                               "Comment": "Symbol resolver deployment failed - non-blocking",
-                              "Result": {
-                                "status": "FAILED",
-                                "message": "Symbol resolver (ADR-090 6.20) deployment failed (non-blocking)"
+                              "Parameters": {
+                                "subLayer": "serverless-symbol-resolver",
+                                "status": "skipped-on-failure",
+                                "executionArn.$": "$$.Execution.Id",
+                                "cause.$": "$.symbolResolverError.Cause"
                               },
                               "End": true
                             }

@@ -248,6 +248,16 @@ jobs:
 
       - name: Push fix to feature branch
         if: steps.changes.outputs.has_changes == 'true' && steps.target.outputs.open_pr == 'false'
+        env:
+          # CWE-78 mitigation (CodeQL #271): branch + fix_type values
+          # taint-flow from a workflow_run event source. Pass via env so
+          # the shell sees properly-quoted variables rather than the raw
+          # ${{ }} substitution being inlined into the script body.
+          # WORKFLOW_RUN_URL is GitHub-constructed and safe but env-var'd
+          # for defense-in-depth + pattern parity.
+          TARGET_BRANCH: ${{ steps.target.outputs.branch }}
+          FIX_TYPE: ${{ needs.analyze-failure.outputs.fix_type }}
+          WORKFLOW_RUN_URL: ${{ github.event.workflow_run.html_url || 'manual' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -255,12 +265,12 @@ jobs:
           git commit -m "fix: auto-fix CI issues (formatting, imports)
 
           Applied automatic fixes for:
-          - ${{ needs.analyze-failure.outputs.fix_type }}
+          - $FIX_TYPE
 
-          Triggered by: ${{ github.event.workflow_run.html_url || 'manual' }}"
+          Triggered by: $WORKFLOW_RUN_URL"
           # Push to the same branch the failed run was on. This works
           # for feature branches but is rejected for main (protected).
-          git push origin HEAD:${{ steps.target.outputs.branch }}
+          git push origin "HEAD:$TARGET_BRANCH"
 
       - name: Open fixup PR for protected branch
         if: steps.changes.outputs.has_changes == 'true' && steps.target.outputs.open_pr == 'true'

@@ -31,15 +31,14 @@ Resources:
   # Stores identity provider configurations per organization
   # Supports multiple IdPs per org with priority-based routing
   IdPConfigurationsTable:
-    Type: AWS::DynamoDB::Table
-    # DR-1 PR1 (#144): DeletionPolicy=Delete prepares this Tier 1 table for the
-    # two-phase type-swap to AWS::DynamoDB::GlobalTable. Reverts to Retain on
-    # the new GlobalTable resource once PR2 ships. With no production data,
-    # the delete-on-stack-update is acceptable; without this prep, the type
-    # swap fails because CFN would retain the physical table while trying to
-    # create a new GlobalTable with the same name. See Tara's review.
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    Type: AWS::DynamoDB::GlobalTable
+    # DR-1 PR2 (#144): Tier 1 GlobalTable. Replicates to ${SecondaryRegion}
+    # in production. Per-region customer-managed CMKs (DR-1.0 / #153) for
+    # auth-credential encryption. Returns to Retain (safe default) now that
+    # the type swap is complete. Replication-lag alarm tracked separately
+    # under DR-9 partial (#152).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${ProjectName}-idp-configurations-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -56,7 +55,7 @@ Resources:
         - AttributeName: idp_id
           KeyType: HASH
       GlobalSecondaryIndexes:
-        # Query all IdPs for an organization, ordered by priority
+        # Query all IdPs for an organization, ordered by priority.
         - IndexName: organization-priority-index
           KeySchema:
             - AttributeName: organization_id
@@ -65,27 +64,60 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
-        # Route authentication based on email domain
+        # Route authentication based on email domain.
         - IndexName: email-domain-index
           KeySchema:
             - AttributeName: email_domain
               KeyType: HASH
           Projection:
             ProjectionType: ALL
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+      # StreamSpecification is REQUIRED on GlobalTable; the streams power the
+      # cross-region replication itself. Application-layer stream consumers
+      # are unaffected (none on this table per the pre-conversion audit).
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
       SSESpecification:
         SSEEnabled: true
-        SSEType: KMS
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-idp-configurations-${Environment}'
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: identity
+      Replicas:
+        # Primary region replica. Uses the regional CMK alias from kms.yaml
+        # (DR-1.0); the alias resolves in the deployed region's KMS context.
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          SSESpecification:
+            KMSMasterKeyId: !Sub 'alias/${ProjectName}-auth-credentials-${Environment}'
+          Tags:
+            - Key: Name
+              Value: !Sub '${ProjectName}-idp-configurations-${Environment}'
+            - Key: Project
+              Value: !Ref ProjectName
+            - Key: Environment
+              Value: !Ref Environment
+            - Key: Component
+              Value: identity
+        # Secondary region replica (production only). Uses the independent
+        # CMK alias from kms-replica-secondary.yaml (DR-1.0); the alias
+        # resolves in the secondary region's KMS context where DynamoDB
+        # creates the replica.
+        - !If
+          - IsProduction
+          - Region: !Ref SecondaryRegion
+            PointInTimeRecoverySpecification:
+              PointInTimeRecoveryEnabled: true
+            SSESpecification:
+              KMSMasterKeyId: !Sub 'alias/${ProjectName}-auth-credentials-${Environment}-dr'
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-idp-configurations-${Environment}-dr'
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Component
+                Value: identity
+              - Key: Role
+                Value: dr-replica
+          - !Ref AWS::NoValue
 
   # ===========================================================================
   # IdP Audit Log Table

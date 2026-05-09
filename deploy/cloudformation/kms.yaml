@@ -502,6 +502,92 @@ Resources:
       AliasName: !Sub 'alias/${ProjectName}-app-${Environment}'
       TargetKeyId: !Ref ApplicationKMSKey
 
+  # ===========================================================================
+  # AuthCredentialsKMSKey (DR-1.0 / #153)
+  # ===========================================================================
+  # Customer-managed CMK for the auth-credential-bearing DynamoDB tables that
+  # DR-1 (#144) replicates as Global Tables -- specifically IdPConfigurationsTable
+  # and OAuthConnectionsTable. This is the PRIMARY-REGION key. The secondary-
+  # region key is INDEPENDENT (NOT a multi-region replica) per Sally's SC-12
+  # guidance ("do not share keys across regions") and Tara's per-region CMK
+  # recommendation -- a compromised primary key must NOT also compromise the
+  # secondary region. The secondary-region key lives in
+  # deploy/cloudformation/kms-replica-secondary.yaml.
+  AuthCredentialsKMSKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} auth credentials encryption key (DR-1 IdPConfigurations + OAuthConnections)'
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+
+          - Sid: AllowCloudFormationTagManagement
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:TagResource, kms:UntagResource, kms:ListResourceTags]
+            Resource: '*'
+
+          # CodeBuild roles - key administration (pattern-based to avoid
+          # circular dependency on individual role ARNs).
+          - Sid: AllowCodeBuildKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Create*, kms:Describe*, kms:Enable*, kms:List*, kms:Put*, kms:Update*, kms:Revoke*, kms:Disable*, kms:Get*, kms:Delete*, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          # DynamoDB service principal - SSE on Global Tables.
+          # Region-bound via aws:SourceRegion / kms:CallerAccount; the secondary
+          # region's replica key has its own analogous statement scoped to
+          # us-west-2.
+          - Sid: AllowDynamoDBServiceRegional
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+                aws:SourceRegion: !Ref AWS::Region
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: AuthCredentialsEncryption
+        - Key: DataClassification
+          Value: Restricted
+        - Key: ReplicationPair
+          Value: !Sub '${ProjectName}-auth-credentials-${Environment}'
+
+  AuthCredentialsKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-auth-credentials-${Environment}'
+      TargetKeyId: !Ref AuthCredentialsKMSKey
+
 # =============================================================================
 # Outputs - Export key ARNs for consumer stacks
 # =============================================================================
@@ -553,3 +639,15 @@ Outputs:
     Value: !Ref ApplicationKMSKey
     Export:
       Name: !Sub '${ProjectName}-app-kms-key-id-${Environment}'
+
+  AuthCredentialsKMSKeyArn:
+    Description: KMS key ARN for auth-credential DynamoDB tables (DR-1.0 / #153)
+    Value: !GetAtt AuthCredentialsKMSKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-auth-credentials-kms-key-arn-${Environment}'
+
+  AuthCredentialsKMSKeyId:
+    Description: KMS key ID for auth-credential DynamoDB tables (DR-1.0 / #153)
+    Value: !Ref AuthCredentialsKMSKey
+    Export:
+      Name: !Sub '${ProjectName}-auth-credentials-kms-key-id-${Environment}'

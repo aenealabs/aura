@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 1.X - KMS Auth Credentials Key (Secondary Region for DR-1.0/#153)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Customer-managed CMK in the SECONDARY region (default us-west-2) that
+# encrypts the secondary-region replicas of the auth-credential DynamoDB
+# Global Tables -- specifically IdPConfigurationsTable and OAuthConnectionsTable.
+#
+# This key is INDEPENDENT of the primary-region AuthCredentialsKMSKey, NOT a
+# multi-region replica. Per Sally's review (NIST 800-53 SC-12) and Tara's
+# AWS-architect guidance:
+#
+#   "Use KMSMasterKeyId per replica with separate regional CMKs, key policies
+#    allowing the DynamoDB service principal in each region."
+#
+# The point: a compromised primary key must NOT also compromise the secondary
+# region. Multi-Region Keys (MRKs) share the same key material across regions
+# and would violate this principle. Independent keys mean separate key
+# policies, separate rotation schedules, and separate audit trails.
+#
+# Deployment: this template is deployed to the SECONDARY region. Until DR-7
+# (#150) lands an orchestration pipeline, deploy manually:
+#
+#   aws cloudformation deploy \
+#       --stack-name aura-kms-replica-secondary-prod \
+#       --template-file deploy/cloudformation/kms-replica-secondary.yaml \
+#       --parameter-overrides Environment=prod ProjectName=aura \
+#       --capabilities CAPABILITY_NAMED_IAM \
+#       --region us-west-2 \
+#       --no-fail-on-empty-changeset
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Conditions:
+  # DR-1.0 (#153): only deploy the secondary-region key in production. dev/qa
+  # don't run cross-region replication, and the cost of an unused CMK
+  # (~$1/month) plus the operational overhead of an extra key rotation is
+  # avoided by gating on prod.
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  AuthCredentialsReplicaKey:
+    Type: AWS::KMS::Key
+    Condition: IsProduction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} auth credentials encryption key (secondary region, DR-1.0)'
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+
+          - Sid: AllowCloudFormationTagManagement
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:TagResource, kms:UntagResource, kms:ListResourceTags]
+            Resource: '*'
+
+          # CodeBuild roles - same convention as primary kms.yaml.
+          - Sid: AllowCodeBuildKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: [kms:Create*, kms:Describe*, kms:Enable*, kms:List*, kms:Put*, kms:Update*, kms:Revoke*, kms:Disable*, kms:Get*, kms:Delete*, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+
+          # DynamoDB service - SSE for the secondary-region replicas of the
+          # auth Global Tables. Region-bound: this statement only allows
+          # use in the SECONDARY region (where this template is deployed).
+          - Sid: AllowDynamoDBServiceSecondaryRegion
+            Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref AWS::AccountId
+                aws:SourceRegion: !Ref AWS::Region
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: AuthCredentialsEncryption
+        - Key: DataClassification
+          Value: Restricted
+        - Key: Role
+          Value: dr-replica-key
+        - Key: ReplicationPair
+          Value: !Sub '${ProjectName}-auth-credentials-${Environment}'
+
+  AuthCredentialsReplicaKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: IsProduction
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-auth-credentials-${Environment}-dr'
+      TargetKeyId: !Ref AuthCredentialsReplicaKey
+
+Outputs:
+  AuthCredentialsReplicaKeyArn:
+    Condition: IsProduction
+    Description: KMS key ARN for secondary-region auth credentials encryption
+    Value: !GetAtt AuthCredentialsReplicaKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-auth-credentials-replica-kms-key-arn-${Environment}'
+
+  AuthCredentialsReplicaKeyId:
+    Condition: IsProduction
+    Description: KMS key ID for secondary-region auth credentials encryption
+    Value: !Ref AuthCredentialsReplicaKey
+    Export:
+      Name: !Sub '${ProjectName}-auth-credentials-replica-kms-key-id-${Environment}'

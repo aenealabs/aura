@@ -1,0 +1,424 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.X - Audit Pipeline (Streams + Kinesis + Firehose + S3 Object Lock for DR-1.1/#154)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Audit-shape DR pattern for the 3 Tier 1 audit tables:
+#
+#   IdPAuditTable           (idp-infrastructure.yaml)  -- IdP authentication audit
+#   AutonomyDecisionsTable  (dynamodb.yaml)            -- HITL approval decisions
+#   PolicyAuditTable        (dynamodb.yaml)            -- Policy change audit
+#
+# Per Sally's review (NIST 800-53 AU-9 / AU-9(1) / AU-11), audit data
+# requires protection from unauthorized modification. DynamoDB Global Tables'
+# last-writer-wins replication permits clock-skewed overwrites of audit
+# records -- a real compliance finding -- so audit tables stay region-bound
+# regular DynamoDB tables; their Streams feed a Kinesis -> Firehose -> S3
+# pipeline where Object Lock (governance mode) prevents modification.
+#
+# Pattern (per table):
+#
+#   AuditTable (DDB regional)
+#       |
+#       +-- DDB Streams (NEW_AND_OLD_IMAGES)
+#              |
+#              +-- Kinesis Data Stream (this template)
+#                     |
+#                     +-- Kinesis Firehose Delivery Stream (this template)
+#                            |
+#                            +-- S3 audit bucket (Object Lock, governance mode)
+#                                  |
+#                                  +-- CRR to secondary-region replica
+#                                        (audit-pipeline-replica.yaml)
+#
+# Failover read access: Athena queries against the audit bucket (or its
+# replica during DR) so audit retrieval remains queryable in either region.
+#
+# Deployment ordering:
+#   1. Deploy this template (creates Kinesis streams used as source ARNs)
+#   2. Deploy idp-infrastructure.yaml + dynamodb.yaml updates that
+#      add KinesisStreamSpecification to the 3 audit tables (separate PR)
+#   3. Deploy audit-pipeline-replica.yaml in the secondary region (manual
+#      until DR-7 / #150 lands an orchestration pipeline)
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: |
+      Secondary AWS region for audit log cross-region replication.
+      Production environments only.
+
+  ObjectLockRetentionDays:
+    Type: Number
+    Default: 2557
+    Description: |
+      Object Lock retention period in days for audit records (default
+      ~7 years to align with SOX evidentiary retention requirements;
+      adjust if compliance regime changes). Governance mode allows
+      privileged users to override under documented break-glass; for
+      compliance mode (truly immutable) modify after team review.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # Audit S3 bucket (Object Lock + CRR target)
+  # ===========================================================================
+  # Single shared bucket for all 3 audit tables; Firehose delivery streams
+  # use a per-table prefix so audit boundaries stay clean (table=<name>/...).
+  # Object Lock REQUIRES the bucket to be created with ObjectLockEnabled: true
+  # at creation time -- cannot be enabled retroactively.
+  AuditBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-audit-${AWS::AccountId}-${Environment}'
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: GOVERNANCE
+            Days: !Ref ObjectLockRetentionDays
+      VersioningConfiguration:
+        # REQUIRED for both Object Lock AND for cross-region replication.
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToColdStorage
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 365
+                StorageClass: GLACIER
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      ReplicationConfiguration: !If
+        - IsProduction
+        - Role: !GetAtt AuditReplicationRole.Arn
+          Rules:
+            - Id: ReplicateAuditToSecondary
+              Status: Enabled
+              Priority: 1
+              Filter:
+                Prefix: ''
+              DeleteMarkerReplication:
+                # Tombstones do NOT propagate cross-region. With Object Lock
+                # active deletion is constrained anyway; defensive-belt.
+                Status: Disabled
+              Destination:
+                Bucket: !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-audit-${AWS::AccountId}-${Environment}-dr'
+                StorageClass: STANDARD
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-audit-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DataClassification
+          Value: ComplianceAudit
+        - Key: ReplicationDestinationRegion
+          Value: !Ref SecondaryRegion
+
+  # ===========================================================================
+  # IAM role for cross-region replication of the audit bucket (prod only)
+  # ===========================================================================
+  AuditReplicationRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-audit-replication-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # Source-bucket ARNs constructed from naming pattern (not !GetAtt)
+        # to avoid the bucket -> role -> bucket circular dependency,
+        # consistent with the DR-5 S3ReplicationRole pattern.
+        - PolicyName: ReplicationSourceRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetReplicationConfiguration, s3:ListBucket]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-audit-${AWS::AccountId}-${Environment}'
+              - Effect: Allow
+                Action:
+                  - s3:GetObjectVersionForReplication
+                  - s3:GetObjectVersionAcl
+                  - s3:GetObjectVersionTagging
+                  - s3:GetObjectRetention
+                  - s3:GetObjectLegalHold
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-audit-${AWS::AccountId}-${Environment}/*'
+        - PolicyName: ReplicationDestinationWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ReplicateObject
+                  - s3:ReplicateDelete
+                  - s3:ReplicateTags
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-audit-${AWS::AccountId}-${Environment}-dr/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # Kinesis Data Streams - one per audit table
+  # ===========================================================================
+  # Per-table streams keep audit boundaries clean (independent shard scaling,
+  # per-table backpressure, per-table monitoring). Tables reference these
+  # via KinesisStreamSpecification in a follow-up PR.
+  IdPAuditKinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub '${ProjectName}-idp-audit-stream-${Environment}'
+      ShardCount: 1
+      RetentionPeriodHours: 24
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: alias/aws/kinesis
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: SourceTable
+          Value: !Sub '${ProjectName}-idp-audit-${Environment}'
+
+  AutonomyDecisionsKinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub '${ProjectName}-autonomy-decisions-stream-${Environment}'
+      ShardCount: 1
+      RetentionPeriodHours: 24
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: alias/aws/kinesis
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: SourceTable
+          Value: !Sub '${ProjectName}-autonomy-decisions-${Environment}'
+
+  PolicyAuditKinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub '${ProjectName}-policy-audit-stream-${Environment}'
+      ShardCount: 1
+      RetentionPeriodHours: 24
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: alias/aws/kinesis
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: SourceTable
+          Value: !Sub '${ProjectName}-policy-audit-${Environment}'
+
+  # ===========================================================================
+  # IAM role for Kinesis Firehose
+  # ===========================================================================
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-audit-firehose-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: FirehoseKinesisRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:DescribeStream
+                  - kinesis:GetShardIterator
+                  - kinesis:GetRecords
+                  - kinesis:ListShards
+                Resource:
+                  - !GetAtt IdPAuditKinesisStream.Arn
+                  - !GetAtt AutonomyDecisionsKinesisStream.Arn
+                  - !GetAtt PolicyAuditKinesisStream.Arn
+        - PolicyName: FirehoseS3Write
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - !GetAtt AuditBucket.Arn
+                  - !Sub '${AuditBucket.Arn}/*'
+        - PolicyName: FirehoseLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/${ProjectName}-audit-*:log-stream:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ===========================================================================
+  # Firehose Delivery Streams - one per audit table
+  # ===========================================================================
+  # Each stream delivers records to the shared S3 bucket under a table-name
+  # prefix so partitioned Athena queries against the audit lake stay clean.
+  IdPAuditFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub '${ProjectName}-idp-audit-firehose-${Environment}'
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !GetAtt IdPAuditKinesisStream.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt AuditBucket.Arn
+        Prefix: !Sub 'table=${ProjectName}-idp-audit/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/'
+        ErrorOutputPrefix: !Sub 'errors/table=${ProjectName}-idp-audit/'
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        RoleARN: !GetAtt FirehoseRole.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AutonomyDecisionsFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub '${ProjectName}-autonomy-decisions-firehose-${Environment}'
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !GetAtt AutonomyDecisionsKinesisStream.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt AuditBucket.Arn
+        Prefix: !Sub 'table=${ProjectName}-autonomy-decisions/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/'
+        ErrorOutputPrefix: !Sub 'errors/table=${ProjectName}-autonomy-decisions/'
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        RoleARN: !GetAtt FirehoseRole.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  PolicyAuditFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub '${ProjectName}-policy-audit-firehose-${Environment}'
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !GetAtt PolicyAuditKinesisStream.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt AuditBucket.Arn
+        Prefix: !Sub 'table=${ProjectName}-policy-audit/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/'
+        ErrorOutputPrefix: !Sub 'errors/table=${ProjectName}-policy-audit/'
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        RoleARN: !GetAtt FirehoseRole.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  AuditBucketName:
+    Description: Audit bucket name
+    Value: !Ref AuditBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-AuditBucketName'
+
+  AuditBucketArn:
+    Description: Audit bucket ARN
+    Value: !GetAtt AuditBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AuditBucketArn'
+
+  IdPAuditKinesisStreamArn:
+    Description: Kinesis stream ARN -- source for IdPAuditTable's KinesisStreamSpecification
+    Value: !GetAtt IdPAuditKinesisStream.Arn
+    Export:
+      Name: !Sub '${ProjectName}-idp-audit-kinesis-stream-arn-${Environment}'
+
+  AutonomyDecisionsKinesisStreamArn:
+    Description: Kinesis stream ARN -- source for AutonomyDecisionsTable's KinesisStreamSpecification
+    Value: !GetAtt AutonomyDecisionsKinesisStream.Arn
+    Export:
+      Name: !Sub '${ProjectName}-autonomy-decisions-kinesis-stream-arn-${Environment}'
+
+  PolicyAuditKinesisStreamArn:
+    Description: Kinesis stream ARN -- source for PolicyAuditTable's KinesisStreamSpecification
+    Value: !GetAtt PolicyAuditKinesisStream.Arn
+    Export:
+      Name: !Sub '${ProjectName}-policy-audit-kinesis-stream-arn-${Environment}'

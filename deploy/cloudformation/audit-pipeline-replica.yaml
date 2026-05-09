@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.X - Audit Pipeline Replica Bucket (Secondary Region for DR-1.1/#154)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Cross-region replica destination for the audit S3 bucket created by
+# audit-pipeline.yaml in the primary region. The audit bucket holds
+# compliance-grade records (NIST 800-53 AU-9) that must survive a primary-
+# region failure with RPO ~15min.
+#
+# Object Lock is enabled on this destination too: replicated audit records
+# stay immutable in the secondary region, matching the protection in
+# the primary.
+#
+# Deployment: this template is deployed to the SECONDARY region. Until
+# DR-7 (#150) lands an orchestration pipeline, deploy manually:
+#
+#   aws cloudformation deploy \
+#       --stack-name aura-audit-pipeline-replica-prod \
+#       --template-file deploy/cloudformation/audit-pipeline-replica.yaml \
+#       --parameter-overrides Environment=prod ProjectName=aura \
+#       --capabilities CAPABILITY_NAMED_IAM \
+#       --region us-west-2 \
+#       --no-fail-on-empty-changeset
+#
+# This deployment must precede the primary-region audit-pipeline.yaml
+# deployment because that template's ReplicationConfiguration references
+# this bucket's ARN by name pattern.
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  ObjectLockRetentionDays:
+    Type: Number
+    Default: 2557
+    Description: |
+      Object Lock retention period in days. Defaults to ~7 years (SOX
+      retention alignment) and should match the primary-region bucket
+      configured in audit-pipeline.yaml.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  AuditReplicaBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsProduction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-audit-${AWS::AccountId}-${Environment}-dr'
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: GOVERNANCE
+            Days: !Ref ObjectLockRetentionDays
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToColdStorage
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 365
+                StorageClass: GLACIER
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-audit-${Environment}-dr'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Role
+          Value: dr-replica
+        - Key: DataClassification
+          Value: ComplianceAudit
+        - Key: ReplicationSource
+          Value: !Sub '${ProjectName}-audit-${AWS::AccountId}-${Environment}'
+
+Outputs:
+  AuditReplicaBucketArn:
+    Condition: IsProduction
+    Description: ARN of the audit replica bucket
+    Value: !GetAtt AuditReplicaBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AuditReplicaBucketArn'

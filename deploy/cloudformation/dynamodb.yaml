@@ -618,6 +618,10 @@ Resources:
         Enabled: true
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+      # DR-1.1 (#154): audit pipeline forwards writes to S3 Object Lock.
+      KinesisStreamSpecification:
+        StreamArn: !ImportValue
+          'Fn::Sub': '${ProjectName}-policy-audit-kinesis-stream-arn-${Environment}'
       SSESpecification:
         SSEEnabled: true
         SSEType: KMS
@@ -669,6 +673,10 @@ Resources:
         Enabled: true
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+      # DR-1.1 (#154): audit pipeline forwards writes to S3 Object Lock.
+      KinesisStreamSpecification:
+        StreamArn: !ImportValue
+          'Fn::Sub': '${ProjectName}-autonomy-decisions-kinesis-stream-arn-${Environment}'
       SSESpecification:
         SSEEnabled: true
         SSEType: KMS

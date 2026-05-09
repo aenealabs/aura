@@ -205,6 +205,13 @@ Resources:
         Enabled: true
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+      # DR-1.1 (#154): IdPAuditTable does NOT use Global Tables (last-writer-wins
+      # would violate NIST AU-9(1)). Instead, the table's writes are forwarded
+      # to the audit pipeline (Kinesis -> Firehose -> S3 with Object Lock).
+      # Requires the audit-pipeline.yaml stack to be deployed first.
+      KinesisStreamSpecification:
+        StreamArn: !ImportValue
+          'Fn::Sub': '${ProjectName}-idp-audit-kinesis-stream-arn-${Environment}'
       SSESpecification:
         SSEEnabled: true
         SSEType: KMS

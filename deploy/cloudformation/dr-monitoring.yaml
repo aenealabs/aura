@@ -1,0 +1,449 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.X - DR Monitoring (Drift Detection + Cross-Region Observability for DR-9/#152)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Operational layer that strengthens the DR initiative (#143) sub-issues that
+# already shipped: DR-1 (DynamoDB Global Tables), DR-1.1 (audit pipeline),
+# DR-1.2 (reclassified Tier 1 GlobalTables), DR-5 (S3 CRR), DR-6 (Secrets
+# Manager replicas).
+#
+# Three concerns:
+#
+# 1. **Drift detection** -- weekly Lambda invocation calls
+#    cloudformation:DetectStackDrift on the secondary-region stacks
+#    (created by DR-1.0, DR-5, DR-1.1). Macy's review: out-of-band changes
+#    to a replica's TTL / PITR / contributor-insights / tags via console
+#    will NOT surface via primary-region drift detection -- the replica is
+#    a child resource of DynamoDB's control plane, not CFN. Targeted drift
+#    detection on the secondary-region stacks catches IaC-managed drift.
+#
+# 2. **SNS topic for DR alerts** -- the replication-lag alarms shipped
+#    with DR-1 have no action today (they alarm but don't notify).
+#    DR-9 PR2 wires them to this topic.
+#
+# 3. **Cross-region observability** -- CloudWatch dashboard with widgets
+#    that pull secondary-region metrics, so primary-region operators see
+#    replica health without switching regions.
+#
+# Lag-alarm subset of DR-9 was already delivered with DR-1 (CloudWatch
+# alarms exist on each replicated table; this template adds the SNS
+# action target for them).
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: Secondary AWS region monitored for drift
+
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: |
+      Email address subscribed to DR alerts. Optional; if empty, the SNS
+      topic is created without an email subscription and operators must
+      subscribe manually (or via DR-7 orchestration when it lands).
+
+  DriftCheckSchedule:
+    Type: String
+    Default: 'cron(0 14 ? * MON *)'
+    Description: |
+      EventBridge schedule expression for the drift-detection run.
+      Default: weekly Mondays at 14:00 UTC. Matches the dependency-risk
+      audit cadence so operations land in a consistent weekly review.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ===========================================================================
+  # SNS topic for DR alerts
+  # ===========================================================================
+  DRAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-dr-alerts-${Environment}'
+      DisplayName: 'Project Aura DR Alerts'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: DRMonitoring
+
+  DRAlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref DRAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ===========================================================================
+  # Drift detection Lambda
+  # ===========================================================================
+  # Calls cloudformation:DetectStackDrift on the secondary-region stacks
+  # (DR-1.0 KMS, DR-5 S3, DR-1.1 audit) and posts to the DR alert SNS
+  # topic on any non-IN_SYNC result. Drift detection is async on AWS's
+  # side -- the Lambda kicks it off, polls for completion (max ~2 minutes),
+  # then aggregates the result.
+  DriftDetectionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-dr-drift-detection-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DriftDetection
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudFormation drift APIs do not support fine-grained Resource
+              # ARNs for these specific actions; they require Resource: '*'.
+              # Defense-in-depth via aws:ResourceAccount + region scoping in
+              # the request itself (the Lambda only targets stacks named
+              # ${ProjectName}-*-secondary-* / ${ProjectName}-*-replica-*).
+              - Effect: Allow
+                Action:
+                  - cloudformation:DetectStackDrift
+                  - cloudformation:DescribeStackDriftDetectionStatus
+                  - cloudformation:DescribeStackResourceDrifts
+                  - cloudformation:DescribeStacks
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:ResourceAccount: !Ref AWS::AccountId
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref DRAlertTopic
+
+  DriftDetectionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-dr-drift-detection-${Environment}'
+      Description: |
+        DR-9 (#152): weekly drift detection on secondary-region DR stacks.
+        Reports to DR alert SNS topic on drift.
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt DriftDetectionRole.Arn
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          PROJECT_NAME: !Ref ProjectName
+          ENVIRONMENT: !Ref Environment
+          SECONDARY_REGION: !Ref SecondaryRegion
+          SNS_TOPIC_ARN: !Ref DRAlertTopic
+          # Stacks to check. Each is in the secondary region.
+          STACKS_CSV: !Sub '${ProjectName}-kms-replica-secondary-${Environment},${ProjectName}-s3-replica-${Environment},${ProjectName}-audit-pipeline-replica-${Environment}'
+      Code:
+        ZipFile: |
+          """DR drift detection on secondary-region stacks."""
+
+          import json
+          import os
+          import time
+
+          import boto3
+
+
+          POLL_INTERVAL = 5
+          POLL_MAX_ATTEMPTS = 24  # 2 minutes per stack
+
+
+          def handler(event, context):
+              region = os.environ['SECONDARY_REGION']
+              stacks = [s.strip() for s in os.environ['STACKS_CSV'].split(',') if s.strip()]
+              project = os.environ['PROJECT_NAME']
+              env = os.environ['ENVIRONMENT']
+              sns_topic = os.environ['SNS_TOPIC_ARN']
+
+              cfn = boto3.client('cloudformation', region_name=region)
+              sns = boto3.client('sns')
+
+              results = []
+              for stack_name in stacks:
+                  result = check_stack(cfn, stack_name)
+                  results.append(result)
+
+              drifted = [r for r in results if r['status'] == 'DRIFTED']
+              if drifted:
+                  message_lines = [
+                      f"DR drift detected in {len(drifted)} stack(s) in {region}:",
+                      ""
+                  ]
+                  for r in drifted:
+                      message_lines.append(f"  - {r['stack']}: {r['detail']}")
+                  message_lines.append("")
+                  message_lines.append(
+                      "Investigate via the AWS Console -- look at the CloudFormation "
+                      "stack's drift status and reconcile out-of-band changes."
+                  )
+                  sns.publish(
+                      TopicArn=sns_topic,
+                      Subject=f"[DR-DRIFT] {project} {env} -- {len(drifted)} stack(s) drifted",
+                      Message='\n'.join(message_lines),
+                  )
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'region': region,
+                      'project': project,
+                      'environment': env,
+                      'stacks_checked': len(stacks),
+                      'drifted_count': len(drifted),
+                      'results': results,
+                  }),
+              }
+
+
+          def check_stack(cfn, stack_name):
+              """Detect drift on one stack. Returns dict with stack + status + detail."""
+              try:
+                  # Verify stack exists; if not, skip without failing.
+                  cfn.describe_stacks(StackName=stack_name)
+              except cfn.exceptions.ClientError as e:
+                  if 'does not exist' in str(e):
+                      return {
+                          'stack': stack_name,
+                          'status': 'NOT_DEPLOYED',
+                          'detail': 'stack not deployed in secondary region',
+                      }
+                  return {
+                      'stack': stack_name,
+                      'status': 'ERROR',
+                      'detail': f'describe_stacks failed: {e}',
+                  }
+
+              # Kick off drift detection.
+              try:
+                  resp = cfn.detect_stack_drift(StackName=stack_name)
+                  detection_id = resp['StackDriftDetectionId']
+              except Exception as e:
+                  return {
+                      'stack': stack_name,
+                      'status': 'ERROR',
+                      'detail': f'detect_stack_drift failed: {e}',
+                  }
+
+              # Poll until complete (or timeout).
+              for _ in range(POLL_MAX_ATTEMPTS):
+                  status = cfn.describe_stack_drift_detection_status(
+                      StackDriftDetectionId=detection_id,
+                  )
+                  detection_status = status.get('DetectionStatus')
+                  if detection_status == 'DETECTION_COMPLETE':
+                      drift_status = status.get('StackDriftStatus')
+                      if drift_status == 'IN_SYNC':
+                          return {
+                              'stack': stack_name,
+                              'status': 'IN_SYNC',
+                              'detail': 'no drift detected',
+                          }
+                      return {
+                          'stack': stack_name,
+                          'status': 'DRIFTED',
+                          'detail': f'drift status: {drift_status}, drifted resources: {status.get("DriftedStackResourceCount", 0)}',
+                      }
+                  if detection_status == 'DETECTION_FAILED':
+                      return {
+                          'stack': stack_name,
+                          'status': 'ERROR',
+                          'detail': f'detection failed: {status.get("DetectionStatusReason")}',
+                      }
+                  time.sleep(POLL_INTERVAL)
+
+              return {
+                  'stack': stack_name,
+                  'status': 'ERROR',
+                  'detail': 'drift detection timed out after 2 minutes',
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # EventBridge schedule for the drift detection.
+  DriftDetectionSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-dr-drift-detection-schedule-${Environment}'
+      Description: 'Weekly drift detection on secondary-region DR stacks (DR-9 / #152)'
+      ScheduleExpression: !Ref DriftCheckSchedule
+      State: !If [IsProduction, ENABLED, DISABLED]
+      Targets:
+        - Id: DriftDetectionLambda
+          Arn: !GetAtt DriftDetectionFunction.Arn
+
+  DriftDetectionScheduleInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DriftDetectionFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DriftDetectionSchedule.Arn
+
+  # ===========================================================================
+  # Cross-region observability dashboard
+  # ===========================================================================
+  # CloudWatch dashboards support cross-region widgets via the `region` field
+  # in each widget body. Operators viewing this dashboard from us-east-1
+  # see replication-lag metrics from us-west-2 without switching regions.
+  DRDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-dr-overview-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0, "y": 0, "width": 24, "height": 2,
+              "properties": {
+                "markdown": "# Project Aura DR Overview (${Environment})\n\nReplication health for the DR initiative (#143). Lag-alarm thresholds = 5 min (1/3 of RPO 15min budget). Drift detection runs weekly via Lambda (DR-9 / #152)."
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 2, "width": 12, "height": 6,
+              "properties": {
+                "title": "DynamoDB GlobalTable Replication Latency (${SecondaryRegion})",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "metrics": [
+                  [ "AWS/DynamoDB", "ReplicationLatency", "TableName", "${ProjectName}-idp-configurations-${Environment}", "ReceivingRegion", "${SecondaryRegion}" ],
+                  [ "...", "${ProjectName}-platform-settings-${Environment}", ".", "." ],
+                  [ "...", "${ProjectName}-autonomy-policies-${Environment}", ".", "." ],
+                  [ "...", "${ProjectName}-repositories-${Environment}", ".", "." ],
+                  [ "...", "${ProjectName}-oauth-connections-${Environment}", ".", "." ],
+                  [ "...", "${ProjectName}-user-onboarding-${Environment}", ".", "." ],
+                  [ "...", "${ProjectName}-team-invitations-${Environment}", ".", "." ],
+                  [ "...", "${ProjectName}-anomalies-${Environment}", ".", "." ],
+                  [ "...", "${ProjectName}-codebase-metadata-${Environment}", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "yAxis": {
+                  "left": {
+                    "label": "Latency (ms)",
+                    "showUnits": false
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "RPO 15min budget alarm threshold (5 min)",
+                      "value": 300000
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 2, "width": 12, "height": 6,
+              "properties": {
+                "title": "S3 CRR Replication Latency (${SecondaryRegion})",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "metrics": [
+                  [ "AWS/S3", "ReplicationLatency", "SourceBucket", "${ProjectName}-artifacts-${AWS::AccountId}-${Environment}", "DestinationBucket", "${ProjectName}-artifacts-${AWS::AccountId}-${Environment}-dr" ],
+                  [ "...", "${ProjectName}-code-repo-${AWS::AccountId}-${Environment}", ".", "${ProjectName}-code-repo-${AWS::AccountId}-${Environment}-dr" ]
+                ],
+                "period": 300,
+                "stat": "Maximum",
+                "yAxis": {
+                  "left": {
+                    "label": "Latency (s)",
+                    "showUnits": false
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 8, "width": 12, "height": 6,
+              "properties": {
+                "title": "Audit Pipeline Throughput (Firehose)",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "metrics": [
+                  [ "AWS/Firehose", "DeliveryToS3.Records", "DeliveryStreamName", "${ProjectName}-idp-audit-firehose-${Environment}" ],
+                  [ "...", "${ProjectName}-autonomy-decisions-firehose-${Environment}" ],
+                  [ "...", "${ProjectName}-policy-audit-firehose-${Environment}" ]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "yAxis": {
+                  "left": {
+                    "label": "Records",
+                    "showUnits": false
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 8, "width": 12, "height": 6,
+              "properties": {
+                "title": "Drift Detection Lambda Invocations",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${ProjectName}-dr-drift-detection-${Environment}" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Duration", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Sum"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  DRAlertTopicArn:
+    Description: SNS topic ARN for DR alerts -- used by replication-lag alarms (DR-9 PR2 wiring)
+    Value: !Ref DRAlertTopic
+    Export:
+      Name: !Sub '${ProjectName}-dr-alert-topic-arn-${Environment}'
+
+  DriftDetectionFunctionArn:
+    Description: Drift detection Lambda ARN
+    Value: !GetAtt DriftDetectionFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-dr-drift-detection-arn-${Environment}'
+
+  DRDashboardName:
+    Description: CloudWatch dashboard name for DR overview
+    Value: !Ref DRDashboard

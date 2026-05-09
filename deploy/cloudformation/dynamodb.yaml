@@ -240,8 +240,12 @@ Resources:
   # Codebase Metadata Table
   CodebaseMetadataTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    # DR-1.2 PR1 (#155): prep for type-swap to AWS::DynamoDB::GlobalTable.
+    # Reverts to Retain on the new GlobalTable resource in PR2. Reclassified
+    # to Tier 1 per Macy's review (rebuild = full re-ingestion of every
+    # onboarded customer repo).
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub '${ProjectName}-codebase-metadata-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -357,8 +361,11 @@ Resources:
   # Anomaly Audit Trail Table
   AnomaliesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    # DR-1.2 PR1 (#155): prep for type-swap to AWS::DynamoDB::GlobalTable.
+    # Reverts to Retain on the new GlobalTable resource in PR2. Reclassified
+    # to Tier 1 per Macy's review (ADR-072 detection ground truth).
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub '${ProjectName}-anomalies-${Environment}'
       BillingMode: PAY_PER_REQUEST

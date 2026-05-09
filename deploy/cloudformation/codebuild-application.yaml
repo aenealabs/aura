@@ -480,7 +480,11 @@ Resources:
         Type: LOCAL
         Modes:
           - LOCAL_SOURCE_CACHE
-      TimeoutInMinutes: 20
+      # 8-hour timeout (CodeBuild max). Cold-start deploys process ~100
+      # cloudformation deploy calls; idempotent no-ops finish in seconds, but
+      # a true cold start can run 60-300+ min. Warm-state deploys remain fast.
+      # Tracked by #131 (buildspec line-cap remediation, Tara's review).
+      TimeoutInMinutes: 480
       QueuedTimeoutInMinutes: 480
       Tags:
         - Key: Project

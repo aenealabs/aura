@@ -614,7 +614,10 @@ Resources:
         Type: LOCAL
         Modes:
           - LOCAL_SOURCE_CACHE
-      TimeoutInMinutes: 20  # Observability deployment is fast (config-only)
+      # 8-hour timeout (CodeBuild max). Cold-start deploys process ~68
+      # cloudformation deploy calls. Warm-state deploys remain fast (config-only).
+      # Tracked by #131 (buildspec line-cap remediation, Tara's review).
+      TimeoutInMinutes: 480
       QueuedTimeoutInMinutes: 480
       Tags:
         - Key: Project

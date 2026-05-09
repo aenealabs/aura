@@ -18,23 +18,18 @@ Main buildspecs that deploy an entire infrastructure layer:
 - `buildspec-security.yml` - Security layer (GuardDuty, Config)
 
 ### 2. Sub-Buildspecs (Component Deployers)
-Modular buildspecs that deploy specific components within a layer:
+Modular buildspecs that deploy specific components within a layer. Sub-buildspecs are
+invoked from the Step Functions deployment pipeline (NOT from parent buildspecs --
+parent -> sub-layer CodeBuild nesting is intentionally avoided per the Tara review of
+issue #131; the only nesting in the system is `bootstrap` -> parent layers, which is
+unavoidable for fresh-account chicken-and-egg).
 
 **Application Layer:**
-- `buildspec-application-ecr.yml` - ECR repositories (Layer 4.1)
-- `buildspec-application-bedrock.yml` - Bedrock infrastructure (Layer 4.2)
-- `buildspec-application-irsa.yml` - IRSA roles (Layer 4.3)
-- `buildspec-application-k8s.yml` - Kubernetes deployments (Layer 4.4)
+- `buildspec-application-identity.yml` - Multi-IdP infrastructure (ADR-054). Currently orphaned -- needs Step Functions wiring (tracked separately).
 
 **Serverless Layer:**
-- `buildspec-serverless-security.yml` - Permission boundary, IAM alerting (Layer 6.0)
-- `buildspec-serverless-lambdas.yml` - Lambda packaging (Layer 6.1)
-- `buildspec-serverless-stacks.yml` - CloudFormation stacks (Layer 6.2)
-
-**Sandbox Layer:**
-- `buildspec-sandbox-infrastructure.yml` - Core infrastructure (Layer 7.1-7.4)
-- `buildspec-sandbox-catalog.yml` - Service Catalog & Monitoring (Layer 7.4-7.7)
-- `buildspec-sandbox-advanced.yml` - Advanced features (Layer 7.8-7.10)
+- `buildspec-serverless-documentation.yml` - Cloud Discovery + Calibration Pipeline (ADR-056). Currently orphaned -- needs Step Functions wiring (tracked separately).
+- `buildspec-serverless-symbol-resolver.yml` - ADR-090 Tier 3 Async LLM Symbol Resolution (Layer 6.20). Wired into the Step Functions deployment pipeline.
 
 ### 3. Utility Scripts
 Shared bash scripts that provide common functionality:

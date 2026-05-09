@@ -634,7 +634,10 @@ Resources:
         Type: LOCAL
         Modes:
           - LOCAL_SOURCE_CACHE
-      TimeoutInMinutes: 45  # Extended for Docker image build with PyTorch
+      # 8-hour timeout (CodeBuild max). Sandbox builds Docker images with
+      # PyTorch + processes ~60 cloudformation deploy calls. Warm-state
+      # deploys remain fast. Tracked by #131 (Tara's review).
+      TimeoutInMinutes: 480
       QueuedTimeoutInMinutes: 480
       Tags:
         - Key: Project

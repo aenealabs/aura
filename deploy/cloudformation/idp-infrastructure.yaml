@@ -13,6 +13,14 @@ Parameters:
     Default: aura
     Description: Project name
 
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: |
+      Secondary AWS region for Tier 1 secret replication (DR-6 / #149).
+      Native Secrets Manager replicas are created in this region for
+      production environments only.
+
 Conditions:
   IsProduction: !Equals [!Ref Environment, prod]
 
@@ -268,6 +276,12 @@ Resources:
     Properties:
       Name: !Sub '${ProjectName}/${Environment}/identity/jwt-signing-key'
       Description: RSA private key for signing Aura JWTs (generate RSA-2048 key manually)
+      # DR-6 (#149): Tier 1 -- JWT signing key must replicate so
+      # tokens issued in primary remain validatable after failover.
+      ReplicaRegions: !If
+        - IsProduction
+        - - Region: !Ref SecondaryRegion
+        - !Ref AWS::NoValue
       SecretString: '{"private_key": "GENERATE_RSA_KEY_AND_UPDATE", "public_key": "GENERATE_RSA_KEY_AND_UPDATE"}'
       Tags:
         - Key: Project
@@ -288,6 +302,13 @@ Resources:
     Properties:
       Name: !Sub '${ProjectName}/${Environment}/identity/ldap-credentials'
       Description: Template for LDAP service account credentials
+      # DR-6 (#149): Tier 1 -- IdP credentials needed in secondary
+      # region for failover auth. Only the active credential payload
+      # replicates; rotation procedure must update both copies.
+      ReplicaRegions: !If
+        - IsProduction
+        - - Region: !Ref SecondaryRegion
+        - !Ref AWS::NoValue
       SecretString: '{"bind_dn": "", "bind_password": ""}'
       Tags:
         - Key: Project
@@ -305,6 +326,11 @@ Resources:
     Properties:
       Name: !Sub '${ProjectName}/${Environment}/identity/oidc-credentials'
       Description: Template for OIDC client credentials
+      # DR-6 (#149): Tier 1 -- IdP credentials for failover auth.
+      ReplicaRegions: !If
+        - IsProduction
+        - - Region: !Ref SecondaryRegion
+        - !Ref AWS::NoValue
       SecretString: '{"client_id": "", "client_secret": ""}'
       Tags:
         - Key: Project
@@ -322,6 +348,11 @@ Resources:
     Properties:
       Name: !Sub '${ProjectName}/${Environment}/identity/saml-sp-credentials'
       Description: SAML Service Provider private key and certificate
+      # DR-6 (#149): Tier 1 -- IdP credentials for failover auth.
+      ReplicaRegions: !If
+        - IsProduction
+        - - Region: !Ref SecondaryRegion
+        - !Ref AWS::NoValue
       SecretString: '{"private_key": "", "certificate": ""}'
       Tags:
         - Key: Project
@@ -339,6 +370,11 @@ Resources:
     Properties:
       Name: !Sub '${ProjectName}/${Environment}/identity/pingid-credentials'
       Description: Template for PingID/PingFederate credentials
+      # DR-6 (#149): Tier 1 -- IdP credentials for failover auth.
+      ReplicaRegions: !If
+        - IsProduction
+        - - Region: !Ref SecondaryRegion
+        - !Ref AWS::NoValue
       SecretString: '{"client_id": "", "client_secret": "", "connection_id": ""}'
       Tags:
         - Key: Project

@@ -102,6 +102,14 @@ Parameters:
     Default: 80
     Description: 80% of monthly budget (for warning alarm) - update this when changing MonthlyBudgetUSD
 
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: |
+      Secondary AWS region for Tier 1 secret replication (DR-6 / #149).
+      Native Secrets Manager replicas are created in this region for
+      production environments only.
+
 Mappings:
   EnvironmentConfig:
     dev:
@@ -330,6 +338,15 @@ Resources:
       # Naming: aura/{environment}/bedrock
       Name: !Sub 'aura/${Environment}/bedrock'
       Description: !Sub 'Bedrock configuration for Project Aura ${Environment} environment'
+      # DR-6 (#149): Tier 1 -- Bedrock config must be available in
+      # the secondary region so failover Lambdas can route LLM calls
+      # without re-bootstrapping. Replica uses AWS-managed default
+      # KMS key consistent with the primary; per-region CMK hardening
+      # is a separate follow-up.
+      ReplicaRegions: !If
+        - IsProduction
+        - - Region: !Ref SecondaryRegion
+        - !Ref AWS::NoValue
       SecretString:
         Fn::Sub:
           - |

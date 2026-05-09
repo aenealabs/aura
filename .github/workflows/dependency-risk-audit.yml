@@ -68,7 +68,15 @@ jobs:
 
       - name: Install frontend deps for npm audit
         working-directory: frontend
-        run: npm ci
+        # --legacy-peer-deps is the documented workaround for the
+        # eslint-plugin-react@7.37.5 peer-cap issue (caps at ^9.7 vs
+        # eslint@10 in the project) tracked under #142. Will be removed
+        # when #142 closes (currently deferred per its trigger
+        # conditions: 6mo silence from filing or CI escape, neither
+        # fired yet). See frontend/CLAUDE.md and
+        # docs/security/DEPENDENCY_RISK_REGISTER.md for the full
+        # rationale on the temporary workaround.
+        run: npm ci --legacy-peer-deps
 
       - name: Run audit
         run: |

@@ -154,11 +154,24 @@ def npm_audit(frontend_dir: Path) -> dict:
     return {"ok": True, "vulnerabilities": vulns, "error": None}
 
 
-def _watch_tier_packages(register_path: Path) -> list[str]:
+def _watch_tier_packages(register_path: Path) -> list[tuple[str, str]]:
     """Parse the Watch / At-Risk / Replace-Now headline table from
-    the register and return the list of package names. Falls back to
-    an empty list if the register is missing or unparseable; the
-    audit can still run pip-audit and npm audit.
+    the register and return ``(name, surface)`` tuples. ``surface`` is
+    the second column verbatim (e.g., ``"Frontend (devDep)"``,
+    ``"Python (API runtime)"``, ``"GitHub Action"``); callers dispatch
+    the correct staleness-check function from it. Falls back to an
+    empty list if the register is missing or unparseable; the audit
+    can still run pip-audit and npm audit.
+
+    Register table header (source of truth):
+        | Package | Surface | Tier | Reason | Mitigation |
+
+    Closes #162. Prior version returned only the package name and the
+    caller dispatched via a brittle ``npm_known`` allowlist that
+    missed ``eslint-plugin-react`` (it fell through to ``pip show``,
+    surfacing as "not installed" under the Python section). Reading
+    the Surface column directly from the register matches the table's
+    own intent.
     """
     if not register_path.exists():
         return []
@@ -168,20 +181,23 @@ def _watch_tier_packages(register_path: Path) -> list[str]:
     if anchor not in text:
         return []
     section = text.split(anchor, 1)[1].split("\n## ", 1)[0]
-    pkgs: list[str] = []
+    rows: list[tuple[str, str]] = []
     for line in section.splitlines():
         if not line.startswith("|"):
             continue
         cells = [c.strip() for c in line.strip("|").split("|")]
         if len(cells) < 2 or cells[0].startswith("---"):
             continue
-        # First cell is something like `package-name` (in backticks)
+        # First cell is something like `package-name` (in backticks).
+        # Header row "| Package | Surface | ..." has no backticks and
+        # falls through cleanly.
         match = re.search(r"`([^`]+)`", cells[0])
         if not match:
             continue
         name = match.group(1).split(" ", 1)[0]
-        pkgs.append(name)
-    return pkgs
+        surface = cells[1] if len(cells) >= 2 else ""
+        rows.append((name, surface))
+    return rows
 
 
 def staleness_check_python(package: str) -> dict:
@@ -356,20 +372,32 @@ def main(argv: list[str] | None = None) -> int:
         npm_result = npm_audit(FRONTEND_DIR)
 
     tracked_packages = _watch_tier_packages(REGISTER_PATH)
-    # Crude split: anything that looks like an npm scoped package or
-    # known-frontend name goes to npm; everything else to pip. The
-    # tracked list is small enough that this heuristic is fine.
+    # Dispatch on the register's Surface column (closes #162). The prior
+    # heuristic used an `npm_known` allowlist that had to be hand-curated
+    # and missed `eslint-plugin-react` (which then surfaced as
+    # "not installed" under the Python section). Surface column values
+    # in the register: "Python (...)", "Frontend (...)", "GitHub Action",
+    # "Backend (...)", etc.
     staleness_python: list[dict] = []
     staleness_npm: list[dict] = []
-    npm_known = {"mermaid", "pptxgenjs", "jspdf", "jspdf-autotable", "react-grid-layout"}
-    for pkg in tracked_packages:
-        if pkg.startswith("@") or pkg in npm_known:
+    for pkg, surface in tracked_packages:
+        surface_lower = surface.lower()
+        if surface_lower.startswith("frontend"):
             staleness_npm.append(staleness_check_npm(pkg, FRONTEND_DIR))
-        elif "/" in pkg:
-            # Skip GitHub-Action entries like tj-actions/changed-files;
-            # those are tracked by SHA pinning, not release-date staleness.
+        elif surface_lower.startswith("python") or surface_lower.startswith("backend"):
+            staleness_python.append(staleness_check_python(pkg))
+        elif surface_lower.startswith("github action"):
+            # Skip: tracked by SHA pinning, not release-date staleness.
             continue
+        elif pkg.startswith("@"):
+            # Fallback for npm-scoped packages whose Surface value didn't
+            # match (e.g., a future addition with a non-standard label).
+            staleness_npm.append(staleness_check_npm(pkg, FRONTEND_DIR))
         else:
+            # Conservative fallback: try pip first. If a package's
+            # Surface label is novel, surface it under Python; the
+            # follow-up triage notices the misclassification and the
+            # register can be updated.
             staleness_python.append(staleness_check_python(pkg))
 
     report = render_report(

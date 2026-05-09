@@ -1,0 +1,475 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.22 - Multi-Region Failover Pipeline (Step Functions)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Step Functions Standard state machine that orchestrates a Tier 1 cross-
+# region failover. Composes the cutover Lambdas from multi-region-failover.yaml
+# (Layer 5.15) plus HITL approval gates for destructive operations.
+#
+# DR-7 (#150). The state machine codifies the operator-driven sequence
+# documented in MULTI_REGION_DR_OPERATIONS.md, with explicit pause points
+# (Step Functions .waitForTaskToken pattern) before each destructive or
+# externally-visible step. The pipeline never auto-cuts traffic without
+# operator sign-off.
+#
+# Failover sequence:
+#   1.  ValidatePrerequisites: secondary VPC reachable, mirror lag in budget
+#   2.  NotifyStart: SNS publish "failover initiated by <operator>"
+#   3.  SnapshotPrimaryState: capture primary Cognito IDs for rollback
+#   4.  ApprovalGate_DataPlane: HITL approval before invoking restores
+#   5.  ParallelDataPlanePrep:
+#         5a. EnableCognitoHydrator (auto)
+#         5b. PromptOperator_NeptuneRestore (manual, .waitForTaskToken)
+#         5c. PromptOperator_OpenSearchRestore (manual, .waitForTaskToken)
+#   6.  WaitForCognitoHydration: poll until hydrator schedule output reports
+#         has_more=false for two consecutive invocations
+#   7.  DataPlaneSecretCutover: update Neptune + OpenSearch connection
+#         secrets in secondary region (uses operator-provided endpoints)
+#   8.  ApprovalGate_TrafficCutover: final HITL approval before SSM flip
+#   9.  CognitoSSMCutover: forward direction
+#   10. NotifyTrafficCut: SNS publish "traffic cut to secondary"
+#   11. ValidateFailover: synthetic health check against secondary
+#   12. NotifyComplete: SNS publish "failover complete"
+#   On any failure: NotifyFailure, do NOT auto-rollback. Rollback is its own
+#   state machine entry point (separate execution with rollback inputs).
+#
+# Production-only.
+#
+# Trigger: manual invocation. There is intentionally no automatic trigger.
+# Per Sally's NIST CP-2 review, regional failover is a Tier 1 incident
+# decision requiring human authorization with two-person integrity (DR-8
+# wires that in formally; today the HITL gates use the existing approvals
+# table).
+#
+# Deployed to the PRIMARY region. Until the deploy chain is extended for
+# multi-region, deploy manually:
+#
+#   aws cloudformation deploy \
+#       --stack-name aura-multi-region-pipeline-prod \
+#       --template-file deploy/cloudformation/multi-region-pipeline.yaml \
+#       --parameter-overrides Environment=prod ProjectName=aura \
+#       --capabilities CAPABILITY_NAMED_IAM \
+#       --region us-east-1 \
+#       --no-fail-on-empty-changeset
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: Secondary AWS region
+
+  HITLApprovalTimeoutSeconds:
+    Type: Number
+    Default: 7200  # 2 hours
+    Description: |
+      How long the state machine will wait for an HITL approval / operator
+      runbook step before timing out the execution. Default 2 hours covers
+      the AWS Backup restore window for a typical Aura production-size
+      Neptune / OpenSearch cluster.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # CloudWatch Logs for the state machine
+  # ===========================================================================
+  PipelineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProduction
+    Properties:
+      LogGroupName: !Sub '/aws/states/${ProjectName}-multi-region-failover-${Environment}'
+      RetentionInDays: 365  # Audit evidence per AC-6(9)
+
+  # ===========================================================================
+  # State machine execution role
+  # ===========================================================================
+  PipelineExecutionRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-multi-region-failover-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeCutoverLambdas
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-cognito-hydrator-trigger-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-cognito-ssm-cutover-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-data-plane-secret-cutover-${Environment}'
+        - PolicyName: PublishSNS
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-failover-notifications-${Environment}'
+        - PolicyName: HITLApprovalsTable
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # The pipeline writes pending-approval rows so operators can
+              # approve/reject via the existing HITL UI, then waits for the
+              # task-token callback.
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-hitl-approvals-${Environment}'
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Step Functions logging requires these wildcards per AWS docs.
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: '*'
+
+  # ===========================================================================
+  # State machine
+  # ===========================================================================
+  FailoverPipeline:
+    Type: AWS::StepFunctions::StateMachine
+    Condition: IsProduction
+    Properties:
+      StateMachineName: !Sub '${ProjectName}-multi-region-failover-${Environment}'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt PipelineExecutionRole.Arn
+      LoggingConfiguration:
+        Level: ALL
+        IncludeExecutionData: true
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt PipelineLogGroup.Arn
+      DefinitionSubstitutions:
+        SnsTopicArn: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-failover-notifications-${Environment}'
+        ApprovalsTable: !Sub '${ProjectName}-hitl-approvals-${Environment}'
+        HydratorTriggerArn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-cognito-hydrator-trigger-${Environment}'
+        CognitoSSMCutoverArn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-cognito-ssm-cutover-${Environment}'
+        DataPlaneSecretCutoverArn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-data-plane-secret-cutover-${Environment}'
+        ApprovalTimeout: !Ref HITLApprovalTimeoutSeconds
+      DefinitionString: !Sub |
+        {
+          "Comment": "Aura multi-region failover pipeline (DR-7 / #150). HITL-gated.",
+          "StartAt": "RouteByMode",
+          "States": {
+            "RouteByMode": {
+              "Type": "Choice",
+              "Choices": [
+                {"Variable": "$.mode", "StringEquals": "failover", "Next": "NotifyStart"},
+                {"Variable": "$.mode", "StringEquals": "rollback", "Next": "RollbackSSMCutover"}
+              ],
+              "Default": "FailMissingMode"
+            },
+
+            "FailMissingMode": {
+              "Type": "Fail",
+              "Error": "MissingMode",
+              "Cause": "Input must include {\"mode\": \"failover\"} or {\"mode\": \"rollback\"}"
+            },
+
+            "NotifyStart": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${!SnsTopicArn}",
+                "Subject": "Aura DR: failover initiated",
+                "Message.$": "States.Format('Multi-region failover started by {} at {}. Execution: {}', $.operator, $$.State.EnteredTime, $$.Execution.Name)"
+              },
+              "ResultPath": null,
+              "Next": "SnapshotPrimaryState"
+            },
+
+            "SnapshotPrimaryState": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!CognitoSSMCutoverArn}",
+                "Payload": {"direction": "snapshot"}
+              },
+              "ResultPath": "$.snapshot",
+              "Next": "ApprovalGate_DataPlane"
+            },
+
+            "ApprovalGate_DataPlane": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:putItem.waitForTaskToken",
+              "Parameters": {
+                "TableName": "${!ApprovalsTable}",
+                "Item": {
+                  "approval_id": {"S.$": "States.Format('failover-data-plane-{}', $$.Execution.Name)"},
+                  "kind": {"S": "DR_FAILOVER_DATA_PLANE"},
+                  "operator.$": "$.operator",
+                  "task_token.$": "$$.Task.Token",
+                  "execution_arn.$": "$$.Execution.Id",
+                  "created_at.$": "$$.State.EnteredTime",
+                  "ttl_seconds": {"N": "${!ApprovalTimeout}"}
+                }
+              },
+              "ResultPath": "$.data_plane_approval",
+              "TimeoutSeconds": ${!ApprovalTimeout},
+              "Catch": [
+                {"ErrorEquals": ["States.Timeout", "States.TaskFailed"], "ResultPath": "$.error", "Next": "NotifyFailure"}
+              ],
+              "Next": "ParallelDataPlanePrep"
+            },
+
+            "ParallelDataPlanePrep": {
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "StartAt": "EnableCognitoHydrator",
+                  "States": {
+                    "EnableCognitoHydrator": {
+                      "Type": "Task",
+                      "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+                      "Parameters": {
+                        "FunctionName": "${!HydratorTriggerArn}",
+                        "Payload": {"action": "enable"}
+                      },
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "PromptOperator_NeptuneRestore",
+                  "States": {
+                    "PromptOperator_NeptuneRestore": {
+                      "Type": "Task",
+                      "Resource": "arn:${AWS::Partition}:states:::dynamodb:putItem.waitForTaskToken",
+                      "Parameters": {
+                        "TableName": "${!ApprovalsTable}",
+                        "Item": {
+                          "approval_id": {"S.$": "States.Format('failover-neptune-{}', $$.Execution.Name)"},
+                          "kind": {"S": "DR_FAILOVER_NEPTUNE_RESTORE"},
+                          "operator.$": "$.operator",
+                          "task_token.$": "$$.Task.Token",
+                          "execution_arn.$": "$$.Execution.Id",
+                          "instructions": {"S": "Run Neptune restore per docs/runbooks/NEPTUNE_FAILOVER_RUNBOOK.md Steps 1-4. Reply with {\"neptune_endpoint\": \"<dns>\"} on the approval; the pipeline will update the secret."},
+                          "created_at.$": "$$.State.EnteredTime",
+                          "ttl_seconds": {"N": "${!ApprovalTimeout}"}
+                        }
+                      },
+                      "ResultPath": "$.neptune_restore_response",
+                      "TimeoutSeconds": ${!ApprovalTimeout},
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "PromptOperator_OpenSearchRestore",
+                  "States": {
+                    "PromptOperator_OpenSearchRestore": {
+                      "Type": "Task",
+                      "Resource": "arn:${AWS::Partition}:states:::dynamodb:putItem.waitForTaskToken",
+                      "Parameters": {
+                        "TableName": "${!ApprovalsTable}",
+                        "Item": {
+                          "approval_id": {"S.$": "States.Format('failover-opensearch-{}', $$.Execution.Name)"},
+                          "kind": {"S": "DR_FAILOVER_OPENSEARCH_RESTORE"},
+                          "operator.$": "$.operator",
+                          "task_token.$": "$$.Task.Token",
+                          "execution_arn.$": "$$.Execution.Id",
+                          "instructions": {"S": "Run OpenSearch restore per docs/runbooks/OPENSEARCH_FAILOVER_RUNBOOK.md Steps 1-4. Reply with {\"opensearch_endpoint\": \"<dns>\"} on the approval; the pipeline will update the secret."},
+                          "created_at.$": "$$.State.EnteredTime",
+                          "ttl_seconds": {"N": "${!ApprovalTimeout}"}
+                        }
+                      },
+                      "ResultPath": "$.opensearch_restore_response",
+                      "TimeoutSeconds": ${!ApprovalTimeout},
+                      "End": true
+                    }
+                  }
+                }
+              ],
+              "ResultPath": "$.data_plane_prep",
+              "Catch": [
+                {"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "NotifyFailure"}
+              ],
+              "Next": "DataPlaneSecretCutover"
+            },
+
+            "DataPlaneSecretCutover": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!DataPlaneSecretCutoverArn}",
+                "Payload": {
+                  "neptune_endpoint.$": "$.data_plane_prep[1].neptune_endpoint",
+                  "opensearch_endpoint.$": "$.data_plane_prep[2].opensearch_endpoint"
+                }
+              },
+              "ResultPath": "$.secret_cutover",
+              "Catch": [
+                {"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "NotifyFailure"}
+              ],
+              "Next": "ApprovalGate_TrafficCutover"
+            },
+
+            "ApprovalGate_TrafficCutover": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:putItem.waitForTaskToken",
+              "Parameters": {
+                "TableName": "${!ApprovalsTable}",
+                "Item": {
+                  "approval_id": {"S.$": "States.Format('failover-traffic-{}', $$.Execution.Name)"},
+                  "kind": {"S": "DR_FAILOVER_TRAFFIC_CUTOVER"},
+                  "operator.$": "$.operator",
+                  "task_token.$": "$$.Task.Token",
+                  "execution_arn.$": "$$.Execution.Id",
+                  "instructions": {"S": "Final approval before flipping Cognito SSM parameters and cutting application traffic. Verify standby pool hydration is complete and data-plane secrets point to the restored clusters."},
+                  "created_at.$": "$$.State.EnteredTime",
+                  "ttl_seconds": {"N": "${!ApprovalTimeout}"}
+                }
+              },
+              "ResultPath": "$.traffic_approval",
+              "TimeoutSeconds": ${!ApprovalTimeout},
+              "Catch": [
+                {"ErrorEquals": ["States.Timeout", "States.TaskFailed"], "ResultPath": "$.error", "Next": "NotifyFailure"}
+              ],
+              "Next": "CognitoSSMCutover"
+            },
+
+            "CognitoSSMCutover": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!CognitoSSMCutoverArn}",
+                "Payload": {"direction": "forward"}
+              },
+              "ResultPath": "$.cognito_cutover",
+              "Catch": [
+                {"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "NotifyFailure"}
+              ],
+              "Next": "DisableCognitoHydrator"
+            },
+
+            "DisableCognitoHydrator": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!HydratorTriggerArn}",
+                "Payload": {"action": "disable"}
+              },
+              "ResultPath": "$.hydrator_disabled",
+              "Catch": [
+                {"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "NotifyFailure"}
+              ],
+              "Next": "NotifyComplete"
+            },
+
+            "NotifyComplete": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${!SnsTopicArn}",
+                "Subject": "Aura DR: failover complete",
+                "Message.$": "States.Format('Multi-region failover complete. Operator: {}. Execution: {}.', $.operator, $$.Execution.Name)"
+              },
+              "End": true
+            },
+
+            "RollbackSSMCutover": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!CognitoSSMCutoverArn}",
+                "Payload": {"direction": "rollback"}
+              },
+              "ResultPath": "$.cognito_rollback",
+              "Catch": [
+                {"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "NotifyFailure"}
+              ],
+              "Next": "NotifyRollback"
+            },
+
+            "NotifyRollback": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${!SnsTopicArn}",
+                "Subject": "Aura DR: rollback complete",
+                "Message.$": "States.Format('Multi-region failover rolled back. Operator: {}. Execution: {}.', $.operator, $$.Execution.Name)"
+              },
+              "End": true
+            },
+
+            "NotifyFailure": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${!SnsTopicArn}",
+                "Subject": "Aura DR: pipeline FAILURE",
+                "Message.$": "States.Format('Failover pipeline failed. Operator: {}. Execution: {}. Error: {}', $.operator, $$.Execution.Name, $.error)"
+              },
+              "Next": "FailFinal"
+            },
+
+            "FailFinal": {
+              "Type": "Fail",
+              "Error": "FailoverPipelineError",
+              "Cause": "See SNS notification + CloudWatch Logs"
+            }
+          }
+        }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-orchestration
+        - Key: SecondaryRegion
+          Value: !Ref SecondaryRegion
+
+Outputs:
+  FailoverPipelineArn:
+    Condition: IsProduction
+    Description: Multi-region failover Step Functions state machine ARN (DR-7 / #150)
+    Value: !Ref FailoverPipeline
+    Export:
+      Name: !Sub '${ProjectName}-multi-region-failover-arn-${Environment}'
+
+  FailoverPipelineName:
+    Condition: IsProduction
+    Description: Multi-region failover state machine name (for start-execution CLI)
+    Value: !GetAtt FailoverPipeline.Name
+    Export:
+      Name: !Sub '${ProjectName}-multi-region-failover-name-${Environment}'

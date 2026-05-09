@@ -1,0 +1,762 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 5.15 - Multi-Region Failover (DNS, Health, Cutover Lambdas)'
+
+# =============================================================================
+# Purpose
+# =============================================================================
+# Global resources for Tier 1 cross-region failover. Replaces the archived
+# multi-region-global.yaml stub which carried health checks but no failover
+# records and no cutover automation. DR-7 (#150).
+#
+# What this template provides:
+#   - Route 53 health checks for the primary + secondary ALBs
+#   - Route 53 failover records (PRIMARY + SECONDARY) for app.aenealabs.com
+#   - SNS topic for failover notifications + email subscription
+#   - CloudWatch alarms on the primary health check
+#   - Cutover Lambdas (in primary region; use cross-region clients):
+#       CognitoHydratorTrigger -- enable/disable hydrator EventBridge rule
+#       CognitoSSMCutover -- flip /aura/{env}/cognito/* SSM parameters
+#       DataPlaneSecretCutover -- update Neptune / OpenSearch connection
+#         secrets in the secondary region
+#
+# What this template intentionally does NOT do:
+#   - Trigger failover automatically. Failover is an explicit human decision
+#     (per Sally's NIST CP-2 guidance and Tara's "warm standby is a state
+#     change, not an automated decision").
+#   - Restore Neptune / OpenSearch from AWS Backup. Those operations stay
+#     in their failover runbooks (NEPTUNE_FAILOVER_RUNBOOK.md /
+#     OPENSEARCH_FAILOVER_RUNBOOK.md). They are destructive and infrequent;
+#     the cost of automating them outweighs the time savings.
+#   - Cross-account or cross-partition health checks (GovCloud constraint).
+#
+# Production-only: dev/qa do not run cross-region failover, and an unused
+# Route 53 health check is wasteful infrastructure.
+#
+# Deployed to the PRIMARY region. Until the deploy chain is extended for
+# multi-region, deploy manually:
+#
+#   aws cloudformation deploy \
+#       --stack-name aura-multi-region-failover-prod \
+#       --template-file deploy/cloudformation/multi-region-failover.yaml \
+#       --parameter-overrides Environment=prod ProjectName=aura \
+#                             HostedZoneId=<zone-id> \
+#                             PrimaryALBDNSName=<primary-alb-dns> \
+#                             SecondaryALBDNSName=<secondary-alb-dns> \
+#       --capabilities CAPABILITY_NAMED_IAM \
+#       --region us-east-1 \
+#       --no-fail-on-empty-changeset
+# =============================================================================
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+  SecondaryRegion:
+    Type: String
+    Default: us-west-2
+    Description: Secondary AWS region for cross-region failover
+
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: |
+      Route 53 hosted zone ID for aenealabs.com. Required when
+      EnableFailoverRecords=true (production). Empty string disables
+      Route 53 record creation.
+
+  HostedZoneName:
+    Type: String
+    Default: aenealabs.com
+    Description: Route 53 hosted zone name
+
+  PrimaryALBDNSName:
+    Type: String
+    Default: ''
+    Description: |
+      Primary ALB DNS name for the failover record. Empty string skips
+      record creation (allows the stack to deploy ahead of the ALB).
+
+  SecondaryALBDNSName:
+    Type: String
+    Default: ''
+    Description: |
+      Secondary ALB DNS name. Empty string is acceptable until the
+      secondary-region application stack lands; failover record
+      creation is gated on this being non-empty.
+
+  PrimaryALBHostedZoneId:
+    Type: String
+    Default: ''
+    Description: ALB hosted zone ID (primary region) -- AWS-known, varies by region
+
+  SecondaryALBHostedZoneId:
+    Type: String
+    Default: ''
+    Description: ALB hosted zone ID (secondary region) -- AWS-known, varies by region
+
+  HealthCheckPath:
+    Type: String
+    Default: /health
+    Description: Health-check endpoint path (must return HTTP 2xx when healthy)
+
+  HealthCheckPort:
+    Type: Number
+    Default: 443
+    Description: Health-check port
+
+  NotificationEmail:
+    Type: String
+    Default: notifications@aenealabs.com
+    Description: Email for failover notifications
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  EnableFailoverRecords: !And
+    - !Not [!Equals [!Ref HostedZoneId, '']]
+    - !Not [!Equals [!Ref PrimaryALBDNSName, '']]
+    - !Not [!Equals [!Ref SecondaryALBDNSName, '']]
+    - !Equals [!Ref Environment, prod]
+  HasPrimaryALB: !And
+    - !Not [!Equals [!Ref PrimaryALBDNSName, '']]
+    - !Equals [!Ref Environment, prod]
+  HasSecondaryALB: !And
+    - !Not [!Equals [!Ref SecondaryALBDNSName, '']]
+    - !Equals [!Ref Environment, prod]
+
+Resources:
+  # ===========================================================================
+  # SNS Topic for Failover Notifications
+  # ===========================================================================
+  FailoverNotificationTopic:
+    Type: AWS::SNS::Topic
+    Condition: IsProduction
+    Properties:
+      TopicName: !Sub '${ProjectName}-failover-notifications-${Environment}'
+      DisplayName: 'Aura Multi-Region Failover Alerts'
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-orchestration
+
+  FailoverNotificationEmailSub:
+    Type: AWS::SNS::Subscription
+    Condition: IsProduction
+    Properties:
+      TopicArn: !Ref FailoverNotificationTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ===========================================================================
+  # Route 53 Health Checks (production only, since dev/qa have no DR)
+  # ===========================================================================
+  # Health-check region list intentionally restricted to US regions: Aura
+  # production runs in us-east-1 with us-west-2 standby. Eight global
+  # checkers (the AWS default) is overkill and adds noise from unrelated
+  # regional networks.
+  PrimaryHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Condition: HasPrimaryALB
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS
+        FullyQualifiedDomainName: !Ref PrimaryALBDNSName
+        Port: !Ref HealthCheckPort
+        ResourcePath: !Ref HealthCheckPath
+        RequestInterval: 30
+        FailureThreshold: 3
+        EnableSNI: true
+        Regions:
+          - us-east-1
+          - us-west-1
+          - us-west-2
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-primary-health-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Region
+          Value: !Ref AWS::Region
+
+  SecondaryHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Condition: HasSecondaryALB
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS
+        FullyQualifiedDomainName: !Ref SecondaryALBDNSName
+        Port: !Ref HealthCheckPort
+        ResourcePath: !Ref HealthCheckPath
+        RequestInterval: 30
+        FailureThreshold: 3
+        EnableSNI: true
+        Regions:
+          - us-east-1
+          - us-west-1
+          - us-west-2
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-secondary-health-${Environment}'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Region
+          Value: !Ref SecondaryRegion
+
+  # ===========================================================================
+  # Route 53 Failover Records (the gap the archived stub admitted)
+  # ===========================================================================
+  # PRIMARY -- when the primary health check passes, traffic goes here.
+  # SECONDARY -- when the primary fails, traffic goes here. SECONDARY
+  #   doesn't carry a health check (per AWS guidance: a SECONDARY without
+  #   a check is always returned when PRIMARY fails). The SecondaryHealthCheck
+  #   above is for observability / dashboards, not for record routing.
+  AppFailoverRecordPrimary:
+    Type: AWS::Route53::RecordSet
+    Condition: EnableFailoverRecords
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'app.${HostedZoneName}'
+      Type: A
+      SetIdentifier: !Sub '${ProjectName}-primary-${Environment}'
+      Failover: PRIMARY
+      HealthCheckId: !Ref PrimaryHealthCheck
+      AliasTarget:
+        DNSName: !Ref PrimaryALBDNSName
+        HostedZoneId: !Ref PrimaryALBHostedZoneId
+        EvaluateTargetHealth: true
+
+  AppFailoverRecordSecondary:
+    Type: AWS::Route53::RecordSet
+    Condition: EnableFailoverRecords
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'app.${HostedZoneName}'
+      Type: A
+      SetIdentifier: !Sub '${ProjectName}-secondary-${Environment}'
+      Failover: SECONDARY
+      AliasTarget:
+        DNSName: !Ref SecondaryALBDNSName
+        HostedZoneId: !Ref SecondaryALBHostedZoneId
+        EvaluateTargetHealth: true
+
+  # ===========================================================================
+  # CloudWatch Alarm: primary health check failing (informational)
+  # ===========================================================================
+  PrimaryHealthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasPrimaryALB
+    Properties:
+      AlarmName: !Sub '${ProjectName}-primary-health-${Environment}'
+      AlarmDescription: 'Primary-region ALB health check failing -- DNS will failover to secondary'
+      Namespace: AWS/Route53
+      MetricName: HealthCheckStatus
+      Dimensions:
+        - Name: HealthCheckId
+          Value: !Ref PrimaryHealthCheck
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Ref FailoverNotificationTopic
+      OKActions:
+        - !Ref FailoverNotificationTopic
+
+  # ===========================================================================
+  # Cutover Lambdas
+  # ===========================================================================
+  # Each Lambda implements one step of the failover runbooks. They are
+  # invoked from the Step Functions orchestrator (multi-region-pipeline.yaml)
+  # and can also be invoked directly for partial drills.
+  #
+  # IAM scope is intentionally narrow: each Lambda has only the permissions
+  # required for its own step.
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # CognitoHydratorTrigger -- enable/disable hydrator EventBridge rule
+  # ---------------------------------------------------------------------------
+  CognitoHydratorTriggerRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-cognito-hydrator-trigger-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: EventBridgeRuleControl
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:EnableRule
+                  - events:DisableRule
+                  - events:DescribeRule
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${SecondaryRegion}:${AWS::AccountId}:rule/${ProjectName}-cognito-dr-hydrator-schedule-${Environment}'
+
+  CognitoHydratorTriggerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProduction
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-cognito-hydrator-trigger-${Environment}'
+      RetentionInDays: 365  # Audit evidence per AC-6(9)
+
+  CognitoHydratorTriggerFunction:
+    Type: AWS::Lambda::Function
+    Condition: IsProduction
+    DependsOn: CognitoHydratorTriggerLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-cognito-hydrator-trigger-${Environment}'
+      Description: 'Enable/disable the Cognito DR hydrator EventBridge schedule (DR-7 / #150)'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt CognitoHydratorTriggerRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          RULE_NAME: !Sub '${ProjectName}-cognito-dr-hydrator-schedule-${Environment}'
+          SECONDARY_REGION: !Ref SecondaryRegion
+      Code:
+        ZipFile: |
+          """Enable / disable the Cognito DR hydrator EventBridge schedule.
+
+          Invoked from the multi-region failover Step Functions pipeline
+          and (during drills) directly. Cross-region: Lambda runs in
+          primary, calls into secondary-region EventBridge.
+
+          Inputs:
+            {"action": "enable"} -- start hydration
+            {"action": "disable"} -- stop hydration after completion
+
+          Returns the post-action rule state for caller introspection.
+          """
+          import json
+          import logging
+          import os
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          RULE_NAME = os.environ['RULE_NAME']
+          SECONDARY_REGION = os.environ['SECONDARY_REGION']
+
+          logger = logging.getLogger()
+          logger.setLevel('INFO')
+
+          events = boto3.client('events', region_name=SECONDARY_REGION)
+
+
+          def handler(event, context):
+              action = (event or {}).get('action', '').lower()
+              if action not in ('enable', 'disable', 'describe'):
+                  raise ValueError(f'unknown action: {action!r}; expected enable|disable|describe')
+
+              if action == 'enable':
+                  events.enable_rule(Name=RULE_NAME)
+              elif action == 'disable':
+                  events.disable_rule(Name=RULE_NAME)
+
+              try:
+                  rule = events.describe_rule(Name=RULE_NAME)
+                  state = rule.get('State')
+              except ClientError as exc:
+                  logger.error('describe_rule failed: %s', exc)
+                  state = 'UNKNOWN'
+
+              result = {'rule': RULE_NAME, 'region': SECONDARY_REGION, 'state': state, 'action': action}
+              logger.info('hydrator-trigger %s', json.dumps(result))
+              return result
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-orchestration
+
+  # ---------------------------------------------------------------------------
+  # CognitoSSMCutover -- flip /aura/{env}/cognito/* SSM parameters
+  # ---------------------------------------------------------------------------
+  CognitoSSMCutoverRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-cognito-ssm-cutover-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: SSMReadWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Read standby pool / client IDs from secondary-region SSM
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${SecondaryRegion}:${AWS::AccountId}:parameter/aura/${Environment}/cognito-dr/*'
+              # Write the cutover values to primary + secondary cognito SSM
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/cognito/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${SecondaryRegion}:${AWS::AccountId}:parameter/aura/${Environment}/cognito/*'
+
+  CognitoSSMCutoverLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProduction
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-cognito-ssm-cutover-${Environment}'
+      RetentionInDays: 365
+
+  CognitoSSMCutoverFunction:
+    Type: AWS::Lambda::Function
+    Condition: IsProduction
+    DependsOn: CognitoSSMCutoverLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-cognito-ssm-cutover-${Environment}'
+      Description: 'Flip /aura/{env}/cognito/* SSM parameters from primary to standby pool (DR-7 / #150)'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt CognitoSSMCutoverRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SECONDARY_REGION: !Ref SecondaryRegion
+      Code:
+        ZipFile: |
+          """Flip Cognito SSM parameters from primary to standby pool.
+
+          On forward direction: read /aura/{env}/cognito-dr/standby-* from
+          secondary-region SSM, write to /aura/{env}/cognito/user-pool-id
+          and /aura/{env}/cognito/client-id in BOTH regions.
+
+          On rollback direction: re-read primary pool's IDs from a snapshot
+          stored in /aura/{env}/cognito-dr/primary-snapshot-* and restore.
+          The snapshot is captured by the orchestrator before forward
+          cutover (so the rollback knows where to put traffic back).
+
+          Inputs:
+            {"direction": "forward"}  -- cutover to standby pool
+            {"direction": "rollback"} -- restore primary pool
+            {"direction": "snapshot"} -- capture primary IDs for rollback
+          """
+          import json
+          import logging
+          import os
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          ENV = os.environ['ENVIRONMENT']
+          SECONDARY_REGION = os.environ['SECONDARY_REGION']
+
+          logger = logging.getLogger()
+          logger.setLevel('INFO')
+
+          ssm_primary = boto3.client('ssm')
+          ssm_secondary = boto3.client('ssm', region_name=SECONDARY_REGION)
+
+
+          PRIMARY_POOL_PARAM = f'/aura/{ENV}/cognito/user-pool-id'
+          PRIMARY_CLIENT_PARAM = f'/aura/{ENV}/cognito/client-id'
+          STANDBY_POOL_PARAM = f'/aura/{ENV}/cognito-dr/standby-pool-id'
+          STANDBY_CLIENT_PARAM = f'/aura/{ENV}/cognito-dr/standby-client-id'
+          SNAPSHOT_POOL_PARAM = f'/aura/{ENV}/cognito-dr/primary-snapshot-pool-id'
+          SNAPSHOT_CLIENT_PARAM = f'/aura/{ENV}/cognito-dr/primary-snapshot-client-id'
+
+
+          def _get(client, name):
+              try:
+                  return client.get_parameter(Name=name)['Parameter']['Value']
+              except ClientError as exc:
+                  if exc.response.get('Error', {}).get('Code') == 'ParameterNotFound':
+                      return None
+                  raise
+
+
+          def _put(client, name, value):
+              client.put_parameter(Name=name, Value=value, Type='String', Overwrite=True)
+
+
+          def _snapshot():
+              # Capture current primary pool IDs into the secondary-region SSM
+              # so rollback has them after a regional outage.
+              pool = _get(ssm_primary, PRIMARY_POOL_PARAM)
+              client = _get(ssm_primary, PRIMARY_CLIENT_PARAM)
+              if not pool or not client:
+                  raise RuntimeError('primary pool params missing -- cannot snapshot')
+              _put(ssm_secondary, SNAPSHOT_POOL_PARAM, pool)
+              _put(ssm_secondary, SNAPSHOT_CLIENT_PARAM, client)
+              return {'snapshot_pool': pool, 'snapshot_client': client}
+
+
+          def _forward():
+              standby_pool = _get(ssm_secondary, STANDBY_POOL_PARAM)
+              standby_client = _get(ssm_secondary, STANDBY_CLIENT_PARAM)
+              if not standby_pool or not standby_client:
+                  raise RuntimeError('standby pool params missing -- deploy cognito-secondary.yaml first')
+
+              # Write to BOTH regions: primary so any surviving primary workloads
+              # also pick up the new pool; secondary because the active workload
+              # post-cutover lives there.
+              for client in (ssm_primary, ssm_secondary):
+                  try:
+                      _put(client, PRIMARY_POOL_PARAM, standby_pool)
+                      _put(client, PRIMARY_CLIENT_PARAM, standby_client)
+                  except ClientError as exc:
+                      logger.warning('SSM write skipped (region may be down): %s', exc)
+
+              return {'cutover_to_pool': standby_pool, 'cutover_to_client': standby_client}
+
+
+          def _rollback():
+              snap_pool = _get(ssm_secondary, SNAPSHOT_POOL_PARAM)
+              snap_client = _get(ssm_secondary, SNAPSHOT_CLIENT_PARAM)
+              if not snap_pool or not snap_client:
+                  raise RuntimeError('snapshot params missing -- cannot rollback')
+              for client in (ssm_primary, ssm_secondary):
+                  try:
+                      _put(client, PRIMARY_POOL_PARAM, snap_pool)
+                      _put(client, PRIMARY_CLIENT_PARAM, snap_client)
+                  except ClientError as exc:
+                      logger.warning('SSM write skipped: %s', exc)
+              return {'rolled_back_to_pool': snap_pool, 'rolled_back_to_client': snap_client}
+
+
+          def handler(event, context):
+              direction = (event or {}).get('direction', '').lower()
+              if direction == 'snapshot':
+                  result = _snapshot()
+              elif direction == 'forward':
+                  result = _forward()
+              elif direction == 'rollback':
+                  result = _rollback()
+              else:
+                  raise ValueError(f'unknown direction: {direction!r}; expected snapshot|forward|rollback')
+              result['direction'] = direction
+              logger.info('cognito-ssm-cutover %s', json.dumps(result))
+              return result
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-orchestration
+
+  # ---------------------------------------------------------------------------
+  # DataPlaneSecretCutover -- update Neptune / OpenSearch connection secrets
+  # ---------------------------------------------------------------------------
+  DataPlaneSecretCutoverRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-data-plane-secret-cutover-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: SecretsManagerWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:UpdateSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${SecondaryRegion}:${AWS::AccountId}:secret:aura/${Environment}/neptune-connection*'
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${SecondaryRegion}:${AWS::AccountId}:secret:aura/${Environment}/opensearch-connection*'
+
+  DataPlaneSecretCutoverLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsProduction
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-data-plane-secret-cutover-${Environment}'
+      RetentionInDays: 365
+
+  DataPlaneSecretCutoverFunction:
+    Type: AWS::Lambda::Function
+    Condition: IsProduction
+    DependsOn: DataPlaneSecretCutoverLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-data-plane-secret-cutover-${Environment}'
+      Description: 'Update Neptune / OpenSearch connection secrets in secondary region post-failover (DR-7 / #150)'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt DataPlaneSecretCutoverRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SECONDARY_REGION: !Ref SecondaryRegion
+      Code:
+        ZipFile: |
+          """Update Neptune / OpenSearch connection secrets in secondary
+          region with the post-restore endpoints. Invoked after the operator
+          completes the AWS Backup restore (Step 3 of the Neptune /
+          OpenSearch failover runbooks).
+
+          Inputs:
+            {
+              "neptune_endpoint": "<dns-or-empty>",
+              "opensearch_endpoint": "<dns-or-empty>"
+            }
+
+          Either field may be empty (skipped). Returns the secrets that
+          were updated.
+          """
+          import json
+          import logging
+          import os
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          ENV = os.environ['ENVIRONMENT']
+          SECONDARY_REGION = os.environ['SECONDARY_REGION']
+
+          logger = logging.getLogger()
+          logger.setLevel('INFO')
+
+          sm = boto3.client('secretsmanager', region_name=SECONDARY_REGION)
+
+
+          def _read_secret(name):
+              try:
+                  resp = sm.get_secret_value(SecretId=name)
+                  return json.loads(resp['SecretString'])
+              except ClientError as exc:
+                  logger.warning('get_secret_value(%s) failed: %s', name, exc)
+                  return {}
+
+
+          def _update_neptune(endpoint):
+              secret_id = f'aura/{ENV}/neptune-connection'
+              current = _read_secret(secret_id)
+              current['host'] = endpoint
+              # Defaults preserved if not in the existing payload
+              current.setdefault('port', 8182)
+              current.setdefault('ssl', True)
+              sm.update_secret(SecretId=secret_id, SecretString=json.dumps(current))
+              return secret_id
+
+
+          def _update_opensearch(endpoint):
+              secret_id = f'aura/{ENV}/opensearch-connection'
+              current = _read_secret(secret_id)
+              current['host'] = endpoint
+              current.setdefault('port', 443)
+              current.setdefault('use_ssl', True)
+              current.setdefault('verify_certs', True)
+              sm.update_secret(SecretId=secret_id, SecretString=json.dumps(current))
+              return secret_id
+
+
+          def handler(event, context):
+              event = event or {}
+              updated = []
+              if event.get('neptune_endpoint'):
+                  updated.append(_update_neptune(event['neptune_endpoint']))
+              if event.get('opensearch_endpoint'):
+                  updated.append(_update_opensearch(event['opensearch_endpoint']))
+              result = {'updated_secrets': updated, 'region': SECONDARY_REGION}
+              logger.info('data-plane-secret-cutover %s', json.dumps(result))
+              return result
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: dr-orchestration
+
+Outputs:
+  FailoverNotificationTopicArn:
+    Condition: IsProduction
+    Description: SNS topic for failover notifications (DR-7 / #150)
+    Value: !Ref FailoverNotificationTopic
+    Export:
+      Name: !Sub '${ProjectName}-failover-notification-topic-arn-${Environment}'
+
+  PrimaryHealthCheckId:
+    Condition: HasPrimaryALB
+    Description: Route 53 primary health-check ID
+    Value: !Ref PrimaryHealthCheck
+    Export:
+      Name: !Sub '${ProjectName}-primary-health-check-id-${Environment}'
+
+  SecondaryHealthCheckId:
+    Condition: HasSecondaryALB
+    Description: Route 53 secondary health-check ID (observability only -- not used for routing)
+    Value: !Ref SecondaryHealthCheck
+    Export:
+      Name: !Sub '${ProjectName}-secondary-health-check-id-${Environment}'
+
+  CognitoHydratorTriggerFunctionArn:
+    Condition: IsProduction
+    Description: Cognito hydrator trigger Lambda ARN (Step Functions input)
+    Value: !GetAtt CognitoHydratorTriggerFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-cognito-hydrator-trigger-arn-${Environment}'
+
+  CognitoSSMCutoverFunctionArn:
+    Condition: IsProduction
+    Description: Cognito SSM cutover Lambda ARN (Step Functions input)
+    Value: !GetAtt CognitoSSMCutoverFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-cognito-ssm-cutover-arn-${Environment}'
+
+  DataPlaneSecretCutoverFunctionArn:
+    Condition: IsProduction
+    Description: Data-plane secret cutover Lambda ARN (Step Functions input)
+    Value: !GetAtt DataPlaneSecretCutoverFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-data-plane-secret-cutover-arn-${Environment}'

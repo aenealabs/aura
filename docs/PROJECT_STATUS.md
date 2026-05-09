@@ -99,7 +99,7 @@
 - Hourly Neptune backup selection (currently daily; closes the Tier 2 RPO 1h gap that's documented in `NEPTUNE_FAILOVER_RUNBOOK.md`)
 - Pre-staged secondary-region service foundation templates for Neptune + OpenSearch (subnet groups + security groups; shaves ~10 min off RTO per the runbooks)
 
-### Buildspec Line-Cap Remediation (Umbrella #131 -- COMPLETE, all 4 sub-issues closed)
+### Buildspec Line-Cap Remediation (Umbrella #131 -- COMPLETE, all 4 sub-issues + 1 follow-up closed)
 
 | Sub-Issue | Status | Outcome |
 |-----------|--------|---------|
@@ -108,11 +108,13 @@
 | #133 (serverless, 903 lines) | Closed | `TimeoutInMinutes: 45 → 480` on `codebuild-serverless.yaml`. Buildspec retained at 903 lines. 3 empty scaffolds + 1 orphan deleted (orphan was duplicate work the parent already runs at lines 723-748). |
 | #134 (sandbox, 685 lines) | Closed | `TimeoutInMinutes: 45 → 480` on `codebuild-sandbox.yaml`. Buildspec retained at 685 lines. 3 empty scaffolds deleted. |
 | #135 (observability, 615 lines) | Closed | `TimeoutInMinutes: 20 → 480` on `codebuild-observability.yaml`. Buildspec retained at 615 lines. No scaffolds existed for this layer. |
+| #157 (orphan sub-layer wiring) | Closed | Step Functions invocation added for `aura-application-identity-deploy-{env}` (LOUD-FAIL: IdP is on the customer auth path) and `aura-serverless-documentation-deploy-{env}` (non-blocking, ADR-056). Retry blocks added to all three sub-layer states (incl. backfill on symbol-resolver). Pass-state observability now emits structured `{subLayer, status, executionArn, cause}` instead of static text. Reviewed by Tara + Macy in parallel; loud-fail vs non-blocking split per Macy's review. |
 
 **Buildspec follow-ups (tracked separately, not blocking the umbrella close):**
-- #157: Wire orphaned sub-layer CodeBuild projects (`application-identity`, `serverless-documentation`) via Step Functions deployment pipeline -- pre-existing gap unrelated to the cap remediation. Reference model: `codebuild-serverless-symbol-resolver.yaml`.
+- Optional: add `aws stepfunctions validate-state-machine-definition` step to the cfn-lint wrapper or pre-commit (Macy's optional add for catching ASL JSON-shape issues earlier). ~5 lines.
 - Inline parallelism (`xargs -P` or background jobs) inside parent buildspecs to reduce cold-start runtime. Tara's optional optimization; defer until measurements show the timeout-extended buildspecs are slow enough to need it.
 - Promoting the cold-start path to Step Functions Standard for true parallel orchestration with retry. Defer until inline parallelism proves insufficient.
+- Bootstrap drill on a fresh DEV account to confirm `idp-infrastructure` + `cloud-discovery` + `calibration-pipeline` land end-to-end without manual intervention. Recommended next time a DEV account is rebuilt.
 
 ### Integrations & Deployment
 

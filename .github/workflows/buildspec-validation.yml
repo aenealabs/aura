@@ -1,0 +1,123 @@
+name: Buildspec Validation
+
+# Path-triggered PR validation for deploy/buildspecs/**. The May 10
+# GTM audit (#163) flagged that buildspecs ship un-gated: no workflow
+# currently validates them on PRs, so a syntactically broken buildspec
+# could land on main and fail at CodeBuild runtime.
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'deploy/buildspecs/**'
+      - '.github/workflows/buildspec-validation.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'deploy/buildspecs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Changed Buildspecs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Install pyyaml
+        run: pip install --quiet pyyaml
+
+      - name: Validate buildspec YAML + structure
+        run: |
+          set -euo pipefail
+          # Decide the scope. On PR, validate only the changed
+          # buildspecs - faster, and the rest are presumed-good. On
+          # push to main or manual dispatch, validate the whole tree
+          # as a safety net.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            TARGETS=$(git diff --name-only --diff-filter=ACMRT \
+              "$BASE_SHA" HEAD -- 'deploy/buildspecs/*.yml' \
+              'deploy/buildspecs/*.yaml' || true)
+            if [ -z "$TARGETS" ]; then
+              echo "No buildspec changes in this PR; nothing to validate."
+              exit 0
+            fi
+          else
+            TARGETS=$(find deploy/buildspecs -name '*.yml' -o -name '*.yaml' 2>/dev/null | sort)
+          fi
+
+          echo "Validating buildspecs:"
+          echo "$TARGETS"
+          echo ""
+
+          export TARGETS
+
+          # Inline Python validator. Checks:
+          # 1. YAML parses
+          # 2. Top-level ``version`` field is present and == '0.2'
+          # 3. ``phases`` field is present and is a mapping
+          # 4. At least one of the canonical phases is defined
+          python <<'PY'
+          import os
+          import sys
+          import yaml
+
+          targets = os.environ['TARGETS'].split()
+          errors = []
+          for path in targets:
+              if not path or not os.path.exists(path):
+                  continue
+              try:
+                  with open(path) as fh:
+                      doc = yaml.safe_load(fh)
+              except yaml.YAMLError as exc:
+                  errors.append(f'{path}: YAML parse error: {exc}')
+                  continue
+              if not isinstance(doc, dict):
+                  errors.append(f'{path}: top-level must be a mapping')
+                  continue
+              version = str(doc.get('version', ''))
+              if version != '0.2':
+                  errors.append(
+                      f'{path}: top-level "version" must be "0.2" '
+                      f'(found {version!r})'
+                  )
+              phases = doc.get('phases')
+              if not isinstance(phases, dict):
+                  errors.append(f'{path}: "phases" must be a mapping')
+                  continue
+              canonical = {'install', 'pre_build', 'build', 'post_build'}
+              if not (set(phases) & canonical):
+                  errors.append(
+                      f'{path}: no canonical phase defined '
+                      f'(expected at least one of {sorted(canonical)})'
+                  )
+              print(f'PASS: {path}')
+
+          if errors:
+              print('', file=sys.stderr)
+              print('Buildspec validation errors:', file=sys.stderr)
+              for err in errors:
+                  print(f'  - {err}', file=sys.stderr)
+              sys.exit(1)
+          PY

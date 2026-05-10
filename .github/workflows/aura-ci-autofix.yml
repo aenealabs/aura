@@ -1,9 +1,19 @@
 name: Aura CI Auto-Fix
 
+# QUARANTINED 2026-05-10 (issue #163): this workflow has been
+# `startup_failure` on every workflow_run trigger for 124 consecutive
+# invocations. It also holds `contents: write` + `pull-requests: write`
+# permissions while non-functional, which is wasted attack surface
+# per the GTM-readiness audit. Disabled by removing the automatic
+# workflow_run trigger; manual workflow_dispatch is preserved so the
+# logic can be re-tested out of band before re-enabling automation.
+#
+# Re-enabling requires:
+# 1. Reproducing a successful run via manual workflow_dispatch.
+# 2. Auditing the privileged permissions for least-privilege scope.
+# 3. Removing this comment and restoring the workflow_run trigger.
+
 on:
-  workflow_run:
-    workflows: ["Code Quality Checks"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       run_id:
@@ -17,9 +27,6 @@ permissions:
   issues: write
   checks: read
   actions: read
-
-env:
-  AURA_API_URL: ${{ vars.AURA_API_URL || 'http://localhost:8080' }}
 
 jobs:
   analyze-failure:

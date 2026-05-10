@@ -30,6 +30,13 @@ jobs:
     name: Tier 3 Live-LLM Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Gate the run on a repo variable so the scheduled trigger does
+    # not startup_failure when the OIDC role + AWS account are not yet
+    # configured. To enable: set `LIVE_LLM_ENABLED` to `true` as a repo
+    # variable AND configure the `AURA_LIVE_LLM_ROLE_ARN` secret with
+    # the Bedrock-invoke role to assume. (#163 closed the persistent
+    # startup_failure noise from the unconfigured-secret path.)
+    if: vars.LIVE_LLM_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

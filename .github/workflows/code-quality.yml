@@ -247,7 +247,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # master
+        # SHA verified against the v0.36.0 release tag via the GitHub
+        # API (the released tag object resolves to this commit SHA).
+        # The May 10, 2026 GTM audit flagged the previous "# master"
+        # comment as ambiguous - the SHA does NOT track master; it is
+        # immutable, even if the upstream tag is later moved.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'

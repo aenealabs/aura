@@ -13,6 +13,22 @@ Parameters:
     Default: aura
     Description: Project name
 
+  LambdaS3Bucket:
+    Type: String
+    Default: ''
+    Description: |
+      S3 bucket containing the ghost-agent-scanner Lambda package. Empty
+      string when the function is deployed in placeholder mode (see
+      Code property below).
+
+  LambdaS3Key:
+    Type: String
+    Default: ''
+    Description: S3 key for the ghost-agent-scanner Lambda package.
+
+Conditions:
+  HasLambdaPackage: !Not [!Equals [!Ref LambdaS3Bucket, '']]
+
 Resources:
   # EventBridge Rule - Shadow Agent Detection Events
   ShadowAgentEventRule:
@@ -181,16 +197,53 @@ Resources:
       SourceArn: !GetAtt GhostAgentScannerRule.Arn
 
   # Lambda Function - Ghost Agent Scanner
+  # ----------------------------------------------------------------------
+  # Code source: when LambdaS3Bucket parameter is set, pull the packaged
+  # handler from S3. When unset (default), ship an inline placeholder so
+  # the stack deploys clean and cfn-lint passes - the placeholder logs +
+  # exits, so the real implementation can be wired in by overriding
+  # LambdaS3Bucket / LambdaS3Key at deploy time (typically via the
+  # buildspec that packages ghost_agent_scanner.py to S3).
   GhostAgentScannerFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ProjectName}-ghost-agent-scanner-${Environment}'
       Description: Weekly ghost agent scanner for decommission assurance (ADR-086)
       Runtime: python3.11
-      Handler: ghost_agent_scanner.lambda_handler
+      Handler: !If
+        - HasLambdaPackage
+        - ghost_agent_scanner.lambda_handler
+        - index.lambda_handler
       Role: !GetAtt GhostAgentScannerRole.Arn
       Timeout: 300
       MemorySize: 512
+      Code: !If
+        - HasLambdaPackage
+        - S3Bucket: !Ref LambdaS3Bucket
+          S3Key: !Ref LambdaS3Key
+        - ZipFile: |
+            """Ghost Agent Scanner placeholder (ADR-086).
+
+            Deployed in placeholder mode when LambdaS3Bucket is unset.
+            Replace by deploying with --parameter-overrides LambdaS3Bucket=...
+            and LambdaS3Key=... pointing at a packaged ghost_agent_scanner
+            module.
+            """
+            import json
+            import logging
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+
+            def lambda_handler(event, context):
+                logger.warning(
+                    "ghost-agent-scanner running in placeholder mode; "
+                    "no scan performed. Set LambdaS3Bucket parameter to "
+                    "ship the real implementation."
+                )
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({"status": "placeholder", "scanned": 0}),
+                }
       Environment:
         Variables:
           ENVIRONMENT: !Ref Environment

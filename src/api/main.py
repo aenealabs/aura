@@ -67,6 +67,7 @@ from src.api.orchestrator_settings_endpoints import (
 from src.api.query_decomposition_endpoints import query_decomposition_router
 from src.api.recurring_task_endpoints import router as recurring_task_router
 from src.api.red_team_endpoints import red_team_router
+from src.services.palantir.api import router as palantir_router
 from src.api.repository_endpoints import router as repository_router
 from src.api.scheduling_endpoints import queue_router as scheduling_queue_router
 from src.api.scheduling_endpoints import router as scheduling_router
@@ -1133,6 +1134,23 @@ app.include_router(guardrails_router)
 # ============================================================================
 
 app.include_router(explainability_router)
+
+# ============================================================================
+# Palantir AIP Integration Endpoints (ADR-074, ADR-075)
+# ============================================================================
+
+app.include_router(palantir_router)
+
+# ============================================================================
+# Runtime Security Endpoints (ADR-077, ADR-083)
+#
+# TODO(#163): the frontend at frontend/src/services/runtimeSecurityApi.js
+# expects 12 endpoints under /api/v1/runtime-security/* (admission,
+# container-escape, correlation, guardduty). The backend services exist
+# under src/services/runtime_security/ but no FastAPI router has been
+# authored yet, so the widgets currently 404. Tracked in the master
+# remediation issue.
+# ============================================================================
 
 # ============================================================================
 # Anomaly Detection Diagnostic Endpoints

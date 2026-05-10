@@ -18,11 +18,7 @@ from .integrity import (
     verify_envelope,
     verify_integrity_envelope,
 )
-from .report_generator import (
-    EDGE_CASE_LIMIT,
-    generate_report,
-    lookup_adapter,
-)
+from .report_generator import EDGE_CASE_LIMIT, generate_report, lookup_adapter
 
 __all__ = [
     "CostAnalysis",

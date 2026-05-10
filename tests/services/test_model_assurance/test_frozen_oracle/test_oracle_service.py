@@ -6,11 +6,11 @@ import pytest
 
 from src.services.model_assurance.axes import ModelAssuranceAxis
 from src.services.model_assurance.frozen_oracle import (
+    DEFAULT_HOLDOUT_RATE,
+    DOMAIN_MINIMUMS,
     ASTDiffJudge,
     CompileTestCandidateOutput,
     CompileTestJudge,
-    DOMAIN_MINIMUMS,
-    DEFAULT_HOLDOUT_RATE,
     GoldenSetIntegrityError,
     GoldenTestCase,
     GoldenTestSet,

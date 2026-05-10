@@ -16,10 +16,7 @@ from src.services.graph.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerOpen,
 )
-from src.services.graph.cost_ceiling import (
-    CeilingConfig,
-    InMemoryCostCeiling,
-)
+from src.services.graph.cost_ceiling import CeilingConfig, InMemoryCostCeiling
 from src.services.graph.edge_labels import EdgeLabel
 from src.services.graph.resolution_cache import (
     CachedResolution,
@@ -33,9 +30,9 @@ from src.services.graph.symbol_resolver_queue import (
     compute_context_hash,
 )
 from src.services.graph.symbol_resolver_tier3 import (
+    UNVERIFIED,
     Tier3LLMResolver,
     Tier3Stats,
-    UNVERIFIED,
 )
 
 # -- Helpers ----------------------------------------------------------
@@ -490,10 +487,7 @@ def _make_request_message(
 
 class TestSymbolResolverWorker:
     def test_resolves_writes_to_neptune_and_caches(self):
-        from scripts.symbol_resolver_worker import (
-            SymbolResolverWorker,
-            WorkerConfig,
-        )
+        from scripts.symbol_resolver_worker import SymbolResolverWorker, WorkerConfig
 
         sqs = _FakeSqs([[_make_request_message()]])
         neptune = _FakeNeptune()
@@ -518,10 +512,7 @@ class TestSymbolResolverWorker:
         assert cached.target_fqn is not None
 
     def test_cache_hit_short_circuits_bedrock(self):
-        from scripts.symbol_resolver_worker import (
-            SymbolResolverWorker,
-            WorkerConfig,
-        )
+        from scripts.symbol_resolver_worker import SymbolResolverWorker, WorkerConfig
 
         sqs = _FakeSqs([[_make_request_message()]])
         neptune = _FakeNeptune()
@@ -547,10 +538,7 @@ class TestSymbolResolverWorker:
         assert neptune.calls[0]["to_entity"] == "python:org/repo:x:y#function"
 
     def test_cost_ceiling_denies_emits_unverified(self):
-        from scripts.symbol_resolver_worker import (
-            SymbolResolverWorker,
-            WorkerConfig,
-        )
+        from scripts.symbol_resolver_worker import SymbolResolverWorker, WorkerConfig
 
         sqs = _FakeSqs([[_make_request_message()]])
         neptune = _FakeNeptune()
@@ -574,10 +562,7 @@ class TestSymbolResolverWorker:
         assert neptune.calls[0]["metadata"]["resolution_method"] == "cost_denied"
 
     def test_breaker_open_skips_delete(self):
-        from scripts.symbol_resolver_worker import (
-            SymbolResolverWorker,
-            WorkerConfig,
-        )
+        from scripts.symbol_resolver_worker import SymbolResolverWorker, WorkerConfig
 
         sqs = _FakeSqs([[_make_request_message()]])
         neptune = _FakeNeptune()
@@ -611,10 +596,7 @@ class TestSymbolResolverWorker:
         assert sqs.deleted == []
 
     def test_invalid_payload_routes_to_dlq(self):
-        from scripts.symbol_resolver_worker import (
-            SymbolResolverWorker,
-            WorkerConfig,
-        )
+        from scripts.symbol_resolver_worker import SymbolResolverWorker, WorkerConfig
 
         bad_message = {"Body": "not-valid-json", "ReceiptHandle": "rcpt-bad"}
         sqs = _FakeSqs([[bad_message]])
@@ -630,10 +612,7 @@ class TestSymbolResolverWorker:
         assert sqs.deleted == ["rcpt-bad"]
 
     def test_max_loops_terminates(self):
-        from scripts.symbol_resolver_worker import (
-            SymbolResolverWorker,
-            WorkerConfig,
-        )
+        from scripts.symbol_resolver_worker import SymbolResolverWorker, WorkerConfig
 
         sqs = _FakeSqs([])  # No messages ever.
         worker = SymbolResolverWorker(

@@ -198,10 +198,7 @@ class TestNeptuneAddRelationshipValidation:
             service.add_relationship("a.py::A", "b.py::B", "FROBNICATES")
 
     def test_accepts_canonical_label(self):
-        from src.services.neptune_graph_service import (
-            NeptuneGraphService,
-            NeptuneMode,
-        )
+        from src.services.neptune_graph_service import NeptuneGraphService, NeptuneMode
 
         service = NeptuneGraphService(mode=NeptuneMode.MOCK)
         id_a = service.add_code_entity("A", "class", "a.py", 1)
@@ -212,10 +209,7 @@ class TestNeptuneAddRelationshipValidation:
         assert result is True
 
     def test_accepts_legacy_label(self):
-        from src.services.neptune_graph_service import (
-            NeptuneGraphService,
-            NeptuneMode,
-        )
+        from src.services.neptune_graph_service import NeptuneGraphService, NeptuneMode
 
         service = NeptuneGraphService(mode=NeptuneMode.MOCK)
         id_a = service.add_code_entity("A", "class", "a.py", 1)
@@ -227,10 +221,7 @@ class TestNeptuneAddRelationshipValidation:
 
     def test_accepts_enum_member_directly(self):
         """EdgeLabel members are str subclasses; they pass directly."""
-        from src.services.neptune_graph_service import (
-            NeptuneGraphService,
-            NeptuneMode,
-        )
+        from src.services.neptune_graph_service import NeptuneGraphService, NeptuneMode
 
         service = NeptuneGraphService(mode=NeptuneMode.MOCK)
         id_a = service.add_code_entity("A", "class", "a.py", 1)

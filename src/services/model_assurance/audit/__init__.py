@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-from .contracts import (
-    EVENT_NIST_MAPPING,
-    AuditEvent,
-    AuditEventType,
-    NISTControl,
-)
+from .contracts import EVENT_NIST_MAPPING, AuditEvent, AuditEventType, NISTControl
 from .event_emitter import (
     AuditEmitter,
     AuditEventSink,

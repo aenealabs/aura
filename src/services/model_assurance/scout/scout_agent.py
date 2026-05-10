@@ -52,9 +52,7 @@ from src.services.model_assurance.scout.events import (
     ModelCandidateDetected,
     make_event,
 )
-from src.services.model_assurance.scout.scout_state import (
-    ScoutStateStore,
-)
+from src.services.model_assurance.scout.scout_state import ScoutStateStore
 
 logger = logging.getLogger(__name__)
 

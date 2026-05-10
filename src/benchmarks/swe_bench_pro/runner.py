@@ -25,12 +25,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from .adapter import Adapter, AdapterError
-from .contracts import (
-    SWEBenchPrediction,
-    SWEBenchResult,
-    SWEBenchTask,
-    TaskOutcome,
-)
+from .contracts import SWEBenchPrediction, SWEBenchResult, SWEBenchTask, TaskOutcome
 
 logger = logging.getLogger(__name__)
 

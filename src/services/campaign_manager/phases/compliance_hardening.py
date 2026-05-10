@@ -31,7 +31,6 @@ from ..contracts import (
 )
 from .base import CampaignWorker, Phase, PhaseExecutionContext, PhaseResult
 
-
 # Phase graph for Compliance Hardening. Order is significant: each
 # phase consumes artifacts produced by the previous one.
 

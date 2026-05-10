@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.services.model_assurance.rollback import (
-    ConfigRevision,
-    RevisionHistory,
-)
+from src.services.model_assurance.rollback import ConfigRevision, RevisionHistory
 
 
 def _rev(rid: str, model: str = "m") -> ConfigRevision:

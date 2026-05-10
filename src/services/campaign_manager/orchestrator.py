@@ -28,13 +28,13 @@ from typing import Optional
 
 from .checkpoint_store import CheckpointStore
 from .contracts import (
+    HIGH_IMPACT_CAMPAIGN_TYPES,
     ArtifactRef,
     CampaignDefinition,
     CampaignOutcome,
     CampaignState,
     CampaignStatus,
     CompletedPhaseRef,
-    HIGH_IMPACT_CAMPAIGN_TYPES,
     HitlMilestone,
     PhaseCheckpoint,
     PhaseOutcome,
@@ -48,12 +48,7 @@ from .exceptions import (
     TenantCostCapExceededError,
 )
 from .operation_ledger import OperationLedger
-from .phases.base import (
-    CampaignWorker,
-    Phase,
-    PhaseExecutionContext,
-    PhaseResult,
-)
+from .phases.base import CampaignWorker, Phase, PhaseExecutionContext, PhaseResult
 from .state_store import CampaignStateStore
 from .tenant_cost_rollup import TenantCostRollup
 

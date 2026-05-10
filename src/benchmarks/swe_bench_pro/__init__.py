@@ -32,29 +32,20 @@ Created: 2026-05-07
 """
 
 from .adapter import Adapter, AdapterError, BatchAdapter
-from .contracts import (
-    SWEBenchPrediction,
-    SWEBenchResult,
-    SWEBenchTask,
-    TaskOutcome,
-)
+from .contracts import SWEBenchPrediction, SWEBenchResult, SWEBenchTask, TaskOutcome
 from .enhanced_adapter import (
     AuraEnhancedAdapter,
     CannedRetriever,
-    NullReviewer,
     NullRetriever,
+    NullReviewer,
+    RepoContextRetriever,
     Reviewer,
     ReviewResult,
-    RepoContextRetriever,
     ScriptedReviewer,
-    StubReviewer,
     StubRetriever,
+    StubReviewer,
 )
-from .mock_adapter import (
-    DeterministicMockAdapter,
-    EmptyPatchAdapter,
-    StubAdapter,
-)
+from .mock_adapter import DeterministicMockAdapter, EmptyPatchAdapter, StubAdapter
 from .runner import RunReport, run
 from .scoring import (
     SimilarityReport,

@@ -33,7 +33,6 @@ from src.services.supply_chain.model_provenance.contracts import (
     SignatureStatus,
 )
 
-
 # Provider reputation tiers. Well-known foundation-model providers
 # score high; new entrants score lower until they accumulate
 # evaluation history. The tier is a lookup, not a learned value, so

@@ -11,9 +11,9 @@ from src.services.model_assurance.anti_goodhart import (
 from src.services.model_assurance.axes import ModelAssuranceAxis
 from src.services.model_assurance.frozen_oracle import (
     DOMAIN_MINIMUMS,
+    REQUIRED_APPROVALS,
     GoldenTestCase,
     GoldenTestSet,
-    REQUIRED_APPROVALS,
     RotationApproval,
     TestCaseDomain,
     apply_rotation,

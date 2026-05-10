@@ -31,10 +31,7 @@ from src.services.model_assurance.frozen_oracle.contracts import (
     GoldenSetIntegrityError,
     GoldenTestCase,
 )
-from src.services.model_assurance.frozen_oracle.golden_set import (
-    GoldenTestSet,
-)
-
+from src.services.model_assurance.frozen_oracle.golden_set import GoldenTestSet
 
 # Hard cap: no more than this fraction of the set may be rotated
 # per cycle. Per ADR-088 §Stage 4 ("10% quarterly").

@@ -11,11 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.lint_edge_labels import (
-    EdgeLabelVisitor,
-    _is_allowlisted,
-    lint_paths,
-)
+from scripts.lint_edge_labels import EdgeLabelVisitor, _is_allowlisted, lint_paths
 
 
 def _write(tmp_path: Path, name: str, source: str) -> Path:

@@ -9,10 +9,7 @@ from .contracts import (
     PipelineStage,
     StageOutcome,
 )
-from .orchestrator import (
-    PipelineOrchestrator,
-    SandboxProvisionHook,
-)
+from .orchestrator import PipelineOrchestrator, SandboxProvisionHook
 from .state_machine_definition import (
     StageLambdaArns,
     StateMachineConfig,

@@ -23,8 +23,8 @@ from src.services.model_assurance import (
     ModelRequirements,
 )
 from src.services.model_assurance.frozen_oracle import (
-    ASTDiffJudge,
     DOMAIN_MINIMUMS,
+    ASTDiffJudge,
     GoldenTestCase,
     GoldenTestSet,
     JudgeRegistry,
@@ -41,19 +41,15 @@ from src.services.model_assurance.pipeline import (
     PipelineOrchestrator,
     PipelineStage,
 )
-from src.services.model_assurance.scout import (
-    EligibilityFlag,
-    make_event,
-)
+from src.services.model_assurance.scout import EligibilityFlag, make_event
 from src.services.supply_chain.model_provenance import (
     InMemoryModelQuarantineStore,
     ModelArtifact,
     ModelLicense,
     ModelProvenanceService,
-    ModelRegistry as ProvRegistry,
-    ProvenanceServiceConfig,
 )
-
+from src.services.supply_chain.model_provenance import ModelRegistry as ProvRegistry
+from src.services.supply_chain.model_provenance import ProvenanceServiceConfig
 
 # ----------------------------------------------------- helpers
 

@@ -20,9 +20,7 @@ import asyncio
 import threading
 from typing import Any
 
-from src.services.neptune_graph_service import (
-    _ThreadDispatchedGremlinClient,
-)
+from src.services.neptune_graph_service import _ThreadDispatchedGremlinClient
 
 
 class _FakeSubmitResult:

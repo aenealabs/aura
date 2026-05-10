@@ -26,14 +26,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional, Protocol
 
+from src.services.vulnerability_scanner.analysis.capability import ModelCapabilityTier
 from src.services.vulnerability_scanner.analysis.cost_tracker import (
     DEFAULT_TIER_PRICING,
     CostCapExceededError,
     CostTracker,
     TierPricing,
-)
-from src.services.vulnerability_scanner.analysis.capability import (
-    ModelCapabilityTier,
 )
 
 from .adapter import Adapter, AdapterError

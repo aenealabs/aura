@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from .augmentation import (
-    AdversarialAugmentation,
-    CaseProposal,
-    DedupReport,
-)
+from .augmentation import AdversarialAugmentation, CaseProposal, DedupReport
 from .seed_source import (
     AgentControlledSeedSource,
     CronSeedSource,

@@ -43,7 +43,6 @@ from src.services.graph.symbol_resolver_tier3 import (
     Tier3LLMResolver,
 )
 
-
 _RECORDINGS_PATH = (
     Path(__file__).resolve().parents[2]
     / "fixtures"

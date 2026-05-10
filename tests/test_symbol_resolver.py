@@ -7,10 +7,7 @@ import pytest
 from src.agents.ast_parser_agent import CodeEntity, CodeRelationship
 from src.services.graph.edge_labels import EdgeLabel
 from src.services.graph.fqn import compute_fqn
-from src.services.graph.symbol_resolver import (
-    ResolutionStats,
-    Tier1SymbolResolver,
-)
+from src.services.graph.symbol_resolver import ResolutionStats, Tier1SymbolResolver
 
 REPO_ID = "owner/repo"
 

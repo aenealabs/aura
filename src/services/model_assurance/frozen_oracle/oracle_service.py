@@ -26,12 +26,8 @@ from src.services.model_assurance.frozen_oracle.contracts import (
     JudgeResult,
     OracleEvaluation,
 )
-from src.services.model_assurance.frozen_oracle.golden_set import (
-    GoldenTestSet,
-)
-from src.services.model_assurance.frozen_oracle.judges.contracts import (
-    JudgeRegistry,
-)
+from src.services.model_assurance.frozen_oracle.golden_set import GoldenTestSet
+from src.services.model_assurance.frozen_oracle.judges.contracts import JudgeRegistry
 
 logger = logging.getLogger(__name__)
 

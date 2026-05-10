@@ -67,7 +67,6 @@ from src.api.orchestrator_settings_endpoints import (
 from src.api.query_decomposition_endpoints import query_decomposition_router
 from src.api.recurring_task_endpoints import router as recurring_task_router
 from src.api.red_team_endpoints import red_team_router
-from src.services.palantir.api import router as palantir_router
 from src.api.repository_endpoints import router as repository_router
 from src.api.scheduling_endpoints import queue_router as scheduling_queue_router
 from src.api.scheduling_endpoints import router as scheduling_router
@@ -91,6 +90,7 @@ from src.services.database_connections import (
 )
 from src.services.git_ingestion_service import GitIngestionService
 from src.services.observability_service import get_monitor, start_event_loop_monitor
+from src.services.palantir.api import router as palantir_router
 from src.services.realtime_monitoring_integration import RealTimeMonitoringIntegration
 
 logger = logging.getLogger(__name__)

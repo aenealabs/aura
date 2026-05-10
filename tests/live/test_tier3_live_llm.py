@@ -31,10 +31,7 @@ import pytest
 
 from src.agents.ast_parser_agent import CodeEntity, CodeRelationship
 from src.services.graph.edge_labels import EdgeLabel
-from src.services.graph.symbol_resolver_tier3 import (
-    UNVERIFIED,
-    Tier3LLMResolver,
-)
+from src.services.graph.symbol_resolver_tier3 import UNVERIFIED, Tier3LLMResolver
 
 # Module-level skip: nothing in this module runs unless real Bedrock
 # is available in the runner environment. Equivalent to a pytest.skip

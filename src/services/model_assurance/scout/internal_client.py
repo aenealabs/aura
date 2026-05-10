@@ -24,9 +24,7 @@ from src.services.model_assurance.adapter_registry import (
     ModelProvider,
     TokenizerType,
 )
-from src.services.model_assurance.scout.bedrock_client import (
-    BedrockModelSummary,
-)
+from src.services.model_assurance.scout.bedrock_client import BedrockModelSummary
 
 logger = logging.getLogger(__name__)
 

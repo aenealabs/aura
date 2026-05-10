@@ -43,7 +43,6 @@ from src.exceptions import (
     WorkflowError,
 )
 
-
 # Each tuple: (constructor, kwargs, attrs to verify)
 EXCEPTION_FIXTURES = [
     (AuraError, {"message": "m", "error_code": "E", "context": {"k": "v"}},

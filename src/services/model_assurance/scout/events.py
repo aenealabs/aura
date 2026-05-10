@@ -33,7 +33,6 @@ from src.services.model_assurance.adapter_registry import (
     ModelProvider,
 )
 
-
 SCHEMA_VERSION = "1.0"
 EVENT_SOURCE = "aura.model_assurance.scout"
 EVENT_DETAIL_TYPE = "ModelCandidateDetected"

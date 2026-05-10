@@ -37,7 +37,6 @@ from scripts import migrate_entity_ids_adr090 as migration_module
 from scripts.migrate_entity_ids_adr090 import migrate
 from src.services.neptune_graph_service import NeptuneGraphService, NeptuneMode
 
-
 _REPO = "owner/repo"
 
 

@@ -35,14 +35,9 @@ logger = logging.getLogger(__name__)
 
 
 try:  # pragma: no cover — exercised via mock-mode tests
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import (
-        ed25519,
-        padding,
-        rsa,
-        ec,
-    )
     from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
 
     CRYPTOGRAPHY_AVAILABLE = True
 except ImportError:  # pragma: no cover

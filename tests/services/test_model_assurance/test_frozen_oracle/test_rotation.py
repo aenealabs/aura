@@ -7,11 +7,11 @@ import pytest
 from src.services.model_assurance.axes import ModelAssuranceAxis
 from src.services.model_assurance.frozen_oracle import (
     DOMAIN_MINIMUMS,
+    REQUIRED_APPROVALS,
+    ROTATION_CAP_FRACTION,
     GoldenSetIntegrityError,
     GoldenTestCase,
     GoldenTestSet,
-    REQUIRED_APPROVALS,
-    ROTATION_CAP_FRACTION,
     RotationApproval,
     RotationProposal,
     TestCaseDomain,

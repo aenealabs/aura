@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from src.services.supply_chain.model_provenance import (
-    InMemoryModelQuarantineStore,
-)
+from src.services.supply_chain.model_provenance import InMemoryModelQuarantineStore
 
 
 class TestBasicLifecycle:

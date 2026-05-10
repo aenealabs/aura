@@ -25,14 +25,14 @@ from typing import Any
 from git import GitCommandError, InvalidGitRepositoryError, Repo
 
 from src.services.github_app_auth import GitHubAppAuth, get_github_app_auth
-from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
-from src.services.graph.fqn import FQNBuilder
 from src.services.graph.config_dependency_agent import (
     VERTEX_CONFIG_PARAMETER,
     VERTEX_FEATURE_FLAG,
     VERTEX_KMS_ALIAS,
     ConfigDependencyAgent,
 )
+from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
+from src.services.graph.fqn import FQNBuilder
 from src.services.graph.symbol_resolver import Tier1SymbolResolver
 from src.services.graph.symbol_resolver_tier2 import Tier2SymbolResolver
 from src.services.graph.symbol_resolver_tier3 import (

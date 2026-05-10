@@ -31,7 +31,6 @@ from src.services.supply_chain.model_provenance import (
 )
 from src.services.supply_chain.model_provenance import signature_verifier as sv_mod
 
-
 pytest.importorskip("cryptography")
 
 

@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from src.services.model_assurance.adapter_registry import (
+    ModelArchitecture,
+    ModelProvider,
+    TokenizerType,
+)
 from src.services.model_assurance.scout import (
     BedrockListClient,
     BedrockListResponse,
@@ -12,14 +17,7 @@ from src.services.model_assurance.scout import (
     infer_tokenizer,
     synthesize_summary,
 )
-from src.services.model_assurance.scout.bedrock_client import (
-    _summary_from_bedrock,
-)
-from src.services.model_assurance.adapter_registry import (
-    ModelArchitecture,
-    ModelProvider,
-    TokenizerType,
-)
+from src.services.model_assurance.scout.bedrock_client import _summary_from_bedrock
 
 
 class TestMockMode:

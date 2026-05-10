@@ -30,7 +30,6 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
-
 # Hostname patterns AWS uses for FIPS endpoints.
 _FIPS_PATTERNS = (
     re.compile(r".*-fips-.*"),

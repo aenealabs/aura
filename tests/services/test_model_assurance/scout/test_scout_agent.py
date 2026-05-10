@@ -21,7 +21,6 @@ from src.services.model_assurance.scout import (
     synthesize_summary,
 )
 
-
 # ----------------------------------------------------------------- helpers
 
 

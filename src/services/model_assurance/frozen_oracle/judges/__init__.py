@@ -13,10 +13,7 @@ from .llm_judge import (
     SelfGradingError,
     assert_no_self_grading,
 )
-from .static_analysis_judge import (
-    StaticAnalysisCandidateOutput,
-    StaticAnalysisJudge,
-)
+from .static_analysis_judge import StaticAnalysisCandidateOutput, StaticAnalysisJudge
 
 __all__ = [
     "CandidateOutput",

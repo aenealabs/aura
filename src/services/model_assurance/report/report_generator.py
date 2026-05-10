@@ -10,15 +10,9 @@ from __future__ import annotations
 
 from typing import Mapping, Sequence
 
-from src.services.model_assurance.adapter_registry import (
-    AdapterRegistry,
-    ModelAdapter,
-)
+from src.services.model_assurance.adapter_registry import AdapterRegistry, ModelAdapter
 from src.services.model_assurance.axes import ModelAssuranceAxis
-from src.services.model_assurance.frozen_oracle import (
-    JudgeResult,
-    OracleEvaluation,
-)
+from src.services.model_assurance.frozen_oracle import JudgeResult, OracleEvaluation
 from src.services.model_assurance.pipeline.contracts import (
     PipelineResult,
     PipelineStage,
@@ -29,7 +23,6 @@ from src.services.model_assurance.report.contracts import (
     HumanSpotCheckResult,
     ShadowDeploymentReport,
 )
-
 
 # Per ADR-088 §Stage 7: 10 best-improved + 10 most-degraded cases.
 EDGE_CASE_LIMIT = 10

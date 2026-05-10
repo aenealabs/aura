@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from .contracts import SWEBenchTask
 
-
 _SYSTEM_PROMPT = """\
 You are an expert software engineer. You will receive a GitHub issue
 report and the current state of the affected repository. Your task is

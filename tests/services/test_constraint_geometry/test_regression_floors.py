@@ -34,7 +34,6 @@ from src.services.constraint_geometry.regression_floor import (
     violations_force_reject,
 )
 
-
 # ---------------------------------------------------------------- helpers
 
 

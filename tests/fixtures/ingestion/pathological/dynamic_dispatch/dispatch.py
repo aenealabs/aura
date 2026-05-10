@@ -8,7 +8,6 @@ deterministic tiers DON'T spuriously resolve them.
 
 from __future__ import annotations
 
-
 HANDLERS = {
     "ping": lambda: "pong",
     "echo": lambda x: x,

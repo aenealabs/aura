@@ -35,9 +35,7 @@ from src.services.model_assurance.rollback.contracts import (
     RollbackOutcome,
     RollbackVerdict,
 )
-from src.services.model_assurance.rollback.revision_history import (
-    RevisionHistory,
-)
+from src.services.model_assurance.rollback.revision_history import RevisionHistory
 
 logger = logging.getLogger(__name__)
 

@@ -27,9 +27,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.services.campaign_manager.checkpoint_store import (
-    InMemoryCheckpointStore,
-)
+from src.services.campaign_manager.checkpoint_store import InMemoryCheckpointStore
 from src.services.campaign_manager.contracts import (
     CampaignDefinition,
     CampaignStatus,
@@ -54,9 +52,7 @@ from src.services.campaign_manager.exceptions import (
     TamperedStateError,
     TenantCostCapExceededError,
 )
-from src.services.campaign_manager.operation_ledger import (
-    InMemoryOperationLedger,
-)
+from src.services.campaign_manager.operation_ledger import InMemoryOperationLedger
 from src.services.campaign_manager.orchestrator import CampaignOrchestrator
 from src.services.campaign_manager.phases.base import (
     Phase,
@@ -71,13 +67,8 @@ from src.services.campaign_manager.state_store import (
     InMemoryCampaignStateStore,
     StaleStateError,
 )
-from src.services.campaign_manager.tenant_cost_rollup import (
-    InMemoryTenantCostRollup,
-)
-from src.services.vulnerability_scanner.analysis.capability import (
-    ModelCapabilityTier,
-)
-
+from src.services.campaign_manager.tenant_cost_rollup import InMemoryTenantCostRollup
+from src.services.vulnerability_scanner.analysis.capability import ModelCapabilityTier
 
 # =============================================================================
 # Fixtures
@@ -727,9 +718,7 @@ class TestPhaseHarnessDrivenLoop:
             ComplianceHardeningWorker._PHASE_GRAPH[4].definition
         )
         from src.services.campaign_manager.contracts import CampaignState
-        from src.services.campaign_manager.cost_tracker import (
-            CampaignCostTracker,
-        )
+        from src.services.campaign_manager.cost_tracker import CampaignCostTracker
 
         ctx = PhaseExecutionContext(
             definition=compliance_definition,

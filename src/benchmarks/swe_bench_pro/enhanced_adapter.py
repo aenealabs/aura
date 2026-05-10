@@ -44,9 +44,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol
 
-from src.services.vulnerability_scanner.analysis.capability import (
-    ModelCapabilityTier,
-)
+from src.services.vulnerability_scanner.analysis.capability import ModelCapabilityTier
 from src.services.vulnerability_scanner.analysis.cost_tracker import (
     DEFAULT_TIER_PRICING,
     CostCapExceededError,

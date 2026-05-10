@@ -9,10 +9,7 @@ from .contracts import (
     RollbackVerdict,
 )
 from .revision_history import RevisionHistory
-from .rollback_service import (
-    AvailabilityProbe,
-    RollbackService,
-)
+from .rollback_service import AvailabilityProbe, RollbackService
 
 __all__ = [
     "ConfigRevision",

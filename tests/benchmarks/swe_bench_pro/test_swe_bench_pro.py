@@ -37,12 +37,6 @@ from src.benchmarks.swe_bench_pro.contracts import (
     TaskOutcome,
 )
 from src.benchmarks.swe_bench_pro.dataset import _row_to_task
-from src.benchmarks.swe_bench_pro.scoring import (
-    HunkRange,
-    parse_unified_diff,
-    score_one,
-    score_predictions,
-)
 from src.benchmarks.swe_bench_pro.mock_adapter import (
     DeterministicMockAdapter,
     EmptyPatchAdapter,
@@ -50,11 +44,13 @@ from src.benchmarks.swe_bench_pro.mock_adapter import (
 )
 from src.benchmarks.swe_bench_pro.prompts import build_user_prompt, system_prompt
 from src.benchmarks.swe_bench_pro.runner import run
-from src.benchmarks.swe_bench_pro.submission import (
-    write_metadata,
-    write_submission,
+from src.benchmarks.swe_bench_pro.scoring import (
+    HunkRange,
+    parse_unified_diff,
+    score_one,
+    score_predictions,
 )
-
+from src.benchmarks.swe_bench_pro.submission import write_metadata, write_submission
 
 # =============================================================================
 # Fixtures
@@ -720,12 +716,12 @@ class TestScorePredictions:
 from src.benchmarks.swe_bench_pro.enhanced_adapter import (  # noqa: E402
     AuraEnhancedAdapter,
     CannedRetriever,
-    NullReviewer,
     NullRetriever,
+    NullReviewer,
     ReviewResult,
     ScriptedReviewer,
-    StubReviewer,
     StubRetriever,
+    StubReviewer,
 )
 
 

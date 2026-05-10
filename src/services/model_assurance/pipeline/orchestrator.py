@@ -31,11 +31,7 @@ from src.services.model_assurance import (
     ModelAssuranceEvaluator,
     ModelAssuranceVerdict,
 )
-from src.services.model_assurance.frozen_oracle import (
-    OracleEvaluation,
-    OracleService,
-)
-from src.services.model_assurance.scoring import make_incumbent
+from src.services.model_assurance.frozen_oracle import OracleEvaluation, OracleService
 from src.services.model_assurance.pipeline.contracts import (
     PipelineDecision,
     PipelineInput,
@@ -43,6 +39,7 @@ from src.services.model_assurance.pipeline.contracts import (
     PipelineStage,
     StageOutcome,
 )
+from src.services.model_assurance.scoring import make_incumbent
 from src.services.supply_chain.model_provenance import (
     ModelProvenanceService,
     ProvenanceVerdict,

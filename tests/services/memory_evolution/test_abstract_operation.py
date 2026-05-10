@@ -440,6 +440,49 @@ class TestMemoryClusteringService:
 
         assert 0.0 <= diversity <= 1.0
 
+    def test_compute_coherence_handles_nan(self, abstraction_config):
+        """Non-finite embeddings must not poison the coherence score."""
+        service = MemoryClusteringService(config=abstraction_config)
+
+        embeddings = [
+            [0.5, 0.5, 0.5, 0.5],
+            [float("nan"), 0.5, 0.5, 0.5],
+            [0.5, float("inf"), 0.5, 0.5],
+        ]
+
+        coherence = service._compute_coherence(embeddings)
+
+        assert np.isfinite(coherence)
+        assert 0.0 <= coherence <= 1.0
+
+    def test_compute_coherence_handles_zero_vectors(self, abstraction_config):
+        """All-zero embeddings must not divide-by-zero."""
+        service = MemoryClusteringService(config=abstraction_config)
+
+        embeddings = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ]
+
+        coherence = service._compute_coherence(embeddings)
+
+        assert np.isfinite(coherence)
+
+    def test_compute_coherence_handles_ragged_input(self, abstraction_config):
+        """Ragged embeddings (mismatched dims) return a defined value."""
+        service = MemoryClusteringService(config=abstraction_config)
+
+        embeddings = [
+            [0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5],
+        ]
+
+        coherence = service._compute_coherence(embeddings)
+
+        assert np.isfinite(coherence)
+        assert 0.0 <= coherence <= 1.0
+
     def test_extract_themes(self, abstraction_config, sample_memories):
         """Test theme extraction from memories."""
         service = MemoryClusteringService(config=abstraction_config)

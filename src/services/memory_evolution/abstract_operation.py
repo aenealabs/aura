@@ -329,19 +329,49 @@ class MemoryClusteringService:
         )
 
     def _compute_coherence(self, embeddings: list[list[float]]) -> float:
-        """Compute cluster coherence (average pairwise cosine similarity)."""
+        """Compute cluster coherence (average pairwise cosine similarity).
+
+        Returns 1.0 for trivially-coherent inputs (fewer than 2 embeddings)
+        and for inputs that cannot be coerced into a 2-D float array - the
+        latter would otherwise propagate NaN through the rest of the
+        scoring pipeline. Defensive against ragged input, non-finite
+        values, and zero-norm vectors.
+        """
         if len(embeddings) < 2:
             return 1.0
 
-        embedding_array = np.array(embeddings)
+        try:
+            embedding_array = np.asarray(embeddings, dtype=np.float64)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Coherence: embeddings could not be coerced to float64 array; "
+                "returning neutral 0.0"
+            )
+            return 0.0
+
+        if embedding_array.ndim != 2 or embedding_array.shape[0] < 2:
+            return 1.0 if embedding_array.shape[0] < 2 else 0.0
+
+        # Replace any non-finite values with 0 - a NaN embedding would
+        # silently poison the pairwise mean otherwise.
+        if not np.all(np.isfinite(embedding_array)):
+            embedding_array = np.nan_to_num(
+                embedding_array, nan=0.0, posinf=0.0, neginf=0.0
+            )
+
         norms = np.linalg.norm(embedding_array, axis=1, keepdims=True)
         normalized = embedding_array / (norms + 1e-10)
 
         similarity_matrix = np.dot(normalized, normalized.T)
 
-        # Get upper triangle (excluding diagonal)
-        upper_indices = np.triu_indices(len(embeddings), k=1)
-        pairwise_similarities = similarity_matrix[upper_indices]
+        # Boolean upper-triangle mask is more robust than ``triu_indices``
+        # across numpy versions and yields the same result.
+        n = embedding_array.shape[0]
+        mask = np.triu(np.ones((n, n), dtype=bool), k=1)
+        pairwise_similarities = similarity_matrix[mask]
+
+        if pairwise_similarities.size == 0:
+            return 1.0
 
         return float(np.mean(pairwise_similarities))
 

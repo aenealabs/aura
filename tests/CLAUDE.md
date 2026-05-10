@@ -25,6 +25,11 @@ pytest -n auto                         # Parallel execution
 pytest -m integration                  # Integration tests only
 ```
 
+A per-test wall-clock cap of 120 seconds is enforced via `pytest-timeout`
+(`--timeout=120 --timeout-method=thread` in default `addopts`). Override
+for legitimately long tests via `@pytest.mark.timeout(N)` at the file or
+function level, or `--timeout=N` on the command line.
+
 `tests/performance/` is excluded from default collection via
 `--ignore=tests/performance` in `pyproject.toml` `addopts`. It runs on
 the dedicated `.github/workflows/benchmarks.yml` workflow on a pinned

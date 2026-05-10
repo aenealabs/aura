@@ -1,7 +1,7 @@
 # Project Aura: Development Status
 
-**Last Assessment:** May 9, 2026
-**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues + 5 follow-ups closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward, orphan stacks wired). May 9, 2026 documentation + security pass closed an additional 4 doc-refresh follow-ups (#158, #159, #160, #161) and 2 CodeQL alerts (#271 critical code injection, #272 medium unpinned action). Issue #142 (eslint-plugin-react swap) reviewed and deferred per its own trigger conditions.
+**Last Assessment:** May 10, 2026
+**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues + 5 follow-ups closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward, orphan stacks wired). May 9, 2026 documentation + security pass closed an additional 4 doc-refresh follow-ups (#158, #159, #160, #161) and 2 CodeQL alerts (#271 critical code injection, #272 medium unpinned action). Issue #142 (eslint-plugin-react swap) reviewed and deferred per its own trigger conditions. **May 10, 2026 GTM-readiness audit (#163) ran 8 parallel lanes and produced a DO-NOT-SHIP verdict pending resolution of CRITICAL gaps in frontend mock-data wiring, observability metric emitters, GovCloud ARN partitioning, CI/CD required checks, and a production-code hardening item. Wave 1 remediation closed 7 fast-critical items (commits c8aa3df, 946954a, 5fed82b, a025ac5, 4b16154, b7c51a6 + branch-protection state change); remaining items track in #163.**
 
 ---
 
@@ -9,15 +9,15 @@
 
 | Metric | Value |
 |--------|-------|
-| **Overall Completion** | 99% |
+| **Overall Completion** | 99% (with GTM-readiness gaps tracked in #163) |
 | **Lines of Code** | 375,000+ |
-| **Test Suite** | 24,800+ tests (0 failures) |
+| **Test Suite** | 24,800+ tests; the May 10 GTM audit observed 25 hard failures at maxfail in a full sweep and one order-dependent crash path now hardened (commit c8aa3df). A clean full-suite re-run with the wave-1 fixes is pending; the "0 failures" claim should be re-asserted only after that run. |
 | **Architecture Decision Records** | 91 ADRs (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089]; ADR-090 GraphRAG ingestion edge completeness + ADR-091 Cognito cross-region DR added in May 2026) |
 | **CloudFormation Templates** | 183 (24 CodeBuild + 159 infrastructure) |
 | **Buildspecs** | 28 buildspec files in deploy/buildspecs/ (down from 38 after #131 cleanup -- 11 dead scaffolds deleted, -1,467 LOC) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
-| **GovCloud Readiness** | 100% (all deployed services compatible) |
+| **GovCloud Readiness** | Service compatibility: 19/19. **ARN partition compliance: incomplete** -- the May 10 audit identified 204 hardcoded `arn:aws:` strings across 21 templates that need `${AWS::Partition}` before a GovCloud Layer 1 deploy will succeed. Tracked in #163. Bedrock IAM model authorization updated to current-gen Sonnet 4.5 / Haiku 4.5 (commit a025ac5). |
 
 ---
 

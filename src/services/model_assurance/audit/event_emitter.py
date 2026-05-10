@@ -15,7 +15,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable, Mapping, Protocol
 
@@ -106,7 +105,8 @@ class CloudTrailEventBridgeSink:
             )
         except Exception as exc:  # pragma: no cover — runtime AWS failure
             logger.warning(
-                "CloudTrailEventBridgeSink put_events failed: %s", exc,
+                "CloudTrailEventBridgeSink put_events failed: %s",
+                exc,
             )
 
 
@@ -183,6 +183,4 @@ def filter_events_by_control(
     events: Iterable[AuditEvent], control: NISTControl
 ) -> tuple[AuditEvent, ...]:
     """Return all events whose NIST mapping includes ``control``."""
-    return tuple(
-        e for e in events if control in e.applicable_controls
-    )
+    return tuple(e for e in events if control in e.applicable_controls)

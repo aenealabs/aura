@@ -62,9 +62,7 @@ class CaseProposal:
 
     case: GoldenTestCase
     sourced_incident_id: str = ""
-    proposed_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    proposed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     notes: str = ""
 
 
@@ -160,7 +158,8 @@ class AdversarialAugmentation:
             RotationProposal(
                 proposal_id=proposal_id,
                 add_cases=tuple(p.case for p in accepted),
-                rationale=rationale or (
+                rationale=rationale
+                or (
                     f"Adversarial augmentation: {len(accepted)} accepted, "
                     f"{len(report.rejected_id_collisions)} id-collisions, "
                     f"{len(report.rejected_content_collisions)} content-dups, "

@@ -154,9 +154,7 @@ class RegistryAllowlist:
         return AllowlistDecision(
             allowed=False,
             matched_entry=None,
-            reason=(
-                f"HuggingFace repo {artifact.model_id!r} not in curated allowlist"
-            ),
+            reason=(f"HuggingFace repo {artifact.model_id!r} not in curated allowlist"),
         )
 
     def with_huggingface_entry(

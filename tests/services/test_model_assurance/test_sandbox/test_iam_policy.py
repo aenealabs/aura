@@ -75,11 +75,13 @@ class TestPolicyValidation:
         ) == ("*",)
 
     def test_multiple_violations_listed(self) -> None:
-        policy = IAMPolicyDocument(actions=(
-            "secretsmanager:GetSecretValue",
-            "rds:DeleteDBInstance",
-            "s3:GetObject",  # benign
-        ))
+        policy = IAMPolicyDocument(
+            actions=(
+                "secretsmanager:GetSecretValue",
+                "rds:DeleteDBInstance",
+                "s3:GetObject",  # benign
+            )
+        )
         violations = validate_iam_policy(
             policy,
             forbidden=IAMConstraint().forbidden_actions,

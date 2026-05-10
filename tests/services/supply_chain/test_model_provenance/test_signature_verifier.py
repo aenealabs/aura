@@ -52,10 +52,14 @@ def keypairs():
 
     def _make() -> tuple[ed25519.Ed25519PrivateKey, str]:
         priv = ed25519.Ed25519PrivateKey.generate()
-        pem = priv.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        ).decode("ascii")
+        pem = (
+            priv.public_key()
+            .public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+            .decode("ascii")
+        )
         return priv, pem
 
     return _make(), _make()

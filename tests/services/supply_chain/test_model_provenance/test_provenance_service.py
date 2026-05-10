@@ -43,8 +43,11 @@ def _artifact(
         provider=provider,
         registry=registry,
         weights_digest=digest or _digest(),
-        license=license_ or ModelLicense(
-            spdx_id="Apache-2.0", is_permissive=True, commercial_use_allowed=True,
+        license=license_
+        or ModelLicense(
+            spdx_id="Apache-2.0",
+            is_permissive=True,
+            commercial_use_allowed=True,
         ),
         training_data=lineage or ModelTrainingDataLineage(),
         signature_b64=signature_b64,
@@ -178,7 +181,8 @@ class TestLicenseDenylist:
         )
         # Verdict is not REJECTED solely due to unknown license
         assert record.verdict in (
-            ProvenanceVerdict.APPROVED, ProvenanceVerdict.QUARANTINED
+            ProvenanceVerdict.APPROVED,
+            ProvenanceVerdict.QUARANTINED,
         )
 
 
@@ -347,4 +351,6 @@ class TestEdgeCases:
         store = InMemoryModelQuarantineStore()
         svc = ModelProvenanceService(quarantine_store=store)
         svc.evaluate(_artifact(provider="rogue"))
-        assert store.is_quarantined("anthropic.claude-3-5-sonnet-20240620-v1:0") is False
+        assert (
+            store.is_quarantined("anthropic.claude-3-5-sonnet-20240620-v1:0") is False
+        )

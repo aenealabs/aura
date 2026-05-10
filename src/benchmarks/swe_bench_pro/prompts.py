@@ -91,8 +91,4 @@ def _escape(text: str) -> str:
     """Escape angle brackets to prevent finding text from breaking
     out of the XML wrapper. Same defence-in-depth used elsewhere in
     Aura's prompt construction (see ADR-049 advanced_prompts)."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

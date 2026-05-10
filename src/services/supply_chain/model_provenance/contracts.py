@@ -65,10 +65,10 @@ class ModelLicense:
     explicit denylist (e.g. ``no-commercial-use``) which are rejected.
     """
 
-    spdx_id: str = "NOASSERTION"   # SPDX identifier or "NOASSERTION"
+    spdx_id: str = "NOASSERTION"  # SPDX identifier or "NOASSERTION"
     name: str = ""
     url: str = ""
-    is_permissive: bool = False    # MIT/Apache/BSD-style
+    is_permissive: bool = False  # MIT/Apache/BSD-style
     commercial_use_allowed: bool = False
 
 
@@ -84,9 +84,9 @@ class ModelTrainingDataLineage:
     behavior of v1.
     """
 
-    sources: tuple[str, ...] = ()              # e.g. ("Common Crawl 2024-09", "RedPajama")
-    cutoff_date: datetime | None = None        # training-data cutoff
-    pii_filtered: bool | None = None           # provider attestation
+    sources: tuple[str, ...] = ()  # e.g. ("Common Crawl 2024-09", "RedPajama")
+    cutoff_date: datetime | None = None  # training-data cutoff
+    pii_filtered: bool | None = None  # provider attestation
     notes: str = ""
 
     @property
@@ -104,18 +104,15 @@ class ProviderSigningKey:
     silent verification failure.
     """
 
-    provider: str                  # "anthropic" / "amazon" / etc.
-    key_id: str                    # vendor-published key ID
+    provider: str  # "anthropic" / "amazon" / etc.
+    key_id: str  # vendor-published key ID
     public_key_pem: str
     not_before: datetime
     not_after: datetime
     revoked: bool = False
 
     def is_active_at(self, when: datetime) -> bool:
-        return (
-            not self.revoked
-            and self.not_before <= when <= self.not_after
-        )
+        return not self.revoked and self.not_before <= when <= self.not_after
 
 
 @dataclass(frozen=True)
@@ -129,17 +126,17 @@ class ModelArtifact:
     metadata response).
     """
 
-    model_id: str                                 # "anthropic.claude-3-5-..."
-    provider: str                                 # "anthropic"
+    model_id: str  # "anthropic.claude-3-5-..."
+    provider: str  # "anthropic"
     registry: ModelRegistry
-    weights_digest: str                           # SHA-256 hex
+    weights_digest: str  # SHA-256 hex
     license: ModelLicense = field(default_factory=ModelLicense)
     training_data: ModelTrainingDataLineage = field(
         default_factory=ModelTrainingDataLineage
     )
-    signature_b64: str | None = None              # detached signature, base64
-    signing_key_id: str | None = None             # which provider key signed it
-    signed_at: datetime | None = None             # when the signature was issued
+    signature_b64: str | None = None  # detached signature, base64
+    signing_key_id: str | None = None  # which provider key signed it
+    signed_at: datetime | None = None  # when the signature was issued
 
     def __post_init__(self) -> None:
         if not self.model_id:
@@ -174,15 +171,11 @@ class ModelProvenanceRecord:
     trust_score: float
     failure_reasons: tuple[str, ...] = ()
     quarantine_id: str | None = None
-    evaluated_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    evaluated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.trust_score <= 1.0:
-            raise ValueError(
-                f"trust_score must be in [0,1]; got {self.trust_score}"
-            )
+            raise ValueError(f"trust_score must be in [0,1]; got {self.trust_score}")
 
     def to_audit_dict(self) -> dict:
         return {

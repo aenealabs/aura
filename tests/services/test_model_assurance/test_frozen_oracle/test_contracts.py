@@ -92,19 +92,21 @@ class TestJudgeResultValidation:
     def test_confidence_range(self) -> None:
         with pytest.raises(ValueError, match=r"\[0,1\]"):
             JudgeResult(
-                case_id="c", judge_id="j",
+                case_id="c",
+                judge_id="j",
                 judge_kind=JudgeKind.DETERMINISTIC,
-                passed=True, confidence=1.5,
+                passed=True,
+                confidence=1.5,
             )
 
     def test_axis_scores_dict(self) -> None:
         r = JudgeResult(
-            case_id="c", judge_id="j",
+            case_id="c",
+            judge_id="j",
             judge_kind=JudgeKind.DETERMINISTIC,
-            passed=True, confidence=1.0,
-            axis_scores=(
-                (ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS, 1.0),
-            ),
+            passed=True,
+            confidence=1.0,
+            axis_scores=((ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS, 1.0),),
         )
         d = r.axis_scores_dict
         assert d[ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS] == 1.0
@@ -113,27 +115,31 @@ class TestJudgeResultValidation:
 class TestOracleEvaluationAggregates:
     def test_overall_pass_rate(self) -> None:
         e = OracleEvaluation(
-            candidate_id="c", judge_results=(),
+            candidate_id="c",
+            judge_results=(),
             per_axis_scores=(),
-            cases_evaluated=10, cases_passed=7,
+            cases_evaluated=10,
+            cases_passed=7,
         )
         assert e.overall_pass_rate == pytest.approx(0.7)
 
     def test_zero_cases_pass_rate(self) -> None:
         e = OracleEvaluation(
-            candidate_id="c", judge_results=(),
+            candidate_id="c",
+            judge_results=(),
             per_axis_scores=(),
-            cases_evaluated=0, cases_passed=0,
+            cases_evaluated=0,
+            cases_passed=0,
         )
         assert e.overall_pass_rate == 0.0
 
     def test_audit_dict_keys(self) -> None:
         e = OracleEvaluation(
-            candidate_id="c", judge_results=(),
-            per_axis_scores=(
-                (ModelAssuranceAxis.CODE_COMPREHENSION, 0.85),
-            ),
-            cases_evaluated=10, cases_passed=8,
+            candidate_id="c",
+            judge_results=(),
+            per_axis_scores=((ModelAssuranceAxis.CODE_COMPREHENSION, 0.85),),
+            cases_evaluated=10,
+            cases_passed=8,
             holdout_cases=("h1", "h2"),
         )
         d = e.to_audit_dict()

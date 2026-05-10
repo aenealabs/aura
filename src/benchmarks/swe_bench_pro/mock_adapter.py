@@ -93,9 +93,7 @@ class DeterministicMockAdapter(Adapter):
     async def solve(self, task: SWEBenchTask) -> SWEBenchPrediction:
         self.solve_count += 1
         if task.instance_id in self._raise_for_ids:
-            raise AdapterError(
-                f"Configured to fail for instance {task.instance_id}"
-            )
+            raise AdapterError(f"Configured to fail for instance {task.instance_id}")
         patch = self._patches.get(task.instance_id, "")
         return SWEBenchPrediction(
             instance_id=task.instance_id,

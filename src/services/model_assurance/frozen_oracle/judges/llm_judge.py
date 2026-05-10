@@ -74,9 +74,7 @@ class SelfGradingError(Exception):
     """Raised when judge_model_id == candidate_model_id."""
 
 
-def assert_no_self_grading(
-    *, candidate_model_id: str, judge_model_id: str
-) -> None:
+def assert_no_self_grading(*, candidate_model_id: str, judge_model_id: str) -> None:
     if candidate_model_id == judge_model_id:
         raise SelfGradingError(
             f"recursive degradation guard: candidate ({candidate_model_id!r}) "
@@ -170,7 +168,5 @@ class LLMJudge:
             passed=response.passed,
             confidence=response.confidence,
             reason=response.rationale,
-            axis_scores=(
-                (self._axis, 1.0 if response.passed else 0.0),
-            ),
+            axis_scores=((self._axis, 1.0 if response.passed else 0.0),),
         )

@@ -17,12 +17,10 @@ Top-level orchestrator. Per evaluation:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Mapping, Sequence
 
 from src.services.model_assurance.axes import ModelAssuranceAxis
 from src.services.model_assurance.frozen_oracle.contracts import (
-    GoldenTestCase,
     JudgeResult,
     OracleEvaluation,
 )
@@ -111,9 +109,7 @@ class OracleService:
             case_passed_overall = True
 
             for judge in self._judges.all_judges():
-                output = per_judge_outputs.get(judge.judge_id, {}).get(
-                    case.case_id
-                )
+                output = per_judge_outputs.get(judge.judge_id, {}).get(case.case_id)
                 if output is None:
                     # Missing output for this (judge, case) pair —
                     # treat as a fail for that judge on this case.

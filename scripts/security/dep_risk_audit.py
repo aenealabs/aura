@@ -73,9 +73,7 @@ def pip_audit(req_file: Path) -> dict:
     - ``vulnerabilities``: list of dicts (name, version, cve, fix_versions)
     - ``error``: str on infrastructure failure
     """
-    proc = _run(
-        ["pip-audit", "--requirement", str(req_file), "--format", "json"]
-    )
+    proc = _run(["pip-audit", "--requirement", str(req_file), "--format", "json"])
     if proc.returncode not in (0, 1):
         # 0 = clean, 1 = vulns found, anything else = pip-audit failure
         return {
@@ -144,7 +142,10 @@ def npm_audit(frontend_dir: Path) -> dict:
                 "name": name,
                 "severity": entry.get("severity"),
                 "via": (
-                    [v.get("source") if isinstance(v, dict) else v for v in entry.get("via", [])]
+                    [
+                        v.get("source") if isinstance(v, dict) else v
+                        for v in entry.get("via", [])
+                    ]
                     if entry.get("via")
                     else []
                 ),
@@ -229,7 +230,11 @@ def staleness_check_npm(package: str, frontend_dir: Path) -> dict:
     try:
         times = json.loads(proc.stdout or "{}")
     except json.JSONDecodeError:
-        return {"package": package, "found": False, "summary": "invalid npm view output"}
+        return {
+            "package": package,
+            "found": False,
+            "summary": "invalid npm view output",
+        }
     latest_modified = times.get("modified")
     return {
         "package": package,
@@ -262,7 +267,9 @@ def render_report(
     total_py_vulns = 0
     for req_file, result in pip_results:
         if not result["ok"]:
-            lines.append(f"- **{str(req_file.relative_to(REPO_ROOT))}** -- audit failed: {result['error']}")
+            lines.append(
+                f"- **{str(req_file.relative_to(REPO_ROOT))}** -- audit failed: {result['error']}"
+            )
             continue
         if not result["vulnerabilities"]:
             lines.append(f"- **{str(req_file.relative_to(REPO_ROOT))}** -- clean")
@@ -278,9 +285,7 @@ def render_report(
                 if v["fix_versions"]
                 else "no fix yet"
             )
-            lines.append(
-                f"  - `{v['name']}=={v['version']}` -- {v['id']} ({fix})"
-            )
+            lines.append(f"  - `{v['name']}=={v['version']}` -- {v['id']} ({fix})")
             if v["description"]:
                 lines.append(f"    - {v['description']}")
     lines.append("")
@@ -297,13 +302,9 @@ def render_report(
     else:
         for v in npm_result["vulnerabilities"]:
             fix = "fix available" if v["fixAvailable"] else "no fix yet"
-            lines.append(
-                f"- `{v['name']}` -- severity {v['severity']} ({fix})"
-            )
+            lines.append(f"- `{v['name']}` -- severity {v['severity']} ({fix})")
     lines.append("")
-    lines.append(
-        f"**npm vulns total:** {len(npm_result.get('vulnerabilities', []))}"
-    )
+    lines.append(f"**npm vulns total:** {len(npm_result.get('vulnerabilities', []))}")
     lines.append("")
 
     # Staleness

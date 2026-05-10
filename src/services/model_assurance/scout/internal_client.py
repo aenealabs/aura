@@ -17,13 +17,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable
 
-from src.services.model_assurance.adapter_registry import (
-    ModelArchitecture,
-    ModelProvider,
-    TokenizerType,
-)
+from src.services.model_assurance.adapter_registry import ModelProvider
 from src.services.model_assurance.scout.bedrock_client import BedrockModelSummary
 
 logger = logging.getLogger(__name__)
@@ -33,9 +28,9 @@ logger = logging.getLogger(__name__)
 class InternalModelSummary:
     """Aura SWE-RL training-pipeline output."""
 
-    model_id: str                    # ECR-pattern: "aura-models/swe-rl-vN"
+    model_id: str  # ECR-pattern: "aura-models/swe-rl-vN"
     checkpoint_iso: datetime
-    base_model: str = ""             # which Bedrock/HF model this fine-tune started from
+    base_model: str = ""  # which Bedrock/HF model this fine-tune started from
     training_loss: float = 0.0
     notes: str = ""
 

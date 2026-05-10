@@ -19,7 +19,8 @@ from src.services.model_assurance.scout import (
 class TestMockMode:
     def test_no_client_empty_response(self) -> None:
         c = HuggingFaceListClient(
-            curated_repo_ids=["meta-llama/CodeLlama-34b"], client=None,
+            curated_repo_ids=["meta-llama/CodeLlama-34b"],
+            client=None,
         )
         c.install_fake(())
         resp = c.list_models()
@@ -27,7 +28,8 @@ class TestMockMode:
 
     def test_install_fake_returns_models(self) -> None:
         c = HuggingFaceListClient(
-            curated_repo_ids=["meta-llama/CodeLlama-34b"], client=None,
+            curated_repo_ids=["meta-llama/CodeLlama-34b"],
+            client=None,
         )
         c.install_fake((synthesize_hf_summary(repo_id="meta-llama/CodeLlama-34b"),))
         resp = c.list_models()

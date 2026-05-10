@@ -26,8 +26,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.services.model_assurance.frozen_oracle.contracts import (
-    DOMAIN_MINIMUMS,
-    GOLDEN_SET_MINIMUM,
     GoldenSetIntegrityError,
     GoldenTestCase,
 )
@@ -137,9 +135,10 @@ def apply_rotation(
 
     # 5. Apply and validate
     remove_set = set(proposal.remove_case_ids)
-    new_cases = tuple(
-        c for c in current.cases if c.case_id not in remove_set
-    ) + proposal.add_cases
+    new_cases = (
+        tuple(c for c in current.cases if c.case_id not in remove_set)
+        + proposal.add_cases
+    )
     new_set = GoldenTestSet(cases=new_cases, version=new_version)
     new_set.validate_minimums()  # raises if minima broken
     return new_set

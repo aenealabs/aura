@@ -116,8 +116,10 @@ class _StubPhase(Phase):
 
     async def execute(self, context: PhaseExecutionContext) -> PhaseResult:
         progress = (
-            SuccessCriteriaProgress(criterion_id=self.criterion_id, progress=1.0),
-        ) if self.criterion_id else ()
+            (SuccessCriteriaProgress(criterion_id=self.criterion_id, progress=1.0),)
+            if self.criterion_id
+            else ()
+        )
         return PhaseResult(
             outcome=PhaseOutcome.COMPLETED,
             success_criteria_progress=progress,

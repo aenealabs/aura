@@ -402,13 +402,9 @@ class TestAuraBedrockAdapter:
         client = _MockLLMClient(
             {"content": _VALID_DIFF, "input_tokens": 1, "output_tokens": 1}
         )
-        adapter = AuraBedrockAdapter(
-            llm_client=client, model_id="m"
-        )
+        adapter = AuraBedrockAdapter(llm_client=client, model_id="m")
         await adapter.solve(_task(problem="UNIQUE-PROBLEM-MARKER-XYZ"))
-        assert (
-            "UNIQUE-PROBLEM-MARKER-XYZ" in client.calls[0]["user_prompt"]
-        )
+        assert "UNIQUE-PROBLEM-MARKER-XYZ" in client.calls[0]["user_prompt"]
 
     @pytest.mark.asyncio
     async def test_prose_response_returns_empty_patch(self):
@@ -425,9 +421,7 @@ class TestAuraBedrockAdapter:
 
     @pytest.mark.asyncio
     async def test_llm_failure_becomes_adapter_error(self):
-        adapter = AuraBedrockAdapter(
-            llm_client=_RaisingLLMClient(), model_id="m"
-        )
+        adapter = AuraBedrockAdapter(llm_client=_RaisingLLMClient(), model_id="m")
         with pytest.raises(AdapterError):
             await adapter.solve(_task())
 
@@ -757,9 +751,7 @@ class TestEnhancedAdapterDefaults:
         assert prediction.model_patch.startswith("diff --git")
         assert prediction.aura_metadata["passes"] == 1
         assert prediction.aura_metadata["had_repo_context"] is False
-        assert (
-            prediction.aura_metadata["review_triggered_revision"] is False
-        )
+        assert prediction.aura_metadata["review_triggered_revision"] is False
         assert len(client.calls) == 1
 
 
@@ -831,9 +823,7 @@ class TestEnhancedAdapterReviewer:
         )
         prediction = await adapter.solve(_task())
         assert prediction.aura_metadata["passes"] == 1
-        assert (
-            prediction.aura_metadata["review_triggered_revision"] is False
-        )
+        assert prediction.aura_metadata["review_triggered_revision"] is False
         assert len(client.calls) == 1
 
     @pytest.mark.asyncio
@@ -870,9 +860,7 @@ class TestEnhancedAdapterReviewer:
         )
         prediction = await adapter.solve(_task(instance_id="rev1"))
         assert prediction.aura_metadata["passes"] == 2
-        assert (
-            prediction.aura_metadata["review_triggered_revision"] is True
-        )
+        assert prediction.aura_metadata["review_triggered_revision"] is True
         assert "revised" in prediction.model_patch
         # Revision prompt MUST surface the critique to the model.
         revision_prompt = client.calls[1]["user_prompt"]
@@ -937,9 +925,7 @@ class TestEnhancedAdapterReviewer:
             "needs-revision": ReviewResult(
                 revision_required=True, critique="missed edge case"
             ),
-            "passes-clean": ReviewResult(
-                revision_required=False, critique=""
-            ),
+            "passes-clean": ReviewResult(revision_required=False, critique=""),
         }
         client = _RecordingLLM(
             [

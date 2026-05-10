@@ -57,7 +57,8 @@ class TestApprovalRules:
         proposal = RotationProposal(proposal_id="p1")
         with pytest.raises(GoldenSetIntegrityError, match="approvals"):
             apply_rotation(
-                s, proposal,
+                s,
+                proposal,
                 approvals=_approvals("alice"),
                 new_version="2026.06.0",
             )
@@ -67,7 +68,8 @@ class TestApprovalRules:
         proposal = RotationProposal(proposal_id="p1")
         with pytest.raises(GoldenSetIntegrityError, match="distinct"):
             apply_rotation(
-                s, proposal,
+                s,
+                proposal,
                 approvals=_approvals("alice", "alice"),
                 new_version="2026.06.0",
             )
@@ -89,13 +91,13 @@ class TestChurnCap:
         s = _full_minimum_set()
         # 10% of 400 = 40. Propose 41 changes → reject.
         adds = tuple(
-            _case(f"new-{i:03d}", TestCaseDomain.REGRESSION)
-            for i in range(41)
+            _case(f"new-{i:03d}", TestCaseDomain.REGRESSION) for i in range(41)
         )
         proposal = RotationProposal(proposal_id="p1", add_cases=adds)
         with pytest.raises(GoldenSetIntegrityError, match="cap"):
             apply_rotation(
-                s, proposal,
+                s,
+                proposal,
                 approvals=_approvals("alice", "bob"),
                 new_version="2026.06.0",
             )
@@ -103,12 +105,12 @@ class TestChurnCap:
     def test_at_cap_accepted(self) -> None:
         s = _full_minimum_set()
         adds = tuple(
-            _case(f"new-{i:03d}", TestCaseDomain.REGRESSION)
-            for i in range(40)
+            _case(f"new-{i:03d}", TestCaseDomain.REGRESSION) for i in range(40)
         )
         proposal = RotationProposal(proposal_id="p1", add_cases=adds)
         out = apply_rotation(
-            s, proposal,
+            s,
+            proposal,
             approvals=_approvals("alice", "bob"),
             new_version="2026.06.0",
         )
@@ -119,16 +121,18 @@ class TestChurnCap:
         s = _full_minimum_set()
         # 21 adds + 20 removes = 41 churn, just over the 40-cap
         adds = tuple(
-            _case(f"new-{i:03d}", TestCaseDomain.REGRESSION)
-            for i in range(21)
+            _case(f"new-{i:03d}", TestCaseDomain.REGRESSION) for i in range(21)
         )
         removes = tuple(f"regression-{i:04d}" for i in range(20))
         proposal = RotationProposal(
-            proposal_id="p1", add_cases=adds, remove_case_ids=removes,
+            proposal_id="p1",
+            add_cases=adds,
+            remove_case_ids=removes,
         )
         with pytest.raises(GoldenSetIntegrityError, match="cap"):
             apply_rotation(
-                s, proposal,
+                s,
+                proposal,
                 approvals=_approvals("alice", "bob"),
                 new_version="2026.06.0",
             )
@@ -147,7 +151,8 @@ class TestProposalSanity:
         proposal = RotationProposal(proposal_id="p1", add_cases=adds)
         with pytest.raises(GoldenSetIntegrityError, match="duplicate"):
             apply_rotation(
-                s, proposal,
+                s,
+                proposal,
                 approvals=_approvals("alice", "bob"),
                 new_version="2026.06.0",
             )
@@ -159,7 +164,8 @@ class TestProposalSanity:
         proposal = RotationProposal(proposal_id="p1", add_cases=adds)
         with pytest.raises(GoldenSetIntegrityError, match="overlap"):
             apply_rotation(
-                s, proposal,
+                s,
+                proposal,
                 approvals=_approvals("alice", "bob"),
                 new_version="2026.06.0",
             )
@@ -167,11 +173,13 @@ class TestProposalSanity:
     def test_remove_unknown_case_rejected(self) -> None:
         s = _full_minimum_set()
         proposal = RotationProposal(
-            proposal_id="p1", remove_case_ids=("never-existed",),
+            proposal_id="p1",
+            remove_case_ids=("never-existed",),
         )
         with pytest.raises(GoldenSetIntegrityError, match="non-existent"):
             apply_rotation(
-                s, proposal,
+                s,
+                proposal,
                 approvals=_approvals("alice", "bob"),
                 new_version="2026.06.0",
             )
@@ -204,7 +212,8 @@ class TestPostRotationInvariants:
         # 30 churn ≤ 40 cap, but per-domain check rejects.
         with pytest.raises(GoldenSetIntegrityError, match="regression"):
             apply_rotation(
-                s, proposal,
+                s,
+                proposal,
                 approvals=_approvals("alice", "bob"),
                 new_version="2026.06.0",
             )
@@ -214,13 +223,14 @@ class TestPostRotationInvariants:
         s = _full_minimum_set()
         removes = tuple(f"regression-{i:04d}" for i in range(5))
         adds = tuple(
-            _case(f"new-reg-{i:04d}", TestCaseDomain.REGRESSION)
-            for i in range(5)
+            _case(f"new-reg-{i:04d}", TestCaseDomain.REGRESSION) for i in range(5)
         )
         out = apply_rotation(
-            s, RotationProposal(
+            s,
+            RotationProposal(
                 proposal_id="p1",
-                add_cases=adds, remove_case_ids=removes,
+                add_cases=adds,
+                remove_case_ids=removes,
             ),
             approvals=_approvals("alice", "bob"),
             new_version="2026.06.0",
@@ -236,11 +246,10 @@ class TestImmutability:
     def test_original_set_unchanged(self) -> None:
         s = _full_minimum_set()
         original_count = len(s)
-        adds = tuple(
-            _case(f"x-{i:03d}", TestCaseDomain.REGRESSION) for i in range(5)
-        )
+        adds = tuple(_case(f"x-{i:03d}", TestCaseDomain.REGRESSION) for i in range(5))
         apply_rotation(
-            s, RotationProposal(proposal_id="p1", add_cases=adds),
+            s,
+            RotationProposal(proposal_id="p1", add_cases=adds),
             approvals=_approvals("alice", "bob"),
             new_version="2026.06.0",
         )

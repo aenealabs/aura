@@ -169,6 +169,7 @@ class TestRotationProposalEmission:
         _, proposal = aug.to_rotation_proposal(existing, proposal_id="p1")
         # Two-distinct-approver requirement and apply.
         from datetime import datetime, timezone
+
         approvals = (
             RotationApproval(
                 approver_id="alice",
@@ -180,8 +181,10 @@ class TestRotationProposalEmission:
             ),
         )
         new_set = apply_rotation(
-            existing, proposal,
-            approvals=approvals, new_version="2026.06.0",
+            existing,
+            proposal,
+            approvals=approvals,
+            new_version="2026.06.0",
         )
         assert len(new_set) == 405
 
@@ -199,7 +202,9 @@ class TestRotationProposalEmission:
         aug = AdversarialAugmentation()
         aug.stage(CaseProposal(case=_case("good-1")))
         _, proposal = aug.to_rotation_proposal(
-            existing, proposal_id="p1", rationale="custom note",
+            existing,
+            proposal_id="p1",
+            rationale="custom note",
         )
         assert proposal.rationale == "custom note"
 

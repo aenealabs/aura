@@ -87,9 +87,7 @@ class TestThrottleHandling:
             def list_foundation_models(self):  # type: ignore[no-untyped-def]
                 raise _ClientError()
 
-        c = BedrockListClient(
-            client=_Bedrock(), max_retries=2, backoff_seconds=0.0
-        )
+        c = BedrockListClient(client=_Bedrock(), max_retries=2, backoff_seconds=0.0)
         from src.services.model_assurance.scout import bedrock_client as bc_mod
 
         original = bc_mod.ClientError

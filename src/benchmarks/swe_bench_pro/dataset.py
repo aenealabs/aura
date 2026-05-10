@@ -97,9 +97,7 @@ def _row_to_task(row: dict) -> SWEBenchTask:
         pass_to_pass=_string_tuple(row.get("PASS_TO_PASS")),
         dockerhub_tag=str(row.get("dockerhub_tag", "") or ""),
         version=str(row.get("version", "") or ""),
-        environment_setup_commit=str(
-            row.get("environment_setup_commit", "") or ""
-        ),
+        environment_setup_commit=str(row.get("environment_setup_commit", "") or ""),
         extra=extra,
     )
 

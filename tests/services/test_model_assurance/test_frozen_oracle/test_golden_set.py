@@ -36,10 +36,8 @@ def _full_minimum_set() -> GoldenTestSet:
     """Build a minimum-viable golden set (exactly 400 cases)."""
     cases: list[GoldenTestCase] = []
     domain_axis_map = {
-        TestCaseDomain.VULNERABILITY_DETECTION:
-            ModelAssuranceAxis.VULNERABILITY_DETECTION_RECALL,
-        TestCaseDomain.PATCH_CORRECTNESS:
-            ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS,
+        TestCaseDomain.VULNERABILITY_DETECTION: ModelAssuranceAxis.VULNERABILITY_DETECTION_RECALL,
+        TestCaseDomain.PATCH_CORRECTNESS: ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS,
         TestCaseDomain.FALSE_POSITIVE: ModelAssuranceAxis.GUARDRAIL_COMPLIANCE,
         TestCaseDomain.REGRESSION: ModelAssuranceAxis.CODE_COMPREHENSION,
     }
@@ -98,9 +96,12 @@ class TestValidateMinimums:
         # Total > 400 but FALSE_POSITIVE shy of its 100-case minimum.
         cases: list[GoldenTestCase] = []
         for i in range(200):
-            cases.append(_case(
-                f"vd-{i:04d}", TestCaseDomain.VULNERABILITY_DETECTION,
-            ))
+            cases.append(
+                _case(
+                    f"vd-{i:04d}",
+                    TestCaseDomain.VULNERABILITY_DETECTION,
+                )
+            )
         for i in range(120):
             cases.append(_case(f"pc-{i:04d}", TestCaseDomain.PATCH_CORRECTNESS))
         for i in range(50):

@@ -8,6 +8,7 @@ between consecutive tests in this directory, breaking PEM
 serialisation. The model_provenance package uses neither lambdas nor
 the rate limiter, so no-op overrides are safe here.
 """
+
 import pytest
 
 

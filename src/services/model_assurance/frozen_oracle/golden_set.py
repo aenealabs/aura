@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import random
 from collections import Counter
-from dataclasses import dataclass, field
-from typing import Iterable, Sequence
+from dataclasses import dataclass
+from typing import Iterable
 
 from src.services.model_assurance.frozen_oracle.contracts import (
     DOMAIN_MINIMUMS,
@@ -128,9 +128,7 @@ class GoldenTestSet:
         optimisation pressure.
         """
         if not 0.0 <= rate <= 0.5:
-            raise ValueError(
-                f"holdout rate must be in [0, 0.5]; got {rate}"
-            )
+            raise ValueError(f"holdout rate must be in [0, 0.5]; got {rate}")
         # Reduce per-domain to keep balance — withhold rate*|domain|
         # from each domain rather than rate*|set| globally so the
         # remaining set still satisfies per-domain minimums (when
@@ -152,8 +150,6 @@ class GoldenTestSet:
         return tuple(holdout_ids), tuple(evaluation)
 
 
-def build_test_set(
-    cases: Iterable[GoldenTestCase], version: str = ""
-) -> GoldenTestSet:
+def build_test_set(cases: Iterable[GoldenTestCase], version: str = "") -> GoldenTestSet:
     """Convenience constructor that materialises the iterable once."""
     return GoldenTestSet(cases=tuple(cases), version=version)

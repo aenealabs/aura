@@ -94,9 +94,7 @@ class Reviewer(Protocol):
     can use it as targeted feedback.
     """
 
-    async def review(
-        self, task: SWEBenchTask, draft_patch: str
-    ) -> "ReviewResult":
+    async def review(self, task: SWEBenchTask, draft_patch: str) -> "ReviewResult":
         """Return a ``ReviewResult`` for the draft."""
         ...
 
@@ -136,9 +134,7 @@ class NullReviewer:
     retrieval's contribution in isolation.
     """
 
-    async def review(
-        self, task: SWEBenchTask, draft_patch: str
-    ) -> ReviewResult:
+    async def review(self, task: SWEBenchTask, draft_patch: str) -> ReviewResult:
         return ReviewResult(revision_required=False, critique="", confidence=1.0)
 
 
@@ -192,9 +188,7 @@ class StubReviewer:
         )
         self.calls: int = 0
 
-    async def review(
-        self, task: SWEBenchTask, draft_patch: str
-    ) -> ReviewResult:
+    async def review(self, task: SWEBenchTask, draft_patch: str) -> ReviewResult:
         self.calls += 1
         return self._template
 
@@ -210,9 +204,7 @@ class ScriptedReviewer:
         self._scripts = scripts
         self.calls: int = 0
 
-    async def review(
-        self, task: SWEBenchTask, draft_patch: str
-    ) -> ReviewResult:
+    async def review(self, task: SWEBenchTask, draft_patch: str) -> ReviewResult:
         self.calls += 1
         return self._scripts.get(
             task.instance_id,

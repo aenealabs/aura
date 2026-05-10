@@ -114,9 +114,7 @@ class BedrockListClient:
     def is_live(self) -> bool:
         return self._is_live
 
-    def install_fake(
-        self, models: tuple[BedrockModelSummary, ...]
-    ) -> None:
+    def install_fake(self, models: tuple[BedrockModelSummary, ...]) -> None:
         """Test helper — populate the mock-mode response."""
         self._fake_models = models
         self._is_live = False
@@ -136,8 +134,7 @@ class BedrockListClient:
                 raw = self._client.list_foundation_models()
                 return BedrockListResponse(
                     models=tuple(
-                        _summary_from_bedrock(m)
-                        for m in raw.get("modelSummaries", [])
+                        _summary_from_bedrock(m) for m in raw.get("modelSummaries", [])
                     )
                 )
             except ClientError as exc:
@@ -156,12 +153,8 @@ class BedrockListClient:
                         error=f"throttled after {attempt} attempts",
                     )
                 # Non-throttle error: surface as error, not silence.
-                return BedrockListResponse(
-                    models=(), throttled=False, error=str(exc)
-                )
-        return BedrockListResponse(
-            models=(), throttled=True, error="retries exhausted"
-        )
+                return BedrockListResponse(models=(), throttled=False, error=str(exc))
+        return BedrockListResponse(models=(), throttled=True, error="retries exhausted")
 
 
 def _summary_from_bedrock(raw: dict) -> BedrockModelSummary:
@@ -183,9 +176,7 @@ def _summary_from_bedrock(raw: dict) -> BedrockModelSummary:
         input_modalities=tuple(raw.get("inputModalities", [])),
         output_modalities=tuple(raw.get("outputModalities", [])),
         inference_types_supported=tuple(raw.get("inferenceTypesSupported", [])),
-        response_streaming_supported=bool(
-            raw.get("responseStreamingSupported", False)
-        ),
+        response_streaming_supported=bool(raw.get("responseStreamingSupported", False)),
     )
 
 
@@ -213,6 +204,7 @@ def synthesize_summary(
 # Architecture / tokenizer inference helpers — used by the Scout Agent
 # when it synthesises a candidate ModelAdapter for a newly-discovered
 # Bedrock model that doesn't have a hand-curated entry yet.
+
 
 def infer_tokenizer(model_id: str) -> TokenizerType:
     if "claude" in model_id.lower():

@@ -60,10 +60,7 @@ from src.services.supply_chain.model_provenance.registry_allowlist import (
 from src.services.supply_chain.model_provenance.signature_verifier import (
     SignatureVerifier,
 )
-from src.services.supply_chain.model_provenance.trust_scorer import (
-    ModelTrustScore,
-    compute_trust_score,
-)
+from src.services.supply_chain.model_provenance.trust_scorer import compute_trust_score
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +70,12 @@ logger = logging.getLogger(__name__)
 # (with `license_acceptable=False`) which an operator can then choose
 # to override via a per-deployment config patch. Hard rejection is
 # reserved for license stances that contradict Aura's commercial use.
-_DENYLISTED_LICENSES: frozenset[str] = frozenset({
-    "PROPRIETARY-NO-COMMERCIAL",
-    "RESEARCH-ONLY",
-})
+_DENYLISTED_LICENSES: frozenset[str] = frozenset(
+    {
+        "PROPRIETARY-NO-COMMERCIAL",
+        "RESEARCH-ONLY",
+    }
+)
 
 
 @dataclass
@@ -158,9 +157,7 @@ class ModelProvenanceService:
         license_acceptable = _license_acceptable(artifact.license)
         license_reasons: tuple[str, ...] = ()
         if not license_acceptable:
-            license_reasons = (
-                f"license {artifact.license.spdx_id!r} on denylist",
-            )
+            license_reasons = (f"license {artifact.license.spdx_id!r} on denylist",)
 
         # 4. Signature verification
         verification = self._verifier.verify(artifact, now=now)

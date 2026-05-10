@@ -111,9 +111,7 @@ def test_multiple_async_calls_reuse_executor() -> None:
     wrapped = _ThreadDispatchedGremlinClient(real)
 
     async def caller() -> list[Any]:
-        return [
-            wrapped.submit(f"g.V('{i}')").all().result() for i in range(3)
-        ]
+        return [wrapped.submit(f"g.V('{i}')").all().result() for i in range(3)]
 
     results = asyncio.run(caller())
     assert results == [["ok"], ["ok"], ["ok"]]

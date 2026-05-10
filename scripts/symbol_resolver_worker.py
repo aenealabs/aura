@@ -50,10 +50,7 @@ from src.services.graph.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerOpen,
 )
-from src.services.graph.cost_ceiling import (
-    CostCeiling,
-    InMemoryCostCeiling,
-)
+from src.services.graph.cost_ceiling import CostCeiling, InMemoryCostCeiling
 from src.services.graph.edge_labels import EdgeLabel
 from src.services.graph.fqn import compute_fqn
 from src.services.graph.resolution_cache import (

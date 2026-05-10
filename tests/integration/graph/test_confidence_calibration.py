@@ -201,12 +201,10 @@ def test_recordings_cover_every_fixture(
     missing = fixture_ids - recorded_ids
     extra = recorded_ids - fixture_ids
     assert not missing, (
-        f"Missing recordings for fixtures: {sorted(missing)}. "
-        f"See REGENERATING.md."
+        f"Missing recordings for fixtures: {sorted(missing)}. " f"See REGENERATING.md."
     )
     assert not extra, (
-        f"Stale recordings without fixtures: {sorted(extra)}. "
-        f"See REGENERATING.md."
+        f"Stale recordings without fixtures: {sorted(extra)}. " f"See REGENERATING.md."
     )
 
 
@@ -278,9 +276,9 @@ def _mannwhitney_u_two_sided(
     if n1 == 0 or n2 == 0:
         return 0.0, 1.0
 
-    combined: list[tuple[float, str]] = (
-        [(v, "a") for v in group_a] + [(v, "b") for v in group_b]
-    )
+    combined: list[tuple[float, str]] = [(v, "a") for v in group_a] + [
+        (v, "b") for v in group_b
+    ]
     combined.sort(key=lambda x: x[0])
     n_total = n1 + n2
 
@@ -299,9 +297,7 @@ def _mannwhitney_u_two_sided(
             tie_group_sizes.append(j - i)
         i = j
 
-    rank_sum_a = sum(
-        ranks[k] for k in range(n_total) if combined[k][1] == "a"
-    )
+    rank_sum_a = sum(ranks[k] for k in range(n_total) if combined[k][1] == "a")
     u_a = rank_sum_a - n1 * (n1 + 1) / 2.0
     u_b = n1 * n2 - u_a
     u_min = min(u_a, u_b)
@@ -309,9 +305,7 @@ def _mannwhitney_u_two_sided(
     mean_u = n1 * n2 / 2.0
     tie_correction = sum(t**3 - t for t in tie_group_sizes)
     if n_total > 1:
-        var_u = (
-            n1 * n2 / 12.0
-        ) * (
+        var_u = (n1 * n2 / 12.0) * (
             n_total + 1 - tie_correction / (n_total * (n_total - 1))
         )
     else:

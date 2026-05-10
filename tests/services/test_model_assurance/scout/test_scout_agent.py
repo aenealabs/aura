@@ -66,9 +66,11 @@ class TestClassification:
             initial_incumbents=frozenset({"anthropic.claude-3-5-sonnet-20240620-v1:0"}),
         )
         agent, sink, _ = _agent(
-            fakes=(synthesize_summary(
-                model_id="anthropic.claude-3-5-sonnet-20240620-v1:0"
-            ),),
+            fakes=(
+                synthesize_summary(
+                    model_id="anthropic.claude-3-5-sonnet-20240620-v1:0"
+                ),
+            ),
             state=state,
         )
         result = agent.run_once()
@@ -177,9 +179,7 @@ class TestPartitionAwareness:
         agent2.run_once()
         assert "anthropic.future" not in state.snapshot().pending_availability
         # Now treated as a normal qualified candidate.
-        assert any(
-            ev.eligibility is EligibilityFlag.QUALIFIED for ev in sink2.events
-        )
+        assert any(ev.eligibility is EligibilityFlag.QUALIFIED for ev in sink2.events)
 
     def test_pending_does_not_re_emit_each_run(self) -> None:
         """After marking pending, subsequent runs don't duplicate the event."""

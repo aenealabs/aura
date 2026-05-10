@@ -30,20 +30,20 @@ Six NIST controls map to the assurance pipeline:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 
 class NISTControl(Enum):
     """NIST 800-53 controls relevant to the assurance pipeline."""
 
-    CM_3 = "CM-3"   # Configuration Change Control
-    CM_5 = "CM-5"   # Access Restrictions for Change
+    CM_3 = "CM-3"  # Configuration Change Control
+    CM_5 = "CM-5"  # Access Restrictions for Change
     SA_10 = "SA-10"  # Developer Configuration Management
-    SI_7 = "SI-7"   # Software Integrity
-    RA_5 = "RA-5"   # Vulnerability Assessment
-    AU_3 = "AU-3"   # Content of Audit Records
+    SI_7 = "SI-7"  # Software Integrity
+    RA_5 = "RA-5"  # Vulnerability Assessment
+    AU_3 = "AU-3"  # Content of Audit Records
 
 
 class AuditEventType(Enum):
@@ -137,8 +137,8 @@ class AuditEvent:
     event_type: AuditEventType
     candidate_id: str
     occurred_at: datetime
-    actor: str = "system"             # IAM principal or "system" for agent flows
-    correlation_id: str = ""          # ties together stages of one pipeline run
+    actor: str = "system"  # IAM principal or "system" for agent flows
+    correlation_id: str = ""  # ties together stages of one pipeline run
     request_parameters: tuple[tuple[str, str], ...] = ()
     response_elements: tuple[tuple[str, str], ...] = ()
     error_code: str | None = None
@@ -173,8 +173,6 @@ class AuditEvent:
             "additionalEventData": {
                 "candidate_id": self.candidate_id,
                 "correlation_id": self.correlation_id,
-                "applicable_controls": [
-                    c.value for c in self.applicable_controls
-                ],
+                "applicable_controls": [c.value for c in self.applicable_controls],
             },
         }

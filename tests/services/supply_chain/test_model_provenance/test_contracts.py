@@ -156,9 +156,7 @@ class TestProviderSigningKey:
 
     def test_revoked_key_inactive(self) -> None:
         now = datetime.now(timezone.utc)
-        k = self._make(
-            now - timedelta(days=1), now + timedelta(days=30), revoked=True
-        )
+        k = self._make(now - timedelta(days=1), now + timedelta(days=30), revoked=True)
         assert k.is_active_at(now) is False
 
 
@@ -208,9 +206,15 @@ class TestProvenanceRecord:
         )
         d = record.to_audit_dict()
         for k in (
-            "model_id", "provider", "registry", "weights_digest",
-            "verdict", "signature_status", "trust_score",
-            "evaluated_at", "license",
+            "model_id",
+            "provider",
+            "registry",
+            "weights_digest",
+            "verdict",
+            "signature_status",
+            "trust_score",
+            "evaluated_at",
+            "license",
         ):
             assert k in d
         assert d["verdict"] == "approved"

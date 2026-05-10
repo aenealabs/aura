@@ -28,7 +28,6 @@ from src.services.model_assurance.scout import ModelCandidateDetected
 from src.services.supply_chain.model_provenance import (
     ModelArtifact,
     ModelProvenanceRecord,
-    ProvenanceVerdict,
 )
 
 
@@ -105,9 +104,7 @@ class StageOutcome:
 
     @property
     def duration_ms(self) -> float:
-        return (
-            self.completed_at - self.started_at
-        ).total_seconds() * 1000.0
+        return (self.completed_at - self.started_at).total_seconds() * 1000.0
 
     def to_audit_dict(self) -> dict:
         return {
@@ -131,18 +128,12 @@ class PipelineResult:
     oracle_evaluation: OracleEvaluation | None = None
     assurance_verdict: ModelAssuranceVerdict | None = None
     rejection_reason: str | None = None
-    started_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
-    completed_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def total_duration_ms(self) -> float:
-        return (
-            self.completed_at - self.started_at
-        ).total_seconds() * 1000.0
+        return (self.completed_at - self.started_at).total_seconds() * 1000.0
 
     def stage_outcome(self, stage: PipelineStage) -> StageOutcome | None:
         for s in self.stages:
@@ -171,8 +162,6 @@ class PipelineResult:
                 else None
             ),
             "assurance_verdict": (
-                self.assurance_verdict.value
-                if self.assurance_verdict
-                else None
+                self.assurance_verdict.value if self.assurance_verdict else None
             ),
         }

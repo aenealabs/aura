@@ -35,9 +35,9 @@ class ModelProvider(Enum):
 
     BEDROCK = "bedrock"
     OPENAI = "openai"
-    GOOGLE = "google"           # via Gemini adapter (ADR audit work)
+    GOOGLE = "google"  # via Gemini adapter (ADR audit work)
     HUGGINGFACE = "huggingface"  # Phase 3
-    INTERNAL = "internal"        # Phase 3 — Aura SWE-RL outputs
+    INTERNAL = "internal"  # Phase 3 — Aura SWE-RL outputs
 
 
 class TokenizerType(Enum):
@@ -48,11 +48,11 @@ class TokenizerType(Enum):
     when adapting prompts for different models.
     """
 
-    CLAUDE = "claude"      # Anthropic
-    CL100K = "cl100k"      # GPT-4 family
-    O200K = "o200k"        # GPT-4o family
-    LLAMA = "llama"        # LLaMA-family / Mistral
-    GEMINI = "gemini"      # Google Gemini
+    CLAUDE = "claude"  # Anthropic
+    CL100K = "cl100k"  # GPT-4 family
+    O200K = "o200k"  # GPT-4o family
+    LLAMA = "llama"  # LLaMA-family / Mistral
+    GEMINI = "gemini"  # Google Gemini
     SENTENCEPIECE = "sentencepiece"
     UNKNOWN = "unknown"
 
@@ -169,10 +169,7 @@ class ModelRequirements:
             reasons.append(DisqualificationReason.TOOL_USE_REQUIRED)
         if self.require_streaming and not adapter.supports_streaming:
             reasons.append(DisqualificationReason.STREAMING_REQUIRED)
-        if (
-            self.trusted_providers
-            and adapter.provider not in self.trusted_providers
-        ):
+        if self.trusted_providers and adapter.provider not in self.trusted_providers:
             reasons.append(DisqualificationReason.PROVIDER_NOT_TRUSTED)
         return tuple(reasons)
 

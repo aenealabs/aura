@@ -78,7 +78,8 @@ class TestASTDiffJudge:
         judge = ASTDiffJudge()
         case = _patch_case()
         cand = PatchCandidateOutput(
-            case_id="other-id", patched_source="x = 1",
+            case_id="other-id",
+            patched_source="x = 1",
         )
         result = judge.evaluate(case=case, candidate_output=cand)
         assert result.passed is False
@@ -89,7 +90,8 @@ class TestASTDiffJudge:
         case = GoldenTestCase(
             case_id="patch-1",
             domain=TestCaseDomain.PATCH_CORRECTNESS,
-            title="t", description="d",
+            title="t",
+            description="d",
             axes=(ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS,),
         )
         cand = PatchCandidateOutput(case_id="patch-1", patched_source="x=1")
@@ -105,9 +107,10 @@ class TestASTDiffJudge:
             patched_source="def f(): return 1",
         )
         result = judge.evaluate(case=case, candidate_output=cand)
-        assert result.axis_scores_dict[
-            ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS
-        ] == 1.0
+        assert (
+            result.axis_scores_dict[ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS]
+            == 1.0
+        )
 
 
 # ----------------------------------------------------- Static-analysis judge
@@ -157,9 +160,10 @@ class TestStaticAnalysisJudge:
             after_findings=(("HIGH", 1),),
         )
         result = judge.evaluate(case=case, candidate_output=cand)
-        assert result.axis_scores_dict[
-            ModelAssuranceAxis.PATCH_SECURITY_EQUIVALENCE
-        ] == 1.0
+        assert (
+            result.axis_scores_dict[ModelAssuranceAxis.PATCH_SECURITY_EQUIVALENCE]
+            == 1.0
+        )
 
 
 # ----------------------------------------------------- Compile/test judge
@@ -221,7 +225,9 @@ class TestSelfGradingGuard:
                 judge_model_id="X",
             )
 
-    def test_constructor_enforces_guard(self, candidate_model_id, judge_model_id) -> None:
+    def test_constructor_enforces_guard(
+        self, candidate_model_id, judge_model_id
+    ) -> None:
         # candidate_model_id and judge_model_id come from the test conftest.
         # Constructor must NOT raise when the two differ.
         LLMJudge(
@@ -262,7 +268,9 @@ class TestLLMJudge:
         judge = self._make_judge(invoke, candidate_model_id, judge_model_id)
         case = _patch_case()
         cand = LLMJudgeCandidateOutput(
-            case_id="patch-1", prompt="p", response="r",
+            case_id="patch-1",
+            prompt="p",
+            response="r",
         )
         result = judge.evaluate(case=case, candidate_output=cand)
         assert result.passed is True
@@ -275,7 +283,9 @@ class TestLLMJudge:
         judge = self._make_judge(invoke, candidate_model_id, judge_model_id)
         case = _patch_case()
         cand = LLMJudgeCandidateOutput(
-            case_id="patch-1", prompt="p", response="r",
+            case_id="patch-1",
+            prompt="p",
+            response="r",
         )
         result = judge.evaluate(case=case, candidate_output=cand)
         assert result.passed is False
@@ -285,14 +295,14 @@ class TestLLMJudge:
         with pytest.raises(ValueError):
             LLMJudgeResponse(passed=True, confidence=2.0)
 
-    def test_case_id_mismatch_fails(
-        self, candidate_model_id, judge_model_id
-    ) -> None:
+    def test_case_id_mismatch_fails(self, candidate_model_id, judge_model_id) -> None:
         invoke = lambda req: LLMJudgeResponse(passed=True, confidence=1.0)
         judge = self._make_judge(invoke, candidate_model_id, judge_model_id)
         case = _patch_case()
         cand = LLMJudgeCandidateOutput(
-            case_id="other-case", prompt="p", response="r",
+            case_id="other-case",
+            prompt="p",
+            response="r",
         )
         result = judge.evaluate(case=case, candidate_output=cand)
         assert result.passed is False

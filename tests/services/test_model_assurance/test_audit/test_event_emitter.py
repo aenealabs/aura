@@ -193,7 +193,8 @@ class TestCloudTrailSinkMockMode:
 
         client = _Fake()
         sink = CloudTrailEventBridgeSink(
-            client=client, bus_name="aura-audit",
+            client=client,
+            bus_name="aura-audit",
         )
         sink.emit(
             AuditEvent(

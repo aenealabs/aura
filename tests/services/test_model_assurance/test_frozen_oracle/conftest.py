@@ -46,6 +46,7 @@ def assert_test_fixtures_use_distinct_models(request):
         candidate = request.getfixturevalue("candidate_model_id")
         judge = request.getfixturevalue("judge_model_id")
         assert_no_self_grading(
-            candidate_model_id=candidate, judge_model_id=judge,
+            candidate_model_id=candidate,
+            judge_model_id=judge,
         )
     yield

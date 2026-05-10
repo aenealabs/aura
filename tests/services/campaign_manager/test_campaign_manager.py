@@ -103,9 +103,7 @@ def compliance_definition(tenant_id) -> CampaignDefinition:
 
 
 @pytest.fixture()
-async def configured_orchestrator(
-    tenant_id, billing_period
-) -> CampaignOrchestrator:
+async def configured_orchestrator(tenant_id, billing_period) -> CampaignOrchestrator:
     rollup = InMemoryTenantCostRollup()
     await rollup.set_cap(tenant_id, billing_period, cap_usd=10_000.0)
     workers = {CampaignType.COMPLIANCE_HARDENING: ComplianceHardeningWorker()}
@@ -266,22 +264,16 @@ class TestCampaignCostTracker:
 
 
 class TestTenantCostRollup:
-    def test_no_budget_default_denies_campaign_start(
-        self, tenant_id, billing_period
-    ):
+    def test_no_budget_default_denies_campaign_start(self, tenant_id, billing_period):
         rollup = InMemoryTenantCostRollup()
         result = asyncio.run(
             rollup.can_start_campaign(tenant_id, billing_period, 100.0)
         )
         assert result is False
 
-    def test_budget_within_cap_allows_campaign_start(
-        self, tenant_id, billing_period
-    ):
+    def test_budget_within_cap_allows_campaign_start(self, tenant_id, billing_period):
         rollup = InMemoryTenantCostRollup()
-        asyncio.run(
-            rollup.set_cap(tenant_id, billing_period, cap_usd=1000.0)
-        )
+        asyncio.run(rollup.set_cap(tenant_id, billing_period, cap_usd=1000.0))
         result = asyncio.run(
             rollup.can_start_campaign(tenant_id, billing_period, 100.0)
         )
@@ -294,18 +286,17 @@ class TestTenantCostRollup:
         with pytest.raises(TenantCostCapExceededError):
             asyncio.run(rollup.record_spend(tenant_id, billing_period, 20.0))
 
-    def test_existing_campaigns_continue_at_rollup_cap(
-        self, tenant_id, billing_period
-    ):
+    def test_existing_campaigns_continue_at_rollup_cap(self, tenant_id, billing_period):
         # Tenant rollup full; existing per-campaign caps still respected,
         # but new campaigns refused. Per ADR D9.
         rollup = InMemoryTenantCostRollup()
         asyncio.run(rollup.set_cap(tenant_id, billing_period, cap_usd=100.0))
         asyncio.run(rollup.record_spend(tenant_id, billing_period, 100.0))
         # Cannot start a new campaign at any size.
-        assert asyncio.run(
-            rollup.can_start_campaign(tenant_id, billing_period, 1.0)
-        ) is False
+        assert (
+            asyncio.run(rollup.can_start_campaign(tenant_id, billing_period, 1.0))
+            is False
+        )
 
 
 # =============================================================================
@@ -411,9 +402,7 @@ class TestStateStore:
         asyncio.run(store.put_initial(s))
         s2 = s.with_status(CampaignStatus.RUNNING)
         asyncio.run(store.update(expected_version=s.version, new_state=s2))
-        loaded = asyncio.run(
-            store.get(s.tenant_id, s.campaign_id)
-        )
+        loaded = asyncio.run(store.get(s.tenant_id, s.campaign_id))
         assert loaded is not None
         assert loaded.status == CampaignStatus.RUNNING
 
@@ -501,9 +490,7 @@ class TestOrchestratorEndToEnd:
         self, configured_orchestrator, compliance_definition, billing_period
     ):
         orch = configured_orchestrator
-        state = await orch.create_campaign(
-            compliance_definition, billing_period
-        )
+        state = await orch.create_campaign(compliance_definition, billing_period)
         assert state.status == CampaignStatus.CREATED
         assert state.current_phase_id == "baseline_scan"
 
@@ -539,10 +526,7 @@ class TestOrchestratorEndToEnd:
         # Drive to HITL pause.
         while True:
             state = await orch.run_next_phase(compliance_definition)
-            if (
-                state.status == CampaignStatus.AWAITING_HITL
-                or state.status.is_terminal
-            ):
+            if state.status == CampaignStatus.AWAITING_HITL or state.status.is_terminal:
                 break
         assert state.status == CampaignStatus.AWAITING_HITL
         with pytest.raises(SeparationOfDutiesError):
@@ -559,10 +543,7 @@ class TestOrchestratorEndToEnd:
         await orch.create_campaign(compliance_definition, billing_period)
         while True:
             state = await orch.run_next_phase(compliance_definition)
-            if (
-                state.status == CampaignStatus.AWAITING_HITL
-                or state.status.is_terminal
-            ):
+            if state.status == CampaignStatus.AWAITING_HITL or state.status.is_terminal:
                 break
         # First approver. Quorum is 2; campaign should remain AWAITING_HITL.
         state = await orch.approve_milestone(
@@ -626,9 +607,7 @@ class TestOrchestratorEndToEnd:
         # Tenant has $50 cap; a $200 campaign should refuse to start.
         rollup = InMemoryTenantCostRollup()
         await rollup.set_cap(tenant_id, billing_period, cap_usd=50.0)
-        workers = {
-            CampaignType.COMPLIANCE_HARDENING: ComplianceHardeningWorker()
-        }
+        workers = {CampaignType.COMPLIANCE_HARDENING: ComplianceHardeningWorker()}
         orch = CampaignOrchestrator(
             state_store=InMemoryCampaignStateStore(),
             checkpoint_store=InMemoryCheckpointStore(),
@@ -640,14 +619,10 @@ class TestOrchestratorEndToEnd:
             await orch.create_campaign(compliance_definition, billing_period)
 
     @pytest.mark.asyncio
-    async def test_high_impact_requires_quorum_two(
-        self, billing_period, tenant_id
-    ):
+    async def test_high_impact_requires_quorum_two(self, billing_period, tenant_id):
         rollup = InMemoryTenantCostRollup()
         await rollup.set_cap(tenant_id, billing_period, cap_usd=10_000.0)
-        workers = {
-            CampaignType.COMPLIANCE_HARDENING: ComplianceHardeningWorker()
-        }
+        workers = {CampaignType.COMPLIANCE_HARDENING: ComplianceHardeningWorker()}
         orch = CampaignOrchestrator(
             state_store=InMemoryCampaignStateStore(),
             checkpoint_store=InMemoryCheckpointStore(),
@@ -672,14 +647,10 @@ class TestOrchestratorEndToEnd:
             await orch.create_campaign(bad, billing_period)
 
     @pytest.mark.asyncio
-    async def test_invalid_definition_rejected(
-        self, billing_period, tenant_id
-    ):
+    async def test_invalid_definition_rejected(self, billing_period, tenant_id):
         rollup = InMemoryTenantCostRollup()
         await rollup.set_cap(tenant_id, billing_period, cap_usd=10_000.0)
-        workers = {
-            CampaignType.COMPLIANCE_HARDENING: ComplianceHardeningWorker()
-        }
+        workers = {CampaignType.COMPLIANCE_HARDENING: ComplianceHardeningWorker()}
         orch = CampaignOrchestrator(
             state_store=InMemoryCampaignStateStore(),
             checkpoint_store=InMemoryCheckpointStore(),
@@ -714,9 +685,7 @@ class TestPhaseHarnessDrivenLoop:
     def test_default_is_complete_returns_false_with_no_history(
         self, compliance_definition
     ):
-        phase = HitlReviewPhase(
-            ComplianceHardeningWorker._PHASE_GRAPH[4].definition
-        )
+        phase = HitlReviewPhase(ComplianceHardeningWorker._PHASE_GRAPH[4].definition)
         from src.services.campaign_manager.contracts import CampaignState
         from src.services.campaign_manager.cost_tracker import CampaignCostTracker
 
@@ -738,12 +707,8 @@ class TestPhaseHarnessDrivenLoop:
         assert phase.is_complete(ctx) is False
 
     @pytest.mark.asyncio
-    async def test_hitl_review_phase_returns_hitl_pending(
-        self, compliance_definition
-    ):
-        phase = HitlReviewPhase(
-            ComplianceHardeningWorker._PHASE_GRAPH[4].definition
-        )
+    async def test_hitl_review_phase_returns_hitl_pending(self, compliance_definition):
+        phase = HitlReviewPhase(ComplianceHardeningWorker._PHASE_GRAPH[4].definition)
         from src.services.campaign_manager.contracts import CampaignState
 
         ctx = PhaseExecutionContext(

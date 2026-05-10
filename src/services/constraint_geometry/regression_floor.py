@@ -80,9 +80,7 @@ class IncumbentBaseline:
                     f"ConstraintAxis or str keys; got {type(axis).__name__}"
                 )
             if not _is_finite(score):
-                axis_label = (
-                    axis.value if isinstance(axis, ConstraintAxis) else axis
-                )
+                axis_label = axis.value if isinstance(axis, ConstraintAxis) else axis
                 raise ValueError(
                     f"IncumbentBaseline score for {axis_label} must be a finite "
                     f"number; got {score!r}"

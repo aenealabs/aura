@@ -45,8 +45,8 @@ class StageLambdaArns:
 class StateMachineConfig:
     """Tunables for the generated ASL."""
 
-    timeout_seconds: int = 3_600           # 1 hour per pipeline run
-    retry_attempts: int = 2                # per Lambda invocation
+    timeout_seconds: int = 3_600  # 1 hour per pipeline run
+    retry_attempts: int = 2  # per Lambda invocation
     retry_interval_seconds: int = 5
     retry_backoff: float = 2.0
 
@@ -125,16 +125,12 @@ def build_state_machine_definition(
         "Type": "Choice",
         "Choices": [
             {
-                "Variable": (
-                    f"$.{PipelineStage.PROVENANCE.value}.Payload.verdict"
-                ),
+                "Variable": (f"$.{PipelineStage.PROVENANCE.value}.Payload.verdict"),
                 "StringEquals": "quarantined",
                 "Next": "Quarantined",
             },
             {
-                "Variable": (
-                    f"$.{PipelineStage.PROVENANCE.value}.Payload.verdict"
-                ),
+                "Variable": (f"$.{PipelineStage.PROVENANCE.value}.Payload.verdict"),
                 "StringEquals": "rejected",
                 "Next": "Rejected",
             },
@@ -166,9 +162,7 @@ def build_state_machine_definition(
         "Type": "Choice",
         "Choices": [
             {
-                "Variable": (
-                    f"$.{PipelineStage.CGE_SCORING.value}.Payload.verdict"
-                ),
+                "Variable": (f"$.{PipelineStage.CGE_SCORING.value}.Payload.verdict"),
                 "StringEquals": "reject",
                 "Next": "Rejected",
             }

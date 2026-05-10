@@ -134,6 +134,7 @@ class TestTeardownInvariant:
 
     def test_teardown_failure_does_not_change_outcome(self) -> None:
         """A teardown that itself raises must not mask the work outcome."""
+
         def teardown(spec, handle):
             raise RuntimeError("teardown error")
 
@@ -160,7 +161,8 @@ class TestProvisionFailure:
             teardown_calls.append("ran")
 
         SandboxProvisioner(
-            provision_fn=provision, teardown_fn=teardown,
+            provision_fn=provision,
+            teardown_fn=teardown,
         ).execute(_spec())
         # No handle to teardown if provisioning never succeeded.
         assert teardown_calls == []

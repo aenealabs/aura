@@ -52,8 +52,7 @@ class LLMClient(Protocol):
         max_tokens: int,
         temperature: float,
         top_p: float,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
 
 class AuraBedrockAdapter(Adapter):
@@ -114,9 +113,7 @@ class AuraBedrockAdapter(Adapter):
             input_tokens=8_000,
             output_tokens=self._max_tokens,
         ):
-            raise AdapterError(
-                f"run cost cap reached; skipping {task.instance_id}"
-            )
+            raise AdapterError(f"run cost cap reached; skipping {task.instance_id}")
 
         sys_prompt = system_prompt()
         user_prompt = build_user_prompt(task)
@@ -210,9 +207,6 @@ def _extract_unified_diff(raw: str) -> str:
     # empty. The model violated the system prompt; an empty patch is
     # the right signal to the harness.
     first_line = text.split("\n", 1)[0]
-    if not (
-        first_line.startswith("diff --git")
-        or first_line.startswith("--- ")
-    ):
+    if not (first_line.startswith("diff --git") or first_line.startswith("--- ")):
         return ""
     return text + ("\n" if not text.endswith("\n") else "")

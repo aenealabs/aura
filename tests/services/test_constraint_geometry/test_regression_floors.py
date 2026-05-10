@@ -146,9 +146,11 @@ class TestAbsoluteMode:
     def test_axis_score_object_input_works(self) -> None:
         """Coherence calculator output (AxisCoherenceScore) should work."""
         floors = [_floor(threshold=0.92)]
-        scores = {ConstraintAxis.SECURITY_POLICY: _axis_score(
-            ConstraintAxis.SECURITY_POLICY, 0.95
-        )}
+        scores = {
+            ConstraintAxis.SECURITY_POLICY: _axis_score(
+                ConstraintAxis.SECURITY_POLICY, 0.95
+            )
+        }
         assert evaluate_floors(floors, scores) == ()
 
 
@@ -157,10 +159,12 @@ class TestAbsoluteMode:
 
 class TestRelativeMode:
     def test_passes_when_above_relative_threshold(self) -> None:
-        floors = [_floor(
-            threshold=0.70,
-            comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
-        )]
+        floors = [
+            _floor(
+                threshold=0.70,
+                comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
+            )
+        ]
         scores = {ConstraintAxis.SECURITY_POLICY: 0.71}
         incumbent = IncumbentBaseline(
             incumbent_id="claude-3.5",
@@ -169,10 +173,12 @@ class TestRelativeMode:
         assert evaluate_floors(floors, scores, incumbent=incumbent) == ()
 
     def test_fails_when_below_relative_threshold(self) -> None:
-        floors = [_floor(
-            threshold=0.70,
-            comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
-        )]
+        floors = [
+            _floor(
+                threshold=0.70,
+                comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
+            )
+        ]
         scores = {ConstraintAxis.SECURITY_POLICY: 0.65}
         incumbent = IncumbentBaseline(
             incumbent_id="claude-3.5",
@@ -185,10 +191,12 @@ class TestRelativeMode:
 
     def test_relative_threshold_scales_with_incumbent(self) -> None:
         """0.70 threshold against incumbent=0.50 means effective floor = 0.35."""
-        floors = [_floor(
-            threshold=0.70,
-            comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
-        )]
+        floors = [
+            _floor(
+                threshold=0.70,
+                comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
+            )
+        ]
         scores = {ConstraintAxis.SECURITY_POLICY: 0.40}  # above 0.35
         incumbent = IncumbentBaseline(
             incumbent_id="weak-incumbent",
@@ -198,20 +206,24 @@ class TestRelativeMode:
 
     def test_no_incumbent_relative_passes(self) -> None:
         """Per ADR-088 issue #110: first-ever evaluation has no baseline."""
-        floors = [_floor(
-            threshold=0.70,
-            comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
-        )]
+        floors = [
+            _floor(
+                threshold=0.70,
+                comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
+            )
+        ]
         scores = {ConstraintAxis.SECURITY_POLICY: 0.50}  # would fail vs absolute 0.70
         assert evaluate_floors(floors, scores, incumbent=None) == ()
 
     def test_no_incumbent_axis_relative_passes(self) -> None:
         """Incumbent supplied but missing this axis — same degraded behaviour."""
-        floors = [_floor(
-            axis=ConstraintAxis.SECURITY_POLICY,
-            threshold=0.70,
-            comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
-        )]
+        floors = [
+            _floor(
+                axis=ConstraintAxis.SECURITY_POLICY,
+                threshold=0.70,
+                comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
+            )
+        ]
         scores = {ConstraintAxis.SECURITY_POLICY: 0.50}
         incumbent = IncumbentBaseline(
             incumbent_id="missing-axis",
@@ -221,10 +233,12 @@ class TestRelativeMode:
 
     def test_relative_zero_incumbent_yields_zero_floor(self) -> None:
         """Edge: incumbent=0 means effective floor = 0, candidate always passes."""
-        floors = [_floor(
-            threshold=0.70,
-            comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
-        )]
+        floors = [
+            _floor(
+                threshold=0.70,
+                comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
+            )
+        ]
         scores = {ConstraintAxis.SECURITY_POLICY: 0.0}
         incumbent = IncumbentBaseline(
             incumbent_id="zero",
@@ -233,10 +247,12 @@ class TestRelativeMode:
         assert evaluate_floors(floors, scores, incumbent=incumbent) == ()
 
     def test_violation_records_incumbent_score(self) -> None:
-        floors = [_floor(
-            threshold=0.70,
-            comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
-        )]
+        floors = [
+            _floor(
+                threshold=0.70,
+                comparison=RegressionFloorComparisonMode.RELATIVE_TO_INCUMBENT,
+            )
+        ]
         scores = {ConstraintAxis.SECURITY_POLICY: 0.10}
         incumbent = IncumbentBaseline(
             incumbent_id="strong",
@@ -286,7 +302,9 @@ class TestMultipleFloors:
     def test_independent_floors_independent_outcomes(self) -> None:
         floors = [
             _floor(floor_id="sec", axis=ConstraintAxis.SECURITY_POLICY, threshold=0.9),
-            _floor(floor_id="ops", axis=ConstraintAxis.OPERATIONAL_BOUNDS, threshold=0.8),
+            _floor(
+                floor_id="ops", axis=ConstraintAxis.OPERATIONAL_BOUNDS, threshold=0.8
+            ),
         ]
         scores = {
             ConstraintAxis.SECURITY_POLICY: 0.95,
@@ -565,10 +583,12 @@ class TestCrossDomainReuse:
 
     def test_floor_works_for_dal_a_style_axis_minimum(self) -> None:
         # ADR-085 DAL-A could express "C2 score >= 0.99 or REJECT" via a floor
-        floors = [_floor(
-            axis=ConstraintAxis.SEMANTIC_CORRECTNESS,
-            threshold=0.99,
-        )]
+        floors = [
+            _floor(
+                axis=ConstraintAxis.SEMANTIC_CORRECTNESS,
+                threshold=0.99,
+            )
+        ]
         passing = {ConstraintAxis.SEMANTIC_CORRECTNESS: 0.995}
         failing = {ConstraintAxis.SEMANTIC_CORRECTNESS: 0.989}
         assert evaluate_floors(floors, passing) == ()
@@ -576,11 +596,13 @@ class TestCrossDomainReuse:
 
     def test_floor_works_for_model_assurance_style_recall_floor(self) -> None:
         # ADR-088 A2 vulnerability detection recall floor
-        floors = [_floor(
-            floor_id="vuln-recall",
-            axis=ConstraintAxis.SECURITY_POLICY,
-            threshold=0.92,
-        )]
+        floors = [
+            _floor(
+                floor_id="vuln-recall",
+                axis=ConstraintAxis.SECURITY_POLICY,
+                threshold=0.92,
+            )
+        ]
         scores = {ConstraintAxis.SECURITY_POLICY: 0.91}
         violations = evaluate_floors(floors, scores)
         assert len(violations) == 1

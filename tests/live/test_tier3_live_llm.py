@@ -257,9 +257,7 @@ async def test_tier3_resolution_rate_above_threshold() -> None:
         estimated_input_tokens += 1500  # generous per-prompt estimate
         estimated_output_tokens += _PER_FIXTURE_MAX_TOKENS
 
-    resolution_rate = sum(
-        1 for s in statuses if s != UNVERIFIED
-    ) / len(statuses)
+    resolution_rate = sum(1 for s in statuses if s != UNVERIFIED) / len(statuses)
     cost_usd = _estimate_cost_usd(estimated_input_tokens, estimated_output_tokens)
 
     # Surface the metrics into the workflow summary so the nightly

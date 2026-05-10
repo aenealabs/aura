@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-from typing import Iterable
 
 from src.services.model_assurance.rollback.contracts import ConfigRevision
 

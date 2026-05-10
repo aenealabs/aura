@@ -8,7 +8,7 @@ yields the same report bytes, so the integrity hash is reproducible.
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from typing import Sequence
 
 from src.services.model_assurance.adapter_registry import AdapterRegistry, ModelAdapter
 from src.services.model_assurance.axes import ModelAssuranceAxis
@@ -83,34 +83,38 @@ def _select_edge_cases(
             elif inc_passed and not passed:
                 regressed.append((case_id, inc_passed, passed))
         for case_id, inc, cand in improved[:EDGE_CASE_LIMIT]:
-            spotlights.append(EdgeCaseSpotlight(
-                case_id=case_id,
-                description="candidate improved on this case",
-                candidate_passed=cand,
-                incumbent_passed=inc,
-                delta_label="improved",
-            ))
+            spotlights.append(
+                EdgeCaseSpotlight(
+                    case_id=case_id,
+                    description="candidate improved on this case",
+                    candidate_passed=cand,
+                    incumbent_passed=inc,
+                    delta_label="improved",
+                )
+            )
         for case_id, inc, cand in regressed[:EDGE_CASE_LIMIT]:
-            spotlights.append(EdgeCaseSpotlight(
-                case_id=case_id,
-                description="candidate regressed on this case",
-                candidate_passed=cand,
-                incumbent_passed=inc,
-                delta_label="regressed",
-            ))
+            spotlights.append(
+                EdgeCaseSpotlight(
+                    case_id=case_id,
+                    description="candidate regressed on this case",
+                    candidate_passed=cand,
+                    incumbent_passed=inc,
+                    delta_label="regressed",
+                )
+            )
     else:
         # No incumbent comparison — surface candidate's failures.
-        failures = [
-            cid for cid, passed in candidate_per_case.items() if not passed
-        ]
+        failures = [cid for cid, passed in candidate_per_case.items() if not passed]
         for case_id in failures[:EDGE_CASE_LIMIT]:
-            spotlights.append(EdgeCaseSpotlight(
-                case_id=case_id,
-                description="candidate failed (no incumbent baseline)",
-                candidate_passed=False,
-                incumbent_passed=False,
-                delta_label="regressed",
-            ))
+            spotlights.append(
+                EdgeCaseSpotlight(
+                    case_id=case_id,
+                    description="candidate failed (no incumbent baseline)",
+                    candidate_passed=False,
+                    incumbent_passed=False,
+                    delta_label="regressed",
+                )
+            )
     return tuple(spotlights)
 
 
@@ -119,9 +123,10 @@ def _build_risk_notes(result: PipelineResult) -> tuple[str, ...]:
     if result.provenance_record is not None:
         if not result.provenance_record.training_data_present:
             notes.append("training-data lineage missing from provenance")
-        if (
-            result.provenance_record.signature_status.value
-            in ("unsigned", "signing_key_unknown", "signing_key_expired")
+        if result.provenance_record.signature_status.value in (
+            "unsigned",
+            "signing_key_unknown",
+            "signing_key_expired",
         ):
             notes.append(
                 f"signature: {result.provenance_record.signature_status.value}"
@@ -130,9 +135,7 @@ def _build_risk_notes(result: PipelineResult) -> tuple[str, ...]:
         notes.append(f"assurance verdict: {result.assurance_verdict.value}")
     sandbox_outcome = result.stage_outcome(PipelineStage.SANDBOX)
     if sandbox_outcome and not sandbox_outcome.succeeded:
-        notes.append(
-            f"sandbox stage anomaly: {sandbox_outcome.detail}"
-        )
+        notes.append(f"sandbox stage anomaly: {sandbox_outcome.detail}")
     return tuple(notes)
 
 
@@ -162,9 +165,7 @@ def generate_report(
     return ShadowDeploymentReport(
         candidate_id=pipeline_result.candidate_id,
         candidate_display_name=candidate_display_name,
-        incumbent_id=(
-            incumbent_adapter.model_id if incumbent_adapter else None
-        ),
+        incumbent_id=(incumbent_adapter.model_id if incumbent_adapter else None),
         pipeline_decision=pipeline_result.decision.value,
         overall_utility=(
             sum(score for _, score in axis_scores) / max(len(axis_scores), 1)
@@ -173,7 +174,9 @@ def generate_report(
         floor_violations=_floor_violations(pipeline_result),
         axis_scores=axis_scores,
         cost_analysis=_build_cost_analysis(
-            candidate_adapter, incumbent_adapter, monthly_volume_mtok_estimate,
+            candidate_adapter,
+            incumbent_adapter,
+            monthly_volume_mtok_estimate,
         ),
         risk_notes=_build_risk_notes(pipeline_result),
         provenance_summary=(
@@ -190,8 +193,6 @@ def generate_report(
     )
 
 
-def lookup_adapter(
-    registry: AdapterRegistry, model_id: str
-) -> ModelAdapter | None:
+def lookup_adapter(registry: AdapterRegistry, model_id: str) -> ModelAdapter | None:
     """Convenience wrapper that swallows KeyError for unknown ids."""
     return registry.find(model_id)

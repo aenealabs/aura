@@ -19,20 +19,12 @@ list of summaries the client will return.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
 
-from src.services.model_assurance.adapter_registry import (
-    ModelArchitecture,
-    ModelProvider,
-    TokenizerType,
-)
-from src.services.model_assurance.scout.bedrock_client import (
-    BedrockModelSummary,
-    infer_architecture,
-    infer_tokenizer,
-)
+from src.services.model_assurance.adapter_registry import ModelProvider
+from src.services.model_assurance.scout.bedrock_client import BedrockModelSummary
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +95,8 @@ class HuggingFaceListClient:
                 self._is_live = True
             except Exception as exc:  # pragma: no cover — env-specific
                 logger.info(
-                    "HuggingFaceListClient init failed (%s); mock mode", exc,
+                    "HuggingFaceListClient init failed (%s); mock mode",
+                    exc,
                 )
                 self._client = None
                 self._is_live = False
@@ -119,9 +112,7 @@ class HuggingFaceListClient:
     def curated_repo_ids(self) -> tuple[str, ...]:
         return self._curated_repo_ids
 
-    def install_fake(
-        self, models: tuple[HuggingFaceModelSummary, ...]
-    ) -> None:
+    def install_fake(self, models: tuple[HuggingFaceModelSummary, ...]) -> None:
         """Test/airgap helper — populate the mock-mode response."""
         self._fake_models = models
         self._is_live = False
@@ -138,7 +129,8 @@ class HuggingFaceListClient:
             return HuggingFaceListResponse(models=tuple(models))
         except Exception as exc:  # pragma: no cover — runtime AWS failure
             return HuggingFaceListResponse(
-                models=tuple(models), error=str(exc),
+                models=tuple(models),
+                error=str(exc),
             )
 
 

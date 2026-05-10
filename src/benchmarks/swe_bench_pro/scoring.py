@@ -252,9 +252,7 @@ def score_one(
     file_set = _file_set_score(gen.file_paths, gold.file_paths)
     hunk_rate = _hunk_overlap_rate(gen, gold)
     token_jac = _token_jaccard(gen, gold)
-    composite = (
-        _W_FILE * file_set.f1 + _W_HUNK * hunk_rate + _W_TOKEN * token_jac
-    )
+    composite = _W_FILE * file_set.f1 + _W_HUNK * hunk_rate + _W_TOKEN * token_jac
 
     return TaskSimilarityScore(
         instance_id=instance_id,
@@ -304,9 +302,7 @@ def score_predictions(
 # -----------------------------------------------------------------------------
 
 
-def _file_set_score(
-    generated: frozenset[str], gold: frozenset[str]
-) -> FileSetScore:
+def _file_set_score(generated: frozenset[str], gold: frozenset[str]) -> FileSetScore:
     if not generated and not gold:
         # Both patches are empty: vacuously matching, but not informative.
         return FileSetScore(

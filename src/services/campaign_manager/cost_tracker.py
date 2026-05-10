@@ -79,14 +79,10 @@ class CampaignCostTracker:
         pricing: dict[ModelCapabilityTier, TierPricing] | None = None,
     ) -> None:
         if cost_cap_usd < 0:
-            raise ValueError(
-                f"cost_cap_usd must be non-negative; got {cost_cap_usd!r}"
-            )
+            raise ValueError(f"cost_cap_usd must be non-negative; got {cost_cap_usd!r}")
         self._campaign_id = campaign_id
         self._cap = cost_cap_usd
-        self._cleanup_reservation = (
-            cost_cap_usd * CLEANUP_RESERVATION_FRACTION
-        )
+        self._cleanup_reservation = cost_cap_usd * CLEANUP_RESERVATION_FRACTION
         self._effective_cap = cost_cap_usd - self._cleanup_reservation
         self._pricing = pricing or DEFAULT_TIER_PRICING
         self._tier_usage: dict[ModelCapabilityTier, _PerTierUsage] = {
@@ -143,9 +139,7 @@ class CampaignCostTracker:
         """Record a normal-mode invocation. Returns USD cost."""
         cost = self.project_cost(tier, input_tokens, output_tokens)
         with self._lock:
-            ceiling = (
-                self._cap if self._cleanup_mode else self._effective_cap
-            )
+            ceiling = self._cap if self._cleanup_mode else self._effective_cap
             current_total = self._total_cost_locked()
             if (current_total + cost) > ceiling:
                 raise CostCapExceededError(
@@ -166,9 +160,7 @@ class CampaignCostTracker:
         if usd < 0:
             raise ValueError(f"sandbox cost must be non-negative; got {usd}")
         with self._lock:
-            ceiling = (
-                self._cap if self._cleanup_mode else self._effective_cap
-            )
+            ceiling = self._cap if self._cleanup_mode else self._effective_cap
             current_total = self._total_cost_locked()
             if (current_total + usd) > ceiling:
                 raise CostCapExceededError(
@@ -209,9 +201,7 @@ class CampaignCostTracker:
             raise ValueError("cap raise must be positive")
         with self._lock:
             self._cap += additional_usd
-            self._effective_cap = self._cap * (
-                1.0 - CLEANUP_RESERVATION_FRACTION
-            )
+            self._effective_cap = self._cap * (1.0 - CLEANUP_RESERVATION_FRACTION)
             self._cleanup_reservation = self._cap - self._effective_cap
             self._cleanup_mode = False  # reset; new headroom available
             self._cap_raises += 1
@@ -246,9 +236,7 @@ class CampaignCostTracker:
     @property
     def cap_remaining_usd(self) -> float:
         with self._lock:
-            ceiling = (
-                self._cap if self._cleanup_mode else self._effective_cap
-            )
+            ceiling = self._cap if self._cleanup_mode else self._effective_cap
             return max(0.0, ceiling - self._total_cost_locked())
 
     # -- private helpers ------------------------------------------------------

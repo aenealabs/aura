@@ -58,7 +58,9 @@ def _digest() -> str:
     return "a" * 64
 
 
-def _artifact(model_id: str = "anthropic.claude-3-5-sonnet-20240620-v1:0") -> ModelArtifact:
+def _artifact(
+    model_id: str = "anthropic.claude-3-5-sonnet-20240620-v1:0",
+) -> ModelArtifact:
     return ModelArtifact(
         model_id=model_id,
         provider="anthropic",
@@ -75,35 +77,44 @@ def _artifact(model_id: str = "anthropic.claude-3-5-sonnet-20240620-v1:0") -> Mo
 def _full_oracle_set() -> GoldenTestSet:
     cases: list[GoldenTestCase] = []
     for i in range(100):
-        cases.append(GoldenTestCase(
-            case_id=f"patch-{i:04d}",
-            domain=TestCaseDomain.PATCH_CORRECTNESS,
-            title="t",
-            description="d",
-            axes=(
-                ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS,
-                ModelAssuranceAxis.PATCH_SECURITY_EQUIVALENCE,
-            ),
-            expected=(("reference_source", "def f(): return 1"),),
-        ))
+        cases.append(
+            GoldenTestCase(
+                case_id=f"patch-{i:04d}",
+                domain=TestCaseDomain.PATCH_CORRECTNESS,
+                title="t",
+                description="d",
+                axes=(
+                    ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS,
+                    ModelAssuranceAxis.PATCH_SECURITY_EQUIVALENCE,
+                ),
+                expected=(("reference_source", "def f(): return 1"),),
+            )
+        )
     fillers = {
         TestCaseDomain.VULNERABILITY_DETECTION: (
-            ModelAssuranceAxis.VULNERABILITY_DETECTION_RECALL, 150,
+            ModelAssuranceAxis.VULNERABILITY_DETECTION_RECALL,
+            150,
         ),
         TestCaseDomain.FALSE_POSITIVE: (
-            ModelAssuranceAxis.GUARDRAIL_COMPLIANCE, 100,
+            ModelAssuranceAxis.GUARDRAIL_COMPLIANCE,
+            100,
         ),
         TestCaseDomain.REGRESSION: (
-            ModelAssuranceAxis.CODE_COMPREHENSION, 50,
+            ModelAssuranceAxis.CODE_COMPREHENSION,
+            50,
         ),
     }
     for domain, (axis, n) in fillers.items():
         for i in range(n):
-            cases.append(GoldenTestCase(
-                case_id=f"{domain.value}-{i:04d}",
-                domain=domain, title="t", description="d",
-                axes=(axis,),
-            ))
+            cases.append(
+                GoldenTestCase(
+                    case_id=f"{domain.value}-{i:04d}",
+                    domain=domain,
+                    title="t",
+                    description="d",
+                    axes=(axis,),
+                )
+            )
     return GoldenTestSet(cases=tuple(cases), version="0.1")
 
 
@@ -112,17 +123,20 @@ def _candidate_outputs(perfect: bool = True) -> Mapping[str, Sequence[object]]:
     ast_outputs = []
     sa_outputs = []
     for i in range(100):
-        source = (
-            "def f(): return 1" if perfect else "def f(): return 999"
+        source = "def f(): return 1" if perfect else "def f(): return 999"
+        ast_outputs.append(
+            PatchCandidateOutput(
+                case_id=f"patch-{i:04d}",
+                patched_source=source,
+            )
         )
-        ast_outputs.append(PatchCandidateOutput(
-            case_id=f"patch-{i:04d}", patched_source=source,
-        ))
-        sa_outputs.append(StaticAnalysisCandidateOutput(
-            case_id=f"patch-{i:04d}",
-            before_findings=(("HIGH", 1),),
-            after_findings=(("HIGH", 1),) if perfect else (("HIGH", 5),),
-        ))
+        sa_outputs.append(
+            StaticAnalysisCandidateOutput(
+                case_id=f"patch-{i:04d}",
+                before_findings=(("HIGH", 1),),
+                after_findings=(("HIGH", 1),) if perfect else (("HIGH", 5),),
+            )
+        )
     return {"ast_diff_v1": ast_outputs, "static_analysis_v1": sa_outputs}
 
 
@@ -154,7 +168,9 @@ def _orchestrator(
         adapter_registry=registry,
         provenance_service=provenance or ModelProvenanceService(),
         oracle_service=OracleService(
-            golden_set=oracle_set, judges=judges, holdout_rate=0.0,
+            golden_set=oracle_set,
+            judges=judges,
+            holdout_rate=0.0,
         ),
         assurance_evaluator=evaluator,
         sandbox_hook=sandbox_hook,
@@ -276,6 +292,7 @@ class TestSandboxBranches:
     def test_sandbox_exception_halts_cleanly(self) -> None:
         def boom(_):
             raise RuntimeError("sandbox crash")
+
         orch = _orchestrator(sandbox_hook=boom)
         result = orch.run(_pipeline_input())
         assert result.decision is PipelineDecision.INFRASTRUCTURE_ERROR
@@ -293,13 +310,14 @@ class TestFloorViolationRoute:
         orch = _orchestrator(enforce_floors=True)
         # AST returns 0% pass on a candidate that always emits the
         # wrong patch — MA3 floor (0.88) fires.
-        result = orch.run(_pipeline_input(
-            candidate_outputs=_candidate_outputs(perfect=False),
-        ))
+        result = orch.run(
+            _pipeline_input(
+                candidate_outputs=_candidate_outputs(perfect=False),
+            )
+        )
         assert result.decision is PipelineDecision.REJECTED
-        assert (
-            result.rejection_reason == "floor_violation"
-            or "floor" in (result.rejection_reason or "")
+        assert result.rejection_reason == "floor_violation" or "floor" in (
+            result.rejection_reason or ""
         )
 
 

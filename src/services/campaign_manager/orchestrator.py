@@ -24,12 +24,10 @@ import logging
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Optional
 
 from .checkpoint_store import CheckpointStore
 from .contracts import (
     HIGH_IMPACT_CAMPAIGN_TYPES,
-    ArtifactRef,
     CampaignDefinition,
     CampaignOutcome,
     CampaignState,
@@ -38,7 +36,6 @@ from .contracts import (
     HitlMilestone,
     PhaseCheckpoint,
     PhaseOutcome,
-    SuccessCriteriaProgress,
 )
 from .cost_tracker import CampaignCostTracker
 from .exceptions import (
@@ -164,9 +161,7 @@ class CampaignOrchestrator:
                 f"approver_quorum >= 2; got {definition.approver_quorum}"
             )
         if not definition.success_criteria:
-            raise InvalidCampaignDefinitionError(
-                "success_criteria must be non-empty"
-            )
+            raise InvalidCampaignDefinitionError("success_criteria must be non-empty")
         if definition.cost_cap_usd <= 0:
             raise InvalidCampaignDefinitionError(
                 f"cost_cap_usd must be > 0; got {definition.cost_cap_usd}"
@@ -321,9 +316,7 @@ class CampaignOrchestrator:
             cost_tracker.enter_cleanup_mode()
             new_state = replace(new_state, status=CampaignStatus.HALTED_AT_CAP)
         elif result.outcome == PhaseOutcome.ANOMALY:
-            new_state = replace(
-                new_state, status=CampaignStatus.HALTED_AT_ANOMALY
-            )
+            new_state = replace(new_state, status=CampaignStatus.HALTED_AT_ANOMALY)
         elif result.outcome == PhaseOutcome.FAILED:
             new_state = replace(new_state, status=CampaignStatus.FAILED)
         elif result.outcome == PhaseOutcome.COMPLETED:
@@ -405,12 +398,8 @@ class CampaignOrchestrator:
         # this up.
         worker = self._worker_for(definition.campaign_type)
         next_phase = worker.next_phase(milestone.phase_id)
-        next_phase_id = (
-            next_phase.definition.phase_id if next_phase else None
-        )
-        new_status = (
-            CampaignStatus.RUNNING if next_phase else CampaignStatus.COMPLETED
-        )
+        next_phase_id = next_phase.definition.phase_id if next_phase else None
+        new_status = CampaignStatus.RUNNING if next_phase else CampaignStatus.COMPLETED
         updated = replace(
             state,
             pending_hitl_approval=None,
@@ -428,9 +417,7 @@ class CampaignOrchestrator:
     # Cancellation
     # -------------------------------------------------------------------------
 
-    async def cancel_campaign(
-        self, definition: CampaignDefinition
-    ) -> CampaignState:
+    async def cancel_campaign(self, definition: CampaignDefinition) -> CampaignState:
         state = await self._load_state(definition)
         if state.status.is_terminal:
             return state
@@ -450,9 +437,7 @@ class CampaignOrchestrator:
             )
         return worker
 
-    async def _load_state(
-        self, definition: CampaignDefinition
-    ) -> CampaignState:
+    async def _load_state(self, definition: CampaignDefinition) -> CampaignState:
         state = await self._state_store.get(
             definition.tenant_id, definition.campaign_id
         )

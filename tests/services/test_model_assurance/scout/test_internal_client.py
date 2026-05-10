@@ -20,10 +20,12 @@ class TestInternalModelClient:
 
     def test_install_fake_returns_models(self) -> None:
         c = InternalModelClient()
-        c.install_fake((
-            synthesize_internal_summary(model_id="aura-models/swe-rl-v3"),
-            synthesize_internal_summary(model_id="aura-models/swe-rl-v4"),
-        ))
+        c.install_fake(
+            (
+                synthesize_internal_summary(model_id="aura-models/swe-rl-v3"),
+                synthesize_internal_summary(model_id="aura-models/swe-rl-v4"),
+            )
+        )
         resp = c.list_models()
         ids = [m.model_id for m in resp.models]
         assert ids == ["aura-models/swe-rl-v3", "aura-models/swe-rl-v4"]
@@ -40,6 +42,7 @@ class TestInternalSummary:
 
     def test_immutability(self) -> None:
         import pytest
+
         s = synthesize_internal_summary(model_id="m")
         with pytest.raises((AttributeError, TypeError)):
             s.model_id = "x"  # type: ignore[misc]

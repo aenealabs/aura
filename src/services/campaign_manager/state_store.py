@@ -78,9 +78,7 @@ class InMemoryCampaignStateStore:
         with self._lock:
             return self._states.get((tenant_id, campaign_id))
 
-    async def update(
-        self, expected_version: int, new_state: CampaignState
-    ) -> None:
+    async def update(self, expected_version: int, new_state: CampaignState) -> None:
         key = (new_state.tenant_id, new_state.campaign_id)
         with self._lock:
             current = self._states.get(key)

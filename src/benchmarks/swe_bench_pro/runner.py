@@ -125,9 +125,7 @@ async def run(
                 )
             except AdapterError as exc:
                 duration = time.monotonic() - started
-                logger.warning(
-                    "Adapter error on task %s: %s", task.instance_id, exc
-                )
+                logger.warning("Adapter error on task %s: %s", task.instance_id, exc)
                 return SWEBenchResult(
                     task=task,
                     prediction=SWEBenchPrediction(

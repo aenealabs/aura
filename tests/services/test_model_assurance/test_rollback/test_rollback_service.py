@@ -78,7 +78,8 @@ class TestModelAvailabilityCheck:
     def test_available_target_allows_rollback(self) -> None:
         svc = RollbackService(
             availability_probe=lambda mid: ModelAvailabilityCheck(
-                model_id=mid, is_available=True,
+                model_id=mid,
+                is_available=True,
             ),
         )
         svc.record_upgrade(_rev("r1", "claude-3-5"))
@@ -201,6 +202,7 @@ class TestParametersPreserved:
         new = out.new_revision
         assert new is not None
         assert new.parameters_dict == {
-            "temperature": "0.2", "max_tokens": "1024",
+            "temperature": "0.2",
+            "max_tokens": "1024",
         }
         assert new.prompt_template_version == "v1.3"

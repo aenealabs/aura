@@ -26,9 +26,7 @@ def _report() -> ShadowDeploymentReport:
         pipeline_decision="hitl_queued",
         overall_utility=0.95,
         incumbent_utility=0.90,
-        axis_scores=(
-            (ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS, 0.95),
-        ),
+        axis_scores=((ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS, 0.95),),
     )
 
 
@@ -64,17 +62,21 @@ class TestReportSealing:
         # Same report content + same generated_at = same hash.
         same_time = datetime(2026, 5, 6, tzinfo=timezone.utc)
         r1 = ShadowDeploymentReport(
-            candidate_id="m", candidate_display_name="M",
+            candidate_id="m",
+            candidate_display_name="M",
             incumbent_id=None,
             pipeline_decision="hitl_queued",
-            overall_utility=0.5, incumbent_utility=None,
+            overall_utility=0.5,
+            incumbent_utility=None,
             generated_at=same_time,
         )
         r2 = ShadowDeploymentReport(
-            candidate_id="m", candidate_display_name="M",
+            candidate_id="m",
+            candidate_display_name="M",
             incumbent_id=None,
             pipeline_decision="hitl_queued",
-            overall_utility=0.5, incumbent_utility=None,
+            overall_utility=0.5,
+            incumbent_utility=None,
             generated_at=same_time,
         )
         assert seal_report(r1).content_hash == seal_report(r2).content_hash

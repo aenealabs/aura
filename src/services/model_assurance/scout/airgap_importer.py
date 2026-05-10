@@ -125,9 +125,6 @@ def import_many(
     for b in bundles:
         record = import_bundle(bundle=b, now=now)
         records.append(record)
-        if (
-            record.status == AirgapBundleStatus.VERIFIED
-            and record.summary is not None
-        ):
+        if record.status == AirgapBundleStatus.VERIFIED and record.summary is not None:
             summaries.append(record.summary)
     return tuple(records), tuple(summaries)

@@ -44,7 +44,8 @@ class TestRegionTemplating:
         policy = EgressPolicy(region="us-east-1")
         # Region in URL doesn't match policy region
         assert policy.validate_destination(
-            "bedrock-runtime.eu-central-1.amazonaws.com", 443,
+            "bedrock-runtime.eu-central-1.amazonaws.com",
+            443,
         ) in (EgressDecision.DENY, EgressDecision.SUSPICIOUS)
 
 
@@ -65,7 +66,8 @@ class TestEndpointValidation:
         # Bedrock is HTTPS only
         assert (
             policy.validate_destination(
-                "bedrock-runtime.us-east-1.amazonaws.com", 80,
+                "bedrock-runtime.us-east-1.amazonaws.com",
+                80,
             )
             is EgressDecision.SUSPICIOUS
         )
@@ -74,7 +76,8 @@ class TestEndpointValidation:
         policy = EgressPolicy(region="us-east-1")
         assert (
             policy.validate_destination(
-                "BEDROCK-RUNTIME.US-EAST-1.AMAZONAWS.COM", 443,
+                "BEDROCK-RUNTIME.US-EAST-1.AMAZONAWS.COM",
+                443,
             )
             is EgressDecision.ALLOW
         )

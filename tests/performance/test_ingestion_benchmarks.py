@@ -148,9 +148,7 @@ def ingestion_service(neptune: NeptuneGraphService):
     with tempfile.TemporaryDirectory() as tmp:
         yield GitIngestionService(
             neptune_service=neptune,
-            opensearch_service=MagicMock(
-                index_embedding=MagicMock(return_value=True)
-            ),
+            opensearch_service=MagicMock(index_embedding=MagicMock(return_value=True)),
             embedding_service=MagicMock(
                 generate_embedding=MagicMock(return_value=[0.1] * 1024)
             ),
@@ -222,9 +220,7 @@ def test_ingestion_throughput_within_threshold(
 
     edges_per_sec_samples: list[float] = []
     for _ in range(_MEASURED_RUNS):
-        elapsed, _e, edges = _measured_run(
-            medium_repo, neptune, ingestion_service
-        )
+        elapsed, _e, edges = _measured_run(medium_repo, neptune, ingestion_service)
         edges_per_sec_samples.append(edges / elapsed)
 
     median_eps = statistics.median(edges_per_sec_samples)

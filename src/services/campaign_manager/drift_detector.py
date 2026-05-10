@@ -70,9 +70,7 @@ def cosine_distance(a: list[float], b: list[float]) -> float:
     inside a hot drift-detection loop.
     """
     if len(a) != len(b):
-        raise ValueError(
-            f"vector length mismatch: {len(a)} vs {len(b)}"
-        )
+        raise ValueError(f"vector length mismatch: {len(a)} vs {len(b)}")
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
@@ -106,8 +104,7 @@ class DriftDetector:
         """Compute drift signals and decide whether re-anchor is recommended."""
         if not 0.0 <= goal_recall_score <= 1.0:
             raise ValueError(
-                f"goal_recall_score must be in [0, 1]; "
-                f"got {goal_recall_score!r}"
+                f"goal_recall_score must be in [0, 1]; " f"got {goal_recall_score!r}"
             )
         if not 0.0 <= repetition_rate <= 1.0:
             raise ValueError(
@@ -146,8 +143,7 @@ class DriftDetector:
         )
         repeat_bad = min(
             1.0,
-            repetition_rate
-            / max(self._thresholds.repetition_rate_max, 1e-9),
+            repetition_rate / max(self._thresholds.repetition_rate_max, 1e-9),
         )
         score = (embed_bad + recall_bad + repeat_bad) / 3.0
 

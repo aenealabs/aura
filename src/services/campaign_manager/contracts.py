@@ -325,15 +325,11 @@ class CampaignState:
             updated_at=datetime.now(timezone.utc),
         )
 
-    def with_pending_hitl(
-        self, milestone: Optional[HitlMilestone]
-    ) -> "CampaignState":
+    def with_pending_hitl(self, milestone: Optional[HitlMilestone]) -> "CampaignState":
         return replace(
             self,
             pending_hitl_approval=milestone,
-            status=(
-                CampaignStatus.AWAITING_HITL if milestone else self.status
-            ),
+            status=(CampaignStatus.AWAITING_HITL if milestone else self.status),
             version=self.version + 1,
             updated_at=datetime.now(timezone.utc),
         )
@@ -362,9 +358,7 @@ class SuccessCriteriaProgress:
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.progress <= 1.0:
-            raise ValueError(
-                f"progress must be in [0,1]; got {self.progress!r}"
-            )
+            raise ValueError(f"progress must be in [0,1]; got {self.progress!r}")
 
 
 @dataclass(frozen=True)

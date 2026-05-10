@@ -44,9 +44,7 @@ class TenantCostRollup(Protocol):
         """Read the current rollup for a tenant in a billing period."""
         ...
 
-    async def set_cap(
-        self, tenant_id: str, period: str, cap_usd: float
-    ) -> None:
+    async def set_cap(self, tenant_id: str, period: str, cap_usd: float) -> None:
         """Establish or update the cap (used at contract time)."""
         ...
 
@@ -85,9 +83,7 @@ class InMemoryTenantCostRollup:
         with self._lock:
             return self._budgets.get((tenant_id, period))
 
-    async def set_cap(
-        self, tenant_id: str, period: str, cap_usd: float
-    ) -> None:
+    async def set_cap(self, tenant_id: str, period: str, cap_usd: float) -> None:
         if cap_usd < 0:
             raise ValueError("cap_usd must be non-negative")
         key = (tenant_id, period)
@@ -147,6 +143,4 @@ class InMemoryTenantCostRollup:
                 # No tenant budget set; default-deny so the API surfaces the
                 # configuration error rather than silently allowing.
                 return False
-            return (
-                budget.used_usd + projected_campaign_cap_usd
-            ) <= budget.cap_usd
+            return (budget.used_usd + projected_campaign_cap_usd) <= budget.cap_usd

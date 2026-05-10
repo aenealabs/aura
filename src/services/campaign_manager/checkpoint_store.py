@@ -30,9 +30,7 @@ class CheckpointStore(Protocol):
         """Persist a checkpoint. Returns the storage key (e.g. S3 key)."""
         ...
 
-    async def read(
-        self, campaign_id: str, phase_id: str
-    ) -> PhaseCheckpoint | None:
+    async def read(self, campaign_id: str, phase_id: str) -> PhaseCheckpoint | None:
         """Read the latest checkpoint for a phase, or ``None``.
 
         Implementations MUST verify the KMS signature before returning;
@@ -42,9 +40,7 @@ class CheckpointStore(Protocol):
         """
         ...
 
-    async def latest_for_campaign(
-        self, campaign_id: str
-    ) -> PhaseCheckpoint | None:
+    async def latest_for_campaign(self, campaign_id: str) -> PhaseCheckpoint | None:
         """Read the most recent checkpoint across any phase."""
         ...
 
@@ -73,8 +69,7 @@ class InMemoryCheckpointStore:
             )
         key = (checkpoint.campaign_id, checkpoint.phase_id)
         storage_key = (
-            f"checkpoints/{checkpoint.campaign_id}/"
-            f"{checkpoint.phase_id}.json"
+            f"checkpoints/{checkpoint.campaign_id}/" f"{checkpoint.phase_id}.json"
         )
         with self._lock:
             self._checkpoints[key] = checkpoint
@@ -84,9 +79,7 @@ class InMemoryCheckpointStore:
             )
         return storage_key
 
-    async def read(
-        self, campaign_id: str, phase_id: str
-    ) -> PhaseCheckpoint | None:
+    async def read(self, campaign_id: str, phase_id: str) -> PhaseCheckpoint | None:
         key = (campaign_id, phase_id)
         with self._lock:
             checkpoint = self._checkpoints.get(key)
@@ -99,9 +92,7 @@ class InMemoryCheckpointStore:
                 )
             return checkpoint
 
-    async def latest_for_campaign(
-        self, campaign_id: str
-    ) -> PhaseCheckpoint | None:
+    async def latest_for_campaign(self, campaign_id: str) -> PhaseCheckpoint | None:
         with self._lock:
             ref = self._latest.get(campaign_id)
             if ref is None:

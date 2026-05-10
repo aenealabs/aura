@@ -32,12 +32,9 @@ from typing import Iterable, Protocol
 
 from src.services.model_assurance.adapter_registry import (
     AdapterRegistry,
-    DisqualificationReason,
     ModelAdapter,
-    ModelArchitecture,
     ModelProvider,
     ModelRequirements,
-    TokenizerType,
 )
 from src.services.model_assurance.scout.bedrock_client import (
     BedrockListClient,

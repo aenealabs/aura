@@ -93,9 +93,7 @@ class BatchAdapter(Adapter):
     async def solve(self, task: SWEBenchTask) -> SWEBenchPrediction:
         results = await self.solve_many([task])
         if not results:
-            raise AdapterError(
-                f"solve_many returned empty for task {task.instance_id}"
-            )
+            raise AdapterError(f"solve_many returned empty for task {task.instance_id}")
         return results[0]
 
     async def solve_many(
@@ -104,6 +102,4 @@ class BatchAdapter(Adapter):
         # Subclasses MUST override; this default exists so the abstract
         # parent's ``solve`` does not infinitely recurse via the parent's
         # default ``solve_many``.
-        raise NotImplementedError(
-            f"{type(self).__name__} must override solve_many"
-        )
+        raise NotImplementedError(f"{type(self).__name__} must override solve_many")

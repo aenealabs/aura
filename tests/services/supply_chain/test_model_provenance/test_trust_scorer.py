@@ -32,8 +32,11 @@ def _artifact(
         provider=provider,
         registry=registry,
         weights_digest=_digest(),
-        license=license_ or ModelLicense(
-            spdx_id="Apache-2.0", is_permissive=True, commercial_use_allowed=True,
+        license=license_
+        or ModelLicense(
+            spdx_id="Apache-2.0",
+            is_permissive=True,
+            commercial_use_allowed=True,
         ),
         training_data=lineage or ModelTrainingDataLineage(),
     )
@@ -289,8 +292,12 @@ class TestDeterminism:
         )
         d = s.to_audit_dict()
         for k in (
-            "aggregate", "provider_score", "registry_score",
-            "signature_score", "license_score",
-            "training_data_score", "maturity_score",
+            "aggregate",
+            "provider_score",
+            "registry_score",
+            "signature_score",
+            "license_score",
+            "training_data_score",
+            "maturity_score",
         ):
             assert k in d

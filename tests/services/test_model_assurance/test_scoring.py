@@ -77,15 +77,11 @@ class TestFloorEnforcement:
         result = ev.evaluate(
             candidate_id="cand",
             candidate_scores=_scores(scores),
-            incumbent=make_incumbent(
-                "inc", _all_axes_at(0.93)
-            ),
+            incumbent=make_incumbent("inc", _all_axes_at(0.93)),
         )
         assert result.verdict is ModelAssuranceVerdict.REJECT
         assert result.rejection_reason == "floor_violation"
-        assert any(
-            v.floor_id.startswith("floor_MA2") for v in result.floor_violations
-        )
+        assert any(v.floor_id.startswith("floor_MA2") for v in result.floor_violations)
 
     def test_high_score_on_one_axis_cant_compensate_for_floor(self) -> None:
         """ADR-088 §Stage 5: floors are pre-check, not weighted.

@@ -97,9 +97,7 @@ class ASTDiffJudge:
                 passed=False,
                 confidence=1.0,
                 reason=f"candidate patched_source did not parse: {exc}",
-                axis_scores=(
-                    (ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS, 0.0),
-                ),
+                axis_scores=((ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS, 0.0),),
             )
         passed = ref_dump == cand_dump
         return JudgeResult(

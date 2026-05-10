@@ -76,9 +76,7 @@ class InMemoryScoutStateStore:
         with self._lock:
             self._active.add(candidate_id)
 
-    def mark_evaluation_complete(
-        self, candidate_id: str, *, accepted: bool
-    ) -> None:
+    def mark_evaluation_complete(self, candidate_id: str, *, accepted: bool) -> None:
         with self._lock:
             self._active.discard(candidate_id)
             if accepted:

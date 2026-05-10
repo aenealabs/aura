@@ -70,9 +70,7 @@ def write_metadata(
                 "model_name_or_path": r.prediction.model_name_or_path,
                 "error": r.error,
                 "started_at": r.started_at.isoformat(),
-                "finished_at": (
-                    r.finished_at.isoformat() if r.finished_at else None
-                ),
+                "finished_at": (r.finished_at.isoformat() if r.finished_at else None),
                 "aura_metadata": r.prediction.aura_metadata,
             }
         )

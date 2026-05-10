@@ -375,9 +375,7 @@ class RegressionFloorViolation:
         return {
             "floor_id": self.floor_id,
             "axis": (
-                self.axis.value
-                if isinstance(self.axis, ConstraintAxis)
-                else self.axis
+                self.axis.value if isinstance(self.axis, ConstraintAxis) else self.axis
             ),
             "candidate_score": round(self.candidate_score, 6),
             "threshold": round(self.threshold, 6),

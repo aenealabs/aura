@@ -27,7 +27,7 @@ Three validators:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 # Hostname patterns AWS uses for FIPS endpoints.

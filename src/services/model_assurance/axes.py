@@ -147,8 +147,7 @@ AXIS_DEFINITIONS: tuple[AxisDefinition, ...] = (
     AxisDefinition(
         axis=ModelAssuranceAxis.GUARDRAIL_COMPLIANCE,
         description=(
-            "ADR-063 Constitutional AI + ADR-065 Semantic "
-            "Guardrails pass rate."
+            "ADR-063 Constitutional AI + ADR-065 Semantic " "Guardrails pass rate."
         ),
         measurement="% of outputs passing guardrail pipelines",
         default_floor=0.98,

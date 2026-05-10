@@ -49,10 +49,10 @@ from src.services.model_assurance.axes import (
 class ModelAssuranceVerdict(Enum):
     """Outcome of one model-assurance evaluation run."""
 
-    ACCEPT = "accept"               # candidate passes floors AND U > U_incumbent
-    REJECT = "reject"               # floor violation forces rejection
-    TIE_REJECT = "tie_reject"       # U == U_incumbent — incumbent holds
-    INFERIOR = "inferior"           # U < U_incumbent
+    ACCEPT = "accept"  # candidate passes floors AND U > U_incumbent
+    REJECT = "reject"  # floor violation forces rejection
+    TIE_REJECT = "tie_reject"  # U == U_incumbent — incumbent holds
+    INFERIOR = "inferior"  # U < U_incumbent
     NO_INCUMBENT_HITL = "no_incumbent_hitl"  # first-ever evaluation; HITL must judge
 
 
@@ -157,9 +157,7 @@ class ModelAssuranceEvaluator:
         weights: Mapping[ModelAssuranceAxis, float] | None = None,
     ) -> None:
         self._floors = floors if floors is not None else default_floors()
-        self._weights = (
-            dict(weights) if weights is not None else default_weights()
-        )
+        self._weights = dict(weights) if weights is not None else default_weights()
 
     @property
     def floors(self) -> tuple[RegressionFloor, ...]:
@@ -290,7 +288,9 @@ def make_incumbent(
     """Convenience constructor — saves callers from string-axis plumbing."""
     return IncumbentBaseline(
         incumbent_id=incumbent_id,
-        axis_scores=tuple((ax.value, float(score)) for ax, score in axis_scores.items()),
+        axis_scores=tuple(
+            (ax.value, float(score)) for ax, score in axis_scores.items()
+        ),
     )
 
 

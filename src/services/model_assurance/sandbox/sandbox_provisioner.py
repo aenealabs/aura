@@ -131,8 +131,9 @@ class SandboxProvisioner:
         *,
         provision_fn: ProvisionFn = _identity_provision,
         teardown_fn: TeardownFn = _no_op_teardown,
-        iam_policy_fetcher: Callable[[SandboxSpec], IAMPolicyDocument | None]
-        | None = None,
+        iam_policy_fetcher: (
+            Callable[[SandboxSpec], IAMPolicyDocument | None] | None
+        ) = None,
     ) -> None:
         self._provision_fn = provision_fn
         self._teardown_fn = teardown_fn
@@ -165,7 +166,8 @@ class SandboxProvisioner:
             policy = self._iam_policy_fetcher(spec)
             if policy is not None:
                 iam_violations = validate_iam_policy(
-                    policy, forbidden=spec.iam_constraint.forbidden_actions,
+                    policy,
+                    forbidden=spec.iam_constraint.forbidden_actions,
                 )
         if iam_violations:
             return SandboxOutcome(
@@ -194,7 +196,9 @@ class SandboxProvisioner:
         except Exception as exc:
             work_error = f"work failed: {exc}"
             logger.warning(
-                "sandbox work raised in %s: %s", sandbox_id, exc,
+                "sandbox work raised in %s: %s",
+                sandbox_id,
+                exc,
             )
         finally:
             try:
@@ -204,7 +208,8 @@ class SandboxProvisioner:
                 # work_error — the spec's invariant is "we tried".
                 logger.error(
                     "sandbox teardown failed for %s: %s",
-                    sandbox_id, teardown_exc,
+                    sandbox_id,
+                    teardown_exc,
                 )
 
         if work_error is not None:

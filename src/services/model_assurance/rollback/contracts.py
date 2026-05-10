@@ -20,7 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Mapping
 
 
 class RollbackVerdict(Enum):
@@ -45,9 +44,7 @@ class ConfigRevision:
     model_id: str
     model_parameters: tuple[tuple[str, str], ...] = ()  # tuple-of-tuples → hashable
     prompt_template_version: str = ""
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: str = "system"
     notes: str = ""
     # When this revision is itself the result of a rollback, this

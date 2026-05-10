@@ -90,9 +90,7 @@ def _build_adapter(mode: str, model_id: str | None):
     if mode in ("bedrock", "unofficial"):
         # Lazy import so users without boto3 / Bedrock access can still
         # run the stub mode against the dataset loader.
-        from src.benchmarks.swe_bench_pro.aura_adapter import (
-            AuraBedrockAdapter,
-        )
+        from src.benchmarks.swe_bench_pro.aura_adapter import AuraBedrockAdapter
 
         chosen = model_id or (
             _UNOFFICIAL_DEFAULT_MODEL
@@ -103,9 +101,7 @@ def _build_adapter(mode: str, model_id: str | None):
         # Production wiring: pass the project's Bedrock LLM client. To keep
         # this script free of Bedrock SDK imports for users on the stub
         # path, the import is deferred and constructed inline.
-        from src.services.bedrock_llm_service import (  # type: ignore
-            BedrockLLMClient,
-        )
+        from src.services.bedrock_llm_service import BedrockLLMClient  # type: ignore
 
         client = BedrockLLMClient()  # uses AWS default credentials chain
         # Unofficial mode caps spend hard — even cheaper-model runs can
@@ -116,9 +112,7 @@ def _build_adapter(mode: str, model_id: str | None):
             model_id=chosen,
             run_cost_cap_usd=cap,
         )
-    raise SystemExit(
-        f"unknown --mode {mode!r}; use 'stub', 'bedrock', or 'unofficial'"
-    )
+    raise SystemExit(f"unknown --mode {mode!r}; use 'stub', 'bedrock', or 'unofficial'")
 
 
 async def _amain(args: argparse.Namespace) -> int:
@@ -158,19 +152,14 @@ async def _amain(args: argparse.Namespace) -> int:
     from src.benchmarks.swe_bench_pro.contracts import TaskOutcome
 
     generated_count = report.outcome_counts.get(TaskOutcome.GENERATED, 0)
-    print(
-        f"\nSWE-Bench Pro run summary "
-        f"({adapter.model_name}, {args.mode} mode):"
-    )
+    print(f"\nSWE-Bench Pro run summary " f"({adapter.model_name}, {args.mode} mode):")
     print(f"  Tasks attempted:        {report.total_tasks}")
     print(
         f"  Patches generated:      {generated_count} "
         f"({report.patch_generation_rate:.1%})"
     )
     for outcome, count in report.outcome_counts.items():
-        outcome_label = (
-            outcome.value if hasattr(outcome, "value") else str(outcome)
-        )
+        outcome_label = outcome.value if hasattr(outcome, "value") else str(outcome)
         print(f"    {outcome_label}: {count}")
     print(f"  Total cost:             ${report.total_cost_usd:.2f}")
     print(f"  Mean duration:          {report.mean_duration_seconds:.1f}s")
@@ -184,8 +173,10 @@ async def _amain(args: argparse.Namespace) -> int:
         gold = load_gold_patches(instance_ids)
         scored = score_predictions(report.predictions, gold)
         print("\nUnofficial heuristic similarity scoring:")
-        print(f"  In-neighborhood rate:   {scored.in_neighborhood_rate:.1%} "
-              f"({scored.in_neighborhood_count}/{scored.total_tasks})")
+        print(
+            f"  In-neighborhood rate:   {scored.in_neighborhood_rate:.1%} "
+            f"({scored.in_neighborhood_count}/{scored.total_tasks})"
+        )
         print(f"  Mean file F1:           {scored.mean_file_f1:.3f}")
         print(f"  Mean hunk overlap:      {scored.mean_hunk_overlap_rate:.3f}")
         print(f"  Mean token Jaccard:     {scored.mean_token_jaccard:.3f}")

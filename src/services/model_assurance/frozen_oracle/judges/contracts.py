@@ -58,9 +58,7 @@ class JudgeRegistry:
 
     def register(self, judge: Judge) -> None:
         if judge.judge_id in self._judges:
-            raise ValueError(
-                f"Judge with id={judge.judge_id!r} already registered"
-            )
+            raise ValueError(f"Judge with id={judge.judge_id!r} already registered")
         self._judges[judge.judge_id] = judge
 
     def unregister(self, judge_id: str) -> Judge:
@@ -84,14 +82,8 @@ class JudgeRegistry:
 
     def deterministic_judges(self) -> tuple[Judge, ...]:
         return tuple(
-            j
-            for j in self._judges.values()
-            if j.judge_kind is JudgeKind.DETERMINISTIC
+            j for j in self._judges.values() if j.judge_kind is JudgeKind.DETERMINISTIC
         )
 
     def llm_judges(self) -> tuple[Judge, ...]:
-        return tuple(
-            j
-            for j in self._judges.values()
-            if j.judge_kind is JudgeKind.LLM
-        )
+        return tuple(j for j in self._judges.values() if j.judge_kind is JudgeKind.LLM)

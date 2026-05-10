@@ -46,23 +46,29 @@ def _full_set() -> GoldenTestSet:
     # remaining 300 are filler in the other domains
     fillers = {
         TestCaseDomain.VULNERABILITY_DETECTION: (
-            ModelAssuranceAxis.VULNERABILITY_DETECTION_RECALL, 150,
+            ModelAssuranceAxis.VULNERABILITY_DETECTION_RECALL,
+            150,
         ),
         TestCaseDomain.FALSE_POSITIVE: (
-            ModelAssuranceAxis.GUARDRAIL_COMPLIANCE, 100,
+            ModelAssuranceAxis.GUARDRAIL_COMPLIANCE,
+            100,
         ),
         TestCaseDomain.REGRESSION: (
-            ModelAssuranceAxis.CODE_COMPREHENSION, 50,
+            ModelAssuranceAxis.CODE_COMPREHENSION,
+            50,
         ),
     }
     for domain, (axis, n) in fillers.items():
         for i in range(n):
-            cases.append(GoldenTestCase(
-                case_id=f"{domain.value}-{i:04d}",
-                domain=domain,
-                title="t", description="d",
-                axes=(axis,),
-            ))
+            cases.append(
+                GoldenTestCase(
+                    case_id=f"{domain.value}-{i:04d}",
+                    domain=domain,
+                    title="t",
+                    description="d",
+                    axes=(axis,),
+                )
+            )
     return GoldenTestSet(cases=tuple(cases), version="0.1")
 
 
@@ -125,9 +131,7 @@ class TestEvaluation:
         # PATCH_FUNCTIONAL_CORRECTNESS axis should be 1.0 averaged across
         # the 100 patch cases. Other axes have 0 contributions.
         per_axis = result.per_axis_dict
-        assert per_axis[
-            ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS
-        ] == 1.0
+        assert per_axis[ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS] == 1.0
 
     def test_failed_judge_drops_axis_average(self) -> None:
         s = _full_set()
@@ -139,9 +143,12 @@ class TestEvaluation:
         outputs = []
         for i in range(100):
             source = "def f(): return 1" if i < 50 else "def f(): return 999"
-            outputs.append(PatchCandidateOutput(
-                case_id=f"patch-{i:04d}", patched_source=source,
-            ))
+            outputs.append(
+                PatchCandidateOutput(
+                    case_id=f"patch-{i:04d}",
+                    patched_source=source,
+                )
+            )
         result = svc.evaluate(
             candidate_id="c1",
             candidate_outputs={"ast_diff_v1": outputs},
@@ -149,9 +156,7 @@ class TestEvaluation:
         )
         per_axis = result.per_axis_dict
         # 50 of 100 patch cases pass; pass-rate = 0.5
-        assert per_axis[
-            ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS
-        ] == 0.5
+        assert per_axis[ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS] == 0.5
 
     def test_missing_candidate_output_treated_as_fail(self) -> None:
         s = _full_set()
@@ -168,9 +173,7 @@ class TestEvaluation:
         # since the missing-output result records no axis contributions.
         per_axis = result.per_axis_dict
         # No contributions → 0.0 average for all axes.
-        assert per_axis[
-            ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS
-        ] == 0.0
+        assert per_axis[ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS] == 0.0
 
 
 class TestHoldoutBehaviour:
@@ -199,7 +202,9 @@ class TestHoldoutBehaviour:
     def test_holdout_deterministic_in_seed(self) -> None:
         s = _full_set()
         svc = OracleService(
-            golden_set=s, judges=JudgeRegistry(), holdout_rate=0.20,
+            golden_set=s,
+            judges=JudgeRegistry(),
+            holdout_rate=0.20,
         )
         a = svc.evaluate(candidate_id="c", candidate_outputs={}, seed=42)
         b = svc.evaluate(candidate_id="c", candidate_outputs={}, seed=42)
@@ -239,9 +244,5 @@ class TestMultipleJudges:
             seed=1,
         )
         per_axis = result.per_axis_dict
-        assert per_axis[
-            ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS
-        ] == 1.0
-        assert per_axis[
-            ModelAssuranceAxis.PATCH_SECURITY_EQUIVALENCE
-        ] == 1.0
+        assert per_axis[ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS] == 1.0
+        assert per_axis[ModelAssuranceAxis.PATCH_SECURITY_EQUIVALENCE] == 1.0

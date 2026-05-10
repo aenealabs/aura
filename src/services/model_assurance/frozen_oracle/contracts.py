@@ -117,7 +117,7 @@ class JudgeResult:
     judge_id: str
     judge_kind: JudgeKind
     passed: bool
-    confidence: float          # [0,1]; deterministic judges report 1.0
+    confidence: float  # [0,1]; deterministic judges report 1.0
     reason: str = ""
     # Per-axis contribution this judge made for this case. The
     # oracle aggregator sums these per axis to compute MA1-MA6 raw
@@ -127,8 +127,7 @@ class JudgeResult:
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError(
-                f"JudgeResult.confidence must be in [0,1]; "
-                f"got {self.confidence}"
+                f"JudgeResult.confidence must be in [0,1]; " f"got {self.confidence}"
             )
 
     @property
@@ -146,9 +145,7 @@ class OracleEvaluation:
     cases_evaluated: int
     cases_passed: int
     holdout_cases: tuple[str, ...] = ()  # case ids withheld this run
-    evaluated_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    evaluated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def per_axis_dict(self) -> dict[ModelAssuranceAxis, float]:

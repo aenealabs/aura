@@ -61,7 +61,7 @@ _REGISTRY_TIER: dict[ModelRegistry, float] = {
 
 _SIGNATURE_TIER: dict[SignatureStatus, float] = {
     SignatureStatus.VERIFIED: 1.00,
-    SignatureStatus.UNSIGNED: 0.50,                # Bedrock returns this — provider attests via API
+    SignatureStatus.UNSIGNED: 0.50,  # Bedrock returns this — provider attests via API
     SignatureStatus.SIGNATURE_INVALID: 0.00,
     SignatureStatus.SIGNING_KEY_EXPIRED: 0.10,
     SignatureStatus.SIGNING_KEY_UNKNOWN: 0.20,
@@ -141,7 +141,7 @@ def _license_score(artifact: ModelArtifact) -> float:
         return 0.85
     if lic.spdx_id == "NOASSERTION":
         return 0.5  # Unknown license — neither pass nor fail
-    return 0.3      # Restrictive license — score down but not zero
+    return 0.3  # Restrictive license — score down but not zero
 
 
 def _training_data_score(artifact: ModelArtifact) -> float:
@@ -171,9 +171,7 @@ def compute_trust_score(
     has zero hidden time dependency.
     """
     ts = now or datetime.now(timezone.utc)
-    provider = _PROVIDER_TIER.get(
-        artifact.provider.lower(), _DEFAULT_PROVIDER_TIER
-    )
+    provider = _PROVIDER_TIER.get(artifact.provider.lower(), _DEFAULT_PROVIDER_TIER)
     registry = _REGISTRY_TIER[artifact.registry]
     signature = _SIGNATURE_TIER[signature_status]
     license_s = _license_score(artifact)

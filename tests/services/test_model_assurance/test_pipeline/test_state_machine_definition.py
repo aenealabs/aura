@@ -36,9 +36,7 @@ class TestStateMachineStructure:
     def test_all_pipeline_stages_have_states(self) -> None:
         asl = build_state_machine_definition(_arns())
         for stage in PipelineStage:
-            assert stage.value in asl["States"], (
-                f"missing ASL state for {stage.value}"
-            )
+            assert stage.value in asl["States"], f"missing ASL state for {stage.value}"
 
     def test_terminal_decisions_present(self) -> None:
         asl = build_state_machine_definition(_arns())
@@ -64,9 +62,7 @@ class TestRoutingLogic:
     def test_adapter_decision_routes_disqualified(self) -> None:
         asl = build_state_machine_definition(_arns())
         choices = asl["States"]["AdapterDecision"]["Choices"]
-        target = next(
-            c["Next"] for c in choices if c.get("BooleanEquals") is True
-        )
+        target = next(c["Next"] for c in choices if c.get("BooleanEquals") is True)
         assert target == "Disqualified"
 
     def test_adapter_decision_default_to_provenance(self) -> None:
@@ -86,9 +82,7 @@ class TestRoutingLogic:
     def test_floor_violation_routes_to_rejected(self) -> None:
         asl = build_state_machine_definition(_arns())
         choices = asl["States"]["FloorViolationCheck"]["Choices"]
-        target = next(
-            c["Next"] for c in choices if c.get("StringEquals") == "reject"
-        )
+        target = next(c["Next"] for c in choices if c.get("StringEquals") == "reject")
         assert target == "Rejected"
 
     def test_floor_violation_default_to_report(self) -> None:

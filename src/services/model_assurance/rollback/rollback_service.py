@@ -25,7 +25,6 @@ truncation. The audit trail is linear and append-only.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -79,7 +78,9 @@ class RollbackService:
     ) -> RollbackOutcome:
         """Roll back to the immediately-previous revision."""
         return self._rollback_n_back(
-            n=1, operator_id=operator_id, notes=notes,
+            n=1,
+            operator_id=operator_id,
+            notes=notes,
         )
 
     def rollback_two_steps(
@@ -90,7 +91,9 @@ class RollbackService:
     ) -> RollbackOutcome:
         """Restore the n-2 configuration (double-rollback shorthand)."""
         return self._rollback_n_back(
-            n=2, operator_id=operator_id, notes=notes,
+            n=2,
+            operator_id=operator_id,
+            notes=notes,
         )
 
     def rollback_to(
@@ -180,9 +183,7 @@ class RollbackService:
             prompt_template_version=target.prompt_template_version,
             created_at=datetime.now(timezone.utc),
             created_by=operator_id,
-            notes=notes or (
-                f"rollback to {target.revision_id} from {from_id}"
-            ),
+            notes=notes or (f"rollback to {target.revision_id} from {from_id}"),
             rolled_back_from=from_id or None,
         )
         self._history.append(new_revision)

@@ -13,9 +13,8 @@ no AWS calls, no network I/O, deterministic per-seed.
 from __future__ import annotations
 
 import logging
-import statistics
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 from src.services.model_assurance.pipeline.contracts import (

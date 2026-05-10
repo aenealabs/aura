@@ -43,10 +43,14 @@ class TestCronSeedSource:
         d1 = datetime(2026, 5, 6, 1, tzinfo=timezone.utc)
         d2 = datetime(2026, 5, 6, 2, tzinfo=timezone.utc)
         a = CronSeedSource(
-            salt="x", granularity=SeedBucketGranularity.HOURLY, clock=d1,
+            salt="x",
+            granularity=SeedBucketGranularity.HOURLY,
+            clock=d1,
         ).current_seed()
         b = CronSeedSource(
-            salt="x", granularity=SeedBucketGranularity.HOURLY, clock=d2,
+            salt="x",
+            granularity=SeedBucketGranularity.HOURLY,
+            clock=d2,
         ).current_seed()
         assert a != b
 
@@ -54,16 +58,20 @@ class TestCronSeedSource:
         d1 = datetime(2026, 5, 6, 1, tzinfo=timezone.utc)
         d2 = datetime(2026, 5, 6, 23, tzinfo=timezone.utc)
         a = CronSeedSource(
-            salt="x", granularity=SeedBucketGranularity.DAILY, clock=d1,
+            salt="x",
+            granularity=SeedBucketGranularity.DAILY,
+            clock=d1,
         ).current_seed()
         b = CronSeedSource(
-            salt="x", granularity=SeedBucketGranularity.DAILY, clock=d2,
+            salt="x",
+            granularity=SeedBucketGranularity.DAILY,
+            clock=d2,
         ).current_seed()
         assert a == b
 
     def test_weekly_stable_within_iso_week(self) -> None:
         # ISO week 19 of 2026
-        d1 = datetime(2026, 5, 4, tzinfo=timezone.utc)   # Monday
+        d1 = datetime(2026, 5, 4, tzinfo=timezone.utc)  # Monday
         d2 = datetime(2026, 5, 10, tzinfo=timezone.utc)  # Sunday
         granularity = SeedBucketGranularity.WEEKLY
         a = CronSeedSource(salt="x", granularity=granularity, clock=d1).current_seed()

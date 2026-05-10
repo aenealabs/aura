@@ -56,10 +56,10 @@ class ModelCandidateDetected:
     """
 
     schema_version: str
-    candidate_id: str            # vendor model ID, e.g. anthropic.claude-...
+    candidate_id: str  # vendor model ID, e.g. anthropic.claude-...
     display_name: str
     provider: ModelProvider
-    partition: str               # "aws" or "aws-us-gov"
+    partition: str  # "aws" or "aws-us-gov"
     detected_at: datetime
     eligibility: EligibilityFlag
     disqualification_reasons: tuple[DisqualificationReason, ...] = ()

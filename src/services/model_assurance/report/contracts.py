@@ -52,9 +52,9 @@ class IntegrityEnvelope:
     overwrite the hash after construction.
     """
 
-    payload_json: str       # canonical-JSON serialised payload
-    content_hash: str       # SHA-256 hex of payload_json
-    created_at: str         # ISO8601 UTC
+    payload_json: str  # canonical-JSON serialised payload
+    content_hash: str  # SHA-256 hex of payload_json
+    created_at: str  # ISO8601 UTC
     envelope_version: str = "1.0"
     signed_by: str = "aura.model_assurance.report"
 
@@ -99,7 +99,7 @@ class EdgeCaseSpotlight:
     description: str
     candidate_passed: bool
     incumbent_passed: bool
-    delta_label: str           # "improved" / "regressed" / "tied"
+    delta_label: str  # "improved" / "regressed" / "tied"
 
 
 @dataclass(frozen=True)
@@ -129,7 +129,7 @@ class ShadowDeploymentReport:
     candidate_id: str
     candidate_display_name: str
     incumbent_id: str | None
-    pipeline_decision: str               # PipelineDecision.value
+    pipeline_decision: str  # PipelineDecision.value
     overall_utility: float
     incumbent_utility: float | None
     floor_violations: tuple[str, ...] = ()
@@ -139,9 +139,7 @@ class ShadowDeploymentReport:
     provenance_summary: str = ""
     edge_cases: tuple[EdgeCaseSpotlight, ...] = ()
     spot_checks: tuple[HumanSpotCheckResult, ...] = ()
-    generated_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def axis_scores_dict(self) -> dict[ModelAssuranceAxis, float]:
@@ -232,7 +230,7 @@ class EvaluationIntegrityEnvelope:
     """
 
     benchmark_version: str
-    axis_floors: tuple[tuple[str, float], ...]      # axis_id → threshold
-    axis_weights: tuple[tuple[str, float], ...]     # axis_id → weight
+    axis_floors: tuple[tuple[str, float], ...]  # axis_id → threshold
+    axis_weights: tuple[tuple[str, float], ...]  # axis_id → weight
     sealed_hash: str
     sealed_at: str

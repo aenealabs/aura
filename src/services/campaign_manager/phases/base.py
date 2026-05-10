@@ -140,17 +140,13 @@ class CampaignWorker(abc.ABC):
         for phase in self.phase_graph():
             if phase.definition.phase_id == phase_id:
                 return phase
-        raise KeyError(
-            f"No phase with id={phase_id!r} in {type(self).__name__}"
-        )
+        raise KeyError(f"No phase with id={phase_id!r} in {type(self).__name__}")
 
     def first_phase(self) -> Phase:
         """The phase the orchestrator runs first."""
         graph = self.phase_graph()
         if not graph:
-            raise ValueError(
-                f"{type(self).__name__}.phase_graph() is empty"
-            )
+            raise ValueError(f"{type(self).__name__}.phase_graph() is empty")
         return graph[0]
 
     def next_phase(self, current_phase_id: str) -> Phase | None:

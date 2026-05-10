@@ -70,12 +70,8 @@ def _judge_result(case_id: str, passed: bool) -> JudgeResult:
 def _oracle(per_case: dict[str, bool]) -> OracleEvaluation:
     return OracleEvaluation(
         candidate_id="cand",
-        judge_results=tuple(
-            _judge_result(cid, p) for cid, p in per_case.items()
-        ),
-        per_axis_scores=(
-            (ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS, 0.9),
-        ),
+        judge_results=tuple(_judge_result(cid, p) for cid, p in per_case.items()),
+        per_axis_scores=((ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS, 0.9),),
         cases_evaluated=len(per_case),
         cases_passed=sum(1 for p in per_case.values() if p),
     )
@@ -142,7 +138,8 @@ class TestReportGeneration:
     def test_axis_scores_passed_through(self) -> None:
         result = _pipeline_result(oracle=_oracle({"c1": True}))
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         d = report.axis_scores_dict
         assert d[ModelAssuranceAxis.PATCH_FUNCTIONAL_CORRECTNESS] == 0.9
@@ -150,7 +147,8 @@ class TestReportGeneration:
     def test_no_oracle_no_axis_scores(self) -> None:
         result = _pipeline_result(oracle=None)
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         assert report.axis_scores == ()
 
@@ -159,16 +157,16 @@ class TestRiskNotes:
     def test_missing_training_data_noted(self) -> None:
         result = _pipeline_result(oracle=_oracle({"c1": True}))
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
-        assert any(
-            "training-data" in note for note in report.risk_notes
-        )
+        assert any("training-data" in note for note in report.risk_notes)
 
     def test_unsigned_signature_noted(self) -> None:
         result = _pipeline_result(oracle=_oracle({"c1": True}))
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         assert any("unsigned" in note for note in report.risk_notes)
 
@@ -177,7 +175,8 @@ class TestProvenanceSummary:
     def test_provenance_summary_present(self) -> None:
         result = _pipeline_result(oracle=_oracle({"c1": True}))
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         assert "approved" in report.provenance_summary
         assert "trust=" in report.provenance_summary
@@ -190,7 +189,8 @@ class TestProvenanceSummary:
             stages=(),
         )
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         assert "no provenance" in report.provenance_summary.lower()
 
@@ -214,7 +214,8 @@ class TestCostAnalysis:
     def test_no_cost_analysis_without_adapter(self) -> None:
         result = _pipeline_result(oracle=_oracle({"c1": True}))
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         assert report.cost_analysis is None
 
@@ -223,7 +224,8 @@ class TestEdgeCaseSpotlight:
     def test_no_edge_cases_without_oracle(self) -> None:
         result = _pipeline_result(oracle=None)
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         assert report.edge_cases == ()
 
@@ -231,7 +233,8 @@ class TestEdgeCaseSpotlight:
         per_case = {"c1": True, "c2": False, "c3": False}
         result = _pipeline_result(oracle=_oracle(per_case))
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         case_ids = {ec.case_id for ec in report.edge_cases}
         assert "c2" in case_ids
@@ -262,7 +265,8 @@ class TestEdgeCaseSpotlight:
         per_case = {f"c{i:03d}": False for i in range(30)}
         result = _pipeline_result(oracle=_oracle(per_case))
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         assert len(report.edge_cases) == EDGE_CASE_LIMIT
 
@@ -272,10 +276,14 @@ class TestSpotChecks:
         result = _pipeline_result(oracle=_oracle({"c1": True}))
         spot_checks = (
             HumanSpotCheckResult(
-                case_id="c1", automated_pass=True, human_pass=True,
+                case_id="c1",
+                automated_pass=True,
+                human_pass=True,
             ),
             HumanSpotCheckResult(
-                case_id="c2", automated_pass=True, human_pass=False,
+                case_id="c2",
+                automated_pass=True,
+                human_pass=False,
                 notes="reviewer disagreed",
             ),
         )
@@ -290,7 +298,9 @@ class TestSpotChecks:
         result = _pipeline_result(oracle=_oracle({"c1": True}))
         spot_checks = (
             HumanSpotCheckResult(
-                case_id="c1", automated_pass=True, human_pass=False,
+                case_id="c1",
+                automated_pass=True,
+                human_pass=False,
             ),
         )
         report = generate_report(
@@ -305,13 +315,20 @@ class TestSerializable:
     def test_serializable_dict_has_all_top_level_keys(self) -> None:
         result = _pipeline_result(oracle=_oracle({"c1": True}))
         report = generate_report(
-            pipeline_result=result, candidate_display_name="X",
+            pipeline_result=result,
+            candidate_display_name="X",
         )
         d = report.to_serialisable_dict()
         for k in (
-            "candidate_id", "candidate_display_name", "pipeline_decision",
-            "overall_utility", "axis_scores", "risk_notes",
-            "provenance_summary", "edge_cases", "spot_checks",
+            "candidate_id",
+            "candidate_display_name",
+            "pipeline_decision",
+            "overall_utility",
+            "axis_scores",
+            "risk_notes",
+            "provenance_summary",
+            "edge_cases",
+            "spot_checks",
             "generated_at",
         ):
             assert k in d
@@ -321,7 +338,8 @@ class TestLookupAdapter:
     def test_existing_id_returns_adapter(self) -> None:
         registry = AdapterRegistry()
         a = lookup_adapter(
-            registry, "anthropic.claude-3-5-sonnet-20240620-v1:0",
+            registry,
+            "anthropic.claude-3-5-sonnet-20240620-v1:0",
         )
         assert a is not None
 

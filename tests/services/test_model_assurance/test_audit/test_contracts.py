@@ -36,9 +36,9 @@ class TestNISTMapping:
         """AU-3 (audit-record content) applies to every event by definition."""
         for event_type in AuditEventType:
             mapped = EVENT_NIST_MAPPING.get(event_type, ())
-            assert NISTControl.AU_3 in mapped, (
-                f"{event_type.value} missing AU-3 mapping"
-            )
+            assert (
+                NISTControl.AU_3 in mapped
+            ), f"{event_type.value} missing AU-3 mapping"
 
     def test_hitl_events_carry_change_control(self) -> None:
         for event_type in (

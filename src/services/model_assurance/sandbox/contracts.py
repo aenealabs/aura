@@ -48,7 +48,7 @@ class EgressDecision(Enum):
 class EgressEndpoint:
     """One endpoint the sandbox is permitted to reach."""
 
-    host: str                  # e.g. "bedrock.us-east-1.amazonaws.com"
+    host: str  # e.g. "bedrock.us-east-1.amazonaws.com"
     port: int = 443
     description: str = ""
 
@@ -84,9 +84,7 @@ class EgressPolicy:
     allowlist: tuple[EgressEndpoint, ...] = DEFAULT_EGRESS_ALLOWLIST
     region: str = "us-east-1"
 
-    def validate_destination(
-        self, host: str, port: int = 443
-    ) -> EgressDecision:
+    def validate_destination(self, host: str, port: int = 443) -> EgressDecision:
         host = host.lower()
         for ep in self.allowlist:
             allowed_host = ep.host.format(region=self.region).lower()
@@ -141,12 +139,12 @@ class SandboxSpec:
     candidate_model_id: str
     egress_policy: EgressPolicy
     iam_constraint: IAMConstraint = field(default_factory=IAMConstraint)
-    ephemeral_storage_mb: int = 4096        # max scratch space
-    cpu_units: int = 2048                   # 2 vCPU
-    memory_mb: int = 4096                   # 4 GB
-    max_runtime_seconds: int = 1_800        # 30 min hard cap
-    enable_runtime_baseline_monitoring: bool = True   # ADR-083 hook
-    enable_container_escape_detection: bool = True    # ADR-077 hook
+    ephemeral_storage_mb: int = 4096  # max scratch space
+    cpu_units: int = 2048  # 2 vCPU
+    memory_mb: int = 4096  # 4 GB
+    max_runtime_seconds: int = 1_800  # 30 min hard cap
+    enable_runtime_baseline_monitoring: bool = True  # ADR-083 hook
+    enable_container_escape_detection: bool = True  # ADR-077 hook
 
     def __post_init__(self) -> None:
         if not self.sandbox_id:
@@ -171,12 +169,8 @@ class SandboxOutcome:
     egress_violations: tuple[str, ...] = ()
     iam_violations: tuple[str, ...] = ()
     error: str | None = None
-    started_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
-    completed_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def is_clean(self) -> bool:
@@ -197,7 +191,5 @@ class SandboxOutcome:
             "error": self.error,
             "started_at": self.started_at.isoformat(),
             "completed_at": self.completed_at.isoformat(),
-            "duration_seconds": (
-                self.completed_at - self.started_at
-            ).total_seconds(),
+            "duration_seconds": (self.completed_at - self.started_at).total_seconds(),
         }

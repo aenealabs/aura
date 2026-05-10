@@ -151,9 +151,7 @@ class _InterruptAtCount:
     def __call__(self, service, entity, fqn) -> None:
         self.call_count += 1
         if self.call_count == self._fail_at:
-            raise KeyboardInterrupt(
-                f"Chaos: interrupt at write {self.call_count}"
-            )
+            raise KeyboardInterrupt(f"Chaos: interrupt at write {self.call_count}")
         return self._original(service, entity, fqn)
 
 
@@ -197,9 +195,9 @@ def test_chaos_resume_converges_to_golden(seed: int, golden_state: str) -> None:
             with pytest.raises(KeyboardInterrupt):
                 migrate(svc)
         # No vertex should have an fqn yet.
-        assert all("fqn" not in v for v in svc.mock_graph.values()), (
-            "pre-scan injection should leave the graph fully unmigrated."
-        )
+        assert all(
+            "fqn" not in v for v in svc.mock_graph.values()
+        ), "pre-scan injection should leave the graph fully unmigrated."
     elif injection_class == 1:
         # mid-batch: wrap _write_fqn_mock to raise on a random
         # mid-loop iteration.
@@ -232,9 +230,9 @@ def test_chaos_resume_converges_to_golden(seed: int, golden_state: str) -> None:
     # remaining work and leave the graph indistinguishable from a
     # clean run.
     resume_stats = migrate(svc)
-    assert resume_stats.failed == 0, (
-        f"Resume run reported failures: {resume_stats.errors}"
-    )
+    assert (
+        resume_stats.failed == 0
+    ), f"Resume run reported failures: {resume_stats.errors}"
 
     chaos_state = _serialize(svc)
     assert chaos_state == golden_state, (
@@ -267,9 +265,7 @@ def test_double_interruption_still_converges(golden_state: str) -> None:
     # remaining count is total_writes - (first_wrapper.call_count - 1)
     # and we want to interrupt around halfway through it.
     remaining = total_writes - (first_wrapper.call_count - 1)
-    second_wrapper = _InterruptAtCount(
-        original, fail_at=max(1, remaining // 2)
-    )
+    second_wrapper = _InterruptAtCount(original, fail_at=max(1, remaining // 2))
     with patch.object(migration_module, "_write_fqn_mock", second_wrapper):
         with pytest.raises(KeyboardInterrupt):
             migrate(svc)
@@ -277,6 +273,6 @@ def test_double_interruption_still_converges(golden_state: str) -> None:
     # Final clean resume.
     final_stats = migrate(svc)
     assert final_stats.failed == 0
-    assert _serialize(svc) == golden_state, (
-        "Double-interruption sequence diverged from clean-run baseline."
-    )
+    assert (
+        _serialize(svc) == golden_state
+    ), "Double-interruption sequence diverged from clean-run baseline."

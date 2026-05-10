@@ -63,10 +63,7 @@ class CompileTestJudge:
             )
         else:
             reason = ""
-        passed = (
-            candidate_output.compile_succeeded
-            and candidate_output.tests_passed
-        )
+        passed = candidate_output.compile_succeeded and candidate_output.tests_passed
         return JudgeResult(
             case_id=case.case_id,
             judge_id=self.judge_id,

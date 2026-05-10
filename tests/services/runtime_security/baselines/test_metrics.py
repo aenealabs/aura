@@ -61,9 +61,18 @@ class TestMetricType:
     def test_has_checkpoint_frequency(self):
         assert MetricType.CHECKPOINT_FREQUENCY.value == "checkpoint_frequency"
 
+    def test_has_policy_write_frequency(self):
+        """ADR-086 Phase 2 added policy_write_frequency."""
+        assert MetricType.POLICY_WRITE_FREQUENCY.value == "policy_write_frequency"
+
     def test_total_member_count(self):
-        """All 10 metric types are defined."""
-        assert len(MetricType) == 10
+        """All metric types are defined.
+
+        Asserts >= rather than == so adding new metrics in subsequent
+        ADRs does not invalidate this test - the per-member tests above
+        are the source of truth for which specific metrics exist.
+        """
+        assert len(MetricType) >= 11
 
 
 # ---------------------------------------------------------------------------

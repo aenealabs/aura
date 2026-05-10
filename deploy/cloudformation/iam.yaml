@@ -103,13 +103,18 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Allow model invocation for approved models only
+              # Allow model invocation for approved models only.
+              # Current generation: Sonnet 4.5 (primary), Haiku 4.5 (fast path).
+              # Legacy 3.5/3 entries retained for fallback during model migration.
               - Effect: Allow
                 Action:
                   - bedrock:InvokeModel
                   - bedrock:InvokeModelWithResponseStream
                 Resource:
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0'
                   - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v1:0'
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0'
                   - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0'
                   - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0'
               # Read-only operations for discovery (scoped by condition)
@@ -121,6 +126,8 @@ Resources:
                 Condition:
                   StringLike:
                     'bedrock:modelId':
+                      - 'anthropic.claude-sonnet-4*'
+                      - 'anthropic.claude-haiku-4*'
                       - 'anthropic.claude-3-5-sonnet*'
                       - 'anthropic.claude-3-haiku*'
                       - 'amazon.titan-embed-text*'

@@ -115,19 +115,19 @@ Mappings:
     dev:
       ShortName: dev
       LogRetentionDays: 7
-      ModelPrimary: anthropic.claude-3-haiku-20240307-v1:0
+      ModelPrimary: anthropic.claude-haiku-4-5-20251001-v1:0
       Schedule: business-hours
       Monitoring: standard
     qa:
       ShortName: qa
       LogRetentionDays: 30
-      ModelPrimary: anthropic.claude-3-5-sonnet-20241022-v1:0
+      ModelPrimary: anthropic.claude-sonnet-4-5-20250929-v1:0
       Schedule: business-hours-plus
       Monitoring: standard
     prod:
       ShortName: prod
       LogRetentionDays: 90
-      ModelPrimary: anthropic.claude-3-5-sonnet-20241022-v1:0
+      ModelPrimary: anthropic.claude-sonnet-4-5-20250929-v1:0
       Schedule: 24x7
       Monitoring: critical
 
@@ -207,6 +207,8 @@ Resources:
               - bedrock:InvokeModel
               - bedrock:InvokeModelWithResponseStream
             Resource:
+              - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0'
+              - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0'
               - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v1:0'
               - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0'
           - Sid: SecretsManagerRead
@@ -352,7 +354,7 @@ Resources:
           - |
             {
               "model_id_primary": "${ModelPrimary}",
-              "model_id_fallback": "anthropic.claude-3-haiku-20240307-v1:0",
+              "model_id_fallback": "anthropic.claude-haiku-4-5-20251001-v1:0",
               "max_tokens_default": 4096,
               "temperature_default": 0.7
             }

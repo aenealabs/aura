@@ -55,3 +55,9 @@
 **Tracked as:** At-Risk in `docs/security/DEPENDENCY_RISK_REGISTER.md`. Replacement plan: swap to `@eslint-react/eslint-plugin` (active fork, native eslint@10 support) — tracked as issue #142, **deferred per its own trigger conditions** (no date-based deadline). The swap fires when *any one* of: (a) `eslint-plugin-react` goes >18 months without an eslint@10 peer-support release, (b) a CVE lands without an upstream fix, or (c) `eslint@9.x` reaches EOL. Re-evaluation runs on the weekly #138 dependency-risk audit cycle.
 
 **Caveat of the workaround:** `--legacy-peer-deps` is not scoped — it silences *all* peer-dep conflicts, not just this one. If a future PR introduces an unrelated peer-dep regression, the flag will paper over it. When picking up this directory, do a one-time `npm install` *without* the flag to verify no new conflicts have been masked, then proceed with `--legacy-peer-deps` for routine work.
+
+---
+
+## `brace-expansion` override pinned to `^5.0.5`
+
+`package.json` `overrides.brace-expansion` is intentionally pinned at `^5.0.5`. eslint@10's `@eslint/config-array` ships a compiled minimatch@10 that calls `require('brace-expansion').expand` (named export). brace-expansion@1.x and 2.x only expose the function as `module.exports` (default), so an earlier override of `^1.1.13` or `^2.0.2` caused `npm run lint` to crash with `TypeError: brace_expansion_1.expand is not a function` before any source code was inspected. 5.x added the proper named `.expand` export with dual ESM/CJS bundles and TypeScript types, satisfying both minimatch@10 *and* the older minimatch@3.1.5 transitively pulled in by `eslint-plugin-react@7.37.5` (it uses the default `require('brace-expansion')()` call which 5.x preserves). Re-evaluate this override when the `eslint-plugin-react` swap in issue #142 lands.

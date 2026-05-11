@@ -428,13 +428,30 @@ async def oidc_login(
 
         # Import OIDC provider
         from src.services.identity.providers.oidc_provider import OIDCProvider
+        from src.services.identity.session_state_store import (
+            PendingOIDCState,
+            get_session_state_store,
+        )
 
         if isinstance(provider, OIDCProvider):
             await provider.discover()
             auth_request = provider.generate_auth_request()
 
-            # TODO: Store state and nonce in DynamoDB for validation
-            # For now, include idp_id in state
+            # Wave 5a (#163): persist the state + nonce + PKCE
+            # code_verifier so the callback can validate the round-trip.
+            # Failure here is fatal - going to the IdP without a stored
+            # state would make the callback unable to validate anything.
+            state_store = get_session_state_store()
+            state_store._put_pending_state(
+                PendingOIDCState(
+                    state=auth_request.state,
+                    idp_id=idp_id,
+                    code_verifier=auth_request.code_verifier,
+                    nonce=auth_request.nonce,
+                    organization_id=config.organization_id,
+                )
+            )
+
             return RedirectResponse(
                 url=auth_request.authorization_url,
                 status_code=status.HTTP_302_FOUND,
@@ -464,21 +481,31 @@ async def oidc_callback(
 
     Exchanges code for tokens and issues Aura JWT.
     """
-    # TODO: Look up state from DynamoDB to get IdP ID and code_verifier
-    # For simplified implementation, state contains IdP ID
+    # Wave 5a (#163): look up the persisted pending state by the
+    # ``state`` parameter the IdP echoed back. ``consume_pending_state``
+    # atomically reads and deletes the row so the same state cannot
+    # be replayed against a different authorization code.
+    from src.services.identity.session_state_store import get_session_state_store
+
+    state_store = get_session_state_store()
+    pending = state_store.consume_pending_state(state)
+    if pending is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unknown, expired, or replayed state parameter",
+        )
 
     config_service = get_idp_config_service()
     token_service = get_token_service()
     audit_service = get_audit_service()
 
-    # In production, decode state properly
-    idp_id = state  # Simplified
+    idp_id = pending.idp_id
 
     config = await config_service.get_config(idp_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid state parameter",
+            detail="Identity provider for this state no longer configured",
         )
 
     client_ip = request.client.host if request.client else None
@@ -487,13 +514,13 @@ async def oidc_callback(
     try:
         provider = IdentityProviderFactory.create(config)
 
-        # TODO: Get code_verifier and nonce from stored state
+        # Use the code_verifier + nonce captured at /oidc/login time.
         auth_result = await provider.authenticate(
             AuthCredentials(
                 code=code,
                 state=state,
-                code_verifier=None,  # Would come from stored state
-                nonce=None,  # Would come from stored state
+                code_verifier=pending.code_verifier,
+                nonce=pending.nonce,
             )
         )
 
@@ -517,6 +544,18 @@ async def oidc_callback(
             client_ip=client_ip,
             user_agent=user_agent,
         )
+
+        # Wave 5a (#163): persist the new session so refresh + logout
+        # paths can look it up. Best-effort: a DynamoDB failure here
+        # must not block the user from getting their first tokens.
+        try:
+            state_store.put_session(session)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Persisting new session %s failed; tokens issued anyway: %s",
+                session.session_id,
+                exc,
+            )
 
         await audit_service.log_auth_success(
             idp_id=idp_id,
@@ -579,9 +618,19 @@ async def refresh_token(
 
         claims = validation.claims
 
-        # Get IdP config and session
-        # TODO: Look up session from DynamoDB using claims
-        # For now, issue new tokens based on claims
+        # Wave 5a (#163): refresh-token revocation check + session
+        # lookup against the persistent store. If the refresh token's
+        # JTI has been invalidated by a prior /logout, reject before
+        # issuing new tokens.
+        from src.services.identity.session_state_store import get_session_state_store
+
+        state_store = get_session_state_store()
+        jti = claims.get("jti", "")
+        if jti and state_store.is_refresh_jti_invalidated(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has been revoked",
+            )
 
         config_service = get_idp_config_service()
         config = await config_service.get_config(claims.get("idp", ""))
@@ -592,22 +641,38 @@ async def refresh_token(
                 detail="IdP configuration not found",
             )
 
-        # Create minimal session for refresh
+        # Look up the durable session row. Fall back to the
+        # claims-derived minimal session if the row is missing so
+        # legacy refresh tokens (issued before the store existed)
+        # still work. The token signature itself remains authoritative.
         from src.services.identity.models import AuthSession
 
-        session = AuthSession(
-            session_id=claims.get("session_id", ""),
-            user_sub=claims.get("sub", ""),
-            idp_id=claims.get("idp", ""),
-            organization_id=claims.get("org_id", ""),
-            refresh_token_jti=claims.get("jti", ""),
-        )
+        session_id = claims.get("session_id", "")
+        session = state_store.get_session(session_id) if session_id else None
+        if session is None:
+            session = AuthSession(
+                session_id=session_id,
+                user_sub=claims.get("sub", ""),
+                idp_id=claims.get("idp", ""),
+                organization_id=claims.get("org_id", ""),
+                refresh_token_jti=jti,
+            )
 
         tokens, updated_session = await token_service.refresh_tokens(
             refresh_token=body.refresh_token,
             session=session,
             idp_config=config,
         )
+
+        # Persist the rotated session (new refresh-token JTI on it).
+        try:
+            state_store.put_session(updated_session)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Persisting refreshed session %s failed: %s",
+                updated_session.session_id,
+                exc,
+            )
 
         return TokenResponse(
             access_token=tokens.access_token,
@@ -643,13 +708,38 @@ async def logout(
     """
     audit_service = get_audit_service()
 
-    # TODO: Invalidate refresh token in session store
+    # Wave 5a (#163): invalidate the refresh-token JTI so a subsequent
+    # /token/refresh request with the same refresh token is rejected.
+    # Best-effort - a failure to persist the revocation shouldn't fail
+    # the user's logout (the access token's exp claim still bounds the
+    # blast radius).
+    from src.services.identity.session_state_store import get_session_state_store
+
+    state_store = get_session_state_store()
+    refresh_jti = getattr(user, "refresh_jti", None) or getattr(user, "jti", None)
+    if refresh_jti:
+        try:
+            state_store.invalidate_refresh_jti(refresh_jti)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Persisting refresh-jti revocation for user %s failed: %s",
+                user.sub,
+                exc,
+            )
+
+    # Also drop the durable session row if we know the session_id.
+    session_id = getattr(user, "session_id", None)
+    if session_id:
+        try:
+            state_store.delete_session(session_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Deleting session %s on logout failed: %s", session_id, exc)
 
     # Log logout event
     await audit_service.log_event(
         action=AuthAction.SESSION_LOGOUT,
-        idp_id="",  # Would get from token claims
-        organization_id="",  # Would get from token claims
+        idp_id=getattr(user, "idp_id", "") or "",
+        organization_id=getattr(user, "organization_id", "") or "",
         actor_id=user.sub,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),

@@ -102,37 +102,48 @@ class RuntimeSecurityGraphService:
     - Escape events
     """
 
-    def __init__(self, config: Optional[RuntimeSecurityConfig] = None):
-        """Initialize graph service with configuration."""
+    def __init__(
+        self,
+        config: Optional[RuntimeSecurityConfig] = None,
+        neptune_client: Optional[Any] = None,
+    ):
+        """Initialize graph service with configuration.
+
+        Args:
+            config: Runtime-security config. Loaded from env if None.
+            neptune_client: Optional thread-dispatched Gremlin client
+                (the ``.client`` attribute from
+                ``NeptuneGraphService``). When provided AND the config
+                does not select mock mode, ``_store_vertex`` and
+                ``_create_edge`` issue real Gremlin writes. When None
+                or mock-mode is on, both paths use the in-memory mock
+                dict.
+        """
         self._config = config or get_runtime_security_config()
-        self._use_mock = self._config.graph.use_mock
+        self._use_mock = self._config.graph.use_mock or neptune_client is None
 
         # Mock storage for testing
         self._mock_vertices: dict[str, GraphVertex] = {}
         self._mock_edges: dict[str, GraphEdge] = {}
 
-        # Connection pool (would use gremlin-python in production)
-        self._connection = None
+        # Gremlin client (thread-dispatched ``.submit().all().result()``
+        # API matching ``NeptuneGraphService.client``). None in mock mode.
+        self._neptune_client = neptune_client if not self._use_mock else None
 
     def _get_connection(self):
         """Get Neptune connection."""
         if self._use_mock:
             return None
-
-        if self._connection is None:
-            # Would initialize gremlin-python connection here
-            endpoint = self._config.graph.neptune_endpoint
-            port = self._config.graph.neptune_port
-            logger.info(f"Connecting to Neptune at {endpoint}:{port}")
-            # self._connection = DriverRemoteConnection(...)
-
-        return self._connection
+        return self._neptune_client
 
     def close(self) -> None:
-        """Close Neptune connection."""
-        if self._connection:
-            # self._connection.close()
-            self._connection = None
+        """Close Neptune connection.
+
+        No-op when the client is owned externally; the
+        ``NeptuneGraphService`` that built it is responsible for
+        teardown. Kept for API compatibility with the old contract.
+        """
+        self._neptune_client = None
 
     # Store methods
 
@@ -490,13 +501,55 @@ class RuntimeSecurityGraphService:
     # Internal methods
 
     def _store_vertex(self, vertex: GraphVertex) -> None:
-        """Store a vertex in the graph."""
+        """Store a vertex in the graph.
+
+        In mock mode, keeps the vertex in ``_mock_vertices``. In live
+        mode, issues a Gremlin upsert (``g.V(id).fold().coalesce(
+        unfold(), addV(label).property(id, ...))``) so repeated
+        ``_store_vertex`` calls are idempotent. Properties are added
+        with ``property(single, key, value)`` to overwrite any prior
+        value rather than appending.
+        """
         if self._use_mock:
             self._mock_vertices[vertex.vertex_id] = vertex
             return
 
-        # Would execute Gremlin addV() in production
-        raise NotImplementedError("Neptune integration not implemented")
+        if self._neptune_client is None:
+            # Defensive: live mode without a client. Fall back to mock
+            # and log so the caller can spot the misconfiguration.
+            logger.warning(
+                "RuntimeSecurityGraphService in live mode without a "
+                "Gremlin client; vertex %s buffered in mock dict",
+                vertex.vertex_id,
+            )
+            self._mock_vertices[vertex.vertex_id] = vertex
+            return
+
+        vid = escape_gremlin_string(vertex.vertex_id)
+        label = escape_gremlin_string(vertex.label.value)
+        prop_clauses = [
+            f".property(single, '{escape_gremlin_string(str(k))}', "
+            f"'{escape_gremlin_string(str(v))}')"
+            for k, v in vertex.properties.items()
+        ]
+        prop_chain = "".join(prop_clauses)
+        query = (
+            f"g.V().has('{label}', 'vertex_id', '{vid}')"
+            f".fold()"
+            f".coalesce(unfold(), addV('{label}').property(id, '{vid}')"
+            f".property(single, 'vertex_id', '{vid}'))"
+            f"{prop_chain}"
+        )
+        try:
+            self._neptune_client.submit(query).all().result()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "Neptune upsert failed for vertex %s (label=%s): %s",
+                vertex.vertex_id,
+                vertex.label.value,
+                exc,
+            )
+            raise
 
     def _get_vertex_properties(self, vertex_id: str) -> Optional[dict[str, Any]]:
         """Get properties of a vertex."""
@@ -550,8 +603,53 @@ class RuntimeSecurityGraphService:
             self._mock_edges[edge_id] = edge
             return edge_id
 
-        # Would execute Gremlin addE() in production
-        raise NotImplementedError("Neptune integration not implemented")
+        if self._neptune_client is None:
+            logger.warning(
+                "RuntimeSecurityGraphService in live mode without a "
+                "Gremlin client; edge %s buffered in mock dict",
+                edge_id,
+            )
+            self._mock_edges[edge_id] = edge
+            return edge_id
+
+        from_vid = escape_gremlin_string(from_vertex_id)
+        to_vid = escape_gremlin_string(to_vertex_id)
+        elabel = escape_gremlin_string(label.value)
+        eid = escape_gremlin_string(edge_id)
+        prop_clauses = [
+            f".property('{escape_gremlin_string(str(k))}', "
+            f"'{escape_gremlin_string(str(v))}')"
+            for k, v in (properties or {}).items()
+        ]
+        prop_chain = "".join(prop_clauses)
+        # Edge upserts are harder than vertex upserts in Gremlin -
+        # there's no shared idiom across providers. We rely on the
+        # uniquely-generated edge_id as the natural anti-duplication
+        # key (callers pass us a fresh id every time). If the same
+        # caller wants idempotent edge writes they should generate a
+        # deterministic edge_id and check `find_edges_for_vertex`
+        # before calling.
+        query = (
+            f"g.V().has('vertex_id', '{from_vid}').as('a')"
+            f".V().has('vertex_id', '{to_vid}').as('b')"
+            f".addE('{elabel}').from('a').to('b')"
+            f".property(id, '{eid}')"
+            f".property('edge_id', '{eid}')"
+            f"{prop_chain}"
+        )
+        try:
+            self._neptune_client.submit(query).all().result()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "Neptune addE failed for edge %s (label=%s, %s -> %s): %s",
+                edge_id,
+                label.value,
+                from_vertex_id,
+                to_vertex_id,
+                exc,
+            )
+            raise
+        return edge_id
 
     def _ensure_code_file_vertex(self, vertex_id: str, file_path: str) -> None:
         """Ensure a code file vertex exists."""

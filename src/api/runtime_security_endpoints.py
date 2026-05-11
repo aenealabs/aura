@@ -22,6 +22,8 @@ from typing import Any, Optional
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
+from src.services.runtime_security.history_store import get_history_store
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/runtime-security", tags=["runtime-security"])
@@ -87,12 +89,18 @@ async def list_admission_decisions(
 ) -> AdmissionDecisionsResponse:
     """Return recent admission decisions with a 24h summary.
 
-    TODO(#163-wave4): replace with a live read against the admission
-    controller's decision log (CloudTrail / EKS audit log). For now
-    returns an empty list so widgets render the "no data" state.
+    Wave 5a (#163): reads from the in-process
+    ``RuntimeSecurityHistoryStore``. Production code on the admission
+    controller's happy path pushes to the same store. Buffer is
+    bounded; durable history lives in Neptune.
     """
-    _ = (limit, namespace)
-    return AdmissionDecisionsResponse()
+    store = get_history_store()
+    decisions = [
+        AdmissionDecision(**d)
+        for d in store.list_admission_decisions(limit=limit, namespace=namespace)
+    ]
+    summary = AdmissionDecisionsSummary(**store.admission_summary())
+    return AdmissionDecisionsResponse(decisions=decisions, summary=summary)
 
 
 @router.get(
@@ -101,8 +109,13 @@ async def list_admission_decisions(
     summary="List configured admission-controller policies",
 )
 async def list_admission_policies() -> list[AdmissionPolicy]:
-    """TODO(#163-wave4): wire to AdmissionController policy registry."""
-    return []
+    """List configured admission-controller policies (Wave 5a, #163).
+
+    Reads from ``RuntimeSecurityHistoryStore.list_admission_policies``,
+    which the admission controller seeds at startup with its policy
+    registry.
+    """
+    return [AdmissionPolicy(**p) for p in get_history_store().list_admission_policies()]
 
 
 @router.get(
@@ -111,8 +124,15 @@ async def list_admission_policies() -> list[AdmissionPolicy]:
     summary="Admission-controller rollup stats",
 )
 async def get_admission_stats() -> AdmissionStats:
-    """TODO(#163-wave4): aggregate decisions over the last 24h."""
-    return AdmissionStats()
+    """Rollup stats for the admission controller (Wave 5a, #163)."""
+    raw = get_history_store().admission_stats()
+    return AdmissionStats(
+        decisions_24h=raw["decisions_24h"],
+        deny_rate_pct=raw["deny_rate_pct"],
+        warn_rate_pct=raw["warn_rate_pct"],
+        avg_decision_latency_ms=raw["avg_decision_latency_ms"],
+        policies_active=raw["policies_active"],
+    )
 
 
 # =============================================================================
@@ -162,9 +182,18 @@ async def list_escape_attempts(
     limit: int = Query(50, ge=1, le=500),
     severity: Optional[str] = None,
 ) -> list[ContainerEscapeAttempt]:
-    """TODO(#163-wave4): wire to runtime_security.escape_detector."""
-    _ = (limit, severity)
-    return []
+    """Recent container-escape attempts (Wave 5a, #163).
+
+    Reads from the in-process history store; the escape detector
+    pushes to it on every ``process_ebpf_event`` that resolves to a
+    non-None ``EscapeEvent``.
+    """
+    return [
+        ContainerEscapeAttempt(**a)
+        for a in get_history_store().list_escape_attempts(
+            limit=limit, severity=severity
+        )
+    ]
 
 
 @router.get(
@@ -175,9 +204,15 @@ async def list_escape_attempts(
 async def list_container_anomalies(
     limit: int = Query(50, ge=1, le=500),
 ) -> list[ContainerAnomaly]:
-    """TODO(#163-wave4): wire to baselines.drift_detector."""
-    _ = limit
-    return []
+    """Recent container behavioral anomalies (Wave 5a, #163).
+
+    Reads from the history store; ``baselines.drift_detector`` pushes
+    on each anomaly it surfaces.
+    """
+    return [
+        ContainerAnomaly(**a)
+        for a in get_history_store().list_container_anomalies(limit=limit)
+    ]
 
 
 @router.get(
@@ -186,8 +221,11 @@ async def list_container_anomalies(
     summary="MITRE ATT&CK coverage rollup",
 )
 async def get_mitre_mapping() -> list[MitreMappingEntry]:
-    """TODO(#163-wave4): aggregate escape attempts by MITRE technique."""
-    return []
+    """MITRE ATT&CK rollup over recent escape attempts (Wave 5a, #163)."""
+    return [
+        MitreMappingEntry(**entry)
+        for entry in get_history_store().mitre_mapping_rollup()
+    ]
 
 
 # =============================================================================
@@ -241,9 +279,17 @@ async def list_runtime_correlations(
     limit: int = Query(50, ge=1, le=500),
     min_confidence: int = Query(50, ge=0, le=100),
 ) -> list[RuntimeCorrelation]:
-    """TODO(#163-wave4): wire to correlation.correlator service."""
-    _ = (limit, min_confidence)
-    return []
+    """Runtime-to-code correlations (Wave 5a, #163).
+
+    Reads from the history store; ``correlation.correlator`` pushes a
+    record on every successful correlation.
+    """
+    return [
+        RuntimeCorrelation(**c)
+        for c in get_history_store().list_correlations(
+            limit=limit, min_confidence=min_confidence
+        )
+    ]
 
 
 @router.get(
@@ -254,9 +300,11 @@ async def list_runtime_correlations(
 async def list_cloudtrail_events(
     limit: int = Query(50, ge=1, le=500),
 ) -> list[CloudTrailEvent]:
-    """TODO(#163-wave4): wire to correlation.cloudtrail_ingest."""
-    _ = limit
-    return []
+    """Recent CloudTrail events the correlator has ingested (Wave 5a, #163)."""
+    return [
+        CloudTrailEvent(**e)
+        for e in get_history_store().list_cloudtrail_events(limit=limit)
+    ]
 
 
 @router.get(
@@ -268,9 +316,13 @@ async def list_code_correlations(
     limit: int = Query(50, ge=1, le=500),
     min_confidence: int = Query(50, ge=0, le=100),
 ) -> list[CodeCorrelation]:
-    """TODO(#163-wave4): wire to correlation.graph_tracer."""
-    _ = (limit, min_confidence)
-    return []
+    """Code-side correlations from ``correlation.graph_tracer`` (Wave 5a, #163)."""
+    return [
+        CodeCorrelation(**c)
+        for c in get_history_store().list_code_correlations(
+            limit=limit, min_confidence=min_confidence
+        )
+    ]
 
 
 # =============================================================================
@@ -325,9 +377,17 @@ async def list_guardduty_findings(
     severity: Optional[str] = None,
     archived: bool = False,
 ) -> list[GuardDutyFinding]:
-    """TODO(#163-wave4): wire to GuardDuty integration in runtime_security."""
-    _ = (limit, severity, archived)
-    return []
+    """GuardDuty findings (Wave 5a, #163).
+
+    Reads from the history store; the GuardDuty ingestion path pushes
+    findings as they arrive via EventBridge.
+    """
+    return [
+        GuardDutyFinding(**f)
+        for f in get_history_store().list_guardduty_findings(
+            limit=limit, severity=severity, archived=archived
+        )
+    ]
 
 
 @router.get(
@@ -336,8 +396,8 @@ async def list_guardduty_findings(
     summary="GuardDuty findings rollup",
 )
 async def get_guardduty_stats() -> GuardDutyStats:
-    """TODO(#163-wave4): aggregate GuardDuty findings by severity."""
-    return GuardDutyStats()
+    """GuardDuty rollup by severity (Wave 5a, #163)."""
+    return GuardDutyStats(**get_history_store().guardduty_stats())
 
 
 @router.get(
@@ -349,9 +409,13 @@ async def list_guardduty_code_links(
     limit: int = Query(50, ge=1, le=500),
     min_confidence: int = Query(50, ge=0, le=100),
 ) -> list[GuardDutyCodeLinkSummary]:
-    """TODO(#163-wave4): wire to GuardDuty + correlation engine."""
-    _ = (limit, min_confidence)
-    return []
+    """GuardDuty findings whose correlation engine produced a code link."""
+    return [
+        GuardDutyCodeLinkSummary(**link)
+        for link in get_history_store().list_guardduty_code_links(
+            limit=limit, min_confidence=min_confidence
+        )
+    ]
 
 
 # =============================================================================

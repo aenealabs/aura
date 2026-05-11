@@ -50,7 +50,7 @@ Resources:
               Service: codebuild.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess'
       Policies:
         - PolicyName: SSRDeployPolicy
           PolicyDocument:
@@ -60,16 +60,16 @@ Resources:
               - Effect: Allow
                 Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:PutRetentionPolicy, logs:TagResource, logs:UntagResource, logs:DeleteLogGroup]
                 Resource:
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-ssr-*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-ssr-*:*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/states/${ProjectName}-ssr-*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/states/${ProjectName}-ssr-*:*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/ssr-*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/ssr-*:*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/ssr-training-${Environment}'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/ssr-training-${Environment}:*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-ssr-*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-ssr-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-ssr-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/states/${ProjectName}-ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/states/${ProjectName}-ssr-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/ssr-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/ssr-training-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/ssr-training-${Environment}:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-ssr-*:*'
 
               # CloudWatch Metrics
               - Effect: Allow
@@ -83,28 +83,28 @@ Resources:
               - Effect: Allow
                 Action: [cloudwatch:PutMetricAlarm, cloudwatch:DeleteAlarms, cloudwatch:DescribeAlarms, cloudwatch:SetAlarmState, cloudwatch:EnableAlarmActions, cloudwatch:DisableAlarmActions, cloudwatch:TagResource, cloudwatch:UntagResource]
                 Resource:
-                  - !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-ssr-*'
 
               # CloudFormation - SSR stacks only
               - Effect: Allow
                 Action: [cloudformation:CreateStack, cloudformation:UpdateStack, cloudformation:DeleteStack, cloudformation:CreateChangeSet, cloudformation:ExecuteChangeSet, cloudformation:DeleteChangeSet, cloudformation:DescribeChangeSet, cloudformation:DescribeStacks, cloudformation:DescribeStackEvents, cloudformation:DescribeStackResources, cloudformation:GetTemplate, cloudformation:ValidateTemplate, cloudformation:GetTemplateSummary]
                 Resource:
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ssr-training-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ssr-training-pipeline-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ssr-training-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ssr-training-pipeline-${Environment}/*'
 
               # S3 - SSR bucket
               - Effect: Allow
                 Action: [s3:CreateBucket, s3:DeleteBucket, s3:PutBucketPolicy, s3:DeleteBucketPolicy, s3:GetBucketPolicy, s3:PutBucketEncryption, s3:GetBucketEncryption, s3:PutEncryptionConfiguration, s3:GetEncryptionConfiguration, s3:PutBucketVersioning, s3:GetBucketVersioning, s3:PutLifecycleConfiguration, s3:GetLifecycleConfiguration, s3:PutBucketPublicAccessBlock, s3:GetBucketPublicAccessBlock, s3:PutBucketTagging, s3:GetBucketTagging, s3:ListBucket, s3:GetObject, s3:PutObject]
                 Resource:
-                  - !Sub 'arn:aws:s3:::${ProjectName}-ssr-training-*-${Environment}'
-                  - !Sub 'arn:aws:s3:::${ProjectName}-ssr-training-*-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-ssr-training-*-${Environment}/*'
 
               # DynamoDB - SSR table
               - Effect: Allow
                 Action: [dynamodb:CreateTable, dynamodb:DeleteTable, dynamodb:DescribeTable, dynamodb:UpdateTable, dynamodb:UpdateTimeToLive, dynamodb:DescribeTimeToLive, dynamodb:TagResource, dynamodb:UntagResource, dynamodb:DescribeContinuousBackups, dynamodb:UpdateContinuousBackups]
                 Resource:
-                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-*-${Environment}'
-                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-*-${Environment}/index/*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ssr-*-${Environment}/index/*'
 
               # KMS - CreateKey with RequestTag condition
               - Effect: Allow
@@ -126,8 +126,8 @@ Resources:
               - Effect: Allow
                 Action: [kms:CreateAlias, kms:DeleteAlias, kms:UpdateAlias]
                 Resource:
-                  - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/${ProjectName}-ssr-*'
-                  - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/${ProjectName}-ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
 
               - Effect: Allow
                 Action: kms:ListAliases
@@ -137,13 +137,13 @@ Resources:
               - Effect: Allow
                 Action: [ecr:CreateRepository, ecr:DeleteRepository, ecr:DescribeRepositories, ecr:PutLifecyclePolicy, ecr:GetLifecyclePolicy, ecr:DeleteLifecyclePolicy, ecr:PutImageScanningConfiguration, ecr:PutImageTagMutability, ecr:TagResource, ecr:UntagResource, ecr:ListTagsForResource, ecr:SetRepositoryPolicy, ecr:DeleteRepositoryPolicy, ecr:GetRepositoryPolicy]
                 Resource:
-                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-ssr-*'
 
               # ECS - Cluster operations
               - Effect: Allow
                 Action: [ecs:CreateCluster, ecs:DeleteCluster, ecs:DescribeClusters, ecs:UpdateCluster, ecs:TagResource, ecs:UntagResource, ecs:PutClusterCapacityProviders]
                 Resource:
-                  - !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-ssr-*'
 
               # ECS - Task definition operations require Resource: '*'
               - Effect: Allow
@@ -154,7 +154,7 @@ Resources:
               - Effect: Allow
                 Action: [states:CreateStateMachine, states:DeleteStateMachine, states:DescribeStateMachine, states:UpdateStateMachine, states:TagResource, states:UntagResource]
                 Resource:
-                  - !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-ssr-*'
 
               # Step Functions - ListStateMachines requires Resource: '*'
               - Effect: Allow
@@ -165,13 +165,13 @@ Resources:
               - Effect: Allow
                 Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:TagRole, iam:UntagRole, iam:ListAttachedRolePolicies, iam:ListRolePolicies]
                 Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-ssr-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-ssr-*-${Environment}'
 
               # IAM Pass Role - includes lambda.amazonaws.com for SSRServiceRole
               - Effect: Allow
                 Action: iam:PassRole
                 Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-ssr-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-ssr-*-${Environment}'
                 Condition:
                   StringEquals:
                     iam:PassedToService: [ecs-tasks.amazonaws.com, states.amazonaws.com, lambda.amazonaws.com]
@@ -180,19 +180,19 @@ Resources:
               - Effect: Allow
                 Action: [ssm:GetParameter, ssm:GetParameters]
                 Resource:
-                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
 
               # SNS - Alerts
               - Effect: Allow
                 Action: [sns:CreateTopic, sns:DeleteTopic, sns:GetTopicAttributes, sns:SetTopicAttributes, sns:Subscribe, sns:Unsubscribe, sns:TagResource, sns:UntagResource]
                 Resource:
-                  - !Sub 'arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-ssr-*'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-ssr-*'
 
               # AWS Budgets - SSR training budget
               - Effect: Allow
                 Action: [budgets:CreateBudget, budgets:ModifyBudget, budgets:ViewBudget, budgets:DeleteBudget, budgets:TagResource, budgets:UntagResource]
                 Resource:
-                  - !Sub 'arn:aws:budgets::${AWS::AccountId}:budget/${ProjectName}-ssr-training-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${ProjectName}-ssr-training-${Environment}'
 
               # CodeConnections
               - Effect: Allow
@@ -209,14 +209,14 @@ Resources:
               - Effect: Allow
                 Action: [ec2:CreateSecurityGroup, ec2:CreateTags]
                 Resource:
-                  - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
-                  - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*'
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*'
 
               # EC2 - Security group management after creation
               - Effect: Allow
                 Action: [ec2:DeleteSecurityGroup, ec2:AuthorizeSecurityGroupIngress, ec2:AuthorizeSecurityGroupEgress, ec2:RevokeSecurityGroupIngress, ec2:RevokeSecurityGroupEgress]
                 Resource:
-                  - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
                 Condition:
                   StringEquals:
                     aws:ResourceTag/Project: !Ref ProjectName

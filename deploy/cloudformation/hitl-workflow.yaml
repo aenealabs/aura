@@ -69,7 +69,7 @@ Resources:
             "ValidateCodeArtifact": {
               "Type": "Task",
               "Comment": "Verify S3 code artifact exists before running tests",
-              "Resource": "arn:aws:states:::aws-sdk:s3:headObject",
+              "Resource": "arn:${AWS::Partition}:states:::aws-sdk:s3:headObject",
               "Parameters": {
                 "Bucket.$": "$.code_bucket",
                 "Key.$": "$.code_key"
@@ -108,7 +108,7 @@ Resources:
             },
             "CreateSandboxRecord": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::dynamodb:putItem",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:putItem",
               "Parameters": {
                 "TableName": "${ProjectName}-sandbox-state-${Environment}",
                 "Item": {
@@ -133,7 +133,7 @@ Resources:
             },
             "RunSandboxTests": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::ecs:runTask.sync",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
               "Parameters": {
                 "Cluster": "${ProjectName}-sandboxes-${Environment}",
                 "TaskDefinition": "${ProjectName}-sandbox-test-runner-${Environment}",
@@ -189,7 +189,7 @@ Resources:
             },
             "UpdateSandboxStateSuccess": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
               "Parameters": {
                 "TableName": "${ProjectName}-sandbox-state-${Environment}",
                 "Key": {
@@ -207,7 +207,7 @@ Resources:
             },
             "UpdateSandboxStateFailed": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
               "Parameters": {
                 "TableName": "${ProjectName}-sandbox-state-${Environment}",
                 "Key": {
@@ -242,7 +242,7 @@ Resources:
             },
             "CreateApprovalRequest": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::dynamodb:putItem",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:putItem",
               "Parameters": {
                 "TableName": "${ProjectName}-approval-requests-${Environment}",
                 "Item": {
@@ -261,7 +261,7 @@ Resources:
             },
             "SendApprovalNotification": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::sns:publish",
+              "Resource": "arn:${AWS::Partition}:states:::sns:publish",
               "Parameters": {
                 "TopicArn": "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-notifications-${Environment}",
                 "Subject": "HITL Approval Required",
@@ -279,7 +279,7 @@ Resources:
             },
             "WaitForApproval": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::aws-sdk:dynamodb:getItem.waitForTaskToken",
+              "Resource": "arn:${AWS::Partition}:states:::aws-sdk:dynamodb:getItem.waitForTaskToken",
               "Parameters": {
                 "TableName": "${ProjectName}-approval-requests-${Environment}",
                 "Key": {
@@ -321,7 +321,7 @@ Resources:
             },
             "DeployPatch": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
               "Parameters": {
                 "TableName": "${ProjectName}-approval-requests-${Environment}",
                 "Key": {
@@ -352,7 +352,7 @@ Resources:
             },
             "ApprovalExpired": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Resource": "arn:${AWS::Partition}:states:::dynamodb:updateItem",
               "Parameters": {
                 "TableName": "${ProjectName}-approval-requests-${Environment}",
                 "Key": {

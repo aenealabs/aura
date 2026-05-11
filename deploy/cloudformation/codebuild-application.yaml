@@ -87,7 +87,7 @@ Resources:
               Service: codebuild.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess'
       Policies:
         - PolicyName: ApplicationDeployPolicy
           PolicyDocument:
@@ -101,7 +101,7 @@ Resources:
                   - logs:PutLogEvents
                   - logs:PutRetentionPolicy
                 Resource:
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-application-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-application-*:*'
 
               # CloudWatch Metrics
               - Effect: Allow
@@ -127,8 +127,8 @@ Resources:
               - Effect: Allow
                 Action: [s3:CreateBucket, s3:DeleteBucket, s3:PutBucketPolicy, s3:DeleteBucketPolicy, s3:GetBucketPolicy, s3:PutBucketEncryption, s3:GetBucketEncryption, s3:PutEncryptionConfiguration, s3:GetEncryptionConfiguration, s3:PutBucketVersioning, s3:GetBucketVersioning, s3:PutLifecycleConfiguration, s3:GetLifecycleConfiguration, s3:PutBucketPublicAccessBlock, s3:GetBucketPublicAccessBlock, s3:PutBucketTagging, s3:GetBucketTagging, s3:ListBucket, s3:GetObject, s3:PutObject, s3:DeleteObject, s3:PutBucketCors, s3:GetBucketCors]
                 Resource:
-                  - !Sub 'arn:aws:s3:::${ProjectName}-onboarding-*-${Environment}-${AWS::AccountId}'
-                  - !Sub 'arn:aws:s3:::${ProjectName}-onboarding-*-${Environment}-${AWS::AccountId}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-onboarding-*-${Environment}-${AWS::AccountId}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-onboarding-*-${Environment}-${AWS::AccountId}/*'
 
               # CloudFormation - Application stacks (Bedrock, ECR, Cognito, Guardrails)
               - Effect: Allow
@@ -147,21 +147,21 @@ Resources:
                   - cloudformation:ValidateTemplate
                   - cloudformation:GetTemplateSummary
                 Resource:
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-bedrock-infrastructure-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-dnsmasq-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-api-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-agent-orchestrator-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-frontend-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-memory-service-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-cognito-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-bedrock-guardrails-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-irsa-api-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-irsa-memory-service-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-onboarding-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-gpu-scheduler-irsa-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-env-validator-irsa-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-iam-diagram-service-${Environment}/*'
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-diagram-service-ssm-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-bedrock-infrastructure-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-dnsmasq-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-api-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-agent-orchestrator-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-frontend-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-memory-service-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-cognito-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-bedrock-guardrails-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-irsa-api-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-irsa-memory-service-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-onboarding-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-gpu-scheduler-irsa-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-env-validator-irsa-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-iam-diagram-service-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-diagram-service-ssm-${Environment}/*'
 
               # Bedrock Model Access and Configuration
               - Effect: Allow
@@ -199,10 +199,10 @@ Resources:
                   - iam:RemoveRoleFromInstanceProfile
                   - iam:PassRole
                 Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-role-*'
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:instance-profile/${ProjectName}-*-${Environment}'
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:instance-profile/${ProjectName}-profile-*'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-role-*'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/${ProjectName}-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/${ProjectName}-profile-*'
 
               # IAM - Create/manage managed policies for IRSA
               - Effect: Allow
@@ -217,10 +217,10 @@ Resources:
                   - iam:TagPolicy
                   - iam:UntagPolicy
                 Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/${ProjectName}-api-policy-${Environment}'
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/${ProjectName}-memory-service-policy-${Environment}'
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/${ProjectName}-gpu-scheduler-policy-${Environment}'
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/${ProjectName}-env-validator-policy-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-api-policy-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-memory-service-policy-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-gpu-scheduler-policy-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-env-validator-policy-${Environment}'
 
               # DynamoDB - Create/manage tables for Bedrock stack
               - Effect: Allow
@@ -237,8 +237,8 @@ Resources:
                   - dynamodb:UpdateContinuousBackups
                   - dynamodb:DescribeContinuousBackups
                 Resource:
-                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-${Environment}'
-                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ddb-*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ddb-*'
 
               # SNS - Create/manage topics for Bedrock alerts
               - Effect: Allow
@@ -252,7 +252,7 @@ Resources:
                   - sns:Subscribe
                   - sns:Unsubscribe
                 Resource:
-                  - !Sub 'arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-*'
 
               # CloudWatch Alarms - Create/manage alarms for Bedrock monitoring
               - Effect: Allow
@@ -263,8 +263,8 @@ Resources:
                   - cloudwatch:TagResource
                   - cloudwatch:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-*-${Environment}'
-                  - !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-alarm-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-*-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-alarm-*'
 
               # CloudWatch Logs - Create log groups for Bedrock and ECS stacks
               - Effect: Allow
@@ -278,9 +278,9 @@ Resources:
                   - logs:TagResource
                   - logs:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/ecs/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/ecs/${ProjectName}-*'
 
               # Budgets - Create/manage budget alerts
               - Effect: Allow
@@ -293,7 +293,7 @@ Resources:
                   - budgets:TagResource
                   - budgets:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:budgets::${AWS::AccountId}:budget/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${ProjectName}-*'
 
               # Cognito - Create/manage User Pools for authentication
               - Effect: Allow
@@ -317,7 +317,7 @@ Resources:
                   - cognito-idp:TagResource
                   - cognito-idp:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+                  - !Sub 'arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
 
               # Bedrock Guardrails - Create/manage guardrails for safe AI
               # NOTE: CloudFormation requires ListTagsForResource to manage tags on Bedrock resources
@@ -336,7 +336,7 @@ Resources:
                   - bedrock:TagResource
                   - bedrock:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/*'
 
               # SSM Parameter Store (for Bedrock, Cognito, and Guardrails config)
               - Effect: Allow
@@ -348,8 +348,8 @@ Resources:
                   - ssm:AddTagsToResource
                   - ssm:RemoveTagsFromResource
                 Resource:
-                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
-                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/providers/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/aura/${Environment}/providers/*'
 
               # Secrets Manager (for API keys and Bedrock config)
               - Effect: Allow
@@ -362,7 +362,7 @@ Resources:
                   - secretsmanager:TagResource
                   - secretsmanager:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*'
 
               # CodeConnections (for GitHub access)
               - Effect: Allow
@@ -378,7 +378,7 @@ Resources:
                   - eks:DescribeCluster
                   - eks:ListClusters
                 Resource:
-                  - !Sub 'arn:aws:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
 
               # ECR Access (for building and pushing container images)
               - Effect: Allow
@@ -409,7 +409,7 @@ Resources:
                   - ecr:TagResource
                   - ecr:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-*'
 
   # EKS Access Entry for Application CodeBuild Role
   # Grants kubectl access to the EKS cluster for deploying K8s manifests
@@ -420,7 +420,7 @@ Resources:
       PrincipalArn: !GetAtt ApplicationCodeBuildRole.Arn
       Type: STANDARD
       AccessPolicies:
-        - PolicyArn: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+        - PolicyArn: !Sub 'arn:${AWS::Partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy'
           AccessScope:
             Type: cluster
       Tags:

@@ -87,7 +87,7 @@ Resources:
               Service: codebuild.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/ReadOnlyAccess  # For reading existing resources
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess'  # For reading existing resources
       Policies:
         - PolicyName: FoundationDeployPolicy
           PolicyDocument:
@@ -97,10 +97,10 @@ Resources:
               - Effect: Allow
                 Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:DeleteLogGroup, logs:PutRetentionPolicy, logs:DescribeLogGroups, logs:TagResource, logs:UntagResource, logs:ListTagsForResource]
                 Resource:
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*:*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vpc/${ProjectName}-${Environment}*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws-waf-logs-${ProjectName}-${Environment}*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vpc/${ProjectName}-${Environment}*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws-waf-logs-${ProjectName}-${Environment}*'
               # CloudWatch Logs - Service-level operations (requires '*')
               - Effect: Allow
                 Action: [logs:PutResourcePolicy, logs:DeleteResourcePolicy, logs:DescribeResourcePolicies, logs:CreateLogDelivery, logs:GetLogDelivery, logs:UpdateLogDelivery, logs:DeleteLogDelivery, logs:ListLogDeliveries]
@@ -128,7 +128,7 @@ Resources:
               # CloudFormation - Foundation stacks (consolidated wildcard)
               - Effect: Allow
                 Action: [cloudformation:CreateStack, cloudformation:UpdateStack, cloudformation:DeleteStack, cloudformation:CreateChangeSet, cloudformation:ExecuteChangeSet, cloudformation:DeleteChangeSet, cloudformation:DescribeChangeSet, cloudformation:DescribeStacks, cloudformation:DescribeStackEvents, cloudformation:DescribeStackResources, cloudformation:GetTemplate, cloudformation:ValidateTemplate, cloudformation:GetTemplateSummary]
-                Resource: !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-*-${Environment}/*'
+                Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-*-${Environment}/*'
 
               # VPC + VPC Endpoints Management (Networking stack)
               - Effect: Allow
@@ -159,15 +159,15 @@ Resources:
               # IAM Management - scoped to project resources
               - Effect: Allow
                 Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:PassRole, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:TagRole, iam:UntagRole, iam:ListAttachedRolePolicies, iam:ListRolePolicies, iam:CreateInstanceProfile, iam:DeleteInstanceProfile, iam:AddRoleToInstanceProfile, iam:RemoveRoleFromInstanceProfile, iam:CreateOpenIDConnectProvider, iam:DeleteOpenIDConnectProvider, iam:GetOpenIDConnectProvider, iam:TagOpenIDConnectProvider, iam:CreateServiceLinkedRole]
-                Resource: [!Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-*', !Sub 'arn:aws:iam::${AWS::AccountId}:instance-profile/${ProjectName}-*', !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/*']
+                Resource: [!Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*', !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/${ProjectName}-*', !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/*']
               # ECR Repository Management
               - Effect: Allow
                 Action: [ecr:CreateRepository, ecr:DeleteRepository, ecr:DescribeRepositories, ecr:PutLifecyclePolicy, ecr:GetLifecyclePolicy, ecr:DeleteLifecyclePolicy, ecr:SetRepositoryPolicy, ecr:GetRepositoryPolicy, ecr:DeleteRepositoryPolicy, ecr:TagResource, ecr:UntagResource, ecr:ListTagsForResource, ecr:PutImageScanningConfiguration, ecr:PutImageTagMutability]
-                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-*'
+                Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-*'
               # Parameter Store (includes PutParameter for K8s config generator)
               - Effect: Allow
                 Action: [ssm:GetParameter, ssm:GetParameters, ssm:GetParametersByPath, ssm:PutParameter]
-                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/*'
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/*'
               # KMS - Key creation (requires '*' with tag condition)
               - Effect: Allow
                 Action: kms:CreateKey
@@ -206,26 +206,26 @@ Resources:
               # CodeBuild project management
               - Effect: Allow
                 Action: [codebuild:CreateProject, codebuild:DeleteProject, codebuild:UpdateProject, codebuild:BatchGetProjects]
-                Resource: !Sub 'arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectName}-*-${Environment}'
+                Resource: !Sub 'arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectName}-*-${Environment}'
               # CodeBuild reports (integration tests)
               - Effect: Allow
                 Action: [codebuild:CreateReportGroup, codebuild:CreateReport, codebuild:UpdateReport, codebuild:BatchPutTestCases, codebuild:BatchPutCodeCoverages]
-                Resource: !Sub 'arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/${ProjectName}-*-${Environment}-*'
+                Resource: !Sub 'arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/${ProjectName}-*-${Environment}-*'
               # S3 - Artifacts and build cache buckets
               - Effect: Allow
                 Action: [s3:CreateBucket, s3:DeleteBucket, s3:PutBucketPolicy, s3:GetBucketPolicy, s3:DeleteBucketPolicy, s3:PutBucketVersioning, s3:PutBucketPublicAccessBlock, s3:PutBucketOwnershipControls, s3:PutEncryptionConfiguration, s3:PutLifecycleConfiguration, s3:PutBucketTagging, s3:GetBucketAcl, s3:GetBucketLocation, s3:ListBucket, s3:GetObject, s3:PutObject]
-                Resource: [!Sub 'arn:aws:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}', !Sub 'arn:aws:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}/*']
+                Resource: [!Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}', !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-${AWS::AccountId}-${Environment}/*']
               # IAM - PassRole for CodeBuild/EventBridge
               - Effect: Allow
                 Action: iam:PassRole
-                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
                 Condition:
                   StringEquals:
                     iam:PassedToService: [codebuild.amazonaws.com, events.amazonaws.com]
               # CloudWatch Alarms
               - Effect: Allow
                 Action: [cloudwatch:PutMetricAlarm, cloudwatch:DeleteAlarms, cloudwatch:DescribeAlarms]
-                Resource: !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-*-${Environment}'
+                Resource: !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-*-${Environment}'
 
       Tags:
         - Key: Project

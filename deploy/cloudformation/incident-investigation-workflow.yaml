@@ -431,7 +431,7 @@ Resources:
           - HasDomainName
           - !Sub 'https://${ProjectName}.${DomainName}'
           - !Sub 'https://${ProjectName}.aura.local'
-      DefinitionString: |
+      DefinitionString: !Sub |
         {
           "Comment": "RuntimeIncidentAgent investigation workflow (ADR-025)",
           "StartAt": "ParseIncidentEvent",
@@ -449,15 +449,15 @@ Resources:
             "InvokeRuntimeIncidentAgent": {
               "Type": "Task",
               "Comment": "Run RuntimeIncidentAgent as ECS Fargate task",
-              "Resource": "arn:aws:states:::ecs:runTask.sync",
+              "Resource": "arn:${AWS::Partition}:states:::ecs:runTask.sync",
               "Parameters": {
                 "Cluster": "${ECSClusterName}",
-                "TaskDefinition": "${TaskDefinitionArn}",
+                "TaskDefinition": "${!TaskDefinitionArn}",
                 "LaunchType": "FARGATE",
                 "NetworkConfiguration": {
                   "AwsvpcConfiguration": {
-                    "Subnets": ["${PrivateSubnetId1}", "${PrivateSubnetId2}"],
-                    "SecurityGroups": ["${ECSSecurityGroupId}"],
+                    "Subnets": ["${!PrivateSubnetId1}", "${!PrivateSubnetId2}"],
+                    "SecurityGroups": ["${!ECSSecurityGroupId}"],
                     "AssignPublicIp": "DISABLED"
                   }
                 },
@@ -490,9 +490,9 @@ Resources:
             "GetInvestigationResults": {
               "Type": "Task",
               "Comment": "Query investigation results from DynamoDB (latest by timestamp)",
-              "Resource": "arn:aws:states:::aws-sdk:dynamodb:query",
+              "Resource": "arn:${AWS::Partition}:states:::aws-sdk:dynamodb:query",
               "Parameters": {
-                "TableName": "${InvestigationsTableName}",
+                "TableName": "${!InvestigationsTableName}",
                 "KeyConditionExpression": "incident_id = :id",
                 "ExpressionAttributeValues": {
                   ":id": {
@@ -508,20 +508,20 @@ Resources:
             "SendHITLNotification": {
               "Type": "Task",
               "Comment": "Notify approvers that investigation is ready for review",
-              "Resource": "arn:aws:states:::sns:publish",
+              "Resource": "arn:${AWS::Partition}:states:::sns:publish",
               "Parameters": {
-                "TopicArn": "${SNSTopicArn}",
+                "TopicArn": "${!SNSTopicArn}",
                 "Subject": "HITL Required: Incident Investigation Complete",
-                "Message.$": "States.Format('Investigation {} complete.\n\nConfidence: {}%\nHypothesis: {}\n\nReview at: ${DashboardBaseUrl}/incidents/{}', $.incident_id, $.investigation.Items[0].confidence_score.N, $.investigation.Items[0].rca_hypothesis.S, $.incident_id)"
+                "Message.$": "States.Format('Investigation {} complete.\n\nConfidence: {}%\nHypothesis: {}\n\nReview at: ${!DashboardBaseUrl}/incidents/{}', $.incident_id, $.investigation.Items[0].confidence_score.N, $.investigation.Items[0].rca_hypothesis.S, $.incident_id)"
               },
               "End": true
             },
             "InvestigationFailed": {
               "Type": "Task",
               "Comment": "Notify that investigation failed",
-              "Resource": "arn:aws:states:::sns:publish",
+              "Resource": "arn:${AWS::Partition}:states:::sns:publish",
               "Parameters": {
-                "TopicArn": "${SNSTopicArn}",
+                "TopicArn": "${!SNSTopicArn}",
                 "Subject": "Investigation Failed",
                 "Message.$": "States.Format('Investigation {} failed.\n\nError: {}\n\nCheck CloudWatch Logs for details.', $.incident_id, $.error.Cause)"
               },

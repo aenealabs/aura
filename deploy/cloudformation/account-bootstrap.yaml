@@ -35,7 +35,7 @@ Parameters:
   AdminRoleArn:
     Type: String
     Description: SSO Administrator Role ARN for this account
-    AllowedPattern: 'arn:aws:iam::\d{12}:role/.*'
+    AllowedPattern: 'arn:aws[a-z0-9-]*:iam::\d{12}:role/.*'
 
   AlertEmail:
     Type: String
@@ -45,7 +45,7 @@ Parameters:
   CodeConnectionsArn:
     Type: String
     Description: GitHub CodeConnections ARN for this account
-    AllowedPattern: 'arn:aws:(codeconnections|codestar-connections):[a-z0-9-]+:\d{12}:connection/[a-f0-9-]+'
+    AllowedPattern: 'arn:aws[a-z0-9-]*:(codeconnections|codestar-connections):[a-z0-9-]+:\d{12}:connection/[a-f0-9-]+'
 
   EnableAccountCloudTrail:
     Type: String

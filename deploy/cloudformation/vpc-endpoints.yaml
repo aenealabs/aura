@@ -73,8 +73,8 @@ Resources:
               - s3:GetObject
               - s3:GetBucketLocation
             Resource:
-              - 'arn:aws:s3:::prod-*-starport-layer-bucket'
-              - 'arn:aws:s3:::prod-*-starport-layer-bucket/*'
+              - !Sub 'arn:${AWS::Partition}:s3:::prod-*-starport-layer-bucket'
+              - !Sub 'arn:${AWS::Partition}:s3:::prod-*-starport-layer-bucket/*'
           # Allow EKS add-on downloads
           - Sid: AllowEKSAddons
             Effect: Allow
@@ -83,8 +83,8 @@ Resources:
               - s3:GetObject
               - s3:GetBucketLocation
             Resource:
-              - 'arn:aws:s3:::amazon-eks-*'
-              - 'arn:aws:s3:::amazon-eks-*/*'
+              - !Sub 'arn:${AWS::Partition}:s3:::amazon-eks-*'
+              - !Sub 'arn:${AWS::Partition}:s3:::amazon-eks-*/*'
 
   # DynamoDB Gateway Endpoint - Required for HITL approval tables
   # IAM Remediation: Scoped to project tables with explicit actions (architecture review Dec 2025)

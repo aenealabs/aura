@@ -124,7 +124,7 @@ Resources:
             Action:
               - ec2:RunInstances
             Resource:
-              - arn:aws:ec2:*:*:instance/*
+              - !Sub 'arn:${AWS::Partition}:ec2:*:*:instance/*'
               - arn:aws-us-gov:ec2:*:*:instance/*
             Condition:
               StringNotEquals:
@@ -141,7 +141,7 @@ Resources:
               - cloudtrail:StopLogging
               - cloudtrail:UpdateTrail
             Resource:
-              - !Sub 'arn:aws:cloudtrail:*:*:trail/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:cloudtrail:*:*:trail/${ProjectName}-*'
               - !Sub 'arn:aws-us-gov:cloudtrail:*:*:trail/${ProjectName}-*'
 
           # ----------------------------------------------------------------
@@ -153,7 +153,7 @@ Resources:
             Action:
               - s3:PutObject
             Resource:
-              - !Sub 'arn:aws:s3:::${ProjectName}-*/*'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*/*'
               - !Sub 'arn:aws-us-gov:s3:::${ProjectName}-*/*'
             Condition:
               'Null':
@@ -168,7 +168,7 @@ Resources:
             Action:
               - ec2:CreateVolume
             Resource:
-              - arn:aws:ec2:*:*:volume/*
+              - !Sub 'arn:${AWS::Partition}:ec2:*:*:volume/*'
               - arn:aws-us-gov:ec2:*:*:volume/*
             Condition:
               Bool:
@@ -188,7 +188,7 @@ Resources:
             Condition:
               StringLike:
                 aws:PrincipalArn:
-                  - arn:aws:iam::*:root
+                  - !Sub 'arn:${AWS::Partition}:iam::*:root'
                   - arn:aws-us-gov:iam::*:root
 
   # ============================================================================

@@ -114,7 +114,7 @@ Resources:
       PrincipalArn: !Ref AdminRoleArn
       Type: STANDARD
       AccessPolicies:
-        - PolicyArn: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+        - PolicyArn: !Sub 'arn:${AWS::Partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy'
           AccessScope:
             Type: cluster
 

@@ -401,7 +401,7 @@ Resources:
         States:
           RequestApproval:
             Type: Task
-            Resource: arn:aws:states:::lambda:invoke.waitForTaskToken
+            Resource: !Sub 'arn:${AWS::Partition}:states:::lambda:invoke.waitForTaskToken'
             Parameters:
               FunctionName: !Ref RequestApprovalFunction
               Payload:

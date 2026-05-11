@@ -85,7 +85,7 @@ Resources:
               Service: codebuild.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess'
       Policies:
         - PolicyName: ChatDeployPolicy
           PolicyDocument:
@@ -101,10 +101,10 @@ Resources:
                   - logs:TagResource
                   - logs:DeleteLogGroup
                 Resource:
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-chat-*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-chat-*:*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-chat-*'
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-chat-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-chat-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-chat-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-chat-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-chat-*:*'
 
               # CloudWatch Metrics
               - Effect: Allow
@@ -143,7 +143,7 @@ Resources:
                   - cloudformation:ValidateTemplate
                   - cloudformation:GetTemplateSummary
                 Resource:
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-chat-assistant-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-chat-assistant-${Environment}/*'
 
               # Lambda - Chat functions
               - Effect: Allow
@@ -162,7 +162,7 @@ Resources:
                   - lambda:PutFunctionConcurrency
                   - lambda:DeleteFunctionConcurrency
                 Resource:
-                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-chat-*'
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-chat-*'
 
               # DynamoDB - Chat tables
               - Effect: Allow
@@ -178,9 +178,9 @@ Resources:
                   - dynamodb:DescribeContinuousBackups
                   - dynamodb:UpdateContinuousBackups
                 Resource:
-                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-chat-*'
-                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-research-tasks-*'
-                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-research-tasks-*/index/*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-chat-*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-research-tasks-*'
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-research-tasks-*/index/*'
 
               # API Gateway - REST and WebSocket APIs
               - Effect: Allow
@@ -193,11 +193,11 @@ Resources:
                   - apigateway:TagResource
                   - apigateway:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis'
-                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis/*'
-                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis'
-                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis/*'
-                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/tags/*'
+                  - !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/restapis'
+                  - !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/restapis/*'
+                  - !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis'
+                  - !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/*'
+                  - !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}::/tags/*'
 
               # Cognito - Read only for authorizer
               - Effect: Allow
@@ -205,7 +205,7 @@ Resources:
                   - cognito-idp:DescribeUserPool
                   - cognito-idp:DescribeUserPoolClient
                 Resource:
-                  - !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+                  - !Sub 'arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
 
               # CloudWatch Alarms
               - Effect: Allow
@@ -214,7 +214,7 @@ Resources:
                   - cloudwatch:DeleteAlarms
                   - cloudwatch:DescribeAlarms
                 Resource:
-                  - !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-chat-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-chat-*'
 
               # IAM Role Management (for Lambda execution roles)
               - Effect: Allow
@@ -232,14 +232,14 @@ Resources:
                   - iam:ListAttachedRolePolicies
                   - iam:ListRolePolicies
                 Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-chat-lambda-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-chat-lambda-role-${Environment}'
 
               # IAM Pass Role (for Lambda execution)
               - Effect: Allow
                 Action:
                   - iam:PassRole
                 Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-chat-lambda-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-chat-lambda-role-${Environment}'
                 Condition:
                   StringEquals:
                     iam:PassedToService: lambda.amazonaws.com
@@ -250,7 +250,7 @@ Resources:
                   - ssm:GetParameter
                   - ssm:GetParameters
                 Resource:
-                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*'
 
               # CodeConnections (for GitHub source access)
               - Effect: Allow

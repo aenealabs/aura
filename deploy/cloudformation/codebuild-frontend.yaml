@@ -87,7 +87,7 @@ Resources:
               Service: codebuild.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess'
       Policies:
         - PolicyName: FrontendDeployPolicy
           PolicyDocument:
@@ -101,7 +101,7 @@ Resources:
                   - logs:PutLogEvents
                   - logs:PutRetentionPolicy
                 Resource:
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-frontend-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-frontend-*:*'
 
               # CloudWatch Metrics
               - Effect: Allow
@@ -136,7 +136,7 @@ Resources:
                   - cloudformation:ValidateTemplate
                   - cloudformation:GetTemplateSummary
                 Resource:
-                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-frontend-${Environment}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-ecr-frontend-${Environment}/*'
 
               # CodeConnections (for GitHub access)
               - Effect: Allow
@@ -152,7 +152,7 @@ Resources:
                   - eks:DescribeCluster
                   - eks:ListClusters
                 Resource:
-                  - !Sub 'arn:aws:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ProjectName}-cluster-${Environment}'
 
               # ECR Access (for building and pushing container images)
               - Effect: Allow
@@ -183,7 +183,7 @@ Resources:
                   - ecr:TagResource
                   - ecr:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-frontend-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-frontend-${Environment}'
 
   # EKS Access Entry for Frontend CodeBuild Role
   FrontendCodeBuildEKSAccessEntry:
@@ -193,7 +193,7 @@ Resources:
       PrincipalArn: !GetAtt FrontendCodeBuildRole.Arn
       Type: STANDARD
       AccessPolicies:
-        - PolicyArn: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+        - PolicyArn: !Sub 'arn:${AWS::Partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy'
           AccessScope:
             Type: cluster
       Tags:

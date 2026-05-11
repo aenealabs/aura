@@ -1,7 +1,7 @@
 # Project Aura: Development Status
 
-**Last Assessment:** May 10, 2026
-**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues + 5 follow-ups closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward, orphan stacks wired). May 9, 2026 documentation + security pass closed an additional 4 doc-refresh follow-ups (#158, #159, #160, #161) and 2 CodeQL alerts (#271 critical code injection, #272 medium unpinned action). Issue #142 (eslint-plugin-react swap) reviewed and deferred per its own trigger conditions. **May 10, 2026 GTM-readiness audit (#163) ran 8 parallel lanes and produced a DO-NOT-SHIP verdict pending resolution of CRITICAL gaps in frontend mock-data wiring, observability metric emitters, GovCloud ARN partitioning, CI/CD required checks, and a production-code hardening item. Wave 1 remediation closed 7 fast-critical items (commits c8aa3df, 946954a, 5fed82b, a025ac5, 4b16154, b7c51a6 + branch-protection state change); remaining items track in #163.**
+**Last Assessment:** May 11, 2026
+**Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues + 5 follow-ups closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward, orphan stacks wired). May 9, 2026 documentation + security pass closed an additional 4 doc-refresh follow-ups (#158, #159, #160, #161) and 2 CodeQL alerts (#271 critical code injection, #272 medium unpinned action). Issue #142 (eslint-plugin-react swap) reviewed and deferred per its own trigger conditions. **May 10-11, 2026 GTM-readiness audit (#163) ran 8 parallel lanes; Wave 1 (7 fast criticals), Wave 2 (CI/CD repair + required status checks on main), and Wave 3 (GovCloud partition sweep + real CloudWatch emitters + runtime-security FastAPI router) have all landed. Final wave 4 closes the remaining backend stubs + frontend MOCK widget replacements to reach GTM-ready.**
 
 ---
 
@@ -17,7 +17,7 @@
 | **Buildspecs** | 28 buildspec files in deploy/buildspecs/ (down from 38 after #131 cleanup -- 11 dead scaffolds deleted, -1,467 LOC) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
-| **GovCloud Readiness** | Service compatibility: 19/19. **ARN partition compliance: incomplete** -- the May 10 audit identified 204 hardcoded `arn:aws:` strings across 21 templates that need `${AWS::Partition}` before a GovCloud Layer 1 deploy will succeed. Tracked in #163. Bedrock IAM model authorization updated to current-gen Sonnet 4.5 / Haiku 4.5 (commit a025ac5). |
+| **GovCloud Readiness** | Service compatibility: 19/19. **ARN partition compliance: complete (Wave 3, commit 3929913)** -- 204 hardcoded `arn:aws:` strings swept to `arn:${AWS::Partition}:` across 19 templates; the 4 remaining instances are inside YAML `#` comments (CLI examples for human readers). All 21 originally-affected templates pass `./scripts/cfn-lint-wrapper.sh`. Bedrock IAM model authorization on current-gen Sonnet 4.5 / Haiku 4.5 (commit a025ac5). |
 
 ---
 

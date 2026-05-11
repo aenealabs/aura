@@ -147,8 +147,7 @@ class RuntimeSecurityMetricsPublisher:
                 )
             except Exception as exc:  # noqa: BLE001 - telemetry is best-effort
                 logger.error(
-                    "Failed to publish runtime-security metrics batch "
-                    "(size=%d): %s",
+                    "Failed to publish runtime-security metrics batch " "(size=%d): %s",
                     len(batch),
                     exc,
                 )

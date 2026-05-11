@@ -68,6 +68,7 @@ from src.api.query_decomposition_endpoints import query_decomposition_router
 from src.api.recurring_task_endpoints import router as recurring_task_router
 from src.api.red_team_endpoints import red_team_router
 from src.api.repository_endpoints import router as repository_router
+from src.api.runtime_security_endpoints import router as runtime_security_router
 from src.api.scheduling_endpoints import queue_router as scheduling_queue_router
 from src.api.scheduling_endpoints import router as scheduling_router
 from src.api.security_alerts_endpoints import router as security_alerts_router
@@ -1144,13 +1145,14 @@ app.include_router(palantir_router)
 # ============================================================================
 # Runtime Security Endpoints (ADR-077, ADR-083)
 #
-# TODO(#163): the frontend at frontend/src/services/runtimeSecurityApi.js
-# expects 12 endpoints under /api/v1/runtime-security/* (admission,
-# container-escape, correlation, guardduty). The backend services exist
-# under src/services/runtime_security/ but no FastAPI router has been
-# authored yet, so the widgets currently 404. Tracked in the master
-# remediation issue.
+# Wave-3 stub router (#163). All 12 endpoints frontend's
+# runtimeSecurityApi.js expects are now registered with proper Pydantic
+# response shapes; bodies return empty data so widgets render the
+# "no data" state. Each handler has a TODO(#163-wave4) for the real
+# service wiring against src/services/runtime_security/*.
 # ============================================================================
+
+app.include_router(runtime_security_router)
 
 # ============================================================================
 # Anomaly Detection Diagnostic Endpoints

@@ -1,8 +1,8 @@
 # Installation and Configuration
 
-**Last Updated:** January 2026
+**Last Updated:** May 11, 2026
 
-This guide provides detailed instructions for deploying Project Aura across all supported deployment models.
+This guide provides detailed instructions for deploying Project Aura across all supported deployment models. For the canonical one-command deployment flow with the most current commands, parameters, and prerequisites, see [docs/deployment/DEPLOYMENT_GUIDE.md](../../deployment/DEPLOYMENT_GUIDE.md) — this guide summarizes that flow plus self-hosted Podman options.
 
 ---
 
@@ -104,56 +104,40 @@ Before beginning, ensure you have:
 
 ### Step 1: Provision AWS Infrastructure
 
-Deploy required AWS services using CloudFormation or Terraform.
+Deploy required AWS services using the canonical one-command flow. The Project Aura repository ships the deployment scripts and CloudFormation templates directly — there is no separate deployment repository to clone.
 
-**Option A: CloudFormation (Recommended)**
-
-```bash
-# Clone the Aura deployment repository
-git clone https://github.com/aenealabs/aura-deployment.git
-cd aura-deployment
-
-# Set environment variables
-export AWS_REGION=us-east-1
-export ENVIRONMENT=production
-export PROJECT_NAME=aura
-
-# Deploy foundation layer (VPC, IAM, security groups)
-aws cloudformation deploy \
-  --template-file cloudformation/foundation.yaml \
-  --stack-name ${PROJECT_NAME}-foundation-${ENVIRONMENT} \
-  --parameter-overrides Environment=${ENVIRONMENT} \
-  --capabilities CAPABILITY_NAMED_IAM
-
-# Deploy data layer (Neptune, OpenSearch, DynamoDB)
-aws cloudformation deploy \
-  --template-file cloudformation/data.yaml \
-  --stack-name ${PROJECT_NAME}-data-${ENVIRONMENT} \
-  --parameter-overrides Environment=${ENVIRONMENT} \
-  --capabilities CAPABILITY_NAMED_IAM
-
-# Deploy compute layer (EKS)
-aws cloudformation deploy \
-  --template-file cloudformation/compute.yaml \
-  --stack-name ${PROJECT_NAME}-compute-${ENVIRONMENT} \
-  --parameter-overrides Environment=${ENVIRONMENT} \
-  --capabilities CAPABILITY_NAMED_IAM
-```
-
-**Option B: Terraform**
+**One-command deploy (recommended)**
 
 ```bash
-cd terraform/
+# From a checkout of the Project Aura repository
+git clone https://github.com/aenealabs/aura.git
+cd aura
 
-# Initialize Terraform
-terraform init
+# One-time per account: configure the prerequisites listed in
+# docs/deployment/DEPLOYMENT_GUIDE.md (AWS CLI + credentials,
+# GitHub CodeConnection ARN at SSM /aura/global/codeconnections-arn,
+# Bedrock model access for current-gen Claude Sonnet + Haiku).
 
-# Review planned changes
-terraform plan -var="environment=production"
-
-# Apply infrastructure
-terraform apply -var="environment=production"
+# Single-command clean-account deploy
+ALERT_EMAIL=ops@example.com ./deploy/deploy.sh deploy dev
 ```
+
+`./deploy/deploy.sh deploy <env>` runs `deploy/scripts/bootstrap-fresh-account.sh` to populate private ECR base images and provision the 24 layer CodeBuild projects, then starts the deployment-pipeline Step Functions execution that deploys every layer (foundation → data → compute → application → observability → serverless → sandbox → security → scanning-engine) in dependency order.
+
+**Other supported commands**
+
+```bash
+# Re-run after fixing a failed step (skips bootstrap)
+./deploy/deploy.sh redeploy dev
+
+# Show latest state-machine execution status
+./deploy/deploy.sh status dev
+
+# cfn-lint every CloudFormation template
+./deploy/deploy.sh validate
+```
+
+For multi-account QA/PROD deployments, see [docs/deployment/MULTI_ACCOUNT_SETUP.md](../../deployment/MULTI_ACCOUNT_SETUP.md). For GovCloud-specific parameters, see `deploy/customer/parameters/govcloud.json`. Terraform support is on the roadmap but not yet supported — CloudFormation (via the bundled `./deploy.sh` flow) is the only canonical IaC entry point today.
 
 ### Step 2: Configure kubectl
 
@@ -169,86 +153,33 @@ aws eks update-kubeconfig \
 kubectl get nodes
 ```
 
-### Step 3: Install Aura via Helm
+### Step 3: Deploy Aura Application Layer
 
-Add the Aura Helm repository and install:
+The Application layer is deployed by the same Step Functions execution started in Step 1 (`./deploy/deploy.sh deploy <env>`). It provisions the API, orchestrator, agent, and frontend workloads into the EKS cluster using the CloudFormation templates in `deploy/cloudformation/` and the container images built by the per-layer CodeBuild projects.
+
+A standalone Helm chart is on the roadmap but is not currently published — there is no `helm repo add aura https://charts.aenealabs.com` host today. For air-gapped or fully self-hosted scenarios that cannot use the CodeBuild-based flow, see [docs/self-hosted/](../../self-hosted/) and ADR-049 (`docs/architecture-decisions/ADR-049-self-hosted-deployment.md`).
+
+**Verifying the deploy**
 
 ```bash
-# Add Helm repository
-helm repo add aura https://charts.aenealabs.com
-helm repo update
+# Show latest state-machine execution status
+./deploy/deploy.sh status ${ENVIRONMENT}
 
-# Create namespace
-kubectl create namespace aura-system
+# Once the execution reaches SUCCEEDED, point kubectl at the cluster
+aws eks update-kubeconfig \
+  --region ${AWS_REGION} \
+  --name aura-cluster-${ENVIRONMENT}
 
-# Create secrets for sensitive configuration
-kubectl create secret generic aura-secrets \
-  --namespace aura-system \
-  --from-literal=db-password='YOUR_DB_PASSWORD' \
-  --from-literal=jwt-secret='YOUR_JWT_SECRET' \
-  --from-literal=encryption-key='YOUR_ENCRYPTION_KEY'
-
-# Install Aura
-helm install aura aura/aura \
-  --namespace aura-system \
-  --values values-production.yaml \
-  --set global.domain=aura.yourcompany.com \
-  --set global.environment=production
+# Confirm core workloads are Running
+kubectl get pods -n aura-system
 ```
 
-**Sample values-production.yaml:**
+**Per-environment parameter files** (for sizing / GovCloud / SSO overrides) live at:
 
-```yaml
-global:
-  domain: aura.yourcompany.com
-  environment: production
-  tlsSecretName: aura-tls
-
-# Replica counts for high availability
-api:
-  replicas: 2
-  resources:
-    requests:
-      cpu: 500m
-      memory: 1Gi
-    limits:
-      cpu: 2000m
-      memory: 4Gi
-
-orchestrator:
-  replicas: 2
-  resources:
-    requests:
-      cpu: 1000m
-      memory: 2Gi
-
-agents:
-  replicas: 3
-  resources:
-    requests:
-      cpu: 2000m
-      memory: 4Gi
-
-# AWS service configuration
-aws:
-  region: us-east-1
-  neptune:
-    endpoint: ${NEPTUNE_ENDPOINT}
-    port: 8182
-  opensearch:
-    endpoint: ${OPENSEARCH_ENDPOINT}
-  bedrock:
-    modelId: anthropic.claude-3-5-sonnet-20241022-v2:0
-
-# Ingress configuration
-ingress:
-  enabled: true
-  className: alb
-  annotations:
-    kubernetes.io/ingress.class: alb
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}
-```
+- `deploy/customer/parameters/small.json` — 1–50 developers
+- `deploy/customer/parameters/medium.json` — 50–200 developers
+- `deploy/customer/parameters/enterprise.json` — 200+ developers
+- `deploy/customer/parameters/govcloud.json` — GovCloud-specific settings
 
 ### Step 4: Configure Ingress and TLS
 
@@ -699,7 +630,7 @@ podman exec -it aura-api \
 |----------|----------|---------|-------------|
 | `LLM_PROVIDER` | No | `bedrock` | LLM provider (bedrock, openai, azure, ollama) |
 | `AWS_REGION` | Conditional | - | AWS region for Bedrock |
-| `BEDROCK_MODEL_ID` | No | `anthropic.claude-3-5-sonnet` | Bedrock model identifier |
+| `BEDROCK_MODEL_ID` | No | current-gen Claude Sonnet | Bedrock model identifier (Wave 1 updated IAM model ARNs to Sonnet 4.5 + Haiku 4.5; see `CLAUDE.md` for the supported model list) |
 | `OPENAI_API_KEY` | Conditional | - | OpenAI API key (if using OpenAI) |
 | `AZURE_OPENAI_ENDPOINT` | Conditional | - | Azure OpenAI endpoint |
 | `AZURE_OPENAI_KEY` | Conditional | - | Azure OpenAI key |

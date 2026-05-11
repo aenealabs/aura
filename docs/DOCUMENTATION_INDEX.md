@@ -1,6 +1,6 @@
 # Project Aura - Documentation Index
 
-**Last Updated:** May 9, 2026
+**Last Updated:** May 11, 2026
 **Purpose:** Master index for all project documentation with clear organization
 
 ---
@@ -10,7 +10,7 @@
 - **Product Docs:** [product/getting-started/](product/getting-started/index.md) - Platform overview, quick start, installation
 - **Core Concepts:** [product/core-concepts/](product/core-concepts/index.md) - Architecture deep-dives, HITL, sandbox security
 - **Support Docs:** [support/](support/index.md) - Troubleshooting, API reference, architecture, operations
-- **Customer Docs:** [customer/QUICK_START.md](customer/QUICK_START.md) - Self-hosted deployment for customers
+- **Customer Quick Start:** [product/getting-started/quick-start.md](product/getting-started/quick-start.md) - 5-minute deployment guide
 - **Certification Roadmaps:** [compliance/roadmaps/README.md](compliance/roadmaps/README.md) - FedRAMP, CMMC L2/L3, IL5
 - **User Guides:** [guides/README.md](guides/README.md) - Start here for end-user documentation
 - **Getting Started:** [README.md](../README.md) → [product/getting-started/quick-start.md](product/getting-started/quick-start.md)
@@ -22,29 +22,31 @@
 
 ---
 
-## Customer Documentation (docs/customer/)
+## Customer-Facing Documentation
 
-Customer-facing documentation for self-hosted deployment and platform operations.
+Customer-facing documentation for self-hosted deployment and platform operations. (Earlier revisions of this index pointed at a `docs/customer/` directory that no longer exists; the May 11, 2026 GTM-readiness sweep redirected each entry to its canonical home.)
 
 ### Deployment & Setup
-| Document | Purpose | Lines |
-|----------|---------|-------|
-| [customer/QUICK_START.md](customer/QUICK_START.md) | 30-minute deployment guide | 379 |
-| [customer/PREREQUISITES.md](customer/PREREQUISITES.md) | AWS requirements, quotas, cost estimates | 558 |
-| [customer/ARCHITECTURE_OVERVIEW.md](customer/ARCHITECTURE_OVERVIEW.md) | System architecture for customers | 609 |
-| [customer/CONFIGURATION_REFERENCE.md](customer/CONFIGURATION_REFERENCE.md) | SSM, Secrets, ConfigMaps, env vars | 578 |
+| Document | Purpose |
+|----------|---------|
+| [product/getting-started/quick-start.md](product/getting-started/quick-start.md) | 5-minute deployment guide |
+| [product/getting-started/system-requirements.md](product/getting-started/system-requirements.md) | Prerequisites for all deployment options (AWS quotas, host requirements) |
+| [product/getting-started/installation.md](product/getting-started/installation.md) | SaaS, Kubernetes, Podman deployment |
+| [support/architecture/system-overview.md](support/architecture/system-overview.md) | System architecture for customers |
+| [product/admin-guide/configuration-reference.md](product/admin-guide/configuration-reference.md) | SSM, Secrets, ConfigMaps, env vars |
 
 ### Operations & Maintenance
-| Document | Purpose | Lines |
-|----------|---------|-------|
-| [customer/ADMIN_GUIDE.md](customer/ADMIN_GUIDE.md) | User, repo, agent management | 745 |
-| [customer/TROUBLESHOOTING.md](customer/TROUBLESHOOTING.md) | Common issues and solutions | 800 |
-| [customer/UPGRADE_GUIDE.md](customer/UPGRADE_GUIDE.md) | Version upgrade procedures | 570 |
+| Document | Purpose |
+|----------|---------|
+| [product/admin-guide/user-management.md](product/admin-guide/user-management.md) | User, repo, agent management |
+| [support/troubleshooting/index.md](support/troubleshooting/index.md) | Common issues and solutions |
+| [deployment/DEPLOYMENT_GUIDE.md](deployment/DEPLOYMENT_GUIDE.md) | Canonical deployment + upgrade procedures (uses `deploy/deploy.sh`) |
 
 ### Security & Compliance
-| Document | Purpose | Lines |
-|----------|---------|-------|
-| [customer/SECURITY_WHITEPAPER.md](customer/SECURITY_WHITEPAPER.md) | Security architecture, CMMC/SOC2/NIST mapping | 653 |
+| Document | Purpose |
+|----------|---------|
+| [security/SECURITY_SERVICES_OVERVIEW.md](security/SECURITY_SERVICES_OVERVIEW.md) | Security architecture, deployed services, NIST mapping |
+| [support/architecture/security-architecture.md](support/architecture/security-architecture.md) | Controls, encryption, tenant isolation |
 
 ---
 

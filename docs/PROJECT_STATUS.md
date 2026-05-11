@@ -11,9 +11,9 @@
 |--------|-------|
 | **Overall Completion** | 99% (with GTM-readiness gaps tracked in #163) |
 | **Lines of Code** | 375,000+ |
-| **Test Suite** | 24,800+ tests; the May 10 GTM audit observed 25 hard failures at maxfail in a full sweep and one order-dependent crash path now hardened (commit c8aa3df). A clean full-suite re-run with the wave-1 fixes is pending; the "0 failures" claim should be re-asserted only after that run. |
+| **Test Suite** | ~24,950+ tests as of May 11, 2026 (24,800+ baseline + ~110 wave-4 + ~46 wave-5a). The May 10 GTM audit observed 25 hard failures at maxfail in a full sweep and one order-dependent crash path now hardened (commit c8aa3df). A clean full-suite re-run with all wave-1 through wave-5a fixes is still pending; the "0 failures" claim should be re-asserted only after that run. |
 | **Architecture Decision Records** | 91 ADRs (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089]; ADR-090 GraphRAG ingestion edge completeness + ADR-091 Cognito cross-region DR added in May 2026) |
-| **CloudFormation Templates** | 183 (24 CodeBuild + 159 infrastructure) |
+| **CloudFormation Templates** | 170 templates (counted by `AWSTemplateFormatVersion` header on May 11, 2026; includes both CodeBuild project templates and infrastructure templates) |
 | **Buildspecs** | 28 buildspec files in deploy/buildspecs/ (down from 38 after #131 cleanup -- 11 dead scaffolds deleted, -1,467 LOC) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
 | **Deployment Phases** | 9 of 9 complete |
@@ -57,7 +57,7 @@
 | Semantic Guardrails Engine | Complete | 6-layer threat detection, 793 tests (ADR-065) |
 | Agent Capability Governance | Complete | 4-tier tool classification, runtime enforcement, 322 tests (ADR-066) |
 | Context Provenance & Integrity | Complete | Trust scoring, anomaly detection, quarantine, 275 tests (ADR-067) |
-| Runtime Agent Security | Complete | Traffic interception, behavioral baselines, AURA-ATT&CK, 1005 tests (ADR-083) |
+| Runtime Agent Security | Complete | Traffic interception, behavioral baselines, AURA-ATT&CK, 1005 tests (ADR-083). Wave 3 added real boto3 CloudWatch metric emitter (commit 17d9827) and a FastAPI stub router (12 endpoints + health, commit 2652b2f). Wave 5a wired the 12 handlers to a per-process `RuntimeSecurityHistoryStore` and replaced the Neptune `NotImplementedError` writers in `graph_integration.py` with real Gremlin upserts (commits 3a441f2 + 101148e). |
 | Policy-as-Code GitOps | Complete | OPA Rego validation, policy simulation, 98 tests (ADR-070) |
 | ABAC Authorization | Complete | Clearance levels, multi-tenant isolation, 115 tests (ADR-073) |
 | Agentic Identity Lifecycle | 100% | Decommission assurance, 15 credential enumerators, ghost scanner, self-modification sentinel, delegation trust envelope, 7 channel verifiers, 271 tests (ADR-086) |
@@ -141,11 +141,11 @@
 | Component | Status | Details |
 |-----------|--------|---------|
 | Cloud Abstraction Layer | Complete | Multi-cloud AWS/Azure support, 46 tests (ADR-004) |
-| Palantir AIP Integration | Complete | Ontology Bridge, event publisher, 197 tests (ADR-074) |
+| Palantir AIP Integration | Complete | Ontology Bridge, event publisher, 197 tests (ADR-074). Wave 1 wired the Palantir router into the FastAPI app at startup (commit 5fed82b). |
 | Self-Hosted Deployment | Complete | Podman, Windows/Linux/macOS (ADR-049) |
 | Air-Gapped & Edge | Complete | Offline model bundles, edge runtime, 200 tests (ADR-078) |
 | Developer Tools | Complete | VSCode, PyCharm, JupyterLab, Dataiku connectors (ADR-048) |
-| Native Vulnerability Scanner | Infrastructure Deployed | GraphRAG-enhanced LLM analysis (ADR-084); ADVANCED-tier (Mythos-class) scaffolding inert by default (capability router, exploit-generation contract, separate ADVANCED prompts, per-scan cost tracker, sandbox verifier, 48 mock-tested paths); live-model validation tracked in issue #115 |
+| Native Vulnerability Scanner | Infrastructure Deployed | GraphRAG-enhanced LLM analysis (ADR-084); ADVANCED-tier (Mythos-class) scaffolding inert by default (capability router, exploit-generation contract, separate ADVANCED prompts, per-scan cost tracker, sandbox verifier, 48 mock-tested paths); live-model validation tracked in issue #115. Wave 3 added real boto3 CloudWatch metric emitter (commit 17d9827). Wave 4 wired `ActiveScansWidget` + `FindingsBySeverityWidget` to the live `vulnScannerApi` and removed the silent-mock fallback in `useDashboardData.js` (commit 8df9cc3); 4 remaining widgets retain honest `DemoDataBadge` markers until their backends land. |
 | Deterministic Verification Envelope | Complete | All 5 phases implemented: N-of-M consensus, MC/DC coverage gate, Z3 formal verification, DAL-A/DAL-B profiles, DO-178C lifecycle data, DVE pipeline orchestrator with DynamoDB/S3/CloudWatch sinks, 191 tests (ADR-085) |
 | Continuous Model Assurance | Complete | All 3 phases implemented: CGE regression-floor, Adapter Registry, 6-axis MA1-MA6 domain, Scout Agent, Model Provenance Service (Sigstore), Frozen Reference Oracle (400 cases, 10% rotation cap), Step Functions pipeline, zero-egress sandbox, anti-Goodhart controls, HuggingFace + Internal SWE-RL sources, rollback mechanism, CloudTrail audit (13 events x 6 NIST controls), GovCloud FIPS validator, 567 new tests (ADR-088) |
 | Long-Horizon Security Campaigns | Phase 1 In-Process | Campaign manager service composing existing primitives into multi-hour autonomous workloads (compliance hardening, vulnerability remediation, cross-repo chain analysis, threat hunting, Mythos exploit refinement, self-play training); orchestrator + operation ledger with idempotency contract + per-token cost tracker with 5% graceful-stop reservation + tenant cost rollup + drift detector + checkpoint store + state store with optimistic concurrency + Phase abstraction with harness-driven loop control + ComplianceHardeningWorker stub; Step Functions Standard chosen as production substrate (in-process now, same Protocols); 42 tests (ADR-089) |
@@ -159,7 +159,7 @@
 | Customer Onboarding | Complete | Welcome modal, checklist, tour, tooltips (ADR-047) |
 | Repository Onboarding | Complete | 5-step wizard, OAuth GitHub/GitLab (ADR-043) |
 | Guardrail Configuration UI | Complete | Compliance profiles, validation, 128 tests (ADR-069) |
-| Hyperscale Agent Orchestration | Phase 1 | UI gating, execution tier selection, security gate validation, ~500 lines UI (ADR-087) |
+| Hyperscale Agent Orchestration | Phase 1 | UI gating, execution tier selection, security gate validation, ~500 lines UI (ADR-087). Wave 4 replaced the hardcoded-zero telemetry placeholders with a new `ModeTelemetryCollector` backed by K8s + SQS lookups (commit a48f3e6). |
 | Model Assurance Queue (HITL) | Complete | React `/model-assurance` page, 6-axis radar, integrity badge, edge-case spotlight, cost analysis, 15 tests (ADR-088) |
 
 ---

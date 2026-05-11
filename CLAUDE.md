@@ -237,19 +237,19 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 - **Context Retrieval Service:** `context-retrieval.aura.local:8080`
 - **Agent Orchestrator:** `orchestrator.aura.local:8080`
 
-### Current Status (As of 2026-05-07)
+### Current Status (As of 2026-05-11)
 
 - **Company:** Aenea Labs | **Domain:** aenealabs.com (Route 53)
-- **Overall Completion:** 99%
+- **Overall Completion:** 99% (with GTM-readiness gaps tracked in #163; Waves 1-4 + Wave 5a landed)
 - **Total Lines of Code:** 375,000+ (production + infrastructure; tests counted separately)
-- **Test Suite:** 24,800+ tests (0 failures)
-- **Architecture Decision Records:** 89 ADRs (86 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089])
+- **Test Suite:** ~24,950+ tests as of May 11, 2026. Clean full-suite re-run still pending; the historical "0 failures" claim is not re-asserted until that re-run lands. See `docs/PROJECT_STATUS.md` for the audit-trail context.
+- **Architecture Decision Records:** 91 ADRs (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089]; ADR-090 GraphRAG ingestion edge completeness + ADR-091 Cognito cross-region DR added in May 2026; counted via `ls docs/architecture-decisions/ADR-*.md | wc -l`)
 - **Infrastructure:** 100% (All 9 phases deployed: Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
-- **Modular CI/CD:** 100% (38 buildspecs managing all CloudFormation templates)
-- **CloudFormation Templates:** 183 templates (24 CodeBuild + 159 infrastructure; counted by `AWSTemplateFormatVersion` header)
+- **Modular CI/CD:** 100% (28 buildspecs in `deploy/buildspecs/` managing all CloudFormation templates; down from 38 after #131 cleanup deleted 11 dead scaffolds; counted via `ls deploy/buildspecs/buildspec-*.yml | wc -l`)
+- **CloudFormation Templates:** 170 templates (counted on 2026-05-11 by `grep -l "AWSTemplateFormatVersion" deploy/cloudformation/*.yaml | wc -l`; includes both CodeBuild project templates and infrastructure templates)
 - **CodeBuild Projects:** 19 projects (9 parent layers + 10 sub-layers including SSR, env-validator, and runtime-security)
 - **Network Services:** 100% (dnsmasq DNSSEC deployed to EKS, private ECR image, ECS Fargate VPC-wide DNS)
-- **LLM Integration:** 100% (Bedrock API operational, Claude 3.5 Sonnet approved and tested)
+- **LLM Integration:** 100% (Bedrock API operational; Wave 1 updated Bedrock IAM model ARNs to current-gen Sonnet 4.5 + Haiku 4.5, commit a025ac5)
 - **GovCloud Readiness:** 100% (19/19 deployed services compatible, using provisioned Neptune)
 - **Autonomy Framework:** 100% (Configurable HITL, 7 policy presets, ADR-032)
 - **Security Services:** 100% (5 services, 328 tests, 7 CloudWatch alarms, EventBridge bus, SNS alerts)
@@ -499,7 +499,7 @@ Directory-specific `CLAUDE.md` files load automatically when working in these di
 | Directory | Scope |
 |-----------|-------|
 | `deploy/cloudformation/CLAUDE.md` | CF description standards, layer table, cfn-lint, IAM limits, ARN partitions, KMS, logging |
-| `deploy/buildspecs/CLAUDE.md` | CodeBuild rules, 600-line limit, deploy patterns |
+| `deploy/buildspecs/CLAUDE.md` | CodeBuild rules, runtime-budget rule (per #131 cleanup), deploy patterns |
 | `frontend/CLAUDE.md` | Design system, colors, typography, React/TS/Tailwind conventions |
 | `src/services/CLAUDE.md` | Python service patterns, fork-join boundaries, shared dependencies |
 | `tests/CLAUDE.md` | 70% coverage threshold, pytest conventions, mock patterns |

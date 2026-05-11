@@ -87,18 +87,18 @@ class OracleService:
 
         # Build per-judge case_id index for O(1) lookup.
         per_judge_outputs: dict[str, dict[str, object]] = {
-            judge_id: {getattr(o, "case_id"): o for o in outs}
+            judge_id: {o.case_id: o for o in outs}
             for judge_id, outs in candidate_outputs.items()
         }
 
         all_results: list[JudgeResult] = []
         # Per-axis running sums for averaging.
-        axis_sums: dict[ModelAssuranceAxis, float] = {
-            ax: 0.0 for ax in ModelAssuranceAxis
-        }
-        axis_counts: dict[ModelAssuranceAxis, int] = {
-            ax: 0 for ax in ModelAssuranceAxis
-        }
+        axis_sums: dict[ModelAssuranceAxis, float] = dict.fromkeys(
+            ModelAssuranceAxis, 0.0
+        )
+        axis_counts: dict[ModelAssuranceAxis, int] = dict.fromkeys(
+            ModelAssuranceAxis, 0
+        )
         cases_passed = 0
         cases_evaluated = 0
 

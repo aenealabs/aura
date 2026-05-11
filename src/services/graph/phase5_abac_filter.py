@@ -35,7 +35,7 @@ Design choices, all from Sally's review:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Iterable, Protocol
 
 from src.services.graph.edge_labels import EdgeLabel

@@ -30,7 +30,7 @@ import logging
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -389,7 +389,7 @@ class Tier2PyrightBackend:
                 stderr=subprocess.PIPE,
                 cwd=str(repo_root),
             )
-        except (FileNotFoundError, OSError) as e:
+        except OSError as e:
             logger.warning(f"Failed to spawn pyright-langserver: {e}")
             stats.pyright_unavailable += sum(
                 1 for r in relationships if self._is_unresolved_call(r)

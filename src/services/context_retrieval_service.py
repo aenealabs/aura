@@ -24,11 +24,7 @@ if TYPE_CHECKING:
 
 from src.agents.filesystem_navigator_agent import FileMatch, FilesystemNavigatorAgent
 from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
-from src.services.graph.phase5_abac_filter import (
-    PHASE5_EDGE_LABELS,
-    SENSITIVITY_RANK,
-    apply_phase5_filter,
-)
+from src.services.graph.phase5_abac_filter import SENSITIVITY_RANK, apply_phase5_filter
 
 
 class GraphQueryType(Enum):

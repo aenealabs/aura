@@ -34,7 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
-from typing import Any, Iterable
+from typing import Iterable
 
 from src.agents.ast_parser_agent import CodeEntity, CodeRelationship
 

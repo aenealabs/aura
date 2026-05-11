@@ -45,16 +45,13 @@ import json
 import logging
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable, Protocol
 
 from src.agents.ast_parser_agent import CodeEntity, CodeRelationship
 from src.services.graph.edge_labels import EdgeLabel
 from src.services.graph.fqn import compute_fqn
-from src.services.graph.symbol_resolver_queue import (
-    ResolutionRequest,
-    compute_context_hash,
-)
+from src.services.graph.symbol_resolver_queue import ResolutionRequest
 
 logger = logging.getLogger(__name__)
 

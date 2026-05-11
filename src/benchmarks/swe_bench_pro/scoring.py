@@ -33,10 +33,10 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable
 
-from .contracts import SWEBenchPrediction, SWEBenchTask
+from .contracts import SWEBenchPrediction
 
 logger = logging.getLogger(__name__)
 

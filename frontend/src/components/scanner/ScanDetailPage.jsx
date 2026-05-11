@@ -28,8 +28,7 @@ import {
   ChevronUpDownIcon,
   MagnifyingGlassCircleIcon,
 } from '@heroicons/react/24/solid';
-import { MOCK_SCAN_DETAIL } from '../../services/vulnScannerMockData';
-import { launchScan, downloadSARIF, cancelScan } from '../../services/vulnScannerApi';
+import { getScanDetail, launchScan, downloadSARIF, cancelScan } from '../../services/vulnScannerApi';
 import {
   SEVERITY_COLORS,
   STAGE_LABELS,
@@ -134,11 +133,16 @@ export function ScanDetailPage({
   const mountedRef = useRef(true);
 
   const fetchScan = useCallback(async () => {
-    try {
-      await new Promise((r) => setTimeout(r, 300));
+    if (!scanId) {
       if (mountedRef.current) {
-        setScan(MOCK_SCAN_DETAIL);
+        setScan(null);
+        setIsLoading(false);
       }
+      return;
+    }
+    try {
+      const detail = await getScanDetail(scanId);
+      if (mountedRef.current) setScan(detail);
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }

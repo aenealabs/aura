@@ -38,7 +38,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,22 @@ class AutonomyPolicy:
         is_active: Whether this policy is currently active
         preset_name: If created from preset, the preset name
         metadata: Additional configuration metadata
+
+    Class-level defense in depth:
+        ``IMMUTABLE_GUARDRAILS`` is a hard-coded set of operations that MUST
+        require HITL regardless of preset, custom config, ``hitl_enabled``
+        master toggle, or ``operation_overrides`` value. These are operations
+        with catastrophic blast radius (credential rotation, prod deploy)
+        where a misconfigured tenant could otherwise grant full autonomy.
+        See #163 HIGH defense-in-depth ask.
     """
+
+    IMMUTABLE_GUARDRAILS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "credential_modification",
+            "production_deployment",
+        }
+    )
 
     policy_id: str
     organization_id: str
@@ -164,12 +179,17 @@ class AutonomyPolicy:
         Determine autonomy level for a specific action.
 
         Priority order:
-        1. Guardrails (always FULL_HITL)
-        2. Operation-specific override
-        3. Repository-specific override
-        4. Severity-specific override
-        5. Default level
+        1. Immutable class-level guardrails (always FULL_HITL, cannot be bypassed)
+        2. Instance guardrails (always FULL_HITL)
+        3. Operation-specific override
+        4. Repository-specific override
+        5. Severity-specific override
+        6. Default level
         """
+        # Immutable class-level guardrails (defense in depth, see #163)
+        if operation in self.IMMUTABLE_GUARDRAILS:
+            return AutonomyLevel.FULL_HITL
+
         # Check guardrails first (cannot be bypassed)
         if operation in self.guardrails:
             return AutonomyLevel.FULL_HITL
@@ -209,7 +229,9 @@ class AutonomyPolicy:
         """
         # Master toggle check
         if not self.hitl_enabled:
-            # Even with HITL disabled, guardrails still apply
+            # Even with HITL disabled, immutable + instance guardrails still apply
+            if operation in self.IMMUTABLE_GUARDRAILS:
+                return True
             if operation in self.guardrails:
                 return True
             return False

@@ -31,7 +31,7 @@ permissions:
 jobs:
   analyze-failure:
     name: Analyze CI Failure
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Only run if the triggering workflow failed
     if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event_name == 'workflow_dispatch' }}
     outputs:
@@ -178,7 +178,7 @@ jobs:
 
   apply-fixes:
     name: Apply Auto-Fixes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: analyze-failure
     if: needs.analyze-failure.outputs.has_fixes == 'true'
 
@@ -327,7 +327,7 @@ jobs:
 
   notify-unfixable:
     name: Notify Unfixable Issues
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: analyze-failure
     if: needs.analyze-failure.outputs.has_fixes == 'false' && github.event.workflow_run.conclusion == 'failure'
 

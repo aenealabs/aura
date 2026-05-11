@@ -35,7 +35,7 @@ env:
 jobs:
   security-review:
     name: Aura Agent Security Review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Skip for dependabot and automated PRs
     if: github.actor != 'dependabot[bot]'
 

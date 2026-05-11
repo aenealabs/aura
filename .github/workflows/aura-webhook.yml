@@ -40,7 +40,7 @@ env:
 jobs:
   notify-aura:
     name: Notify Aura Platform
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Only run if AURA_API_URL is configured
     if: vars.AURA_API_URL != ''
 
@@ -206,7 +206,7 @@ jobs:
 
   log-event:
     name: Log GitHub Event
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Log event details

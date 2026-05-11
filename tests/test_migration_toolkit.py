@@ -832,9 +832,13 @@ class TestMigratorIntegration:
         migrator.set_progress_callback(callback)
         await migrator.run()
 
-        # Callback may or may not be called in dry run with 0 items
-        # Just verify no errors occurred
-        assert True
+        # Callback may or may not be called in dry run with 0 items;
+        # the contract is: the migrator must not raise, the callback must be
+        # the one we registered, and progress entries (if any) must be the
+        # type the callback signature expects.
+        assert migrator._progress_callback is callback
+        for entry in callback_called:
+            assert entry is not None
 
 
 # ==============================================================================

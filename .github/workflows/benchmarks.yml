@@ -37,7 +37,7 @@ jobs:
     # the benchmark workflow runs on ubuntu-latest-large because the
     # default ubuntu-latest runner has too much variance for sub-20%
     # regression detection.
-    runs-on: ubuntu-latest-large
+    runs-on: ubuntu-24.04-large
     timeout-minutes: 20
     steps:
       - name: Checkout repository

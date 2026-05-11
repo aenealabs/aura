@@ -660,5 +660,62 @@ class TestEdgeCases:
         assert policy3.name == "Updated"
 
 
+class TestImmutableGuardrails:
+    """Verify IMMUTABLE_GUARDRAILS cannot be bypassed (#163 defense in depth)."""
+
+    def test_immutable_guardrails_set_is_locked(self):
+        """The class-level immutable set must contain both critical operations."""
+        assert "credential_modification" in AutonomyPolicy.IMMUTABLE_GUARDRAILS
+        assert "production_deployment" in AutonomyPolicy.IMMUTABLE_GUARDRAILS
+
+    def test_empty_instance_guardrails_does_not_bypass_immutable(self):
+        """A tenant that empties .guardrails must still gate credential_modification."""
+        policy = AutonomyPolicy(
+            policy_id="p1",
+            organization_id="org-1",
+            hitl_enabled=True,
+            default_level=AutonomyLevel.FULL_AUTONOMOUS,
+            guardrails=[],
+        )
+        assert (
+            policy.get_autonomy_level("LOW", "credential_modification")
+            == AutonomyLevel.FULL_HITL
+        )
+        assert (
+            policy.get_autonomy_level("LOW", "production_deployment")
+            == AutonomyLevel.FULL_HITL
+        )
+
+    def test_operation_override_to_full_autonomous_does_not_bypass(self):
+        """operation_overrides can't downgrade an immutable guardrail."""
+        policy = AutonomyPolicy(
+            policy_id="p1",
+            organization_id="org-1",
+            hitl_enabled=True,
+            default_level=AutonomyLevel.FULL_AUTONOMOUS,
+            guardrails=[],
+            operation_overrides={
+                "credential_modification": AutonomyLevel.FULL_AUTONOMOUS,
+            },
+        )
+        assert (
+            policy.get_autonomy_level("LOW", "credential_modification")
+            == AutonomyLevel.FULL_HITL
+        )
+
+    def test_hitl_disabled_still_requires_immutable_guardrail(self):
+        """Master HITL toggle off must not bypass immutable guardrails."""
+        policy = AutonomyPolicy(
+            policy_id="p1",
+            organization_id="org-1",
+            hitl_enabled=False,
+            default_level=AutonomyLevel.FULL_AUTONOMOUS,
+            guardrails=[],
+        )
+        assert policy.requires_hitl("LOW", "credential_modification") is True
+        assert policy.requires_hitl("LOW", "production_deployment") is True
+        assert policy.requires_hitl("LOW", "code_review") is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

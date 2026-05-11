@@ -29,8 +29,9 @@ Parameters:
 
   ContainerImage:
     Type: String
-    Default: 'public.ecr.aws/docker/library/nginx:alpine'
-    Description: Container image to run
+    AllowedPattern: '^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.(com|com\.cn)/[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+$'
+    ConstraintDescription: 'Must be a private ECR image (e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/aura-base-images/nginx:1.25). Public registries (public.ecr.aws, Docker Hub) are not permitted - supply-chain policy. See root CLAUDE.md.'
+    Description: Container image to run (REQUIRED). Must be a private ECR image from the customer account (e.g. ${AccountId}.dkr.ecr.${Region}.amazonaws.com/aura-base-images/nginx:1.25).
 
   ContainerPort:
     Type: Number

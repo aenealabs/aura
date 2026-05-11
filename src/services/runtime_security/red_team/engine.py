@@ -41,6 +41,11 @@ class TestOutcome(Enum):
     SKIPPED = "skipped"  # Test was skipped (not applicable)
 
 
+# Tell pytest this is not a test class (avoids PytestCollectionWarning).
+# Dunders are excluded from Enum membership, so this is a safe class attribute.
+TestOutcome.__test__ = False  # type: ignore[attr-defined]
+
+
 @dataclass(frozen=True)
 class RedTeamResult:
     """Immutable result of a single red team test."""

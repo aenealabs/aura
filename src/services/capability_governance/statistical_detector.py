@@ -14,7 +14,7 @@ Detection Types:
 
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from .anomaly_contracts import (
@@ -346,7 +346,7 @@ class StatisticalAnomalyDetector:
 
         if current_hour is None:
             if current_time is None:
-                current_time = datetime.utcnow()
+                current_time = datetime.now(timezone.utc)
             current_hour = current_time.hour
 
         is_unusual_hour = current_hour not in baseline.active_hours

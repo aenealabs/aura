@@ -127,6 +127,9 @@ class TicketReopenModel(BaseModel):
 class TestConnectionModel(BaseModel):
     """Request model for testing connection."""
 
+    # Tell pytest this is not a test class (avoids PytestCollectionWarning).
+    __test__ = False
+
     provider: str = Field(..., description="Provider to test")
     config: Dict[str, Any] = Field(..., description="Provider configuration")
 

@@ -13,7 +13,7 @@ Anomaly Types:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -103,7 +103,7 @@ class StatisticalBaseline:
     active_hours: list[int] = field(
         default_factory=lambda: list(range(8, 20))
     )  # 8am-8pm
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for storage."""
@@ -126,7 +126,7 @@ class StatisticalBaseline:
         if isinstance(updated_at, str):
             updated_at = datetime.fromisoformat(updated_at)
         elif updated_at is None:
-            updated_at = datetime.utcnow()
+            updated_at = datetime.now(timezone.utc)
 
         return cls(
             agent_type=data["agent_type"],
@@ -247,7 +247,7 @@ class HoneypotResult:
     honeypot_name: str | None = None
     action_taken: str | None = None
     agent_id: str | None = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -268,7 +268,7 @@ class QuarantineRecord:
     reason: QuarantineReason
     triggered_by: str  # tool name or anomaly type
     anomaly_score: float | None = None
-    quarantined_at: datetime = field(default_factory=datetime.utcnow)
+    quarantined_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     released_at: datetime | None = None
     hitl_approved_by: str | None = None
     notes: str | None = None
@@ -300,7 +300,7 @@ class AnomalyAlert:
     alert_id: str
     agent_id: str
     anomaly_result: AnomalyResult
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     acknowledged: bool = False
     acknowledged_by: str | None = None
     acknowledged_at: datetime | None = None
@@ -357,7 +357,7 @@ class CapabilityInvocation:
     tool_name: str
     classification: str
     decision: str  # ALLOW, DENY, etc.
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     latency_ms: float | None = None
     context: InvocationContext | None = None
 
@@ -383,7 +383,7 @@ class AgentContext:
     agent_type: str
     environment: str = "development"
     tenant_id: str | None = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     risk_score: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:

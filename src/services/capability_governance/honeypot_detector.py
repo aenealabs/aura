@@ -14,7 +14,7 @@ honeypot capability, it is definitively malicious or confused.
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from .anomaly_contracts import (
@@ -222,7 +222,7 @@ class HoneypotDetector:
             honeypot_name=tool_name,
             action_taken="quarantine",
             agent_id=agent_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
 
     async def get_anomaly_result(
@@ -272,7 +272,7 @@ class HoneypotDetector:
             "agent_id": agent_id,
             "tool_name": tool_name,
             "message": message,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "context": context.to_dict() if context else None,
         }
 
@@ -325,7 +325,7 @@ class HoneypotDetector:
             reason=reason,
             triggered_by=tool_name,
             anomaly_score=1.0,  # Honeypots always have score of 1.0
-            quarantined_at=datetime.utcnow(),
+            quarantined_at=datetime.now(timezone.utc),
             notes=f"Automatic quarantine due to {reason.value}",
         )
 
@@ -345,7 +345,7 @@ class HoneypotDetector:
         """Log forensic data for investigation."""
         forensic_entry = {
             "event_id": str(uuid.uuid4()),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "agent_id": agent_id,
             "tool_name": tool_name,
             "context": context.to_dict() if context else None,
@@ -385,7 +385,7 @@ class HoneypotDetector:
         if record is None or not record.is_active:
             return False
 
-        record.released_at = datetime.utcnow()
+        record.released_at = datetime.now(timezone.utc)
         record.hitl_approved_by = released_by
         if notes:
             record.notes = (record.notes or "") + f" | Release: {notes}"

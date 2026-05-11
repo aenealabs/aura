@@ -29,8 +29,11 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
-  pull-requests: write
+  # Quality checks are read-only by default. Jobs that need write access
+  # (e.g. release-please, auto-fix, upload-sarif) declare it at the job
+  # scope, not workflow-scope.
+  contents: read
+  pull-requests: read
   security-events: write
 
 jobs:
@@ -38,7 +41,7 @@ jobs:
   # PRs run the full suite in python-quality job
   check-trigger:
     name: Check Trigger Type
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
       run_full_tests: ${{ steps.check.outputs.run_full_tests }}
@@ -55,7 +58,7 @@ jobs:
   # CONSOLIDATED: Lint + Tests in single job (saves 3 runner spin-ups)
   python-quality:
     name: Python Quality & Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: check-trigger
     timeout-minutes: 25
     steps:
@@ -237,7 +240,7 @@ jobs:
   # Security scan runs in parallel (PRs only)
   security-scan:
     name: Security Scanning
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: check-trigger
     timeout-minutes: 10
     if: needs.check-trigger.outputs.run_full_tests == 'true'

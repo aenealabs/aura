@@ -125,19 +125,19 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/opensearch/${ProjectName}-${Environment}/index-slow'
-      RetentionInDays: 7
+      RetentionInDays: 30
 
   OpenSearchSearchSlowLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/opensearch/${ProjectName}-${Environment}/search-slow'
-      RetentionInDays: 7
+      RetentionInDays: 30
 
   OpenSearchApplicationLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/opensearch/${ProjectName}-${Environment}/application'
-      RetentionInDays: 7
+      RetentionInDays: 30
 
   # Resource Policy for CloudWatch Logs
   OpenSearchLogPolicy:

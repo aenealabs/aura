@@ -28,7 +28,7 @@ concurrency:
 jobs:
   smoke:
     name: Tier 3 Live-LLM Smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Gate the run on a repo variable so the scheduled trigger does
     # not startup_failure when the OIDC role + AWS account are not yet

@@ -372,14 +372,14 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/${ProjectName}/${Environment}/application'
-      RetentionInDays: 7
+      RetentionInDays: 30
 
   # Log Group for Agent Logs
   AgentLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/${ProjectName}/${Environment}/agents'
-      RetentionInDays: 7
+      RetentionInDays: 30
 
   # Metric Filter for Application Errors
   ErrorMetricFilter:

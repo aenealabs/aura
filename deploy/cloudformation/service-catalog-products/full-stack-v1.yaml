@@ -29,8 +29,9 @@ Parameters:
 
   ApiContainerImage:
     Type: String
-    Default: 'public.ecr.aws/docker/library/python:3.11-slim'
-    Description: Container image for the API
+    AllowedPattern: '^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.(com|com\.cn)/[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+$'
+    ConstraintDescription: 'Must be a private ECR image (e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/aura-base-images/python:3.11-slim). Public registries are not permitted - supply-chain policy.'
+    Description: Container image for the API (REQUIRED). Must be a private ECR image from the customer account.
 
 Resources:
   # ==========================================================================

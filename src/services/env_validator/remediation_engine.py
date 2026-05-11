@@ -7,7 +7,7 @@ with support for HITL approval workflow for risky fixes.
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Protocol
 
@@ -52,7 +52,7 @@ class RemediationAction:
     patch: dict  # JSON patch or similar
     before_state: Optional[dict] = None
     after_state: Optional[dict] = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     executed_at: Optional[datetime] = None
     executed_by: Optional[str] = None
     approval_required: bool = False
@@ -423,7 +423,7 @@ class RemediationEngine:
             return action
 
         action.status = RemediationStatus.IN_PROGRESS
-        action.executed_at = datetime.utcnow()
+        action.executed_at = datetime.now(timezone.utc)
         action.executed_by = "env-validator-agent" if not self.dry_run else "dry-run"
 
         try:
@@ -503,7 +503,7 @@ class RemediationEngine:
         return RemediationResult(
             run_id=run_id,
             environment=self.environment,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             actions=actions,
             auto_fixed=auto_fixed,
             pending_approval=pending_approval,
@@ -538,7 +538,7 @@ class RemediationEngine:
 
         action.status = RemediationStatus.APPROVED
         action.approved_by = approved_by
-        action.approved_at = datetime.utcnow()
+        action.approved_at = datetime.now(timezone.utc)
         return action
 
     def reject_action(
@@ -574,7 +574,7 @@ class RemediationEngine:
         action.status = RemediationStatus.REJECTED
         action.rejection_reason = reason
         action.executed_by = rejected_by
-        action.executed_at = datetime.utcnow()
+        action.executed_at = datetime.now(timezone.utc)
         return action
 
 
@@ -602,7 +602,7 @@ class MockRemediationEngine(RemediationEngine):
             return action
 
         action.status = RemediationStatus.IN_PROGRESS
-        action.executed_at = datetime.utcnow()
+        action.executed_at = datetime.now(timezone.utc)
         action.executed_by = "mock-engine"
 
         # Simulate successful application

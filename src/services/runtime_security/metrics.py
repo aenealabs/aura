@@ -6,12 +6,49 @@ CloudWatch metrics publisher for runtime security services.
 Based on ADR-077: Cloud Runtime Security Integration
 """
 
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from .config import get_runtime_security_config
+
+logger = logging.getLogger(__name__)
+
+
+# CloudWatch PutMetricData accepts at most 1000 MetricDatum entries
+# per request (and 40 KB per request). 500 is a conservative ceiling
+# that fits well inside both limits even with rich dimension sets.
+_CLOUDWATCH_BATCH_LIMIT = 500
+
+
+def _build_boto3_cloudwatch_client() -> Any:
+    """Construct the production boto3 CloudWatch client.
+
+    Imported lazily so unit tests that don't touch the real emitter
+    path (i.e. set ``cloudwatch_client=None`` and verify the buffer
+    snapshot) never need to install boto3 or mock it. Production
+    instantiates the publisher with the real client.
+    """
+    import boto3  # local import; not a runtime dep of the buffer-only path
+
+    return boto3.client("cloudwatch")
+
+
+def _datum_to_cloudwatch_payload(datum: "MetricDatum") -> dict[str, Any]:
+    """Convert internal MetricDatum to CloudWatch PutMetricData shape."""
+    payload: dict[str, Any] = {
+        "MetricName": datum.name,
+        "Value": datum.value,
+        "Unit": datum.unit,
+        "Timestamp": datum.timestamp,
+    }
+    if datum.dimensions:
+        payload["Dimensions"] = [
+            {"Name": k, "Value": str(v)} for k, v in datum.dimensions.items()
+        ]
+    return payload
 
 
 @dataclass
@@ -45,12 +82,34 @@ class MetricsTimer:
 
 
 class RuntimeSecurityMetricsPublisher:
-    """Publishes CloudWatch metrics for runtime security services."""
+    """Publishes CloudWatch metrics for runtime security services.
 
-    def __init__(self):
+    Two modes:
+
+    - **mock**: when the config disables metrics OR when the caller
+      passes ``cloudwatch_client=None`` AND no environment client is
+      available. Metrics buffer locally and are NOT shipped. Tests
+      use this mode to assert on the buffer snapshot.
+    - **emit**: when a boto3 CloudWatch client is configured (either
+      injected or auto-constructed). ``flush()`` ships the buffered
+      batch via ``PutMetricData``.
+    """
+
+    def __init__(self, cloudwatch_client: Optional[Any] = None):
         self._config = get_runtime_security_config()
         self._buffer: list[MetricDatum] = []
-        self._mock_mode = self._config.metrics.enabled is False
+        # Mock mode trips when config explicitly disables metrics OR
+        # when the caller did not provide a client AND we fail to
+        # construct one. ``cloudwatch_client=None`` is a useful test
+        # hook so callers can opt out of boto3 import.
+        config_disabled = self._config.metrics.enabled is False
+        self._cloudwatch: Optional[Any]
+        if config_disabled:
+            self._cloudwatch = None
+            self._mock_mode = True
+        else:
+            self._cloudwatch = cloudwatch_client
+            self._mock_mode = cloudwatch_client is None
 
     @property
     def namespace(self) -> str:
@@ -58,12 +117,41 @@ class RuntimeSecurityMetricsPublisher:
         return self._config.metrics.namespace
 
     def _publish_batch(self, metrics: list[MetricDatum]) -> None:
-        """Publish a batch of metrics to CloudWatch."""
+        """Ship a batch of metrics to CloudWatch via boto3.
+
+        Splits oversized batches at the CloudWatch ``PutMetricData``
+        request limit. Per-batch failures are logged and swallowed so
+        a single bad batch does not lose subsequent batches; the
+        worker keeps emitting whatever it can.
+        """
         if self._mock_mode or not metrics:
             return
 
-        # In production, this would use boto3 CloudWatch client
-        # For now, we'll just buffer metrics
+        if self._cloudwatch is None:
+            # Defensive: caller flipped mock_mode False without a client.
+            logger.warning(
+                "RuntimeSecurityMetricsPublisher in emit mode with no client; "
+                "dropping %d metrics",
+                len(metrics),
+            )
+            return
+
+        # Slice into <=1000-element batches at CloudWatch's request cap.
+        for offset in range(0, len(metrics), _CLOUDWATCH_BATCH_LIMIT):
+            batch = metrics[offset : offset + _CLOUDWATCH_BATCH_LIMIT]
+            payload = [_datum_to_cloudwatch_payload(d) for d in batch]
+            try:
+                self._cloudwatch.put_metric_data(
+                    Namespace=self.namespace,
+                    MetricData=payload,
+                )
+            except Exception as exc:  # noqa: BLE001 - telemetry is best-effort
+                logger.error(
+                    "Failed to publish runtime-security metrics batch "
+                    "(size=%d): %s",
+                    len(batch),
+                    exc,
+                )
 
     def _maybe_flush(self) -> None:
         """Flush buffer if it exceeds configured size."""

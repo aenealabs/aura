@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { TagIcon } from '@heroicons/react/24/solid';
-import { MOCK_FINDINGS_BY_CWE } from '../../../../services/vulnScannerMockData';
+import { getFindingsByCWE } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError, WidgetCard } from './ScannerWidgetShared';
 
 /**
@@ -27,8 +27,8 @@ export function FindingsByCWEWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(MOCK_FINDINGS_BY_CWE); setError(null); }
+      const response = await getFindingsByCWE();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
   }, []);

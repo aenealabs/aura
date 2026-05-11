@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { TrashIcon } from '@heroicons/react/24/solid';
-import { MOCK_CLEANUP_ACTIVITY } from '../../../../services/vulnScannerMockData';
+import { getCleanupActivity } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError, WidgetCard } from './ScannerWidgetShared';
 
 const CLEANUP_COLORS = {
@@ -33,8 +33,8 @@ export function CleanupActivityWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(MOCK_CLEANUP_ACTIVITY); setError(null); }
+      const response = await getCleanupActivity();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
   }, []);

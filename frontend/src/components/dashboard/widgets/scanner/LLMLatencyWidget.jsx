@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { BoltIcon } from '@heroicons/react/24/solid';
-import { MOCK_LLM_LATENCY } from '../../../../services/vulnScannerMockData';
+import { getLLMLatency } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError, WidgetCard } from './ScannerWidgetShared';
 
 const LATENCY_COLORS = { p50: '#10B981', p95: '#F59E0B', p99: '#DC2626' };
@@ -29,8 +29,8 @@ export function LLMLatencyWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(MOCK_LLM_LATENCY); setError(null); }
+      const response = await getLLMLatency();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
   }, []);

@@ -222,6 +222,17 @@ class SecretsDetectionService:
         # Schema/configuration key names (not values)
         r'"(?:password|secret|token|key)":\s*(?:null|undefined|""|\{\})',
         r"(?:password|secret|token|key)_?(?:field|name|label|key|type)",
+        # Assignment from a variable, attribute, or function call (not a literal).
+        # e.g. `api_key = request.eraser_api_key`, `secret = os.environ.get("X")`,
+        # `token = config.fetch()`. The value is delegated, not embedded.
+        # Whitespace around `=` is required so we match Python-style assignment
+        # (`api_key = request.x`) and not env-style literals
+        # (`SENDGRID_API_KEY=SG.foo.bar`).
+        r"(?:api[_-]?key|apikey|secret|token|password)\s+[:=]\s+"
+        r"[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_]",
+        r"(?:api[_-]?key|apikey|secret|token|password)\s+[:=]\s+" r"os\.environ",
+        r"(?:api[_-]?key|apikey|secret|token|password)\s+[:=]\s+"
+        r"[a-zA-Z_][a-zA-Z0-9_]*\s*\(",
     ]
 
     def __init__(

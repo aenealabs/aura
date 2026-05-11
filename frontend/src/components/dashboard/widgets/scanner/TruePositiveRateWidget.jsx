@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { CheckBadgeIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/solid';
-import { MOCK_TRUE_POSITIVE_RATE } from '../../../../services/vulnScannerMockData';
+import { getTruePositiveRate } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError } from './ScannerWidgetShared';
 
 /**
@@ -30,9 +30,9 @@ export function TruePositiveRateWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
+      const response = await getTruePositiveRate();
       if (mountedRef.current) {
-        setData(MOCK_TRUE_POSITIVE_RATE);
+        setData(response);
         setError(null);
       }
     } catch (err) {

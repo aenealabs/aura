@@ -62,11 +62,6 @@ class TestUnicodeHomoglyphBypass:
 
         return InputSanitizer()
 
-    @pytest.mark.xfail(
-        reason="SECURITY GAP: Homoglyph detection not yet implemented. "
-        "Cyrillic/Greek lookalike characters bypass pattern detection. "
-        "See: https://github.com/aenealabs/aura/issues/TBD"
-    )
     def test_cyrillic_o_substitution_in_ignore(self, llm_sanitizer):
         """
         Test detection of Cyrillic 'о' substituted for Latin 'o' in 'ignore'.
@@ -95,11 +90,6 @@ class TestUnicodeHomoglyphBypass:
             or result.was_modified
         ), "Cyrillic homoglyph substitution should be detected or sanitized"
 
-    @pytest.mark.xfail(
-        reason="SECURITY GAP: Homoglyph detection not yet implemented. "
-        "Greek lookalike characters bypass pattern detection. "
-        "See: https://github.com/aenealabs/aura/issues/TBD"
-    )
     def test_greek_omicron_substitution(self, llm_sanitizer):
         """
         Test detection of Greek 'ο' (omicron) substituted for Latin 'o'.
@@ -705,11 +695,6 @@ This is the actual content.
             or result.was_modified
         ), "HTML comment injection should be detected"
 
-    @pytest.mark.xfail(
-        reason="SECURITY GAP: [INST] tag pattern requires content between tags. "
-        "Multiline [INST]...[/INST] not matched by current regex. "
-        "See: https://github.com/aenealabs/aura/issues/TBD"
-    )
     def test_instruction_tag_injection(self, llm_sanitizer):
         """
         Test detection of [INST] tag injection patterns.

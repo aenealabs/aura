@@ -15,7 +15,7 @@ import {
   ArrowTrendingUpIcon,
   MinusIcon,
 } from '@heroicons/react/24/solid';
-import { MOCK_SCAN_QUEUE_DEPTH } from '../../../../services/vulnScannerMockData';
+import { getScanQueueDepth } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError, formatRelativeTime } from './ScannerWidgetShared';
 
 /**
@@ -32,8 +32,8 @@ export function ScanQueueDepthWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(MOCK_SCAN_QUEUE_DEPTH); setError(null); }
+      const response = await getScanQueueDepth();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
   }, []);

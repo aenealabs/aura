@@ -19,6 +19,23 @@ from .metrics import get_runtime_security_metrics
 logger = logging.getLogger(__name__)
 
 
+# MITRE ATT&CK tactic per EscapeTechnique. Used by the wave-5b
+# history-store push path so the ``/container/mitre-mapping`` rollup
+# can group escape attempts by their parent ATT&CK tactic.
+_MITRE_TACTIC_FOR: dict[str, str] = {
+    "kernel_exploit": "Privilege Escalation",
+    "dirty_pipe": "Privilege Escalation",
+    "overlayfs": "Privilege Escalation",
+    "privilege_escalation": "Privilege Escalation",
+    "namespace_escape": "Privilege Escalation",
+    "cgroup_escape": "Privilege Escalation",
+    "container_socket": "Execution",
+    "host_mount": "Discovery",
+    "capability_abuse": "Privilege Escalation",
+    "none": "Unknown",
+}
+
+
 # MITRE ATT&CK mappings for escape techniques
 MITRE_MAPPING = {
     EscapeTechnique.PRIVILEGE_ESCALATION: "T1611",
@@ -499,6 +516,38 @@ class ContainerEscapeDetector:
             cluster=event.cluster,
             blocked=event.blocked,
         )
+
+        # Wave 5b (#163): push the event to the history store so the
+        # ``/api/v1/runtime-security/container/escape-attempts`` widget
+        # surfaces real data. Best-effort - the metrics emission above
+        # is the durable signal; the history store is convenience for
+        # the UI.
+        try:
+            from .history_store import get_history_store
+
+            get_history_store().record_escape_attempt(
+                {
+                    "attempt_id": event.event_id,
+                    "container_id": event.container_id,
+                    "pod_name": event.pod_name,
+                    "namespace": event.namespace,
+                    "technique": event.technique.value,
+                    "mitre_tactic": _MITRE_TACTIC_FOR.get(
+                        event.technique.value, "Privilege Escalation"
+                    ),
+                    "mitre_technique": event.mitre_attack_id or "",
+                    "severity": event.severity.name.lower(),
+                    "blocked": event.blocked,
+                    "detected_at": event.timestamp.isoformat(),
+                    "details": event.process_args or event.syscall or "",
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "History-store push for escape event %s failed: %s",
+                event.event_id,
+                exc,
+            )
 
     def _trigger_alerts(self, event: EscapeEvent) -> None:
         """Trigger alerts for an escape event."""

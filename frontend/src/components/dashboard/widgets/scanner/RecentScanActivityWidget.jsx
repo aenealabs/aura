@@ -18,7 +18,7 @@ import {
   WrenchScrewdriverIcon,
   FunnelIcon,
 } from '@heroicons/react/24/solid';
-import { MOCK_RECENT_ACTIVITY } from '../../../../services/vulnScannerMockData';
+import { getRecentScanActivity } from '../../../../services/vulnScannerApi';
 import { SEVERITY_COLORS, WidgetSkeleton, WidgetError, WidgetCard, formatRelativeTime, formatDuration } from './ScannerWidgetShared';
 
 const TYPE_CONFIG = {
@@ -110,9 +110,9 @@ export function RecentScanActivityWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
+      const response = await getRecentScanActivity();
       if (mountedRef.current) {
-        setData(MOCK_RECENT_ACTIVITY);
+        setData(response);
         setError(null);
       }
     } catch (err) {

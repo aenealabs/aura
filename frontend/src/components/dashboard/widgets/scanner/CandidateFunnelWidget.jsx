@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { FunnelIcon } from '@heroicons/react/24/solid';
-import { MOCK_CANDIDATE_FUNNEL } from '../../../../services/vulnScannerMockData';
+import { getCandidateFunnel } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError, WidgetCard, formatNumber } from './ScannerWidgetShared';
 
 const FUNNEL_COLORS = ['#3B82F6', '#8B5CF6', '#F59E0B', '#DC2626'];
@@ -29,8 +29,8 @@ export function CandidateFunnelWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(MOCK_CANDIDATE_FUNNEL); setError(null); }
+      const response = await getCandidateFunnel();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
   }, []);

@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChartBarIcon } from '@heroicons/react/24/solid';
-import { MOCK_SCAN_DURATION_TREND } from '../../../../services/vulnScannerMockData';
+import { getScanDurationTrend } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError, WidgetCard } from './ScannerWidgetShared';
 
 const LINE_COLORS = {
@@ -35,8 +35,8 @@ export function ScanDurationTrendWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(MOCK_SCAN_DURATION_TREND); setError(null); }
+      const response = await getScanDurationTrend();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
   }, []);

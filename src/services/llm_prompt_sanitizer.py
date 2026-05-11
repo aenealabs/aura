@@ -128,11 +128,61 @@ HIDDEN_INSTRUCTION_PATTERNS = [
     r"[\u200b\u200c\u200d\ufeff]",  # Zero-width characters
     r"[\u2060\u2061\u2062\u2063]",  # Word joiner and invisible characters
     r"[\u00ad]",  # Soft hyphen
-    r"<!--.*?-->",  # HTML comments
-    r"\[INST\].*?\[/INST\]",  # Instruction tags
-    r"<\|.*?\|>",  # Special delimiter patterns
+    r"<!--[\s\S]*?-->",  # HTML comments (multiline-safe)
+    r"\[INST\][\s\S]*?\[/INST\]",  # Instruction tags (multiline-safe)
+    r"<\|[\s\S]*?\|>",  # Special delimiter patterns (multiline-safe)
     r"###\s*(?:system|instruction|hidden):",  # Markdown instruction injection
 ]
+
+# Homoglyph confusables: Cyrillic and Greek letters that visually mimic Latin
+# ASCII. Attackers substitute these to bypass keyword-based pattern matching.
+# Source: a curated subset of UAX #39 Unicode Confusables most commonly abused
+# for English-language prompt injection (ignore, system, prompt, etc.).
+HOMOGLYPH_CONFUSABLES: dict[str, str] = {
+    # Cyrillic lowercase -> Latin lowercase
+    "\u0430": "a",
+    "\u0435": "e",
+    "\u043e": "o",
+    "\u0440": "p",
+    "\u0441": "c",
+    "\u0443": "y",
+    "\u0445": "x",
+    # Cyrillic uppercase -> Latin uppercase
+    "\u0410": "A",
+    "\u0412": "B",
+    "\u0415": "E",
+    "\u041a": "K",
+    "\u041c": "M",
+    "\u041d": "H",
+    "\u041e": "O",
+    "\u0420": "P",
+    "\u0421": "C",
+    "\u0422": "T",
+    "\u0425": "X",
+    # Greek lowercase -> Latin lowercase
+    "\u03bf": "o",
+    "\u03b1": "a",
+    "\u03b5": "e",
+    "\u03b9": "i",
+    "\u03bd": "v",
+    "\u03c1": "p",
+    "\u03c7": "x",
+    "\u03ba": "k",
+    "\u03bc": "u",
+    # Greek uppercase -> Latin uppercase
+    "\u039f": "O",
+    "\u0391": "A",
+    "\u0395": "E",
+    "\u0399": "I",
+    "\u039a": "K",
+    "\u039c": "M",
+    "\u039d": "N",
+    "\u03a1": "P",
+    "\u03a4": "T",
+    "\u03a7": "X",
+}
+
+_HOMOGLYPH_TABLE = str.maketrans(HOMOGLYPH_CONFUSABLES)
 
 # Delimiter injection (trying to close/reopen system prompts)
 DELIMITER_PATTERNS = [
@@ -268,10 +318,19 @@ class LLMPromptSanitizer:
         detected_patterns = []
         threat_level = ThreatLevel.NONE
 
+        # Homoglyph defense: fold Cyrillic/Greek lookalikes to Latin and re-run
+        # pattern matching against the normalized text. This catches attacks
+        # like `ignоre all previous instructions` that bypass raw ASCII
+        # keyword matching. We only flag once if any confusable was present.
+        normalized = prompt.translate(_HOMOGLYPH_TABLE)
+        has_homoglyphs = normalized != prompt
+
         # Check each pattern category
         for category, patterns in self._compiled_patterns.items():
             for pattern in patterns:
                 matches = pattern.findall(prompt)
+                if not matches and has_homoglyphs:
+                    matches = pattern.findall(normalized)
                 if matches:
                     detected_patterns.append(f"{category}:{pattern.pattern[:50]}")
 
@@ -279,6 +338,16 @@ class LLMPromptSanitizer:
                     category_threat = self._get_category_threat_level(category)
                     if category_threat.value > threat_level.value:
                         threat_level = category_threat
+
+        # If the input contained homoglyph confusables at all, flag it as a
+        # hidden-instruction attempt regardless of whether matching keywords
+        # surfaced - mixing Cyrillic/Greek into English text is suspicious
+        # on its own and should raise threat level to at least LOW.
+        if has_homoglyphs:
+            detected_patterns.append("hidden:homoglyph_confusables")
+            hidden_threat = self._get_category_threat_level("hidden")
+            if hidden_threat.value > threat_level.value:
+                threat_level = hidden_threat
 
         # Decide action based on threat level and mode
         if (

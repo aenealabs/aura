@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { BellAlertIcon } from '@heroicons/react/24/solid';
-import { MOCK_ALARM_STATUS } from '../../../../services/vulnScannerMockData';
+import { getScannerAlarmStatus } from '../../../../services/vulnScannerApi';
 import { ALARM_COLORS, WidgetSkeleton, WidgetError, WidgetCard, formatRelativeTime } from './ScannerWidgetShared';
 
 /**
@@ -60,9 +60,9 @@ export function ScannerAlarmStatusWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
+      const response = await getScannerAlarmStatus();
       if (mountedRef.current) {
-        setData(MOCK_ALARM_STATUS);
+        setData(response);
         setError(null);
       }
     } catch (err) {

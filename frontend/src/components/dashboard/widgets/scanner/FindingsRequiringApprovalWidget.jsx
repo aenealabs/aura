@@ -14,7 +14,7 @@ import {
   HandRaisedIcon,
   ArrowTrendingUpIcon,
 } from '@heroicons/react/24/solid';
-import { MOCK_FINDINGS_REQUIRING_APPROVAL } from '../../../../services/vulnScannerMockData';
+import { getFindingsRequiringApproval } from '../../../../services/vulnScannerApi';
 import { SEVERITY_COLORS, WidgetSkeleton, WidgetError } from './ScannerWidgetShared';
 
 /**
@@ -32,9 +32,9 @@ export function FindingsRequiringApprovalWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
+      const response = await getFindingsRequiringApproval();
       if (mountedRef.current) {
-        setData(MOCK_FINDINGS_REQUIRING_APPROVAL);
+        setData(response);
         setError(null);
       }
     } catch (err) {

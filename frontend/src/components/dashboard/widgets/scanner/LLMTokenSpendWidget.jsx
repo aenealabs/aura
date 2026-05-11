@@ -15,7 +15,7 @@ import {
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
 } from '@heroicons/react/24/solid';
-import { MOCK_LLM_TOKEN_SPEND } from '../../../../services/vulnScannerMockData';
+import { getLLMTokenSpend } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError, formatNumber } from './ScannerWidgetShared';
 
 /**
@@ -33,9 +33,9 @@ export function LLMTokenSpendWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
+      const response = await getLLMTokenSpend();
       if (mountedRef.current) {
-        setData(MOCK_LLM_TOKEN_SPEND);
+        setData(response);
         setError(null);
       }
     } catch (err) {

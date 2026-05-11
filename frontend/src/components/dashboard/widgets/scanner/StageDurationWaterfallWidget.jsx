@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Bars3BottomLeftIcon } from '@heroicons/react/24/solid';
-import { MOCK_STAGE_DURATION } from '../../../../services/vulnScannerMockData';
+import { getStageDuration } from '../../../../services/vulnScannerApi';
 import { STAGE_LABELS, WidgetSkeleton, WidgetError, WidgetCard, formatDuration } from './ScannerWidgetShared';
 
 const STAGE_COLORS = [
@@ -32,8 +32,8 @@ export function StageDurationWaterfallWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(MOCK_STAGE_DURATION); setError(null); }
+      const response = await getStageDuration();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
   }, []);

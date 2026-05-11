@@ -234,7 +234,69 @@ class RuntimeCodeCorrelator:
             remediation_plan=remediation_plan,
         )
         self._chains.append(chain)
+        self._push_history(chain)
         return chain
+
+    def _push_history(self, chain: CorrelationChain) -> None:
+        """Best-effort push of a correlation chain to the runtime-security history store.
+
+        Why: Wave 5b (#163) wires producers so the ``/api/v1/runtime-security/correlation*``
+        endpoints surface real data rather than the empty Wave 5a buffer.
+        """
+        try:
+            from ..history_store import get_history_store
+
+            store = get_history_store()
+            best_path = chain.trace_result.best_path if chain.trace_result else None
+            best_match = chain.match_result.best_match if chain.match_result else None
+
+            code_location: Optional[dict[str, Any]] = None
+            affected_files: list[str] = []
+            if best_path and best_path.source_file:
+                function_name = best_path.nodes[-1] if best_path.nodes else ""
+                code_location = {
+                    "file": best_path.source_file,
+                    "line": best_path.source_line_start or 0,
+                    "function": function_name,
+                }
+                affected_files = [best_path.source_file]
+
+            confidence = 0
+            if best_match is not None:
+                try:
+                    confidence = int(round(float(best_match.similarity_score) * 100))
+                except (AttributeError, TypeError, ValueError):
+                    confidence = 0
+            confidence = max(0, min(100, confidence))
+
+            correlation_record = {
+                "correlation_id": str(uuid.uuid4()),
+                "source_event": "runtime",
+                "event_id": chain.event_id,
+                "event_name": best_match.vulnerability_id if best_match else "",
+                "code_location": code_location,
+                "confidence_score": confidence,
+                "affected_files": affected_files,
+                "correlated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            store.record_correlation(correlation_record)
+
+            if best_path and best_path.source_file:
+                store.record_code_correlation(
+                    {
+                        "correlation_id": str(uuid.uuid4()),
+                        "file": best_path.source_file,
+                        "line_start": best_path.source_line_start or 0,
+                        "line_end": best_path.source_line_end or 0,
+                        "runtime_event_id": chain.event_id,
+                        "correlation_type": "graph_trace",
+                        "confidence": confidence,
+                    }
+                )
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 -- telemetry must never break the hot path
+            logger.debug("History-store push for correlation failed: %s", exc)
 
     async def correlate_batch(
         self,

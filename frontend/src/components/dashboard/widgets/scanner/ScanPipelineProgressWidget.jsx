@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { QueueListIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/24/solid';
-import { MOCK_PIPELINE_PROGRESS } from '../../../../services/vulnScannerMockData';
+import { getActiveScans, getScanDetail } from '../../../../services/vulnScannerApi';
 import { STAGE_LABELS, STAGE_STATUS_COLORS, WidgetSkeleton, WidgetError, WidgetCard, formatDuration } from './ScannerWidgetShared';
 
 /**
@@ -78,9 +78,21 @@ export function ScanPipelineProgressWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
+      let targetScanId = scanId;
+      if (!targetScanId) {
+        const active = await getActiveScans();
+        targetScanId = active?.scans?.[0]?.scan_id ?? null;
+      }
+      if (!targetScanId) {
+        if (mountedRef.current) {
+          setData({ scan_id: null, stages: [] });
+          setError(null);
+        }
+        return;
+      }
+      const detail = await getScanDetail(targetScanId);
       if (mountedRef.current) {
-        setData(MOCK_PIPELINE_PROGRESS);
+        setData(detail);
         setError(null);
       }
     } catch (err) {

@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ServerStackIcon } from '@heroicons/react/24/solid';
-import { MOCK_CONCURRENT_UTILIZATION } from '../../../../services/vulnScannerMockData';
+import { getConcurrentUtilization } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError } from './ScannerWidgetShared';
 
 /**
@@ -27,8 +27,8 @@ export function ConcurrentUtilizationWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(MOCK_CONCURRENT_UTILIZATION); setError(null); }
+      const response = await getConcurrentUtilization();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
   }, []);

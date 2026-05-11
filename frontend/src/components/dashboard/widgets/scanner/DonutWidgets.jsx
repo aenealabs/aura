@@ -18,10 +18,10 @@ import {
   AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/solid';
 import {
-  MOCK_FINDINGS_BY_LANGUAGE,
-  MOCK_VERIFICATION_STATUS,
-  MOCK_SCAN_DEPTH_DISTRIBUTION,
-} from '../../../../services/vulnScannerMockData';
+  getFindingsByLanguage,
+  getVerificationStatus,
+  getScanDepthDistribution,
+} from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError, WidgetCard } from './ScannerWidgetShared';
 
 const DONUT_PALETTES = {
@@ -111,7 +111,7 @@ function DonutChart({ segments, palette, size = 120, strokeWidth = 24 }) {
 /**
  * Generic donut widget factory
  */
-function useDonutWidget(mockData, refreshInterval) {
+function useDonutWidget(fetcher, refreshInterval) {
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -119,11 +119,11 @@ function useDonutWidget(mockData, refreshInterval) {
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(mockData); setError(null); }
+      const response = await fetcher();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
-  }, []);
+  }, [fetcher]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -139,7 +139,7 @@ function useDonutWidget(mockData, refreshInterval) {
  * Findings by Language Widget
  */
 export function FindingsByLanguageWidget({ refreshInterval = 300000, className = '' }) {
-  const { data, isLoading, error, fetchData } = useDonutWidget(MOCK_FINDINGS_BY_LANGUAGE, refreshInterval);
+  const { data, isLoading, error, fetchData } = useDonutWidget(getFindingsByLanguage, refreshInterval);
 
   if (isLoading) return <WidgetSkeleton className={className} />;
   if (error) return <WidgetError title="By Language" onRetry={fetchData} className={className} />;
@@ -157,7 +157,7 @@ export function FindingsByLanguageWidget({ refreshInterval = 300000, className =
  * Verification Status Distribution Widget
  */
 export function VerificationStatusWidget({ refreshInterval = 300000, className = '' }) {
-  const { data, isLoading, error, fetchData } = useDonutWidget(MOCK_VERIFICATION_STATUS, refreshInterval);
+  const { data, isLoading, error, fetchData } = useDonutWidget(getVerificationStatus, refreshInterval);
 
   if (isLoading) return <WidgetSkeleton className={className} />;
   if (error) return <WidgetError title="Verification Status" onRetry={fetchData} className={className} />;
@@ -175,7 +175,7 @@ export function VerificationStatusWidget({ refreshInterval = 300000, className =
  * Scan Depth Distribution Widget
  */
 export function ScanDepthDistributionWidget({ refreshInterval = 300000, className = '' }) {
-  const { data, isLoading, error, fetchData } = useDonutWidget(MOCK_SCAN_DEPTH_DISTRIBUTION, refreshInterval);
+  const { data, isLoading, error, fetchData } = useDonutWidget(getScanDepthDistribution, refreshInterval);
 
   if (isLoading) return <WidgetSkeleton className={className} />;
   if (error) return <WidgetError title="Scan Depth" onRetry={fetchData} className={className} />;

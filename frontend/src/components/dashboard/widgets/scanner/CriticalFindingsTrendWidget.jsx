@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { FireIcon } from '@heroicons/react/24/solid';
-import { MOCK_CRITICAL_FINDINGS_TREND } from '../../../../services/vulnScannerMockData';
+import { getCriticalFindingsTrend } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError, WidgetCard } from './ScannerWidgetShared';
 
 /**
@@ -28,8 +28,8 @@ export function CriticalFindingsTrendWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      if (mountedRef.current) { setData(MOCK_CRITICAL_FINDINGS_TREND); setError(null); }
+      const response = await getCriticalFindingsTrend();
+      if (mountedRef.current) { setData(response); setError(null); }
     } catch (err) { if (mountedRef.current) setError(err); }
     finally { if (mountedRef.current) setIsLoading(false); }
   }, []);

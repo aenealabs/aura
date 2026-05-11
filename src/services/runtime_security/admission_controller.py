@@ -55,6 +55,27 @@ class AdmissionController:
         # Initialize default policies
         self._init_default_policies()
 
+        # Wave 5b (#163): seed the runtime-security history store so
+        # the /admission/policies widget surfaces this controller's
+        # active policy registry without having to query DynamoDB.
+        try:
+            from .history_store import get_history_store
+
+            get_history_store().set_admission_policies(
+                [
+                    {
+                        "policy_id": p.policy_id,
+                        "name": p.name,
+                        "enabled": p.enabled,
+                        "rule_count": 1,  # one rule per policy in this controller
+                        "last_updated": datetime.now(timezone.utc).isoformat(),
+                    }
+                    for p in self._policies.values()
+                ]
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("History-store seed for admission policies failed: %s", exc)
+
     def _init_default_policies(self) -> None:
         """Initialize default admission policies."""
         cfg = self._config.admission
@@ -598,6 +619,41 @@ class AdmissionController:
                 severity=violation.severity.name,
                 cluster=decision.cluster,
             )
+
+        # Wave 5b (#163): push to the in-process history store so the
+        # ``/api/v1/runtime-security/admission/decisions`` widget sees
+        # live data. Best-effort - a failure to push to the store
+        # cannot fail an admission decision.
+        try:
+            from .history_store import get_history_store
+
+            get_history_store().record_admission_decision(
+                {
+                    "decision_id": decision.decision_id,
+                    "decision": decision.decision.value,
+                    "resource_type": decision.resource_kind,
+                    "resource_name": decision.resource_name,
+                    "namespace": decision.namespace,
+                    "policy_name": (
+                        decision.violations[0].policy_id
+                        if decision.violations
+                        else "default"
+                    ),
+                    "reason": (
+                        decision.violations[0].description
+                        if decision.violations
+                        else "All policies passed"
+                    ),
+                    "timestamp": decision.timestamp.isoformat(),
+                    "metadata": {
+                        "cluster": decision.cluster,
+                        "request_uid": decision.request_uid,
+                        "violation_count": len(decision.violations),
+                    },
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("History-store push for admission decision failed: %s", exc)
 
     def to_admission_response(self, decision: AdmissionDecision) -> dict[str, Any]:
         """Convert decision to Kubernetes AdmissionReview response format."""

@@ -18,6 +18,7 @@ import {
   ExclamationCircleIcon,
 } from '@heroicons/react/24/solid';
 import { DataFreshnessIndicator } from '../../palantir/DataFreshnessIndicator';
+import { DemoDataBadge } from './DemoDataBadge';
 
 // Mock MTTR data
 const MOCK_MTTR_DATA = {
@@ -202,6 +203,7 @@ export function MTTRWidget({
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               MTTR
             </h3>
+            <DemoDataBadge />
           </div>
           {isOnTarget ? (
             <CheckCircleIcon className="w-4 h-4 text-green-500" />

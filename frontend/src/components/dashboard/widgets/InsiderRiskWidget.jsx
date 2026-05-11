@@ -19,6 +19,7 @@ import {
   ArrowTrendingDownIcon,
 } from '@heroicons/react/24/solid';
 import { DataFreshnessIndicator } from '../../palantir/DataFreshnessIndicator';
+import { DemoDataBadge } from './DemoDataBadge';
 
 // Mock insider risk data
 const MOCK_RISK_DATA = {
@@ -143,6 +144,7 @@ export function InsiderRiskWidget({
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
             Insider Risk
           </h3>
+          <DemoDataBadge />
         </div>
       </div>
 

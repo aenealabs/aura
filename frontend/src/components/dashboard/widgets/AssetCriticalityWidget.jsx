@@ -16,6 +16,7 @@ import {
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/solid';
 import { DataFreshnessIndicator } from '../../palantir/DataFreshnessIndicator';
+import { DemoDataBadge } from './DemoDataBadge';
 
 // Classification colors
 const CLASSIFICATION_COLORS = {
@@ -200,6 +201,7 @@ export function AssetCriticalityWidget({
             <h3 className="font-semibold text-gray-900 dark:text-gray-100">
               Asset Criticality
             </h3>
+            <DemoDataBadge />
           </div>
           {onViewAll && (
             <button

@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ShieldExclamationIcon } from '@heroicons/react/24/solid';
-import { MOCK_FINDINGS_BY_SEVERITY } from '../../../../services/vulnScannerMockData';
+import { getFindingsBySeverity } from '../../../../services/vulnScannerApi';
 import { SEVERITY_COLORS, WidgetSkeleton, WidgetError, WidgetCard } from './ScannerWidgetShared';
 
 const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];
@@ -31,10 +31,9 @@ export function FindingsBySeverityWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      // In production, replace with: const data = await getFindingsBySeverity();
-      await new Promise((r) => setTimeout(r, 300));
+      const response = await getFindingsBySeverity();
       if (mountedRef.current) {
-        setData(MOCK_FINDINGS_BY_SEVERITY);
+        setData(response);
         setError(null);
       }
     } catch (err) {

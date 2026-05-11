@@ -18,6 +18,7 @@ import {
   XCircleIcon,
 } from '@heroicons/react/24/solid';
 import { DataFreshnessIndicator } from '../../palantir/DataFreshnessIndicator';
+import { DemoDataBadge } from './DemoDataBadge';
 
 // Mock compliance drift data
 const MOCK_DRIFT_DATA = {
@@ -167,6 +168,7 @@ export function ComplianceDriftWidget({
             <h3 className="font-semibold text-gray-900 dark:text-gray-100">
               Compliance Drift
             </h3>
+            <DemoDataBadge />
           </div>
           {totalFailing > 0 && (
             <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">

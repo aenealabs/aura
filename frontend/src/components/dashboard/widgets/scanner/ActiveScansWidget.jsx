@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PlayCircleIcon } from '@heroicons/react/24/solid';
-import { MOCK_ACTIVE_SCANS } from '../../../../services/vulnScannerMockData';
+import { getActiveScans } from '../../../../services/vulnScannerApi';
 import { STAGE_LABELS, STAGE_STATUS_COLORS, WidgetSkeleton, WidgetError, formatRelativeTime } from './ScannerWidgetShared';
 
 /**
@@ -52,9 +52,9 @@ export function ActiveScansWidget({
 
   const fetchData = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 200));
+      const response = await getActiveScans();
       if (mountedRef.current) {
-        setData(MOCK_ACTIVE_SCANS);
+        setData(response);
         setError(null);
       }
     } catch (err) {

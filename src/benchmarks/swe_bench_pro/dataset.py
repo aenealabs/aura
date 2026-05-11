@@ -154,9 +154,7 @@ def load_subset(
     # revision pinned via the ``revision`` kwarg (default ``"main"``);
     # B615 plugin is conservative and can't follow the variable, hence
     # the explicit nosec. Reproducible-baseline runs pass a SHA here.
-    ds = load_dataset(  # nosec B615
-        dataset_name, split=split, revision=revision
-    )
+    ds = load_dataset(dataset_name, split=split, revision=revision)  # nosec B615
     if seed is not None:
         ds = ds.shuffle(seed=seed)
 
@@ -182,9 +180,7 @@ def iter_tasks(
     """Yield every task in the configured split. For full-dataset runs."""
     load_dataset = _require_datasets()
     # See ``load_subset`` comment on the B615 nosec rationale.
-    ds = load_dataset(  # nosec B615
-        dataset_name, split=split, revision=revision
-    )
+    ds = load_dataset(dataset_name, split=split, revision=revision)  # nosec B615
     for row in ds:
         yield _row_to_task(dict(row))
 
@@ -221,9 +217,7 @@ def load_gold_patches(
         len(target_ids),
     )
     # See ``load_subset`` comment on the B615 nosec rationale.
-    ds = load_dataset(  # nosec B615
-        dataset_name, split=split, revision=revision
-    )
+    ds = load_dataset(dataset_name, split=split, revision=revision)  # nosec B615
     out: dict[str, str] = {}
     for row in ds:
         row_id = str(row.get("instance_id", ""))

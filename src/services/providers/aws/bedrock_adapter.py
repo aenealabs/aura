@@ -20,8 +20,14 @@ from src.abstractions.llm_service import (
     UsageSummary,
 )
 from src.services.bedrock_llm_service import BedrockLLMService, BedrockMode
+from src.services.titan_embedding_service import EmbeddingMode, TitanEmbeddingService
 
 logger = logging.getLogger(__name__)
+
+# Default Titan Embeddings v2 model ID used when the caller doesn't
+# override at the call site. 1024-dimensional vectors; pricing in 2025
+# is $0.0001 per 1k input tokens.
+_DEFAULT_EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v2:0"
 
 
 class BedrockLLMAdapter(LLMService):
@@ -29,11 +35,15 @@ class BedrockLLMAdapter(LLMService):
     Adapter for AWS Bedrock that implements LLMService interface.
 
     Wraps the existing BedrockLLMService to provide a cloud-agnostic API.
+    Embedding methods delegate to ``TitanEmbeddingService`` (the
+    long-standing in-tree embedding service) so this adapter does not
+    duplicate budget tracking / caching / mock-mode logic.
     """
 
     def __init__(self, region: str = "us-east-1") -> None:
         self.region = region
         self._service: BedrockLLMService | None = None
+        self._embedding_service: TitanEmbeddingService | None = None
         self._initialized = False
 
     def _get_service(self) -> BedrockLLMService:
@@ -41,6 +51,26 @@ class BedrockLLMAdapter(LLMService):
         if self._service is None:
             self._service = BedrockLLMService(mode=BedrockMode.AWS)
         return self._service
+
+    def _get_embedding_service(
+        self, model_id: str | None = None
+    ) -> TitanEmbeddingService:
+        """Get or lazily-construct the Titan embedding delegate.
+
+        Re-instantiates the underlying service if the caller asks for a
+        different model_id; otherwise reuses the cached instance so the
+        TTLCache for embeddings is preserved across calls.
+        """
+        target_model = model_id or _DEFAULT_EMBEDDING_MODEL_ID
+        if (
+            self._embedding_service is None
+            or self._embedding_service.model_id != target_model
+        ):
+            self._embedding_service = TitanEmbeddingService(
+                mode=EmbeddingMode.AWS,
+                model_id=target_model,
+            )
+        return self._embedding_service
 
     async def initialize(self) -> bool:
         """Initialize the Bedrock service."""
@@ -186,30 +216,54 @@ Provide specific, actionable recommendations with code examples."""
         text: str,
         model_id: str | None = None,
     ) -> list[float]:
-        """
-        Generate embedding using Titan.
+        """Generate a single embedding via Titan.
 
-        Note: BedrockLLMService doesn't have embedding support yet.
-        This is a placeholder that raises NotImplementedError.
+        Delegates to ``TitanEmbeddingService.generate_embedding`` (sync
+        method) inside ``asyncio.to_thread`` so the adapter contract
+        stays async without blocking the event loop on the boto3 call.
+        Caching, budget tracking, and mock-mode fallback are owned by
+        the delegate.
         """
-        raise NotImplementedError(
-            "Embedding generation not yet implemented in BedrockLLMService"
-        )
+        import asyncio
+
+        if not text or not text.strip():
+            raise ValueError("text must be non-empty for embedding generation")
+
+        service = self._get_embedding_service(model_id)
+        return await asyncio.to_thread(service.generate_embedding, text)
 
     async def generate_embeddings_batch(
         self,
         texts: list[str],
         model_id: str | None = None,
     ) -> list[list[float]]:
-        """
-        Generate embeddings for multiple texts.
+        """Generate embeddings for many texts in one call.
 
-        Note: BedrockLLMService doesn't have embedding support yet.
-        This is a placeholder that raises NotImplementedError.
+        Uses ``TitanEmbeddingService.generate_embeddings_batch`` when
+        available; falls back to a per-text loop for older delegate
+        versions that only expose the singular method. Empty input
+        returns an empty list.
         """
-        raise NotImplementedError(
-            "Batch embedding generation not yet implemented in BedrockLLMService"
-        )
+        import asyncio
+
+        if not texts:
+            return []
+
+        service = self._get_embedding_service(model_id)
+
+        # The delegate has a native batch method that handles caching
+        # + budget per item; prefer it when present.
+        batch_fn = getattr(service, "generate_embeddings_batch", None)
+        if callable(batch_fn):
+            return await asyncio.to_thread(batch_fn, texts)
+
+        # Fallback: sequential generation. The delegate's TTLCache will
+        # short-circuit duplicates, so this is no worse than the batch
+        # path for repeated inputs.
+        async def _one(text: str) -> list[float]:
+            return await asyncio.to_thread(service.generate_embedding, text)
+
+        return [await _one(t) for t in texts]
 
     async def get_usage_summary(
         self,

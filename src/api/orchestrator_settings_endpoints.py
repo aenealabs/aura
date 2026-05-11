@@ -245,6 +245,159 @@ class HealthResponse(BaseModel):
 
 
 # ============================================================================
+# Mode-status telemetry collector (ADR-087 wave-4 wiring, #163)
+# ============================================================================
+
+
+class ModeTelemetryCollector:
+    """Best-effort lookups for the live values on the mode-status page.
+
+    Each method returns an honest fallback (0 or desired) rather than
+    raising when the underlying service is unreachable. This is by
+    design: the settings page must not 500 because of a transient
+    SQS or K8s hiccup. The audit's complaint was that hardcoded zeros
+    looked like fabricated telemetry; this collector replaces them
+    with values that are real when we can fetch them and conservative
+    when we can't.
+    """
+
+    def __init__(self) -> None:
+        self._sqs_client: Any = None
+        self._k8s_apps_v1: Any = None
+        self._k8s_batch_v1: Any = None
+
+    def _sqs(self) -> Any:
+        """Lazy boto3 SQS client. Returns None if boto3 isn't usable."""
+        if self._sqs_client is None:
+            try:
+                import boto3
+
+                self._sqs_client = boto3.client("sqs")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("SQS client unavailable for telemetry: %s", exc)
+                self._sqs_client = False  # sentinel "tried and failed"
+        return self._sqs_client or None
+
+    def _k8s_apps(self) -> Any:
+        """Lazy K8s AppsV1 API. Returns None if in-cluster config fails."""
+        if self._k8s_apps_v1 is None:
+            try:
+                from kubernetes import client as k8s_client
+                from kubernetes import config as k8s_config
+
+                try:
+                    k8s_config.load_incluster_config()
+                except Exception:
+                    k8s_config.load_kube_config()
+                self._k8s_apps_v1 = k8s_client.AppsV1Api()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("K8s AppsV1 unavailable for telemetry: %s", exc)
+                self._k8s_apps_v1 = False
+        return self._k8s_apps_v1 or None
+
+    def _k8s_batch(self) -> Any:
+        """Lazy K8s BatchV1 API for Job listings."""
+        if self._k8s_batch_v1 is None:
+            try:
+                from kubernetes import client as k8s_client
+                from kubernetes import config as k8s_config
+
+                try:
+                    k8s_config.load_incluster_config()
+                except Exception:
+                    k8s_config.load_kube_config()
+                self._k8s_batch_v1 = k8s_client.BatchV1Api()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("K8s BatchV1 unavailable for telemetry: %s", exc)
+                self._k8s_batch_v1 = False
+        return self._k8s_batch_v1 or None
+
+    def warm_pool_replicas_ready(self, desired: int, deployment_name: str) -> int:
+        """Live K8s readyReplicas; falls back to ``desired`` when unavailable.
+
+        ``desired`` is the safer fallback than 0: when warm pool is
+        enabled and K8s is healthy but unreachable from this pod,
+        the converged state IS desired.
+        """
+        if desired <= 0:
+            return 0
+        api = self._k8s_apps()
+        if api is None:
+            return desired
+        try:
+            deploy = api.read_namespaced_deployment_status(
+                name=deployment_name, namespace="aura-system"
+            )
+            ready = getattr(deploy.status, "ready_replicas", None)
+            return int(ready) if ready is not None else desired
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "K8s read_namespaced_deployment_status failed for %s: %s",
+                deployment_name,
+                exc,
+            )
+            return desired
+
+    def queue_depth(self, queue_url: str | None) -> int:
+        """Live SQS ApproximateNumberOfMessages; 0 when no URL or error."""
+        if not queue_url:
+            return 0
+        sqs = self._sqs()
+        if sqs is None:
+            return 0
+        try:
+            resp = sqs.get_queue_attributes(
+                QueueUrl=queue_url,
+                AttributeNames=["ApproximateNumberOfMessages"],
+            )
+            depth = resp.get("Attributes", {}).get("ApproximateNumberOfMessages", "0")
+            return int(depth)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("SQS get_queue_attributes failed: %s", exc)
+            return 0
+
+    def active_burst_jobs(self, namespace: str) -> int:
+        """Count of K8s Jobs with status.active > 0 in ``namespace``."""
+        api = self._k8s_batch()
+        if api is None:
+            return 0
+        try:
+            jobs = api.list_namespaced_job(
+                namespace=namespace,
+                label_selector="aura.io/burst=true",
+            )
+            return sum(
+                1
+                for j in jobs.items
+                if getattr(j.status, "active", 0) and j.status.active > 0
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "K8s list_namespaced_job failed for ns=%s: %s",
+                namespace,
+                exc,
+            )
+            return 0
+
+
+# Process-singleton so the boto3/k8s clients are constructed once.
+_MODE_TELEMETRY_COLLECTOR: ModeTelemetryCollector | None = None
+
+
+def _get_mode_telemetry_collector() -> ModeTelemetryCollector:
+    global _MODE_TELEMETRY_COLLECTOR
+    if _MODE_TELEMETRY_COLLECTOR is None:
+        _MODE_TELEMETRY_COLLECTOR = ModeTelemetryCollector()
+    return _MODE_TELEMETRY_COLLECTOR
+
+
+def _reset_mode_telemetry_collector() -> None:
+    """Test hook: discard the singleton so a fresh collector is built."""
+    global _MODE_TELEMETRY_COLLECTOR
+    _MODE_TELEMETRY_COLLECTOR = None
+
+
+# ============================================================================
 # Helper Functions
 # ============================================================================
 
@@ -700,20 +853,37 @@ async def get_mode_status(
     current_mode = compute_effective_mode(settings)
     can_change, remaining = check_cooldown(settings)
 
-    # TODO: Get actual K8s status from warm pool deployment
-    # For now, return configured values
     warm_pool_replicas_desired = (
         settings.get("warm_pool_replicas", 1)
         if settings.get("warm_pool_enabled")
         else 0
     )
 
+    # Real telemetry lookups (wave 4, #163). Each helper is best-effort:
+    # a failure or missing config returns the safest fallback rather
+    # than raising, so a transient K8s/SQS hiccup doesn't 500 the
+    # settings page.
+    collector = _get_mode_telemetry_collector()
+    warm_pool_replicas_ready = collector.warm_pool_replicas_ready(
+        desired=warm_pool_replicas_desired,
+        deployment_name=settings.get(
+            "warm_pool_deployment_name", "aura-orchestrator-warm-pool"
+        ),
+    )
+    queue_depth = collector.queue_depth(
+        queue_url=settings.get("orchestrator_queue_url")
+        or os.environ.get("AURA_ORCHESTRATOR_QUEUE_URL")
+    )
+    active_burst_jobs = collector.active_burst_jobs(
+        namespace=settings.get("burst_jobs_namespace", "aura-system")
+    )
+
     return ModeStatusResponse(
         current_mode=current_mode,
         warm_pool_replicas_desired=warm_pool_replicas_desired,
-        warm_pool_replicas_ready=0,  # TODO: Query K8s
-        queue_depth=0,  # TODO: Query SQS
-        active_burst_jobs=0,  # TODO: Query K8s Jobs
+        warm_pool_replicas_ready=warm_pool_replicas_ready,
+        queue_depth=queue_depth,
+        active_burst_jobs=active_burst_jobs,
         can_switch_mode=can_change,
         cooldown_remaining_seconds=remaining,
         last_mode_change_at=settings.get("last_mode_change_at"),

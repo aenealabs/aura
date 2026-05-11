@@ -12,24 +12,27 @@ return empty). These tests verify:
 from __future__ import annotations
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.runtime_security_endpoints import router
 
+# Module-level app + client. Building these at import time and
+# reusing them sidesteps a test-ordering issue we hit with a per-test
+# fixture: the conftest's autouse ``lambda_env_reset_fixture`` rotates
+# the asyncio event loop between tests, which the function-scoped
+# TestClient wasn't binding to cleanly (every test after the first
+# 404'd). The router has no per-request state, so a shared instance
+# is safe here.
+_app = FastAPI()
+_app.include_router(router)
+_client = TestClient(_app)
 
-@pytest.fixture(scope="module")
+
+@pytest.fixture
 def client() -> TestClient:
-    """Wrap the router in a minimal FastAPI app for testing.
-
-    Avoids importing ``src.api.main`` (which pulls in agents, DB
-    services, monitoring, etc.) - the router is self-contained and
-    should be testable in isolation.
-    """
-    from fastapi import FastAPI
-
-    app = FastAPI()
-    app.include_router(router)
-    return TestClient(app)
+    """Return the module-level TestClient bound to a fresh FastAPI app."""
+    return _client
 
 
 # ---------------------------------------------------------------------------

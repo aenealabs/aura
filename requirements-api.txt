@@ -16,6 +16,7 @@ botocore>=1.43.3
 # Graph Database and Vector Store
 gremlinpython>=3.8.1         # Amazon Neptune connectivity
 opensearch-py>=3.2.0         # OpenSearch vector store
+cachetools>=5.5.0            # TTLCache for vector/embedding caches
 requests>=2.33.1             # HTTP client (used by PyGithub, ad-hoc HTTP)
 
 # Git Integration

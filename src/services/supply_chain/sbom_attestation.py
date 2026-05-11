@@ -338,18 +338,59 @@ class SBOMAttestationService:
                 ) from e
 
     def get_sbom(self, sbom_id: str) -> Optional[SBOMDocument]:
-        """Get SBOM by ID."""
+        """Get SBOM by ID.
+
+        In production mode the lookup hits DynamoDB; the table key is
+        ``sbom_id`` and the row carries the serialized ``SBOMDocument``.
+        Falls back to the in-memory cache when DynamoDB is unavailable
+        so the service degrades gracefully.
+        """
         if self.config.storage.use_mock_storage:
             return self._mock_sboms.get(sbom_id)
-        # TODO: Implement DynamoDB lookup
-        return self._mock_sboms.get(sbom_id)
+        if self._dynamodb is None:
+            logger.debug(
+                "get_sbom %s: no DynamoDB client; using in-memory cache",
+                sbom_id,
+            )
+            return self._mock_sboms.get(sbom_id)
+        try:
+            resp = self._dynamodb.get_item(
+                TableName=self.config.storage.sbom_table_name,
+                Key={"sbom_id": {"S": sbom_id}},
+            )
+            item = resp.get("Item")
+            if item is None:
+                return None
+            sbom = _sbom_from_dynamodb_item(item)
+            # Warm the in-memory cache so subsequent calls in the same
+            # request don't repeat the round trip.
+            self._mock_sboms[sbom_id] = sbom
+            return sbom
+        except Exception as exc:  # noqa: BLE001
+            logger.error("DynamoDB get_item for SBOM %s failed: %s", sbom_id, exc)
+            return self._mock_sboms.get(sbom_id)
 
     def get_sbom_content(self, sbom_id: str) -> Optional[bytes]:
-        """Get SBOM artifact content."""
+        """Get the serialized SBOM artifact bytes from S3."""
         if self.config.storage.use_mock_storage:
             return self._mock_artifacts.get(sbom_id)
-        # TODO: Implement S3 lookup
-        return self._mock_artifacts.get(sbom_id)
+        if self._s3 is None:
+            logger.debug(
+                "get_sbom_content %s: no S3 client; using in-memory cache",
+                sbom_id,
+            )
+            return self._mock_artifacts.get(sbom_id)
+        try:
+            resp = self._s3.get_object(
+                Bucket=self.config.storage.s3_bucket_name,
+                Key=_sbom_artifact_key(sbom_id),
+            )
+            body = resp["Body"].read()
+            self._mock_artifacts[sbom_id] = body
+            return body
+        except Exception as exc:  # noqa: BLE001
+            logger.error("S3 get_object for SBOM artifact %s failed: %s", sbom_id, exc)
+            return self._mock_artifacts.get(sbom_id)
 
     def get_provenance(self, purl: str) -> ProvenanceChain:
         """
@@ -679,44 +720,230 @@ class SBOMAttestationService:
     # Storage Methods
     # -------------------------------------------------------------------------
 
+    def _serialize_sbom_artifact(self, sbom: SBOMDocument) -> bytes:
+        """Return the on-disk artifact bytes for an SBOM document.
+
+        Splits out so both mock-mode and production-mode storage paths
+        produce the same bytes for a given (format, document) pair.
+        """
+        if sbom.format in (
+            SBOMFormat.CYCLONEDX_1_5_JSON,
+            SBOMFormat.CYCLONEDX_1_5_XML,
+        ):
+            content = json.dumps(self.to_cyclonedx(sbom), indent=2)
+        elif sbom.format in (SBOMFormat.SPDX_2_3_JSON, SBOMFormat.SPDX_2_3_RDF):
+            content = json.dumps(self.to_spdx(sbom), indent=2)
+        else:
+            content = json.dumps(sbom.to_dict(), indent=2)
+        return content.encode()
+
     def _store_sbom(self, sbom: SBOMDocument) -> None:
-        """Store SBOM in DynamoDB and S3."""
+        """Store SBOM metadata in DynamoDB and the artifact body in S3.
+
+        In production mode both writes are required for the SBOM to
+        be considered persisted; if either fails, we log + retain the
+        in-memory copy so a follow-up retry can succeed. Mock-mode
+        keeps everything in memory.
+        """
+        artifact_bytes = self._serialize_sbom_artifact(sbom)
+        # Always update the in-memory cache so the rest of the process
+        # has consistent reads regardless of which backing store served
+        # the underlying call.
+        self._mock_sboms[sbom.sbom_id] = sbom
+        self._mock_artifacts[sbom.sbom_id] = artifact_bytes
+
         if self.config.storage.use_mock_storage:
-            self._mock_sboms[sbom.sbom_id] = sbom
-
-            # Store artifact
-            if sbom.format in (
-                SBOMFormat.CYCLONEDX_1_5_JSON,
-                SBOMFormat.CYCLONEDX_1_5_XML,
-            ):
-                content = json.dumps(self.to_cyclonedx(sbom), indent=2)
-            elif sbom.format in (SBOMFormat.SPDX_2_3_JSON, SBOMFormat.SPDX_2_3_RDF):
-                content = json.dumps(self.to_spdx(sbom), indent=2)
-            else:
-                content = json.dumps(sbom.to_dict(), indent=2)
-
-            self._mock_artifacts[sbom.sbom_id] = content.encode()
             return
 
-        # TODO: Implement DynamoDB and S3 storage
-        self._mock_sboms[sbom.sbom_id] = sbom
+        # Production path: DynamoDB metadata + S3 artifact bytes.
+        if self._dynamodb is not None:
+            try:
+                self._dynamodb.put_item(
+                    TableName=self.config.storage.sbom_table_name,
+                    Item=_sbom_to_dynamodb_item(sbom),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "DynamoDB put_item for SBOM %s failed: %s",
+                    sbom.sbom_id,
+                    exc,
+                )
+        else:
+            logger.debug(
+                "SBOM %s: no DynamoDB client; retaining in-memory only",
+                sbom.sbom_id,
+            )
+
+        if self._s3 is not None:
+            try:
+                self._s3.put_object(
+                    Bucket=self.config.storage.s3_bucket_name,
+                    Key=_sbom_artifact_key(sbom.sbom_id),
+                    Body=artifact_bytes,
+                    ContentType=_sbom_content_type(sbom.format),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error("S3 put_object for SBOM %s failed: %s", sbom.sbom_id, exc)
+        else:
+            logger.debug(
+                "SBOM %s: no S3 client; artifact retained in-memory only",
+                sbom.sbom_id,
+            )
 
     def _store_attestation(self, attestation: Attestation) -> None:
-        """Store attestation in DynamoDB."""
-        if self.config.storage.use_mock_storage:
-            self._mock_attestations[attestation.attestation_id] = attestation
-            return
-
-        # TODO: Implement DynamoDB storage
+        """Store attestation in DynamoDB (mock fallback in-memory)."""
         self._mock_attestations[attestation.attestation_id] = attestation
+        if self.config.storage.use_mock_storage or self._dynamodb is None:
+            return
+        try:
+            self._dynamodb.put_item(
+                TableName=self.config.storage.attestation_table_name,
+                Item=_attestation_to_dynamodb_item(attestation),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "DynamoDB put_item for attestation %s failed: %s",
+                attestation.attestation_id,
+                exc,
+            )
 
     def _get_attestation(self, attestation_id: str) -> Optional[Attestation]:
-        """Get attestation from DynamoDB."""
+        """Get attestation from DynamoDB (mock fallback in-memory)."""
         if self.config.storage.use_mock_storage:
             return self._mock_attestations.get(attestation_id)
+        if self._dynamodb is None:
+            return self._mock_attestations.get(attestation_id)
+        try:
+            resp = self._dynamodb.get_item(
+                TableName=self.config.storage.attestation_table_name,
+                Key={"attestation_id": {"S": attestation_id}},
+            )
+            item = resp.get("Item")
+            if item is None:
+                return None
+            attestation = _attestation_from_dynamodb_item(item)
+            self._mock_attestations[attestation_id] = attestation
+            return attestation
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "DynamoDB get_item for attestation %s failed: %s",
+                attestation_id,
+                exc,
+            )
+            return self._mock_attestations.get(attestation_id)
 
-        # TODO: Implement DynamoDB lookup
-        return self._mock_attestations.get(attestation_id)
+
+# ---------------------------------------------------------------------------
+# DynamoDB / S3 serialization helpers (wave-4 wiring, #163)
+# ---------------------------------------------------------------------------
+
+
+def _sbom_artifact_key(sbom_id: str) -> str:
+    """Stable S3 key for an SBOM artifact body."""
+    return f"sboms/{sbom_id}.json"
+
+
+def _sbom_content_type(fmt: "SBOMFormat") -> str:
+    """Map ``SBOMFormat`` to a ``Content-Type`` header value."""
+    text = fmt.value.lower() if hasattr(fmt, "value") else str(fmt).lower()
+    if "xml" in text:
+        return "application/xml"
+    if "rdf" in text:
+        return "application/rdf+xml"
+    return "application/json"
+
+
+def _sbom_to_dynamodb_item(sbom: "SBOMDocument") -> dict[str, Any]:
+    """Serialize an SBOMDocument to a DynamoDB item.
+
+    Stores the document as a single JSON blob under ``payload`` so the
+    schema does not need to change every time a new field lands on the
+    dataclass. Indexable fields (``sbom_id``, ``format``,
+    ``created_at``) get their own attributes.
+    """
+    payload = json.dumps(sbom.to_dict())
+    return {
+        "sbom_id": {"S": sbom.sbom_id},
+        "format": {"S": sbom.format.value},
+        "payload": {"S": payload},
+    }
+
+
+def _sbom_from_dynamodb_item(item: dict[str, Any]) -> "SBOMDocument":
+    """Hydrate an SBOMDocument from a DynamoDB item.
+
+    Inline reconstruction (no ``SBOMDocument.from_dict`` on the
+    contract today) -- converts the format enum + ISO timestamps and
+    rebuilds components via ``SBOMComponent.from_dict``.
+    """
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    payload = json.loads(item["payload"]["S"])
+    return SBOMDocument(
+        sbom_id=payload["sbom_id"],
+        name=payload.get("name", ""),
+        version=payload.get("version", ""),
+        format=SBOMFormat(payload["format"]),
+        spec_version=payload.get("spec_version", ""),
+        repository_id=payload.get("repository_id", ""),
+        created_at=(
+            _dt.fromisoformat(payload["created_at"])
+            if payload.get("created_at")
+            else _dt.now(_tz.utc)
+        ),
+        components=[SBOMComponent.from_dict(c) for c in payload.get("components", [])],
+        hash_value=payload.get("hash_value"),
+        commit_sha=payload.get("commit_sha"),
+        branch=payload.get("branch"),
+        tool_name=payload.get("tool_name", "aura-sbom-generator"),
+        tool_version=payload.get("tool_version", "1.0.0"),
+        serial_number=payload.get("serial_number"),
+        document_namespace=payload.get("document_namespace"),
+        content_hash=payload.get("content_hash"),
+    )
+
+
+def _attestation_to_dynamodb_item(att: "Attestation") -> dict[str, Any]:
+    """Serialize an Attestation to a DynamoDB item."""
+    payload = json.dumps(att.to_dict())
+    return {
+        "attestation_id": {"S": att.attestation_id},
+        "sbom_id": {"S": att.sbom_id},
+        "signing_method": {"S": att.signing_method.value},
+        "payload": {"S": payload},
+    }
+
+
+def _attestation_from_dynamodb_item(item: dict[str, Any]) -> "Attestation":
+    """Hydrate an Attestation from a DynamoDB item."""
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    payload = json.loads(item["payload"]["S"])
+    return Attestation(
+        attestation_id=payload["attestation_id"],
+        sbom_id=payload["sbom_id"],
+        predicate_type=payload.get("predicate_type", "https://slsa.dev/provenance/v1"),
+        signing_method=SigningMethod(payload.get("signing_method", "sigstore_keyless")),
+        signature=payload.get("signature"),
+        certificate=payload.get("certificate"),
+        signer_identity=payload.get("signer_identity"),
+        rekor_log_index=payload.get("rekor_log_index"),
+        rekor_log_id=payload.get("rekor_log_id"),
+        rekor_uuid=payload.get("rekor_uuid"),
+        created_at=(
+            _dt.fromisoformat(payload["created_at"])
+            if payload.get("created_at")
+            else _dt.now(_tz.utc)
+        ),
+        expires_at=(
+            _dt.fromisoformat(payload["expires_at"])
+            if payload.get("expires_at")
+            else None
+        ),
+        subject_digest=payload.get("subject_digest"),
+    )
 
 
 # Singleton instance

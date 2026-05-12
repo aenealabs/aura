@@ -28,9 +28,32 @@ The platform is self-funded; live-AWS validation has been paused to control cost
 
 To make progress on Phase 1 risk without live AWS, the following local-only activities are possible and would reduce the cold-start risk when the cost gate eventually opens:
 
-1. **Static template scan** — write a Python script that parses every `deploy/cloudformation/*.yaml` looking for `AWS::IAM::Role`, `AWS::IAM::Policy`, `AWS::IAM::ManagedPolicy` resources, extracts the union of `Action:` lists, and cross-references against what the new `CloudFormationScopedManagedPolicy` grants. Surfaces any action the platform uses that's missing from the new policy. ~half-day of work. **Recommended as a deferred-Phase-1 substitute when the cost gate next opens.**
-2. **cfn-lint W3037 audit** — already done; iam.yaml passes clean.
-3. **Manual cold-path review** — walk the ADR-092 §Migration cold-path checklist (12 specific actions: rollback, DR restore, drift, fresh-account bootstrap, cross-region replication, Neptune restore) against the new scoped policy by inspection. ~1 hour.
+1. **Static template scan** — ✅ shipped at `scripts/adr_092_static_action_scan.py` (commit `ce60ff7`). 37 tests. First run identified 3 real deploy-time gaps in EC2 SG actions (applied in `d067836`) and 3 aspirational typos in DynamoDB GSI actions (rejected — not real IAM actions).
+2. **Wave 13 follow-up: additional services** — applied. The pre-ADR-092 16-service wildcard didn't cover Lambda (108 resources), SNS (122), Events (78), Config (38), SQS (31), CodeBuild (25), ServiceCatalog (22), ApiGateway (16+19), Route53 (15), Scheduler (14), Cognito (14), Budgets (12), StepFunctions (9), CloudFront (9), Backup (8), ACM. Added to a second managed policy `CloudFormationScopedAdditionalServicesPolicy` scoped to project-prefixed ARNs.
+3. **cfn-lint W3037 audit** — done; iam.yaml passes clean.
+4. **Manual cold-path review** — walk the ADR-092 §Migration cold-path checklist against the new scoped policy by inspection. Not yet done; ~1 hour when desired.
+
+## Known issues for deploy re-engagement
+
+When the cost gate opens and live-AWS phases (3, 3.5, 4, 5) start, address these BEFORE running `cloudformation deploy iam.yaml`:
+
+### ⚠️ Managed policy size limit
+
+Both `CloudFormationScopedManagedPolicy` and `CloudFormationScopedAdditionalServicesPolicy` currently exceed the AWS **customer managed policy 6,144-character document limit** when CFN resolves intrinsics to JSON:
+
+- `CloudFormationScopedManagedPolicy`: ~11,662 chars (limit: 6,144)
+- `CloudFormationScopedAdditionalServicesPolicy`: ~10,983 chars (limit: 6,144)
+
+A live `aws cloudformation deploy iam.yaml` will fail with `PolicySizeLimitExceeded` at IAM API time. This is acceptable for now because deploy phases are Deferred (Cost Gate); the offline static-scan workflow doesn't trigger AWS calls.
+
+**Fix when re-engaging:** split each oversized policy into two pieces (~5,500 chars each), giving 4 managed policies total. IAM allows up to 10 managed policies per role, so this fits comfortably. Suggested split:
+
+| Original | Split into |
+|---|---|
+| `CloudFormationScopedManagedPolicy` | `CloudFormationScopedCorePolicy1` (s3, dynamodb, ecr, eks) <br> `CloudFormationScopedCorePolicy2` (ecs, rds, es, elb, autoscaling, efs, servicediscovery, ec2) |
+| `CloudFormationScopedAdditionalServicesPolicy` | `CloudFormationScopedAdditionalPolicy1` (lambda, sns, sqs, events, scheduler, states) <br> `CloudFormationScopedAdditionalPolicy2` (apigateway, cognito, route53, codebuild, config, budgets, cloudfront, acm, backup, servicecatalog) |
+
+Update `ManagedPolicyArns` on `CloudFormationServiceRole` to reference all 4. Estimate: half-day to split, validate via `cfn-lint`, re-run static-scan to confirm same action coverage.
 
 ### Revision history
 

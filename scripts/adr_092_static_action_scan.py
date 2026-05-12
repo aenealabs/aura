@@ -292,11 +292,19 @@ def extract_actions_from_template(
 def extract_scoped_policy_actions(iam_yaml_path: Path) -> set[str]:
     """Extract the Action set that the ADR-092 scoped policy grants.
 
-    Looks for the ``CloudFormationScopedManagedPolicy`` resource AND all
-    statements inside ``CloudFormationServiceRole``'s inline policy
-    (because ADR-092 splits the policy: Statements 1-3 in the managed
-    policy, Statements 4-7 inline on the role). Both grant access; both
-    must be checked.
+    Looks at every ``AWS::IAM::ManagedPolicy`` whose logical ID starts
+    with ``CloudFormationScoped`` (e.g.,
+    ``CloudFormationScopedManagedPolicy``,
+    ``CloudFormationScopedAdditionalServicesPolicy``) PLUS the
+    ``CloudFormationServiceRole``'s inline policy. ADR-092 splits the
+    policy across managed-policy + inline: Statements 1-3 in the primary
+    managed policy, Wave 13 follow-up additional-services in the
+    secondary managed policy, Statements 4-7 inline on the role.
+    All grant access; all must be checked.
+
+    The ``CloudFormationLegacyManagedPolicy`` is intentionally excluded
+    because it is the rollback-only policy and the scan should report
+    against the production-default scoped path.
 
     Returns a set of action strings. Wildcards (``s3:*``, ``s3:Get*``) are
     preserved verbatim so the matcher can expand them.
@@ -318,10 +326,16 @@ def extract_scoped_policy_actions(iam_yaml_path: Path) -> set[str]:
 
     granted: set[str] = set()
 
-    # 1) The scoped managed policy (Statements 1, 2, 3)
-    scoped_mp = resources.get("CloudFormationScopedManagedPolicy")
-    if isinstance(scoped_mp, dict):
-        for doc_obj in _iter_policy_documents_in_resource(scoped_mp):
+    # 1) Every CloudFormationScoped* managed policy (primary scoped +
+    #    Wave 13 additional services).
+    for logical_id, resource in resources.items():
+        if not isinstance(resource, dict):
+            continue
+        if resource.get("Type") != "AWS::IAM::ManagedPolicy":
+            continue
+        if not logical_id.startswith("CloudFormationScoped"):
+            continue
+        for doc_obj in _iter_policy_documents_in_resource(resource):
             for stmt, _sid in _iter_statements(doc_obj):
                 if stmt.get("Effect") != "Allow":
                     continue

@@ -760,6 +760,420 @@ Resources:
               StringEqualsIfExists:
                 'aws:ResourceTag/Project': !Ref ProjectName
 
+  # ===========================================================================
+  # ADR-092 Wave 13 follow-up: Additional services not in original 16
+  # ===========================================================================
+  # The pre-ADR-092 wildcard block covered 16 services (ec2, eks, rds, es,
+  # dynamodb, s3, kms, logs, cloudwatch, elasticloadbalancing, autoscaling,
+  # ecs, ecr, elasticfilesystem, servicediscovery). The offline static scan
+  # (scripts/adr_092_static_action_scan.py) and template-resource enumeration
+  # surfaced 16 additional services the platform deploys via CFN that were
+  # NOT covered by the original wildcards (Lambda 108 resources, SNS 122,
+  # Events 78, Config 38, SQS 31, CodeBuild 25, ServiceCatalog 22,
+  # ApiGatewayV2 19, ApiGateway 16, Route53 15, Scheduler 14, Cognito 14,
+  # Budgets 12, StepFunctions 9, CloudFront 9, Backup 8).
+  #
+  # Project-ARN-scoped where the service supports it. Tag-conditioned for
+  # the few that don't. CFN-deploy-time actions only (Create/Update/Delete/
+  # Tag); runtime data-plane actions (lambda:InvokeFunction, sns:Publish,
+  # sqs:SendMessage) intentionally excluded - those belong on the consuming
+  # principal's role, not the deploy role.
+  #
+  # ⚠️  KNOWN AWS LIMIT - REQUIRES SPLIT BEFORE LIVE DEPLOY
+  # ⚠️  ===================================================
+  # ⚠️  Both this policy AND CloudFormationScopedManagedPolicy exceed the
+  # ⚠️  AWS customer managed policy 6,144-character limit when CFN resolves
+  # ⚠️  intrinsics to JSON (CloudFormationScopedManagedPolicy ~11,662 chars,
+  # ⚠️  this policy ~10,983 chars). A live `aws cloudformation deploy` of
+  # ⚠️  iam.yaml will fail with PolicySizeLimitExceeded.
+  # ⚠️
+  # ⚠️  This is acceptable for now because ADR-092 deploy phases are
+  # ⚠️  Deferred (Cost Gate). When the cost gate opens and Phase 2.3 dev
+  # ⚠️  deploys begin, FIRST split these into two managed policies each
+  # ⚠️  (~5,500 chars each, leaving headroom):
+  # ⚠️    CloudFormationScopedManagedPolicy           -> Core1 + Core2
+  # ⚠️    CloudFormationScopedAdditionalServicesPolicy -> Add1 + Add2
+  # ⚠️  Update ManagedPolicyArns on CloudFormationServiceRole to attach
+  # ⚠️  all 4 (IAM allows up to 10 managed policies per role).
+  # ⚠️
+  # ⚠️  Tracked in ADR-092 §"Known issues for deploy re-engagement".
+
+  CloudFormationScopedAdditionalServicesPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: UseScopedDeployRole
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-cfn-additional-policy-${Environment}'
+      Description: 'ADR-092 Wave 13 follow-up: deploy-time grants for services not in the original 16-service wildcard (Lambda, SNS, Events, etc.)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ScopedMutateLambda
+            Effect: Allow
+            Action:
+              - lambda:CreateFunction
+              - lambda:DeleteFunction
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - lambda:ListFunctions
+              - lambda:TagResource
+              - lambda:UntagResource
+              - lambda:ListTags
+              - lambda:AddPermission
+              - lambda:RemovePermission
+              - lambda:GetPolicy
+              - lambda:PublishVersion
+              - lambda:CreateAlias
+              - lambda:DeleteAlias
+              - lambda:UpdateAlias
+              - lambda:GetAlias
+              - lambda:CreateEventSourceMapping
+              - lambda:DeleteEventSourceMapping
+              - lambda:UpdateEventSourceMapping
+              - lambda:GetEventSourceMapping
+              - lambda:PublishLayerVersion
+              - lambda:DeleteLayerVersion
+              - lambda:GetLayerVersion
+              - lambda:PutFunctionConcurrency
+              - lambda:DeleteFunctionConcurrency
+              - lambda:PutFunctionEventInvokeConfig
+              - lambda:DeleteFunctionEventInvokeConfig
+              - lambda:UpdateFunctionEventInvokeConfig
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:${ProjectName}-*:*'
+              - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:aura-*'
+              - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:aura-*:*'
+              - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:layer:${ProjectName}-*:*'
+              - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:event-source-mapping:*'
+
+          - Sid: ScopedMutateSNS
+            Effect: Allow
+            Action:
+              - sns:CreateTopic
+              - sns:DeleteTopic
+              - sns:GetTopicAttributes
+              - sns:SetTopicAttributes
+              - sns:Subscribe
+              - sns:Unsubscribe
+              - sns:ListSubscriptionsByTopic
+              - sns:GetSubscriptionAttributes
+              - sns:SetSubscriptionAttributes
+              - sns:TagResource
+              - sns:UntagResource
+              - sns:ListTagsForResource
+              - sns:AddPermission
+              - sns:RemovePermission
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sns:*:${AWS::AccountId}:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:sns:*:${AWS::AccountId}:aura-*'
+
+          - Sid: ScopedMutateSQS
+            Effect: Allow
+            Action:
+              - sqs:CreateQueue
+              - sqs:DeleteQueue
+              - sqs:GetQueueAttributes
+              - sqs:SetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:TagQueue
+              - sqs:UntagQueue
+              - sqs:ListQueueTags
+              - sqs:AddPermission
+              - sqs:RemovePermission
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sqs:*:${AWS::AccountId}:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:sqs:*:${AWS::AccountId}:aura-*'
+
+          - Sid: ScopedMutateEvents
+            Effect: Allow
+            Action:
+              - events:PutRule
+              - events:DeleteRule
+              - events:DescribeRule
+              - events:DisableRule
+              - events:EnableRule
+              - events:PutTargets
+              - events:RemoveTargets
+              - events:ListTargetsByRule
+              - events:CreateEventBus
+              - events:DeleteEventBus
+              - events:DescribeEventBus
+              - events:PutPermission
+              - events:RemovePermission
+              - events:CreateConnection
+              - events:DeleteConnection
+              - events:UpdateConnection
+              - events:DescribeConnection
+              - events:CreateApiDestination
+              - events:DeleteApiDestination
+              - events:UpdateApiDestination
+              - events:DescribeApiDestination
+              - events:TagResource
+              - events:UntagResource
+              - events:ListTagsForResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:events:*:${AWS::AccountId}:rule/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:events:*:${AWS::AccountId}:rule/aura-*'
+              - !Sub 'arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/aura-*'
+              - !Sub 'arn:${AWS::Partition}:events:*:${AWS::AccountId}:connection/${ProjectName}-*/*'
+              - !Sub 'arn:${AWS::Partition}:events:*:${AWS::AccountId}:api-destination/${ProjectName}-*/*'
+
+          - Sid: ScopedMutateScheduler
+            Effect: Allow
+            Action:
+              - scheduler:CreateSchedule
+              - scheduler:DeleteSchedule
+              - scheduler:GetSchedule
+              - scheduler:UpdateSchedule
+              - scheduler:CreateScheduleGroup
+              - scheduler:DeleteScheduleGroup
+              - scheduler:GetScheduleGroup
+              - scheduler:TagResource
+              - scheduler:UntagResource
+              - scheduler:ListTagsForResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:scheduler:*:${AWS::AccountId}:schedule/*/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:scheduler:*:${AWS::AccountId}:schedule-group/${ProjectName}-*'
+
+          - Sid: ScopedMutateStepFunctions
+            Effect: Allow
+            Action:
+              - states:CreateStateMachine
+              - states:DeleteStateMachine
+              - states:UpdateStateMachine
+              - states:DescribeStateMachine
+              - states:TagResource
+              - states:UntagResource
+              - states:ListTagsForResource
+              - states:CreateActivity
+              - states:DeleteActivity
+              - states:DescribeActivity
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:states:*:${AWS::AccountId}:stateMachine:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:states:*:${AWS::AccountId}:activity:${ProjectName}-*'
+
+          - Sid: ScopedMutateApiGateway
+            Effect: Allow
+            Action:
+              # ApiGateway uses a complex /restapis/*/resources/*/methods/*
+              # path-style API; the deploy role needs broad action coverage
+              # on the API resources it creates.
+              - apigateway:POST
+              - apigateway:GET
+              - apigateway:PUT
+              - apigateway:PATCH
+              - apigateway:DELETE
+              - apigateway:TagResource
+              - apigateway:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:apigateway:*::/restapis'
+              - !Sub 'arn:${AWS::Partition}:apigateway:*::/restapis/*'
+              - !Sub 'arn:${AWS::Partition}:apigateway:*::/apis'
+              - !Sub 'arn:${AWS::Partition}:apigateway:*::/apis/*'
+              - !Sub 'arn:${AWS::Partition}:apigateway:*::/tags/*'
+              - !Sub 'arn:${AWS::Partition}:apigateway:*::/domainnames'
+              - !Sub 'arn:${AWS::Partition}:apigateway:*::/domainnames/*'
+              - !Sub 'arn:${AWS::Partition}:apigateway:*::/account'
+
+          - Sid: ScopedMutateCognito
+            Effect: Allow
+            Action:
+              - cognito-idp:CreateUserPool
+              - cognito-idp:DeleteUserPool
+              - cognito-idp:UpdateUserPool
+              - cognito-idp:DescribeUserPool
+              - cognito-idp:CreateUserPoolClient
+              - cognito-idp:DeleteUserPoolClient
+              - cognito-idp:UpdateUserPoolClient
+              - cognito-idp:DescribeUserPoolClient
+              - cognito-idp:CreateUserPoolDomain
+              - cognito-idp:DeleteUserPoolDomain
+              - cognito-idp:DescribeUserPoolDomain
+              - cognito-idp:UpdateUserPoolDomain
+              - cognito-idp:CreateGroup
+              - cognito-idp:DeleteGroup
+              - cognito-idp:UpdateGroup
+              - cognito-idp:GetGroup
+              - cognito-idp:CreateIdentityProvider
+              - cognito-idp:DeleteIdentityProvider
+              - cognito-idp:UpdateIdentityProvider
+              - cognito-idp:DescribeIdentityProvider
+              - cognito-idp:CreateResourceServer
+              - cognito-idp:DeleteResourceServer
+              - cognito-idp:UpdateResourceServer
+              - cognito-idp:DescribeResourceServer
+              - cognito-idp:SetUserPoolMfaConfig
+              - cognito-idp:GetUserPoolMfaConfig
+              - cognito-idp:TagResource
+              - cognito-idp:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cognito-idp:*:${AWS::AccountId}:userpool/*'
+
+          - Sid: ScopedMutateRoute53
+            Effect: Allow
+            Action:
+              - route53:CreateHostedZone
+              - route53:DeleteHostedZone
+              - route53:GetHostedZone
+              - route53:UpdateHostedZoneComment
+              - route53:ChangeResourceRecordSets
+              - route53:ListResourceRecordSets
+              - route53:ChangeTagsForResource
+              - route53:ListTagsForResource
+              - route53:GetChange
+              - route53:AssociateVPCWithHostedZone
+              - route53:DisassociateVPCFromHostedZone
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:route53:::hostedzone/*'
+              - !Sub 'arn:${AWS::Partition}:route53:::change/*'
+
+          - Sid: ScopedMutateCodeBuild
+            Effect: Allow
+            Action:
+              - codebuild:CreateProject
+              - codebuild:DeleteProject
+              - codebuild:UpdateProject
+              - codebuild:BatchGetProjects
+              - codebuild:ImportSourceCredentials
+              - codebuild:DeleteSourceCredentials
+              - codebuild:ListSourceCredentials
+              - codebuild:CreateWebhook
+              - codebuild:DeleteWebhook
+              - codebuild:UpdateWebhook
+              - codebuild:CreateReportGroup
+              - codebuild:DeleteReportGroup
+              - codebuild:UpdateReportGroup
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:codebuild:*:${AWS::AccountId}:project/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:codebuild:*:${AWS::AccountId}:project/aura-*'
+              - !Sub 'arn:${AWS::Partition}:codebuild:*:${AWS::AccountId}:report-group/${ProjectName}-*'
+
+          - Sid: ScopedMutateConfig
+            Effect: Allow
+            Action:
+              - config:PutConfigRule
+              - config:DeleteConfigRule
+              - config:DescribeConfigRules
+              - config:PutConfigurationRecorder
+              - config:DeleteConfigurationRecorder
+              - config:DescribeConfigurationRecorders
+              - config:PutDeliveryChannel
+              - config:DeleteDeliveryChannel
+              - config:DescribeDeliveryChannels
+              - config:StartConfigurationRecorder
+              - config:StopConfigurationRecorder
+              - config:PutConformancePack
+              - config:DeleteConformancePack
+              - config:PutRemediationConfigurations
+              - config:DeleteRemediationConfiguration
+              - config:TagResource
+              - config:UntagResource
+            Resource: '*'  # AWS Config is account-level, no resource ARNs
+
+          - Sid: ScopedMutateBudgets
+            Effect: Allow
+            Action:
+              - budgets:CreateBudget
+              - budgets:DeleteBudget
+              - budgets:ModifyBudget
+              - budgets:DescribeBudget
+              - budgets:CreateBudgetAction
+              - budgets:DeleteBudgetAction
+              - budgets:UpdateBudgetAction
+              - budgets:DescribeBudgetAction
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/aura-*'
+
+          - Sid: ScopedMutateCloudFront
+            Effect: Allow
+            Action:
+              - cloudfront:CreateDistribution
+              - cloudfront:DeleteDistribution
+              - cloudfront:UpdateDistribution
+              - cloudfront:GetDistribution
+              - cloudfront:GetDistributionConfig
+              - cloudfront:TagResource
+              - cloudfront:UntagResource
+              - cloudfront:ListTagsForResource
+              - cloudfront:CreateOriginAccessControl
+              - cloudfront:DeleteOriginAccessControl
+              - cloudfront:UpdateOriginAccessControl
+              - cloudfront:CreateInvalidation
+              - cloudfront:CreateCachePolicy
+              - cloudfront:DeleteCachePolicy
+              - cloudfront:UpdateCachePolicy
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*'
+              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/*'
+              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:cache-policy/*'
+
+          - Sid: ScopedMutateACM
+            Effect: Allow
+            Action:
+              - acm:RequestCertificate
+              - acm:DeleteCertificate
+              - acm:DescribeCertificate
+              - acm:AddTagsToCertificate
+              - acm:RemoveTagsFromCertificate
+              - acm:ListTagsForCertificate
+              - acm:UpdateCertificateOptions
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:acm:*:${AWS::AccountId}:certificate/*'
+
+          - Sid: ScopedMutateBackup
+            Effect: Allow
+            Action:
+              - backup:CreateBackupVault
+              - backup:DeleteBackupVault
+              - backup:DescribeBackupVault
+              - backup:PutBackupVaultAccessPolicy
+              - backup:DeleteBackupVaultAccessPolicy
+              - backup:CreateBackupPlan
+              - backup:DeleteBackupPlan
+              - backup:UpdateBackupPlan
+              - backup:GetBackupPlan
+              - backup:CreateBackupSelection
+              - backup:DeleteBackupSelection
+              - backup:GetBackupSelection
+              - backup:TagResource
+              - backup:UntagResource
+              - backup:ListTags
+              - backup:PutBackupVaultNotifications
+              - backup:DeleteBackupVaultNotifications
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:backup:*:${AWS::AccountId}:backup-vault:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:backup:*:${AWS::AccountId}:backup-plan:*'
+              - !Sub 'arn:${AWS::Partition}:backup:*:${AWS::AccountId}:backup-selection:*'
+
+          - Sid: ScopedMutateServiceCatalog
+            Effect: Allow
+            Action:
+              - servicecatalog:CreatePortfolio
+              - servicecatalog:DeletePortfolio
+              - servicecatalog:UpdatePortfolio
+              - servicecatalog:DescribePortfolio
+              - servicecatalog:CreateProduct
+              - servicecatalog:DeleteProduct
+              - servicecatalog:UpdateProduct
+              - servicecatalog:DescribeProduct
+              - servicecatalog:CreateProvisioningArtifact
+              - servicecatalog:DeleteProvisioningArtifact
+              - servicecatalog:UpdateProvisioningArtifact
+              - servicecatalog:AssociateProductWithPortfolio
+              - servicecatalog:DisassociateProductFromPortfolio
+              - servicecatalog:AssociatePrincipalWithPortfolio
+              - servicecatalog:DisassociatePrincipalFromPortfolio
+              - servicecatalog:CreateConstraint
+              - servicecatalog:DeleteConstraint
+              - servicecatalog:UpdateConstraint
+              - servicecatalog:TagResource
+              - servicecatalog:UntagResource
+            Resource: '*'  # Service Catalog API uses portfolio/product IDs not ARNs
+
   # CloudFormation Service Role
   CloudFormationServiceRole:
     Type: AWS::IAM::Role
@@ -776,11 +1190,21 @@ Resources:
       # UseLegacyDeployRole parameter. Statements 1, 2, 3 (scoped+tag-conditioned
       # mutate + EC2 split) live in the managed policy. Statements 4-8 below
       # stay inline alongside the existing IAM/CFN/Secrets/Bedrock/SSM blocks.
+      # The Additional Services policy (Wave 13 follow-up) covers services
+      # not in the original 16-service wildcard (Lambda, SNS, Events, etc.).
+      # On rollback (UseLegacyDeployRole=true) only the legacy wildcard policy
+      # is attached - the additional-services policy is omitted because the
+      # legacy wildcard covered fewer services and adding the additional one
+      # would expand scope during rollback rather than preserve it.
       ManagedPolicyArns:
         - !If
           - UseLegacyDeployRoleEnabled
           - !Ref CloudFormationLegacyManagedPolicy
           - !Ref CloudFormationScopedManagedPolicy
+        - !If
+          - UseScopedDeployRole
+          - !Ref CloudFormationScopedAdditionalServicesPolicy
+          - !Ref AWS::NoValue
       Policies:
         - PolicyName: CloudFormationDeploymentPolicy
           PolicyDocument:

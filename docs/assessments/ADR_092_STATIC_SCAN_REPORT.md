@@ -5,9 +5,9 @@ Offline cross-reference of IAM actions used across `deploy/cloudformation/` temp
 ## Summary
 
 - Templates scanned: **187**
-- Actions granted by ADR-092 scoped policy: **420**
+- Actions granted by ADR-092 scoped policy: **661**
 - Action references found in templates: **4578**
-- Covered: **2822** | Uncovered (gaps): **1756** | Unique uncovered actions: **524**
+- Covered: **3490** | Uncovered (gaps): **1088** | Unique uncovered actions: **336**
 
 ## Result: ⚠️ Gaps found
 
@@ -20,17 +20,8 @@ Each row below is an action that one of the platform's IAM resources lists, but 
 - `*`
   - model-assurance-sandbox.yaml
 
-### `acm` (8 unique actions)
+### `acm` (2 unique actions)
 
-- `acm:AddTagsToCertificate`
-  - codebuild-compute.yaml
-- `acm:DeleteCertificate`
-  - codebuild-compute.yaml
-- `acm:DescribeCertificate`
-  - alb-controller.yaml
-  - codebuild-compute.yaml
-  - codebuild-marketing.yaml
-  - iam-palantir-integration.yaml
 - `acm:GetCertificate`
   - iam-palantir-integration.yaml
 - `acm:ListCertificates`
@@ -38,44 +29,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - codebuild-compute.yaml
   - codebuild-marketing.yaml
   - iam-palantir-integration.yaml
-- `acm:ListTagsForCertificate`
-  - codebuild-compute.yaml
-  - iam-palantir-integration.yaml
-- `acm:RemoveTagsFromCertificate`
-  - codebuild-compute.yaml
-- `acm:RequestCertificate`
-  - codebuild-compute.yaml
-
-### `apigateway` (7 unique actions)
-
-- `apigateway:DELETE`
-  - codebuild-chat-assistant.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-- `apigateway:GET`
-  - codebuild-chat-assistant.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-- `apigateway:PATCH`
-  - codebuild-chat-assistant.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-- `apigateway:POST`
-  - codebuild-chat-assistant.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-- `apigateway:PUT`
-  - codebuild-chat-assistant.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-- `apigateway:TagResource`
-  - codebuild-chat-assistant.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-- `apigateway:UntagResource`
-  - codebuild-chat-assistant.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
 
 ### `application-autoscaling` (6 unique actions)
 
@@ -112,37 +65,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - archive/marketplace.yaml
 - `aws-marketplace:ResolveCustomer`
   - archive/marketplace.yaml
-
-### `backup` (14 unique actions)
-
-- `backup:CreateBackupPlan`
-  - codebuild-observability.yaml
-- `backup:CreateBackupSelection`
-  - codebuild-observability.yaml
-- `backup:CreateBackupVault`
-  - codebuild-observability.yaml
-- `backup:DeleteBackupPlan`
-  - codebuild-observability.yaml
-- `backup:DeleteBackupSelection`
-  - codebuild-observability.yaml
-- `backup:DeleteBackupVault`
-  - codebuild-observability.yaml
-- `backup:DeleteBackupVaultNotifications`
-  - codebuild-observability.yaml
-- `backup:DescribeBackupVault`
-  - codebuild-observability.yaml
-- `backup:GetBackupPlan`
-  - codebuild-observability.yaml
-- `backup:GetBackupSelection`
-  - codebuild-observability.yaml
-- `backup:PutBackupVaultNotifications`
-  - codebuild-observability.yaml
-- `backup:TagResource`
-  - codebuild-observability.yaml
-- `backup:UntagResource`
-  - codebuild-observability.yaml
-- `backup:UpdateBackupPlan`
-  - codebuild-observability.yaml
 
 ### `backup-storage` (8 unique actions)
 
@@ -202,34 +124,12 @@ Each row below is an action that one of the platform's IAM resources lists, but 
 - `bedrock:UpdateProvisionedModelThroughput`
   - codebuild-application.yaml
 
-### `budgets` (14 unique actions)
+### `budgets` (7 unique actions)
 
-- `budgets:CreateBudget`
-  - codebuild-application.yaml
-  - codebuild-observability.yaml
-  - codebuild-ssr.yaml
-- `budgets:CreateBudgetAction`
-  - codebuild-observability.yaml
-  - codebuild-sandbox.yaml
-- `budgets:DeleteBudget`
-  - codebuild-application.yaml
-  - codebuild-observability.yaml
-  - codebuild-ssr.yaml
-- `budgets:DeleteBudgetAction`
-  - codebuild-observability.yaml
-  - codebuild-sandbox.yaml
 - `budgets:Describe*`
   - account-bootstrap.yaml
-- `budgets:DescribeBudget`
-  - codebuild-application.yaml
-  - codebuild-observability.yaml
 - `budgets:DescribeBudgets`
   - codebuild-observability.yaml
-- `budgets:ModifyBudget`
-  - codebuild-application.yaml
-  - codebuild-observability.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-ssr.yaml
 - `budgets:TagResource`
   - codebuild-application.yaml
   - codebuild-observability.yaml
@@ -241,8 +141,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - codebuild-sandbox.yaml
   - codebuild-ssr.yaml
 - `budgets:UpdateBudget`
-  - codebuild-observability.yaml
-- `budgets:UpdateBudgetAction`
   - codebuild-observability.yaml
 - `budgets:View*`
   - account-bootstrap.yaml
@@ -306,25 +204,13 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - deployment-pipeline.yaml
   - drift-detection.yaml
 
-### `cloudfront` (21 unique actions)
+### `cloudfront` (10 unique actions)
 
-- `cloudfront:CreateDistribution`
-  - codebuild-marketing.yaml
 - `cloudfront:CreateFunction`
-  - codebuild-marketing.yaml
-- `cloudfront:CreateInvalidation`
-  - codebuild-marketing.yaml
-- `cloudfront:CreateOriginAccessControl`
-  - codebuild-marketing.yaml
-- `cloudfront:DeleteDistribution`
   - codebuild-marketing.yaml
 - `cloudfront:DeleteFunction`
   - codebuild-marketing.yaml
-- `cloudfront:DeleteOriginAccessControl`
-  - codebuild-marketing.yaml
 - `cloudfront:DescribeFunction`
-  - codebuild-marketing.yaml
-- `cloudfront:GetDistribution`
   - codebuild-marketing.yaml
 - `cloudfront:GetFunction`
   - codebuild-marketing.yaml
@@ -336,19 +222,9 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - codebuild-marketing.yaml
 - `cloudfront:ListFunctions`
   - codebuild-marketing.yaml
-- `cloudfront:ListTagsForResource`
-  - codebuild-marketing.yaml
 - `cloudfront:PublishFunction`
   - codebuild-marketing.yaml
-- `cloudfront:TagResource`
-  - codebuild-marketing.yaml
-- `cloudfront:UntagResource`
-  - codebuild-marketing.yaml
-- `cloudfront:UpdateDistribution`
-  - codebuild-marketing.yaml
 - `cloudfront:UpdateFunction`
-  - codebuild-marketing.yaml
-- `cloudfront:UpdateOriginAccessControl`
   - codebuild-marketing.yaml
 
 ### `cloudtrail` (12 unique actions)
@@ -395,15 +271,11 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - codebuild-sandbox.yaml
   - ...and 4 more templates
 
-### `codebuild` (15 unique actions)
+### `codebuild` (10 unique actions)
 
 - `codebuild:BatchGetBuilds`
   - codebuild-runbook-agent.yaml
   - deployment-pipeline.yaml
-- `codebuild:BatchGetProjects`
-  - codebuild-bootstrap.yaml
-  - codebuild-foundation.yaml
-  - codebuild-serverless.yaml
 - `codebuild:BatchPutCodeCoverages`
   - codebuild-foundation.yaml
   - codebuild-integration-test.yaml
@@ -412,22 +284,10 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - codebuild-foundation.yaml
   - codebuild-integration-test.yaml
   - codebuild-runbook-agent.yaml
-- `codebuild:CreateProject`
-  - codebuild-bootstrap.yaml
-  - codebuild-foundation.yaml
-  - codebuild-serverless.yaml
 - `codebuild:CreateReport`
   - codebuild-foundation.yaml
   - codebuild-integration-test.yaml
   - codebuild-runbook-agent.yaml
-- `codebuild:CreateReportGroup`
-  - codebuild-foundation.yaml
-  - codebuild-integration-test.yaml
-  - codebuild-runbook-agent.yaml
-- `codebuild:DeleteProject`
-  - codebuild-bootstrap.yaml
-  - codebuild-foundation.yaml
-  - codebuild-serverless.yaml
 - `codebuild:ListBuilds`
   - codebuild-runbook-agent.yaml
 - `codebuild:ListBuildsForProject`
@@ -439,16 +299,12 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - runbook-agent.yaml
 - `codebuild:StopBuild`
   - deployment-pipeline.yaml
-- `codebuild:UpdateProject`
-  - codebuild-bootstrap.yaml
-  - codebuild-foundation.yaml
-  - codebuild-serverless.yaml
 - `codebuild:UpdateReport`
   - codebuild-foundation.yaml
   - codebuild-integration-test.yaml
   - codebuild-runbook-agent.yaml
 
-### `cognito-idp` (31 unique actions)
+### `cognito-idp` (9 unique actions)
 
 - `cognito-idp:AdminAddUserToGroup`
   - cognito-dr-hydrator.yaml
@@ -470,96 +326,22 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - cognito-dr-hydrator.yaml
 - `cognito-idp:AdminUpdateUserAttributes`
   - iam-palantir-integration.yaml
-- `cognito-idp:CreateGroup`
-  - codebuild-application.yaml
-- `cognito-idp:CreateIdentityProvider`
-  - iam-palantir-integration.yaml
-- `cognito-idp:CreateUserPool`
-  - codebuild-application.yaml
-- `cognito-idp:CreateUserPoolClient`
-  - codebuild-application.yaml
-- `cognito-idp:CreateUserPoolDomain`
-  - codebuild-application.yaml
-- `cognito-idp:DeleteGroup`
-  - codebuild-application.yaml
-- `cognito-idp:DeleteIdentityProvider`
-  - iam-palantir-integration.yaml
-- `cognito-idp:DeleteUserPool`
-  - codebuild-application.yaml
-- `cognito-idp:DeleteUserPoolClient`
-  - codebuild-application.yaml
-- `cognito-idp:DeleteUserPoolDomain`
-  - codebuild-application.yaml
-- `cognito-idp:DescribeIdentityProvider`
-  - iam-palantir-integration.yaml
-- `cognito-idp:DescribeUserPool`
-  - codebuild-application.yaml
-  - codebuild-chat-assistant.yaml
-  - iam-palantir-integration.yaml
-- `cognito-idp:DescribeUserPoolClient`
-  - alb-controller.yaml
-  - codebuild-application.yaml
-  - codebuild-chat-assistant.yaml
-- `cognito-idp:DescribeUserPoolDomain`
-  - codebuild-application.yaml
-- `cognito-idp:GetGroup`
-  - codebuild-application.yaml
 - `cognito-idp:GetIdentityProviderByIdentifier`
   - iam-palantir-integration.yaml
 - `cognito-idp:ListIdentityProviders`
   - iam-palantir-integration.yaml
-- `cognito-idp:TagResource`
-  - codebuild-application.yaml
-- `cognito-idp:UntagResource`
-  - codebuild-application.yaml
-- `cognito-idp:UpdateGroup`
-  - codebuild-application.yaml
-- `cognito-idp:UpdateIdentityProvider`
-  - iam-palantir-integration.yaml
-- `cognito-idp:UpdateUserPool`
-  - codebuild-application.yaml
-- `cognito-idp:UpdateUserPoolClient`
-  - codebuild-application.yaml
-- `cognito-idp:UpdateUserPoolDomain`
-  - codebuild-application.yaml
 
-### `config` (18 unique actions)
+### `config` (5 unique actions)
 
-- `config:DeleteConfigRule`
-  - codebuild-security.yaml
-- `config:DeleteConfigurationRecorder`
-  - codebuild-security.yaml
-- `config:DeleteDeliveryChannel`
-  - codebuild-security.yaml
 - `config:DescribeComplianceByConfigRule`
-  - codebuild-security.yaml
-- `config:DescribeConfigRules`
   - codebuild-security.yaml
 - `config:DescribeConfigurationRecorderStatus`
   - codebuild-security.yaml
-- `config:DescribeConfigurationRecorders`
-  - codebuild-security.yaml
 - `config:DescribeDeliveryChannelStatus`
-  - codebuild-security.yaml
-- `config:DescribeDeliveryChannels`
   - codebuild-security.yaml
 - `config:GetComplianceDetailsByConfigRule`
   - codebuild-security.yaml
-- `config:PutConfigRule`
-  - codebuild-security.yaml
-- `config:PutConfigurationRecorder`
-  - codebuild-security.yaml
-- `config:PutDeliveryChannel`
-  - codebuild-security.yaml
 - `config:PutEvaluations`
-  - codebuild-security.yaml
-- `config:StartConfigurationRecorder`
-  - codebuild-security.yaml
-- `config:StopConfigurationRecorder`
-  - codebuild-security.yaml
-- `config:TagResource`
-  - codebuild-security.yaml
-- `config:UntagResource`
   - codebuild-security.yaml
 
 ### `cur` (2 unique actions)
@@ -790,115 +572,19 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - archive/opensearch-filesystem-index.yaml
   - irsa-aura-api.yaml
 
-### `events` (18 unique actions)
+### `events` (2 unique actions)
 
-- `events:CreateEventBus`
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - codebuild-serverless.yaml
-  - codebuild-vuln-scan.yaml
-- `events:DeleteEventBus`
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - codebuild-serverless.yaml
-  - codebuild-vuln-scan.yaml
-- `events:DeleteRule`
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 8 more templates
-- `events:DescribeEventBus`
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - codebuild-serverless.yaml
-  - codebuild-vuln-scan.yaml
-- `events:DescribeRule`
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 12 more templates
-- `events:DisableRule`
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - codebuild-runtime-security.yaml
-  - ...and 5 more templates
-- `events:EnableRule`
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - codebuild-runtime-security.yaml
-  - ...and 5 more templates
 - `events:ListRules`
   - codebuild-data.yaml
   - codebuild-observability.yaml
   - codebuild-security.yaml
   - codebuild-serverless.yaml
-- `events:ListTagsForResource`
-  - codebuild-incident-response.yaml
-- `events:ListTargetsByRule`
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - codebuild-runtime-security.yaml
-  - codebuild-sandbox.yaml
-  - ...and 3 more templates
 - `events:PutEvents`
   - checkpoint-websocket.yaml
   - dashboard-dynamodb.yaml
   - irsa-aura-api.yaml
   - model-assurance-pipeline.yaml
   - runtime-security-correlation.yaml
-  - ...and 4 more templates
-- `events:PutPermission`
-  - codebuild-observability.yaml
-  - codebuild-serverless.yaml
-- `events:PutRule`
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 11 more templates
-- `events:PutTargets`
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 11 more templates
-- `events:RemovePermission`
-  - codebuild-observability.yaml
-  - codebuild-serverless.yaml
-- `events:RemoveTargets`
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 8 more templates
-- `events:TagResource`
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - codebuild-runtime-security.yaml
-  - ...and 5 more templates
-- `events:UntagResource`
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - codebuild-runtime-security.yaml
   - ...and 4 more templates
 
 ### `execute-api` (1 unique actions)
@@ -1075,74 +761,16 @@ Each row below is an action that one of the platform's IAM resources lists, but 
 - `kms:ReEncrypt*`
   - account-migration-bootstrap.yaml
 
-### `lambda` (33 unique actions)
+### `lambda` (8 unique actions)
 
 - `lambda:*`
   - test-env-iam.yaml
-- `lambda:AddPermission`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
-- `lambda:CreateAlias`
-  - codebuild-serverless.yaml
-- `lambda:CreateEventSourceMapping`
-  - codebuild-data.yaml
-  - codebuild-serverless.yaml
-- `lambda:CreateFunction`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
 - `lambda:CreateFunctionUrlConfig`
-  - codebuild-serverless.yaml
-- `lambda:DeleteAlias`
-  - codebuild-serverless.yaml
-- `lambda:DeleteEventSourceMapping`
-  - codebuild-data.yaml
-  - codebuild-serverless.yaml
-- `lambda:DeleteFunction`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
-- `lambda:DeleteFunctionConcurrency`
-  - codebuild-chat-assistant.yaml
-  - codebuild-serverless-documentation.yaml
   - codebuild-serverless.yaml
 - `lambda:DeleteFunctionUrlConfig`
   - codebuild-serverless.yaml
-- `lambda:DeleteLayerVersion`
-  - codebuild-sandbox.yaml
-- `lambda:GetAlias`
-  - codebuild-serverless.yaml
-- `lambda:GetEventSourceMapping`
-  - codebuild-data.yaml
-  - codebuild-serverless.yaml
-- `lambda:GetFunction`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
-- `lambda:GetFunctionConfiguration`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
 - `lambda:GetFunctionUrlConfig`
   - codebuild-serverless.yaml
-- `lambda:GetLayerVersion`
-  - codebuild-sandbox.yaml
 - `lambda:InvokeFunction`
   - codebuild-chat-assistant.yaml
   - codebuild-incident-response.yaml
@@ -1155,59 +783,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - codebuild-serverless.yaml
 - `lambda:ListLayerVersions`
   - codebuild-sandbox.yaml
-- `lambda:ListTags`
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-security.yaml
-  - codebuild-vuln-scan.yaml
-- `lambda:PublishLayerVersion`
-  - codebuild-sandbox.yaml
-- `lambda:PublishVersion`
-  - codebuild-serverless.yaml
-- `lambda:PutFunctionConcurrency`
-  - codebuild-chat-assistant.yaml
-  - codebuild-serverless-documentation.yaml
-  - codebuild-serverless.yaml
-- `lambda:RemovePermission`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
-- `lambda:TagResource`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
-- `lambda:UntagResource`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
-- `lambda:UpdateAlias`
-  - codebuild-serverless.yaml
-- `lambda:UpdateEventSourceMapping`
-  - codebuild-data.yaml
-  - codebuild-serverless.yaml
-- `lambda:UpdateFunctionCode`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
-- `lambda:UpdateFunctionConfiguration`
-  - codebuild-chat-assistant.yaml
-  - codebuild-data.yaml
-  - codebuild-env-validator.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 6 more templates
 - `lambda:UpdateFunctionUrlConfig`
   - codebuild-serverless.yaml
 
@@ -1270,31 +845,17 @@ Each row below is an action that one of the platform's IAM resources lists, but 
 - `rds:CopyDBClusterSnapshot`
   - account-migration-bootstrap.yaml
 
-### `route53` (9 unique actions)
+### `route53` (5 unique actions)
 
-- `route53:ChangeResourceRecordSets`
-  - archive/multi-region-global.yaml
-  - codebuild-compute.yaml
-  - route53-cross-account-role.yaml
-- `route53:GetChange`
-  - codebuild-compute.yaml
-  - route53-cross-account-role.yaml
 - `route53:GetHealthCheck`
   - archive/multi-region-global.yaml
 - `route53:GetHealthCheckStatus`
   - archive/multi-region-global.yaml
-- `route53:GetHostedZone`
-  - codebuild-compute.yaml
-  - route53-cross-account-role.yaml
 - `route53:ListHealthChecks`
   - archive/multi-region-global.yaml
 - `route53:ListHostedZones`
   - route53-cross-account-role.yaml
 - `route53:ListHostedZonesByName`
-  - route53-cross-account-role.yaml
-- `route53:ListResourceRecordSets`
-  - archive/multi-region-global.yaml
-  - codebuild-compute.yaml
   - route53-cross-account-role.yaml
 
 ### `s3` (32 unique actions)
@@ -1407,60 +968,17 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - audit-pipeline.yaml
   - s3.yaml
 
-### `scheduler` (9 unique actions)
+### `scheduler` (2 unique actions)
 
-- `scheduler:CreateSchedule`
-  - codebuild-observability.yaml
-- `scheduler:DeleteSchedule`
-  - codebuild-observability.yaml
-- `scheduler:GetSchedule`
-  - codebuild-observability.yaml
-- `scheduler:GetScheduleGroup`
-  - codebuild-observability.yaml
 - `scheduler:ListScheduleGroups`
   - codebuild-observability.yaml
 - `scheduler:ListSchedules`
   - codebuild-observability.yaml
-- `scheduler:TagResource`
-  - codebuild-observability.yaml
-- `scheduler:UntagResource`
-  - codebuild-observability.yaml
-- `scheduler:UpdateSchedule`
-  - codebuild-observability.yaml
 
-### `servicecatalog` (32 unique actions)
+### `servicecatalog` (12 unique actions)
 
-- `servicecatalog:AssociatePrincipalWithPortfolio`
-  - codebuild-sandbox.yaml
-- `servicecatalog:AssociateProductWithPortfolio`
-  - codebuild-sandbox.yaml
-  - test-env-iam.yaml
-- `servicecatalog:CreateConstraint`
-  - codebuild-sandbox.yaml
-- `servicecatalog:CreatePortfolio`
-  - codebuild-sandbox.yaml
-- `servicecatalog:CreateProduct`
-  - codebuild-sandbox.yaml
-  - test-env-iam.yaml
-- `servicecatalog:CreateProvisioningArtifact`
-  - codebuild-sandbox.yaml
-  - test-env-iam.yaml
-- `servicecatalog:DeleteConstraint`
-  - codebuild-sandbox.yaml
-- `servicecatalog:DeletePortfolio`
-  - codebuild-sandbox.yaml
-- `servicecatalog:DeleteProduct`
-  - codebuild-sandbox.yaml
-- `servicecatalog:DeleteProvisioningArtifact`
-  - codebuild-sandbox.yaml
-  - test-env-iam.yaml
 - `servicecatalog:DescribeConstraint`
   - codebuild-sandbox.yaml
-- `servicecatalog:DescribePortfolio`
-  - codebuild-sandbox.yaml
-- `servicecatalog:DescribeProduct`
-  - codebuild-sandbox.yaml
-  - test-env-iam.yaml
 - `servicecatalog:DescribeProductAsAdmin`
   - codebuild-sandbox.yaml
 - `servicecatalog:DescribeProvisionedProduct`
@@ -1469,10 +987,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - test-env-iam.yaml
 - `servicecatalog:DescribeProvisioningParameters`
   - test-env-iam.yaml
-- `servicecatalog:DisassociatePrincipalFromPortfolio`
-  - codebuild-sandbox.yaml
-- `servicecatalog:DisassociateProductFromPortfolio`
-  - codebuild-sandbox.yaml
 - `servicecatalog:ListAcceptedPortfolioShares`
   - codebuild-sandbox.yaml
 - `servicecatalog:ListConstraintsForPortfolio`
@@ -1486,21 +1000,8 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - test-env-iam.yaml
 - `servicecatalog:SearchProductsAsAdmin`
   - codebuild-sandbox.yaml
-- `servicecatalog:TagResource`
-  - codebuild-sandbox.yaml
 - `servicecatalog:TerminateProvisionedProduct`
   - test-env-iam.yaml
-- `servicecatalog:UntagResource`
-  - codebuild-sandbox.yaml
-- `servicecatalog:UpdateConstraint`
-  - codebuild-sandbox.yaml
-- `servicecatalog:UpdatePortfolio`
-  - codebuild-sandbox.yaml
-- `servicecatalog:UpdateProduct`
-  - codebuild-sandbox.yaml
-  - test-env-iam.yaml
-- `servicecatalog:UpdateProvisioningArtifact`
-  - codebuild-sandbox.yaml
 
 ### `ses` (2 unique actions)
 
@@ -1524,43 +1025,10 @@ Each row below is an action that one of the platform's IAM resources lists, but 
 - `shield:GetSubscriptionState`
   - alb-controller.yaml
 
-### `sns` (15 unique actions)
+### `sns` (3 unique actions)
 
 - `sns:*`
   - test-env-iam.yaml
-- `sns:AddPermission`
-  - codebuild-runtime-security.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-security.yaml
-- `sns:CreateTopic`
-  - codebuild-application.yaml
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 8 more templates
-- `sns:DeleteTopic`
-  - codebuild-application.yaml
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 8 more templates
-- `sns:GetTopicAttributes`
-  - codebuild-application.yaml
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 8 more templates
-- `sns:ListSubscriptionsByTopic`
-  - codebuild-observability.yaml
-  - codebuild-security.yaml
-  - codebuild-serverless.yaml
-- `sns:ListTagsForResource`
-  - codebuild-incident-response.yaml
-  - codebuild-serverless-documentation.yaml
-  - codebuild-serverless.yaml
 - `sns:ListTopics`
   - codebuild-observability.yaml
   - codebuild-security.yaml
@@ -1572,64 +1040,16 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - aura-cost-alerts.yaml
   - calibration-pipeline.yaml
   - ...and 33 more templates
-- `sns:RemovePermission`
-  - codebuild-runtime-security.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-security.yaml
-- `sns:SetTopicAttributes`
-  - codebuild-application.yaml
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 7 more templates
-- `sns:Subscribe`
-  - codebuild-application.yaml
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 9 more templates
-- `sns:TagResource`
-  - codebuild-application.yaml
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 7 more templates
-- `sns:Unsubscribe`
-  - codebuild-application.yaml
-  - codebuild-bootstrap.yaml
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - ...and 9 more templates
-- `sns:UntagResource`
-  - codebuild-application.yaml
-  - codebuild-data.yaml
-  - codebuild-incident-response.yaml
-  - codebuild-observability.yaml
-  - codebuild-runtime-security.yaml
-  - ...and 6 more templates
 
-### `sqs` (15 unique actions)
+### `sqs` (5 unique actions)
 
 - `sqs:*`
   - test-env-iam.yaml
-- `sqs:AddPermission`
-  - codebuild-serverless.yaml
 - `sqs:ChangeMessageVisibility`
   - gpu-scheduler-irsa.yaml
   - iam-palantir-integration.yaml
   - orchestrator-dispatcher.yaml
   - serverless-permission-boundary.yaml
-- `sqs:CreateQueue`
-  - codebuild-data.yaml
-  - codebuild-observability.yaml
-  - codebuild-security.yaml
-  - codebuild-serverless-symbol-resolver.yaml
-  - codebuild-serverless.yaml
-  - ...and 1 more templates
 - `sqs:DeleteMessage`
   - capability-governance.yaml
   - constitutional-audit-queue.yaml
@@ -1637,31 +1057,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - iam-palantir-integration.yaml
   - irsa-aura-api.yaml
   - ...and 4 more templates
-- `sqs:DeleteQueue`
-  - codebuild-data.yaml
-  - codebuild-observability.yaml
-  - codebuild-security.yaml
-  - codebuild-serverless-symbol-resolver.yaml
-  - codebuild-serverless.yaml
-  - ...and 1 more templates
-- `sqs:GetQueueAttributes`
-  - capability-governance.yaml
-  - codebuild-data.yaml
-  - codebuild-observability.yaml
-  - codebuild-security.yaml
-  - codebuild-serverless-symbol-resolver.yaml
-  - ...and 11 more templates
-- `sqs:GetQueueUrl`
-  - codebuild-data.yaml
-  - codebuild-observability.yaml
-  - codebuild-security.yaml
-  - codebuild-serverless-symbol-resolver.yaml
-  - codebuild-serverless.yaml
-  - ...and 5 more templates
-- `sqs:ListQueueTags`
-  - codebuild-data.yaml
-  - codebuild-observability.yaml
-  - codebuild-serverless-symbol-resolver.yaml
 - `sqs:ReceiveMessage`
   - capability-governance.yaml
   - constitutional-audit-queue.yaml
@@ -1669,8 +1064,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - iam-palantir-integration.yaml
   - irsa-aura-api.yaml
   - ...and 4 more templates
-- `sqs:RemovePermission`
-  - codebuild-serverless.yaml
 - `sqs:SendMessage`
   - capability-governance.yaml
   - gpu-scheduler-irsa.yaml
@@ -1678,27 +1071,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - irsa-aura-api.yaml
   - realtime-monitoring.yaml
   - ...and 4 more templates
-- `sqs:SetQueueAttributes`
-  - codebuild-data.yaml
-  - codebuild-observability.yaml
-  - codebuild-security.yaml
-  - codebuild-serverless-symbol-resolver.yaml
-  - codebuild-serverless.yaml
-  - ...and 1 more templates
-- `sqs:TagQueue`
-  - codebuild-data.yaml
-  - codebuild-observability.yaml
-  - codebuild-security.yaml
-  - codebuild-serverless-symbol-resolver.yaml
-  - codebuild-serverless.yaml
-  - ...and 1 more templates
-- `sqs:UntagQueue`
-  - codebuild-data.yaml
-  - codebuild-observability.yaml
-  - codebuild-security.yaml
-  - codebuild-serverless-symbol-resolver.yaml
-  - codebuild-serverless.yaml
-  - ...and 1 more templates
 
 ### `ssm` (2 unique actions)
 
@@ -1712,36 +1084,14 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - runtime-security-discovery.yaml
   - ...and 1 more templates
 
-### `states` (19 unique actions)
+### `states` (10 unique actions)
 
 - `states:*`
   - test-env-iam.yaml
-- `states:CreateActivity`
-  - codebuild-sandbox.yaml
-- `states:CreateStateMachine`
-  - codebuild-incident-response.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-  - codebuild-ssr.yaml
-  - codebuild-vuln-scan.yaml
-- `states:DeleteActivity`
-  - codebuild-sandbox.yaml
-- `states:DeleteStateMachine`
-  - codebuild-incident-response.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-  - codebuild-ssr.yaml
-  - codebuild-vuln-scan.yaml
 - `states:DescribeExecution`
   - dr-compliance-controls.yaml
   - orchestrator-dispatcher.yaml
   - test-env-iam.yaml
-- `states:DescribeStateMachine`
-  - codebuild-incident-response.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-  - codebuild-ssr.yaml
-  - codebuild-vuln-scan.yaml
 - `states:DescribeStateMachineForExecution`
   - codebuild-serverless.yaml
 - `states:GetExecutionHistory`
@@ -1751,9 +1101,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - codebuild-sandbox.yaml
   - codebuild-serverless.yaml
   - codebuild-ssr.yaml
-- `states:ListTagsForResource`
-  - codebuild-incident-response.yaml
-  - codebuild-serverless.yaml
 - `states:SendTaskFailure`
   - dr-compliance-controls.yaml
   - hitl-callback.yaml
@@ -1769,24 +1116,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - test-env-iam.yaml
 - `states:StopExecution`
   - test-env-iam.yaml
-- `states:TagResource`
-  - codebuild-incident-response.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-  - codebuild-ssr.yaml
-  - codebuild-vuln-scan.yaml
-- `states:UntagResource`
-  - codebuild-incident-response.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-  - codebuild-ssr.yaml
-  - codebuild-vuln-scan.yaml
-- `states:UpdateStateMachine`
-  - codebuild-incident-response.yaml
-  - codebuild-sandbox.yaml
-  - codebuild-serverless.yaml
-  - codebuild-ssr.yaml
-  - codebuild-vuln-scan.yaml
 
 ### `sts` (1 unique actions)
 

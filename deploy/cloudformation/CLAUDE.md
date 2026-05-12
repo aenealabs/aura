@@ -58,14 +58,18 @@ Where `N` = layer number (1-8) and `S` = sub-layer number within that layer.
 
 ---
 
-## IAM Policy Size Limit - 10KB Maximum
+## IAM Policy Size Limits - Inline 10KB / Managed 6,144 chars
 
-AWS enforces a **hard 10,240 byte limit** on inline IAM policies.
+AWS enforces **two distinct size limits** on IAM policies:
+
+- **Inline policies:** hard 10,240 byte limit
+- **Managed policies:** hard 6,144 character limit (post-whitespace-strip)
 
 **Check policy size BEFORE adding new permissions:**
 - Read the existing template and count approximate bytes in the inline policy
 - If adding permissions to a large policy (>300 lines), proactively create a managed policy
 - Never add permissions to inline policies that are already close to the limit
+- For managed policies, watch the 6,144-char ceiling -- the ADR-092 Wave 13 follow-up surfaced this limit and Wave 14 resolved it by splitting one oversized scoped policy into five tier-based managed policies
 
 **Managed policy pattern (REQUIRED when inline policy is large):**
 ```yaml
@@ -89,7 +93,12 @@ NewPermissionsManagedPolicy:
 - Avoid duplicate ARN patterns across statements
 
 **When limit is hit:** Do NOT disable features - split into managed policies attached to the role.
-See `deploy/cloudformation/codebuild-observability.yaml` for managed policy pattern example.
+
+**Canonical multi-policy split precedent (size-constrained scoped policies):**
+- **ADR-092 (CFN Deploy-Role Wildcard Scoping)** is the canonical reference for the 5-policy split pattern on size-constrained scoped policies. See `iam.yaml` `CloudFormationScopedManagedPolicy*` resources, split by lifecycle blast-radius tier: **Data / Compute / EC2OperateAndStorage / EventsAndIntegration / PlatformManagement**. All under 6,144 chars with headroom; coverage byte-identical before/after split (Sally verified).
+- Earlier precedent: `deploy/cloudformation/codebuild-observability.yaml` (single managed-policy pattern, simpler scope).
+- Design canon: `docs/architecture-decisions/ADR-092-cfn-deploy-role-wildcard-scoping.md` for the full 8-statement structure rationale and the `UseLegacyDeployRole` blue/green rollback parameter.
+- Offline static action scanner that verifies policy coverage against actual CFN template usage: `scripts/adr_092_static_action_scan.py`. Report: `docs/assessments/ADR_092_STATIC_SCAN_REPORT.md`.
 
 ---
 

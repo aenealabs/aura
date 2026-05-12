@@ -1,6 +1,6 @@
 # Project Aura - Documentation Index
 
-**Last Updated:** May 11, 2026
+**Last Updated:** May 12, 2026
 **Purpose:** Master index for all project documentation with clear organization
 
 ---
@@ -329,6 +329,7 @@ Technical documentation for developers, cybersecurity professionals, and IT admi
 | [assessments/AWS_WELL_ARCHITECTED_CICD_ASSESSMENT.md](assessments/AWS_WELL_ARCHITECTED_CICD_ASSESSMENT.md) | AWS Well-Architected CI/CD assessment | Nov 2025 |
 | [assessments/AWS_WELL_ARCHITECTED_PLATFORM_ASSESSMENT.md](assessments/AWS_WELL_ARCHITECTED_PLATFORM_ASSESSMENT.md) | AWS Well-Architected Platform assessment | Dec 2025 |
 | [assessments/TIME_SPACE_COMPLEXITY_AUDIT.md](assessments/TIME_SPACE_COMPLEXITY_AUDIT.md) | Codebase time/space complexity audit (87 findings, issues #701-#704) | Feb 26, 2026 |
+| [assessments/ADR_092_STATIC_SCAN_REPORT.md](assessments/ADR_092_STATIC_SCAN_REPORT.md) | ADR-092 offline static-action-scan report: coverage gaps between `CloudFormationServiceRole` scoped policy and actions used across all 187 CFN templates (Phase 1 cost-gate substitute) | May 12, 2026 |
 
 ### Planning (docs/planning/)
 | File | Purpose | Last Updated |
@@ -482,6 +483,7 @@ Comprehensive certification roadmaps for government and defense market access.
 |------|---------|
 | [../scripts/cfn-lint-wrapper.sh](../scripts/cfn-lint-wrapper.sh) | Wrapper script for cfn-lint with standardized exit code handling |
 | [../scripts/validate_iam_actions.py](../scripts/validate_iam_actions.py) | IAM action validation against AWS service database |
+| [../scripts/adr_092_static_action_scan.py](../scripts/adr_092_static_action_scan.py) | Offline ADR-092 static action scanner (Phase 1 cost-gate substitute): parses all CFN templates, cross-references actions with `CloudFormationServiceRole` scoped policy, reports coverage gaps. 37 unit tests in `tests/scripts/test_adr_092_static_action_scan.py`. |
 | [../.github/workflows/nightly-iam-validation.yml](../.github/workflows/nightly-iam-validation.yml) | Nightly validation of CloudFormation templates and IAM actions |
 
 ### Buildspecs & Deployment Scripts (deploy/buildspecs/, deploy/scripts/)
@@ -696,7 +698,7 @@ All services follow the base/overlay Kustomize pattern. Use overlays for environ
 | File | Purpose |
 |------|---------|
 | [../frontend/README.md](../frontend/README.md) | Frontend quick start and API integration guide |
-| [../frontend/package.json](../frontend/package.json) | NPM dependencies (React 18, Vite 6, Tailwind) |
+| [../frontend/package.json](../frontend/package.json) | NPM dependencies (React 19, JavaScript, Vite 6, Tailwind) |
 | [../frontend/vite.config.js](../frontend/vite.config.js) | Vite config with API proxy |
 | [../frontend/src/components/ApprovalDashboard.jsx](../frontend/src/components/ApprovalDashboard.jsx) | HITL approval workflow UI |
 | [../frontend/src/components/LoginPage.jsx](../frontend/src/components/LoginPage.jsx) | Cognito OAuth login page |
@@ -714,6 +716,18 @@ All services follow the base/overlay Kustomize pattern. Use overlays for environ
 | File | Purpose |
 |------|---------|
 | [../frontend/src/hooks/useFocusTrap.jsx](../frontend/src/hooks/useFocusTrap.jsx) | Focus trap hook for modal accessibility (WCAG 2.1 AA compliance) |
+
+### GTM Wave 8/9 Stub Backend Endpoints (Top-Level Dashboard Widgets + HealthCheckModal)
+
+Added during GTM-readiness Waves 8 and 9 (issue #163) to live-wire previously-MOCK-only dashboard widgets and modal.
+
+| File | Purpose |
+|------|---------|
+| [../src/api/dashboard_metrics_endpoints.py](../src/api/dashboard_metrics_endpoints.py) | 5 FastAPI endpoints (MTTR, asset-criticality, compliance-drift, insider-risk, health) backing the four top-level dashboard widgets that previously imported from MOCK. Wave 8 (commit 8197263). |
+| [../frontend/src/services/dashboardMetricsApi.js](../frontend/src/services/dashboardMetricsApi.js) | JavaScript API client for `dashboard_metrics_endpoints.py`. `DemoDataBadge` markers removed from the wired widgets. |
+| [../src/api/system_health_endpoints.py](../src/api/system_health_endpoints.py) | `GET /api/v1/system-health` stub endpoint backing the HealthCheckModal. Wave 9 (commit 996b2d8). |
+| [../frontend/src/services/systemHealthApi.js](../frontend/src/services/systemHealthApi.js) | JavaScript API client for `system_health_endpoints.py`. |
+| [../tests/api/test_dashboard_metrics_endpoints.py](../tests/api/test_dashboard_metrics_endpoints.py) | 6 endpoint tests for the Wave 8 dashboard-metrics stub backend. |
 
 ### Repository Onboarding Components (ADR-043)
 | File | Purpose |
@@ -981,6 +995,7 @@ Detailed technical specifications for complex architectural components.
 | [architecture-decisions/ADR-087-hyperscale-agent-orchestration.md](architecture-decisions/ADR-087-hyperscale-agent-orchestration.md) | Phase 1 Deployed | Hyperscale Agent Orchestration (3 Execution Tiers, Integration Mode Gating, Graduated Security Gates, 1,000+ Agent Scaling) |
 | [architecture-decisions/ADR-088-continuous-model-assurance.md](architecture-decisions/ADR-088-continuous-model-assurance.md) | Implemented (All 3 Phases) | Continuous Model Assurance (CGE Regression-Floor, Adapter Registry, 6-Axis MA1-MA6 Domain, Scout Agent, Model Provenance with Sigstore, Frozen Reference Oracle, Step Functions Pipeline, Zero-Egress Sandbox, Anti-Goodhart Controls, Rollback, CloudTrail Audit) |
 | [architecture-decisions/ADR-089-long-horizon-security-campaigns.md](architecture-decisions/ADR-089-long-horizon-security-campaigns.md) | Proposed (Phase 1 In-Process) | Long-Horizon Security Campaigns (Multi-Hour Autonomous Workloads, Step Functions Standard Substrate, Operation Ledger Idempotency, Per-Token Cost Tracker with Graceful-Stop Reservation, Tenant Cost Rollup, Drift Detector, Checkpoint Store, State Store with Optimistic Concurrency, Phase Abstraction with Harness-Driven Loop Control, ComplianceHardeningWorker Stub) |
+| [architecture-decisions/ADR-092-cfn-deploy-role-wildcard-scoping.md](architecture-decisions/ADR-092-cfn-deploy-role-wildcard-scoping.md) | Accepted (v2); Phase 2 Code Merged; Deploy Phases Deferred (Cost Gate) | CloudFormation Deploy-Role Wildcard Scoping (8-Statement Scoped Structure, Self-Broadening Deny [T1098.001], PassRole `PassedToService` Constraint [T1078.004], Project-Tag Deny, `UseLegacyDeployRole` Blue/Green Rollback, 5-Policy Split by Blast-Radius Tier for 6,144-Char Managed-Policy Limit, Offline Static-Action Scanner Phase 1 Substitute) |
 
 ### Runtime Agent Security Platform (ADR-083)
 | File | Purpose |

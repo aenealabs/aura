@@ -17,7 +17,7 @@
 - **GitOps Operations:** [ARGOCD_RUNBOOK.md](runbooks/ARGOCD_RUNBOOK.md)
 - **E2E Testing:** [E2E_TESTING_RUNBOOK.md](runbooks/E2E_TESTING_RUNBOOK.md)
 - **For AI Assistants:** [CLAUDE.md](../CLAUDE.md) + [GUARDRAILS.md](../agent-config/GUARDRAILS.md)
-- **Current Status:** [PROJECT_STATUS.md](../PROJECT_STATUS.md) + [CHANGELOG.md](../CHANGELOG.md)
+- **Current Status:** [PROJECT_STATUS.md](PROJECT_STATUS.md) + [CHANGELOG.md](../CHANGELOG.md)
 - **Architecture:** [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)
 
 ---
@@ -1590,7 +1590,7 @@ Standalone HTML documents for presenting platform capabilities to technical and 
 
 ### For AI Assistants (Claude Code)
 1. **Context Loading:** ../CLAUDE.md (always loaded first)
-2. **Current State:** ../PROJECT_STATUS.md
+2. **Current State:** PROJECT_STATUS.md
 3. **Recent Changes:** ../CHANGELOG.md
 4. **Institutional Memory:** ../agent-config/GUARDRAILS.md
 5. **Reference Documents:** Use file paths, don't read unless editing

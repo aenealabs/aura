@@ -299,8 +299,9 @@ class TestIntegrityVerificationService:
 class TestIntegrityServiceSingleton:
     """Tests for global singleton management."""
 
-    def test_get_integrity_service(self):
+    def test_get_integrity_service(self, monkeypatch):
         """Test getting global service instance."""
+        monkeypatch.setenv("AURA_INTEGRITY_HMAC_KEY", "test-singleton-hmac-key")
         service = get_integrity_service()
         assert service is not None
 
@@ -314,8 +315,9 @@ class TestIntegrityServiceSingleton:
         assert service is not None
         assert service._cache_ttl == 120
 
-    def test_reset_integrity_service(self):
+    def test_reset_integrity_service(self, monkeypatch):
         """Test resetting global service."""
+        monkeypatch.setenv("AURA_INTEGRITY_HMAC_KEY", "test-singleton-hmac-key")
         service1 = get_integrity_service()
         reset_integrity_service()
         service2 = get_integrity_service()

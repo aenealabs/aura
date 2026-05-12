@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Bootstrap Layer CodeBuild Project (Layer 0: Deploys All 24 CodeBuild Projects)'
+Description: 'Project Aura - Bootstrap Layer CodeBuild Project (Layer 0: Deploys 24 Downstream CodeBuild Projects)'
 
 # =============================================================================
 # BOOTSTRAP LAYER - ONE-TIME MANUAL DEPLOYMENT
@@ -8,9 +8,12 @@ Description: 'Project Aura - Bootstrap Layer CodeBuild Project (Layer 0: Deploys
 # projects. It solves the chicken-and-egg problem for fresh account deployments.
 #
 # DEPLOYMENT SEQUENCE:
-#   1. Manual: Deploy this template (codebuild-bootstrap.yaml) - ONE TIME
+#   1. Manual: Deploy this template (codebuild-bootstrap.yaml) - ONE TIME.
+#      This creates exactly one CodeBuild project (the bootstrap project itself).
 #   2. Manual: Create SSM parameter /aura/global/codeconnections-arn
-#   3. Trigger: aura-bootstrap-deploy-{env} - deploys all 24 CodeBuild projects
+#   3. Trigger: aura-bootstrap-deploy-{env} - deploys 24 additional downstream
+#      CodeBuild projects (one per layer/sub-layer). Total CodeBuild projects
+#      in the account after step 3: 25 (1 bootstrap + 24 downstream).
 #   4. Trigger: aura-foundation-deploy-{env} - deploys Foundation infrastructure
 #   5. Trigger: Remaining layers (data, compute, application, etc.)
 #

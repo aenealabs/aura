@@ -227,7 +227,7 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 - **Infrastructure:** CloudFormation, Terraform (planned)
 - **Compute:** EKS on EC2 (GovCloud compatible), ECS on Fargate (for dnsmasq VPC-wide service)
 - **DNS/Service Discovery:** dnsmasq (3-tier architecture)
-- **Frontend (Future):** React 18+, TypeScript, Tailwind CSS, Next.js 14+
+- **Frontend:** React 19, JavaScript (no TypeScript), Tailwind CSS, Vite. (Earlier roadmap entries that referenced TypeScript + Next.js are obsolete; see `frontend/package.json` for canonical versions.)
 - **Deployment Strategy:** AWS Commercial Cloud (dev/qa) → AWS GovCloud (US) (production)
 
 ### Service Discovery Endpoints

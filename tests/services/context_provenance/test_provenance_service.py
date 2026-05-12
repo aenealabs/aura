@@ -254,8 +254,9 @@ class TestContentProvenanceService:
 class TestProvenanceServiceSingleton:
     """Tests for global singleton management."""
 
-    def test_get_provenance_service(self):
+    def test_get_provenance_service(self, monkeypatch):
         """Test getting global service instance."""
+        monkeypatch.setenv("AURA_PROVENANCE_HMAC_KEY", "test-singleton-hmac-key")
         service = get_provenance_service()
         assert service is not None
 
@@ -271,8 +272,9 @@ class TestProvenanceServiceSingleton:
         service2 = get_provenance_service()
         assert service is service2
 
-    def test_reset_provenance_service(self):
+    def test_reset_provenance_service(self, monkeypatch):
         """Test resetting global service."""
+        monkeypatch.setenv("AURA_PROVENANCE_HMAC_KEY", "test-singleton-hmac-key")
         service1 = get_provenance_service()
         reset_provenance_service()
         service2 = get_provenance_service()

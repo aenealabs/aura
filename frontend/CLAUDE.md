@@ -22,11 +22,11 @@
 
 ## Technology Stack
 
-- **Framework:** React 18+, Next.js 14+
-- **Language:** TypeScript (strict mode, avoid `any`)
+- **Framework:** React 19, Vite (no Next.js)
+- **Language:** JavaScript with JSX (no TypeScript). When converting modules to TS, do it incrementally per-file and update this entry.
 - **Styling:** Tailwind CSS
 - **State Management:** Follow existing patterns in the codebase
-- **Build:** Node 20 (private ECR base image: `aura-base-images/node:20-slim`)
+- **Build:** Node 20 (private ECR base image: `aura-base-images/node:20-slim`); bundle via Vite + Rollup
 
 ---
 

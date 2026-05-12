@@ -95,8 +95,11 @@ const ResetPasswordPage = lazy(() =>
   import('./components/auth').then((m) => ({ default: m.ResetPasswordPage }))
 );
 
-// ProtectedRoute is kept static as it's part of the critical auth path
-import { ProtectedRoute } from './components/auth';
+// ProtectedRoute is part of the critical auth path so it's imported
+// statically. Import directly from its module file (not the auth barrel
+// `./components/auth`) so Rollup can keep LoginPage/SignUpPage/etc. in
+// their own lazy chunks instead of dragging them in via the barrel.
+import ProtectedRoute from './components/auth/ProtectedRoute';
 
 /**
  * Error Tracking Initializer Component

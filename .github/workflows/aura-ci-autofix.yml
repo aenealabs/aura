@@ -281,7 +281,7 @@ jobs:
 
       - name: Open fixup PR for protected branch
         if: steps.changes.outputs.has_changes == 'true' && steps.target.outputs.open_pr == 'true'
-        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: chore/auto-fix-${{ github.event.workflow_run.id || 'manual' }}

@@ -2,13 +2,42 @@
 
 ## Status
 
-**Accepted (v2)** | May 12, 2026
+**Accepted (v2) — Phase 2 code merged; deploy phases Deferred (Cost Gate)** | May 12, 2026
+
+### Phase tracker
+
+| Phase | Description | State | Blocker | Re-engage when |
+|---|---|---|---|---|
+| **1 — Inventory** | CloudTrail Lake query + `cfn-policy-validator` + DR replay + cold-path checklist | **Deferred (Cost Gate)** | Requires live AWS account access for CloudTrail Lake, IAM Access Analyzer, and 30-day log retention | Live-AWS budget restored, OR offline static-analysis substitute lands (see "Offline alternatives" below) |
+| **2 — Code (in-repo)** | New parameter + conditions + 2 managed policies + 8-statement role rewrite | ✅ **Done** (commit `970371a`, May 12, 2026) | — | — |
+| **3 — Validate dev** | `cloudformation deploy iam.yaml` to dev with `UseLegacyDeployRole=false`, exercise every CodeBuild project, capture AccessDenied | **Deferred (Cost Gate)** | Requires live AWS dev account + active CodeBuild projects | Live-AWS budget restored |
+| **3.5 — Rollback exercise** | Deliberately fail a deploy to exercise rollback paths | **Deferred (Cost Gate)** | Requires live dev account | Live-AWS budget restored |
+| **4 — Validate QA** | Same flow against QA; 24-h zero-AccessDenied watch | **Deferred (Cost Gate)** | Requires live AWS QA account | Live-AWS budget restored |
+| **5 — Production rollout** | Behind ADR-032 HITL approval gate (this is credential-modification scope per ADR-086 `IMMUTABLE_GUARDRAILS`) | **Deferred (Cost Gate)** | Requires live AWS prod account | Live-AWS budget restored AND Phase 3+4 green |
+| **6 — Documentation** | Update root `CLAUDE.md` IAM-wildcards section, ADR-041 affected-templates table, add annual-review commitment, close #182 IAM line | **Deferred (Cost Gate)** | Belongs after Phases 3–5 succeed so the docs reflect deployed reality, not aspiration | After Phase 5 succeeds |
+
+### Cost gate context
+
+The platform is self-funded; live-AWS validation has been paused to control cost. The Phase 2 code change is safe to ship because:
+
+- The new `UseLegacyDeployRole=true` rollback path preserves the pre-ADR-092 behavior byte-for-byte (single 16-service wildcard, region-conditioned). Anyone who deploys this template **today** with the default `UseLegacyDeployRole=false` will get the scoped policy; with `UseLegacyDeployRole=true` they get the original.
+- No live deployment is required for the code to be reviewed, merged, or referenced.
+- The deploy phases (3, 3.5, 4, 5) carry deployment risk that can only be retired by exercising them against live AWS — that's the cost gate.
+
+### Offline alternatives (no AWS account required)
+
+To make progress on Phase 1 risk without live AWS, the following local-only activities are possible and would reduce the cold-start risk when the cost gate eventually opens:
+
+1. **Static template scan** — write a Python script that parses every `deploy/cloudformation/*.yaml` looking for `AWS::IAM::Role`, `AWS::IAM::Policy`, `AWS::IAM::ManagedPolicy` resources, extracts the union of `Action:` lists, and cross-references against what the new `CloudFormationScopedManagedPolicy` grants. Surfaces any action the platform uses that's missing from the new policy. ~half-day of work. **Recommended as a deferred-Phase-1 substitute when the cost gate next opens.**
+2. **cfn-lint W3037 audit** — already done; iam.yaml passes clean.
+3. **Manual cold-path review** — walk the ADR-092 §Migration cold-path checklist (12 specific actions: rollback, DR restore, drift, fresh-account bootstrap, cross-region replication, Neptune restore) against the new scoped policy by inspection. ~1 hour.
 
 ### Revision history
 
-- **v1** (May 12, 2026) — Initial draft. Three options (A/B/C) with C recommended. Drafted in response to issue #182 IAM-wildcards line item.
-- **v2** (May 12, 2026) — Revised after three independent expert reviews (AWS/IAM architect, cybersecurity analyst, senior code reviewer). Material corrections to the per-service scoping table, added Self-Broadening Deny and `iam:PassedToService` constraint, re-labeled prod-pattern Deny as a safety control with a separate security Deny added, expanded to 8-statement structure, planned managed-policy split from day one, expanded Phase 1 inventory beyond CloudTrail-only, replaced inline `!If` rollback with dual-managed-policy or separate-template pattern.
-- **Accepted** (May 12, 2026) — Owner accepted v2 unmodified. Phase 2 (code change) committed in the same change set. Phase 1 (CloudTrail inventory) and Phases 3–5 (deploy + rollback exercise + production + docs) pending live AWS access.
+- **v1** (May 12, 2026) — Initial draft. Three options (A/B/C) with C recommended.
+- **v2** (May 12, 2026) — Revised after three independent expert reviews (AWS/IAM architect, cybersecurity analyst, senior code reviewer). Material corrections to the per-service scoping table, added Self-Broadening Deny and `iam:PassedToService` constraint, re-labeled prod-pattern Deny as a safety control, expanded to 8-statement structure, planned managed-policy split, replaced inline `!If` rollback with dual-managed-policy.
+- **Accepted** (May 12, 2026) — Owner accepted v2 unmodified. Phase 2 code committed (commit `970371a`).
+- **Deploy Deferred** (May 12, 2026) — Platform is self-funded; live-AWS validation paused. Phases 1, 3, 3.5, 4, 5, 6 marked Deferred (Cost Gate). Re-engage when budget is restored.
 
 ## Context
 

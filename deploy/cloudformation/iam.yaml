@@ -1053,7 +1053,14 @@ Resources:
                 Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/*'
 
               # Bedrock Guardrails - Create/manage guardrails via CloudFormation
-              # Required for AWS::Bedrock::Guardrail and AWS::Bedrock::GuardrailVersion resources
+              # Required for AWS::Bedrock::Guardrail and AWS::Bedrock::GuardrailVersion resources.
+              #
+              # NOTE: AWS Bedrock does NOT expose separate IAM actions for guardrail
+              # version operations (DeleteGuardrailVersion / GetGuardrailVersion /
+              # ListGuardrailVersions). Version reads use GetGuardrail with a version
+              # parameter; deleting the parent guardrail removes all versions.
+              # Previously this list included those three non-existent actions which
+              # AWS silently ignored - removed during ADR-092 cleanup.
               - Effect: Allow
                 Action:
                   - bedrock:CreateGuardrail
@@ -1062,9 +1069,6 @@ Resources:
                   - bedrock:UpdateGuardrail
                   - bedrock:ListGuardrails
                   - bedrock:CreateGuardrailVersion
-                  - bedrock:DeleteGuardrailVersion
-                  - bedrock:GetGuardrailVersion
-                  - bedrock:ListGuardrailVersions
                   - bedrock:TagResource
                   - bedrock:UntagResource
                   - bedrock:ListTagsForResource

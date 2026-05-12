@@ -77,6 +77,7 @@ from src.api.security_incidents_endpoints import router as security_incidents_ro
 from src.api.security_middleware import add_security_middleware
 from src.api.settings_endpoints import router as settings_router
 from src.api.sla_endpoints import router as sla_router
+from src.api.system_health_endpoints import router as system_health_router
 from src.api.team_endpoints import router as team_router
 from src.api.ticketing_endpoints import router as ticketing_router
 from src.api.trace_endpoints import router as trace_router
@@ -1131,6 +1132,14 @@ app.include_router(widget_router)
 # ============================================================================
 
 app.include_router(dashboard_metrics_router)
+
+# ============================================================================
+# Internal System Health Endpoint (#182 Wave 9)
+# Backs HealthCheckModal. NOT to be confused with health_metrics_endpoints
+# (customer-tenant health rollup in SaaS mode).
+# ============================================================================
+
+app.include_router(system_health_router)
 
 # ============================================================================
 # Guardrails Configuration Endpoints (ADR-069)

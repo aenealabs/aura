@@ -39,6 +39,23 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
     // CSS code splitting for lazy-loaded routes
     cssCodeSplit: true,
+    // Vite emits `<link rel="modulepreload">` tags into index.html for
+    // chunks reachable from the entry's static + dynamic import graph.
+    // That's a problem for vendor-mermaid (2.99 MB) and vendor-grid:
+    // they're behind dynamic imports, but the entry graph touches the
+    // dynamic-import site, so Vite preloads them on every page. The
+    // resolveDependencies callback below filters those heavy lazy
+    // chunks out of the preload list so they only load when actually
+    // requested (e.g. user opens a graph view or renders a Mermaid
+    // diagram in chat). See #182.
+    modulePreload: {
+      polyfill: true,
+      resolveDependencies: (_filename, deps) =>
+        deps.filter((dep) => {
+          const lazyOnlyChunks = ['vendor-mermaid', 'vendor-grid'];
+          return !lazyOnlyChunks.some((chunk) => dep.includes(`${chunk}-`));
+        }),
+    },
     rollupOptions: {
       output: {
         // Function-based manual chunks for precise control

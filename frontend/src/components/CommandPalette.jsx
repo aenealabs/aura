@@ -48,6 +48,7 @@ function useDebounce(value, delay = 150) {
 }
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from './ui/Toast';
 import {
   HomeIcon,
   CodeBracketIcon,
@@ -253,6 +254,7 @@ export function CommandPaletteProvider({ children }) {
 
 function CommandPaletteModal({ isOpen, onClose }) {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const inputRef = useRef(null);
   const listRef = useRef(null);
   const [query, setQuery] = useState('');
@@ -411,10 +413,13 @@ function CommandPaletteModal({ isOpen, onClose }) {
   const handleAction = (action) => {
     switch (action) {
       case 'scan':
-        // TODO: Implement security scan trigger
+        navigate('/security/scanner');
+        toast.info('Launch a scan from the Active Scans panel.');
         break;
       case 'health':
-        // TODO: Implement health check trigger
+        toast.info(
+          'System health is available from the user menu in the header.',
+        );
         break;
       case 'refresh':
         window.location.reload();

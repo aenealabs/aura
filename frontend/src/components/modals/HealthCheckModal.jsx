@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { getSystemHealth } from '../../services/systemHealthApi';
 import {
   XMarkIcon,
   HeartIcon,
@@ -300,160 +301,6 @@ function HealthSummary({ healthData, loading }) {
 }
 
 /**
- * Mock health data generator
- */
-function generateMockHealthData() {
-  return {
-    overallStatus: 'healthy',
-    summary: 'All 12 services are operating normally',
-    healthyServices: 11,
-    degradedServices: 1,
-    unhealthyServices: 0,
-    lastUpdated: new Date().toLocaleTimeString(),
-    categories: {
-      agents: {
-        status: 'healthy',
-        services: [
-          {
-            name: 'Orchestrator Agent',
-            status: 'healthy',
-            metrics: [
-              { label: 'Active Tasks', value: '3' },
-              { label: 'Success Rate', value: '99.2%' },
-              { label: 'Avg Response', value: '245ms' },
-            ],
-          },
-          {
-            name: 'Coder Agent',
-            status: 'healthy',
-            metrics: [
-              { label: 'Patches Generated', value: '12' },
-              { label: 'In Progress', value: '2' },
-              { label: 'Queue Depth', value: '5' },
-            ],
-          },
-          {
-            name: 'Reviewer Agent',
-            status: 'healthy',
-            metrics: [
-              { label: 'Reviews Today', value: '28' },
-              { label: 'Avg Duration', value: '4.2m' },
-            ],
-          },
-          {
-            name: 'Validator Agent',
-            status: 'healthy',
-            metrics: [
-              { label: 'Tests Run', value: '156' },
-              { label: 'Pass Rate', value: '98.7%' },
-            ],
-          },
-        ],
-      },
-      databases: {
-        status: 'healthy',
-        services: [
-          {
-            name: 'Neptune (Graph DB)',
-            status: 'healthy',
-            metrics: [
-              { label: 'Nodes', value: '12,847' },
-              { label: 'Edges', value: '38,291' },
-              { label: 'Avg Latency', value: '42ms' },
-            ],
-          },
-          {
-            name: 'OpenSearch (Vector)',
-            status: 'healthy',
-            metrics: [
-              { label: 'Documents', value: '245,912' },
-              { label: 'Index Size', value: '2.4 GB' },
-              { label: 'Query Latency', value: '18ms' },
-            ],
-          },
-          {
-            name: 'DynamoDB',
-            status: 'healthy',
-            metrics: [
-              { label: 'Tables', value: '8' },
-              { label: 'Read Capacity', value: '85%' },
-              { label: 'Write Capacity', value: '23%' },
-            ],
-          },
-        ],
-      },
-      api: {
-        status: 'degraded',
-        services: [
-          {
-            name: 'API Gateway',
-            status: 'healthy',
-            metrics: [
-              { label: 'Requests/min', value: '1,234' },
-              { label: 'Error Rate', value: '0.02%' },
-              { label: 'P95 Latency', value: '127ms' },
-            ],
-          },
-          {
-            name: 'Context Retrieval Service',
-            status: 'degraded',
-            metrics: [
-              { label: 'Cache Hit Rate', value: '72%' },
-              { label: 'Avg Response', value: '345ms' },
-            ],
-            message: 'Elevated latency detected. Auto-scaling in progress.',
-          },
-        ],
-      },
-      llm: {
-        status: 'healthy',
-        services: [
-          {
-            name: 'AWS Bedrock',
-            status: 'healthy',
-            metrics: [
-              { label: 'Model', value: 'Claude 3.5 Sonnet' },
-              { label: 'Tokens Today', value: '2.4M' },
-              { label: 'Avg Latency', value: '1.2s' },
-            ],
-          },
-          {
-            name: 'Embedding Service',
-            status: 'healthy',
-            metrics: [
-              { label: 'Model', value: 'Titan Embed v2' },
-              { label: 'Embeddings/hr', value: '12,456' },
-            ],
-          },
-        ],
-      },
-      infrastructure: {
-        status: 'healthy',
-        services: [
-          {
-            name: 'EKS Cluster',
-            status: 'healthy',
-            metrics: [
-              { label: 'Nodes', value: '6' },
-              { label: 'CPU Usage', value: '45%' },
-              { label: 'Memory', value: '62%' },
-            ],
-          },
-          {
-            name: 'Sandbox Network',
-            status: 'healthy',
-            metrics: [
-              { label: 'Active Sandboxes', value: '3' },
-              { label: 'Available', value: '7' },
-            ],
-          },
-        ],
-      },
-    },
-  };
-}
-
-/**
  * Main Health Check Modal Component
  */
 export default function HealthCheckModal({ isOpen, onClose }) {
@@ -473,10 +320,13 @@ export default function HealthCheckModal({ isOpen, onClose }) {
     }
 
     try {
-      // In production, this would call the health API
-      // const data = await getSystemHealth();
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      setHealthData(generateMockHealthData());
+      const data = await getSystemHealth();
+      // The endpoint returns ISO 8601 `lastUpdated`; the UI expects a
+      // locale-formatted display string. Format on the client.
+      const formatted = data?.lastUpdated
+        ? { ...data, lastUpdated: new Date(data.lastUpdated).toLocaleTimeString() }
+        : data;
+      setHealthData(formatted);
     } catch (err) {
       console.error('Failed to fetch health data:', err);
     } finally {

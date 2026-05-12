@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
 import { CommandPaletteProvider, useCommandPalette, CommandPaletteTrigger } from './CommandPalette';
+import { ToastProvider } from './ui/Toast';
 
 // Mock useNavigate
 const mockNavigate = vi.fn();
@@ -36,9 +37,9 @@ describe('CommandPalette', () => {
   test('does not render modal when closed', () => {
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -50,9 +51,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -68,9 +69,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -86,9 +87,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -119,9 +120,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -143,9 +144,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -169,9 +170,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -198,9 +199,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -224,9 +225,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -243,9 +244,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -263,9 +264,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -282,9 +283,9 @@ describe('CommandPalette', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <TestComponent />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -301,9 +302,9 @@ describe('CommandPaletteTrigger', () => {
   test('renders trigger button', () => {
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <CommandPaletteTrigger />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -315,9 +316,9 @@ describe('CommandPaletteTrigger', () => {
 
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <CommandPaletteTrigger />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 
@@ -331,9 +332,9 @@ describe('CommandPaletteTrigger', () => {
   test('shows keyboard shortcut hint', () => {
     render(
       <BrowserRouter>
-        <CommandPaletteProvider>
+        <ToastProvider><CommandPaletteProvider>
           <CommandPaletteTrigger />
-        </CommandPaletteProvider>
+        </CommandPaletteProvider></ToastProvider>
       </BrowserRouter>
     );
 

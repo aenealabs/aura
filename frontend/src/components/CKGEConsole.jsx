@@ -1655,15 +1655,20 @@ export default function CKGEConsole() {
         handleOpenFile(node);
         break;
       case 'viewReferences':
-        // TODO: Implement reference viewing in graph
+        toast.info(
+          'Reference viewing arrives with the GraphRAG visualization update.',
+        );
         break;
       case 'copyPath':
         if (node?.path) {
           navigator.clipboard.writeText(node.path);
+          toast.success('Copied path to clipboard.');
         }
         break;
       case 'openInIDE':
-        // TODO: Implement IDE integration
+        toast.info(
+          'IDE integration is available via the VSCode and JetBrains plugins (Settings > Developer Tools).',
+        );
         break;
       default:
         break;
@@ -1865,9 +1870,6 @@ export default function CKGEConsole() {
               initialFile={fileViewerFile}
               highlightedLines={highlightedLines}
               onClose={handleCloseFileViewer}
-              onLineClick={(_line) => {
-                // TODO: Handle line click - navigate to code reference
-              }}
             />
           </div>
         )}
@@ -1985,9 +1987,6 @@ export default function CKGEConsole() {
                   initialFile={fileViewerFile}
                   highlightedLines={highlightedLines}
                   onClose={handleCloseFileViewer}
-                  onLineClick={(_line) => {
-                // TODO: Handle line click - navigate to code reference
-              }}
                 />
               </div>
             )}

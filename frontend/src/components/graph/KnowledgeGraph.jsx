@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useToast } from '../ui/Toast';
 import {
   DocumentIcon,
   CodeBracketIcon,
@@ -482,6 +483,8 @@ export default function KnowledgeGraph({
   onFileOpen,
   className = '',
 }) {
+  const { toast } = useToast();
+
   // Graph data state
   const [nodes, setNodes] = useState(initialNodes);
   const [edges, setEdges] = useState(initialEdges);
@@ -630,20 +633,25 @@ export default function KnowledgeGraph({
         }
         break;
       case 'viewReferences':
-        // TODO: Implement reference viewing
+        toast.info(
+          'Reference viewing arrives with the GraphRAG visualization update.',
+        );
         break;
       case 'copyPath':
         if (node.path) {
           navigator.clipboard.writeText(node.path);
+          toast.success('Copied path to clipboard.');
         }
         break;
       case 'openInIDE':
-        // TODO: Implement IDE integration
+        toast.info(
+          'IDE integration is available via the VSCode and JetBrains plugins (Settings > Developer Tools).',
+        );
         break;
       default:
         break;
     }
-  }, [onFileOpen]);
+  }, [onFileOpen, toast]);
 
   // Handle canvas pan
   const handleCanvasPan = useCallback((e) => {
@@ -828,7 +836,7 @@ export default function KnowledgeGraph({
           onToggleFullscreen={handleToggleFullscreen}
           isFullscreen={isFullscreen}
           onToggleSettings={() => {
-            // TODO: Implement settings panel toggle
+            toast.info('Graph settings panel arrives with the GraphRAG visualization update.');
           }}
         />
 
@@ -882,9 +890,6 @@ export default function KnowledgeGraph({
             initialFile={fileViewerFile}
             highlightedLines={fileViewerFile?.line ? [fileViewerFile.line] : []}
             onClose={() => setFileViewerOpen(false)}
-            onLineClick={(_line) => {
-              // TODO: Handle line click - navigate to code reference
-            }}
           />
         </div>
       )}

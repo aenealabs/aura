@@ -35,25 +35,34 @@ To make progress on Phase 1 risk without live AWS, the following local-only acti
 
 ## Known issues for deploy re-engagement
 
-When the cost gate opens and live-AWS phases (3, 3.5, 4, 5) start, address these BEFORE running `cloudformation deploy iam.yaml`:
+When the cost gate opens and live-AWS phases (3, 3.5, 4, 5) start, the runbook below addresses what's needed before running `cloudformation deploy iam.yaml`.
 
-### ⚠️ Managed policy size limit
+### ✅ Managed policy size limit (resolved Wave 14, commit pending)
 
-Both `CloudFormationScopedManagedPolicy` and `CloudFormationScopedAdditionalServicesPolicy` currently exceed the AWS **customer managed policy 6,144-character document limit** when CFN resolves intrinsics to JSON:
+**Original problem (Wave 13):** Both `CloudFormationScopedManagedPolicy` and `CloudFormationScopedAdditionalServicesPolicy` exceeded the AWS **customer managed policy 6,144-character document limit** when CFN resolved intrinsics:
 
-- `CloudFormationScopedManagedPolicy`: ~11,662 chars (limit: 6,144)
-- `CloudFormationScopedAdditionalServicesPolicy`: ~10,983 chars (limit: 6,144)
+- `CloudFormationScopedManagedPolicy`: ~11,662 chars
+- `CloudFormationScopedAdditionalServicesPolicy`: ~10,983 chars
 
-A live `aws cloudformation deploy iam.yaml` will fail with `PolicySizeLimitExceeded` at IAM API time. This is acceptable for now because deploy phases are Deferred (Cost Gate); the offline static-scan workflow doesn't trigger AWS calls.
+**Resolution (Wave 14):** Three independent agent reviews (Tara/Jake/Sally — captured in the #182 comment thread) converged on a 5-policy split grouped by lifecycle blast-radius tier. The 2 oversized policies were replaced with 5 right-sized policies, all comfortably under 6,144 chars:
 
-**Fix when re-engaging:** split each oversized policy into two pieces (~5,500 chars each), giving 4 managed policies total. IAM allows up to 10 managed policies per role, so this fits comfortably. Suggested split:
+| Policy | Resolved size | Headroom | Services |
+|---|---:|---:|---|
+| `CloudFormationScopedDataPolicy` | 3,556 | 2,588 | s3, dynamodb, rds, es |
+| `CloudFormationScopedComputePolicy` | 4,820 | 1,324 | ecr, eks, ecs, elb, autoscaling, ec2-create |
+| `CloudFormationScopedEC2OperateAndStoragePolicy` | 3,685 | 2,459 | ec2-existing, efs, servicediscovery, acm |
+| `CloudFormationScopedEventsAndIntegrationPolicy` | 5,505 | 639 | lambda, sns, sqs, events, scheduler, states, route53, apigateway |
+| `CloudFormationScopedPlatformManagementPolicy` | 5,193 | 951 | cognito, codebuild, config, budgets, backup, servicecatalog, cloudfront |
 
-| Original | Split into |
-|---|---|
-| `CloudFormationScopedManagedPolicy` | `CloudFormationScopedCorePolicy1` (s3, dynamodb, ecr, eks) <br> `CloudFormationScopedCorePolicy2` (ecs, rds, es, elb, autoscaling, efs, servicediscovery, ec2) |
-| `CloudFormationScopedAdditionalServicesPolicy` | `CloudFormationScopedAdditionalPolicy1` (lambda, sns, sqs, events, scheduler, states) <br> `CloudFormationScopedAdditionalPolicy2` (apigateway, cognito, route53, codebuild, config, budgets, cloudfront, acm, backup, servicecatalog) |
+Total attached to the role: 5 scoped + 1 conditional legacy = **6 max** (IAM allows up to 10 managed policies per role; 4-slot headroom for future additions).
 
-Update `ManagedPolicyArns` on `CloudFormationServiceRole` to reference all 4. Estimate: half-day to split, validate via `cfn-lint`, re-run static-scan to confirm same action coverage.
+**Why this grouping:** Per Tara's review, "lifecycle blast-radius tier" makes the policy boundary semantically meaningful — a reviewer hunting data-exfil paths reviews one file (Data); a reviewer hunting compute-lifecycle drift reviews one file (Compute); etc. The alternative "Core1/Core2/Add1/Add2" alphabetical split would have hit the same size targets but with arbitrary boundaries.
+
+**Why not action wildcards (Candidate B in the review):** Per Sally's review, wildcards like `lambda:Create*` would have shrunk the policies by ~50% but silently grant any future AWS action matching the prefix (e.g., `lambda:CreateFunctionUrlConfig` creating public HTTPS endpoints, `kms:PutKeyPolicy` enabling external grants, `ec2:ModifySnapshotAttribute` enabling public EBS snapshots — MITRE T1537). The explicit-action posture is a load-bearing element of ADR-092's NIST AC-6 compliance claim.
+
+**Rollback behavior unchanged:** `UseLegacyDeployRole=true` still swaps the 5 scoped policies for the single legacy wildcard policy via `!If`/`AWS::NoValue` per Jake's pattern. The role's `ManagedPolicyArns` block now has 6 slots; CFN compacts the list when a slot resolves to `AWS::NoValue`.
+
+**Coverage byte-identical before/after split:** the static scan (`scripts/adr_092_static_action_scan.py`) returns the same 661 grants / 3,490 covered / 336 uncovered both before and after the split, confirming no actions were dropped or added during the regrouping.
 
 ### Revision history
 

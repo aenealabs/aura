@@ -351,16 +351,36 @@ Resources:
               StringEquals:
                 'aws:RequestedRegion': !Ref AWS::Region
 
-  CloudFormationScopedManagedPolicy:
+  # ===========================================================================
+  # ADR-092 Wave 14: Scoped managed policies, split into 5 by blast-radius tier
+  # ===========================================================================
+  # Per 3-agent review (Tara/Jake/Sally - #182 comment thread), the original
+  # Wave 12+13 two-policy structure exceeded AWS's 6,144-char managed-policy
+  # document limit when CFN resolves intrinsics. Wave 14 splits the 31 Sids
+  # across 5 managed policies grouped by lifecycle blast-radius tier. All
+  # under 6,144 chars with comfortable headroom:
+  #
+  #   Data                  s3, dynamodb, rds, es                        ~3,567 chars
+  #   Compute               ecr, eks, ecs, elb, autoscaling, ec2-create  ~4,829 chars
+  #   EC2OperateAndStorage  ec2-existing, efs, servicediscovery, acm     ~3,694 chars
+  #   EventsAndIntegration  lambda, sns, sqs, events, scheduler, states,
+  #                         route53, apigateway                          ~5,512 chars
+  #   PlatformManagement    cognito, codebuild, config, budgets, backup,
+  #                         servicecatalog, cloudfront                   ~5,201 chars
+  #
+  # Total attached to role: 5 scoped + 1 legacy = 6 max (IAM allows 10/role).
+  # Statements 4-8 (KMS, CloudWatch, Logs, read-only, Denies, IAM/PassRole)
+  # remain inline on CloudFormationServiceRole per ADR-092 v2.
+
+  CloudFormationScopedDataPolicy:
     Type: AWS::IAM::ManagedPolicy
     Condition: UseScopedDeployRole
     Properties:
-      ManagedPolicyName: !Sub '${ProjectName}-cfn-scoped-policy-${Environment}'
-      Description: 'ADR-092 Statements 1, 2, 3 - scoped mutate (ARN-supported services), tag-conditioned mutate (server-generated-ID services), EC2 split.'
+      ManagedPolicyName: !Sub '${ProjectName}-cfn-data-${Environment}'
+      Description: 'ADR-092 Wave 14 - Data plane (s3, dynamodb, rds, es). Statement 8.3 Project-tag Deny relevance is highest here.'
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # -------- Statement 1: Scoped mutate (ARN-supported services) --------
           - Sid: ScopedMutateS3
             Effect: Allow
             Action:
@@ -387,7 +407,6 @@ Resources:
             Resource:
               - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*/*'
-
           - Sid: ScopedMutateDynamoDB
             Effect: Allow
             Action:
@@ -428,81 +447,6 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${ProjectName}-*/backup/*'
               - !Sub 'arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:backup/*'
               - !Sub 'arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:global-table/${ProjectName}-*'
-
-          - Sid: ScopedMutateECR
-            Effect: Allow
-            Action:
-              - ecr:CreateRepository
-              - ecr:DeleteRepository
-              - ecr:PutLifecyclePolicy
-              - ecr:DeleteLifecyclePolicy
-              - ecr:GetLifecyclePolicy
-              - ecr:SetRepositoryPolicy
-              - ecr:DeleteRepositoryPolicy
-              - ecr:GetRepositoryPolicy
-              - ecr:PutImageScanningConfiguration
-              - ecr:PutImageTagMutability
-              - ecr:TagResource
-              - ecr:UntagResource
-              - ecr:ListTagsForResource
-            Resource:
-              # Note: ECR uses `aura-*` prefix per ADR-049 (private-ECR convention),
-              # not `${ProjectName}-*`. Called out explicitly.
-              - !Sub 'arn:${AWS::Partition}:ecr:*:${AWS::AccountId}:repository/aura-*'
-
-          - Sid: ScopedMutateEKS
-            Effect: Allow
-            Action:
-              - eks:CreateCluster
-              - eks:DeleteCluster
-              - eks:UpdateClusterConfig
-              - eks:UpdateClusterVersion
-              - eks:CreateNodegroup
-              - eks:DeleteNodegroup
-              - eks:UpdateNodegroupConfig
-              - eks:UpdateNodegroupVersion
-              - eks:CreateFargateProfile
-              - eks:DeleteFargateProfile
-              - eks:CreateAddon
-              - eks:DeleteAddon
-              - eks:UpdateAddon
-              - eks:TagResource
-              - eks:UntagResource
-              - eks:AssociateAccessPolicy
-              - eks:DisassociateAccessPolicy
-              - eks:CreateAccessEntry
-              - eks:DeleteAccessEntry
-              - eks:UpdateAccessEntry
-            Resource:
-              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:cluster/${ProjectName}-*'
-              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:nodegroup/${ProjectName}-*/*/*'
-              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:fargateprofile/${ProjectName}-*/*'
-              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:addon/${ProjectName}-*/*/*'
-              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:access-entry/${ProjectName}-*/*/*'
-
-          - Sid: ScopedMutateECS
-            Effect: Allow
-            Action:
-              - ecs:CreateCluster
-              - ecs:DeleteCluster
-              - ecs:PutClusterCapacityProviders
-              - ecs:RegisterTaskDefinition
-              - ecs:DeregisterTaskDefinition
-              - ecs:CreateService
-              - ecs:DeleteService
-              - ecs:UpdateService
-              - ecs:CreateTaskSet
-              - ecs:DeleteTaskSet
-              - ecs:UpdateTaskSet
-              - ecs:TagResource
-              - ecs:UntagResource
-            Resource:
-              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:cluster/${ProjectName}-*'
-              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:service/${ProjectName}-*/*'
-              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:task-definition/${ProjectName}-*:*'
-              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:task-set/${ProjectName}-*/*/*'
-              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:capacity-provider/${ProjectName}-*'
-
           - Sid: ScopedMutateRDS
             Effect: Allow
             Action:
@@ -543,7 +487,6 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:og:${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:snapshot:${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:cluster-snapshot:${ProjectName}-*'
-
           - Sid: ScopedMutateOpenSearch
             Effect: Allow
             Action:
@@ -556,6 +499,86 @@ Resources:
             Resource:
               - !Sub 'arn:${AWS::Partition}:es:*:${AWS::AccountId}:domain/${ProjectName}-*'
 
+  CloudFormationScopedComputePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: UseScopedDeployRole
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-cfn-compute-${Environment}'
+      Description: 'ADR-092 Wave 14 - Compute lifecycle mutate (ecr, eks, ecs, elb, autoscaling, ec2-create).'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ScopedMutateECR
+            Effect: Allow
+            Action:
+              - ecr:CreateRepository
+              - ecr:DeleteRepository
+              - ecr:PutLifecyclePolicy
+              - ecr:DeleteLifecyclePolicy
+              - ecr:GetLifecyclePolicy
+              - ecr:SetRepositoryPolicy
+              - ecr:DeleteRepositoryPolicy
+              - ecr:GetRepositoryPolicy
+              - ecr:PutImageScanningConfiguration
+              - ecr:PutImageTagMutability
+              - ecr:TagResource
+              - ecr:UntagResource
+              - ecr:ListTagsForResource
+            Resource:
+              # Note: ECR uses `aura-*` prefix per ADR-049 (private-ECR convention),
+              # not `${ProjectName}-*`. Called out explicitly.
+              - !Sub 'arn:${AWS::Partition}:ecr:*:${AWS::AccountId}:repository/aura-*'
+          - Sid: ScopedMutateEKS
+            Effect: Allow
+            Action:
+              - eks:CreateCluster
+              - eks:DeleteCluster
+              - eks:UpdateClusterConfig
+              - eks:UpdateClusterVersion
+              - eks:CreateNodegroup
+              - eks:DeleteNodegroup
+              - eks:UpdateNodegroupConfig
+              - eks:UpdateNodegroupVersion
+              - eks:CreateFargateProfile
+              - eks:DeleteFargateProfile
+              - eks:CreateAddon
+              - eks:DeleteAddon
+              - eks:UpdateAddon
+              - eks:TagResource
+              - eks:UntagResource
+              - eks:AssociateAccessPolicy
+              - eks:DisassociateAccessPolicy
+              - eks:CreateAccessEntry
+              - eks:DeleteAccessEntry
+              - eks:UpdateAccessEntry
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:cluster/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:nodegroup/${ProjectName}-*/*/*'
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:fargateprofile/${ProjectName}-*/*'
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:addon/${ProjectName}-*/*/*'
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:access-entry/${ProjectName}-*/*/*'
+          - Sid: ScopedMutateECS
+            Effect: Allow
+            Action:
+              - ecs:CreateCluster
+              - ecs:DeleteCluster
+              - ecs:PutClusterCapacityProviders
+              - ecs:RegisterTaskDefinition
+              - ecs:DeregisterTaskDefinition
+              - ecs:CreateService
+              - ecs:DeleteService
+              - ecs:UpdateService
+              - ecs:CreateTaskSet
+              - ecs:DeleteTaskSet
+              - ecs:UpdateTaskSet
+              - ecs:TagResource
+              - ecs:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:cluster/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:service/${ProjectName}-*/*'
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:task-definition/${ProjectName}-*:*'
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:task-set/${ProjectName}-*/*/*'
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:capacity-provider/${ProjectName}-*'
           - Sid: ScopedMutateELB
             Effect: Allow
             Action:
@@ -585,7 +608,6 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:${AWS::AccountId}:listener/app/${ProjectName}-*/*/*'
               - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:${AWS::AccountId}:listener/net/${ProjectName}-*/*/*'
               - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:${AWS::AccountId}:listener-rule/app/${ProjectName}-*/*/*/*'
-
           - Sid: ScopedMutateAutoScaling
             Effect: Allow
             Action:
@@ -604,68 +626,6 @@ Resources:
               - autoscaling:StartInstanceRefresh
             Resource:
               - !Sub 'arn:${AWS::Partition}:autoscaling:*:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${ProjectName}-*'
-
-          # -------- Statement 2: Tag-conditioned mutate (server-generated-ID services) --------
-          - Sid: TagConditionedCreateEFS
-            Effect: Allow
-            Action:
-              - elasticfilesystem:CreateFileSystem
-            Resource: '*'
-            Condition:
-              StringEquals:
-                'aws:RequestTag/Project': !Ref ProjectName
-
-          - Sid: TagConditionedOperateEFS
-            Effect: Allow
-            Action:
-              - elasticfilesystem:DeleteFileSystem
-              - elasticfilesystem:UpdateFileSystem
-              - elasticfilesystem:CreateMountTarget
-              - elasticfilesystem:DeleteMountTarget
-              - elasticfilesystem:ModifyMountTargetSecurityGroups
-              - elasticfilesystem:CreateAccessPoint
-              - elasticfilesystem:DeleteAccessPoint
-              - elasticfilesystem:TagResource
-              - elasticfilesystem:UntagResource
-              - elasticfilesystem:PutLifecycleConfiguration
-              - elasticfilesystem:PutFileSystemPolicy
-              - elasticfilesystem:DeleteFileSystemPolicy
-            Resource: '*'
-            Condition:
-              StringEquals:
-                'aws:ResourceTag/Project': !Ref ProjectName
-
-          - Sid: TagConditionedCreateServiceDiscovery
-            Effect: Allow
-            Action:
-              - servicediscovery:CreatePrivateDnsNamespace
-              - servicediscovery:CreatePublicDnsNamespace
-              - servicediscovery:CreateHttpNamespace
-            Resource: '*'
-            Condition:
-              StringLike:
-                'servicediscovery:NamespaceName': !Sub '${ProjectName}-*'
-
-          - Sid: TagConditionedOperateServiceDiscovery
-            Effect: Allow
-            Action:
-              - servicediscovery:DeleteNamespace
-              - servicediscovery:UpdateHttpNamespace
-              - servicediscovery:UpdatePrivateDnsNamespace
-              - servicediscovery:UpdatePublicDnsNamespace
-              - servicediscovery:CreateService
-              - servicediscovery:DeleteService
-              - servicediscovery:UpdateService
-              - servicediscovery:RegisterInstance
-              - servicediscovery:DeregisterInstance
-              - servicediscovery:TagResource
-              - servicediscovery:UntagResource
-            Resource: '*'
-            Condition:
-              StringEqualsIfExists:
-                'aws:ResourceTag/Project': !Ref ProjectName
-
-          # -------- Statement 3: EC2 split - mutate (tag-conditioned) + describe (Statement 7) --------
           - Sid: EC2MutateOnCreateRequireProjectTag
             Effect: Allow
             Action:
@@ -693,6 +653,15 @@ Resources:
               StringEquals:
                 'aws:RequestTag/Project': !Ref ProjectName
 
+  CloudFormationScopedEC2OperateAndStoragePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: UseScopedDeployRole
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-cfn-e-c2-operate-and-storage-${Environment}'
+      Description: 'ADR-092 Wave 14 - EC2 steady-state operate, EFS, ServiceDiscovery, ACM. Split from Compute for size.'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
           - Sid: EC2MutateOnExistingRequireProjectTag
             Effect: Allow
             Action:
@@ -759,51 +728,80 @@ Resources:
             Condition:
               StringEqualsIfExists:
                 'aws:ResourceTag/Project': !Ref ProjectName
+          - Sid: TagConditionedCreateEFS
+            Effect: Allow
+            Action:
+              - elasticfilesystem:CreateFileSystem
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/Project': !Ref ProjectName
+          - Sid: TagConditionedOperateEFS
+            Effect: Allow
+            Action:
+              - elasticfilesystem:DeleteFileSystem
+              - elasticfilesystem:UpdateFileSystem
+              - elasticfilesystem:CreateMountTarget
+              - elasticfilesystem:DeleteMountTarget
+              - elasticfilesystem:ModifyMountTargetSecurityGroups
+              - elasticfilesystem:CreateAccessPoint
+              - elasticfilesystem:DeleteAccessPoint
+              - elasticfilesystem:TagResource
+              - elasticfilesystem:UntagResource
+              - elasticfilesystem:PutLifecycleConfiguration
+              - elasticfilesystem:PutFileSystemPolicy
+              - elasticfilesystem:DeleteFileSystemPolicy
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/Project': !Ref ProjectName
+          - Sid: TagConditionedCreateServiceDiscovery
+            Effect: Allow
+            Action:
+              - servicediscovery:CreatePrivateDnsNamespace
+              - servicediscovery:CreatePublicDnsNamespace
+              - servicediscovery:CreateHttpNamespace
+            Resource: '*'
+            Condition:
+              StringLike:
+                'servicediscovery:NamespaceName': !Sub '${ProjectName}-*'
+          - Sid: TagConditionedOperateServiceDiscovery
+            Effect: Allow
+            Action:
+              - servicediscovery:DeleteNamespace
+              - servicediscovery:UpdateHttpNamespace
+              - servicediscovery:UpdatePrivateDnsNamespace
+              - servicediscovery:UpdatePublicDnsNamespace
+              - servicediscovery:CreateService
+              - servicediscovery:DeleteService
+              - servicediscovery:UpdateService
+              - servicediscovery:RegisterInstance
+              - servicediscovery:DeregisterInstance
+              - servicediscovery:TagResource
+              - servicediscovery:UntagResource
+            Resource: '*'
+            Condition:
+              StringEqualsIfExists:
+                'aws:ResourceTag/Project': !Ref ProjectName
+          - Sid: ScopedMutateACM
+            Effect: Allow
+            Action:
+              - acm:RequestCertificate
+              - acm:DeleteCertificate
+              - acm:DescribeCertificate
+              - acm:AddTagsToCertificate
+              - acm:RemoveTagsFromCertificate
+              - acm:ListTagsForCertificate
+              - acm:UpdateCertificateOptions
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:acm:*:${AWS::AccountId}:certificate/*'
 
-  # ===========================================================================
-  # ADR-092 Wave 13 follow-up: Additional services not in original 16
-  # ===========================================================================
-  # The pre-ADR-092 wildcard block covered 16 services (ec2, eks, rds, es,
-  # dynamodb, s3, kms, logs, cloudwatch, elasticloadbalancing, autoscaling,
-  # ecs, ecr, elasticfilesystem, servicediscovery). The offline static scan
-  # (scripts/adr_092_static_action_scan.py) and template-resource enumeration
-  # surfaced 16 additional services the platform deploys via CFN that were
-  # NOT covered by the original wildcards (Lambda 108 resources, SNS 122,
-  # Events 78, Config 38, SQS 31, CodeBuild 25, ServiceCatalog 22,
-  # ApiGatewayV2 19, ApiGateway 16, Route53 15, Scheduler 14, Cognito 14,
-  # Budgets 12, StepFunctions 9, CloudFront 9, Backup 8).
-  #
-  # Project-ARN-scoped where the service supports it. Tag-conditioned for
-  # the few that don't. CFN-deploy-time actions only (Create/Update/Delete/
-  # Tag); runtime data-plane actions (lambda:InvokeFunction, sns:Publish,
-  # sqs:SendMessage) intentionally excluded - those belong on the consuming
-  # principal's role, not the deploy role.
-  #
-  # ⚠️  KNOWN AWS LIMIT - REQUIRES SPLIT BEFORE LIVE DEPLOY
-  # ⚠️  ===================================================
-  # ⚠️  Both this policy AND CloudFormationScopedManagedPolicy exceed the
-  # ⚠️  AWS customer managed policy 6,144-character limit when CFN resolves
-  # ⚠️  intrinsics to JSON (CloudFormationScopedManagedPolicy ~11,662 chars,
-  # ⚠️  this policy ~10,983 chars). A live `aws cloudformation deploy` of
-  # ⚠️  iam.yaml will fail with PolicySizeLimitExceeded.
-  # ⚠️
-  # ⚠️  This is acceptable for now because ADR-092 deploy phases are
-  # ⚠️  Deferred (Cost Gate). When the cost gate opens and Phase 2.3 dev
-  # ⚠️  deploys begin, FIRST split these into two managed policies each
-  # ⚠️  (~5,500 chars each, leaving headroom):
-  # ⚠️    CloudFormationScopedManagedPolicy           -> Core1 + Core2
-  # ⚠️    CloudFormationScopedAdditionalServicesPolicy -> Add1 + Add2
-  # ⚠️  Update ManagedPolicyArns on CloudFormationServiceRole to attach
-  # ⚠️  all 4 (IAM allows up to 10 managed policies per role).
-  # ⚠️
-  # ⚠️  Tracked in ADR-092 §"Known issues for deploy re-engagement".
-
-  CloudFormationScopedAdditionalServicesPolicy:
+  CloudFormationScopedEventsAndIntegrationPolicy:
     Type: AWS::IAM::ManagedPolicy
     Condition: UseScopedDeployRole
     Properties:
-      ManagedPolicyName: !Sub '${ProjectName}-cfn-additional-policy-${Environment}'
-      Description: 'ADR-092 Wave 13 follow-up: deploy-time grants for services not in the original 16-service wildcard (Lambda, SNS, Events, etc.)'
+      ManagedPolicyName: !Sub '${ProjectName}-cfn-events-and-integration-${Environment}'
+      Description: 'ADR-092 Wave 14 - Events, messaging, orchestration (lambda, sns, sqs, events, scheduler, states, route53, apigateway).'
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -847,7 +845,6 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:aura-*:*'
               - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:layer:${ProjectName}-*:*'
               - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:event-source-mapping:*'
-
           - Sid: ScopedMutateSNS
             Effect: Allow
             Action:
@@ -868,7 +865,6 @@ Resources:
             Resource:
               - !Sub 'arn:${AWS::Partition}:sns:*:${AWS::AccountId}:${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:sns:*:${AWS::AccountId}:aura-*'
-
           - Sid: ScopedMutateSQS
             Effect: Allow
             Action:
@@ -885,7 +881,6 @@ Resources:
             Resource:
               - !Sub 'arn:${AWS::Partition}:sqs:*:${AWS::AccountId}:${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:sqs:*:${AWS::AccountId}:aura-*'
-
           - Sid: ScopedMutateEvents
             Effect: Allow
             Action:
@@ -920,7 +915,6 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/aura-*'
               - !Sub 'arn:${AWS::Partition}:events:*:${AWS::AccountId}:connection/${ProjectName}-*/*'
               - !Sub 'arn:${AWS::Partition}:events:*:${AWS::AccountId}:api-destination/${ProjectName}-*/*'
-
           - Sid: ScopedMutateScheduler
             Effect: Allow
             Action:
@@ -937,7 +931,6 @@ Resources:
             Resource:
               - !Sub 'arn:${AWS::Partition}:scheduler:*:${AWS::AccountId}:schedule/*/${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:scheduler:*:${AWS::AccountId}:schedule-group/${ProjectName}-*'
-
           - Sid: ScopedMutateStepFunctions
             Effect: Allow
             Action:
@@ -954,7 +947,23 @@ Resources:
             Resource:
               - !Sub 'arn:${AWS::Partition}:states:*:${AWS::AccountId}:stateMachine:${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:states:*:${AWS::AccountId}:activity:${ProjectName}-*'
-
+          - Sid: ScopedMutateRoute53
+            Effect: Allow
+            Action:
+              - route53:CreateHostedZone
+              - route53:DeleteHostedZone
+              - route53:GetHostedZone
+              - route53:UpdateHostedZoneComment
+              - route53:ChangeResourceRecordSets
+              - route53:ListResourceRecordSets
+              - route53:ChangeTagsForResource
+              - route53:ListTagsForResource
+              - route53:GetChange
+              - route53:AssociateVPCWithHostedZone
+              - route53:DisassociateVPCFromHostedZone
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:route53:::hostedzone/*'
+              - !Sub 'arn:${AWS::Partition}:route53:::change/*'
           - Sid: ScopedMutateApiGateway
             Effect: Allow
             Action:
@@ -978,6 +987,15 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:apigateway:*::/domainnames/*'
               - !Sub 'arn:${AWS::Partition}:apigateway:*::/account'
 
+  CloudFormationScopedPlatformManagementPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: UseScopedDeployRole
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-cfn-platform-management-${Environment}'
+      Description: 'ADR-092 Wave 14 - Platform management (cognito, codebuild, config, budgets, backup, servicecatalog, cloudfront).'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
           - Sid: ScopedMutateCognito
             Effect: Allow
             Action:
@@ -1011,25 +1029,6 @@ Resources:
               - cognito-idp:UntagResource
             Resource:
               - !Sub 'arn:${AWS::Partition}:cognito-idp:*:${AWS::AccountId}:userpool/*'
-
-          - Sid: ScopedMutateRoute53
-            Effect: Allow
-            Action:
-              - route53:CreateHostedZone
-              - route53:DeleteHostedZone
-              - route53:GetHostedZone
-              - route53:UpdateHostedZoneComment
-              - route53:ChangeResourceRecordSets
-              - route53:ListResourceRecordSets
-              - route53:ChangeTagsForResource
-              - route53:ListTagsForResource
-              - route53:GetChange
-              - route53:AssociateVPCWithHostedZone
-              - route53:DisassociateVPCFromHostedZone
-            Resource:
-              - !Sub 'arn:${AWS::Partition}:route53:::hostedzone/*'
-              - !Sub 'arn:${AWS::Partition}:route53:::change/*'
-
           - Sid: ScopedMutateCodeBuild
             Effect: Allow
             Action:
@@ -1050,7 +1049,6 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:codebuild:*:${AWS::AccountId}:project/${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:codebuild:*:${AWS::AccountId}:project/aura-*'
               - !Sub 'arn:${AWS::Partition}:codebuild:*:${AWS::AccountId}:report-group/${ProjectName}-*'
-
           - Sid: ScopedMutateConfig
             Effect: Allow
             Action:
@@ -1072,7 +1070,6 @@ Resources:
               - config:TagResource
               - config:UntagResource
             Resource: '*'  # AWS Config is account-level, no resource ARNs
-
           - Sid: ScopedMutateBudgets
             Effect: Allow
             Action:
@@ -1087,43 +1084,6 @@ Resources:
             Resource:
               - !Sub 'arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/aura-*'
-
-          - Sid: ScopedMutateCloudFront
-            Effect: Allow
-            Action:
-              - cloudfront:CreateDistribution
-              - cloudfront:DeleteDistribution
-              - cloudfront:UpdateDistribution
-              - cloudfront:GetDistribution
-              - cloudfront:GetDistributionConfig
-              - cloudfront:TagResource
-              - cloudfront:UntagResource
-              - cloudfront:ListTagsForResource
-              - cloudfront:CreateOriginAccessControl
-              - cloudfront:DeleteOriginAccessControl
-              - cloudfront:UpdateOriginAccessControl
-              - cloudfront:CreateInvalidation
-              - cloudfront:CreateCachePolicy
-              - cloudfront:DeleteCachePolicy
-              - cloudfront:UpdateCachePolicy
-            Resource:
-              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*'
-              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/*'
-              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:cache-policy/*'
-
-          - Sid: ScopedMutateACM
-            Effect: Allow
-            Action:
-              - acm:RequestCertificate
-              - acm:DeleteCertificate
-              - acm:DescribeCertificate
-              - acm:AddTagsToCertificate
-              - acm:RemoveTagsFromCertificate
-              - acm:ListTagsForCertificate
-              - acm:UpdateCertificateOptions
-            Resource:
-              - !Sub 'arn:${AWS::Partition}:acm:*:${AWS::AccountId}:certificate/*'
-
           - Sid: ScopedMutateBackup
             Effect: Allow
             Action:
@@ -1148,7 +1108,6 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:backup:*:${AWS::AccountId}:backup-vault:${ProjectName}-*'
               - !Sub 'arn:${AWS::Partition}:backup:*:${AWS::AccountId}:backup-plan:*'
               - !Sub 'arn:${AWS::Partition}:backup:*:${AWS::AccountId}:backup-selection:*'
-
           - Sid: ScopedMutateServiceCatalog
             Effect: Allow
             Action:
@@ -1173,8 +1132,29 @@ Resources:
               - servicecatalog:TagResource
               - servicecatalog:UntagResource
             Resource: '*'  # Service Catalog API uses portfolio/product IDs not ARNs
+          - Sid: ScopedMutateCloudFront
+            Effect: Allow
+            Action:
+              - cloudfront:CreateDistribution
+              - cloudfront:DeleteDistribution
+              - cloudfront:UpdateDistribution
+              - cloudfront:GetDistribution
+              - cloudfront:GetDistributionConfig
+              - cloudfront:TagResource
+              - cloudfront:UntagResource
+              - cloudfront:ListTagsForResource
+              - cloudfront:CreateOriginAccessControl
+              - cloudfront:DeleteOriginAccessControl
+              - cloudfront:UpdateOriginAccessControl
+              - cloudfront:CreateInvalidation
+              - cloudfront:CreateCachePolicy
+              - cloudfront:DeleteCachePolicy
+              - cloudfront:UpdateCachePolicy
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*'
+              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/*'
+              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:cache-policy/*'
 
-  # CloudFormation Service Role
   CloudFormationServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -1186,25 +1166,24 @@ Resources:
             Principal:
               Service: cloudformation.amazonaws.com
             Action: sts:AssumeRole
-      # ADR-092: scoped/legacy managed policy attached conditionally via
-      # UseLegacyDeployRole parameter. Statements 1, 2, 3 (scoped+tag-conditioned
-      # mutate + EC2 split) live in the managed policy. Statements 4-8 below
-      # stay inline alongside the existing IAM/CFN/Secrets/Bedrock/SSM blocks.
-      # The Additional Services policy (Wave 13 follow-up) covers services
-      # not in the original 16-service wildcard (Lambda, SNS, Events, etc.).
-      # On rollback (UseLegacyDeployRole=true) only the legacy wildcard policy
-      # is attached - the additional-services policy is omitted because the
-      # legacy wildcard covered fewer services and adding the additional one
-      # would expand scope during rollback rather than preserve it.
+      # ADR-092 v3 Wave 14: 5 scoped managed policies attached conditionally
+      # via UseLegacyDeployRole. Each policy is a separate slot; rollback
+      # (UseLegacyDeployRole=true) replaces all 5 with the single Legacy
+      # policy. Per Jake's review (#182 comment): each slot uses !If with
+      # AWS::NoValue so CFN compacts the list when the condition is false.
+      # Statements 4-8 (KMS, CloudWatch, Logs, read-only, Denies, IAM scope,
+      # PassRole) remain inline below. All Denies inline preserve precedence
+      # across all attached managed policies regardless of which is attached.
       ManagedPolicyArns:
         - !If
           - UseLegacyDeployRoleEnabled
           - !Ref CloudFormationLegacyManagedPolicy
-          - !Ref CloudFormationScopedManagedPolicy
-        - !If
-          - UseScopedDeployRole
-          - !Ref CloudFormationScopedAdditionalServicesPolicy
           - !Ref AWS::NoValue
+        - !If [UseScopedDeployRole, !Ref CloudFormationScopedDataPolicy, !Ref AWS::NoValue]
+        - !If [UseScopedDeployRole, !Ref CloudFormationScopedComputePolicy, !Ref AWS::NoValue]
+        - !If [UseScopedDeployRole, !Ref CloudFormationScopedEC2OperateAndStoragePolicy, !Ref AWS::NoValue]
+        - !If [UseScopedDeployRole, !Ref CloudFormationScopedEventsAndIntegrationPolicy, !Ref AWS::NoValue]
+        - !If [UseScopedDeployRole, !Ref CloudFormationScopedPlatformManagementPolicy, !Ref AWS::NoValue]
       Policies:
         - PolicyName: CloudFormationDeploymentPolicy
           PolicyDocument:

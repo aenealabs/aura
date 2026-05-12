@@ -9,8 +9,8 @@
  * @module components/dashboard/widgets/scanner/TruePositiveRateWidget
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { CheckBadgeIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/solid';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/solid';
 import { getTruePositiveRate } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError } from './ScannerWidgetShared';
 

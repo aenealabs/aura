@@ -11,7 +11,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getHealth,
   getCircuitBreaker,
-  getSyncStatus,
   getAllStatus,
   resetCircuitBreaker,
   triggerSync,

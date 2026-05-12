@@ -8,7 +8,7 @@
  * @module components/dashboard/widgets/MTTRWidget
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import {
   ClockIcon,

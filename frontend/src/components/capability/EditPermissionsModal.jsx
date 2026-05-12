@@ -7,16 +7,11 @@
  * @module components/capability/EditPermissionsModal
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import {
   XMarkIcon,
-  ShieldCheckIcon,
-  ShieldExclamationIcon,
   ExclamationTriangleIcon,
-  InformationCircleIcon,
-  PlusIcon,
-  TrashIcon,
   CheckIcon,
 } from '@heroicons/react/24/outline';
 

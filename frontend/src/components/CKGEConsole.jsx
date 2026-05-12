@@ -1585,7 +1585,7 @@ export default function CKGEConsole() {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Simple mock query matching
-    let results = [];
+    let results;
     const lowerQuery = query.toLowerCase();
 
     if (lowerQuery.includes('vulnerability') || lowerQuery.includes('cve')) {
@@ -1673,7 +1673,7 @@ export default function CKGEConsole() {
       default:
         break;
     }
-  }, [handleOpenFile]);
+  }, [handleOpenFile, toast]);
 
   // Handle right-click context menu
   const handleGraphContextMenu = useCallback((e, node) => {

@@ -4,7 +4,7 @@
  * WCAG 2.1 AA compliance tests for the AI diagram generation dialog.
  */
 
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 

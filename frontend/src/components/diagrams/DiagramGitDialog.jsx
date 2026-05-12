@@ -8,7 +8,7 @@
  * and smooth transitions per design-principles.md
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import {
   CodeBracketIcon,

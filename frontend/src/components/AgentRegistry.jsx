@@ -16,7 +16,6 @@ import {
   CommandLineIcon,
   EyeIcon,
   TrashIcon,
-  ArrowTrendingUpIcon,
 } from '@heroicons/react/24/outline';
 import { PageSkeleton } from './ui/LoadingSkeleton';
 import { useToast } from './ui/Toast';

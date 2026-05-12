@@ -52,8 +52,8 @@ const TourTooltip = ({
       const targetRect = target.getBoundingClientRect();
       const padding = 16;
 
-      let x = 0;
-      let y = 0;
+      let x;
+      let y;
 
       switch (step.placement) {
         case 'bottom':

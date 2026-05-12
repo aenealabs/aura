@@ -157,23 +157,19 @@ export async function uploadAvatar(file) {
   }
 
   // Production: upload to API
-  try {
-    const formData = new FormData();
-    formData.append('avatar', file);
+  const formData = new FormData();
+  formData.append('avatar', file);
 
-    const response = await fetch(`${apiUrl}/user/avatar`, {
-      method: 'POST',
-      body: formData,
-    });
+  const response = await fetch(`${apiUrl}/user/avatar`, {
+    method: 'POST',
+    body: formData,
+  });
 
-    if (!response.ok) {
-      throw new ApiError('Failed to upload avatar', response.status);
-    }
-
-    return response.json();
-  } catch (error) {
-    throw error;
+  if (!response.ok) {
+    throw new ApiError('Failed to upload avatar', response.status);
   }
+
+  return response.json();
 }
 
 /**
@@ -190,12 +186,8 @@ export async function deleteAvatar() {
   }
 
   // Production: delete via API
-  try {
-    await apiClient.delete('/user/avatar');
-    return { success: true };
-  } catch (error) {
-    throw error;
-  }
+  await apiClient.delete('/user/avatar');
+  return { success: true };
 }
 
 /**

@@ -7,7 +7,6 @@
  * @module components/guardrails/GuardrailActivityDashboard
  */
 
-import React from 'react';
 import PropTypes from 'prop-types';
 import {
   ShieldCheckIcon,

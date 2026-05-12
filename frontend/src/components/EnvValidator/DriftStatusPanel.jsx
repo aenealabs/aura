@@ -14,7 +14,6 @@ import {
   ArrowPathIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  DocumentDuplicateIcon,
   EyeIcon,
 } from '@heroicons/react/24/outline';
 import { Environments, SeverityColors } from '../../services/envValidatorApi';

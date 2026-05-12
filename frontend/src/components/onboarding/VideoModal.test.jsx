@@ -13,7 +13,7 @@
  * Also tests VideoCard component for video listing.
  */
 
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import VideoModal, { VideoCard } from './VideoModal';

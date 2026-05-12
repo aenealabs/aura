@@ -7,7 +7,7 @@
  * @module components/explainability/DecisionExplorer
  */
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
   MagnifyingGlassIcon,

@@ -24,17 +24,9 @@ import {
   ArrowPathIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
-  ArrowTrendingUpIcon,
-  ArrowTrendingDownIcon,
-  MinusIcon,
   BellAlertIcon,
-  DocumentChartBarIcon,
-  AdjustmentsHorizontalIcon,
-  XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { LineChart, DonutChart } from '../ui/Charts';
-import { PageSkeleton, ChartSkeleton, Skeleton } from '../ui/LoadingSkeleton';
-import DashboardGrid from '../ui/DashboardGrid';
+import { PageSkeleton, Skeleton } from '../ui/LoadingSkeleton';
 import MetricCard from '../ui/MetricCard';
 import { useToast } from '../ui/Toast';
 import {
@@ -51,8 +43,6 @@ import {
   TrendDirection,
   getStatusColor,
   getStatusBgColor,
-  getSeverityColor,
-  formatPercent,
   formatScore,
 } from '../../services/alignmentApi';
 

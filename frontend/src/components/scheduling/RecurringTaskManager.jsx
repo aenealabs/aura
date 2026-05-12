@@ -16,7 +16,6 @@ import {
   ClockIcon,
   CalendarDaysIcon,
   ExclamationTriangleIcon,
-  CheckCircleIcon,
   XMarkIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
@@ -27,7 +26,6 @@ import {
   updateRecurringTask,
   deleteRecurringTask,
   toggleRecurringTask,
-  JOB_TYPES,
 } from '../../services/schedulingApi';
 
 // Job type display configuration

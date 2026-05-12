@@ -19,7 +19,7 @@ import {
   ClockIcon,
   PlayIcon,
 } from '@heroicons/react/24/solid';
-import { getTimeline, getStatusColor, formatDuration, rescheduleJob } from '../../services/schedulingApi';
+import { getTimeline, formatDuration, rescheduleJob } from '../../services/schedulingApi';
 import { useToast } from '../ui/Toast';
 
 // View modes

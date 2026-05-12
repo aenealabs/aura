@@ -17,12 +17,10 @@
  * @module components/scanner/ScanLaunchForm
  */
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import {
   PlayCircleIcon,
   XMarkIcon,
-  PlusIcon,
-  InformationCircleIcon,
   CurrencyDollarIcon,
 } from '@heroicons/react/24/solid';
 import {

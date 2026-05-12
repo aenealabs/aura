@@ -306,7 +306,7 @@ export function useRovingTabIndex(containerRef, selector = 'button') {
     const handleKeyDown = (event) => {
       const { key } = event;
       const itemsArray = Array.from(items);
-      let newIndex = currentIndex;
+      let newIndex;
 
       switch (key) {
         case 'ArrowRight':

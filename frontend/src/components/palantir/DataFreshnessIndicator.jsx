@@ -7,7 +7,7 @@
  * @module components/palantir/DataFreshnessIndicator
  */
 
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { ClockIcon } from '@heroicons/react/24/outline';
 

@@ -17,7 +17,6 @@ import {
   Squares2X2Icon,
   ShareIcon,
   DocumentDuplicateIcon,
-  EllipsisVerticalIcon,
 } from '@heroicons/react/24/outline';
 
 import 'react-grid-layout/css/styles.css';
@@ -25,7 +24,7 @@ import 'react-grid-layout/css/styles.css';
 import DashboardMetricCard from './MetricCard';
 import WidgetLibrary from './WidgetLibrary';
 import ShareDashboardModal from './ShareDashboardModal';
-import { getWidgetById, WIDGET_CATALOG } from './widgetRegistry';
+import { getWidgetById } from './widgetRegistry';
 
 // Grid configuration
 const GRID_COLS = 12;

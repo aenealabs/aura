@@ -6,9 +6,9 @@
  * ADR-075: Palantir AIP UI Enhancements
  */
 
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { ThreatIntelWidget } from './ThreatIntelWidget';
 import * as palantirApi from '../../../services/palantirApi';
 

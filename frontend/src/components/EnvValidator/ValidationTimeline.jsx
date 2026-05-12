@@ -14,7 +14,6 @@ import {
   ExclamationTriangleIcon,
   ClockIcon,
   ChevronRightIcon,
-  FunnelIcon,
 } from '@heroicons/react/24/outline';
 import { ResultColors, Environments } from '../../services/envValidatorApi';
 

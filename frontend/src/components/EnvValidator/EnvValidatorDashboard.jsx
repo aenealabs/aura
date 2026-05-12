@@ -6,7 +6,7 @@
  * dashboard layout with drag-and-drop card reordering.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   ShieldCheckIcon,
   ExclamationTriangleIcon,

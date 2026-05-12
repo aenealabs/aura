@@ -38,8 +38,8 @@ const FeatureTooltip = ({
     const tooltip = tooltipRef.current.getBoundingClientRect();
     const padding = 8;
 
-    let x = 0;
-    let y = 0;
+    let x;
+    let y;
 
     switch (placement) {
       case 'top':

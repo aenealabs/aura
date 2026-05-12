@@ -19,18 +19,15 @@ import {
   ArrowPathIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
-  ExclamationTriangleIcon,
   ShieldCheckIcon,
   CubeIcon,
-  CloudIcon,
   DocumentCheckIcon,
-  Cog6ToothIcon,
   LinkIcon,
   KeyIcon,
   Square3Stack3DIcon,
   BoltIcon,
 } from '@heroicons/react/24/outline';
-import { testConnection, getHealth } from '../../services/palantirApi';
+import { testConnection } from '../../services/palantirApi';
 
 // Steps configuration
 const STEPS = [

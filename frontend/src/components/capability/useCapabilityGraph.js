@@ -305,7 +305,7 @@ async function updateAgentCapabilities(agentId, grantedTools) {
     });
     if (!response.ok) {
       // Mock success for development
-      console.info('Mock: Updated capabilities for', agentId, grantedTools);
+      console.warn('Mock: Updated capabilities for', agentId, grantedTools);
       return {
         success: true,
         agent_id: agentId,
@@ -315,7 +315,7 @@ async function updateAgentCapabilities(agentId, grantedTools) {
     }
     return response.json();
   } catch (err) {
-    console.info('Mock: Updated capabilities for', agentId, grantedTools);
+    console.warn('Mock: Updated capabilities for', agentId, grantedTools);
     return {
       success: true,
       agent_id: agentId,

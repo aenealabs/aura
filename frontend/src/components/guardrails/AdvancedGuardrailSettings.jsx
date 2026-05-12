@@ -8,13 +8,12 @@
  * @module components/guardrails/AdvancedGuardrailSettings
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import PropTypes from 'prop-types';
 import {
   ChevronDownIcon,
   ChevronUpIcon,
   LockClosedIcon,
-  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { SegmentedControl, Tooltip } from '../shared';
 

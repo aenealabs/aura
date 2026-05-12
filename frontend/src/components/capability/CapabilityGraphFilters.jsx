@@ -7,13 +7,12 @@
  * @module components/capability/CapabilityGraphFilters
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import PropTypes from 'prop-types';
 import {
   FunnelIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  XMarkIcon,
   ExclamationTriangleIcon,
   ShieldCheckIcon,
   ShieldExclamationIcon,

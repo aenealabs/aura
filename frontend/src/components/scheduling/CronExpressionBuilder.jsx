@@ -7,10 +7,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  ClockIcon,
-  CalendarDaysIcon,
   ArrowPathIcon,
-  ChevronDownIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 
@@ -123,9 +120,10 @@ export default function CronExpressionBuilder({ value, onChange, showPreview = t
         return `${minute} * * * *`;
       case 'daily':
         return `${minute} ${hour} * * *`;
-      case 'weekly':
+      case 'weekly': {
         const days = selectedDays.sort((a, b) => Number(a) - Number(b)).join(',');
         return `${minute} ${hour} * * ${days || '*'}`;
+      }
       case 'monthly':
         return `${minute} ${hour} ${dayOfMonth} * *`;
       default:
@@ -416,7 +414,7 @@ function describeCron(cron) {
   if (preset) return preset.description;
 
   // Build description
-  let desc = '';
+  let desc;
 
   // Time component
   if (hour === '*') {

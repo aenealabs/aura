@@ -9,7 +9,6 @@
  * @module components/dashboard/widgets/SyncStatusWidget
  */
 
-import React from 'react';
 import PropTypes from 'prop-types';
 import {
   ArrowPathIcon,

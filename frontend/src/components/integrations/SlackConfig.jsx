@@ -26,8 +26,6 @@ import {
   HashtagIcon,
   BellAlertIcon,
   ArrowTopRightOnSquareIcon,
-  PlusIcon,
-  TrashIcon,
 } from '@heroicons/react/24/outline';
 import { useIntegrationConfig } from '../../hooks/useIntegrations';
 import { useFocusTrap } from '../../hooks/useFocusTrap';

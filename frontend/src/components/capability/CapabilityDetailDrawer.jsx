@@ -19,7 +19,6 @@ import {
   ArrowPathIcon,
   DocumentTextIcon,
   LinkIcon,
-  ClockIcon,
   UserCircleIcon,
 } from '@heroicons/react/24/outline';
 import EditPermissionsModal from './EditPermissionsModal';

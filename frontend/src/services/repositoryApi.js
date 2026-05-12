@@ -250,7 +250,7 @@ export async function listOAuthConnections(provider = null) {
   } catch (error) {
     // Return mock data in dev mode, empty array otherwise
     if (IS_DEV) {
-      console.info('Using mock OAuth connections (dev mode)');
+      console.warn('Using mock OAuth connections (dev mode)');
       const connections = provider
         ? MOCK_OAUTH_CONNECTIONS.filter((c) => c.provider === provider)
         : MOCK_OAUTH_CONNECTIONS;
@@ -317,7 +317,7 @@ export async function listRepositories(filters = {}) {
   } catch (error) {
     // Return mock data in dev mode, empty array otherwise
     if (IS_DEV) {
-      console.info('Using mock repositories (dev mode)');
+      console.warn('Using mock repositories (dev mode)');
       let repos = [...MOCK_REPOSITORIES];
       if (filters.status) {
         repos = repos.filter((r) => r.status === filters.status);

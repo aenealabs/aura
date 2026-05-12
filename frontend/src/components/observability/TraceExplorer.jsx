@@ -15,7 +15,6 @@ import {
   Search,
   RefreshCw,
   X,
-  Info,
   Layers,
   Zap,
   Target,

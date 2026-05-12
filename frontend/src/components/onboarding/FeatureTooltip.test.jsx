@@ -9,8 +9,7 @@
  * - Accessibility attributes
  */
 
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import FeatureTooltip from './FeatureTooltip';
 import TooltipIndicator from './TooltipIndicator';

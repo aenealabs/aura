@@ -182,12 +182,8 @@ export async function getIdentityProvider(id) {
     return provider;
   }
 
-  try {
-    const { data } = await apiClient.get(`/identity/providers/${id}`);
-    return data;
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiClient.get(`/identity/providers/${id}`);
+  return data;
 }
 
 /**
@@ -209,12 +205,8 @@ export async function createIdentityProvider(config) {
     return newProvider;
   }
 
-  try {
-    const { data } = await apiClient.post('/identity/providers', config);
-    return data;
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiClient.post('/identity/providers', config);
+  return data;
 }
 
 /**
@@ -237,12 +229,8 @@ export async function updateIdentityProvider(id, config) {
     return providers[index];
   }
 
-  try {
-    const { data } = await apiClient.put(`/identity/providers/${id}`, config);
-    return data;
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiClient.put(`/identity/providers/${id}`, config);
+  return data;
 }
 
 /**
@@ -257,12 +245,8 @@ export async function deleteIdentityProvider(id) {
     return { success: true };
   }
 
-  try {
-    await apiClient.delete(`/identity/providers/${id}`);
-    return { success: true };
-  } catch (error) {
-    throw error;
-  }
+  await apiClient.delete(`/identity/providers/${id}`);
+  return { success: true };
 }
 
 /**
@@ -287,12 +271,8 @@ export async function testIdentityProvider(id) {
     };
   }
 
-  try {
-    const { data } = await apiClient.post(`/identity/providers/${id}/test`);
-    return data;
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiClient.post(`/identity/providers/${id}/test`);
+  return data;
 }
 
 /**
@@ -309,12 +289,8 @@ export async function setDefaultIdentityProvider(id) {
     return { success: true };
   }
 
-  try {
-    const { data } = await apiClient.post(`/identity/providers/${id}/set-default`);
-    return data;
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiClient.post(`/identity/providers/${id}/set-default`);
+  return data;
 }
 
 /**
@@ -334,12 +310,8 @@ export async function toggleIdentityProvider(id, enabled) {
     return provider;
   }
 
-  try {
-    const { data } = await apiClient.patch(`/identity/providers/${id}`, { enabled });
-    return data;
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiClient.patch(`/identity/providers/${id}`, { enabled });
+  return data;
 }
 
 /**
@@ -380,12 +352,8 @@ export async function createDomainRoute(route) {
     return newRoute;
   }
 
-  try {
-    const { data } = await apiClient.post('/identity/domain-routes', route);
-    return data;
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiClient.post('/identity/domain-routes', route);
+  return data;
 }
 
 /**
@@ -400,12 +368,8 @@ export async function deleteDomainRoute(id) {
     return { success: true };
   }
 
-  try {
-    await apiClient.delete(`/identity/domain-routes/${id}`);
-    return { success: true };
-  } catch (error) {
-    throw error;
-  }
+  await apiClient.delete(`/identity/domain-routes/${id}`);
+  return { success: true };
 }
 
 /**
@@ -435,12 +399,8 @@ export async function initiateSsoAuth(providerId) {
     };
   }
 
-  try {
-    const { data } = await apiClient.post(`/identity/providers/${providerId}/auth`);
-    return data;
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiClient.post(`/identity/providers/${providerId}/auth`);
+  return data;
 }
 
 export default {

@@ -9,7 +9,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ServerStackIcon } from '@heroicons/react/24/solid';
 import { getConcurrentUtilization } from '../../../../services/vulnScannerApi';
 import { WidgetSkeleton, WidgetError } from './ScannerWidgetShared';
 

@@ -16,7 +16,6 @@ import {
   XCircleIcon,
   ShieldCheckIcon,
   WrenchScrewdriverIcon,
-  FunnelIcon,
 } from '@heroicons/react/24/solid';
 import { getRecentScanActivity } from '../../../../services/vulnScannerApi';
 import { SEVERITY_COLORS, WidgetSkeleton, WidgetError, WidgetCard, formatRelativeTime, formatDuration } from './ScannerWidgetShared';

@@ -8,7 +8,7 @@
  * @module components/explainability/ExplainabilityPage
  */
 
-import React, { useCallback } from 'react';
+import { useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import ExplainabilityDashboard from './ExplainabilityDashboard';

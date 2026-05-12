@@ -7,9 +7,9 @@
  * @module components/guardrails/GuardrailSettings
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { ArrowLeftIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon } from '@heroicons/react/24/outline';
 
 import SecurityProfileSelector, { SECURITY_PROFILES } from './SecurityProfileSelector';
 import AdvancedGuardrailSettings from './AdvancedGuardrailSettings';

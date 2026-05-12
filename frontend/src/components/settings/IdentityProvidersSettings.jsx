@@ -15,7 +15,6 @@ import {
   InformationCircleIcon,
   GlobeAltIcon,
   TrashIcon,
-  PencilIcon,
 } from '@heroicons/react/24/outline';
 import IdPCard from './identity/IdPCard';
 import IdPConfigModal from './identity/IdPConfigModal';

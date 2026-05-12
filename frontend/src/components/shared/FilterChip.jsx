@@ -7,7 +7,6 @@
  * @module components/shared/FilterChip
  */
 
-import React from 'react';
 import PropTypes from 'prop-types';
 import { XMarkIcon, CheckIcon } from '@heroicons/react/20/solid';
 

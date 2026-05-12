@@ -19,7 +19,7 @@ import {
   ServerIcon,
   CloudIcon,
 } from '@heroicons/react/24/outline';
-import { GPU_ERROR_TYPES, getErrorTypeInfo, formatCost } from '../../services/gpuSchedulerApi';
+import { getErrorTypeInfo, formatCost } from '../../services/gpuSchedulerApi';
 
 /**
  * Error icon based on error type

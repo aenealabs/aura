@@ -12,7 +12,7 @@
  * - Preview and manual send options
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 
 // Schedule frequency options

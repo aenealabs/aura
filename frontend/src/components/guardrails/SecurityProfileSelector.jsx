@@ -7,7 +7,6 @@
  * @module components/guardrails/SecurityProfileSelector
  */
 
-import React from 'react';
 import PropTypes from 'prop-types';
 import {
   ShieldCheckIcon,

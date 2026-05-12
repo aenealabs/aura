@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
-import { apiClient, ApiError } from './api';
+import { apiClient } from './api';
 
 // Mock fetch globally
 global.fetch = vi.fn();

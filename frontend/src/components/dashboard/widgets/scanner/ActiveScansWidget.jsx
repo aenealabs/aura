@@ -12,7 +12,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PlayCircleIcon } from '@heroicons/react/24/solid';
 import { getActiveScans } from '../../../../services/vulnScannerApi';
-import { STAGE_LABELS, STAGE_STATUS_COLORS, WidgetSkeleton, WidgetError, formatRelativeTime } from './ScannerWidgetShared';
+import { STAGE_LABELS, WidgetSkeleton, WidgetError, formatRelativeTime } from './ScannerWidgetShared';
 
 /**
  * Pipeline progress mini bar

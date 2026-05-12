@@ -1160,7 +1160,7 @@ export function createGPUWebSocket({ onMessage, onError, onClose }) {
   };
 
   ws.onclose = (event) => {
-    console.log('GPU WebSocket closed:', event.code, event.reason);
+    console.warn('GPU WebSocket closed:', event.code, event.reason);
     onClose?.(event);
   };
 

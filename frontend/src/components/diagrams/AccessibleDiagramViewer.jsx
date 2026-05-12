@@ -25,8 +25,6 @@ import {
 import {
   ChevronUpIcon,
   ChevronDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 

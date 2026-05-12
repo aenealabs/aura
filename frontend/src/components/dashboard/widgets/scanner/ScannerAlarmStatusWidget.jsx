@@ -12,7 +12,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { BellAlertIcon } from '@heroicons/react/24/solid';
 import { getScannerAlarmStatus } from '../../../../services/vulnScannerApi';
-import { ALARM_COLORS, WidgetSkeleton, WidgetError, WidgetCard, formatRelativeTime } from './ScannerWidgetShared';
+import { ALARM_COLORS, WidgetSkeleton, WidgetError, WidgetCard } from './ScannerWidgetShared';
 
 /**
  * Alarm row component

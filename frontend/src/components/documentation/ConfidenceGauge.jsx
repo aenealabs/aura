@@ -3,7 +3,6 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
-  QuestionMarkCircleIcon,
 } from '@heroicons/react/24/solid';
 import { Skeleton } from '../ui/LoadingSkeleton';
 

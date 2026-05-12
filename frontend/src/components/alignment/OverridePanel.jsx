@@ -15,15 +15,13 @@
  * Reference: ADR-052 AI Alignment Principles & Human-Machine Collaboration
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import {
   ShieldCheckIcon,
-  ArrowPathIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
   ClockIcon,
   UserIcon,
-  XMarkIcon,
   PlusIcon,
   TrashIcon,
   ArrowUturnLeftIcon,

@@ -14,7 +14,6 @@ import {
   boostJobPriority,
   getGPUResources,
   getGPUQueueMetrics,
-  getQueuePosition,
   estimateQueuePosition,
   getGPUCosts,
   getJobLogs,

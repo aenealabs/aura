@@ -9,7 +9,7 @@
  * @module components/dashboard/widgets/DependencyConfusionWidget
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import {
   ShieldExclamationIcon,

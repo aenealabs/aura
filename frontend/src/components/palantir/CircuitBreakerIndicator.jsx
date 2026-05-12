@@ -12,7 +12,6 @@
  * @module components/palantir/CircuitBreakerIndicator
  */
 
-import React from 'react';
 import PropTypes from 'prop-types';
 import {
   CheckCircleIcon,

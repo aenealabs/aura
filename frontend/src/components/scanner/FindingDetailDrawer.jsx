@@ -16,7 +16,7 @@
  * @module components/scanner/FindingDetailDrawer
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   XMarkIcon,
   CheckIcon,

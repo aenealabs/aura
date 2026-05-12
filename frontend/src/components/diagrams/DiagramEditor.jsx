@@ -8,13 +8,12 @@
  * and smooth transitions per design-principles.md
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import DiagramViewer from './DiagramViewer';
 import {
   PlayIcon,
   SparklesIcon,
-  DocumentTextIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
   ClipboardDocumentIcon,

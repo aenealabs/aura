@@ -8,7 +8,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 
 // The dashboard widgets call /api/v1/dashboard/metrics/* via dashboardMetricsApi.
 // We mock the module here so the tests drive widgets with controlled fixture

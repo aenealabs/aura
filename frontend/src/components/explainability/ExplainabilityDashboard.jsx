@@ -8,12 +8,10 @@
  * @module components/explainability/ExplainabilityDashboard
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import {
   ArrowLeftIcon,
-  MagnifyingGlassIcon,
-  FunnelIcon,
   ArrowPathIcon,
   ChartBarIcon,
   LightBulbIcon,

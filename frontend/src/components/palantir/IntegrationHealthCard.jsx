@@ -7,7 +7,6 @@
  * @module components/palantir/IntegrationHealthCard
  */
 
-import React from 'react';
 import PropTypes from 'prop-types';
 import {
   ShieldCheckIcon,

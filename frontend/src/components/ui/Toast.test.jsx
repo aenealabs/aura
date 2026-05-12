@@ -1,5 +1,5 @@
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, test, expect, vi } from 'vitest';
 import { ToastProvider, useToast, showApiError } from './Toast';
 
 // Test consumer component

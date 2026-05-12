@@ -7,7 +7,6 @@
  * @module components/guardrails/ComplianceProfileBadge
  */
 
-import React from 'react';
 import PropTypes from 'prop-types';
 import { LockClosedIcon, InformationCircleIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
 import { Tooltip } from '../shared';

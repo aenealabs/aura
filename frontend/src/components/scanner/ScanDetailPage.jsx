@@ -30,14 +30,12 @@ import {
 } from '@heroicons/react/24/solid';
 import { getScanDetail, launchScan, downloadSARIF, cancelScan } from '../../services/vulnScannerApi';
 import {
-  SEVERITY_COLORS,
   STAGE_LABELS,
   STAGE_STATUS_COLORS,
   SeverityBadge,
   ConfidenceBadge,
   VerificationBadge,
   formatDuration,
-  formatRelativeTime,
   formatNumber,
 } from '../dashboard/widgets/scanner/ScannerWidgetShared';
 

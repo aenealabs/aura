@@ -830,7 +830,7 @@ export default function ApprovalDashboard() {
   // Fetch approvals on mount only
   useEffect(() => {
     fetchApprovals();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Handle refresh - falls back to mock data when API unavailable

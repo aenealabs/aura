@@ -11,28 +11,21 @@ import {
   CpuChipIcon,
   QueueListIcon,
   CurrencyDollarIcon,
-  ClockIcon,
-  PlayIcon,
-  StopIcon,
   ArrowUpIcon,
   XMarkIcon,
   ChevronRightIcon,
   ChevronDownIcon,
   PlusIcon,
   ArrowPathIcon,
-  InformationCircleIcon,
   Cog6ToothIcon,
   QuestionMarkCircleIcon,
   ExclamationCircleIcon,
-  ExclamationTriangleIcon,
   CheckCircleIcon,
   BoltIcon,
 } from '@heroicons/react/24/outline';
 import { CpuChipIcon as CpuChipIconSolid } from '@heroicons/react/24/solid';
-import MetricCard, { MetricCardGrid } from '../ui/MetricCard';
 import { useGPUWorkloads } from '../../context/GPUWorkloadsContext';
 import {
-  formatGPUMemory,
   formatCost,
   formatDuration,
   getGPUStatusColor,

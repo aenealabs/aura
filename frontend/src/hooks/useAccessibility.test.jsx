@@ -13,7 +13,6 @@ import {
   useHighContrast,
   useAnnouncer,
   useKeyboardNavigation,
-  useRovingTabIndex,
   AnnouncerProvider,
   VisuallyHidden,
   SkipLink,

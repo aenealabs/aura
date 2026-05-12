@@ -6,7 +6,7 @@
  * ADR-075: Palantir AIP UI Enhancements
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SyncStatusWidget } from './SyncStatusWidget';

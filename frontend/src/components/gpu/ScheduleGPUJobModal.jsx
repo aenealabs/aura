@@ -12,7 +12,6 @@ import {
   CpuChipIcon,
   FolderIcon,
   ClockIcon,
-  CurrencyDollarIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   InformationCircleIcon,
@@ -22,7 +21,6 @@ import { useGPUWorkloads } from '../../context/GPUWorkloadsContext';
 import {
   GPU_JOB_TYPES,
   GPU_JOB_PRIORITIES,
-  formatDuration,
   formatCost,
 } from '../../services/gpuSchedulerApi';
 

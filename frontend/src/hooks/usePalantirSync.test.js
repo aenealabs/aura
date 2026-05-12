@@ -6,7 +6,7 @@
  * ADR-075: Palantir AIP UI Enhancements
  */
 
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { usePalantirSync, useCircuitBreaker, usePalantirHealth } from './usePalantirSync';
 import * as palantirApi from '../services/palantirApi';

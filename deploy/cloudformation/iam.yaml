@@ -23,6 +23,16 @@ Parameters:
     Default: aura
     Description: Project name
 
+  UseLegacyDeployRole:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: 'ADR-092 blue/green rollback toggle. Default false attaches the scoped managed policy (ADR-092 Statements 1, 2, 3). Set true to revert to the legacy unscoped 16-service wildcard policy. Flipping this parameter swaps the managed policy on the CFN deploy role without recreating the role (RoleName is immutable). See ADR-092 §Rollback.'
+
+Conditions:
+  UseLegacyDeployRoleEnabled: !Equals [!Ref UseLegacyDeployRole, 'true']
+  UseScopedDeployRole: !Equals [!Ref UseLegacyDeployRole, 'false']
+
 Resources:
   # EKS Cluster Role
   EKSClusterRole:
@@ -299,6 +309,444 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
+  # ===========================================================================
+  # ADR-092: CloudFormation Deploy Role Managed Policies (Statements 1, 2, 3)
+  # ===========================================================================
+  # Two managed policies attached conditionally to the same role.
+  # - CloudFormationScopedManagedPolicy: default (UseLegacyDeployRole=false)
+  # - CloudFormationLegacyManagedPolicy: rollback (UseLegacyDeployRole=true)
+  # The role itself keeps inline policy with Statements 4-8 (KMS, CloudWatch,
+  # Logs, read-only, Denies) and the pre-existing IAM/CFN/Secrets/Bedrock/SSM
+  # blocks. See ADR-092 for the design.
+
+  CloudFormationLegacyManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: UseLegacyDeployRoleEnabled
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-cfn-legacy-policy-${Environment}'
+      Description: 'ADR-092 LEGACY - retained for blue/green rollback. Single 16-service wildcard, region-conditioned. DO NOT USE outside rollback.'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: LegacyUnscoped16ServiceWildcard
+            Effect: Allow
+            Action:
+              - ec2:*
+              - eks:*
+              - rds:*
+              - es:*
+              - dynamodb:*
+              - s3:*
+              - kms:*
+              - logs:*
+              - cloudwatch:*
+              - elasticloadbalancing:*
+              - autoscaling:*
+              - ecs:*
+              - ecr:*
+              - elasticfilesystem:*
+              - servicediscovery:*
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:RequestedRegion': !Ref AWS::Region
+
+  CloudFormationScopedManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: UseScopedDeployRole
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-cfn-scoped-policy-${Environment}'
+      Description: 'ADR-092 Statements 1, 2, 3 - scoped mutate (ARN-supported services), tag-conditioned mutate (server-generated-ID services), EC2 split.'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # -------- Statement 1: Scoped mutate (ARN-supported services) --------
+          - Sid: ScopedMutateS3
+            Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:DeleteBucket
+              - s3:PutBucketPolicy
+              - s3:DeleteBucketPolicy
+              - s3:GetBucketPolicy
+              - s3:PutBucketVersioning
+              - s3:PutEncryptionConfiguration
+              - s3:PutLifecycleConfiguration
+              - s3:PutBucketTagging
+              - s3:PutBucketCORS
+              - s3:PutBucketPublicAccessBlock
+              - s3:PutBucketAcl
+              - s3:PutReplicationConfiguration
+              - s3:PutBucketNotification
+              - s3:PutBucketLogging
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:GetObject
+              - s3:ListBucket
+              - s3:RestoreObject
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*/*'
+
+          - Sid: ScopedMutateDynamoDB
+            Effect: Allow
+            Action:
+              - dynamodb:CreateTable
+              - dynamodb:DeleteTable
+              - dynamodb:UpdateTable
+              - dynamodb:DescribeTable
+              - dynamodb:TagResource
+              - dynamodb:UntagResource
+              - dynamodb:UpdateContinuousBackups
+              - dynamodb:UpdateTimeToLive
+              - dynamodb:DescribeTimeToLive
+              - dynamodb:DescribeContinuousBackups
+              - dynamodb:CreateGlobalTable
+              - dynamodb:UpdateGlobalTable
+              - dynamodb:DescribeGlobalTable
+              - dynamodb:CreateBackup
+              - dynamodb:DeleteBackup
+              - dynamodb:DescribeBackup
+              - dynamodb:RestoreTableFromBackup
+              - dynamodb:RestoreTableToPointInTime
+              - dynamodb:DescribeStream
+              - dynamodb:UpdateContributorInsights
+              - dynamodb:PutResourcePolicy
+              - dynamodb:DeleteResourcePolicy
+              - dynamodb:GetResourcePolicy
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${ProjectName}-*/index/*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${ProjectName}-*/stream/*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${ProjectName}-*/backup/*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:backup/*'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:global-table/${ProjectName}-*'
+
+          - Sid: ScopedMutateECR
+            Effect: Allow
+            Action:
+              - ecr:CreateRepository
+              - ecr:DeleteRepository
+              - ecr:PutLifecyclePolicy
+              - ecr:DeleteLifecyclePolicy
+              - ecr:GetLifecyclePolicy
+              - ecr:SetRepositoryPolicy
+              - ecr:DeleteRepositoryPolicy
+              - ecr:GetRepositoryPolicy
+              - ecr:PutImageScanningConfiguration
+              - ecr:PutImageTagMutability
+              - ecr:TagResource
+              - ecr:UntagResource
+              - ecr:ListTagsForResource
+            Resource:
+              # Note: ECR uses `aura-*` prefix per ADR-049 (private-ECR convention),
+              # not `${ProjectName}-*`. Called out explicitly.
+              - !Sub 'arn:${AWS::Partition}:ecr:*:${AWS::AccountId}:repository/aura-*'
+
+          - Sid: ScopedMutateEKS
+            Effect: Allow
+            Action:
+              - eks:CreateCluster
+              - eks:DeleteCluster
+              - eks:UpdateClusterConfig
+              - eks:UpdateClusterVersion
+              - eks:CreateNodegroup
+              - eks:DeleteNodegroup
+              - eks:UpdateNodegroupConfig
+              - eks:UpdateNodegroupVersion
+              - eks:CreateFargateProfile
+              - eks:DeleteFargateProfile
+              - eks:CreateAddon
+              - eks:DeleteAddon
+              - eks:UpdateAddon
+              - eks:TagResource
+              - eks:UntagResource
+              - eks:AssociateAccessPolicy
+              - eks:DisassociateAccessPolicy
+              - eks:CreateAccessEntry
+              - eks:DeleteAccessEntry
+              - eks:UpdateAccessEntry
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:cluster/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:nodegroup/${ProjectName}-*/*/*'
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:fargateprofile/${ProjectName}-*/*'
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:addon/${ProjectName}-*/*/*'
+              - !Sub 'arn:${AWS::Partition}:eks:*:${AWS::AccountId}:access-entry/${ProjectName}-*/*/*'
+
+          - Sid: ScopedMutateECS
+            Effect: Allow
+            Action:
+              - ecs:CreateCluster
+              - ecs:DeleteCluster
+              - ecs:PutClusterCapacityProviders
+              - ecs:RegisterTaskDefinition
+              - ecs:DeregisterTaskDefinition
+              - ecs:CreateService
+              - ecs:DeleteService
+              - ecs:UpdateService
+              - ecs:CreateTaskSet
+              - ecs:DeleteTaskSet
+              - ecs:UpdateTaskSet
+              - ecs:TagResource
+              - ecs:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:cluster/${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:service/${ProjectName}-*/*'
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:task-definition/${ProjectName}-*:*'
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:task-set/${ProjectName}-*/*/*'
+              - !Sub 'arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:capacity-provider/${ProjectName}-*'
+
+          - Sid: ScopedMutateRDS
+            Effect: Allow
+            Action:
+              - rds:CreateDBCluster
+              - rds:DeleteDBCluster
+              - rds:ModifyDBCluster
+              - rds:CreateDBInstance
+              - rds:DeleteDBInstance
+              - rds:ModifyDBInstance
+              - rds:CreateDBSubnetGroup
+              - rds:DeleteDBSubnetGroup
+              - rds:ModifyDBSubnetGroup
+              - rds:CreateDBParameterGroup
+              - rds:DeleteDBParameterGroup
+              - rds:ModifyDBParameterGroup
+              - rds:CreateDBClusterParameterGroup
+              - rds:DeleteDBClusterParameterGroup
+              - rds:ModifyDBClusterParameterGroup
+              - rds:CreateOptionGroup
+              - rds:DeleteOptionGroup
+              - rds:ModifyOptionGroup
+              - rds:CreateDBSnapshot
+              - rds:DeleteDBSnapshot
+              - rds:CreateDBClusterSnapshot
+              - rds:DeleteDBClusterSnapshot
+              - rds:RestoreDBClusterFromSnapshot
+              - rds:RestoreDBClusterToPointInTime
+              - rds:RestoreDBInstanceFromDBSnapshot
+              - rds:ModifyDBClusterSnapshotAttribute
+              - rds:AddTagsToResource
+              - rds:RemoveTagsFromResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:db:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:cluster:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:subgrp:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:pg:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:cluster-pg:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:og:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:snapshot:${ProjectName}-*'
+              - !Sub 'arn:${AWS::Partition}:rds:*:${AWS::AccountId}:cluster-snapshot:${ProjectName}-*'
+
+          - Sid: ScopedMutateOpenSearch
+            Effect: Allow
+            Action:
+              - es:CreateDomain
+              - es:DeleteDomain
+              - es:UpdateDomainConfig
+              - es:AddTags
+              - es:RemoveTags
+              - es:UpdateElasticsearchDomainConfig
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:es:*:${AWS::AccountId}:domain/${ProjectName}-*'
+
+          - Sid: ScopedMutateELB
+            Effect: Allow
+            Action:
+              - elasticloadbalancing:CreateLoadBalancer
+              - elasticloadbalancing:DeleteLoadBalancer
+              - elasticloadbalancing:ModifyLoadBalancerAttributes
+              - elasticloadbalancing:CreateTargetGroup
+              - elasticloadbalancing:DeleteTargetGroup
+              - elasticloadbalancing:ModifyTargetGroup
+              - elasticloadbalancing:ModifyTargetGroupAttributes
+              - elasticloadbalancing:RegisterTargets
+              - elasticloadbalancing:DeregisterTargets
+              - elasticloadbalancing:CreateListener
+              - elasticloadbalancing:DeleteListener
+              - elasticloadbalancing:ModifyListener
+              - elasticloadbalancing:CreateRule
+              - elasticloadbalancing:DeleteRule
+              - elasticloadbalancing:ModifyRule
+              - elasticloadbalancing:AddTags
+              - elasticloadbalancing:RemoveTags
+              - elasticloadbalancing:SetSubnets
+              - elasticloadbalancing:SetSecurityGroups
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:${AWS::AccountId}:loadbalancer/app/${ProjectName}-*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:${AWS::AccountId}:loadbalancer/net/${ProjectName}-*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:${AWS::AccountId}:targetgroup/${ProjectName}-*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:${AWS::AccountId}:listener/app/${ProjectName}-*/*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:${AWS::AccountId}:listener/net/${ProjectName}-*/*/*'
+              - !Sub 'arn:${AWS::Partition}:elasticloadbalancing:*:${AWS::AccountId}:listener-rule/app/${ProjectName}-*/*/*/*'
+
+          - Sid: ScopedMutateAutoScaling
+            Effect: Allow
+            Action:
+              - autoscaling:CreateAutoScalingGroup
+              - autoscaling:DeleteAutoScalingGroup
+              - autoscaling:UpdateAutoScalingGroup
+              - autoscaling:CreateOrUpdateTags
+              - autoscaling:DeleteTags
+              - autoscaling:AttachInstances
+              - autoscaling:DetachInstances
+              - autoscaling:SetDesiredCapacity
+              - autoscaling:SetInstanceProtection
+              - autoscaling:SuspendProcesses
+              - autoscaling:ResumeProcesses
+              - autoscaling:CancelInstanceRefresh
+              - autoscaling:StartInstanceRefresh
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:autoscaling:*:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${ProjectName}-*'
+
+          # -------- Statement 2: Tag-conditioned mutate (server-generated-ID services) --------
+          - Sid: TagConditionedCreateEFS
+            Effect: Allow
+            Action:
+              - elasticfilesystem:CreateFileSystem
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/Project': !Ref ProjectName
+
+          - Sid: TagConditionedOperateEFS
+            Effect: Allow
+            Action:
+              - elasticfilesystem:DeleteFileSystem
+              - elasticfilesystem:UpdateFileSystem
+              - elasticfilesystem:CreateMountTarget
+              - elasticfilesystem:DeleteMountTarget
+              - elasticfilesystem:ModifyMountTargetSecurityGroups
+              - elasticfilesystem:CreateAccessPoint
+              - elasticfilesystem:DeleteAccessPoint
+              - elasticfilesystem:TagResource
+              - elasticfilesystem:UntagResource
+              - elasticfilesystem:PutLifecycleConfiguration
+              - elasticfilesystem:PutFileSystemPolicy
+              - elasticfilesystem:DeleteFileSystemPolicy
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/Project': !Ref ProjectName
+
+          - Sid: TagConditionedCreateServiceDiscovery
+            Effect: Allow
+            Action:
+              - servicediscovery:CreatePrivateDnsNamespace
+              - servicediscovery:CreatePublicDnsNamespace
+              - servicediscovery:CreateHttpNamespace
+            Resource: '*'
+            Condition:
+              StringLike:
+                'servicediscovery:NamespaceName': !Sub '${ProjectName}-*'
+
+          - Sid: TagConditionedOperateServiceDiscovery
+            Effect: Allow
+            Action:
+              - servicediscovery:DeleteNamespace
+              - servicediscovery:UpdateHttpNamespace
+              - servicediscovery:UpdatePrivateDnsNamespace
+              - servicediscovery:UpdatePublicDnsNamespace
+              - servicediscovery:CreateService
+              - servicediscovery:DeleteService
+              - servicediscovery:UpdateService
+              - servicediscovery:RegisterInstance
+              - servicediscovery:DeregisterInstance
+              - servicediscovery:TagResource
+              - servicediscovery:UntagResource
+            Resource: '*'
+            Condition:
+              StringEqualsIfExists:
+                'aws:ResourceTag/Project': !Ref ProjectName
+
+          # -------- Statement 3: EC2 split - mutate (tag-conditioned) + describe (Statement 7) --------
+          - Sid: EC2MutateOnCreateRequireProjectTag
+            Effect: Allow
+            Action:
+              - ec2:CreateVpc
+              - ec2:CreateSubnet
+              - ec2:CreateInternetGateway
+              - ec2:CreateNatGateway
+              - ec2:CreateRouteTable
+              - ec2:CreateSecurityGroup
+              - ec2:CreateVolume
+              - ec2:CreateSnapshot
+              - ec2:CreateImage
+              - ec2:CreateNetworkInterface
+              - ec2:CreateVpcEndpoint
+              - ec2:CreateVpcPeeringConnection
+              - ec2:CreateLaunchTemplate
+              - ec2:CreateLaunchTemplateVersion
+              - ec2:CreateKeyPair
+              - ec2:CreateNetworkAcl
+              - ec2:CreateFlowLogs
+              - ec2:RunInstances
+              - ec2:AllocateAddress
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/Project': !Ref ProjectName
+
+          - Sid: EC2MutateOnExistingRequireProjectTag
+            Effect: Allow
+            Action:
+              - ec2:DeleteVpc
+              - ec2:DeleteSubnet
+              - ec2:DeleteInternetGateway
+              - ec2:DeleteNatGateway
+              - ec2:DeleteRouteTable
+              - ec2:CreateRoute
+              - ec2:DeleteRoute
+              - ec2:DeleteSecurityGroup
+              - ec2:DeleteVolume
+              - ec2:DeleteSnapshot
+              - ec2:DeregisterImage
+              - ec2:DeleteNetworkInterface
+              - ec2:DeleteVpcEndpoints
+              - ec2:DeleteVpcPeeringConnection
+              - ec2:DeleteLaunchTemplate
+              - ec2:DeleteLaunchTemplateVersions
+              - ec2:DeleteKeyPair
+              - ec2:DeleteNetworkAcl
+              - ec2:CreateNetworkAclEntry
+              - ec2:DeleteNetworkAclEntry
+              - ec2:DeleteFlowLogs
+              - ec2:CreateTags
+              - ec2:DeleteTags
+              - ec2:TerminateInstances
+              - ec2:StopInstances
+              - ec2:StartInstances
+              - ec2:RebootInstances
+              - ec2:ModifyVpcAttribute
+              - ec2:ModifySubnetAttribute
+              - ec2:ModifyVpcEndpoint
+              - ec2:ModifyLaunchTemplate
+              - ec2:ModifyInstanceAttribute
+              - ec2:ModifyVolume
+              - ec2:ModifyImageAttribute
+              - ec2:ModifyNetworkInterfaceAttribute
+              - ec2:AttachInternetGateway
+              - ec2:DetachInternetGateway
+              - ec2:AttachVolume
+              - ec2:DetachVolume
+              - ec2:AttachNetworkInterface
+              - ec2:DetachNetworkInterface
+              - ec2:AssociateRouteTable
+              - ec2:DisassociateRouteTable
+              - ec2:AssociateAddress
+              - ec2:DisassociateAddress
+              - ec2:ReleaseAddress
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:AuthorizeSecurityGroupEgress
+              - ec2:RevokeSecurityGroupIngress
+              - ec2:RevokeSecurityGroupEgress
+              - ec2:CancelSpotInstanceRequests
+              - ec2:AssignPrivateIpAddresses
+              - ec2:UnassignPrivateIpAddresses
+            Resource: '*'
+            Condition:
+              StringEqualsIfExists:
+                'aws:ResourceTag/Project': !Ref ProjectName
+
   # CloudFormation Service Role
   CloudFormationServiceRole:
     Type: AWS::IAM::Role
@@ -311,37 +759,208 @@ Resources:
             Principal:
               Service: cloudformation.amazonaws.com
             Action: sts:AssumeRole
+      # ADR-092: scoped/legacy managed policy attached conditionally via
+      # UseLegacyDeployRole parameter. Statements 1, 2, 3 (scoped+tag-conditioned
+      # mutate + EC2 split) live in the managed policy. Statements 4-8 below
+      # stay inline alongside the existing IAM/CFN/Secrets/Bedrock/SSM blocks.
+      ManagedPolicyArns:
+        - !If
+          - UseLegacyDeployRoleEnabled
+          - !Ref CloudFormationLegacyManagedPolicy
+          - !Ref CloudFormationScopedManagedPolicy
       Policies:
         - PolicyName: CloudFormationDeploymentPolicy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Infrastructure Services (scoped to current region)
-              - Effect: Allow
+              # ===========================================================
+              # ADR-092 Statement 4: KMS bootstrap + operate split
+              # ===========================================================
+              # CreateKey cannot use kms:ResourceAliases (no alias exists at
+              # creation time). Operate-tier actions use kms:ResourceAliases
+              # matching alias/${ProjectName}-* per ADR-092.
+              - Sid: KMSBootstrapRequireProjectTag
+                Effect: Allow
                 Action:
-                  - ec2:*
-                  - eks:*
-                  - rds:*  # Neptune uses RDS service namespace
-                  - es:*  # OpenSearch uses 'es' service prefix
-                  - dynamodb:*
-                  - s3:*
-                  - kms:*
-                  - logs:*
-                  - cloudwatch:*
-                  - elasticloadbalancing:*
-                  - autoscaling:*
-                  - ecs:*
-                  - ecr:*
-                  - elasticfilesystem:*
-                  - rds:*
-                  - servicediscovery:*
+                  - kms:CreateKey
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'aws:RequestTag/Project': !Ref ProjectName
+
+              - Sid: KMSOperateScopedByAlias
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                  - kms:GenerateDataKeyWithoutPlaintext
+                  - kms:DescribeKey
+                  - kms:ScheduleKeyDeletion
+                  - kms:CancelKeyDeletion
+                  - kms:DisableKey
+                  - kms:EnableKey
+                  - kms:EnableKeyRotation
+                  - kms:DisableKeyRotation
+                  - kms:GetKeyRotationStatus
+                  - kms:PutKeyPolicy
+                  - kms:GetKeyPolicy
+                  - kms:CreateAlias
+                  - kms:DeleteAlias
+                  - kms:UpdateAlias
+                  - kms:ListAliases
+                  - kms:TagResource
+                  - kms:UntagResource
+                  - kms:ListResourceTags
+                  - kms:CreateGrant
+                  - kms:RetireGrant
+                  - kms:RevokeGrant
+                  - kms:ListGrants
+                  - kms:ReplicateKey
+                  - kms:UpdatePrimaryRegion
+                Resource: '*'
+                Condition:
+                  StringLike:
+                    'kms:ResourceAliases': !Sub 'alias/${ProjectName}-*'
+
+              # ===========================================================
+              # ADR-092 Statement 5: CloudWatch PutMetricData
+              # ===========================================================
+              # PutMetricData operates at the namespace level, not resource.
+              # AWS API requires Resource: '*'. Per ADR-041 §44 precedent,
+              # the wildcard is justified inline and constrained by namespace.
+              - Sid: CloudWatchPutMetricDataWildcardJustifiedByAPI
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringLike:
+                    'cloudwatch:namespace':
+                      - !Sub '${ProjectName}/*'
+                      - 'AWS/*'
+
+              - Sid: CloudWatchMutateScoped
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:SetAlarmState
+                  - cloudwatch:PutDashboard
+                  - cloudwatch:DeleteDashboards
+                  - cloudwatch:TagResource
+                  - cloudwatch:UntagResource
+                  - cloudwatch:PutAnomalyDetector
+                  - cloudwatch:DeleteAnomalyDetector
+                  - cloudwatch:PutCompositeAlarm
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:*:${AWS::AccountId}:alarm:${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch::${AWS::AccountId}:dashboard/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch::${AWS::AccountId}:dashboard/aura-*'
+
+              # ===========================================================
+              # ADR-092 Statement 6: Logs CreateLogDelivery
+              # ===========================================================
+              # AWS API requires Resource: '*' for log-delivery APIs.
+              # Per ADR-041 §44 precedent, wildcard justified inline.
+              - Sid: LogsCreateLogDeliveryWildcardJustifiedByAPI
+                Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:DescribeResourcePolicies
+                  - logs:PutResourcePolicy
+                  - logs:DeleteResourcePolicy
+                Resource: '*'
+
+              - Sid: LogsMutateScopedToActualLogGroupPatterns
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:DeleteRetentionPolicy
+                  - logs:PutSubscriptionFilter
+                  - logs:DeleteSubscriptionFilter
+                  - logs:PutMetricFilter
+                  - logs:DeleteMetricFilter
+                  - logs:CreateLogStream
+                  - logs:DeleteLogStream
+                  - logs:PutLogEvents
+                  - logs:TagResource
+                  - logs:UntagResource
+                  - logs:AssociateKmsKey
+                  - logs:DisassociateKmsKey
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/eks/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/ecs/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/apigateway/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/states/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/events/${ProjectName}-*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/${ProjectName}/*:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/${ProjectName}-*:*'
+
+              # ===========================================================
+              # ADR-092 Statement 7: Read-only wildcards (account inventory)
+              # ===========================================================
+              # ~50 EC2 Describe APIs + similar across other services have
+              # no resource-ARN support per Service Authorization Reference.
+              # Read-only by nature - reconnaissance risk only, not exfil.
+              # Region condition retained as defense in depth.
+              - Sid: ReadOnlyWildcardAccountInventoryJustifiedByAPI
+                Effect: Allow
+                Action:
+                  - ec2:Describe*
+                  - ec2:Get*
+                  - ec2:List*
+                  - eks:Describe*
+                  - eks:List*
+                  - ecs:Describe*
+                  - ecs:List*
+                  - ecr:Describe*
+                  - ecr:List*
+                  - ecr:Get*
+                  - ecr:BatchGet*
+                  - rds:Describe*
+                  - rds:List*
+                  - es:Describe*
+                  - es:List*
+                  - dynamodb:Describe*
+                  - dynamodb:List*
+                  - s3:ListAllMyBuckets
+                  - s3:GetBucketLocation
+                  - kms:Describe*
+                  - kms:List*
+                  - kms:Get*
+                  - logs:Describe*
+                  - logs:Get*
+                  - logs:List*
+                  - logs:FilterLogEvents
+                  - cloudwatch:Describe*
+                  - cloudwatch:List*
+                  - cloudwatch:Get*
+                  - elasticloadbalancing:Describe*
+                  - autoscaling:Describe*
+                  - elasticfilesystem:Describe*
+                  - servicediscovery:Get*
+                  - servicediscovery:List*
                 Resource: '*'
                 Condition:
                   StringEquals:
                     'aws:RequestedRegion': !Ref AWS::Region
 
-              # IAM - Scoped to Project Resources Only
-              - Effect: Allow
+              # ===========================================================
+              # Existing IAM scope - PRESERVED from pre-ADR-092 policy
+              # ===========================================================
+              # iam:PassRole split out below into Statement 8.4 with
+              # iam:PassedToService constraint per ADR-092.
+              - Sid: IAMScopedToProjectRoles
+                Effect: Allow
                 Action:
                   - iam:CreateRole
                   - iam:DeleteRole
@@ -352,7 +971,6 @@ Resources:
                   - iam:GetRolePolicy
                   - iam:AttachRolePolicy
                   - iam:DetachRolePolicy
-                  - iam:PassRole
                   - iam:CreateInstanceProfile
                   - iam:DeleteInstanceProfile
                   - iam:GetInstanceProfile
@@ -365,6 +983,35 @@ Resources:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*'
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/${ProjectName}-*'
                   - !Sub 'arn:${AWS::Partition}:iam::*:role/aws-service-role/*'
+
+              # ===========================================================
+              # ADR-092 Statement 8.4: iam:PassRole with PassedToService
+              # ===========================================================
+              # Closes MITRE T1078.004 (Valid Accounts: Cloud Accounts).
+              # Without this condition, the role could attach IRSA roles to
+              # services not used by the platform (CodeBuild, Glue,
+              # SageMaker) - escalation paths.
+              - Sid: IAMPassRoleConstrainedToConsumerServices
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*'
+                  - !Sub 'arn:${AWS::Partition}:iam::*:role/aws-service-role/*'
+                Condition:
+                  StringEquals:
+                    'iam:PassedToService':
+                      - cloudformation.amazonaws.com
+                      - ec2.amazonaws.com
+                      - ecs-tasks.amazonaws.com
+                      - ecs.amazonaws.com
+                      - eks.amazonaws.com
+                      - eks-fargate-pods.amazonaws.com
+                      - lambda.amazonaws.com
+                      - states.amazonaws.com
+                      - apigateway.amazonaws.com
+                      - bedrock.amazonaws.com
+                      - rds.amazonaws.com
 
               # CloudFormation Stack Management
               # IAM Remediation: Explicit actions instead of cloudformation:* (architecture review Dec 2025)
@@ -471,8 +1118,77 @@ Resources:
                   StringEquals:
                     codestar-connections:PassedToService: codebuild.amazonaws.com
 
-              # DENY Dangerous Operations (defense in depth)
-              - Effect: Deny
+              # ===========================================================
+              # ADR-092 Statement 8.1: Safety Deny (prod-pattern collision)
+              # ===========================================================
+              # NOT a security control. Catches name-collision misconfig
+              # (dev/qa deploy accidentally targeting prod-named resources).
+              # Uses aws:PrincipalTag/Environment (the role's tag) not the
+              # resource's tag - that's the right check for "wrong env deploy"
+              # semantics. See ADR-092 §8.1.
+              - Sid: SafetyDenyProductionPatternsInNonProdDeploys
+                Effect: Deny
+                Action: '*'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:*:*:table/${ProjectName}-*-prod*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-prod*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-*-prod*/*'
+                  - !Sub 'arn:${AWS::Partition}:rds:*:*:db:${ProjectName}-*-prod*'
+                  - !Sub 'arn:${AWS::Partition}:rds:*:*:cluster:${ProjectName}-*-prod*'
+                Condition:
+                  StringNotEquals:
+                    'aws:PrincipalTag/Environment': !Ref Environment
+
+              # ===========================================================
+              # ADR-092 Statement 8.2: Security Deny - Self-broadening
+              # ===========================================================
+              # Closes MITRE T1098.001 (Account Manipulation: Additional Cloud
+              # Roles). The role name matches ${ProjectName}-cfn-role-*, so
+              # without this Deny it could iam:UpdateAssumeRolePolicy on
+              # itself and broaden its own trust policy.
+              - Sid: SecurityDenySelfBroadening
+                Effect: Deny
+                Action:
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:DeleteRolePermissionsBoundary
+                  - iam:PutRolePermissionsBoundary
+                  - iam:DeleteRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cfn-role-*'
+
+              # ===========================================================
+              # ADR-092 Statement 8.3: Security Deny - missing Project tag
+              # ===========================================================
+              # Narrows exfiltration / destruction blast radius on cross-
+              # project resources. Caveat: aws:ResourceTag has documented
+              # gaps on some services (S3 GetObject does not consult bucket
+              # tags by default). Best-effort defense in depth; paired with
+              # org-level Project-tag-required SCP.
+              - Sid: SecurityDenyMutateResourcesMissingProjectTag
+                Effect: Deny
+                Action:
+                  - dynamodb:DeleteItem
+                  - dynamodb:DeleteTable
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:UpdateItem
+                  - s3:DeleteBucket
+                  - s3:DeleteObject
+                  - s3:PutBucketPolicy
+                  - kms:ScheduleKeyDeletion
+                  - kms:DisableKey
+                  - rds:DeleteDBCluster
+                  - rds:DeleteDBInstance
+                Resource: '*'
+                Condition:
+                  StringNotEqualsIfExists:
+                    'aws:ResourceTag/Project': !Ref ProjectName
+
+              # DENY Dangerous Operations (defense in depth) - PRESERVED
+              - Sid: DenyDangerousAccountOperations
+                Effect: Deny
                 Action:
                   - iam:DeleteUser
                   - iam:DeleteGroup
@@ -488,6 +1204,8 @@ Resources:
           Value: !Ref ProjectName
         - Key: Environment
           Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-092
 
   # Lambda Execution Role (for custom resources)
   LambdaExecutionRole:

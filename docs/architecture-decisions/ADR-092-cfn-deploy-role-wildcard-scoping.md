@@ -2,12 +2,13 @@
 
 ## Status
 
-**Proposed (v2)** | May 12, 2026
+**Accepted (v2)** | May 12, 2026
 
 ### Revision history
 
 - **v1** (May 12, 2026) — Initial draft. Three options (A/B/C) with C recommended. Drafted in response to issue #182 IAM-wildcards line item.
-- **v2** (May 12, 2026) — Revised after three independent expert reviews (AWS/IAM architect, cybersecurity analyst, senior code reviewer). Material corrections to the per-service scoping table, added Self-Broadening Deny and `iam:PassedToService` constraint, re-labeled prod-pattern Deny as a safety control with a separate security Deny added, expanded to 8-statement structure, planned managed-policy split from day one, expanded Phase 1 inventory beyond CloudTrail-only, replaced inline `!If` rollback with dual-managed-policy or separate-template pattern. Decision unchanged: still Option C (hybrid), still Proposed pending human acceptance.
+- **v2** (May 12, 2026) — Revised after three independent expert reviews (AWS/IAM architect, cybersecurity analyst, senior code reviewer). Material corrections to the per-service scoping table, added Self-Broadening Deny and `iam:PassedToService` constraint, re-labeled prod-pattern Deny as a safety control with a separate security Deny added, expanded to 8-statement structure, planned managed-policy split from day one, expanded Phase 1 inventory beyond CloudTrail-only, replaced inline `!If` rollback with dual-managed-policy or separate-template pattern.
+- **Accepted** (May 12, 2026) — Owner accepted v2 unmodified. Phase 2 (code change) committed in the same change set. Phase 1 (CloudTrail inventory) and Phases 3–5 (deploy + rollback exercise + production + docs) pending live AWS access.
 
 ## Context
 

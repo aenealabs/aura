@@ -18,19 +18,7 @@ import {
   ExclamationCircleIcon,
 } from '@heroicons/react/24/solid';
 import { DataFreshnessIndicator } from '../../palantir/DataFreshnessIndicator';
-import { DemoDataBadge } from './DemoDataBadge';
-
-// Mock MTTR data
-const MOCK_MTTR_DATA = {
-  current_mttr_hours: 18.5,
-  target_mttr_hours: 24,
-  previous_mttr_hours: 22.3,
-  critical_mttr_hours: 4.2,
-  high_mttr_hours: 12.8,
-  medium_mttr_hours: 36.4,
-  open_count: 23,
-  closed_last_7d: 47,
-};
+import { getMTTR } from '../../../services/dashboardMetricsApi';
 
 /**
  * Format hours into readable string
@@ -118,11 +106,9 @@ export function MTTRWidget({
 
   const fetchMTTR = useCallback(async () => {
     try {
-      // Mock data for now
-      await new Promise((resolve) => setTimeout(resolve, 400));
-
+      const response = await getMTTR();
       if (mountedRef.current) {
-        setMttrData(MOCK_MTTR_DATA);
+        setMttrData(response);
         setLastUpdated(new Date().toISOString());
         setError(null);
       }
@@ -203,7 +189,6 @@ export function MTTRWidget({
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               MTTR
             </h3>
-            <DemoDataBadge />
           </div>
           {isOnTarget ? (
             <CheckCircleIcon className="w-4 h-4 text-green-500" />

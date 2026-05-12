@@ -18,22 +18,7 @@ import {
   XCircleIcon,
 } from '@heroicons/react/24/solid';
 import { DataFreshnessIndicator } from '../../palantir/DataFreshnessIndicator';
-import { DemoDataBadge } from './DemoDataBadge';
-
-// Mock compliance drift data
-const MOCK_DRIFT_DATA = {
-  frameworks: [
-    { name: 'SOC 2', passing: 45, failing: 3, total: 48 },
-    { name: 'HIPAA', passing: 28, failing: 2, total: 30 },
-    { name: 'CMMC L2', passing: 108, failing: 5, total: 113 },
-    { name: 'NIST 800-53', passing: 95, failing: 7, total: 102 },
-  ],
-  recentFailures: [
-    { id: 'ctrl-001', control: 'AC-2.3', framework: 'NIST', description: 'Access review not completed', daysOpen: 3 },
-    { id: 'ctrl-002', control: 'AU-6', framework: 'NIST', description: 'Log review overdue', daysOpen: 7 },
-    { id: 'ctrl-003', control: 'CC6.1', framework: 'SOC 2', description: 'Encryption key rotation', daysOpen: 1 },
-  ],
-};
+import { getComplianceDrift } from '../../../services/dashboardMetricsApi';
 
 /**
  * Framework progress bar
@@ -85,10 +70,9 @@ export function ComplianceDriftWidget({
 
   const fetchDrift = useCallback(async () => {
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
+      const response = await getComplianceDrift();
       if (mountedRef.current) {
-        setDriftData(MOCK_DRIFT_DATA);
+        setDriftData(response);
         setLastUpdated(new Date().toISOString());
         setError(null);
       }
@@ -168,7 +152,6 @@ export function ComplianceDriftWidget({
             <h3 className="font-semibold text-gray-900 dark:text-gray-100">
               Compliance Drift
             </h3>
-            <DemoDataBadge />
           </div>
           {totalFailing > 0 && (
             <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">

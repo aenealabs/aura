@@ -16,7 +16,7 @@ import {
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/solid';
 import { DataFreshnessIndicator } from '../../palantir/DataFreshnessIndicator';
-import { DemoDataBadge } from './DemoDataBadge';
+import { getAssetCriticality } from '../../../services/dashboardMetricsApi';
 
 // Classification colors
 const CLASSIFICATION_COLORS = {
@@ -25,14 +25,6 @@ const CLASSIFICATION_COLORS = {
   Internal: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
   Public: { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
 };
-
-// Mock data for development
-const MOCK_ASSETS = [
-  { asset_id: 'payment-service', criticality_score: 10, data_classification: 'Restricted', business_owner: 'jsmith@company.com' },
-  { asset_id: 'auth-gateway', criticality_score: 9, data_classification: 'Confidential', business_owner: 'mchen@company.com' },
-  { asset_id: 'user-api', criticality_score: 8, data_classification: 'Internal', business_owner: 'alee@company.com' },
-  { asset_id: 'analytics-pipeline', criticality_score: 6, data_classification: 'Internal', business_owner: 'bwilson@company.com' },
-];
 
 /**
  * Criticality bar visualization
@@ -115,11 +107,9 @@ export function AssetCriticalityWidget({
 
   const fetchAssets = useCallback(async () => {
     try {
-      // Mock data for now - would call getAssetCriticality in production
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
+      const response = await getAssetCriticality();
       if (mountedRef.current) {
-        setAssets(MOCK_ASSETS);
+        setAssets(response?.assets ?? []);
         setLastUpdated(new Date().toISOString());
         setError(null);
       }
@@ -201,7 +191,6 @@ export function AssetCriticalityWidget({
             <h3 className="font-semibold text-gray-900 dark:text-gray-100">
               Asset Criticality
             </h3>
-            <DemoDataBadge />
           </div>
           {onViewAll && (
             <button

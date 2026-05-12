@@ -35,6 +35,7 @@ from src.api.compliance_endpoints import router as compliance_router
 from src.api.customer_health_endpoints import router as customer_health_router
 from src.api.dashboard_endpoints import router as dashboard_router
 from src.api.dashboard_endpoints import widget_router
+from src.api.dashboard_metrics_endpoints import router as dashboard_metrics_router
 from src.api.dependencies import set_anomaly_detector, set_monitoring_integration
 from src.api.dev_mocks_endpoints import router as dev_mocks_router
 from src.api.disaster_recovery_endpoints import router as dr_router
@@ -1123,6 +1124,13 @@ app.include_router(trust_center_router)
 
 app.include_router(dashboard_router)
 app.include_router(widget_router)
+
+# ============================================================================
+# Top-Level Dashboard Metrics Endpoints (#163 Wave 8)
+# Backs MTTR, AssetCriticality, ComplianceDrift, InsiderRisk widgets.
+# ============================================================================
+
+app.include_router(dashboard_metrics_router)
 
 # ============================================================================
 # Guardrails Configuration Endpoints (ADR-069)

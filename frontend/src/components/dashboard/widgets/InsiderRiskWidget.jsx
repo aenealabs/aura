@@ -19,18 +19,7 @@ import {
   ArrowTrendingDownIcon,
 } from '@heroicons/react/24/solid';
 import { DataFreshnessIndicator } from '../../palantir/DataFreshnessIndicator';
-import { DemoDataBadge } from './DemoDataBadge';
-
-// Mock insider risk data
-const MOCK_RISK_DATA = {
-  elevated_count: 7,
-  high_risk_count: 2,
-  medium_risk_count: 5,
-  total_monitored: 1250,
-  trend: 'up',
-  trend_delta: 2,
-  last_escalation: new Date(Date.now() - 3600000).toISOString(),
-};
+import { getInsiderRisk } from '../../../services/dashboardMetricsApi';
 
 /**
  * Risk level indicator
@@ -60,11 +49,9 @@ export function InsiderRiskWidget({
 
   const fetchRisk = useCallback(async () => {
     try {
-      // Mock data for now
-      await new Promise((resolve) => setTimeout(resolve, 400));
-
+      const response = await getInsiderRisk();
       if (mountedRef.current) {
-        setRiskData(MOCK_RISK_DATA);
+        setRiskData(response);
         setLastUpdated(new Date().toISOString());
         setError(null);
       }
@@ -144,7 +131,6 @@ export function InsiderRiskWidget({
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
             Insider Risk
           </h3>
-          <DemoDataBadge />
         </div>
       </div>
 

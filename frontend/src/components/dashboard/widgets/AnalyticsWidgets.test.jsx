@@ -9,6 +9,53 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// The dashboard widgets call /api/v1/dashboard/metrics/* via dashboardMetricsApi.
+// We mock the module here so the tests drive widgets with controlled fixture
+// data rather than depending on a live backend. The mock is hoisted by Vitest.
+vi.mock('../../../services/dashboardMetricsApi', () => ({
+  getAssetCriticality: vi.fn(async () => ({
+    assets: [
+      { asset_id: 'payment-service', criticality_score: 10, data_classification: 'Restricted', business_owner: 'jsmith@company.com' },
+      { asset_id: 'auth-gateway', criticality_score: 9, data_classification: 'Confidential', business_owner: 'mchen@company.com' },
+      { asset_id: 'user-api', criticality_score: 8, data_classification: 'Internal', business_owner: 'alee@company.com' },
+      { asset_id: 'analytics-pipeline', criticality_score: 6, data_classification: 'Internal', business_owner: 'bwilson@company.com' },
+    ],
+  })),
+  getComplianceDrift: vi.fn(async () => ({
+    frameworks: [
+      { name: 'SOC 2', passing: 45, failing: 3, total: 48 },
+      { name: 'HIPAA', passing: 28, failing: 2, total: 30 },
+      { name: 'CMMC L2', passing: 108, failing: 5, total: 113 },
+      { name: 'NIST 800-53', passing: 95, failing: 7, total: 102 },
+    ],
+    recentFailures: [
+      { id: 'ctrl-001', control: 'AC-2.3', framework: 'NIST', description: 'Access review not completed', daysOpen: 3 },
+      { id: 'ctrl-002', control: 'AU-6', framework: 'NIST', description: 'Log review overdue', daysOpen: 7 },
+      { id: 'ctrl-003', control: 'CC6.1', framework: 'SOC 2', description: 'Encryption key rotation', daysOpen: 1 },
+    ],
+  })),
+  getMTTR: vi.fn(async () => ({
+    current_mttr_hours: 18.5,
+    target_mttr_hours: 24,
+    previous_mttr_hours: 22.3,
+    critical_mttr_hours: 4.2,
+    high_mttr_hours: 12.8,
+    medium_mttr_hours: 36.4,
+    open_count: 23,
+    closed_last_7d: 47,
+  })),
+  getInsiderRisk: vi.fn(async () => ({
+    elevated_count: 7,
+    high_risk_count: 2,
+    medium_risk_count: 5,
+    total_monitored: 1250,
+    trend: 'up',
+    trend_delta: 2,
+    last_escalation: new Date().toISOString(),
+  })),
+}));
+
 import { AssetCriticalityWidget } from './AssetCriticalityWidget';
 import { EPSSTrendWidget } from './EPSSTrendWidget';
 import { ComplianceDriftWidget } from './ComplianceDriftWidget';

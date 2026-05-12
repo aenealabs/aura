@@ -54,6 +54,12 @@ structlog>=24.1.0     # For security agent orchestrator and devops services
 # Updated to versions compatible with Python 3.12
 tree-sitter-python>=0.25.0
 tree-sitter-javascript>=0.23.1
+tree-sitter-typescript>=0.23.2
+tree-sitter-go>=0.23.4
+tree-sitter-java>=0.23.5
+tree-sitter-rust>=0.23.2
+tree-sitter-c>=0.23.4
+tree-sitter-cpp>=0.23.4
 
 # Testing Dependencies
 pytest>=8.3.0

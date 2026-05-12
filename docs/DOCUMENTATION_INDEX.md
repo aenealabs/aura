@@ -1026,6 +1026,7 @@ Detailed technical specifications for complex architectural components.
 | File | Purpose |
 |------|---------|
 | [../src/services/vulnerability_scanner/](../src/services/vulnerability_scanner/) | Foundation source code (20 files, 4,896 lines) |
+| [../src/services/vulnerability_scanner/parsing/](../src/services/vulnerability_scanner/parsing/) | **#181 Phase 1 (May 12, 2026)** -- tree-sitter AST surface for Python/JS/TS/Go/Java/Rust/C/C++: `languages.py` (extension + shebang + content sniff), `grammar_loader.py` (lazy thread-safe per-language grammar cache), `parser_pool.py` (bounded-LRU parser pool), `ast.py` (`parse_file` / `parse_source` with timeout + file-size guards). 155 tests in `tests/services/vulnerability_scanner/parsing/` |
 | [../deploy/cloudformation/vuln-scan-infrastructure.yaml](../deploy/cloudformation/vuln-scan-infrastructure.yaml) | Layer 9.1 - DynamoDB, S3, KMS, SNS for scan data |
 | [../deploy/cloudformation/vuln-scan-iam.yaml](../deploy/cloudformation/vuln-scan-iam.yaml) | Layer 9.2 - IAM roles for workers, Step Functions, Lambda |
 | [../deploy/cloudformation/vuln-scan-networking.yaml](../deploy/cloudformation/vuln-scan-networking.yaml) | Layer 9.3 - ECS Fargate cluster, security groups, log groups |

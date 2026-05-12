@@ -87,131 +87,55 @@ phases:
       - echo "Deploying Secrets Stack..."
       - SECRETS_STACK="${PROJECT_NAME}-secrets-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $SECRETS_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $SECRETS_STACK \
-            --template-body file://deploy/cloudformation/secrets.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=NeptuneEndpoint,ParameterValue=$NEPTUNE_ENDPOINT \
-              ParameterKey=OpenSearchEndpoint,ParameterValue=$OPENSEARCH_ENDPOINT \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $SECRETS_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $SECRETS_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-            exit 1
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $SECRETS_STACK \
-            --template-body file://deploy/cloudformation/secrets.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=NeptuneEndpoint,ParameterValue=$NEPTUNE_ENDPOINT \
-              ParameterKey=OpenSearchEndpoint,ParameterValue=$OPENSEARCH_ENDPOINT \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $SECRETS_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $SECRETS_STACK \
+          --template-file deploy/cloudformation/secrets.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            NeptuneEndpoint=$NEPTUNE_ENDPOINT \
+            OpenSearchEndpoint=$OPENSEARCH_ENDPOINT \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "Secrets Stack deployment complete"
 
       # Deploy Monitoring Stack
       - echo "Deploying Monitoring Stack..."
       - MONITORING_STACK="${PROJECT_NAME}-monitoring-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $MONITORING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $MONITORING_STACK \
-            --template-body file://deploy/cloudformation/monitoring.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=EnableContainerInsights,ParameterValue=true \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $MONITORING_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $MONITORING_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-            exit 1
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $MONITORING_STACK \
-            --template-body file://deploy/cloudformation/monitoring.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=EnableContainerInsights,ParameterValue=true \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $MONITORING_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $MONITORING_STACK \
+          --template-file deploy/cloudformation/monitoring.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            AlertEmail=$ALERT_EMAIL \
+            EnableContainerInsights=true \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "Monitoring Stack deployment complete"
 
       # Deploy Cost Alerts Stack
       - echo "Deploying Cost Alerts Stack..."
       - COST_ALERTS_STACK="${PROJECT_NAME}-cost-alerts-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $COST_ALERTS_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $COST_ALERTS_STACK \
-            --template-body file://deploy/cloudformation/aura-cost-alerts.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=DailyBudget,ParameterValue=15 \
-              ParameterKey=MonthlyBudget,ParameterValue=400 \
-              ParameterKey=EnableBudgetEnforcement,ParameterValue=false \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $COST_ALERTS_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $COST_ALERTS_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-            exit 1
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $COST_ALERTS_STACK \
-            --template-body file://deploy/cloudformation/aura-cost-alerts.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=DailyBudget,ParameterValue=15 \
-              ParameterKey=MonthlyBudget,ParameterValue=400 \
-              ParameterKey=EnableBudgetEnforcement,ParameterValue=false \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $COST_ALERTS_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $COST_ALERTS_STACK \
+          --template-file deploy/cloudformation/aura-cost-alerts.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            AlertEmail=$ALERT_EMAIL \
+            DailyBudget=15 \
+            MonthlyBudget=400 \
+            EnableBudgetEnforcement=false \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "Cost Alerts Stack deployment complete"
 
       # Deploy Organization Cost Monitoring Stack (Layer 5.4 - Multi-Account)
@@ -235,83 +159,35 @@ phases:
       - echo "Deploying Real-Time Monitoring Stack..."
       - REALTIME_MONITORING_STACK="${PROJECT_NAME}-realtime-monitoring-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $REALTIME_MONITORING_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $REALTIME_MONITORING_STACK \
-            --template-body file://deploy/cloudformation/realtime-monitoring.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=SecurityAlertsTopicArn,ParameterValue=$SECURITY_ALERTS_TOPIC_ARN \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $REALTIME_MONITORING_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $REALTIME_MONITORING_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-            exit 1
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $REALTIME_MONITORING_STACK \
-            --template-body file://deploy/cloudformation/realtime-monitoring.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=SecurityAlertsTopicArn,ParameterValue=$SECURITY_ALERTS_TOPIC_ARN \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $REALTIME_MONITORING_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $REALTIME_MONITORING_STACK \
+          --template-file deploy/cloudformation/realtime-monitoring.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            AlertEmail=$ALERT_EMAIL \
+            SecurityAlertsTopicArn=$SECURITY_ALERTS_TOPIC_ARN \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "Real-Time Monitoring Stack deployment complete"
 
       # Deploy Disaster Recovery Stack (AWS Backup, Cross-Region)
       - echo "Deploying Disaster Recovery Stack..."
       - DR_STACK="${PROJECT_NAME}-disaster-recovery-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $DR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $DR_STACK \
-            --template-body file://deploy/cloudformation/disaster-recovery.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $DR_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $DR_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $DR_STACK \
-            --template-body file://deploy/cloudformation/disaster-recovery.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $DR_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $DR_STACK \
+          --template-file deploy/cloudformation/disaster-recovery.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            AlertEmail=$ALERT_EMAIL \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "Disaster Recovery Stack deployment complete"
 
       # Deploy OpenTelemetry Collector IAM Resources
@@ -335,42 +211,18 @@ phases:
         if [ -z "$OIDC_PROVIDER_ARN" ] || [ "$OIDC_PROVIDER_ARN" = "None" ]; then
           echo "Skipping OTEL Collector - EKS OIDC not available"
         else
-          if aws cloudformation describe-stacks --stack-name $OTEL_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-            echo "Stack exists, attempting update..."
-            OUTPUT=$(aws cloudformation update-stack \
-              --stack-name $OTEL_STACK \
-              --template-body file://deploy/cloudformation/otel-collector.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-                ParameterKey=OIDCProviderArn,ParameterValue=$OIDC_PROVIDER_ARN \
-                ParameterKey=OIDCProviderURL,ParameterValue=$OIDC_PROVIDER_URL \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager 2>&1) && \
-            aws cloudformation wait stack-update-complete --stack-name $OTEL_STACK --region $AWS_DEFAULT_REGION || \
-            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-              echo "No updates needed for $OTEL_STACK"
-            else
-              echo "Update failed: $OUTPUT"
-            fi
-          else
-            echo "Stack does not exist, creating..."
-            aws cloudformation create-stack \
-              --stack-name $OTEL_STACK \
-              --template-body file://deploy/cloudformation/otel-collector.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-                ParameterKey=OIDCProviderArn,ParameterValue=$OIDC_PROVIDER_ARN \
-                ParameterKey=OIDCProviderURL,ParameterValue=$OIDC_PROVIDER_URL \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager
-            aws cloudformation wait stack-create-complete --stack-name $OTEL_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $OTEL_STACK \
+            --template-file deploy/cloudformation/otel-collector.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+              OIDCProviderArn=$OIDC_PROVIDER_ARN \
+              OIDCProviderURL=$OIDC_PROVIDER_URL \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
           echo "OpenTelemetry Collector Stack deployment complete"
         fi
 
@@ -378,82 +230,35 @@ phases:
       - echo "Deploying Log Retention Sync Lambda..."
       - LOG_RETENTION_STACK="${PROJECT_NAME}-log-retention-sync-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $LOG_RETENTION_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $LOG_RETENTION_STACK \
-            --template-body file://deploy/cloudformation/log-retention-sync.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=DefaultRetentionDays,ParameterValue=90 \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $LOG_RETENTION_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $LOG_RETENTION_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $LOG_RETENTION_STACK \
-            --template-body file://deploy/cloudformation/log-retention-sync.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=DefaultRetentionDays,ParameterValue=90 \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $LOG_RETENTION_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $LOG_RETENTION_STACK \
+          --template-file deploy/cloudformation/log-retention-sync.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            AlertEmail=$ALERT_EMAIL \
+            DefaultRetentionDays=90 \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "Log Retention Sync Lambda deployment complete"
 
       # Deploy AI Alignment Alerts Stack (Layer 5.10 - ADR-052)
       - echo "Deploying AI Alignment Alerts Stack..."
       - ALIGNMENT_ALERTS_STACK="${PROJECT_NAME}-alignment-alerts-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $ALIGNMENT_ALERTS_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $ALIGNMENT_ALERTS_STACK \
-            --template-body file://deploy/cloudformation/alignment-alerts.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $ALIGNMENT_ALERTS_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $ALIGNMENT_ALERTS_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $ALIGNMENT_ALERTS_STACK \
-            --template-body file://deploy/cloudformation/alignment-alerts.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=observability Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $ALIGNMENT_ALERTS_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $ALIGNMENT_ALERTS_STACK \
+          --template-file deploy/cloudformation/alignment-alerts.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            AlertEmail=$ALERT_EMAIL \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=observability DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "AI Alignment Alerts Stack deployment complete"
 
       # Deploy GPU Monitoring Stack (Layer 5.9 - ADR-061)

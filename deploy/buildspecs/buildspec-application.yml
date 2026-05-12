@@ -86,47 +86,15 @@ phases:
         echo "Deploying ECR Repository Stack..."
         ECR_STACK="${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT}"
 
-        # Check if stack exists to determine create vs update
-        STACK_EXISTS=false
-        if aws cloudformation describe-stacks --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          STACK_EXISTS=true
-          echo "ECR stack exists, checking if update needed..."
-        else
-          echo "ECR stack does not exist, creating..."
-        fi
-
-        # Create or update the ECR stack
-        UPDATE_RESULT=0
-        if [ "$STACK_EXISTS" = "true" ]; then
-          # Try update - capture result to check if update was needed
-          if aws cloudformation update-stack \
-            --stack-name $ECR_STACK \
-            --template-body file://deploy/cloudformation/ecr-dnsmasq.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1; then
-            echo "ECR stack update initiated, waiting..."
-            aws cloudformation wait stack-update-complete --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION
-          else
-            echo "ECR stack already up-to-date (no changes needed)"
-          fi
-        else
-          # Create new stack
-          aws cloudformation create-stack \
-            --stack-name $ECR_STACK \
-            --template-body file://deploy/cloudformation/ecr-dnsmasq.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          echo "ECR stack creation initiated, waiting..."
-          aws cloudformation wait stack-create-complete --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $ECR_STACK \
+          --template-file deploy/cloudformation/ecr-dnsmasq.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
 
         # Verify stack is ready and get Repository URI
         echo "Verifying ECR stack status..."
@@ -549,44 +517,16 @@ phases:
         echo "Deploying Bedrock Infrastructure Stack..."
         BEDROCK_STACK="${PROJECT_NAME}-bedrock-infrastructure-${ENVIRONMENT}"
 
-        BEDROCK_STACK_EXISTS=false
-        if aws cloudformation describe-stacks --stack-name $BEDROCK_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          BEDROCK_STACK_EXISTS=true
-          echo "Bedrock stack exists, checking if update needed..."
-        else
-          echo "Bedrock stack does not exist, creating..."
-        fi
-
-        if [ "$BEDROCK_STACK_EXISTS" = "true" ]; then
-          if aws cloudformation update-stack \
-            --stack-name $BEDROCK_STACK \
-            --template-body file://deploy/cloudformation/aura-bedrock-infrastructure.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1; then
-            echo "Bedrock stack update initiated, waiting..."
-            aws cloudformation wait stack-update-complete --stack-name $BEDROCK_STACK --region $AWS_DEFAULT_REGION
-          else
-            echo "Bedrock stack already up-to-date (no changes needed)"
-          fi
-        else
-          aws cloudformation create-stack \
-            --stack-name $BEDROCK_STACK \
-            --template-body file://deploy/cloudformation/aura-bedrock-infrastructure.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          echo "Bedrock stack creation initiated, waiting..."
-          aws cloudformation wait stack-create-complete --stack-name $BEDROCK_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $BEDROCK_STACK \
+          --template-file deploy/cloudformation/aura-bedrock-infrastructure.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            AlertEmail=$ALERT_EMAIL \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
 
         echo "Bedrock stack ready"
 
@@ -597,45 +537,16 @@ phases:
         echo "Deploying Cognito User Pool..."
         COGNITO_STACK="${PROJECT_NAME}-cognito-${ENVIRONMENT}"
 
-        COGNITO_STACK_EXISTS=false
-        if aws cloudformation describe-stacks --stack-name $COGNITO_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          COGNITO_STACK_EXISTS=true
-          echo "Cognito stack exists, checking if update needed..."
-        else
-          echo "Cognito stack does not exist, creating..."
-        fi
-
-        if [ "$COGNITO_STACK_EXISTS" = "true" ]; then
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $COGNITO_STACK \
-            --template-body file://deploy/cloudformation/cognito.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=DomainName,ParameterValue=aenealabs.com \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $COGNITO_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "Cognito stack already up-to-date (no changes needed)"
-          else
-            echo "Cognito stack update output: $OUTPUT"
-          fi
-        else
-          aws cloudformation create-stack \
-            --stack-name $COGNITO_STACK \
-            --template-body file://deploy/cloudformation/cognito.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=DomainName,ParameterValue=aenealabs.com \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          echo "Cognito stack creation initiated, waiting..."
-          aws cloudformation wait stack-create-complete --stack-name $COGNITO_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $COGNITO_STACK \
+          --template-file deploy/cloudformation/cognito.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            DomainName=aenealabs.com \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
 
         echo "Cognito stack ready"
 
@@ -646,45 +557,16 @@ phases:
         echo "Deploying Bedrock Guardrails..."
         GUARDRAILS_STACK="${PROJECT_NAME}-bedrock-guardrails-${ENVIRONMENT}"
 
-        GUARDRAILS_STACK_EXISTS=false
-        if aws cloudformation describe-stacks --stack-name $GUARDRAILS_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          GUARDRAILS_STACK_EXISTS=true
-          echo "Guardrails stack exists, checking if update needed..."
-        else
-          echo "Guardrails stack does not exist, creating..."
-        fi
-
-        if [ "$GUARDRAILS_STACK_EXISTS" = "true" ]; then
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $GUARDRAILS_STACK \
-            --template-body file://deploy/cloudformation/bedrock-guardrails.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=EnablePIIFiltering,ParameterValue=true \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $GUARDRAILS_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "Guardrails stack already up-to-date (no changes needed)"
-          else
-            echo "Guardrails stack update output: $OUTPUT"
-          fi
-        else
-          aws cloudformation create-stack \
-            --stack-name $GUARDRAILS_STACK \
-            --template-body file://deploy/cloudformation/bedrock-guardrails.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=EnablePIIFiltering,ParameterValue=true \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          echo "Guardrails stack creation initiated, waiting..."
-          aws cloudformation wait stack-create-complete --stack-name $GUARDRAILS_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $GUARDRAILS_STACK \
+          --template-file deploy/cloudformation/bedrock-guardrails.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            EnablePIIFiltering=true \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
 
         echo "Bedrock Guardrails stack ready"
 
@@ -722,52 +604,20 @@ phases:
         echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
         echo "OIDC Provider URL: $OIDC_PROVIDER_URL"
 
-        IRSA_STACK_EXISTS=false
-        if aws cloudformation describe-stacks --stack-name $IRSA_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          IRSA_STACK_EXISTS=true
-          echo "IRSA stack exists, checking if update needed..."
-        else
-          echo "IRSA stack does not exist, creating..."
-        fi
-
-        if [ "$IRSA_STACK_EXISTS" = "true" ]; then
-          if aws cloudformation update-stack \
-            --stack-name $IRSA_STACK \
-            --template-body file://deploy/cloudformation/irsa-aura-api.yaml \
-            --parameters \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=OIDCProviderArn,ParameterValue="$OIDC_PROVIDER_ARN" \
-              ParameterKey=OIDCProviderURL,ParameterValue="$OIDC_PROVIDER_URL" \
-              ParameterKey=ServiceAccountNamespace,ParameterValue=default \
-              ParameterKey=ServiceAccountName,ParameterValue=${PROJECT_NAME}-api \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1; then
-            echo "IRSA stack update initiated, waiting..."
-            aws cloudformation wait stack-update-complete --stack-name $IRSA_STACK --region $AWS_DEFAULT_REGION
-          else
-            echo "IRSA stack already up-to-date (no changes needed)"
-          fi
-        else
-          aws cloudformation create-stack \
-            --stack-name $IRSA_STACK \
-            --template-body file://deploy/cloudformation/irsa-aura-api.yaml \
-            --parameters \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=OIDCProviderArn,ParameterValue="$OIDC_PROVIDER_ARN" \
-              ParameterKey=OIDCProviderURL,ParameterValue="$OIDC_PROVIDER_URL" \
-              ParameterKey=ServiceAccountNamespace,ParameterValue=default \
-              ParameterKey=ServiceAccountName,ParameterValue=${PROJECT_NAME}-api \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          echo "IRSA stack creation initiated, waiting..."
-          aws cloudformation wait stack-create-complete --stack-name $IRSA_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $IRSA_STACK \
+          --template-file deploy/cloudformation/irsa-aura-api.yaml \
+          --parameter-overrides \
+            ProjectName=$PROJECT_NAME \
+            Environment=$ENVIRONMENT \
+            OIDCProviderArn="$OIDC_PROVIDER_ARN" \
+            OIDCProviderURL="$OIDC_PROVIDER_URL" \
+            ServiceAccountNamespace=default \
+            ServiceAccountName=${PROJECT_NAME}-api \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
 
         # Get the role ARN for Kubernetes annotation
         IRSA_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $IRSA_STACK \

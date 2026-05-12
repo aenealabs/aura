@@ -5,9 +5,9 @@ Offline cross-reference of IAM actions used across `deploy/cloudformation/` temp
 ## Summary
 
 - Templates scanned: **187**
-- Actions granted by ADR-092 scoped policy: **417**
+- Actions granted by ADR-092 scoped policy: **420**
 - Action references found in templates: **4578**
-- Covered: **2819** | Uncovered (gaps): **1759** | Unique uncovered actions: **527**
+- Covered: **2822** | Uncovered (gaps): **1756** | Unique uncovered actions: **524**
 
 ## Result: ⚠️ Gaps found
 
@@ -642,15 +642,6 @@ Each row below is an action that one of the platform's IAM resources lists, but 
   - checkpoint-websocket.yaml
   - cloud-discovery.yaml
   - ...and 28 more templates
-
-### `ec2` (3 unique actions)
-
-- `ec2:ModifySecurityGroupRules`
-  - codebuild-sandbox.yaml
-- `ec2:UpdateSecurityGroupRuleDescriptionsEgress`
-  - codebuild-foundation.yaml
-- `ec2:UpdateSecurityGroupRuleDescriptionsIngress`
-  - codebuild-foundation.yaml
 
 ### `ecr` (7 unique actions)
 

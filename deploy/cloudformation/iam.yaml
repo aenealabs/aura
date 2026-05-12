@@ -404,6 +404,13 @@ Resources:
               - dynamodb:CreateGlobalTable
               - dynamodb:UpdateGlobalTable
               - dynamodb:DescribeGlobalTable
+              # NOTE on GSIs (ADR-092 Wave 13 investigation): DynamoDB does
+              # NOT expose separate IAM actions for Create/Update/Delete
+              # GlobalSecondaryIndex. GSI lifecycle is controlled via
+              # dynamodb:UpdateTable with a GlobalSecondaryIndexUpdates
+              # parameter. Templates that list dynamodb:CreateGlobalSecondary
+              # Index etc. are aspirational typos - AWS IAM silently accepts
+              # them but never matches them. UpdateTable above covers it.
               - dynamodb:CreateBackup
               - dynamodb:DeleteBackup
               - dynamodb:DescribeBackup
@@ -739,6 +746,12 @@ Resources:
               - ec2:AuthorizeSecurityGroupEgress
               - ec2:RevokeSecurityGroupIngress
               - ec2:RevokeSecurityGroupEgress
+              # ADR-092 static-scan gap fixes (Wave 13): required when CFN
+              # deploys security-group rule modifications (codebuild-sandbox,
+              # codebuild-foundation).
+              - ec2:ModifySecurityGroupRules
+              - ec2:UpdateSecurityGroupRuleDescriptionsIngress
+              - ec2:UpdateSecurityGroupRuleDescriptionsEgress
               - ec2:CancelSpotInstanceRequests
               - ec2:AssignPrivateIpAddresses
               - ec2:UnassignPrivateIpAddresses

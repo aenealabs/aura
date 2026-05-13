@@ -1,6 +1,6 @@
 # Cost-Gate Deferred Work
 
-**Last reviewed:** May 13, 2026
+**Last reviewed:** May 13, 2026 (added #180 residuals on close-out)
 **Next review:** August 13, 2026 (quarterly)
 **Owner of this registry:** Platform team
 
@@ -8,13 +8,13 @@
 
 ## Purpose
 
-This file is the single, grep-able registry of every "Deferred (Cost Gate)" item across all ADRs and major initiatives. It exists because:
+This file is the single, grep-able registry of every item paused pending an external condition -- most commonly the cost-gate (live-AWS budget restoration), occasionally other event-driven conditions like external-endpoint provisioning or review-capacity availability. It exists because:
 
 * Open GitHub issues that sit for indeterminate periods erode signal-to-noise in the issue tracker.
-* The deferral trigger is **event-driven** (live-AWS budget restoration), not time-driven, so a cron / milestone is the wrong shape.
-* On Day-1 budget restoration, the operator needs to walk a single canonical list of "what was paused and what's the re-engage condition" -- not grep through 90+ ADRs.
+* The deferral trigger is **event-driven**, not time-driven, so a cron / milestone is the wrong shape.
+* On Day-1 budget restoration (or external-endpoint provisioning), the operator needs to walk a single canonical list of "what was paused and what's the re-engage condition" -- not grep through 90+ ADRs.
 
-**Source of truth remains the ADR's phase tracker.** This file is the discovery index that points to it.
+**Source of truth remains the ADR's phase tracker (for ADR-derived items) or the closing comment of the originating issue (for issue-derived items).** This file is the discovery index that points back to those.
 
 ---
 
@@ -43,6 +43,9 @@ This file is the single, grep-able registry of every "Deferred (Cost Gate)" item
 | **ADR-092 Phase 6** | [ADR-092](architecture-decisions/ADR-092-cfn-deploy-role-wildcard-scoping.md) | Documentation update + annual-review commitment + close-out of #182 IAM line. | After ADR-092 Phase 5 succeeds (so docs reflect deployed reality) | Platform team | 2026-05-12 |
 | **ADR-093 Phase 6** | [ADR-093](architecture-decisions/ADR-093-neptune-cross-file-taint-resolver.md) | First-prod-scan of Neptune-backed taint resolver against single test tenant; feature flag on, kill-switch hot-standby, all 5 alarms armed. | Live-AWS budget restored AND ADR-093 Phases 1–5 green (✅ as of 2026-05-13) | Scanner platform team | 2026-05-13 |
 | **ADR-093 Phase 7** | [ADR-093](architecture-decisions/ADR-093-neptune-cross-file-taint-resolver.md) | GA flag-flip for enterprise tenants, tiered (T1 commercial → T2 dedicated cluster → T3 GovCloud VPC). | After ADR-093 Phase 6 validates against a real test tenant | Scanner platform team | 2026-05-13 |
+| **#180 SNS subscriptions** | [#180 closing comment](https://github.com/aenealabs/aura/issues/180) | Provision `AWS::SNS::Subscription` resources on the `runtime-security-correlation.yaml` topics (and other documented PagerDuty/Slack routes referenced in `docs/support/operations/monitoring.md`). Code path is in place; topics exist; only the subscriptions are missing. Without them, ADR-086 self-mod sentinel + remediation alerts have no human recipient. | External endpoints provisioned (PagerDuty / Slack webhook URLs) AND live-AWS budget restored to add subscriptions via console / CFN | Ops team | 2026-05-13 |
+| **#180 nightly-live-llm.yml** | [#180 closing comment](https://github.com/aenealabs/aura/issues/180) | Workflow has `startup_failure` on every scheduled run; likely missing `secrets.AURA_LIVE_LLM_ROLE_ARN`. Tied to live-Bedrock invocations so cost-gate-coupled. Workflow remains in-tree because `docs/runbooks/ADR090_LIVE_LLM_SMOKE_RUNBOOK.md` references it; removing would orphan operational documentation. | Live-AWS budget restored (Bedrock test budget specifically) AND GitHub repo secret `AURA_LIVE_LLM_ROLE_ARN` populated | Ops team | 2026-05-13 |
+| **#180 Branch-protection PR-review enforcement** | [#180 closing comment](https://github.com/aenealabs/aura/issues/180) | Enable PR + ≥1 review requirement on the `main-protection` ruleset. Branch-protection is *enabled* (since Wave 1, #163); the open work is tightening enforcement strength. Not budget-gated -- gated on external-review-capacity availability. Operator handling separately. | External code-review capacity confirmed AND operator schedules the GitHub ruleset update | Owner (lavrut) | 2026-05-13 |
 
 ---
 

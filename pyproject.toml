@@ -13,7 +13,7 @@ dependencies = [
     "pytest-xdist==3.8.0",
     "pytest-timeout==2.4.0",
     # AWS service mocking for 85% coverage target
-    "moto[all]==5.2.0",
+    "moto[all]==5.2.1",
 ]
 
 [project.optional-dependencies]

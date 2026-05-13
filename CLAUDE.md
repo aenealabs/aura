@@ -547,3 +547,24 @@ For high-risk operations (infrastructure changes, security modifications):
 3. **Act:** Execute changes only after exploration and plan approval
 
 This is enforced by the permission model: edits to `deploy/` paths require explicit approval via the ask-mode default.
+
+### Pre-Push Hygiene
+
+Run `pre-commit` locally **before pushing** any commit that touches more than one or two files. The repo's hooks are mostly **auto-fixers** (`isort`, `black`, `trailing-whitespace`, `end-of-file-fixer`, `markdownlint --fix`); when CI's `pre-commit run` sees a diff that the local hooks would have fixed, the runner can't push the fixes back -- it just exits non-zero. Skipping the local run causes a "push -> CI red -> push fix -> CI green" ping-pong that's wasteful and pollutes git history with chore commits.
+
+**Standard pre-push routine:**
+
+```bash
+# Option 1 (fastest): run hooks on just the changed files in the staged commit.
+pre-commit run --files $(git diff --name-only HEAD~1 HEAD)
+
+# Option 2 (safest): run all hooks on every file. Use when the commit
+# touches >10 files, when adding new file types, or when unsure.
+SKIP=no-commit-to-branch pre-commit run --all-files
+```
+
+The `SKIP=no-commit-to-branch` is necessary on `main` -- that hook is a local guard against direct main commits and fires on every local run from main.
+
+**Why this matters for agents specifically:** an agent working in many-file commits (refactors, doc sweeps, multi-language work) is the most likely actor to push a commit with un-applied auto-fixes. CI then surfaces the fixes as failures and the agent has to re-do the loop. Running pre-commit once before the push prevents the second cycle.
+
+**Don't bypass with `--no-verify`.** If a hook fails, fix the underlying issue or add the file to the hook's exclude list with a justification comment in `.pre-commit-config.yaml`. The escape hatch is a code smell, not a workflow.

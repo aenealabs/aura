@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 9.4 - TaintResolver IAM (Writer Role + Boundary)'
+
+# Per ADR-093 Phase 4.3 §Observability + Tara's required change R7:
+# the writer worker role carries a permission boundary that:
+#   * Denies neptune-db:* outside the specific taint cluster ARN.
+#   * Denies kms:Sign outside the per-tenant signing CMK alias pattern
+#     (alias/aura/scanner/taint-signing-*).
+#   * Denies dynamodb:* outside the scan_state + summary_revocations tables.
+#   * Denies ssm:GetParameter outside the kill-switch parameter.
+# Without the boundary, the writer role is a confused-deputy candidate.
+#
+# Cost-gate posture: ships code-complete. Deployment deferred until
+# Phase 6 (live validation) per the ADR-092 pattern.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name prefix for resource names and ARNs.
+  Environment:
+    Type: String
+    AllowedValues: [dev, qa, prod]
+    Description: Target environment.
+  NeptuneClusterArn:
+    Type: String
+    Description: >
+      Full ARN of the Neptune cluster that hosts taint summaries.
+      Example: arn:aws:neptune-db:us-east-1:123456789012:cluster-id/taint-cluster
+  ScanStateTableName:
+    Type: String
+    Default: aura-scan-state
+    Description: DynamoDB table holding the per-scan write-fence flag.
+  RevocationsTableName:
+    Type: String
+    Default: aura-summary-revocations
+    Description: DynamoDB table holding signature revocation entries.
+  KillSwitchParameterName:
+    Type: String
+    Default: /aura/scanner/neptune_taint_resolver_enabled
+    Description: SSM Parameter Store name for the kill-switch flag.
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Permission boundary -- defines the OUTER LIMIT of what any policy attached
+  # to TaintResolverWriterRole can grant. Tara R7: kms:Sign only on the
+  # per-tenant signing CMK alias pattern; neptune-db only on the taint cluster.
+  # ---------------------------------------------------------------------------
+  TaintResolverWriterBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-taint-resolver-writer-boundary-${Environment}'
+      Description: >
+        Permission boundary for the Neptune taint-resolver writer worker.
+        Limits neptune-db, kms:Sign, dynamodb, ssm to the taint-resolver
+        resource set; explicitly denies everything else.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowedNeptuneOps
+            Effect: Allow
+            Action:
+              - 'neptune-db:connect'
+              - 'neptune-db:ReadDataViaQuery'
+              - 'neptune-db:WriteDataViaQuery'
+              - 'neptune-db:DeleteDataViaQuery'
+            Resource: !Ref NeptuneClusterArn
+          - Sid: AllowedKmsSignOnTaintSigningKeys
+            Effect: Allow
+            Action:
+              - 'kms:Sign'
+              - 'kms:Verify'
+              - 'kms:GetPublicKey'
+              - 'kms:DescribeKey'
+            Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+            Condition:
+              StringLike:
+                'kms:RequestAlias': 'alias/aura/scanner/taint-signing-*'
+          - Sid: AllowedDynamoDbScanState
+            Effect: Allow
+            Action:
+              - 'dynamodb:GetItem'
+              - 'dynamodb:PutItem'
+              - 'dynamodb:Query'
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ScanStateTableName}'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RevocationsTableName}'
+          - Sid: AllowedSsmKillSwitchRead
+            Effect: Allow
+            Action:
+              - 'ssm:GetParameter'
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${KillSwitchParameterName}'
+          - Sid: AllowedCloudWatchMetrics
+            Effect: Allow
+            Action:
+              - 'cloudwatch:PutMetricData'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'cloudwatch:namespace': 'Aura/Scanner/TaintResolver'
+          - Sid: AllowedLogsWrite
+            Effect: Allow
+            Action:
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aura/scanner/taint-summaries:*'
+          # ---- Explicit denies ----
+          # The Allows above use specific ARNs; the boundary still
+          # explicitly denies common confused-deputy escalations so
+          # any attached policy that broadens these is overridden.
+          - Sid: DenyKmsSignOutsideTaintAlias
+            Effect: Deny
+            Action: 'kms:Sign'
+            Resource: '*'
+            Condition:
+              StringNotLike:
+                'kms:RequestAlias': 'alias/aura/scanner/taint-signing-*'
+          - Sid: DenyIamWriteOps
+            Effect: Deny
+            Action:
+              - 'iam:CreateUser'
+              - 'iam:CreateRole'
+              - 'iam:AttachRolePolicy'
+              - 'iam:PutRolePolicy'
+              - 'iam:PassRole'
+              - 'iam:CreatePolicy'
+              - 'iam:CreatePolicyVersion'
+              - 'iam:UpdateAssumeRolePolicy'
+            Resource: '*'
+          - Sid: DenyAuditLogTampering
+            Effect: Deny
+            Action:
+              - 'cloudtrail:StopLogging'
+              - 'cloudtrail:DeleteTrail'
+              - 'cloudtrail:UpdateTrail'
+              - 'logs:DeleteLogGroup'
+              - 'logs:DeleteRetentionPolicy'
+            Resource: '*'
+
+  # ---------------------------------------------------------------------------
+  # Writer worker role -- the scanner worker assumes this role to write
+  # taint summaries to Neptune and DynamoDB. The boundary above caps
+  # what any future policy attached here can grant.
+  # ---------------------------------------------------------------------------
+  TaintResolverWriterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-taint-resolver-writer-${Environment}'
+      Description: !Sub >
+        Scanner-worker role for writing taint summaries to Neptune and
+        DynamoDB. Bounded by ${ProjectName}-taint-resolver-writer-boundary-${Environment}.
+      PermissionsBoundary: !Ref TaintResolverWriterBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref TaintResolverWriterBoundary
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: taint-resolver-writer
+        - Key: ADR
+          Value: ADR-093
+
+Outputs:
+  WriterRoleArn:
+    Description: ARN of the writer role for scanner worker IRSA wiring.
+    Value: !GetAtt TaintResolverWriterRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WriterRoleArn'
+  WriterBoundaryArn:
+    Description: ARN of the permission boundary for documentation + audit.
+    Value: !Ref TaintResolverWriterBoundary
+    Export:
+      Name: !Sub '${AWS::StackName}-WriterBoundaryArn'

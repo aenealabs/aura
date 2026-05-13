@@ -204,7 +204,7 @@ def test_guardduty_code_links_only_emits_findings_with_link(store) -> None:
 
     links = store.list_guardduty_code_links(min_confidence=50)
 
-    assert [l["finding_id"] for l in links] == ["1"]
+    assert [link["finding_id"] for link in links] == ["1"]
 
 
 # ---------------------------------------------------------------------------

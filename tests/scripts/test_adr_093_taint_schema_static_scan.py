@@ -7,11 +7,7 @@ from textwrap import dedent
 
 import pytest
 
-from scripts.adr_093_taint_schema_static_scan import (
-    main,
-    render_markdown,
-    scan_source,
-)
+from scripts.adr_093_taint_schema_static_scan import main, render_markdown, scan_source
 
 # ---------------------------------------------------------------------------
 # Happy path: a clean repository module

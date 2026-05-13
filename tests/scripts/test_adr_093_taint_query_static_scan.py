@@ -5,11 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from scripts.adr_093_taint_query_static_scan import (
-    main,
-    render_markdown,
-    scan_files,
-)
+from scripts.adr_093_taint_query_static_scan import main, render_markdown, scan_files
 
 
 def _write(path: Path, body: str) -> Path:

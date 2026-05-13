@@ -65,6 +65,7 @@ repos:
             src/services/.*_connector\.py|
             src/services/github_pr_service\.py|
             src/services/adversarial_input_service\.py|
+            src/services/integrations/secrets_prescan_filter\.py|
             src/services/observability_mcp_adapters\.py|
             src/prompts/.*|
             src/api/webhook_handler\.py|
@@ -192,6 +193,7 @@ repos:
             # Services with key detection/handling logic
             src/services/github_pr_service\.py|
             src/services/secrets_detection_service\.py|
+            src/services/integrations/secrets_prescan_filter\.py|
 
             # False positives documentation contains example key patterns
             docs/reference/PRE_COMMIT_FALSE_POSITIVES\.md

@@ -43,9 +43,7 @@ class TestStripCoAuthoredBy:
 
     def test_strips_basic_co_authored_by(self):
         msg = (
-            "feat: add thing\n"
-            "\n"
-            "Co-Authored-By: Claude <noreply@anthropic.com>\n"
+            "feat: add thing\n" "\n" "Co-Authored-By: Claude <noreply@anthropic.com>\n"
         )
         cleaned, removed = commit_msg_hook.strip_ai_attribution(msg)
         assert removed == 1
@@ -67,11 +65,7 @@ class TestStripCoAuthoredBy:
             assert variant not in cleaned
 
     def test_strips_case_insensitive(self):
-        msg = (
-            "feat: thing\n"
-            "\n"
-            "co-authored-by: claude <user@anthropic.com>\n"
-        )
+        msg = "feat: thing\n" "\n" "co-authored-by: claude <user@anthropic.com>\n"
         cleaned, removed = commit_msg_hook.strip_ai_attribution(msg)
         assert removed == 1
         assert "claude" not in cleaned

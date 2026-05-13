@@ -830,7 +830,7 @@ export default function ApprovalDashboard() {
   // Fetch approvals on mount only
   useEffect(() => {
     fetchApprovals();
-     
+
   }, []);
 
   // Handle refresh - falls back to mock data when API unavailable

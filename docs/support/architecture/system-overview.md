@@ -314,7 +314,8 @@ Nodes:
 ├── Class (name, docstring, line)
 ├── Function (name, signature, line)
 ├── Variable (name, type, scope)
-└── Vulnerability (title, severity, cve)
+├── Vulnerability (title, severity, cve)
+└── FunctionSummary (taint source/sink summary, ADR-093, code-complete; not yet in production)
 
 Edges:
 ├── CONTAINS (Repository → File, File → Class/Function)
@@ -322,8 +323,11 @@ Edges:
 ├── IMPORTS (File → File)
 ├── INHERITS (Class → Class)
 ├── REFERENCES (Function → Variable)
-└── AFFECTS (Vulnerability → Function/File)
+├── AFFECTS (Vulnerability → Function/File)
+└── DEPENDS_ON_SUMMARY (FunctionSummary → FunctionSummary, ADR-093 transitive invalidation)
 ```
+
+**Cross-File Taint Resolver (ADR-093):** A persistence layer on top of Neptune for per-function taint summaries. Enables incremental scans by reusing summaries from prior scans for unchanged files. Per-tenant KMS-signed summaries with transport-bound payloads; tiered tenant isolation (T1 shared / T2 dedicated cluster / T3 dedicated VPC); pre-staged kill-switch via SSM Parameter Store. **Phases 0-5 code-complete (May 13, 2026); Phases 6-7 Deferred (Cost Gate) -- not yet running in production.** See [ADR-093](../../architecture-decisions/ADR-093-neptune-cross-file-taint-resolver.md) and the [taint resolver runbook](../../runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md) for operations.
 
 #### OpenSearch (Vector/Search)
 

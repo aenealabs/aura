@@ -147,6 +147,25 @@ The retrieval service orchestrates queries across all three sources and fuses re
 2. **Sparse (BM25)**: Keyword matching via traditional text search
 3. **Graph (Gremlin)**: Structural traversal via relationship queries
 
+### 4. Cross-File Taint Resolver (ADR-093)
+
+A persistence layer on top of Neptune that turns per-function taint summaries (sources, sinks, sanitizers, propagators) into a reusable cache class. This sits alongside the structural and semantic graph data above; it does not replace them.
+
+**Status:** Code-complete as of May 13, 2026; live deployment is **Deferred (Cost Gate)** pending budget restoration. Capability is reviewable now; production enablement will follow.
+
+**What this enables for your team:**
+
+- **Incremental scans that get faster as your repo grows.** When the scanner re-runs after a small pull request, summaries for unchanged files are reused from the prior scan. A 10K-file repo with 10 changed files reuses ~9,990 summaries instead of recomputing them. Target win: 10x to 100x latency reduction on small-diff scans versus full-rescan.
+- **Cross-file dataflow at scale across all 8 supported languages.** Python, JavaScript, TypeScript, Go, Java, Rust, C, and C++ all participate in the same source-to-sink graph. A taint flowing from a request handler in one file to a SQL query in another file is followed deterministically, not heuristically.
+- **Audit-defensible "which summary produced this finding?"** Every persisted summary is signed with a tenant-scoped KMS asymmetric key (RSASSA_PSS_SHA_256), and the signed payload is transport-bound to the scan ID, commit SHA, and a session nonce. Replay or substitution attempts fail signature verification. Compromised-signer revocation is consulted on every read.
+- **Tiered isolation that matches your regulatory posture.**
+  - **T1 (commercial SaaS):** shared cluster with a tenant-predicate-enforcing Gremlin client; per-tenant data keys envelope-encrypted under a shared CMK.
+  - **T2 (FedRAMP-Moderate / CMMC-L2):** dedicated Neptune cluster per tenant.
+  - **T3 (GovCloud / classified):** dedicated VPC.
+- **No live-failure surface.** The resolver is treated as a cache class. If the persistence layer is unavailable, the scanner degrades to per-scan in-memory analysis (`CrossFileTaintContext`) with no correctness loss. A pre-staged operator kill-switch flips this in under five minutes via SSM Parameter Store, with no redeploy.
+
+For operations details and the named CloudWatch alarms covering this layer, see the [taint resolver runbook](../../runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md). For full design rationale, threat model, and NIST 800-53 mapping, see [ADR-093](../../architecture-decisions/ADR-093-neptune-cross-file-taint-resolver.md).
+
 ---
 
 ## How Hybrid Retrieval Works
@@ -440,3 +459,4 @@ Set boundaries on query behavior:
 - ADR-034: Context Engineering Framework
 - Issue #151: Hybrid GraphRAG Implementation
 - ADR-051: Recursive Context and Embedding Prediction
+- ADR-093: Neptune-Backed Cross-File Taint Resolver (code-complete; deploy Deferred (Cost Gate))

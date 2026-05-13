@@ -85,6 +85,10 @@ What the original document claimed but is not yet deployed:
 
 **The DR initiative (#143) is closed (May 2026): all 13 sub-issues resolved.** The Tier-1 RTO/RPO commitments are now backed by deployed infrastructure, not just aspirational targets. The "Currently Operational Capabilities" section above describes the deployed posture.
 
+### Cache-Class Data: Cross-File Taint Resolver (ADR-093)
+
+The Neptune-backed cross-file taint resolver (ADR-093) intentionally has **RTO = 0 / RPO = infinite**. The persisted `FunctionSummary` vertices and `DEPENDS_ON_SUMMARY` edges are a cache class -- every summary is content-addressed (`sha256(normalized_body || analyzer_version || taxonomy_version)`) and re-derivable from source. On loss of the taint cluster (regional failure, accidental drop, corruption), the scanner degrades to the in-memory `CrossFileTaintContext` with no correctness loss; scan latency for incremental workloads regresses to full-rescan latency until the cache rewarms. The resolver therefore does **not** participate in the AWS Backup vault, PITR, or cross-region copy plans -- backing up a cache that costs less to re-derive than to restore is anti-pattern. A pre-staged operator kill-switch (SSM Parameter Store, `<5min` to flip) is the in-region fail-safe; cross-region failover is unnecessary. Phases 6-7 are **Deferred (Cost Gate)** and the resolver is not yet running in production. See [ADR-093](../../architecture-decisions/ADR-093-neptune-cross-file-taint-resolver.md) and the [taint resolver runbook](../../runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md).
+
 ### Audit / Compliance Posture
 
 - The **Backup tier** (AWS Backup vault + PITR + cross-region backup copy) is audit-defensible today: deployments are codified, backups are enumerable via the AWS Backup API, restore procedures are documented and tested.

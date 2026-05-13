@@ -304,6 +304,23 @@ Multi-strategy context retrieval system that combines graph, vector, filesystem,
 
 **Detailed Documentation:** See [archive/implementation-snapshots/IMPLEMENTATION_AGENTIC_SEARCH.md](archive/implementation-snapshots/IMPLEMENTATION_AGENTIC_SEARCH.md)
 
+### Cross-File Taint Resolver (ADR-093)
+
+**Status:** Phases 0-5 code-complete (May 13, 2026); Phases 6-7 **Deferred (Cost Gate)** -- not yet running in production. Tracked in `docs/COST_GATE_DEFERRED.md`.
+
+The taint resolver is a Neptune-backed persistence layer that sits on top of the existing GraphRAG substrate to make **cross-file dataflow** (source -> sink) reusable across scans. The in-memory `CrossFileTaintContext` from issue #181 Phases 3.10-3.12 already provides intra-scan cross-file correctness for all 8 supported languages (Python, JavaScript, TypeScript, Go, Java, Rust, C, C++). ADR-093 promotes those per-function summaries to a content-addressed, KMS-signed cache class so scan N+1 can reuse summaries produced by scan N.
+
+| Aspect | Description |
+|---|---|
+| Persistence target | Same Neptune cluster as GraphRAG; new vertex/edge labels (`FunctionSummary`, `DEPENDS_ON_SUMMARY`) |
+| Integrity | Per-tenant asymmetric KMS CMK (RSASSA_PSS_SHA_256); transport-bound payload binds `scan_id` + `commit_sha` + `session_nonce` (defeats T1565.002 replay) |
+| Tenant isolation | T1 shared cluster with `TenantScopedGremlinClient` (bytecode-only, string-mode Gremlin rejected); T2 dedicated cluster per FedRAMP-Moderate / CMMC-L2 tenant; T3 dedicated VPC for GovCloud |
+| Failure posture | Pre-staged kill-switch via SSM Parameter Store; `<5min` operator-driven degrade to in-memory `CrossFileTaintContext` with no redeploy |
+| Observability | CloudWatch namespace `Aura/Scanner/TaintResolver` with 5 named alarms (see operations doc) |
+| Code substrate | `TaintContext` Protocol + `build_taint_context` factory at `src/services/scanner/parsing/taint_context_factory.py` |
+
+**Detailed Documentation:** See [ADR-093](architecture-decisions/ADR-093-neptune-cross-file-taint-resolver.md) and [docs/runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md](runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md).
+
 ---
 
 ## Context Retrieval Pipeline

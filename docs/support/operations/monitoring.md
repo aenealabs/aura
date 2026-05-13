@@ -97,6 +97,22 @@ This guide covers monitoring strategies, dashboards, metrics, and alerting for P
 | `node_ready` | k8s | Node health status | != True |
 | `pvc_usage_percent` | k8s | PVC disk usage | > 80% |
 
+### Scanner Taint Resolver Metrics (ADR-093)
+
+**Status:** Code-complete (May 13, 2026); Phases 6-7 **Deferred (Cost Gate)** -- alarms are defined but will arm when live deploy resumes. See [ADR-093](../../architecture-decisions/ADR-093-neptune-cross-file-taint-resolver.md) and the [taint resolver runbook](../../runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md).
+
+The cross-file taint resolver emits to CloudWatch namespace `Aura/Scanner/TaintResolver`. Five named alarms cover integrity, cache health, and isolation:
+
+| Alarm | Severity | What it indicates | First response |
+|---|---|---|---|
+| `summary.bad_signature` | P1 | KMS signature verification failed on a persisted summary (T1565.001 / SI-7(6) integrity violation, or key revocation) | Page on-call; consult [runbook -> bad_signature](../../runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md); validate summary revocation table and rotate writer credentials if compromise suspected |
+| `summary.cache_miss_rate` | P2 | Sustained cache miss rate above threshold; incremental-scan latency benefit lost | Investigate writer worker health and DynamoDB write-fence latency; consider kill-switch if degraded |
+| `summary.write_fence_timeout` | P2 | DynamoDB write-fence acquisition timeout on summary publish (T1499.004 contention or DDB throttling) | Check per-tenant write-rate quota; raise DDB capacity or rate-limit ingest |
+| `gremlin.p99_latency_ms` | P3 | Neptune Gremlin p99 lookup latency exceeds budget under multi-tenant load | Inspect Neptune CloudWatch (CPU, buffer hit ratio); scale or shed load |
+| `tenant_predicate_rejection` | P1 | `TenantScopedGremlinClient` rejected a query missing the tenant predicate (defense-in-depth against T1136 cross-tenant leak) | Page on-call; treat as potential code-path bypass attempt; capture query, freeze writer, escalate per security incident response |
+
+All five alarms route through the standard SNS topic and follow the alert routing table above.
+
 ---
 
 ## Dashboards

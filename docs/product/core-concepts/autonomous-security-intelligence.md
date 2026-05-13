@@ -165,11 +165,14 @@ confidence_factors = {
     "policy_match": 0.95,           # Does fix align with security policies?
     "test_coverage": 0.80,          # Is the affected code well-tested?
     "neural_memory": 0.75,          # Past experience with similar issues
+    "taint_chain_confidence": 0.82, # Source-to-sink dataflow strength + CWE attribution
 }
 
 # Weighted combination
 final_confidence = weighted_average(confidence_factors, weights)
 ```
+
+**On `taint_chain_confidence`:** When the scanner produces a finding, the analyzer hands the LLM a structured taint chain (source -> propagators -> sanitizers -> sink) together with its CWE attribution and per-edge taint labels. The presence and strength of that chain is itself a confidence signal -- a fully-traced chain across files contributes more weight than a partial one. Cross-file taint analysis spans all 8 supported languages (Python, JavaScript, TypeScript, Go, Java, Rust, C, C++). The persistence layer that makes this reusable across scans is described in [Hybrid GraphRAG -> Cross-File Taint Resolver](./hybrid-graphrag.md#4-cross-file-taint-resolver-adr-093).
 
 ### Uncertainty Quantification
 

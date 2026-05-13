@@ -12,7 +12,7 @@
 | **Overall Completion** | 99% (GTM-readiness audit #163 closed; remaining work tracked in #180 external-endpoints, #181 tree-sitter implementation, #182 tech-debt tracker) |
 | **Lines of Code** | 375,000+ |
 | **Test Suite** | ~25,121+ tests as of May 13, 2026 (~25,106+ through Phase 3.11 + 15 Phase 3.12 scan-assembly bridge tests). The May 10 GTM audit observed 25 hard failures at maxfail in a full sweep and one order-dependent crash path now hardened (commit c8aa3df). A clean full-suite re-run with all wave-1 through wave-14 fixes is still pending; the "0 failures" claim should be re-asserted only after that run. |
-| **Architecture Decision Records** | 92 ADRs (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089], 1 Accepted-with-deploy-Deferred [092]; ADR-090 GraphRAG ingestion edge completeness + ADR-091 Cognito cross-region DR + ADR-092 CFN deploy-role wildcard scoping added in May 2026; counted via `ls docs/architecture-decisions/ADR-*.md | wc -l`) |
+| **Architecture Decision Records** | 93 ADRs (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089], 1 Accepted-with-deploy-Deferred [092], 1 Accepted-Phase-1-unblocked [093]; ADR-090 GraphRAG ingestion edge completeness + ADR-091 Cognito cross-region DR + ADR-092 CFN deploy-role wildcard scoping + ADR-093 Neptune-backed cross-file taint resolver added in May 2026; counted via `ls docs/architecture-decisions/ADR-*.md | wc -l`) |
 | **CloudFormation Templates** | 175 templates (170 in `deploy/cloudformation/` + 5 in `deploy/cloudformation/service-catalog-products/`, counted by `AWSTemplateFormatVersion` header on May 12, 2026; includes both CodeBuild project templates and infrastructure templates. The 13 templates under `deploy/cloudformation/archive/` are excluded.) |
 | **Buildspecs** | 28 buildspec files in deploy/buildspecs/ (down from 38 after #131 cleanup -- 11 dead scaffolds deleted, -1,467 LOC) |
 | **CodeBuild Projects** | 19 projects (9 parent layers + 10 sub-layers) |
@@ -210,7 +210,7 @@
 
 ## Architecture Decision Records
 
-92 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
+93 ADRs document rationale for significant design choices. See [docs/architecture-decisions/](architecture-decisions/) for the full list. Key ADRs:
 
 - **ADR-004**: Cloud Abstraction Layer (Multi-cloud)
 - **ADR-024**: Titan Neural Memory Architecture

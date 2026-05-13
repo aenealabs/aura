@@ -43,7 +43,7 @@ structlog>=24.1.0            # Security agent orchestrator logging
 
 # Configuration
 python-dotenv>=1.2.2         # Environment variable loading
-networkx>=3.4.0              # Graph processing (lightweight, used in API)
+networkx>=3.6.1              # Graph processing (lightweight, used in API)
 
 # YAML Support (config parsing)
 PyYAML>=6.0.2

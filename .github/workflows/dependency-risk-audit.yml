@@ -3,8 +3,24 @@ name: Dependency Risk Audit
 # Recurring weekly audit per docs/security/DEPENDENCY_RISK_REGISTER.md.
 #
 # Runs pip-audit + npm audit + a maintainer-staleness check against the
-# Watch / At-Risk tiers from the register. Posts the report as a comment
-# on the tracking issue.
+# Watch / At-Risk tiers from the register.
+#
+# Output behaviour by trigger:
+#
+# * schedule / workflow_dispatch -- writes the report to
+#   docs/security/audits/YYYY-WNN.md and opens (or updates) a PR
+#   with that file. The PR is labelled `audit-green` when both
+#   pip-audit and npm audit (high+) return clean, or `audit-findings`
+#   otherwise. Operator review + merge is required; no bot self-
+#   approval, no auto-merge -- consistent with the main-protection
+#   PR-review enforcement.
+#
+# * pull_request -- generates the report into the workflow summary
+#   only (no file commit). Lets reviewers see the audit impact of
+#   the PR they're reviewing.
+#
+# See docs/security/audits/README.md for the artifact layout, and
+# docs/runbooks/DEPENDENCY_RISK_AUDIT_RUNBOOK.md for triage.
 
 on:
   schedule:
@@ -23,8 +39,8 @@ on:
       - 'scripts/security/dep_risk_audit.py'
 
 permissions:
-  contents: read
-  issues: write
+  contents: write          # commit the audit-week branch
+  pull-requests: write     # open / update the audit PR
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -38,6 +54,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Need full history so branch creation works cleanly.
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
@@ -70,51 +89,140 @@ jobs:
         working-directory: frontend
         # --legacy-peer-deps is the documented workaround for the
         # eslint-plugin-react@7.37.5 peer-cap issue (caps at ^9.7 vs
-        # eslint@10 in the project) tracked under #142. Will be removed
-        # when #142 closes (currently deferred per its trigger
-        # conditions: 6mo silence from filing or CI escape, neither
-        # fired yet). See frontend/CLAUDE.md and
-        # docs/security/DEPENDENCY_RISK_REGISTER.md for the full
-        # rationale on the temporary workaround.
+        # eslint@10 in the project) tracked in
+        # docs/security/DEPENDENCY_RISK_REGISTER.md.
         run: npm ci --legacy-peer-deps
 
-      - name: Run audit
+      - name: Compute paths
+        id: paths
         run: |
-          REPORT_PATH="reports/dep-audit-$(date -u +%Y-%m-%d).md"
-          mkdir -p reports
-          python -m scripts.security.dep_risk_audit --output "$REPORT_PATH"
-          echo "REPORT_PATH=$REPORT_PATH" >> $GITHUB_ENV
-          # Surface the report into the workflow summary so a quick
-          # glance at the run page tells the story.
-          cat "$REPORT_PATH" >> $GITHUB_STEP_SUMMARY
+          # ISO 8601 week (YYYY-WNN, e.g., 2026-W20).
+          WEEK=$(date -u +%G-W%V)
+          BRANCH="deps/audit/${WEEK}"
+          REPORT="docs/security/audits/${WEEK}.md"
+          echo "week=${WEEK}" >> $GITHUB_OUTPUT
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+          echo "report=${REPORT}" >> $GITHUB_OUTPUT
+
+      - name: Run audit
+        id: audit
+        run: |
+          mkdir -p "$(dirname "${{ steps.paths.outputs.report }}")"
+          python -m scripts.security.dep_risk_audit \
+            --output "${{ steps.paths.outputs.report }}"
+          # Surface the report into the workflow summary.
+          cat "${{ steps.paths.outputs.report }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Determine green vs findings
+        id: greenness
+        # Re-runs pip-audit + npm audit separately to derive a CI-shaped
+        # exit code (the audit script itself always returns 0; it just
+        # writes a report). "Green" = both tools return clean at the
+        # high-severity threshold; anything else flips the PR label
+        # to `audit-findings` for operator triage.
+        run: |
+          set +e
+          GREEN=true
+          for f in requirements.txt requirements-api.txt requirements-agents.txt; do
+            if [ -f "$f" ]; then
+              pip-audit -r "$f" --strict
+              if [ $? -ne 0 ]; then
+                GREEN=false
+                echo "pip-audit found findings in $f"
+              fi
+            fi
+          done
+          if [ -f deploy/docker/memory-service/requirements.txt ]; then
+            pip-audit -r deploy/docker/memory-service/requirements.txt --strict
+            if [ $? -ne 0 ]; then
+              GREEN=false
+              echo "pip-audit found findings in memory-service requirements"
+            fi
+          fi
+          ( cd frontend && npm audit --audit-level=high )
+          if [ $? -ne 0 ]; then
+            GREEN=false
+            echo "npm audit found high+ findings"
+          fi
+          echo "is_green=${GREEN}" >> $GITHUB_OUTPUT
+          echo "is_green=${GREEN}"
 
       - name: Upload audit report artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: dependency-risk-audit-${{ github.run_number }}
-          path: ${{ env.REPORT_PATH }}
+          path: ${{ steps.paths.outputs.report }}
           retention-days: 90
 
-      - name: Post report to tracking issue
-        # Skip on PRs (the workflow summary covers it) and on
-        # workflow_dispatch (the operator can read the run page).
-        if: github.event_name == 'schedule'
+      - name: Open or update audit PR
+        # Skip on pull_request (workflow summary covers it; we don't
+        # commit audit files from a PR-triggered run because the run
+        # is reviewing someone else's changes, not the audit itself).
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Tracking issue is #138 (created when this workflow lands).
-          # If the issue doesn't exist, fail soft -- the report is
-          # still in the artifact and the workflow summary.
-          if gh issue view 138 --repo ${{ github.repository }} > /dev/null 2>&1; then
-            COMMENT="$(printf '%s\n\n_Run: %s/%s/actions/runs/%s_\n' \
-              "$(cat "$REPORT_PATH")" \
-              "${{ github.server_url }}" \
-              "${{ github.repository }}" \
-              "${{ github.run_id }}")"
-            echo "$COMMENT" | gh issue comment 138 \
-              --repo ${{ github.repository }} \
-              --body-file - || \
-              echo '::warning::Failed to post audit report to issue #138'
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="${{ steps.paths.outputs.branch }}"
+          REPORT="${{ steps.paths.outputs.report }}"
+          WEEK="${{ steps.paths.outputs.week }}"
+          IS_GREEN="${{ steps.greenness.outputs.is_green }}"
+
+          if [ "$IS_GREEN" = "true" ]; then
+            LABEL="audit-green"
+            HEADER="✅ Green -- pip-audit and npm audit (high+) both clean."
           else
-            echo '::warning::Tracking issue #138 not found; report is in artifacts only.'
+            LABEL="audit-findings"
+            HEADER="⚠️ Findings -- one or more tools reported issues at the high-severity threshold. Triage per \`docs/runbooks/DEPENDENCY_RISK_AUDIT_RUNBOOK.md\`."
+          fi
+
+          # Push the audit file on the week's branch.  Force-push is
+          # safe here because the branch is scoped to one week's audit
+          # and only this workflow writes to it.
+          git checkout -B "$BRANCH"
+          git add "$REPORT"
+          if git diff --cached --quiet; then
+            echo "No changes to commit; the week's audit report already matches main."
+            exit 0
+          fi
+          git commit -m "audit(deps): weekly report ${WEEK}"
+          git push origin "$BRANCH" --force
+
+          # Open or update the PR.
+          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+            echo "Updating existing PR for ${BRANCH}"
+            if [ "$LABEL" = "audit-green" ]; then
+              gh pr edit "$BRANCH" --add-label "audit-green" --remove-label "audit-findings" 2>/dev/null || \
+                gh pr edit "$BRANCH" --add-label "audit-green"
+            else
+              gh pr edit "$BRANCH" --add-label "audit-findings" --remove-label "audit-green" 2>/dev/null || \
+                gh pr edit "$BRANCH" --add-label "audit-findings"
+            fi
+          else
+            BODY=$(cat <<EOF
+          # Dependency risk audit -- ${WEEK}
+
+          ${HEADER}
+
+          The full report is committed in [\`${REPORT}\`](https://github.com/${{ github.repository }}/blob/${BRANCH}/${REPORT}).
+
+          - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - **Triage:** see [\`docs/runbooks/DEPENDENCY_RISK_AUDIT_RUNBOOK.md\`](https://github.com/${{ github.repository }}/blob/main/docs/runbooks/DEPENDENCY_RISK_AUDIT_RUNBOOK.md)
+          - **Register:** [\`docs/security/DEPENDENCY_RISK_REGISTER.md\`](https://github.com/${{ github.repository }}/blob/main/docs/security/DEPENDENCY_RISK_REGISTER.md)
+          - **Audit history:** [\`docs/security/audits/\`](https://github.com/${{ github.repository }}/tree/main/docs/security/audits)
+
+          Operator action:
+          - If green: review the report file and merge. No tier changes should be needed.
+          - If findings: triage each finding via the runbook decision tree. Update the register row(s) and commit the changes to this PR before merging.
+          EOF
+          )
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "audit(deps): weekly report ${WEEK}" \
+              --body "$BODY" \
+              --label "$LABEL"
           fi

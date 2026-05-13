@@ -1,10 +1,10 @@
 # Dependency Risk Audit Runbook
 
-**Last Updated:** 2026-05-08
+**Last Updated:** 2026-05-13
 **Workflow:** `.github/workflows/dependency-risk-audit.yml`
 **Script:** `scripts/security/dep_risk_audit.py`
 **Register:** `docs/security/DEPENDENCY_RISK_REGISTER.md`
-**Tracking Issue:** #138
+**Audit history:** `docs/security/audits/` (one `YYYY-WNN.md` file per ISO week)
 **Owner:** Platform Engineering
 
 ---
@@ -17,11 +17,13 @@ The dependency risk audit runs every Monday at 14:00 UTC and produces a markdown
 2. **Frontend CVEs** via `npm audit` against `frontend/`.
 3. **Maintainer staleness** against the Watch / At-Risk tiers from the register, using `pip show` and `npm view` metadata.
 
-The report is posted as a comment on tracking issue #138 and stored as a workflow artifact for 90 days.
+The report is committed to `docs/security/audits/YYYY-WNN.md` via a weekly PR titled `audit(deps): weekly report YYYY-WNN`. The PR is auto-labelled `audit-green` (both tools clean) or `audit-findings` (high-severity issues present). Operator merges; no bot auto-merge. The report is also retained as a workflow artifact for 90 days for runtime access.
+
+The audit migrated from "post as a comment on tracking issue #138" to "commit as a file via PR" on 2026-05-13 -- see `docs/security/audits/README.md` for the rationale.
 
 ## Triage Decision Tree
 
-When the audit posts a new report, walk this list top to bottom.
+When the audit opens a new PR, walk this list top to bottom.
 
 ### 1. Any Python or npm CVE listed?
 
@@ -201,5 +203,7 @@ The lesson: drafts are cheap to start, expensive to fully unwind. Use the markdo
 - Workflow: `.github/workflows/dependency-risk-audit.yml`
 - Disclosure policy (inbound + advisory consumer guidance): [`SECURITY.md`](../../SECURITY.md)
 - Worked-example advisory (dry-run for `tj-actions/changed-files`): [`docs/security/SAMPLE_ADVISORY_TJ_ACTIONS.md`](../security/SAMPLE_ADVISORY_TJ_ACTIONS.md)
-- Tracking issue (audit feed): [#138](https://github.com/aenealabs/aura/issues/138)
+- Audit history: [`docs/security/audits/`](../security/audits/) (one `YYYY-WNN.md` per ISO week; PR-titled `audit(deps): weekly report YYYY-WNN`)
+- Audit-history README + cadence: [`docs/security/audits/README.md`](../security/audits/README.md)
+- Tracking issue (audit feed, pre-2026-05-13 history only): [#138](https://github.com/aenealabs/aura/issues/138) -- closed after migration to file-based audits
 - Tracking issue (advisory pipeline): [#141](https://github.com/aenealabs/aura/issues/141)

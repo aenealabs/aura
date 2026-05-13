@@ -40,7 +40,15 @@ Parameters:
     Type: String
     Description: Name of the artifacts S3 bucket for template storage
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   HasHITLTopic: !Not [!Equals [!Ref HITLApprovalsTopicArn, '']]
   HasApprovalStateMachine: !Not [!Equals [!Ref ApprovalStateMachineArn, '']]
   HasPortfolio: !Not [!Equals [!Ref ServiceCatalogPortfolioId, '']]
@@ -261,6 +269,8 @@ Resources:
   SubmitErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-test-env-marketplace-submit-errors-${Environment}'
       AlarmDescription: 'High number of template submission errors'
       MetricName: Errors
@@ -286,6 +296,8 @@ Resources:
   ApproveErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-test-env-marketplace-approve-errors-${Environment}'
       AlarmDescription: 'High number of template approval errors'
       MetricName: Errors

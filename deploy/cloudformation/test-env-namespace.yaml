@@ -44,7 +44,15 @@ Parameters:
     Default: 'layers/kubectl-layer.zip'
     Description: S3 key for kubectl layer zip file
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   HasNotificationTopic: !Not [!Equals [!Ref NotificationTopicArn, '']]
   CreateKubectlLayer: !Not [!Equals [!Ref KubectlLayerS3Bucket, '']]
 
@@ -172,6 +180,8 @@ Resources:
   NamespaceControllerErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-test-env-namespace-errors-${Environment}'
       AlarmDescription: 'High number of namespace controller Lambda errors'
       MetricName: Errors
@@ -197,6 +207,8 @@ Resources:
   NamespaceControllerDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-test-env-namespace-duration-${Environment}'
       AlarmDescription: 'Namespace controller taking too long (approaching timeout)'
       MetricName: Duration

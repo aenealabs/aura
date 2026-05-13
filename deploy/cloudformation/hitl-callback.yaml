@@ -59,7 +59,15 @@ Parameters:
     MaxValue: 300
     Description: Lambda function timeout in seconds
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   HasCustomTableName: !Not [!Equals [!Ref HITLTableName, '']]
   HasCustomWorkflowTable: !Not [!Equals [!Ref WorkflowTableName, '']]
   HasCustomSNSTopic: !Not [!Equals [!Ref SNSTopicArn, '']]
@@ -205,6 +213,8 @@ Resources:
   ApprovalCallbackErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub ${ProjectName}-approval-callback-errors-${Environment}
       AlarmDescription: Alert when approval callback Lambda encounters errors
       MetricName: Errors

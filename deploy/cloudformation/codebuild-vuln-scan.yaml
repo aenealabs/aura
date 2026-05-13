@@ -31,6 +31,15 @@ Parameters:
     AllowedValues: [main, develop]
     Description: GitHub branch to build from
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
+Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
 Resources:
   # S3 Bucket for Vuln Scan Layer Build Artifacts
   VulnScanArtifactsBucket:
@@ -311,6 +320,8 @@ Resources:
   VulnScanBuildFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-vuln-scan-build-failures-${Environment}'
       AlarmDescription: Alert when vuln scan layer has 2+ build failures in 1 hour
       MetricName: FailedBuilds
@@ -329,6 +340,8 @@ Resources:
   VulnScanBuildDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-vuln-scan-build-slow-${Environment}'
       AlarmDescription: Alert when vuln scan layer build takes longer than 30 minutes
       MetricName: Duration

@@ -18,7 +18,15 @@ Parameters:
     Description: KMS key ARN for encryption
     Default: ''
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   UseKMSKey: !Not [!Equals [!Ref KMSKeyArn, '']]
   IsProd: !Equals [!Ref Environment, 'prod']
 
@@ -421,6 +429,8 @@ Resources:
   DispatcherFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-scheduler-dispatcher-failures-${Environment}'
       AlarmDescription: Alert when scheduler dispatcher has failures
       MetricName: JobsFailedToDispatch

@@ -780,6 +780,8 @@ Resources:
         - Name: TableName
           Value: !Ref ApprovalRequestsTable
       TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref HITLNotificationTopic
 
 Outputs:
   # DynamoDB Tables

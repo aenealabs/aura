@@ -43,6 +43,15 @@ Parameters:
     AllowedValues: [main, develop]
     Description: GitHub branch to build from
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
+Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
 Resources:
   # S3 Bucket for Runtime Security Artifacts
   RuntimeSecurityArtifactsBucket:
@@ -288,6 +297,8 @@ Resources:
   RuntimeSecurityBuildFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-runtime-security-build-failures-${Environment}'
       AlarmDescription: 'Alert when Runtime Security Layer has 2+ failures in 1 hour'
       MetricName: FailedBuilds

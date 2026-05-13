@@ -23,7 +23,15 @@ Parameters:
 # -----------------------------------------------------------------------------
 # Conditions
 # -----------------------------------------------------------------------------
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   IsProd: !Equals [!Ref Environment, prod]
 
 # -----------------------------------------------------------------------------
@@ -261,6 +269,8 @@ Resources:
   CircuitBreakerOpenAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-discovery-circuit-open-${Environment}'
       AlarmDescription: Alert when circuit breaker opens for cloud discovery
       MetricName: CircuitBreakerOpen
@@ -278,6 +288,8 @@ Resources:
   DiscoveryLatencyAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-discovery-latency-${Environment}'
       AlarmDescription: Alert when discovery latency exceeds threshold
       MetricName: DiscoveryLatency
@@ -295,6 +307,8 @@ Resources:
   CredentialErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-discovery-credential-errors-${Environment}'
       AlarmDescription: Alert when credential errors occur
       MetricName: CredentialError
@@ -312,6 +326,8 @@ Resources:
   IaCCorrelationRateAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-discovery-low-correlation-${Environment}'
       AlarmDescription: Alert when IaC correlation rate drops below threshold
       MetricName: CorrelationRate

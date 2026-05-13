@@ -1029,6 +1029,8 @@ Resources:
         - Name: StateMachineArn
           Value: !Ref SSRTrainingStateMachine
       TreatMissingData: notBreaching
+      AlarmActions:
+        - !If [HasAlertEmail, !Ref SSRAlertTopic, !Ref 'AWS::NoValue']
 
   # ============================================================================
   # AWS Budget for Cost Control

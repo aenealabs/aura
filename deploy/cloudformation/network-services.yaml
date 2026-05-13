@@ -114,7 +114,15 @@ Parameters:
       - "4096"
       - "8192"
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   CreateEcsCluster: !Equals [!Ref EcsClusterName, ""]
   IsProduction: !Equals [!Ref Environment, prod]
 
@@ -435,6 +443,8 @@ Resources:
   HighCpuAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub "${ProjectName}-network-services-high-cpu-${Environment}"
       AlarmDescription: Alert when DNS service CPU exceeds 80%
       MetricName: CPUUtilization
@@ -454,6 +464,8 @@ Resources:
   HighMemoryAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub "${ProjectName}-network-services-high-memory-${Environment}"
       AlarmDescription: Alert when DNS service memory exceeds 80%
       MetricName: MemoryUtilization

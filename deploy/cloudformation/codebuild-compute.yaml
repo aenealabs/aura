@@ -46,6 +46,15 @@ Parameters:
     Type: String
     Description: Route 53 Hosted Zone ID in dev account for ACM DNS validation. Retrieved from SSM at deployment.
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
+Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
 Resources:
   # S3 Bucket for Compute Layer Artifacts
   ComputeArtifactsBucket:
@@ -583,6 +592,8 @@ Resources:
   ComputeBuildFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-compute-build-failures-${Environment}'
       AlarmDescription: 'Alert when Compute Layer has 2+ failures in 1 hour'
       MetricName: FailedBuilds
@@ -601,6 +612,8 @@ Resources:
   ComputeBuildDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-compute-build-slow-${Environment}'
       AlarmDescription: 'Alert when Compute Layer build takes longer than 45 minutes'
       MetricName: Duration

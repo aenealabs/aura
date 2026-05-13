@@ -29,6 +29,15 @@ Parameters:
       - develop
     Description: GitHub branch to build from
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
+Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
 Resources:
   # CloudWatch Log Group for SSR Builds
   SSRBuildLogGroup:
@@ -281,6 +290,8 @@ Resources:
   SSRBuildFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-ssr-build-failures-${Environment}'
       AlarmDescription: 'Alert when SSR Training build has 2+ failures in 1 hour'
       MetricName: FailedBuilds

@@ -38,6 +38,15 @@ Parameters:
       - develop
     Description: GitHub branch to build from
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
+Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
 Resources:
   # S3 Bucket for Data Layer Artifacts
   DataArtifactsBucket:
@@ -553,6 +562,8 @@ Resources:
   DataBuildFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-data-build-failures-${Environment}'
       AlarmDescription: 'Alert when Data Layer has 2+ failures in 1 hour'
       MetricName: FailedBuilds
@@ -571,6 +582,8 @@ Resources:
   DataBuildDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-data-build-slow-${Environment}'
       AlarmDescription: 'Alert when Data Layer build takes longer than 30 minutes'
       MetricName: Duration
@@ -589,6 +602,8 @@ Resources:
   DataLayerCostAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-data-layer-cost-exceeded-${Environment}'
       AlarmDescription: 'Alert when Data Layer costs exceed $15/day'
       MetricName: EstimatedCharges

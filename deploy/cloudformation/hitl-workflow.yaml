@@ -19,6 +19,15 @@ Parameters:
   # Note: ApprovalTimeoutHours is configured in the state machine definition
   # directly rather than as a parameter to simplify deployment.
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
+Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
 Resources:
   # Note: CloudWatch Log Group is created in sandbox.yaml and imported here
   # to avoid resource name collision between stacks.
@@ -411,6 +420,8 @@ Resources:
   HITLWorkflowFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-hitl-workflow-failures-${Environment}'
       AlarmDescription: Alert when HITL workflow has multiple failures
       MetricName: ExecutionsFailed

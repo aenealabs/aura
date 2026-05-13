@@ -13,7 +13,15 @@ Parameters:
     Default: aura
     Description: Project name
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   IsProd: !Equals [!Ref Environment, prod]
 
 Resources:
@@ -176,6 +184,8 @@ Resources:
   RefineSuccessRateAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-refine-success-rate-${Environment}'
       AlarmDescription: Alert if refine operation success rate drops below 80%
       MetricName: RefineSuccessRate
@@ -193,6 +203,8 @@ Resources:
   StrategyReuseAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-strategy-reuse-rate-${Environment}'
       AlarmDescription: Alert if strategy reuse rate drops below 30%
       MetricName: StrategyReuseRate
@@ -210,6 +222,8 @@ Resources:
   EvolutionRegressionAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-evolution-regression-${Environment}'
       AlarmDescription: Alert if evolution gain becomes negative
       MetricName: EvolutionGain
@@ -227,6 +241,8 @@ Resources:
   RefineLatencyAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-refine-latency-${Environment}'
       AlarmDescription: Alert if p95 refine latency exceeds 500ms (trigger circuit breaker)
       MetricName: RefineLatency
@@ -244,6 +260,8 @@ Resources:
   DLQMessagesAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-refine-dlq-messages-${Environment}'
       AlarmDescription: Alert if messages appear in dead letter queue
       MetricName: ApproximateNumberOfMessagesVisible

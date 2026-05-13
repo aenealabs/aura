@@ -58,7 +58,15 @@ Parameters:
     Default: ''
     Description: ARN of customer-managed KMS key (required if UseCustomerManagedKMS=true)
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   HasProvisionerFunction: !Not [!Equals [!Ref ProvisionerFunctionArn, '']]
   HasNotificationTopic: !Not [!Equals [!Ref NotificationTopicArn, '']]
   UseCustomerKMS: !Equals [!Ref UseCustomerManagedKMS, 'true']
@@ -220,6 +228,8 @@ Resources:
   SchedulerErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-test-env-scheduler-errors-${Environment}'
       AlarmDescription: 'High number of scheduler Lambda errors'
       MetricName: Errors

@@ -11,6 +11,11 @@ Parameters:
     Default: aura
     Description: Project name for resource naming
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Mappings:
   PartitionMap:
     aws:
@@ -21,6 +26,9 @@ Mappings:
       URLSuffix: amazonaws-us-gov.com
 
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   IsGovCloud: !Or
     - !Equals [!Ref 'AWS::Region', 'us-gov-west-1']
     - !Equals [!Ref 'AWS::Region', 'us-gov-east-1']
@@ -189,6 +197,8 @@ Resources:
   DiagramErrorRateAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-diagram-error-rate-${Environment}'
       AlarmDescription: High error rate in diagram generation service
       MetricName: ProviderFailures
@@ -206,6 +216,8 @@ Resources:
   DiagramLatencyAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-diagram-latency-${Environment}'
       AlarmDescription: High latency in diagram generation
       MetricName: GenerationLatency
@@ -223,6 +235,8 @@ Resources:
   DiagramDailyCostAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-diagram-daily-cost-${Environment}'
       AlarmDescription: Daily AI provider cost threshold exceeded
       MetricName: ProviderCost

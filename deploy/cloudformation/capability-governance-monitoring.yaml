@@ -370,6 +370,8 @@ Resources:
       Threshold: 50
       ComparisonOperator: LessThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions:
+        - !If [HasAlertEmail, !Ref AlertTopic, !Ref 'AWS::NoValue']
 
   # Rate Limit Alarm
   RateLimitAlarm:

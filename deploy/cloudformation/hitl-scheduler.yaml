@@ -73,7 +73,15 @@ Parameters:
     MaxValue: 900
     Description: Lambda function timeout in seconds
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   HasCustomTableName: !Not [!Equals [!Ref HITLTableName, '']]
   HasCustomSNSTopic: !Not [!Equals [!Ref SNSTopicArn, '']]
   HasBackupReviewers: !Not [!Equals [!Ref BackupReviewers, '']]
@@ -205,6 +213,8 @@ Resources:
   ExpirationProcessorErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub ${ProjectName}-expiration-processor-errors-${Environment}
       AlarmDescription: Alert when expiration processor Lambda encounters errors
       MetricName: Errors

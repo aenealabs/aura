@@ -24,12 +24,21 @@ Parameters:
     AllowedValues: [main, develop]
     Description: GitHub branch to build from
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Mappings:
   PartitionMap:
     aws:
       Partition: 'aws'
     aws-us-gov:
       Partition: 'aws-us-gov'
+
+Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
 
 Resources:
   # S3 Bucket for Documentation Artifacts
@@ -284,6 +293,8 @@ Resources:
   DocumentationBuildFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-documentation-build-failures-${Environment}'
       AlarmDescription: 'Alert when Documentation Agent has 2+ failures in 1 hour'
       MetricName: FailedBuilds

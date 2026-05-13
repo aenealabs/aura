@@ -50,6 +50,15 @@ Parameters:
     AllowedValues: [main, develop]
     Description: GitHub branch to build from
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
+Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
 Resources:
   # S3 Bucket for Bootstrap Artifacts
   BootstrapArtifactsBucket:
@@ -265,6 +274,8 @@ Resources:
   BootstrapBuildFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-bootstrap-build-failures-${Environment}'
       AlarmDescription: 'Alert when Bootstrap Layer has build failures'
       MetricName: FailedBuilds

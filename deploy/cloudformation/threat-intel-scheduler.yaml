@@ -78,7 +78,15 @@ Parameters:
     MaxValue: 900
     Description: Lambda function timeout in seconds
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   HasNVDApiKey: !Not [!Equals [!Ref NVDApiKey, '']]
   HasGitHubToken: !Not [!Equals [!Ref GitHubToken, '']]
   HasCustomSNSTopic: !Not [!Equals [!Ref SNSTopicArn, '']]
@@ -217,6 +225,8 @@ Resources:
   ThreatIntelProcessorErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub ${ProjectName}-threat-intel-processor-errors-${Environment}
       AlarmDescription: Alert when threat intel processor Lambda encounters errors
       MetricName: Errors
@@ -236,6 +246,8 @@ Resources:
   CriticalThreatsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub ${ProjectName}-critical-threats-detected-${Environment}
       AlarmDescription: Alert when critical security threats are detected
       MetricName: CriticalThreatsFound

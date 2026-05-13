@@ -64,7 +64,15 @@ Parameters:
     Default: ''
     Description: KMS key ARN for EBS encryption (optional, uses AWS managed key if empty)
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   UseCustomKMSKey: !Not [!Equals [!Ref KMSKeyArn, '']]
 
 # Note: AMI is retrieved via SSM parameter at deploy time for latest GPU-optimized AMI
@@ -394,6 +402,8 @@ Resources:
   GPUMemoryHighAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-neural-memory-gpu-memory-high-${Environment}'
       AlarmDescription: GPU memory utilization is high
       MetricName: utilization_memory
@@ -411,6 +421,8 @@ Resources:
   GPUTemperatureHighAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-neural-memory-gpu-temp-high-${Environment}'
       AlarmDescription: GPU temperature is critically high
       MetricName: temperature_gpu

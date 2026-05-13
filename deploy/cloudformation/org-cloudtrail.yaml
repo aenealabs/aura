@@ -42,7 +42,15 @@ Parameters:
     AllowedValues: ['true', 'false']
     Description: Enable S3 data events (increases cost significantly)
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   IncludeDataEvents: !Equals [!Ref EnableDataEvents, 'true']
 
 Resources:
@@ -248,6 +256,8 @@ Resources:
   RootAccountUsageAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-org-root-account-usage'
       AlarmDescription: Alert when root account is used in any organization account
       MetricName: RootAccountUsageCount
@@ -278,6 +288,8 @@ Resources:
   CloudTrailChangesAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-org-cloudtrail-changes'
       AlarmDescription: Alert when CloudTrail configuration is modified
       MetricName: CloudTrailChangesCount

@@ -31,7 +31,15 @@ Parameters:
     Default: ''
     Description: AWS Account ID for production environment (optional)
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   HasProdAccount: !Not [!Equals [!Ref ProdAccountId, '']]
 
 Resources:
@@ -127,6 +135,8 @@ Resources:
   Route53CrossAccountAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-route53-cross-account-changes'
       AlarmDescription: 'Alert on Route 53 changes via cross-account role - potential security event'
       MetricName: Route53ChangesViaCrossAccountRole

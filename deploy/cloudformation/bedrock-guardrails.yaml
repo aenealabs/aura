@@ -19,7 +19,15 @@ Parameters:
     AllowedValues: ['true', 'false']
     Description: Enable PII detection and filtering
 
+  AlertTopicArn:
+    Type: String
+    Default: ''
+    Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
+
 Conditions:
+  HasAlertTopic:
+    !Not [!Equals [!Ref AlertTopicArn, '']]
+
   IsProd: !Equals [!Ref Environment, prod]
   EnablePII: !Equals [!Ref EnablePIIFiltering, 'true']
 
@@ -208,6 +216,8 @@ Resources:
   GuardrailBlockRateAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmActions:
+        - !If [HasAlertTopic, !Ref AlertTopicArn, !Ref 'AWS::NoValue']
       AlarmName: !Sub '${ProjectName}-guardrail-high-block-rate-${Environment}'
       AlarmDescription: Alert when guardrail block rate exceeds threshold (may indicate attack or misconfiguration)
       MetricName: GuardrailBlocks

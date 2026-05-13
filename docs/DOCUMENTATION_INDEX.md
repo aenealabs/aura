@@ -330,6 +330,9 @@ Technical documentation for developers, cybersecurity professionals, and IT admi
 | [assessments/AWS_WELL_ARCHITECTED_PLATFORM_ASSESSMENT.md](assessments/AWS_WELL_ARCHITECTED_PLATFORM_ASSESSMENT.md) | AWS Well-Architected Platform assessment | Dec 2025 |
 | [assessments/TIME_SPACE_COMPLEXITY_AUDIT.md](assessments/TIME_SPACE_COMPLEXITY_AUDIT.md) | Codebase time/space complexity audit (87 findings, issues #701-#704) | Feb 26, 2026 |
 | [assessments/ADR_092_STATIC_SCAN_REPORT.md](assessments/ADR_092_STATIC_SCAN_REPORT.md) | ADR-092 offline static-action-scan report: coverage gaps between `CloudFormationServiceRole` scoped policy and actions used across all 187 CFN templates (Phase 1 cost-gate substitute) | May 12, 2026 |
+| [assessments/ADR_093_SCHEMA_SCAN_REPORT.md](assessments/ADR_093_SCHEMA_SCAN_REPORT.md) | ADR-093 offline schema-drift static-scan report: reads_set vs writes_set + tenant-predicate check on `neptune_taint_repository.py` (Phase 5 cost-gate substitute) | May 13, 2026 |
+| [assessments/ADR_093_QUERY_SCAN_REPORT.md](assessments/ADR_093_QUERY_SCAN_REPORT.md) | ADR-093 offline query-shape static-scan report: tenant-predicate AST gate + hardcoded ARN check across the 4 Phase-2/3/4 modules (Phase 5 cost-gate substitute) | May 13, 2026 |
+| [COST_GATE_DEFERRED.md](COST_GATE_DEFERRED.md) | Single registry of every "Deferred (Cost Gate)" item across all ADRs (ADR-092 deploy phases + ADR-093 Phases 6-7). Quarterly review cadence; source of truth for "what's paused pending budget restoration." | May 13, 2026 |
 
 ### Planning (docs/planning/)
 | File | Purpose | Last Updated |

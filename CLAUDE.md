@@ -242,18 +242,18 @@ See `docs/deployment/DEPLOYMENT_GUIDE.md` for full container build workflow.
 - **Company:** Aenea Labs | **Domain:** aenealabs.com (Route 53)
 - **Overall Completion:** 99% (GTM-readiness audit #163 CLOSED on May 12, 2026 after Waves 1-14; remaining work in #180 external-endpoints, #181 tree-sitter implementation, #182 tech-debt tracker)
 - **Deferred-Work Constraint:** Platform self-funded; live-AWS validation paused indefinitely (cost-gate). Other deferrals (vendor-access, external-endpoint, review-capacity, upstream-maintainer) follow the same close-issue-track-in-registry pattern. ADR-092 deploy phases 1, 3, 3.5, 4, 5, 6 + ADR-093 phases 6/7 (cost-gate); #115 Mythos-class testing (vendor-access-gate); #180 residuals (external-endpoint + review-capacity); #142 / #138 (upstream-maintainer / recurring-operation) all closed and tracked. All code work is complete and reviewable. Offline static-scan substitutes (`scripts/adr_092_static_action_scan.py`, `scripts/adr_093_taint_schema_static_scan.py`, `scripts/adr_093_taint_query_static_scan.py`) stand in for the cost-gated live phases. Single registry of paused work: [`docs/DEFERRED_WORK_REGISTRY.md`](docs/DEFERRED_WORK_REGISTRY.md) (reviewed quarterly).
-- **Total Lines of Code:** 375,000+ (production + infrastructure; tests counted separately)
-- **Test Suite:** ~25,253+ tests as of May 13, 2026 (+31 from ADR-093 Phase 5 -- offline static-scan substitute: schema-drift + query-shape AST gates). Clean full-suite re-run still pending; the historical "0 failures" claim is not re-asserted until that re-run lands. See `docs/PROJECT_STATUS.md` for the audit-trail context.
+- **Total Lines of Code:** 402,939 code lines across `src/` + `deploy/` (production + infrastructure; tests counted separately at 303,926). Methodology: `cloc src/ deploy/ --md` "code" column; reproduce with `cloc src/ deploy/ tests/ --md` for the full picture.
+- **Test Suite:** 26,414 tests as of May 14, 2026. Reproduce with `pytest --collect-only -q`. Clean full-suite re-run pending issue #183 resolution; the historical "0 failures" claim is not re-asserted until that re-run lands.
 - **Architecture Decision Records:** 93 ADRs (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089], 1 Accepted-with-deploy-Deferred [092], 1 Accepted-Phase-1-unblocked [093]; ADR-090 GraphRAG ingestion edge completeness + ADR-091 Cognito cross-region DR + ADR-092 CFN deploy-role wildcard scoping + ADR-093 Neptune-backed cross-file taint resolver added in May 2026; counted via `ls docs/architecture-decisions/ADR-*.md | wc -l`)
 - **Infrastructure:** 100% (All 9 phases deployed: Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine)
 - **Modular CI/CD:** 100% (28 buildspecs in `deploy/buildspecs/` managing all CloudFormation templates; down from 38 after #131 cleanup deleted 11 dead scaffolds; counted via `ls deploy/buildspecs/buildspec-*.yml | wc -l`). Wave 10 (commit `7670397`) replaced 27 inline create/update branches in `buildspec-application.yml`, `buildspec-observability.yml`, and `buildspec-serverless.yml` with the canonical `aws cloudformation deploy --no-fail-on-empty-changeset` pattern (-640 LOC).
-- **CloudFormation Templates:** 175 templates (170 in `deploy/cloudformation/` + 5 in `deploy/cloudformation/service-catalog-products/`, counted on 2026-05-12 by `find deploy/cloudformation -path "*/archive" -prune -o -name "*.yaml" -type f -print | grep -v "/archive/" | wc -l`; includes both CodeBuild project templates and infrastructure templates; excludes the 13 archive templates)
-- **CodeBuild Projects:** 19 projects (9 parent layers + 10 sub-layers including SSR, env-validator, and runtime-security)
+- **CloudFormation Templates:** 176 templates (deploy/cloudformation/ + deploy/cloudformation/service-catalog-products/, excluding archive). Reproduce: `find deploy/cloudformation -path "*/archive" -prune -o -name "*.yaml" -type f -print | grep -v "/archive/" | wc -l`.
+- **CodeBuild Projects:** 25 `AWS::CodeBuild::Project` resources across the `codebuild-*.yaml` templates. Reproduce: `grep -rh "AWS::CodeBuild::Project" deploy/cloudformation/*.yaml | wc -l`. (Prior "19 projects" claim reflected only the originally documented 9 parent + 10 sub-layers; subsequent layers were added without updating the count.)
 - **Network Services:** 100% (dnsmasq DNSSEC deployed to EKS, private ECR image, ECS Fargate VPC-wide DNS)
 - **LLM Integration:** 100% (Bedrock API operational; Wave 1 updated Bedrock IAM model ARNs to current-gen Sonnet 4.5 + Haiku 4.5, commit a025ac5)
 - **GovCloud Readiness:** 100% (19/19 deployed services compatible, using provisioned Neptune)
 - **Autonomy Framework:** 100% (Configurable HITL, 7 policy presets, ADR-032)
-- **Security Services:** 100% (5 services, 328 tests, 7 CloudWatch alarms, EventBridge bus, SNS alerts)
+- **Security Services:** 100% (5 services, 373 tests across `tests/test_security*.py` / `test_a2as*.py` / `test_compliance_security*.py`, 7 CloudWatch alarms, EventBridge bus, SNS alerts). Reproduce: `pytest tests/test_security*.py tests/test_a2as*.py tests/test_compliance_security*.py --collect-only -q`.
 - **Self-Service Test Environments:** 100% (ADR-039 complete, 4 phases deployed, monitoring + budgets operational)
 - **Context Engineering (ADR-034):** 100% (7 services deployed: scoring, registry, stack, retrieval, hoprag, mcp, summarization)
 - **Hybrid GraphRAG (Issue #151):** 100% (Full graph search implementation: CALL_GRAPH, DEPENDENCIES, INHERITANCE, REFERENCES, RELATED)
@@ -347,12 +347,14 @@ Always use `--platform linux/amd64` on ARM machines (Apple Silicon). See `docs/d
 **Deployment (Future):**
 
 ```bash
-# Deploy to dev environment
+# Deploy to dev environment (tier 2 = Fargate)
 ./deploy/scripts/deploy-network-services.sh dev 2
 
-# Deploy to production
-./deploy/scripts/deploy-network-services.sh prod 4
+# Deploy to production (tier all = both Kubernetes + Fargate paths)
+./deploy/scripts/deploy-network-services.sh prod all
 ```
+
+Valid tier values are `1` (Kubernetes), `2` (Fargate), or `all`. See `deploy/scripts/deploy-network-services.sh:271` for the authoritative validator.
 
 ---
 

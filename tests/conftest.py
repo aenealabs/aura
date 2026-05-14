@@ -133,9 +133,23 @@ _protected_prefixes = (
     "src.services.model_router",
     "tests.",
     # External auth libraries - removing these breaks exception class identity
-    # in auth.py's except blocks (jose.jwt.ExpiredSignatureError, httpx.HTTPError)
+    # in auth.py's except blocks. ``jose.jwt.ExpiredSignatureError``,
+    # ``httpx.HTTPError``, and ``jwt.ExpiredSignatureError`` / ``jwt.PyJWTError``
+    # (PyJWT) are all caught by-class in src/api/auth.py. If we let the
+    # post-test teardown hook strip any of these from ``sys.modules``, the
+    # next test's ``import jwt`` (or jose/httpx) creates a fresh module
+    # whose classes have new identities -- which means
+    # ``except jwt.ExpiredSignatureError:`` in auth.py compares against
+    # the STALE class while the exception instance comes from the FRESH
+    # class, and the except clause silently doesn't match. Diagnosed
+    # 2026-05-14 while chasing issue #194's test_expired_token residual
+    # (the symptom: ``isinstance(exc, jwt.ExpiredSignatureError)`` False
+    # at the catch site, with ``jwt is sys.modules['jwt']`` also False).
+    # PyJWT wasn't on this list originally because the comment only
+    # called out jose -- same defect class, same fix.
     "jose",
     "httpx",
+    "jwt",
     "conftest",
     "torch",  # Once loaded, cannot be safely unloaded
     "_C",  # torch internals
@@ -266,6 +280,8 @@ def _set_provenance_hmac_key():
         "test-hmac-key-not-for-production-use",
     )
     yield
+
+
 
 
 # =============================================================================

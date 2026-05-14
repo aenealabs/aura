@@ -54,6 +54,13 @@ from typing import Any, Dict, List, Optional
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 
+# Process-level lock so a second invocation of any destructive subcommand
+# exits non-zero before reaching the destructive phase (issue #186
+# cluster C3). The module lives in scripts/ alongside this file; the
+# sys.path insert handles the standalone-script invocation case.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from killswitch_lock import KillSwitchLock, KillSwitchLockHeldError  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -903,6 +910,73 @@ class StackManager:
             pass
         return None
 
+    # Terminal CloudFormation stack states that mean "deployment finished"
+    # (whether successfully or not). Anything else means the stack is
+    # still mutating.
+    _TERMINAL_OK_STATES = {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
+    _TERMINAL_FAIL_STATES = {
+        "CREATE_FAILED",
+        "ROLLBACK_COMPLETE",
+        "ROLLBACK_FAILED",
+        "UPDATE_FAILED",
+        "UPDATE_ROLLBACK_COMPLETE",
+        "UPDATE_ROLLBACK_FAILED",
+        "DELETE_FAILED",
+    }
+
+    def wait_for_stack_complete(
+        self,
+        stack_name: str,
+        *,
+        poll_interval_seconds: int = 10,
+        timeout_seconds: int = 1800,
+    ) -> bool:
+        """Block until ``stack_name`` reaches a terminal CloudFormation state.
+
+        ``aws cloudformation deploy`` already waits for completion when
+        invoked synchronously, but the audit (#186 cluster H4) called out
+        the absence of an explicit, locally-visible post-condition --
+        meaning if the AWS CLI subprocess ever times out before the
+        underlying stack settles, the caller has no recovery path. This
+        method provides that explicit verification.
+
+        Returns True if the stack settled in ``CREATE_COMPLETE`` or
+        ``UPDATE_COMPLETE``. Returns False on any terminal failure
+        state, on ``timeout_seconds`` expiry, or if the stack vanishes
+        mid-poll (e.g. someone else deleted it).
+        """
+        deadline = time.time() + timeout_seconds
+        last_status: Optional[str] = None
+        while time.time() < deadline:
+            try:
+                resp = self.cfn.describe_stacks(StackName=stack_name)
+                status = resp["Stacks"][0].get("StackStatus", "UNKNOWN")
+            except ClientError as exc:
+                code = exc.response.get("Error", {}).get("Code", "")
+                if code == "ValidationError":
+                    warn(f"Stack {stack_name} vanished mid-poll: {exc}")
+                    return False
+                warn(f"describe-stacks({stack_name}) transient error: {exc}")
+                time.sleep(poll_interval_seconds)
+                continue
+
+            if status in self._TERMINAL_OK_STATES:
+                return True
+            if status in self._TERMINAL_FAIL_STATES:
+                error(f"Stack {stack_name} settled in failure state: {status}")
+                return False
+
+            if status != last_status:
+                info(f"Stack {stack_name} status={status}; polling...")
+                last_status = status
+            time.sleep(poll_interval_seconds)
+
+        error(
+            f"Stack {stack_name} did not reach a terminal state within "
+            f"{timeout_seconds}s (last seen: {last_status})"
+        )
+        return False
+
     def delete_stack(self, stack_name: str, dry_run: bool = True) -> bool:
         # Safety: refuse to delete protected stacks
         if stack_name in PROTECTED_STACKS:
@@ -1011,8 +1085,20 @@ class StackManager:
         info(f"  Running: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         if result.returncode == 0:
-            success(f"Stack {stack_name} deployed successfully")
-            return True
+            # ``aws cloudformation deploy`` is synchronous; receiving exit
+            # code 0 means the CLI observed COMPLETE state. The extra
+            # describe-stacks check below is defense-in-depth, called
+            # out by audit #186 H4: if the CLI ever fails to wait (e.g.
+            # an internal timeout), this surfaces it locally rather than
+            # cascading silently into the next phase.
+            if self.wait_for_stack_complete(stack_name, timeout_seconds=60):
+                success(f"Stack {stack_name} deployed successfully")
+                return True
+            error(
+                f"Stack {stack_name}: CLI reported success but stack is not "
+                f"in COMPLETE state -- check CloudFormation console"
+            )
+            return False
         if (
             "No changes to deploy" in result.stdout
             or "No updates are to be performed" in result.stderr
@@ -1956,8 +2042,13 @@ def do_restore(args: argparse.Namespace) -> int:
         dry_run=dry_run,
     )
 
-    # Summary
-    label = "Plan" if dry_run else "Complete"
+    # Summary. The label distinguishes between "this script has completed
+    # its slice of the restore" and "the environment is back online".
+    # Issue #186 cluster H4 called out that the prior message implied
+    # the latter when only the former is true -- CodeBuild builds and
+    # K8s rollout finish asynchronously. The block below is explicit
+    # about what is and isn't done.
+    label = "Plan" if dry_run else "Script Phase Complete"
     print(f"\n{GREEN}{BOLD}=== Restore {label} ==={NC}")
     print(
         f"  Core stacks {'to deploy' if dry_run else 'deployed'}: "
@@ -1970,14 +2061,45 @@ def do_restore(args: argparse.Namespace) -> int:
     )
     if build_ids:
         print(f"  Build IDs: {', '.join(build_ids)}")
-        print(
-            f"\n  {YELLOW}Monitor CodeBuild builds for upper layer "
-            f"deployment status{NC}"
-        )
     if deploy_failures > 0:
         print(f"  {RED}Failures: {deploy_failures}{NC}")
     if dry_run:
-        print(f"\n  {YELLOW}Run with --execute to perform " f"these operations{NC}")
+        print(f"\n  {YELLOW}Run with --execute to perform these operations{NC}")
+    else:
+        # Honest "what's still pending" block. Without this, an operator
+        # sees the green "Complete" banner and assumes the environment
+        # is fully back; in reality the CodeBuild upper layers and the
+        # K8s data-plane rollout are still running. The runbook lists
+        # these as required manual checks -- printing them inline so the
+        # script's success state matches the documentation.
+        print(f"\n{YELLOW}{BOLD}=== POST-RESTORE VERIFICATION REQUIRED ==={NC}")
+        print(
+            f"{YELLOW}The script has finished its phase of the restore. The "
+            f"following steps are still required before DEV is operational:{NC}"
+        )
+        print(
+            "  1. Refresh kubeconfig:\n"
+            f"     {BOLD}aws eks update-kubeconfig --name "
+            f"{PROJECT_NAME}-cluster-{ENVIRONMENT} --region "
+            f"{args.region}{NC}"
+        )
+        print(
+            "  2. Verify K8s nodes are joining:\n"
+            f"     {BOLD}kubectl get nodes{NC}"
+        )
+        print(
+            "  3. Monitor CodeBuild builds for upper-layer deployment "
+            "completion. Use one of:"
+        )
+        for project in CODEBUILD_RESTORE_PROJECTS:
+            print(
+                f"     aws codebuild list-builds-for-project "
+                f"--project-name {project} --max-items 1"
+            )
+        print(
+            f"\n  {YELLOW}Until these checks pass, treat DEV as 'restoring' "
+            f"rather than 'running'.{NC}"
+        )
     return 0 if deploy_failures == 0 or dry_run else 1
 
 
@@ -2566,14 +2688,37 @@ Examples:
     print(f"Protected stacks: {len(PROTECTED_STACKS)}")
     print()
 
-    if args.command == "shutdown":
-        return do_shutdown(args)
-    elif args.command == "restore":
-        return do_restore(args)
-    elif args.command == "status":
+    # Read-only ``status`` does not need the concurrent-run guard; the
+    # three destructive subcommands do. ``--execute`` is a strict prefix
+    # of the gate; dry-runs still take the lock so two operators cannot
+    # both run dry-shutdown against shared state simultaneously and
+    # then both flip to ``--execute``.
+    if args.command == "status":
         return do_status(args)
-    elif args.command == "cleanup":
-        return do_cleanup(args)
+
+    try:
+        with KillSwitchLock("dev-killswitch", command=args.command):
+            if args.command == "shutdown":
+                return do_shutdown(args)
+            elif args.command == "restore":
+                return do_restore(args)
+            elif args.command == "cleanup":
+                return do_cleanup(args)
+    except KillSwitchLockHeldError as exc:
+        error(
+            "Another DEV kill-switch invocation is already running. "
+            "Refusing to start a second concurrent operation."
+        )
+        error(str(exc))
+        error(
+            "If you are certain no other invocation is active "
+            "(e.g. a prior run was force-killed), remove "
+            f"{Path.home() / '.aura' / 'dev-killswitch.lock'} and re-run. "
+            "The kernel releases the lock automatically on a clean process "
+            "exit or crash; manual removal is only needed if the lock file "
+            "still exists for another reason."
+        )
+        return 1
     return 1
 
 

@@ -195,11 +195,13 @@ AWS_PROFILE=aura-admin python scripts/qa_killswitch.py restore --execute --force
 
 **Estimated restore time:** ~45-60 minutes (dominated by Neptune and EKS cluster creation)
 
-**After restore completes**, the following manual steps may be needed:
+**After the script finishes** (it now reports `Restore Script Phase Complete` rather than `Restore Complete` to make this explicit -- see issue #186 cluster H4), the following steps are still required before QA is operational. The script prints them inline at the end of a successful `--execute` run.
 
 1. Update kubeconfig: `aws eks update-kubeconfig --name aura-cluster-qa --region us-east-1`
 2. Verify K8s nodes are joining: `kubectl get nodes`
 3. Re-deploy K8s workloads if needed via CodeBuild `aura-k8s-deploy-qa`
+
+Until these checks pass, treat QA as in the **restoring** state rather than **running**.
 
 ---
 

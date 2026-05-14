@@ -215,7 +215,7 @@ Resources:
       Runtime: python3.11
       Handler: index.handler
       Role: !GetAtt DevScalerRole.Arn
-      Timeout: 180
+      Timeout: 900  # 15 min, Lambda max -- accommodates per-nodegroup polling (#186 H4)
       MemorySize: 256
       Environment:
         Variables:
@@ -366,8 +366,72 @@ Resources:
                   return False
 
 
+          # Bounded poll: ``eks:UpdateNodegroupConfig`` is asynchronous --
+          # the API returns immediately while the scaling operation is
+          # still ``IN_PROGRESS``. Issue #186 cluster H4 flagged the
+          # original fire-and-forget pattern: Lambda logged success in
+          # ~1s while nodes ran at full capacity for the following 5-10
+          # minutes, defeating the off-hours cost-saving claim.
+          POLL_INTERVAL_SECONDS = 15
+          # 300s budget per nodegroup keeps the sequential 3-nodegroup
+          # worst case (3 * 300 = 900s) at exactly Lambda's 15-minute
+          # ceiling. Typical EKS nodegroup scale completes in 3-5 min, so
+          # this budget covers the realistic case with margin. If a
+          # nodegroup exceeds this budget we log + return False -- the
+          # scale was still initiated via update_nodegroup_config; only
+          # the observation timed out.
+          POLL_TIMEOUT_SECONDS = 300
+
+
+          def _wait_nodegroup_active(ng_name: str, expected_desired: int) -> bool:
+              """Poll ``eks:DescribeNodegroup`` until status==ACTIVE and
+              scalingConfig.desiredSize matches what we just requested,
+              or until the timeout fires.
+
+              Returns True if the requested state was observed, False on
+              timeout. Failures of the describe call itself are logged
+              and treated as transient (we keep polling until the
+              timeout) so a brief throttling event doesn't immediately
+              fail the whole scaling operation.
+              """
+              import time as _time
+
+              deadline = _time.time() + POLL_TIMEOUT_SECONDS
+              while _time.time() < deadline:
+                  try:
+                      ng = eks.describe_nodegroup(
+                          clusterName=CLUSTER_NAME,
+                          nodegroupName=ng_name,
+                      )['nodegroup']
+                      status = ng.get('status', 'UNKNOWN')
+                      actual = ng.get('scalingConfig', {}).get('desiredSize')
+                      if status == 'ACTIVE' and actual == expected_desired:
+                          logger.info(
+                              f"{ng_name} reached ACTIVE at desired={actual}"
+                          )
+                          return True
+                      logger.info(
+                          f"{ng_name} status={status} desired={actual} "
+                          f"(target desired={expected_desired}); polling..."
+                      )
+                  except Exception as e:
+                      logger.warning(
+                          f"describe_nodegroup({ng_name}) transient error: {e}"
+                      )
+                  _time.sleep(POLL_INTERVAL_SECONDS)
+              logger.error(
+                  f"{ng_name} did not reach ACTIVE at desired={expected_desired} "
+                  f"within {POLL_TIMEOUT_SECONDS}s"
+              )
+              return False
+
+
           def scale_nodegroup(ng_name: str, min_size: int, max_size: int, desired: int) -> bool:
-              """Scale a single EKS nodegroup."""
+              """Scale a single EKS nodegroup and wait for the change to land.
+
+              The waiter is a bounded poll, NOT a fire-and-forget. See
+              ``_wait_nodegroup_active`` for the rationale and budget.
+              """
               try:
                   eks.update_nodegroup_config(
                       clusterName=CLUSTER_NAME,
@@ -378,11 +442,13 @@ Resources:
                           'desiredSize': desired,
                       }
                   )
-                  logger.info(f"Scaled {ng_name}: min={min_size}, max={max_size}, desired={desired}")
-                  return True
+                  logger.info(f"Requested scale of {ng_name}: min={min_size}, max={max_size}, desired={desired}")
               except Exception as e:
-                  logger.error(f"Failed to scale {ng_name}: {e}")
+                  logger.error(f"Failed to request scale of {ng_name}: {e}")
                   return False
+
+              # Wait for the async operation to land before declaring success.
+              return _wait_nodegroup_active(ng_name, desired)
 
 
           def scale_down(targets: list, trigger: str) -> dict:

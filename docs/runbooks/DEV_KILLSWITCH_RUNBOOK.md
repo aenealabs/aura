@@ -225,7 +225,7 @@ AWS_PROFILE=aura-admin python scripts/dev_killswitch.py restore --execute --forc
 
 **Estimated restore time:** ~90-120 minutes (core infrastructure deploy ~45-60 minutes + CodeBuild upper-layer deployments running in parallel ~30-60 minutes)
 
-**After restore completes**, the following manual steps may be needed:
+**After the script finishes** (it now reports `Restore Script Phase Complete` rather than `Restore Complete` to make this explicit -- see issue #186 cluster H4), the following steps are still required before DEV is operational. The script prints them inline at the end of a successful `--execute` run; they are reproduced here for reference.
 
 1. Update kubeconfig: `aws eks update-kubeconfig --name aura-cluster-dev --region us-east-1`
 2. Verify K8s nodes are joining: `kubectl get nodes`
@@ -240,6 +240,8 @@ AWS_PROFILE=aura-admin python scripts/dev_killswitch.py restore --execute --forc
    aws codebuild list-builds-for-project --project-name aura-vuln-scan-deploy-dev --max-items 1
    ```
 4. Re-deploy K8s workloads if needed via CodeBuild `aura-k8s-deploy-dev`
+
+Until these checks pass, treat DEV as in the **restoring** state rather than **running**.
 
 ---
 

@@ -329,6 +329,64 @@ class TestStackManager:
         )
         assert result is False
 
+    # ------------------------------------------------------------------
+    # wait_for_stack_complete: defense-in-depth post-condition introduced
+    # by audit #186 cluster H4.
+    # ------------------------------------------------------------------
+
+    def test_wait_for_stack_complete_create_complete(self, stack_manager, mock_cfn):
+        """CREATE_COMPLETE settles immediately as success."""
+        mock_cfn.describe_stacks.return_value = {
+            "Stacks": [{"StackStatus": "CREATE_COMPLETE"}]
+        }
+        assert stack_manager.wait_for_stack_complete("aura-x-dev") is True
+
+    def test_wait_for_stack_complete_update_complete(self, stack_manager, mock_cfn):
+        """UPDATE_COMPLETE settles as success."""
+        mock_cfn.describe_stacks.return_value = {
+            "Stacks": [{"StackStatus": "UPDATE_COMPLETE"}]
+        }
+        assert stack_manager.wait_for_stack_complete("aura-x-dev") is True
+
+    def test_wait_for_stack_complete_rollback_complete(self, stack_manager, mock_cfn):
+        """ROLLBACK_COMPLETE is a terminal failure and returns False."""
+        mock_cfn.describe_stacks.return_value = {
+            "Stacks": [{"StackStatus": "ROLLBACK_COMPLETE"}]
+        }
+        assert stack_manager.wait_for_stack_complete("aura-x-dev") is False
+
+    def test_wait_for_stack_complete_create_failed(self, stack_manager, mock_cfn):
+        """CREATE_FAILED is a terminal failure and returns False."""
+        mock_cfn.describe_stacks.return_value = {
+            "Stacks": [{"StackStatus": "CREATE_FAILED"}]
+        }
+        assert stack_manager.wait_for_stack_complete("aura-x-dev") is False
+
+    def test_wait_for_stack_complete_stack_vanished(self, stack_manager, mock_cfn):
+        """Stack vanishing mid-poll (ValidationError) returns False fast."""
+        from botocore.exceptions import ClientError
+
+        mock_cfn.describe_stacks.side_effect = ClientError(
+            {"Error": {"Code": "ValidationError", "Message": "Stack does not exist"}},
+            "DescribeStacks",
+        )
+        assert stack_manager.wait_for_stack_complete("aura-x-dev") is False
+
+    def test_wait_for_stack_complete_timeout(self, stack_manager, mock_cfn):
+        """If the stack never settles, returns False at timeout."""
+        # Stay in CREATE_IN_PROGRESS forever; timeout=1s for test speed.
+        mock_cfn.describe_stacks.return_value = {
+            "Stacks": [{"StackStatus": "CREATE_IN_PROGRESS"}]
+        }
+        assert (
+            stack_manager.wait_for_stack_complete(
+                "aura-x-dev",
+                poll_interval_seconds=0,
+                timeout_seconds=1,
+            )
+            is False
+        )
+
 
 # ---------------------------------------------------------------------------
 # NeptuneSnapshotManager Tests

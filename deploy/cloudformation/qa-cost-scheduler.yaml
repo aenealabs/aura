@@ -176,7 +176,7 @@ Resources:
       Runtime: python3.11
       Handler: index.handler
       Role: !GetAtt QAScalerRole.Arn
-      Timeout: 120
+      Timeout: 600  # 10 min -- accommodates EKS nodegroup scale-completion polling (#186 H4)
       MemorySize: 256
       Environment:
         Variables:
@@ -335,11 +335,56 @@ Resources:
               return result
 
 
+          # Bounded poll: ``eks:UpdateNodegroupConfig`` is asynchronous.
+          # See #186 H4. 300s ceiling per scale operation; typical
+          # completes in 3-5 minutes. On timeout we log + continue --
+          # the scale was still initiated, only the observation timed
+          # out.
+          POLL_INTERVAL_SECONDS = 15
+          POLL_TIMEOUT_SECONDS = 300
+
+
+          def _wait_nodegroup_active(expected_desired: int) -> bool:
+              """Poll until status==ACTIVE and scalingConfig.desiredSize
+              matches the requested target, or until the timeout fires.
+              """
+              import time as _time
+
+              deadline = _time.time() + POLL_TIMEOUT_SECONDS
+              while _time.time() < deadline:
+                  try:
+                      ng = eks.describe_nodegroup(
+                          clusterName=CLUSTER_NAME,
+                          nodegroupName=NODEGROUP_NAME,
+                      )['nodegroup']
+                      status = ng.get('status', 'UNKNOWN')
+                      actual = ng.get('scalingConfig', {}).get('desiredSize')
+                      if status == 'ACTIVE' and actual == expected_desired:
+                          logger.info(
+                              f"{NODEGROUP_NAME} reached ACTIVE at desired={actual}"
+                          )
+                          return True
+                      logger.info(
+                          f"{NODEGROUP_NAME} status={status} desired={actual} "
+                          f"(target desired={expected_desired}); polling..."
+                      )
+                  except Exception as e:
+                      logger.warning(
+                          f"describe_nodegroup({NODEGROUP_NAME}) transient error: {e}"
+                      )
+                  _time.sleep(POLL_INTERVAL_SECONDS)
+              logger.error(
+                  f"{NODEGROUP_NAME} did not reach ACTIVE at desired={expected_desired} "
+                  f"within {POLL_TIMEOUT_SECONDS}s"
+              )
+              return False
+
+
           def scale_nodegroup(min_size: int, max_size: int, desired_size: int, trigger: str, asg_suspended: bool = False) -> dict:
-              """Scale the EKS nodegroup."""
+              """Scale the EKS nodegroup and wait for the change to land."""
               action = 'stop' if min_size == 0 else 'start'
 
-              logger.info(f"Scaling nodegroup {NODEGROUP_NAME}: min={min_size}, max={max_size}, desired={desired_size}")
+              logger.info(f"Requesting scale of {NODEGROUP_NAME}: min={min_size}, max={max_size}, desired={desired_size}")
 
               eks.update_nodegroup_config(
                   clusterName=CLUSTER_NAME,
@@ -351,6 +396,9 @@ Resources:
                   }
               )
 
+              # Wait for the async operation to land.
+              scale_completed = _wait_nodegroup_active(desired_size)
+
               # Publish metrics
               publish_metric('ScaleOperations', 1)
               publish_metric(f'Scale{"Down" if min_size == 0 else "Up"}', 1)
@@ -358,7 +406,13 @@ Resources:
               # Send notification
               notify(action, trigger)
 
-              logger.info(f"Nodegroup {NODEGROUP_NAME} scaled successfully")
+              if scale_completed:
+                  logger.info(f"Nodegroup {NODEGROUP_NAME} scaled successfully")
+              else:
+                  logger.warning(
+                      f"Nodegroup {NODEGROUP_NAME} scale initiated but did not "
+                      f"reach desired state within poll budget; check console"
+                  )
 
               return {
                   'statusCode': 200,

@@ -8,10 +8,28 @@ name: Nightly Live-LLM Smoke
 # enforced inside the test.
 
 on:
-  schedule:
-    # 09:00 UTC daily (off-peak for us-east-1; misses heavy diurnal
-    # Bedrock contention windows).
-    - cron: '0 9 * * *'
+  # The schedule trigger is intentionally commented out below. This
+  # workflow has had ``startup_failure`` on every single scheduled run
+  # since inception (May 9, 2026) because the required AWS OIDC role
+  # secret (``AURA_LIVE_LLM_ROLE_ARN``) and the ``LIVE_LLM_ENABLED``
+  # repo variable are not yet configured -- and ``id-token: write``
+  # under the permissions block requires the OIDC handshake even when
+  # the job-level ``if:`` would skip the body. A daily ``startup_failure``
+  # is louder than useful (audit #185 cluster C4).
+  #
+  # To re-enable the schedule:
+  #   1. Configure the ``AURA_LIVE_LLM_ROLE_ARN`` secret with a Bedrock-
+  #      invoke role ARN that trusts the GitHub OIDC provider for this
+  #      repo.
+  #   2. Set the ``LIVE_LLM_ENABLED`` repo variable to ``"true"``.
+  #   3. Uncomment the ``schedule:`` block below.
+  #
+  # ``workflow_dispatch`` is kept enabled so a maintainer can do an
+  # ad-hoc validation run once the secrets land, without needing to
+  # land a second commit to flip the schedule back on.
+  #
+  # schedule:
+  #   - cron: '0 9 * * *'
   workflow_dispatch:
 
 permissions:

@@ -33,11 +33,19 @@ permissions:
 jobs:
   ingestion-benchmarks:
     name: ADR-090 Ingestion Benchmarks
-    # Pinned runner for stable CPU + memory characteristics. Per #117:
-    # the benchmark workflow runs on ubuntu-latest-large because the
-    # default ubuntu-latest runner has too much variance for sub-20%
-    # regression detection.
-    runs-on: ubuntu-24.04-large
+    # Runner choice trade-off (audit #185 cluster H3):
+    # The original ``ubuntu-24.04-large`` runner was pinned for stable
+    # CPU + memory characteristics per #117. As of 2026-05-14 that
+    # runner type was not allocating -- runs queued for 13+ hours
+    # without starting, effectively rendering the benchmark gate dead.
+    # Switched to ``ubuntu-latest`` so the gate runs at all, at the
+    # cost of higher CPU / memory variance. This is strictly better
+    # than a dead gate, but it means the sub-20% regression-detection
+    # accuracy claim from #117 is degraded -- prefer trend analysis
+    # over single-run comparison.
+    # If a future maintainer can confirm ``ubuntu-24.04-large`` is
+    # available again, swap back and reference this comment.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout repository

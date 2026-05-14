@@ -132,24 +132,36 @@ _protected_prefixes = (
     "src.api.trace_endpoints",
     "src.services.model_router",
     "tests.",
-    # External auth libraries - removing these breaks exception class identity
-    # in auth.py's except blocks. ``jose.jwt.ExpiredSignatureError``,
-    # ``httpx.HTTPError``, and ``jwt.ExpiredSignatureError`` / ``jwt.PyJWTError``
-    # (PyJWT) are all caught by-class in src/api/auth.py. If we let the
-    # post-test teardown hook strip any of these from ``sys.modules``, the
-    # next test's ``import jwt`` (or jose/httpx) creates a fresh module
-    # whose classes have new identities -- which means
-    # ``except jwt.ExpiredSignatureError:`` in auth.py compares against
-    # the STALE class while the exception instance comes from the FRESH
-    # class, and the except clause silently doesn't match. Diagnosed
-    # 2026-05-14 while chasing issue #194's test_expired_token residual
-    # (the symptom: ``isinstance(exc, jwt.ExpiredSignatureError)`` False
-    # at the catch site, with ``jwt is sys.modules['jwt']`` also False).
-    # PyJWT wasn't on this list originally because the comment only
-    # called out jose -- same defect class, same fix.
+    # External libraries whose CLASSES are compared by identity in
+    # production code -- and which therefore must NOT be stripped from
+    # ``sys.modules`` between tests. A stripped module gets re-imported
+    # fresh on next access, creating new class objects with new
+    # identities; any production code that did ``isinstance(x, C)`` or
+    # ``except C:`` against the OLD class fails to match because the
+    # exception instance / object now comes from the FRESH class.
+    #
+    # ``jose`` + ``httpx``: caught by-class in src/api/auth.py except blocks.
+    # ``jwt`` (PyJWT): same -- src/api/auth.py catches
+    #     ``jwt.ExpiredSignatureError`` / ``jwt.InvalidTokenError`` /
+    #     ``jwt.PyJWTError`` at lines 343, 475, 486, 496.
+    # ``starlette`` + ``fastapi``: FastAPI's route registration calls
+    #     ``isinstance(param_type, Request)`` against
+    #     ``starlette.requests.Request``. If starlette is stripped after
+    #     api/* modules were registered, the next test that triggers a
+    #     route re-import sees ``FastAPIError: Invalid args for response
+    #     field! Hint: check that <class 'starlette.requests.Request'>
+    #     is a valid Pydantic field type`` -- the new Request class
+    #     doesn't match the registry's old Request class.
+    #
+    # Diagnosed 2026-05-14 while chasing issue #194's last two residuals
+    # (test_expired_token + the 23 ERRORs in test_api_endpoints).
     "jose",
     "httpx",
     "jwt",
+    "starlette",
+    "fastapi",
+    "pydantic",
+    "pydantic_core",
     "conftest",
     "torch",  # Once loaded, cannot be safely unloaded
     "_C",  # torch internals
@@ -268,16 +280,20 @@ def _disable_hitl_demo_seed():
     yield
 
 
-# Provide a fixed HMAC key for the context-provenance service so tests
-# that construct ``ProvenanceService`` (directly or via the singleton)
-# don't ``RuntimeError`` on the required env var. Production sets this
-# from SSM Parameter Store at startup; the test value is a placeholder
-# with no operational meaning. Tracked under issue #194 misc cluster.
+# Provide fixed HMAC keys for the context-provenance services so tests
+# that construct them (directly or via singletons) don't ``RuntimeError``
+# on the required env vars. Production sets these from SSM Parameter
+# Store at startup; the test values are placeholders with no
+# operational meaning. Tracked under issue #194 misc cluster.
 @pytest.fixture(autouse=True, scope="session")
-def _set_provenance_hmac_key():
+def _set_provenance_hmac_keys():
     os.environ.setdefault(
         "AURA_PROVENANCE_HMAC_KEY",
         "test-hmac-key-not-for-production-use",
+    )
+    os.environ.setdefault(
+        "AURA_INTEGRITY_HMAC_KEY",
+        "test-integrity-hmac-key-not-for-production-use",
     )
     yield
 

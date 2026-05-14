@@ -54,7 +54,7 @@ structlog>=25.5.0     # For security agent orchestrator and devops services
 # These are included to reflect the CKGE's multi-language analysis capability.
 # Updated to versions compatible with Python 3.12
 tree-sitter-python>=0.25.0
-tree-sitter-javascript>=0.23.1
+tree-sitter-javascript>=0.25.0
 tree-sitter-typescript>=0.23.2
 tree-sitter-go>=0.23.4
 tree-sitter-java>=0.23.5

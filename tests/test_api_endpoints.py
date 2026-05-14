@@ -91,16 +91,23 @@ def mock_health_endpoints():
 def test_client(
     mock_git_ingestion_service, mock_webhook_handler, mock_health_endpoints
 ):
-    """Create a test client with mocked services."""
-    import sys
+    """Create a test client with mocked services.
 
-    # Clear ALL src modules to ensure completely fresh imports
-    # This prevents module state pollution from other test files
-    modules_to_clear = [k for k in list(sys.modules.keys()) if k.startswith("src.")]
-    for mod in modules_to_clear:
-        del sys.modules[mod]
+    Issue #194 cluster 1+2: this fixture previously cleared *every*
+    ``src.*`` module from ``sys.modules`` to "prevent module state
+    pollution from other test files." That cure was worse than the
+    disease -- the cleared modules get re-imported, but other tests
+    that already hold references to the OLD class objects (e.g. the 36
+    parametrized cases in ``test_exceptions_pickle_roundtrip.py``)
+    then fail on class-identity comparisons against the NEW imports.
+    The same root pattern was fixed for ``test_gpu_scheduler_endpoints.py``
+    and ``test_documentation_endpoints.py`` in #183 (commit ``62dba9a``).
 
-    # Import module fresh after clearing cache
+    Removed the destructive ``del sys.modules[...]`` loop. The mocks
+    + ``patch.object`` calls below are sufficient to isolate this
+    fixture from the global service singletons without touching
+    ``sys.modules``.
+    """
     import src.api.main as main_module
 
     # Patch the global service instances

@@ -185,3 +185,64 @@ jobs:
           echo "| Templates with Errors | ${{ steps.cfnlint.outputs.errors }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Valid IAM Actions | ${{ steps.validate.outputs.valid_count }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Invalid IAM Actions | ${{ steps.validate.outputs.invalid_count }} |" >> $GITHUB_STEP_SUMMARY
+
+      # Alarm: workflow-level failure handler. Audit issue #185 found that the
+      # "Create issue for invalid actions" step above only fires when
+      # ``steps.validate`` succeeded with invalid_count > 0. If an earlier step
+      # fails (cfn-lint wrapper exits non-zero, network error, etc.), the
+      # alarm step is skipped -- meaning the alarm exists only when the gate
+      # is healthy. This step runs on any prior-step failure so the deafness
+      # mode that hid five consecutive nightly failures cannot recur.
+      - name: Notify on workflow failure
+        if: failure()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = '⚠️ Nightly IAM Validation: Workflow Failure';
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'workflow-failure,nightly-iam-validation',
+            });
+
+            const body = [
+              `## Workflow failure detected`,
+              ``,
+              `**Run:** ${runUrl}`,
+              `**Date:** ${new Date().toISOString()}`,
+              ``,
+              `One or more steps in \`nightly-iam-validation.yml\` failed before the`,
+              `validation alarm could evaluate. Common causes:`,
+              ``,
+              `1. \`cfn-lint-wrapper.sh\` exited with errors (template lint failure).`,
+              `2. Dependency install timeout or PyPI outage.`,
+              `3. New CloudFormation template breaks the existing wrapper invariants.`,
+              ``,
+              `Open the run link above and inspect the first failing step.`,
+              ``,
+              `_This issue is updated on each subsequent failure; close it once`,
+              `the next scheduled run is green._`,
+            ].join('\n');
+
+            const match = existing.data.find(i => i.title === title);
+            if (match) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                body,
+              });
+              core.info(`Updated existing alarm issue #${match.number}`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['workflow-failure', 'nightly-iam-validation', 'automated'],
+              });
+              core.info(`Created alarm issue #${created.data.number}`);
+            }

@@ -239,6 +239,35 @@ def aws_credentials():
     # Cleanup is automatic when fixture goes out of scope
 
 
+# Disable the HITL demo-approval seeding for the entire test run.
+# Without this, ``HITLApprovalService(mode=MOCK)`` constructors pre-populate
+# ``mock_store`` with 10 demo records for the dashboard UI (see
+# ``src/services/hitl_approval_service.py::_init_mock_mode``), which leaks
+# into tests that assume an empty store. Tracked under issue #194 cluster
+# 4 + 6 (initially diagnosed as two separate clusters, then merged once
+# the singleton seeding turned out to be the shared root cause).
+# Tests that explicitly want demo data can set the env var to "true" in a
+# local fixture.
+@pytest.fixture(autouse=True, scope="session")
+def _disable_hitl_demo_seed():
+    os.environ.setdefault("AURA_SEED_MOCK_APPROVALS", "false")
+    yield
+
+
+# Provide a fixed HMAC key for the context-provenance service so tests
+# that construct ``ProvenanceService`` (directly or via the singleton)
+# don't ``RuntimeError`` on the required env var. Production sets this
+# from SSM Parameter Store at startup; the test value is a placeholder
+# with no operational meaning. Tracked under issue #194 misc cluster.
+@pytest.fixture(autouse=True, scope="session")
+def _set_provenance_hmac_key():
+    os.environ.setdefault(
+        "AURA_PROVENANCE_HMAC_KEY",
+        "test-hmac-key-not-for-production-use",
+    )
+    yield
+
+
 # =============================================================================
 # Lambda Test Isolation Fixtures
 # =============================================================================

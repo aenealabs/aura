@@ -44,7 +44,11 @@ class TestNeptuneFailures:
         successful_writes = []
         write_count = 0
 
-        def mock_add_entity(entity, repo_id, branch):
+        # Signature must match _add_entity_to_graph in
+        # src/services/git_ingestion_service.py:950 (fqn_builder is the
+        # 4th positional argument production passes). Added 2026-05-14
+        # per issue #194 misc cluster.
+        def mock_add_entity(entity, repo_id, branch, fqn_builder=None):
             nonlocal write_count
             write_count += 1
             if write_count > 3:

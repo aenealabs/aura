@@ -1491,7 +1491,7 @@ class TestHITLApprovalServiceAWSModeFallback:
     def test_aws_mode_fallback_no_boto3(self, monkeypatch):
         """Test AWS mode falls back to mock when boto3 unavailable."""
         # Temporarily disable boto3
-        from services import hitl_approval_service
+        from src.services import hitl_approval_service
 
         original = hitl_approval_service.BOTO3_AVAILABLE
         monkeypatch.setattr(hitl_approval_service, "BOTO3_AVAILABLE", False)

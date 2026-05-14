@@ -480,7 +480,12 @@ class TestIngestionInterruption:
         failures = []
         call_count = 0
 
-        def mock_add_entity_sync(entity, repo_id, branch):
+        # Signature must match _add_entity_to_graph in
+        # src/services/git_ingestion_service.py:950: production passes
+        # ``fqn_builder`` as the 4th positional argument when calling
+        # through ``_add_entity_with_limit``. Added 2026-05-14 per
+        # issue #194 misc cluster.
+        def mock_add_entity_sync(entity, repo_id, branch, fqn_builder=None):
             nonlocal call_count
             call_count += 1
             if call_count in [5, 6]:  # Entities 5 and 6 fail

@@ -38,7 +38,7 @@ mock_bedrock_config = MagicMock()
 mock_bedrock_config.get_config = MagicMock(
     return_value=MagicMock(
         max_tokens=4096,
-        model_id="anthropic.claude-3-5-sonnet",
+        model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
         daily_budget_usd=100.0,
         monthly_budget_usd=3000.0,
         rpm_limit=60,
@@ -607,8 +607,8 @@ class TestBedrockLLMServiceInvokeModel:
             "cache_enabled": True,
             "cache_ttl_seconds": 86400,
         }
-        self.service.model_id_primary = "anthropic.claude-3-5-sonnet"
-        self.service.model_id_fallback = "anthropic.claude-3-haiku"
+        self.service.model_id_primary = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        self.service.model_id_fallback = "anthropic.claude-3-haiku-20240307-v1:0"
 
     def test_invoke_model_basic(self):
         """Test basic model invocation."""
@@ -1014,8 +1014,8 @@ class TestAsyncGenerate:
             "cache_enabled": True,
             "cache_ttl_seconds": 86400,
         }
-        service.model_id_primary = "anthropic.claude-3-5-sonnet"
-        service.model_id_fallback = "anthropic.claude-3-haiku"
+        service.model_id_primary = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        service.model_id_fallback = "anthropic.claude-3-haiku-20240307-v1:0"
         return service
 
     @pytest.mark.asyncio
@@ -1157,8 +1157,8 @@ class TestResponseCaching:
             "cache_enabled": True,
             "cache_ttl_seconds": 86400,
         }
-        self.service.model_id_primary = "anthropic.claude-3-5-sonnet"
-        self.service.model_id_fallback = "anthropic.claude-3-haiku"
+        self.service.model_id_primary = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        self.service.model_id_fallback = "anthropic.claude-3-haiku-20240307-v1:0"
 
     def test_response_cache_initialized(self):
         """Test response cache is initialized as OrderedDict."""
@@ -1226,8 +1226,8 @@ class TestCostTracking:
             "cache_enabled": True,
             "cache_ttl_seconds": 86400,
         }
-        self.service.model_id_primary = "anthropic.claude-3-5-sonnet"
-        self.service.model_id_fallback = "anthropic.claude-3-haiku"
+        self.service.model_id_primary = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        self.service.model_id_fallback = "anthropic.claude-3-haiku-20240307-v1:0"
 
     def test_invoke_model_updates_spend(self):
         """Test invoke_model updates spend tracking."""
@@ -1269,8 +1269,8 @@ class TestTierSelection:
             "cache_enabled": True,
             "cache_ttl_seconds": 86400,
         }
-        self.service.model_id_primary = "anthropic.claude-3-5-sonnet"
-        self.service.model_id_fallback = "anthropic.claude-3-haiku"
+        self.service.model_id_primary = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        self.service.model_id_fallback = "anthropic.claude-3-haiku-20240307-v1:0"
 
     def test_fast_tier_operations(self):
         """Test fast tier is selected for appropriate operations."""
@@ -1375,8 +1375,8 @@ class TestRequestHistoryTracking:
             "cache_enabled": True,
             "cache_ttl_seconds": 86400,
         }
-        self.service.model_id_primary = "anthropic.claude-3-5-sonnet"
-        self.service.model_id_fallback = "anthropic.claude-3-haiku"
+        self.service.model_id_primary = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        self.service.model_id_fallback = "anthropic.claude-3-haiku-20240307-v1:0"
 
     def test_request_history_is_list(self):
         """Test request history is a list."""

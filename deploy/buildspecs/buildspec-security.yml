@@ -62,41 +62,17 @@ phases:
       - echo "Deploying AWS Config Compliance Stack..."
       - CONFIG_STACK="${PROJECT_NAME}-config-compliance-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $CONFIG_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $CONFIG_STACK \
-            --template-body file://deploy/cloudformation/config-compliance.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $CONFIG_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $CONFIG_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-            exit 1
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $CONFIG_STACK \
-            --template-body file://deploy/cloudformation/config-compliance.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $CONFIG_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $CONFIG_STACK \
+          --template-file deploy/cloudformation/config-compliance.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            AlertEmail=$ALERT_EMAIL \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=security DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "AWS Config Compliance Stack deployment complete"
 
       # Deploy GuardDuty Stack
@@ -142,90 +118,43 @@ phases:
       - echo "Deploying Drift Detection Stack..."
       - DRIFT_STACK="${PROJECT_NAME}-drift-detection-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $DRIFT_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $DRIFT_STACK \
-            --template-body file://deploy/cloudformation/drift-detection.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=DriftDetectionSchedule,ParameterValue="rate(6 hours)" \
-              ParameterKey=EnableAutomaticRemediation,ParameterValue=false \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $DRIFT_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $DRIFT_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-            exit 1
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $DRIFT_STACK \
-            --template-body file://deploy/cloudformation/drift-detection.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL \
-              ParameterKey=DriftDetectionSchedule,ParameterValue="rate(6 hours)" \
-              ParameterKey=EnableAutomaticRemediation,ParameterValue=false \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $DRIFT_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $DRIFT_STACK \
+          --template-file deploy/cloudformation/drift-detection.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            AlertEmail=$ALERT_EMAIL \
+            "DriftDetectionSchedule=rate(6 hours)" \
+            EnableAutomaticRemediation=false \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=security DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "Drift Detection Stack deployment complete"
 
       # Deploy Red Team Infrastructure (adversarial testing - disabled by default)
       - echo "Deploying Red Team Infrastructure..."
       - REDTEAM_STACK="${PROJECT_NAME}-red-team-${ENVIRONMENT}"
       - |
-        REDTEAM_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
-        REDTEAM_PARAMS="$REDTEAM_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
-        # Red Team is disabled by default - requires explicit opt-in
-        REDTEAM_PARAMS="$REDTEAM_PARAMS ParameterKey=EnableRedTeam,ParameterValue=false"
+        # Build parameter list for ``aws cloudformation deploy --parameter-overrides``
+        # (Key=Value form; not the older ParameterKey=K,ParameterValue=V).
+        REDTEAM_OVERRIDES="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME EnableRedTeam=false"
         if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
-          REDTEAM_PARAMS="$REDTEAM_PARAMS ParameterKey=VpcId,ParameterValue=$VPC_ID"
+          REDTEAM_OVERRIDES="$REDTEAM_OVERRIDES VpcId=$VPC_ID"
         fi
         if [ -n "$ALERT_EMAIL" ]; then
-          REDTEAM_PARAMS="$REDTEAM_PARAMS ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL"
+          REDTEAM_OVERRIDES="$REDTEAM_OVERRIDES AlertEmail=$ALERT_EMAIL"
         fi
       - |
-        if aws cloudformation describe-stacks --stack-name $REDTEAM_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Red Team stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $REDTEAM_STACK \
-            --template-body file://deploy/cloudformation/red-team.yaml \
-            --parameters $REDTEAM_PARAMS \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $REDTEAM_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $REDTEAM_STACK"
-          else
-            echo "Red Team update output: $OUTPUT"
-          fi
-        else
-          echo "Red Team stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $REDTEAM_STACK \
-            --template-body file://deploy/cloudformation/red-team.yaml \
-            --parameters $REDTEAM_PARAMS \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=security Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $REDTEAM_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $REDTEAM_STACK \
+          --template-file deploy/cloudformation/red-team.yaml \
+          --parameter-overrides $REDTEAM_OVERRIDES \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=security DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
       - echo "Red Team Infrastructure deployment complete (disabled by default)"
 
       # Deploy Semantic Guardrails Stack (ADR-065)

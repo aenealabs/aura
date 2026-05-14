@@ -109,59 +109,44 @@ phases:
       - echo "Deploying Sandbox Infrastructure..."
       - SANDBOX_STACK="${PROJECT_NAME}-sandbox-${ENVIRONMENT}"
 
-      # Build CloudFormation parameters
+      # Build CloudFormation parameter-overrides list (Key=Value form for ``aws cloudformation deploy``).
       - |
-        PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
-        PARAMS="$PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
+        OVERRIDES="Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME"
         if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
-          PARAMS="$PARAMS ParameterKey=VpcId,ParameterValue=$VPC_ID"
+          OVERRIDES="$OVERRIDES VpcId=$VPC_ID"
         fi
         if [ -n "$PRIVATE_SUBNET_IDS" ] && [ "$PRIVATE_SUBNET_IDS" != "None" ]; then
-          PARAMS="$PARAMS ParameterKey=PrivateSubnetIds,ParameterValue=\"$PRIVATE_SUBNET_IDS\""
+          OVERRIDES="$OVERRIDES PrivateSubnetIds=$PRIVATE_SUBNET_IDS"
         fi
         # Add AlertEmail for SNS notifications (from SSM parameter store)
         if [ -n "$ALERT_EMAIL" ] && [ "$ALERT_EMAIL" != "None" ]; then
-          PARAMS="$PARAMS ParameterKey=AlertEmail,ParameterValue=$ALERT_EMAIL"
+          OVERRIDES="$OVERRIDES AlertEmail=$ALERT_EMAIL"
           echo "SNS notifications will be sent to: $ALERT_EMAIL"
         else
           echo "Warning: ALERT_EMAIL not set, SNS email notifications disabled"
         fi
-        echo "CloudFormation parameters: $PARAMS"
+        echo "CloudFormation parameter overrides: $OVERRIDES"
 
-      # Deploy or update stack
+      # Deploy sandbox stack
       - |
-        if aws cloudformation describe-stacks --stack-name $SANDBOX_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          echo "Stack exists, attempting update..."
-          OUTPUT=$(aws cloudformation update-stack \
-            --stack-name $SANDBOX_STACK \
-            --template-body file://deploy/cloudformation/sandbox.yaml \
-            --parameters $PARAMS \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=sandbox Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1) && \
-          aws cloudformation wait stack-update-complete --stack-name $SANDBOX_STACK --region $AWS_DEFAULT_REGION || \
-          if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-            echo "No updates needed for $SANDBOX_STACK"
-          else
-            echo "Update failed: $OUTPUT"
-            # Check stack events for detailed error
-            aws cloudformation describe-stack-events --stack-name $SANDBOX_STACK \
-              --query 'StackEvents[?ResourceStatus==`UPDATE_FAILED` || ResourceStatus==`CREATE_FAILED`].[LogicalResourceId,ResourceStatusReason]' \
-              --output table --region $AWS_DEFAULT_REGION || true
-            exit 1
-          fi
-        else
-          echo "Stack does not exist, creating..."
-          aws cloudformation create-stack \
-            --stack-name $SANDBOX_STACK \
-            --template-body file://deploy/cloudformation/sandbox.yaml \
-            --parameters $PARAMS \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=sandbox Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          aws cloudformation wait stack-create-complete --stack-name $SANDBOX_STACK --region $AWS_DEFAULT_REGION
+        set +e
+        aws cloudformation deploy \
+          --stack-name $SANDBOX_STACK \
+          --template-file deploy/cloudformation/sandbox.yaml \
+          --parameter-overrides $OVERRIDES \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=sandbox DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+        EXIT_CODE=$?
+        set -e
+
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "Sandbox deploy failed, dumping stack events for diagnosis..."
+          aws cloudformation describe-stack-events --stack-name $SANDBOX_STACK \
+            --query 'StackEvents[?ResourceStatus==`UPDATE_FAILED` || ResourceStatus==`CREATE_FAILED`].[LogicalResourceId,ResourceStatusReason]' \
+            --output table --region $AWS_DEFAULT_REGION || true
+          exit $EXIT_CODE
         fi
       - echo "Sandbox Infrastructure deployment complete"
 
@@ -259,8 +244,14 @@ phases:
           STACK_STATUS="DOES_NOT_EXIST"
         fi
 
-        # Use create-stack or update-stack directly to bypass CloudFormation's EarlyValidation
-        # which can incorrectly flag Service Catalog templates with intrinsic functions
+        # INTENTIONAL DEVIATION FROM THE ``aws cloudformation deploy`` PATTERN.
+        # The Service Catalog product templates inside ``test-environment-catalog.yaml``
+        # use intrinsic functions in a way that change-set-based deployment
+        # (which ``deploy`` uses internally) has historically flagged as invalid
+        # during EarlyValidation. ``create-stack`` / ``update-stack`` bypass that
+        # path. This block is deliberately excluded from the audit #192 / Wave 10
+        # idempotency migration -- do NOT collapse to ``aws cloudformation deploy``
+        # without first verifying the EarlyValidation behaviour has changed.
         if [ "$STACK_STATUS" = "DOES_NOT_EXIST" ]; then
           echo "Creating new Service Catalog stack..."
           aws cloudformation create-stack \
@@ -565,39 +556,16 @@ phases:
           STEPFUNCTIONS_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $SANDBOX_STACK \
             --query 'Stacks[0].Outputs[?OutputKey==`StepFunctionsRoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
 
-          if aws cloudformation describe-stacks --stack-name $HITL_WORKFLOW_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-            echo "HITL workflow stack exists, attempting update..."
-            OUTPUT=$(aws cloudformation update-stack \
-              --stack-name $HITL_WORKFLOW_STACK \
-              --template-body file://deploy/cloudformation/hitl-workflow.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=sandbox Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager 2>&1) && \
-            aws cloudformation wait stack-update-complete --stack-name $HITL_WORKFLOW_STACK --region $AWS_DEFAULT_REGION || \
-            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-              echo "No updates needed for $HITL_WORKFLOW_STACK"
-            else
-              echo "Update failed: $OUTPUT"
-              exit 1
-            fi
-          else
-            echo "HITL workflow stack does not exist, creating..."
-            aws cloudformation create-stack \
-              --stack-name $HITL_WORKFLOW_STACK \
-              --template-body file://deploy/cloudformation/hitl-workflow.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=sandbox Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager
-            aws cloudformation wait stack-create-complete --stack-name $HITL_WORKFLOW_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $HITL_WORKFLOW_STACK \
+            --template-file deploy/cloudformation/hitl-workflow.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=sandbox DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
           echo "HITL Workflow State Machine deployment complete"
         else
           echo "HITL workflow template not found, skipping (will be created in next iteration)"

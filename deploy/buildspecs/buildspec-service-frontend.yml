@@ -60,42 +60,16 @@ phases:
         echo "Deploying ECR Frontend Repository Stack..."
         ECR_STACK="${PROJECT_NAME}-ecr-frontend-${ENVIRONMENT}"
 
-        STACK_EXISTS=false
-        if aws cloudformation describe-stacks --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          STACK_EXISTS=true
-          echo "ECR stack exists, checking if update needed..."
-        else
-          echo "ECR stack does not exist, creating..."
-        fi
-
-        if [ "$STACK_EXISTS" = "true" ]; then
-          if aws cloudformation update-stack \
-            --stack-name $ECR_STACK \
-            --template-body file://deploy/cloudformation/ecr-frontend.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=frontend Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager 2>&1; then
-            echo "ECR stack update initiated, waiting..."
-            aws cloudformation wait stack-update-complete --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION
-          else
-            echo "ECR stack already up-to-date (no changes needed)"
-          fi
-        else
-          aws cloudformation create-stack \
-            --stack-name $ECR_STACK \
-            --template-body file://deploy/cloudformation/ecr-frontend.yaml \
-            --parameters \
-              ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-              ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-            --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=frontend Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-            --region $AWS_DEFAULT_REGION \
-            --no-cli-pager
-          echo "ECR stack creation initiated, waiting..."
-          aws cloudformation wait stack-create-complete --stack-name $ECR_STACK --region $AWS_DEFAULT_REGION
-        fi
+        aws cloudformation deploy \
+          --stack-name $ECR_STACK \
+          --template-file deploy/cloudformation/ecr-frontend.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=frontend DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
 
         # Get ECR Repository URI
         ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $ECR_STACK \

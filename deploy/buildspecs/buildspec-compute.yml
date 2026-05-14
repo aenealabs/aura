@@ -91,68 +91,41 @@ phases:
       - echo "Deploying EKS Stack..."
       - EKS_STACK="${PROJECT_NAME}-eks-${ENVIRONMENT}"
       - |
-        if aws cloudformation describe-stacks --stack-name $EKS_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-          OPERATION="update-stack"
-          WAIT_CONDITION="stack-update-complete"
-        else
-          OPERATION="create-stack"
-          WAIT_CONDITION="stack-create-complete"
-        fi
-
-      - |
+        # ``aws cloudformation deploy --no-fail-on-empty-changeset`` collapses the
+        # describe-stacks / create-stack / update-stack / wait dance into one
+        # idempotent call. The fallback below preserves the long-standing
+        # special case where an EKS cluster may exist outside CloudFormation
+        # (legacy bootstrap path); if the deploy fails but the cluster is
+        # reachable, the downstream node-group deploys are still safe.
+        # Note: Node group parameters removed per ADR-058 (nodes managed by
+        # dedicated stacks).
         set +e
-        # Note: Node group parameters removed per ADR-058 (nodes managed by dedicated stacks)
-        OUTPUT=$(aws cloudformation $OPERATION \
+        aws cloudformation deploy \
           --stack-name $EKS_STACK \
-          --template-body file://deploy/cloudformation/eks.yaml \
-          --parameters \
-            ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-            ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-            ParameterKey=PrivateSubnetIds,ParameterValue=\"$PUBLIC_SUBNET_IDS\" \
-            ParameterKey=EKSSecurityGroupId,ParameterValue=$EKS_SG \
-            ParameterKey=EKSClusterRoleArn,ParameterValue=$EKS_CLUSTER_ROLE \
-            ParameterKey=AdminRoleArn,ParameterValue=$ADMIN_ROLE_ARN \
-            ParameterKey=KubernetesVersion,ParameterValue=1.34 \
+          --template-file deploy/cloudformation/eks.yaml \
+          --parameter-overrides \
+            Environment=$ENVIRONMENT \
+            ProjectName=$PROJECT_NAME \
+            "PrivateSubnetIds=$PUBLIC_SUBNET_IDS" \
+            EKSSecurityGroupId=$EKS_SG \
+            EKSClusterRoleArn=$EKS_CLUSTER_ROLE \
+            AdminRoleArn=$ADMIN_ROLE_ARN \
+            KubernetesVersion=1.34 \
           --capabilities CAPABILITY_NAMED_IAM \
-          --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=compute DeployTimestamp=$DEPLOY_TIMESTAMP \
           --region $AWS_DEFAULT_REGION \
-          --no-cli-pager 2>&1)
+          --no-fail-on-empty-changeset
         EXIT_CODE=$?
         set -e
 
-        if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-          echo "No updates needed - stack already matches template"
-          SKIP_WAIT=true
-        elif [ $EXIT_CODE -ne 0 ]; then
-          echo "CloudFormation error: $OUTPUT"
-          # Check if cluster already exists - if so, continue with node group deployment
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "EKS stack deploy returned non-zero exit code ($EXIT_CODE), checking cluster reachability..."
           if aws eks describe-cluster --name ${PROJECT_NAME}-cluster-${ENVIRONMENT} --region $AWS_DEFAULT_REGION 2>/dev/null; then
-            echo "EKS cluster exists - continuing with node group deployment despite stack error"
-            echo "Note: Existing embedded node group will be migrated to separate stacks"
-            SKIP_WAIT=true
+            echo "EKS cluster is reachable -- continuing with node group deployment despite stack error"
           else
-            echo "EKS cluster does not exist and stack creation failed"
+            echo "EKS cluster is not reachable; failing"
             exit $EXIT_CODE
           fi
-        else
-          echo "$OUTPUT"
-          SKIP_WAIT=false
-        fi
-
-      - |
-        if [ "$SKIP_WAIT" = "false" ]; then
-          echo "Waiting for EKS stack (this may take 15-20 minutes)..."
-          aws cloudformation wait $WAIT_CONDITION --stack-name $EKS_STACK --region $AWS_DEFAULT_REGION || {
-            echo "Warning: EKS stack wait failed, checking if cluster is usable..."
-            if aws eks describe-cluster --name ${PROJECT_NAME}-cluster-${ENVIRONMENT} --region $AWS_DEFAULT_REGION 2>/dev/null; then
-              echo "EKS cluster is active - continuing"
-            else
-              echo "EKS cluster not found"
-              exit 1
-            fi
-          }
-        else
-          echo "Skipping wait - no updates were performed"
         fi
 
       # Get EKS cluster outputs for node groups
@@ -277,36 +250,17 @@ phases:
           else
             echo "Found Hosted Zone ID: $HOSTED_ZONE_ID_LOCAL"
           fi
-          ACM_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
-          ACM_PARAMS="$ACM_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
-          ACM_PARAMS="$ACM_PARAMS ParameterKey=DomainName,ParameterValue=aenealabs.com"
-          ACM_PARAMS="$ACM_PARAMS ParameterKey=HostedZoneId,ParameterValue=$HOSTED_ZONE_ID_LOCAL"
-          if aws cloudformation describe-stacks --stack-name $ACM_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-            echo "ACM stack exists, attempting update..."
-            OUTPUT=$(aws cloudformation update-stack \
-              --stack-name $ACM_STACK \
-              --template-body file://deploy/cloudformation/acm-certificate.yaml \
-              --parameters $ACM_PARAMS \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager 2>&1) && \
-            aws cloudformation wait stack-update-complete --stack-name $ACM_STACK --region $AWS_DEFAULT_REGION || \
-            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-              echo "No updates needed for $ACM_STACK"
-            else
-              echo "Update failed: $OUTPUT"
-            fi
-          else
-            echo "ACM stack does not exist, creating..."
-            aws cloudformation create-stack \
-              --stack-name $ACM_STACK \
-              --template-body file://deploy/cloudformation/acm-certificate.yaml \
-              --parameters $ACM_PARAMS \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager
-            aws cloudformation wait stack-create-complete --stack-name $ACM_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $ACM_STACK \
+            --template-file deploy/cloudformation/acm-certificate.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+              DomainName=aenealabs.com \
+              HostedZoneId=$HOSTED_ZONE_ID_LOCAL \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=compute DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
         fi
       - echo "ACM Certificate check complete"
 
@@ -330,41 +284,20 @@ phases:
         if [ -z "$OIDC_PROVIDER_ARN" ] || [ "$OIDC_PROVIDER_ARN" = "None" ]; then
           echo "Warning: OIDC Provider ARN not found, skipping ALB Controller deployment"
         else
-          ALB_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
-          ALB_PARAMS="$ALB_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
-          ALB_PARAMS="$ALB_PARAMS ParameterKey=OIDCProviderArn,ParameterValue=$OIDC_PROVIDER_ARN"
-          ALB_PARAMS="$ALB_PARAMS ParameterKey=OIDCProviderURL,ParameterValue=$OIDC_PROVIDER_URL"
-          ALB_PARAMS="$ALB_PARAMS ParameterKey=ClusterName,ParameterValue=$CLUSTER_NAME"
-          ALB_PARAMS="$ALB_PARAMS ParameterKey=VpcId,ParameterValue=$VPC_ID"
-
-          if aws cloudformation describe-stacks --stack-name $ALB_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-            echo "ALB Controller stack exists, attempting update..."
-            OUTPUT=$(aws cloudformation update-stack \
-              --stack-name $ALB_STACK \
-              --template-body file://deploy/cloudformation/alb-controller.yaml \
-              --parameters $ALB_PARAMS \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager 2>&1) && \
-            aws cloudformation wait stack-update-complete --stack-name $ALB_STACK --region $AWS_DEFAULT_REGION || \
-            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-              echo "No updates needed for $ALB_STACK"
-            else
-              echo "Update failed: $OUTPUT"
-            fi
-          else
-            echo "ALB Controller stack does not exist, creating..."
-            aws cloudformation create-stack \
-              --stack-name $ALB_STACK \
-              --template-body file://deploy/cloudformation/alb-controller.yaml \
-              --parameters $ALB_PARAMS \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager
-            aws cloudformation wait stack-create-complete --stack-name $ALB_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $ALB_STACK \
+            --template-file deploy/cloudformation/alb-controller.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+              OIDCProviderArn=$OIDC_PROVIDER_ARN \
+              OIDCProviderURL=$OIDC_PROVIDER_URL \
+              ClusterName=$CLUSTER_NAME \
+              VpcId=$VPC_ID \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=compute DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
           echo "ALB Controller deployment complete"
         fi
 
@@ -440,44 +373,23 @@ phases:
         DEPLOY_GPU=${DEPLOY_GPU_INFRASTRUCTURE:-false}
         if [ "$ENVIRONMENT" = "prod" ] || [ "$ENVIRONMENT" = "staging" ] || [ "$DEPLOY_GPU" = "true" ]; then
           echo "Deploying neural memory GPU infrastructure..."
-          NEURAL_PARAMS="ParameterKey=Environment,ParameterValue=$ENVIRONMENT"
-          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME"
-          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=VpcId,ParameterValue=$VPC_ID"
-          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=PrivateSubnetIds,ParameterValue=\"$PRIVATE_SUBNET_IDS\""
-          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=EKSNodeSecurityGroupId,ParameterValue=$EKS_NODE_SG"
-          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=GPUInstanceType,ParameterValue=g5.xlarge"
-          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=MinCapacity,ParameterValue=0"
-          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=MaxCapacity,ParameterValue=3"
-          NEURAL_PARAMS="$NEURAL_PARAMS ParameterKey=DesiredCapacity,ParameterValue=0"
-
-          if aws cloudformation describe-stacks --stack-name $NEURAL_MEMORY_STACK --region $AWS_DEFAULT_REGION 2>/dev/null; then
-            echo "Neural memory stack exists, attempting update..."
-            OUTPUT=$(aws cloudformation update-stack \
-              --stack-name $NEURAL_MEMORY_STACK \
-              --template-body file://deploy/cloudformation/neural-memory-gpu.yaml \
-              --parameters $NEURAL_PARAMS \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager 2>&1) && \
-            aws cloudformation wait stack-update-complete --stack-name $NEURAL_MEMORY_STACK --region $AWS_DEFAULT_REGION || \
-            if echo "$OUTPUT" | grep -q "No updates are to be performed"; then
-              echo "No updates needed for $NEURAL_MEMORY_STACK"
-            else
-              echo "Update failed: $OUTPUT"
-            fi
-          else
-            echo "Neural memory stack does not exist, creating..."
-            aws cloudformation create-stack \
-              --stack-name $NEURAL_MEMORY_STACK \
-              --template-body file://deploy/cloudformation/neural-memory-gpu.yaml \
-              --parameters $NEURAL_PARAMS \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=compute Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager
-            aws cloudformation wait stack-create-complete --stack-name $NEURAL_MEMORY_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $NEURAL_MEMORY_STACK \
+            --template-file deploy/cloudformation/neural-memory-gpu.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+              VpcId=$VPC_ID \
+              "PrivateSubnetIds=$PRIVATE_SUBNET_IDS" \
+              EKSNodeSecurityGroupId=$EKS_NODE_SG \
+              GPUInstanceType=g5.xlarge \
+              MinCapacity=0 \
+              MaxCapacity=3 \
+              DesiredCapacity=0 \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=compute DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
           echo "Neural memory GPU infrastructure deployment complete"
         else
           echo "Skipping GPU infrastructure in dev (set DEPLOY_GPU_INFRASTRUCTURE=true to deploy)"

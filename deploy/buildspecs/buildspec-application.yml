@@ -208,34 +208,16 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
-            if aws cloudformation update-stack \
-              --stack-name $API_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-api.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager 2>&1; then
-              echo "API ECR stack update initiated, waiting..."
-              aws cloudformation wait stack-update-complete --stack-name $API_ECR_STACK --region $AWS_DEFAULT_REGION
-            else
-              echo "API ECR stack already up-to-date (no changes needed)"
-            fi
-          else
-            aws cloudformation create-stack \
-              --stack-name $API_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-api.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager
-            echo "API ECR stack creation initiated, waiting..."
-            aws cloudformation wait stack-create-complete --stack-name $API_ECR_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $API_ECR_STACK \
+            --template-file deploy/cloudformation/ecr-api.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
 
           # Get API ECR Repository URI from CloudFormation
           API_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $API_ECR_STACK \
@@ -286,34 +268,16 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
-            if aws cloudformation update-stack \
-              --stack-name $AGENT_ORCH_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-agent-orchestrator.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager 2>&1; then
-              echo "Agent Orchestrator ECR stack update initiated, waiting..."
-              aws cloudformation wait stack-update-complete --stack-name $AGENT_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
-            else
-              echo "Agent Orchestrator ECR stack already up-to-date (no changes needed)"
-            fi
-          else
-            aws cloudformation create-stack \
-              --stack-name $AGENT_ORCH_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-agent-orchestrator.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
-                ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application Key=DeployTimestamp,Value=$DEPLOY_TIMESTAMP \
-              --region $AWS_DEFAULT_REGION \
-              --no-cli-pager
-            echo "Agent Orchestrator ECR stack creation initiated, waiting..."
-            aws cloudformation wait stack-create-complete --stack-name $AGENT_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $AGENT_ORCH_ECR_STACK \
+            --template-file deploy/cloudformation/ecr-agent-orchestrator.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application DeployTimestamp=$DEPLOY_TIMESTAMP \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
 
           # Get Agent Orchestrator ECR Repository URI from CloudFormation
           AGENT_ORCH_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $AGENT_ORCH_ECR_STACK \
@@ -346,23 +310,17 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
-            aws cloudformation update-stack \
-              --stack-name $FRONTEND_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-frontend.yaml \
-              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
-              --region $AWS_DEFAULT_REGION --no-cli-pager 2>&1 || echo "Frontend ECR stack already up-to-date"
-            aws cloudformation wait stack-update-complete --stack-name $FRONTEND_ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null || true
-          else
-            aws cloudformation create-stack \
-              --stack-name $FRONTEND_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-frontend.yaml \
-              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
-              --region $AWS_DEFAULT_REGION --no-cli-pager
-            aws cloudformation wait stack-create-complete --stack-name $FRONTEND_ECR_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $FRONTEND_ECR_STACK \
+            --template-file deploy/cloudformation/ecr-frontend.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
+
           FRONTEND_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $FRONTEND_ECR_STACK \
             --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
         fi
@@ -393,23 +351,17 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
-            aws cloudformation update-stack \
-              --stack-name $MEMORY_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-memory-service.yaml \
-              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
-              --region $AWS_DEFAULT_REGION --no-cli-pager 2>&1 || echo "Memory Service ECR stack already up-to-date"
-            aws cloudformation wait stack-update-complete --stack-name $MEMORY_ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null || true
-          else
-            aws cloudformation create-stack \
-              --stack-name $MEMORY_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-memory-service.yaml \
-              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
-              --region $AWS_DEFAULT_REGION --no-cli-pager
-            aws cloudformation wait stack-create-complete --stack-name $MEMORY_ECR_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $MEMORY_ECR_STACK \
+            --template-file deploy/cloudformation/ecr-memory-service.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
+
           MEMORY_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $MEMORY_ECR_STACK \
             --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
         fi
@@ -440,23 +392,17 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
-            aws cloudformation update-stack \
-              --stack-name $META_ORCH_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-meta-orchestrator.yaml \
-              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
-              --region $AWS_DEFAULT_REGION --no-cli-pager 2>&1 || echo "Meta Orchestrator ECR stack already up-to-date"
-            aws cloudformation wait stack-update-complete --stack-name $META_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null || true
-          else
-            aws cloudformation create-stack \
-              --stack-name $META_ORCH_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-meta-orchestrator.yaml \
-              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
-              --region $AWS_DEFAULT_REGION --no-cli-pager
-            aws cloudformation wait stack-create-complete --stack-name $META_ORCH_ECR_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $META_ORCH_ECR_STACK \
+            --template-file deploy/cloudformation/ecr-meta-orchestrator.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
+
           META_ORCH_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $META_ORCH_ECR_STACK \
             --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
         fi
@@ -488,23 +434,17 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
-            aws cloudformation update-stack \
-              --stack-name $INCIDENT_AGENT_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-runtime-incident-agent.yaml \
-              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
-              --region $AWS_DEFAULT_REGION --no-cli-pager 2>&1 || echo "Runtime Incident Agent ECR stack already up-to-date"
-            aws cloudformation wait stack-update-complete --stack-name $INCIDENT_AGENT_ECR_STACK --region $AWS_DEFAULT_REGION 2>/dev/null || true
-          else
-            aws cloudformation create-stack \
-              --stack-name $INCIDENT_AGENT_ECR_STACK \
-              --template-body file://deploy/cloudformation/ecr-runtime-incident-agent.yaml \
-              --parameters ParameterKey=Environment,ParameterValue=$ENVIRONMENT ParameterKey=ProjectName,ParameterValue=$PROJECT_NAME \
-              --tags Key=Project,Value=$PROJECT_NAME Key=Environment,Value=$ENVIRONMENT Key=Layer,Value=application \
-              --region $AWS_DEFAULT_REGION --no-cli-pager
-            aws cloudformation wait stack-create-complete --stack-name $INCIDENT_AGENT_ECR_STACK --region $AWS_DEFAULT_REGION
-          fi
+          aws cloudformation deploy \
+            --stack-name $INCIDENT_AGENT_ECR_STACK \
+            --template-file deploy/cloudformation/ecr-runtime-incident-agent.yaml \
+            --parameter-overrides \
+              Environment=$ENVIRONMENT \
+              ProjectName=$PROJECT_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application \
+            --region $AWS_DEFAULT_REGION \
+            --no-fail-on-empty-changeset
+
           INCIDENT_AGENT_ECR_REPO_URI=$(aws cloudformation describe-stacks --stack-name $INCIDENT_AGENT_ECR_STACK \
             --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
         fi

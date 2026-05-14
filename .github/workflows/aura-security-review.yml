@@ -36,8 +36,14 @@ jobs:
   security-review:
     name: Aura Agent Security Review
     runs-on: ubuntu-24.04
-    # Skip for dependabot and automated PRs
-    if: github.actor != 'dependabot[bot]'
+    # Note: this workflow's path filter (above) already excludes most
+    # Dependabot PRs (lockfile-only changes don't touch src/ or
+    # deploy/**/*.yaml). A blanket "skip dependabot" used to live here too,
+    # which produced a real coverage gap: Dependabot PRs that DO touch the
+    # source tree (frontend bundles, generated SDK files) silently skipped
+    # the review. Removed in issue #191. If a future Dependabot pattern is
+    # truly noisy, prefer narrowing the path filter rather than blanket-
+    # skipping by actor.
 
     steps:
       - name: Checkout repository

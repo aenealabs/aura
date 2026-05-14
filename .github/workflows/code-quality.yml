@@ -82,7 +82,12 @@ jobs:
           pip install --upgrade pip
           pip install black==26.3.1 flake8 mypy bandit[toml]
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -r requirements.txt || true
+          # requirements.txt install must fail loudly. Previously this line
+          # ended in `|| true`, which silently masked transient PyPI errors
+          # and unavailable wheels and left required packages uninstalled --
+          # subsequent pytest steps then failed with ModuleNotFoundError,
+          # creating opaque "green-by-flake" CI behaviour. See issue #190.
+          pip install -r requirements.txt
           pip install pytest pytest-cov pytest-asyncio pytest-forked pytest-xdist
           pip install 'pydantic[email]'  # Required for email validation in tests
 

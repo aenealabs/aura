@@ -74,7 +74,7 @@ hypothesis>=6.100.0     # Property-based tests (dataflow analyzer invariants)
 moto[all]>=5.0.0        # AWS service mocking for tests
 
 # CloudFormation validation (for infrastructure deployment)
-cfn-lint>=1.22.0
+cfn-lint>=1.51.0
 PyYAML>=6.0.2
 
 # Code Quality (Optional)

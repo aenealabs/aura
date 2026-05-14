@@ -17,7 +17,7 @@ botocore>=1.43.3
 gremlinpython>=3.8.1         # Amazon Neptune connectivity
 opensearch-py>=3.2.0         # OpenSearch vector store
 cachetools>=5.5.0            # TTLCache for vector/embedding caches
-requests>=2.33.1             # HTTP client (used by PyGithub, ad-hoc HTTP)
+requests>=2.34.1             # HTTP client (used by PyGithub, ad-hoc HTTP)
 
 # Git Integration
 GitPython>=3.1.50            # Git metadata extraction

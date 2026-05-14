@@ -48,7 +48,7 @@ torch>=2.11.0          # For DeepMLPMemory, MIRAS, neural memory backends
 numpy>=1.26.0         # For constraint geometry, memory evolution, semantic guardrails, JEPA
 
 # Structured Logging (Security/DevOps Agents)
-structlog>=24.1.0     # For security agent orchestrator and devops services
+structlog>=25.5.0     # For security agent orchestrator and devops services
 
 # --- TREE-SITTER LANGUAGE BINDINGS (Required for AST Parsing) ---
 # These are included to reflect the CKGE's multi-language analysis capability.

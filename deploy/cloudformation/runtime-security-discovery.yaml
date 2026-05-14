@@ -27,6 +27,7 @@ Parameters:
     Description: S3 key for the ghost-agent-scanner Lambda package.
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   HasLambdaPackage: !Not [!Equals [!Ref LambdaS3Bucket, '']]
 
 Resources:
@@ -384,8 +385,8 @@ Resources:
   # DynamoDB Table - Decommission Attestations
   DecommissionAttestationTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-decommission-attestations-${Environment}'
       BillingMode: PAY_PER_REQUEST

@@ -24,6 +24,7 @@ Parameters:
     Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   HasAlertTopic:
     !Not [!Equals [!Ref AlertTopicArn, '']]
 
@@ -34,8 +35,8 @@ Resources:
   # DynamoDB Table for Scheduled Jobs
   ScheduledJobsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-scheduled-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -96,8 +97,8 @@ Resources:
   # DynamoDB Table for Recurring Tasks (ADR-055 Phase 3)
   RecurringTasksTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-recurring-tasks-${Environment}'
       BillingMode: PAY_PER_REQUEST

@@ -85,8 +85,8 @@ Resources:
   # at creation time -- cannot be enabled retroactively.
   AuditBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub '${ProjectName}-audit-${AWS::AccountId}-${Environment}'
       ObjectLockEnabled: true

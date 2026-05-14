@@ -27,6 +27,7 @@ Parameters:
     Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   HasAlertTopic:
     !Not [!Equals [!Ref AlertTopicArn, '']]
 
@@ -37,8 +38,8 @@ Resources:
 
   ConstitutionalAuditTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-constitutional-audit-${Environment}'
       BillingMode: PAY_PER_REQUEST

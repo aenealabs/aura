@@ -37,8 +37,8 @@ Resources:
   # OpenSearch Domain
   OpenSearchDomain:
     Type: AWS::OpenSearchService::Domain
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       DomainName: !Sub '${ProjectName}-${Environment}'
       EngineVersion: 'OpenSearch_2.11'

@@ -50,8 +50,8 @@ Resources:
   # ============================================================================
   ConfigBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub '${ProjectName}-config-${Environment}-${AWS::AccountId}'
       BucketEncryption:

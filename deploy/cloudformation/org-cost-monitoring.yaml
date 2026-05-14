@@ -67,6 +67,7 @@ Parameters:
     Description: Monthly budget for Bedrock LLM (USD)
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   EnableAnomaly: !Equals [!Ref EnableAnomalyDetection, 'true']
 
 Resources:
@@ -366,8 +367,8 @@ Resources:
 
   CostAggregationTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-org-cost-tracking-${Environment}'
       BillingMode: PAY_PER_REQUEST

@@ -20,11 +20,14 @@ Parameters:
     Default: aura
     Description: Project name
 
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
 Resources:
   RuntimeIncidentAgentRepository:
     Type: AWS::ECR::Repository
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       # Note: No environment suffix - this repo predates our naming convention
       # and is used by aura-incident-investigation-{env} ECS task definitions

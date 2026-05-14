@@ -68,6 +68,7 @@ Parameters:
     Description: 'Optional ARN of an SNS topic to receive alarm notifications. Empty = no notifications (default; preserves backward compatibility).'
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   HasAlertTopic:
     !Not [!Equals [!Ref AlertTopicArn, '']]
 
@@ -81,8 +82,8 @@ Resources:
   # Chat Conversations Table
   ChatConversationsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-chat-conversations-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -138,8 +139,8 @@ Resources:
   # Chat Messages Table
   ChatMessagesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-chat-messages-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -185,8 +186,8 @@ Resources:
   # WebSocket Connections Table
   ChatConnectionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-chat-connections-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -222,8 +223,8 @@ Resources:
   # Research Tasks Table - Async deep research task tracking
   ResearchTasksTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-research-tasks-${Environment}'
       BillingMode: PAY_PER_REQUEST

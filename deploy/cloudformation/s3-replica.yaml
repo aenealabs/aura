@@ -49,8 +49,8 @@ Resources:
   ArtifactsReplicaBucket:
     Type: AWS::S3::Bucket
     Condition: IsProduction
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       # Naming: matches the primary bucket pattern with a -dr suffix so the
       # ARN is constructable from primary-stack parameters without having to
@@ -93,8 +93,8 @@ Resources:
   CodeRepositoryReplicaBucket:
     Type: AWS::S3::Bucket
     Condition: IsProduction
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub "${ProjectName}-code-repo-${AWS::AccountId}-${Environment}-dr"
       BucketEncryption:

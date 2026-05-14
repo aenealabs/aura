@@ -39,6 +39,7 @@ Parameters:
     Description: Enable DynamoDB Point-in-Time Recovery (recommended for prod)
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   IsProd: !Equals [!Ref Environment, prod]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
   EnablePITR: !Or
@@ -172,8 +173,8 @@ Resources:
 
   SSRTrainingStateTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-ssr-training-state-${Environment}'
       BillingMode: PAY_PER_REQUEST

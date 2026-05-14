@@ -35,6 +35,7 @@ Parameters:
     Description: Enable red-team infrastructure (requires explicit opt-in)
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   IsProd: !Equals [!Ref Environment, prod]
   HasVpc: !Not [!Equals [!Ref VpcId, '']]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
@@ -50,8 +51,8 @@ Resources:
   RedTeamReportsBucket:
     Type: AWS::S3::Bucket
     Condition: CreateResources
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub '${ProjectName}-red-team-reports-${Environment}-${AWS::AccountId}'
       BucketEncryption:
@@ -95,8 +96,8 @@ Resources:
   RedTeamAccessLogsBucket:
     Type: AWS::S3::Bucket
     Condition: CreateResources
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub '${ProjectName}-red-team-logs-${Environment}-${AWS::AccountId}'
       BucketEncryption:
@@ -220,8 +221,8 @@ Resources:
 
   RedTeamFindingsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Condition: CreateResources
     Properties:
       TableName: !Sub '${ProjectName}-red-team-findings-${Environment}'
@@ -286,8 +287,8 @@ Resources:
 
   RedTeamTestRunsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Condition: CreateResources
     Properties:
       TableName: !Sub '${ProjectName}-red-team-runs-${Environment}'

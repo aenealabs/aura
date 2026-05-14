@@ -21,13 +21,16 @@ Parameters:
     Default: aura
     Description: Project name
 
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
 Resources:
   # ===========================================================================
   # Scan Worker Repository
   # ===========================================================================
   ScanWorkerRepository:
     Type: AWS::ECR::Repository
-    DeletionPolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
     Properties:
       RepositoryName: !Sub '${ProjectName}-scan-worker-${Environment}'
       ImageScanningConfiguration:
@@ -80,7 +83,7 @@ Resources:
   # ===========================================================================
   ScanGraphBuilderRepository:
     Type: AWS::ECR::Repository
-    DeletionPolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
     Properties:
       RepositoryName: !Sub '${ProjectName}-scan-graph-builder-${Environment}'
       ImageScanningConfiguration:

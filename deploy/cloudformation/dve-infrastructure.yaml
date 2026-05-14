@@ -54,8 +54,8 @@ Resources:
 
   DVEAuditKey:
     Type: AWS::KMS::Key
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub 'KMS CMK for DVE audit records and proof archive (${Environment})'
       EnableKeyRotation: true
@@ -116,8 +116,8 @@ Resources:
 
   DVEAuditTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-dve-audit-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -163,8 +163,8 @@ Resources:
 
   DVEProofBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       # Account-then-env naming order matches the codebuild-data IAM
       # policy ARN pattern ``aura-*-${AccountId}-${Environment}``.

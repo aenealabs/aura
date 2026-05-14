@@ -32,6 +32,7 @@ Parameters:
     Default: ''
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   IsProd: !Equals [!Ref Environment, prod]
   HasVpc: !Not [!Equals [!Ref VpcId, '']]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
@@ -44,8 +45,8 @@ Resources:
   # Approval Requests Table - Tracks HITL approval workflow state
   ApprovalRequestsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-approval-requests-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -127,8 +128,8 @@ Resources:
   # Sandbox State Table - Tracks ephemeral sandbox lifecycle
   SandboxStateTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-sandbox-state-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -170,8 +171,8 @@ Resources:
   # Sandbox Results Table - Test execution results
   SandboxResultsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-sandbox-results-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -211,8 +212,8 @@ Resources:
   # Patch Workflows Table - Tracks end-to-end patch validation workflow state
   PatchWorkflowsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-patch-workflows-${Environment}'
       BillingMode: PAY_PER_REQUEST

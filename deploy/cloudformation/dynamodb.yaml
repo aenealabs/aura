@@ -39,8 +39,8 @@ Resources:
   # Cost Tracking Table
   CostTrackingTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-cost-tracking-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -85,8 +85,8 @@ Resources:
   # User Sessions Table
   UserSessionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-user-sessions-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -126,8 +126,8 @@ Resources:
   # Code Generation Jobs Table
   CodeGenJobsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-codegen-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -180,8 +180,8 @@ Resources:
   # Git Ingestion Jobs Table
   IngestionJobsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-ingestion-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -253,8 +253,8 @@ Resources:
     # Rebuild cost = full re-ingestion of every onboarded customer repo;
     # cannot meet RTO 1h without cross-region replication. AWS-managed
     # encryption (no CMK; metadata not auth credentials).
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-codebase-metadata-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -342,8 +342,8 @@ Resources:
     # in production. AWS-managed encryption (no customer-managed CMK) since
     # this table holds tenant config, not auth credentials. Returns to
     # Retain (safe default).
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-platform-settings-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -429,8 +429,8 @@ Resources:
     # AWS-managed encryption (no CMK; not auth credentials). Note: this is
     # a detection log, not an audit log -- AutonomyDecisionsTable / IdPAuditTable
     # / PolicyAuditTable are the audit-shape tables (DR-1.1 / #154).
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-anomalies-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -545,8 +545,8 @@ Resources:
     Type: AWS::DynamoDB::GlobalTable
     # DR-1 PR3 (#144): Tier 1 GlobalTable (ADR-032 HITL policies).
     # Replicates to ${SecondaryRegion} in production. AWS-managed encryption.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-autonomy-policies-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -630,8 +630,8 @@ Resources:
   # Autonomy Policy Audit Table - audit trail for policy changes
   PolicyAuditTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-policy-audit-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -677,8 +677,8 @@ Resources:
   # Autonomy Decisions Table - records of autonomous decisions made
   AutonomyDecisionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-autonomy-decisions-${Environment}'
       BillingMode: PAY_PER_REQUEST

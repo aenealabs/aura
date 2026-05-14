@@ -12,12 +12,15 @@ Parameters:
     AllowedValues: [dev, qa, prod]
     Description: Deployment environment
 
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
 Resources:
   # Checkpoints Table - Stores checkpoint state for approval workflow
   CheckpointsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-checkpoints-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -58,8 +61,8 @@ Resources:
   # WebSocket Connections Table - Tracks active WebSocket connections
   ConnectionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-ws-connections-${Environment}'
       BillingMode: PAY_PER_REQUEST

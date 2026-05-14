@@ -32,6 +32,7 @@ Parameters:
     Description: Email address for calibration notifications (optional)
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
   IsProd: !Equals [!Ref Environment, 'prod']
 
@@ -41,8 +42,8 @@ Resources:
   # ==========================================================================
   DocumentationFeedbackTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-documentation-feedback-${Environment}'
       BillingMode: PAY_PER_REQUEST

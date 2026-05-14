@@ -69,8 +69,8 @@ Conditions:
 Resources:
   UserMirrorTable:
     Type: AWS::DynamoDB::GlobalTable
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-user-mirror-${Environment}'
       BillingMode: PAY_PER_REQUEST

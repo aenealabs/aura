@@ -95,8 +95,8 @@ Resources:
   EvidenceBucket:
     Type: AWS::S3::Bucket
     Condition: IsProduction
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub '${ProjectName}-compliance-evidence-${AWS::AccountId}-${Environment}'
       ObjectLockEnabled: true
@@ -148,8 +148,8 @@ Resources:
   SessionRecordingBucket:
     Type: AWS::S3::Bucket
     Condition: IsProduction
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub '${ProjectName}-session-recording-${AWS::AccountId}-${Environment}'
       VersioningConfiguration:
@@ -266,8 +266,8 @@ Resources:
   TwoPersonApprovalState:
     Type: AWS::DynamoDB::Table
     Condition: IsProduction
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-dr-two-person-approvals-${Environment}'
       BillingMode: PAY_PER_REQUEST

@@ -32,6 +32,9 @@ Parameters:
     Type: String
     Description: Email for budget alerts
 
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
 Resources:
   # Main Test Environment Monthly Budget
   TestEnvMonthlyBudget:
@@ -167,8 +170,8 @@ Resources:
   # DynamoDB Table for Cost Tracking per User
   CostTrackingTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-test-env-cost-tracking-${Environment}'
       BillingMode: PAY_PER_REQUEST

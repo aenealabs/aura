@@ -266,8 +266,8 @@ Resources:
 
   LLMCostTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       # Naming: aura-ddb-{env}-llm-costs
       TableName:

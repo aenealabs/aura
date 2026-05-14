@@ -59,6 +59,12 @@ Resources:
   # ==========================================================================
   OrgCloudTrailBucket:
     Type: AWS::S3::Bucket
+    # Unconditional Retain is intentional and audit-aware (#193 cluster M2).
+    # This stack deploys to the management account only -- never DEV/QA -- and
+    # the bucket holds the organization-wide CloudTrail audit log. Losing it
+    # would create a NIST 800-53 AU-2/AU-3 compliance gap. The
+    # !If [IsProduction, Retain, Delete] pattern applied elsewhere in this
+    # repo is not appropriate here.
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:

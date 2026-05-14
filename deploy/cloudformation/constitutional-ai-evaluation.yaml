@@ -65,6 +65,7 @@ Parameters:
     Description: S3 key for Lambda deployment package
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
   IsProd: !Equals [!Ref Environment, 'prod']
   AlertsEnabled: !Equals [!Ref EnableRegressionAlerts, 'true']
@@ -114,8 +115,8 @@ Resources:
   # ==========================================================================
   GoldenSetTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-cai-golden-set-${Environment}'
       BillingMode: PAY_PER_REQUEST

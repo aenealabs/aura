@@ -13,6 +13,9 @@ Parameters:
     Default: aura
     Description: Project name
 
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
 Resources:
   # IAM Role for Correlation Service (GraphRAG access + remediation)
   CorrelationServiceRole:
@@ -61,8 +64,8 @@ Resources:
   # DynamoDB Table - Correlation Results
   CorrelationResultsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-correlation-results-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -103,8 +106,8 @@ Resources:
   # DynamoDB Table - Remediation Plans
   RemediationPlansTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-remediation-plans-${Environment}'
       BillingMode: PAY_PER_REQUEST

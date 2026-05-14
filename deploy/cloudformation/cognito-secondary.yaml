@@ -70,8 +70,8 @@ Resources:
   StandbyUserPool:
     Type: AWS::Cognito::UserPool
     Condition: IsProduction
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       UserPoolName: !Sub '${ProjectName}-users-${Environment}-dr'
 

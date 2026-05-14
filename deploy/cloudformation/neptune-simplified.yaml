@@ -126,8 +126,8 @@ Resources:
 
   NeptunePrimaryInstance:
     Type: AWS::Neptune::DBInstance
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       DBInstanceIdentifier: !Sub '${ProjectName}-neptune-primary-${Environment}'
       DBInstanceClass: !Ref InstanceType
@@ -149,8 +149,8 @@ Resources:
   NeptuneReadReplica:
     Type: AWS::Neptune::DBInstance
     Condition: CreateReadReplica
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       DBInstanceIdentifier: !Sub '${ProjectName}-neptune-replica-${Environment}'
       DBInstanceClass: !Ref InstanceType

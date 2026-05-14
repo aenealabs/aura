@@ -56,8 +56,8 @@ Resources:
   AuditReplicaBucket:
     Type: AWS::S3::Bucket
     Condition: IsProduction
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub '${ProjectName}-audit-${AWS::AccountId}-${Environment}-dr'
       ObjectLockEnabled: true

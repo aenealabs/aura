@@ -55,8 +55,8 @@ Resources:
   AuthCredentialsReplicaKey:
     Type: AWS::KMS::Key
     Condition: IsProduction
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub '${ProjectName}-${Environment} auth credentials encryption key (secondary region, DR-1.0)'
       EnableKeyRotation: true
@@ -140,8 +140,8 @@ Resources:
   UserMirrorReplicaKey:
     Type: AWS::KMS::Key
     Condition: IsProduction
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub '${ProjectName}-${Environment} user-mirror table encryption key (secondary region, DR-2 / ADR-091)'
       EnableKeyRotation: true

@@ -37,8 +37,8 @@ Resources:
     # DR-1 PR4 (#144): Tier 1 GlobalTable. Customer repo configurations.
     # AWS-managed encryption (no CMK) since this is configuration metadata,
     # not auth credentials.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-repositories-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -141,8 +141,8 @@ Resources:
     # per Sally's SC-12 guidance. TTL stays at top level (TTL deletes
     # propagate as deletes across replicas, billed; expected behavior for
     # token expiry).
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-oauth-connections-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -241,8 +241,8 @@ Resources:
   # Repository Ingestion Jobs Table - Tracks repository ingestion job status
   RepositoryIngestionJobsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-repo-ingestion-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST

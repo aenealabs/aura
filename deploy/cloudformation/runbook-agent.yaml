@@ -53,6 +53,7 @@ Parameters:
     Description: Enable automated incident processing via EventBridge
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
   EnableAutomation: !Equals [!Ref EnableAutomatedProcessing, 'true']
 
@@ -62,8 +63,8 @@ Resources:
   # ============================================
   RunbookIndexTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-runbooks-${Environment}'
       BillingMode: PAY_PER_REQUEST

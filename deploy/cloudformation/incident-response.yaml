@@ -94,7 +94,7 @@ Resources:
   DeploymentsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: !If [IsProduction, Retain, Delete]
-    UpdateReplacePolicy: Retain
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-deployments-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -149,7 +149,7 @@ Resources:
   InvestigationsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: !If [IsProduction, Retain, Delete]
-    UpdateReplacePolicy: Retain
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-incident-investigations-${Environment}'
       BillingMode: PAY_PER_REQUEST

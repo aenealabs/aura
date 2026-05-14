@@ -30,6 +30,9 @@ Parameters:
     Default: aura
     Description: Project name
 
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
 Resources:
   # ===========================================================================
   # Backup Encryption Key
@@ -37,8 +40,8 @@ Resources:
   # Used by: AWS Backup, disaster-recovery.yaml, S3 backup copies
   BackupKMSKey:
     Type: AWS::KMS::Key
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub '${ProjectName}-${Environment} backup encryption key'
       EnableKeyRotation: true
@@ -157,8 +160,8 @@ Resources:
   # Used by: Neptune, OpenSearch, DynamoDB (future migration from AWS-managed)
   DataKMSKey:
     Type: AWS::KMS::Key
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub '${ProjectName}-${Environment} data layer encryption key'
       EnableKeyRotation: true
@@ -277,8 +280,8 @@ Resources:
   # Used by: Incident Response, Red Team, GuardDuty findings, security logs
   SecurityKMSKey:
     Type: AWS::KMS::Key
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub '${ProjectName}-${Environment} security layer encryption key'
       EnableKeyRotation: true
@@ -377,8 +380,8 @@ Resources:
   # Used by: Secrets Manager, Lambda env vars, SQS, SNS
   ApplicationKMSKey:
     Type: AWS::KMS::Key
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub '${ProjectName}-${Environment} application layer encryption key'
       EnableKeyRotation: true
@@ -515,8 +518,8 @@ Resources:
   # deploy/cloudformation/kms-replica-secondary.yaml.
   AuthCredentialsKMSKey:
     Type: AWS::KMS::Key
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub '${ProjectName}-${Environment} auth credentials encryption key (DR-1 IdPConfigurations + OAuthConnections)'
       EnableKeyRotation: true
@@ -601,8 +604,8 @@ Resources:
   # has its own independent key in deploy/cloudformation/kms-replica-secondary.yaml.
   UserMirrorKMSKey:
     Type: AWS::KMS::Key
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub '${ProjectName}-${Environment} user-mirror table encryption key (DR-2 / #145, ADR-091)'
       EnableKeyRotation: true

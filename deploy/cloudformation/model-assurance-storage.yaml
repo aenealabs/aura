@@ -60,8 +60,8 @@ Resources:
 
   ModelAssuranceKey:
     Type: AWS::KMS::Key
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       Description: !Sub 'KMS CMK for the ADR-088 model-assurance domain (${Environment})'
       EnableKeyRotation: true
@@ -122,8 +122,8 @@ Resources:
 
   RevisionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-model-assurance-revisions-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -162,8 +162,8 @@ Resources:
 
   QuarantineTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-model-assurance-quarantine-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -196,8 +196,8 @@ Resources:
 
   AuditTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-model-assurance-audit-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -253,8 +253,8 @@ Resources:
 
   ScoutStateTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-model-assurance-scout-state-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -282,8 +282,8 @@ Resources:
 
   FrozenOracleBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       # Bucket name uses ${AccountId}-${Environment} order so it
       # matches the codebuild-data IAM policy ARN pattern
@@ -354,8 +354,8 @@ Resources:
 
   ShadowReportsBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub '${ProjectName}-model-assurance-reports-${AWS::AccountId}-${Environment}'
       ObjectLockEnabled: true

@@ -85,8 +85,8 @@ Resources:
 
   GPUJobsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-gpu-jobs-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -161,8 +161,8 @@ Resources:
 
   GPUQuotasTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-gpu-quotas-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -197,8 +197,8 @@ Resources:
 
   CheckpointsBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       BucketName: !Sub '${ProjectName}-gpu-checkpoints-${AWS::AccountId}-${Environment}'
       VersioningConfiguration:

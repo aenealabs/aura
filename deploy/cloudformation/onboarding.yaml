@@ -34,8 +34,8 @@ Resources:
   UserOnboardingTable:
     Type: AWS::DynamoDB::GlobalTable
     # DR-1 PR5 (#144): Tier 1 GlobalTable. Customer onboarding state.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-user-onboarding-${Environment}'
       BillingMode: PAY_PER_REQUEST
@@ -127,8 +127,8 @@ Resources:
   TeamInvitationsTable:
     Type: AWS::DynamoDB::GlobalTable
     # DR-1 PR5 (#144): Tier 1 GlobalTable. Pending team invitations.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub '${ProjectName}-team-invitations-${Environment}'
       BillingMode: PAY_PER_REQUEST

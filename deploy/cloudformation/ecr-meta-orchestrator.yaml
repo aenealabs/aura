@@ -16,10 +16,13 @@ Parameters:
     Default: aura
     Description: Project name
 
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
 Resources:
   MetaOrchestratorRepository:
     Type: AWS::ECR::Repository
-    DeletionPolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
     Properties:
       RepositoryName: !Sub '${ProjectName}-meta-orchestrator-${Environment}'
       ImageScanningConfiguration:

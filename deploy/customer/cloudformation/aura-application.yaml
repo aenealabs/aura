@@ -32,9 +32,9 @@ Metadata:
           default: EKS Configuration
         Parameters:
           - KubernetesVersion
-          - NodeInstanceType
-          - NodeMinSize
-          - NodeMaxSize
+          - EKSNodeInstanceType
+          - EKSNodeMinSize
+          - EKSNodeMaxSize
           - NodeVolumeSize
       - Label:
           default: Bedrock Configuration
@@ -80,7 +80,7 @@ Parameters:
       - '1.34'
     Description: Kubernetes version for EKS cluster
 
-  NodeInstanceType:
+  EKSNodeInstanceType:
     Type: String
     Default: r6i.large
     AllowedValues:
@@ -91,14 +91,14 @@ Parameters:
       - r6i.2xlarge
     Description: EKS worker node instance type
 
-  NodeMinSize:
+  EKSNodeMinSize:
     Type: Number
     Default: 2
     MinValue: 1
     MaxValue: 10
     Description: Minimum number of EKS worker nodes
 
-  NodeMaxSize:
+  EKSNodeMaxSize:
     Type: Number
     Default: 8
     MinValue: 2
@@ -214,14 +214,14 @@ Resources:
       AmiType: AL2023_x86_64_STANDARD
       Version: !Ref KubernetesVersion
       ScalingConfig:
-        MinSize: !Ref NodeMinSize
-        MaxSize: !Ref NodeMaxSize
-        DesiredSize: !Ref NodeMinSize
+        MinSize: !Ref EKSNodeMinSize
+        MaxSize: !Ref EKSNodeMaxSize
+        DesiredSize: !Ref EKSNodeMinSize
       LaunchTemplate:
         Id: !Ref EKSNodeLaunchTemplate
         Version: !GetAtt EKSNodeLaunchTemplate.LatestVersionNumber
       InstanceTypes:
-        - !Ref NodeInstanceType
+        - !Ref EKSNodeInstanceType
       UpdateConfig:
         MaxUnavailable: 1
       Labels:

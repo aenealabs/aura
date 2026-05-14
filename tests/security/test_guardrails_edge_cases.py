@@ -344,8 +344,13 @@ class TestGuardrailServiceUnavailability:
                 require_guardrails=False,  # Permissive mode
             )
 
-            # Verify guardrails are disabled but service is operational
-            from config.guardrails_config import GuardrailMode
+            # Verify guardrails are disabled but service is operational.
+            # Use the canonical ``src.config`` import path so this enum class
+            # matches the one BedrockLLMService imported -- importing via the
+            # bare ``config.X`` path resolves to a different module entry in
+            # ``sys.modules`` and the two GuardrailMode classes compare
+            # unequal. See issue #183 cluster C.
+            from src.config.guardrails_config import GuardrailMode
 
             assert service.guardrail_config.mode == GuardrailMode.DISABLED
 

@@ -17,19 +17,6 @@ if platform.system() != "Linux":
 class TestGPUSchedulerEndpointsUnit:
     """Unit tests for GPU scheduler endpoint logic."""
 
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
-
     def test_request_model_validation(self):
         """Test request model validation."""
         from src.api.gpu_scheduler_endpoints import GPUJobSubmitRequest
@@ -156,19 +143,6 @@ class TestGPUSchedulerEndpointsUnit:
 class TestParseJobConfig:
     """Tests for _parse_job_config helper function."""
 
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
-
     def test_parse_embedding_config(self):
         """Test parsing embedding job config."""
         from src.api.gpu_scheduler_endpoints import _parse_job_config
@@ -243,19 +217,6 @@ class TestParseJobConfig:
 
 class TestGPUJobResponseFromJob:
     """Tests for GPUJobResponse.from_job method."""
-
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
 
     def test_from_job_basic(self):
         """Test creating response from basic job."""
@@ -526,19 +487,6 @@ class TestGPUSchedulerEndpointsIntegration:
 class TestExceptionHandling:
     """Tests for exception handling in endpoints."""
 
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
-
     @pytest.mark.asyncio
     async def test_submit_job_quota_exceeded(self):
         """Test submit_job raises HTTPException when quota exceeded."""
@@ -689,19 +637,6 @@ class TestExceptionHandling:
 class TestCostSummaryEndpoint:
     """Tests for cost summary endpoint."""
 
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
-
     @pytest.mark.asyncio
     async def test_get_cost_summary_with_jobs(self):
         """Test cost summary with completed jobs."""
@@ -787,19 +722,6 @@ class TestCostSummaryEndpoint:
 class TestResourceStatusEndpoint:
     """Tests for resource status endpoint."""
 
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
-
     @pytest.mark.asyncio
     async def test_get_resource_status(self):
         """Test get resource status."""
@@ -866,19 +788,6 @@ class TestFactoryFunctions:
 
 class TestQueuePositionEndpoint:
     """Tests for queue position endpoint."""
-
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
 
     @pytest.fixture
     def mock_position_estimate(self):
@@ -950,19 +859,6 @@ class TestQueuePositionEndpoint:
 class TestQueueMetricsEndpoint:
     """Tests for queue metrics endpoint."""
 
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
-
     @pytest.fixture
     def mock_queue_metrics(self):
         """Create mock queue metrics."""
@@ -1030,19 +926,6 @@ class TestQueueMetricsEndpoint:
 
 class TestQueueEstimateEndpoint:
     """Tests for queue estimate endpoint."""
-
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
 
     @pytest.fixture
     def mock_position_estimate(self):
@@ -1148,19 +1031,6 @@ class TestQueueEstimateEndpoint:
 
 class TestQueueResponseModels:
     """Tests for queue response model conversions."""
-
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.gpu_scheduler")
-            or key.startswith("src.services.gpu_scheduler")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
 
     def test_position_estimate_response_from_estimate(self):
         """Test creating PositionEstimateResponse from model."""

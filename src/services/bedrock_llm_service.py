@@ -12,13 +12,11 @@ import json
 import logging
 import os
 import random
-import sys
 import time
 import uuid
 from collections import OrderedDict
 from datetime import UTC, datetime
 from enum import Enum
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 # Import Redis cache service for production state management
@@ -35,10 +33,18 @@ try:
 except ImportError:
     pass
 
-# Import configuration - use Path for cleaner imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.bedrock_config import calculate_cost, get_config
-from config.guardrails_config import (
+# Import configuration via the canonical ``src.config`` path. Previously this
+# module did ``sys.path.insert(0, .../src)`` and then ``from config.X import
+# ...``, which works at runtime but causes the SAME modules to live under TWO
+# names in ``sys.modules`` (``config.X`` and ``src.config.X``) -- one per
+# import string used. Enum class identity is per-import-string, so
+# ``GuardrailMode.DISABLED`` from the two copies is unequal. That manifested
+# as the CI-only failure in
+# ``test_guardrail_unavailable_with_require_guardrails_false`` once another
+# test in the suite happened to import via ``src.config.guardrails_config``
+# first. See issue #183 cluster C.
+from src.config.bedrock_config import calculate_cost, get_config
+from src.config.guardrails_config import (
     GuardrailMode,
     GuardrailResult,
     format_guardrail_trace,

@@ -17,20 +17,6 @@ if platform.system() != "Linux":
 class TestDocumentationEndpointsUnit:
     """Unit tests for documentation endpoint logic."""
 
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        # Clear documentation-related modules to ensure fresh router state
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.documentation")
-            or key.startswith("src.services.documentation")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
-
     def test_diagram_types_endpoint(self):
         """Test GET /api/v1/documentation/diagram-types endpoint."""
         from src.api.documentation_endpoints import router
@@ -148,19 +134,6 @@ class TestDocumentationEndpointsUnit:
 
 class TestDocumentationHelpers:
     """Tests for helper functions."""
-
-    @pytest.fixture(autouse=True)
-    def clear_modules(self):
-        """Clear cached modules before each test."""
-        modules_to_clear = [
-            key
-            for key in list(sys.modules.keys())
-            if key.startswith("src.api.documentation")
-            or key.startswith("src.services.documentation")
-        ]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
-        yield
 
     def test_build_documentation_response(self):
         """Test _build_documentation_response helper."""

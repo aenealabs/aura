@@ -215,7 +215,23 @@ class LocalInferenceConfig(BaseModel):
         return v
 
 
-# Union of all valid job configurations (discriminated union)
+# Union of all valid job configurations.
+#
+# This was previously declared as ``Field(discriminator=None)`` with a comment
+# claiming job_type discrimination, but ``discriminator=None`` is the absence
+# of a discriminator -- pydantic falls back to its "smart" union mode. In
+# pydantic 2.13 that mode tightened: passing an already-validated instance of
+# one union member back into the same union (which happens whenever
+# ``GPUJobCreateRequest.config`` is forwarded into ``GPUJob.config`` inside
+# the scheduler) intermittently rejected the instance under the strict pass
+# before falling through to lax, producing ``5 validation errors for GPUJob``
+# in CI. See issue #183 cluster A.
+#
+# ``union_mode='left_to_right'`` restores the pre-2.13 behaviour: pydantic
+# walks the members in order and accepts the first one that validates. The
+# config classes have non-overlapping required fields (repository_id /
+# dataset_id / batch_id / session_id / model_id), so left-to-right resolution
+# is unambiguous in practice.
 GPUJobConfig = Annotated[
     Union[
         EmbeddingJobConfig,
@@ -224,7 +240,7 @@ GPUJobConfig = Annotated[
         MemoryConsolidationConfig,
         LocalInferenceConfig,
     ],
-    Field(discriminator=None),  # Use job_type field for discrimination
+    Field(union_mode="left_to_right"),
 ]
 
 

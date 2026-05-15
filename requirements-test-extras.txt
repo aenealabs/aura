@@ -1,0 +1,31 @@
+# Optional test-only dependencies.
+#
+# Tests in this repo are gated with ``@pytest.mark.skipif(not HAS_X, ...)``
+# (or equivalent ``importlib.util.find_spec`` checks) for libraries that
+# are not part of the runtime requirement set. Installing these unblocks
+# the corresponding skipped tests in CI and in the Linux test-harness
+# container.
+#
+# Reproduce the 2026-05-14 skip breakdown:
+#   pytest --no-cov -rs --tb=no -q 2>&1 | grep '^SKIPPED'
+#
+# Closures (skip counts from the 2026-05-14 full run):
+#   34  mypy-boto3-dynamodb   - tests/lambda/chat/test_deep_research.py
+#   17  kubernetes            - k8s-client tests across the suite
+#    6  opentelemetry-*       - tests/test_otel_instrumentation.py
+#    4  cairosvg              - SVG-rendering tests
+#    1  hdbscan               - one HDBSCAN clustering test
+
+mypy-boto3-dynamodb
+kubernetes
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation
+cairosvg
+hdbscan
+# email-validator: pydantic[email] runtime dep; production code uses
+# EmailStr in API models (src/api/team_endpoints.py, dashboard models).
+# Without it, collection of any test that touches those models errors
+# with "email-validator is not installed". Host has it via accumulated
+# state; harness needs to declare it explicitly.
+email-validator

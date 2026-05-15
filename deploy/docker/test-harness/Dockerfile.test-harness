@@ -1,0 +1,117 @@
+# Project Aura - Linux Test Harness Container
+#
+# Local-developer test harness that runs the pytest suite on a Linux
+# runtime. Purpose: close the ~6,576 macOS-fork test skips caused by
+# darwin's Objective-C runtime forbidding ``fork()`` after torch loads
+# (see ``tests/conftest.py`` line 1042-1048 for the safety guard). On
+# Linux there's no Objective-C runtime to taint, so ``pytest.mark.forked``
+# tests run normally. Also preinstalls the optional-dep set from
+# ``requirements-test-extras.txt`` to close ~62 more skips.
+#
+# Closures vs the 2026-05-14 darwin baseline:
+#   - 6,576 macOS fork+torch     -> resolved by running on Linux
+#   -    34 mypy-boto3-dynamodb  -> installed via requirements-test-extras
+#   -    17 kubernetes           -> installed via requirements-test-extras
+#   -     6 opentelemetry        -> installed via requirements-test-extras
+#   -     4 cairosvg             -> installed via requirements-test-extras
+#   -     1 hdbscan              -> installed via requirements-test-extras
+# Not closed by this harness (independent issues):
+#   -    18 CUDA tests (no NVIDIA hardware in the container)
+#   -    10 API-server tests (need ``kubectl port-forward`` to live cluster)
+#   -    14 ADR-093 placeholders (code not implemented yet)
+#   -     3 z3-solver mock-path  (correctly skipped when real z3 present)
+#   -   ~43 AWS E2E / Bedrock    (cost-gated per DEFERRED_WORK_REGISTRY)
+#
+# Usage (Podman - primary per ADR-049):
+#   podman build --platform linux/amd64 \
+#       -f deploy/docker/test-harness/Dockerfile.test-harness \
+#       -t aura/test-harness:latest .
+#   podman run --rm --platform linux/amd64 \
+#       -v "$PWD":/workspace:Z \
+#       -w /workspace \
+#       aura/test-harness:latest \
+#       pytest --no-cov -q
+#
+# Usage (Docker - CI fallback):
+#   docker build -f deploy/docker/test-harness/Dockerfile.test-harness \
+#       -t aura/test-harness:latest .
+#
+# Convenience: ``scripts/run-tests-in-container.sh`` wraps both build
+# and run so the developer doesn't have to remember the flags.
+#
+# Memory: the test suite needs ~4-6 GB. On macOS, Podman Machine defaults
+# to 2 GB -- bump it with ``podman machine set --memory 8192`` before
+# first run.
+#
+# Base-image policy: defaults to the public ECR Gallery copy of
+# ``python:3.11-slim`` so a developer with no AWS access can run the
+# harness. CI / regulated builds override with the private ECR base via
+# ``--build-arg PYTHON_BASE_IMAGE=...`` per the root CLAUDE.md Container
+# Security section.
+
+# NOTE: Python 3.12, not 3.11. The codebase uses 3.12-only syntax
+# (e.g. PEP 701 f-strings containing backslashes -- see
+# ``src/services/community_summarization_service.py:474``). The
+# project's ``requires-python = ">=3.11"`` pin in pyproject.toml is
+# laxer than the code actually supports; tighten that separately.
+ARG PYTHON_BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim
+
+FROM ${PYTHON_BASE_IMAGE} AS harness
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_ROOT_USER_ACTION=ignore \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# System deps:
+#   build-essential  - hdbscan and a few other test extras compile native code
+#   git              - some tests shell out to ``git`` (e.g. SWE-bench harness)
+#   libcairo2        - cairosvg runtime dep (binding to system libcairo)
+#   ca-certificates  - HTTPS to PyPI / model registries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        ca-certificates \
+        libcairo2 \
+        libcairo2-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Stage the requirement files first so the dependency layer is cached
+# across code edits (Dockerfile-best-practice ordering).
+#
+# Pre-existing latent conflict in ``requirements.txt``:
+#   * ``pydantic>=2.13.4`` (line 40)
+#   * ``moto[all]>=5.0.0`` (line 74) -> transitively requires
+#     ``cfn-lint`` -> ``aws-sam-translator==1.109.0`` -> ``pydantic~=2.12.5``
+# The local dev env hides this because it accumulated packages
+# incrementally; a clean install (CI, this container) hits a pip
+# resolver error. Using ``--use-deprecated=legacy-resolver`` mirrors
+# the accumulated-state install path: pip warns about the conflict but
+# installs the explicit pin (pydantic 2.13.x) and lets the transitive
+# constraint slide. This is exactly the same state the host has been
+# running tests against, so the harness reproduces the same behavior.
+#
+# A proper fix belongs in a separate change to the requirements file
+# (either drop the ``pydantic`` pin or pin ``aws-sam-translator`` to a
+# version with a broader range, e.g. 1.106.0).
+COPY requirements.txt requirements-test-extras.txt /tmp/req/
+RUN pip install --no-cache-dir --use-deprecated=legacy-resolver \
+        -r /tmp/req/requirements.txt \
+    && pip install --no-cache-dir --use-deprecated=legacy-resolver \
+        -r /tmp/req/requirements-test-extras.txt
+
+# Default command runs the suite with coverage off; callers can override.
+# The repo is expected to be bind-mounted at /workspace at run time --
+# we deliberately do NOT ``COPY`` it into the image so the harness
+# stays fast to rebuild and so test artifacts (e.g. cache files) are
+# written back to the host.
+CMD ["pytest", "--no-cov", "-q"]
+
+LABEL org.opencontainers.image.title="Aura Test Harness" \
+      org.opencontainers.image.description="Linux pytest harness that unblocks macOS-fork skips" \
+      org.opencontainers.image.source="https://github.com/aenealabs/aura"

@@ -323,7 +323,15 @@ class TestVerifyToken:
         ):
             mock_response = MagicMock()
             mock_response.json.return_value = {
-                "keys": [{"kid": "testkey", "alg": "RS256", "kty": "RSA", "n": "test", "e": "AQAB"}]
+                "keys": [
+                    {
+                        "kid": "testkey",
+                        "alg": "RS256",
+                        "kty": "RSA",
+                        "n": "test",
+                        "e": "AQAB",
+                    }
+                ]
             }
             mock_response.raise_for_status = MagicMock()
 
@@ -368,7 +376,15 @@ class TestVerifyToken:
         ):
             mock_response = MagicMock()
             mock_response.json.return_value = {
-                "keys": [{"kid": "testkey", "alg": "RS256", "kty": "RSA", "n": "test", "e": "AQAB"}]
+                "keys": [
+                    {
+                        "kid": "testkey",
+                        "alg": "RS256",
+                        "kty": "RSA",
+                        "n": "test",
+                        "e": "AQAB",
+                    }
+                ]
             }
             mock_response.raise_for_status = MagicMock()
 
@@ -408,7 +424,15 @@ class TestVerifyToken:
         ):
             mock_response = MagicMock()
             mock_response.json.return_value = {
-                "keys": [{"kid": "testkey", "alg": "RS256", "kty": "RSA", "n": "test", "e": "AQAB"}]
+                "keys": [
+                    {
+                        "kid": "testkey",
+                        "alg": "RS256",
+                        "kty": "RSA",
+                        "n": "test",
+                        "e": "AQAB",
+                    }
+                ]
             }
             mock_response.raise_for_status = MagicMock()
 
@@ -456,7 +480,15 @@ class TestVerifyToken:
         ):
             mock_response = MagicMock()
             mock_response.json.return_value = {
-                "keys": [{"kid": "testkey", "alg": "RS256", "kty": "RSA", "n": "test", "e": "AQAB"}]
+                "keys": [
+                    {
+                        "kid": "testkey",
+                        "alg": "RS256",
+                        "kty": "RSA",
+                        "n": "test",
+                        "e": "AQAB",
+                    }
+                ]
             }
             mock_response.raise_for_status = MagicMock()
 
@@ -508,7 +540,15 @@ class TestVerifyToken:
         ):
             mock_response = MagicMock()
             mock_response.json.return_value = {
-                "keys": [{"kid": "testkey", "alg": "RS256", "kty": "RSA", "n": "test", "e": "AQAB"}]
+                "keys": [
+                    {
+                        "kid": "testkey",
+                        "alg": "RS256",
+                        "kty": "RSA",
+                        "n": "test",
+                        "e": "AQAB",
+                    }
+                ]
             }
             mock_response.raise_for_status = MagicMock()
 
@@ -560,7 +600,15 @@ class TestVerifyToken:
         ):
             mock_response = MagicMock()
             mock_response.json.return_value = {
-                "keys": [{"kid": "testkey", "alg": "RS256", "kty": "RSA", "n": "test", "e": "AQAB"}]
+                "keys": [
+                    {
+                        "kid": "testkey",
+                        "alg": "RS256",
+                        "kty": "RSA",
+                        "n": "test",
+                        "e": "AQAB",
+                    }
+                ]
             }
             mock_response.raise_for_status = MagicMock()
 

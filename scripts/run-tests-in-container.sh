@@ -98,32 +98,74 @@ if [[ $REBUILD -eq 1 ]] || ! image_exists; then
         "$REPO_ROOT"
 fi
 
+# Mount the repo read-only by default (issue #195 P4). A compromised
+# wheel or misbehaving test can't rewrite ``.git/hooks/``, source files,
+# or any other on-disk state. Pytest's writable paths
+# (``.pytest_cache``, coverage outputs, ``tmp_path`` roots) get tmpfs
+# mounts so they remain functional and isolated to the container's
+# lifetime. The ``--shell`` mode keeps RW because interactive debug
+# sessions often need to edit / install / scratch-write inside the
+# container; the production pytest path stays read-only.
+#
 # SELinux relabel suffix is harmless on macOS / non-SELinux Linux.
-MOUNT_OPTS=":Z"
+MOUNT_OPTS=":ro,Z"
 if [[ "$(uname -s)" == "Darwin" ]]; then
-    MOUNT_OPTS=""  # no relabel needed; ``:Z`` confuses some Podman Machine versions
+    MOUNT_OPTS=":ro"  # no relabel needed; ``:Z`` confuses some Podman Machine versions
 fi
 
+# Shell mode: keep RW because the user is interactively debugging and
+# will need to write scratch files / install ad-hoc packages.
+if [[ $SHELL_MODE -eq 1 ]]; then
+    SHELL_MOUNT_OPTS="${MOUNT_OPTS//:ro/}"
+    SHELL_MOUNT_OPTS="${SHELL_MOUNT_OPTS//,,/,}"
+    SHELL_MOUNT_OPTS="${SHELL_MOUNT_OPTS#:,}"  # strip leading comma if any
+    [[ -z "$SHELL_MOUNT_OPTS" || "$SHELL_MOUNT_OPTS" == ":" ]] && SHELL_MOUNT_OPTS=""
+    echo "==> Dropping into bash in $IMAGE (RW mount for interactive use)"
+    exec "$RUNTIME" run --rm \
+        --platform "$PLATFORM" \
+        -v "${REPO_ROOT}:/workspace${SHELL_MOUNT_OPTS}" \
+        -w /workspace \
+        -e PYTHONDONTWRITEBYTECODE=1 \
+        -e PYTHONUNBUFFERED=1 \
+        -it "$IMAGE" /bin/bash
+fi
+
+# Read-only RUN_ARGS with tmpfs for pytest write paths.
+#
+# Layout:
+#   /workspace          -- repo bind-mount, READ-ONLY
+#   /tmp                -- tmpfs, 2GB, exec-enabled (pytest tmp_path
+#                          uses this; needs exec for compiled extension
+#                          loading some tests do)
+#   /home/aura/.cache   -- tmpfs, 512MB (pip user-config, matplotlib
+#                          cache, etc. -- anything writing to $HOME)
+#
+# Pytest writes (``.pytest_cache``, coverage XML, junit, etc.) get
+# redirected to ``/tmp`` via the explicit ``-o cache_dir`` override
+# below. Tmpfs-mounting over a sub-path of a RO bind-mount works on
+# Linux but is undocumented behavior; routing pytest's writes to a
+# top-level tmpfs is cleaner and works the same on macOS Podman
+# Machine where the over-mount trick is flaky.
 RUN_ARGS=(
     run --rm
     --platform "$PLATFORM"
     -v "${REPO_ROOT}:/workspace${MOUNT_OPTS}"
     -w /workspace
+    --tmpfs "/tmp:exec,size=2g,mode=1777"
+    --tmpfs "/home/aura/.cache:size=512m,mode=1777"
     -e PYTHONDONTWRITEBYTECODE=1
     -e PYTHONUNBUFFERED=1
+    -e PYTEST_DEBUG_TEMPROOT=/tmp
 )
-
-if [[ $SHELL_MODE -eq 1 ]]; then
-    echo "==> Dropping into bash in $IMAGE"
-    exec "$RUNTIME" "${RUN_ARGS[@]}" -it "$IMAGE" /bin/bash
-fi
 
 # Default command is ``pytest --no-cov -q``; the user can append extra
 # args or pass ``--`` followed by a completely custom command.
+# ``-o cache_dir=/tmp/.pytest_cache`` routes pytest's cache to the
+# writable tmpfs since ``/workspace`` is now RO (#195 P4).
 if [[ ${#PYTEST_ARGS[@]} -eq 0 ]]; then
-    CMD=(pytest --no-cov -q)
+    CMD=(pytest -o "cache_dir=/tmp/.pytest_cache" --no-cov -q)
 else
-    CMD=(pytest --no-cov "${PYTEST_ARGS[@]}")
+    CMD=(pytest -o "cache_dir=/tmp/.pytest_cache" --no-cov "${PYTEST_ARGS[@]}")
 fi
 
 echo "==> Running ${CMD[*]} in $IMAGE"

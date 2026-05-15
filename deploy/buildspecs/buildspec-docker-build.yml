@@ -97,9 +97,19 @@ phases:
             BUILD_CONTEXT="."
             BASE_IMAGE_TYPE="python"
             ;;
+          test-harness)
+            # Local-developer test harness (issue #195 P2). Separate
+            # ECR repo per ADR-076.1 -- tier=non-production must NOT
+            # share a registry path with production images. Python
+            # 3.12 because the codebase uses PEP 701 f-strings.
+            ECR_REPO_NAME="${PROJECT_NAME}-test-harness-${ENVIRONMENT}"
+            DOCKERFILE="deploy/docker/test-harness/Dockerfile.test-harness"
+            BUILD_CONTEXT="."
+            BASE_IMAGE_TYPE="python-3.12"
+            ;;
           *)
             echo "ERROR: Unknown build target: $BUILD_TARGET"
-            echo "Valid targets: api, dnsmasq, frontend, agent-orchestrator, agent, sandbox, memory-service, memory-service-cpu, meta-orchestrator"
+            echo "Valid targets: api, dnsmasq, frontend, agent-orchestrator, agent, sandbox, memory-service, memory-service-cpu, meta-orchestrator, test-harness"
             exit 1
             ;;
         esac
@@ -121,6 +131,17 @@ phases:
             BASE_IMAGE_TAG="3.11-slim"
             BASE_IMAGE_ARG="PYTHON_BASE_IMAGE"
             FALLBACK_IMAGE="public.ecr.aws/docker/library/python:3.11-slim"
+            ;;
+          python-3.12)
+            # Test-harness only (issue #195 P1). Same ECR repository
+            # as ``python`` but different tag -- the ECR lifecycle
+            # policy already accepts both ``3.11-*`` and ``3.12-*``
+            # tag prefixes (see
+            # ``deploy/cloudformation/ecr-base-images.yaml``).
+            BASE_IMAGE_OUTPUT="PythonRepositoryUri"
+            BASE_IMAGE_TAG="3.12-slim"
+            BASE_IMAGE_ARG="PYTHON_BASE_IMAGE"
+            FALLBACK_IMAGE="public.ecr.aws/docker/library/python:3.12-slim"
             ;;
           alpine)
             BASE_IMAGE_OUTPUT="AlpineRepositoryUri"

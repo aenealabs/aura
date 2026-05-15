@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.X - ECR Test Harness (Non-Production Image Registry; issue #195 P2)'
+
+# Non-production ECR repository for the local-developer test harness
+# (``deploy/docker/test-harness/Dockerfile.test-harness``). Kept in
+# its own template + repository per ADR-076.1: the test harness
+# carries a ``tier=non-production`` OCI label / Sigstore predicate
+# field, and the registry path must reflect that to preserve audit
+# clarity around production-tier attestations.
+#
+# Deployment of THIS template is gated on the issue #195 P2 work
+# (live-AWS validation paused per ``docs/DEFERRED_WORK_REGISTRY.md``).
+# The template merges into ``main`` so the infra is reviewable; deploy
+# follows when the cost gate lifts.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  TestHarnessRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      # ``-test-harness-`` segment makes the non-production tier
+      # explicit at the registry path. Auditors filtering Rekor on
+      # ``aenealabs.com/aura-`` repos can drop anything matching
+      # ``aura-test-harness-`` to scope to production images only.
+      RepositoryName: !Sub '${ProjectName}-test-harness-${Environment}'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 5 tagged images (test harness images are large and turn over frequently)",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["latest", "dev", "qa", "v"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Delete untagged images older than 7 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 7
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: test-harness
+        - Key: Tier
+          Value: non-production
+        - Key: Layer
+          Value: '4'
+        - Key: ADR
+          Value: ADR-076.1
+
+Outputs:
+  RepositoryUri:
+    Description: ECR Repository URI for the non-production test-harness image
+    Value: !GetAtt TestHarnessRepository.RepositoryUri
+    Export:
+      Name: !Sub '${ProjectName}-ecr-test-harness-${Environment}-RepositoryUri'
+
+  RepositoryArn:
+    Description: ECR Repository ARN
+    Value: !GetAtt TestHarnessRepository.Arn
+    Export:
+      Name: !Sub '${ProjectName}-ecr-test-harness-${Environment}-RepositoryArn'
+
+  RepositoryName:
+    Description: ECR Repository name
+    Value: !Ref TestHarnessRepository
+    Export:
+      Name: !Sub '${ProjectName}-ecr-test-harness-${Environment}-RepositoryName'

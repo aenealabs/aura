@@ -1,0 +1,66 @@
+# Project Aura - Root Build-Context Ignore Rules
+#
+# All Dockerfiles under ``deploy/docker/`` build with the repo root as
+# context (`docker build -f <subdir>/Dockerfile.X .`). Without this
+# file, ``COPY .`` or wildcards risk pulling secrets, local state, and
+# build artifacts into the image layer (even if they're never
+# referenced, they're tarred up and shipped to the daemon and can leak
+# via image inspection or shared layer caches).
+#
+# Per the 2026-05-14 ultrareview (Tara's container-policy pass): verify
+# no .env, .aws/, or *.pem can land in any Docker build context. The
+# .dockerignore in deploy/docker/test-harness/ is a duplicate set of
+# rules for anyone who builds from that subdir directly.
+
+# Credentials / secrets
+.env
+.env.*
+.aws/
+.kube/
+.ssh/
+*.pem
+*.key
+*.cer
+*.p12
+credentials
+credentials.json
+service-account.json
+.npmrc
+
+# Local Python / Node state
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Worktrees / agent state (large + irrelevant to every image)
+.claude/worktrees/
+
+# Git history (ship the working tree, not the full history;
+# Dockerfiles that actually need git history use a build arg).
+.git/
+.gitignore
+
+# Frontend dev artifacts
+frontend/build/
+frontend/dist/
+frontend/.vite/

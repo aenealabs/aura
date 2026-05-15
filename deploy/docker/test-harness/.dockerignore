@@ -1,0 +1,53 @@
+# Project Aura - Test Harness Build Context
+#
+# This file lives in the test-harness directory, but the build runs
+# from the repo root (see ``scripts/run-tests-in-container.sh``), so
+# we duplicate the prevention rules here as a defense-in-depth guard.
+# If anyone runs ``podman build .`` from the test-harness dir directly,
+# this file applies; if they run from the repo root, the repo-root
+# ``.dockerignore`` applies. Either way, secrets stay out of the
+# build context.
+#
+# Per Tara's 2026-05-14 container-policy review: confirm no .env,
+# .aws/, or *.pem can land in the build context.
+
+# Credentials / secrets
+.env
+.env.*
+.aws/
+.kube/
+.ssh/
+*.pem
+*.key
+*.cer
+*.p12
+credentials
+credentials.json
+service-account.json
+
+# Local state
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Container artifacts that shouldn't recursively land in a child build
+.claude/worktrees/

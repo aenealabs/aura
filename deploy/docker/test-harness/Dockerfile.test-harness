@@ -1,5 +1,26 @@
 # Project Aura - Linux Test Harness Container
 #
+# ============================================================================
+# SCOPE: LOCAL-DEV ONLY -- DO NOT BAKE INTO SHARED IMAGES UNTIL ISSUE #195
+# CLOSES.
+#
+# This image is intentionally built fresh by each developer (no registry
+# push) and pinned with minor-version constraints on
+# ``requirements-test-extras.txt`` rather than ``--require-hashes``. That's
+# acceptable for the per-dev local-build model because the residual
+# attack surface (compromised upstream wheel in a pinned minor range
+# executing as UID 1000 against an RW bind-mount) is Medium severity --
+# Sally's 2026-05-14 supply-chain review.
+#
+# Issue #195 tracks the Phase 2 promotion that lands the missing
+# controls: private ECR base, CI-built shared image, hash-pinned
+# dependencies, RO bind-mount + tmpfs for pytest write paths, SBOM +
+# Sigstore via ADR-076. Until that issue closes, treat this image as
+# a personal-dev artifact, NOT a shared one. Do NOT push it to any
+# registry, do NOT bake it into a CI base image, do NOT reuse layers
+# from it in a production build.
+# ============================================================================
+#
 # Local-developer test harness that runs the pytest suite on a Linux
 # runtime. Purpose: close the ~6,576 macOS-fork test skips caused by
 # darwin's Objective-C runtime forbidding ``fork()`` after torch loads
@@ -54,7 +75,14 @@
 # ``src/services/community_summarization_service.py:474``). The
 # project's ``requires-python = ">=3.11"`` pin in pyproject.toml is
 # laxer than the code actually supports; tighten that separately.
-ARG PYTHON_BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim
+#
+# Pinned by digest, not floating tag, so a malicious or accidental
+# retag of ``:3.12-slim`` upstream can't change what every developer
+# pulls on next rebuild. Bump the digest deliberately when picking
+# up a new Python patch release; verify the new digest with
+# ``podman inspect public.ecr.aws/docker/library/python:3.12-slim
+# --format '{{ .Digest }}'``.
+ARG PYTHON_BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim@sha256:bf73779de6dbd030f3d189eeeb246286965832761ace318c1518300f76c0840d
 
 FROM ${PYTHON_BASE_IMAGE} AS harness
 
@@ -83,27 +111,19 @@ WORKDIR /workspace
 
 # Stage the requirement files first so the dependency layer is cached
 # across code edits (Dockerfile-best-practice ordering).
-#
-# Pre-existing latent conflict in ``requirements.txt``:
-#   * ``pydantic>=2.13.4`` (line 40)
-#   * ``moto[all]>=5.0.0`` (line 74) -> transitively requires
-#     ``cfn-lint`` -> ``aws-sam-translator==1.109.0`` -> ``pydantic~=2.12.5``
-# The local dev env hides this because it accumulated packages
-# incrementally; a clean install (CI, this container) hits a pip
-# resolver error. Using ``--use-deprecated=legacy-resolver`` mirrors
-# the accumulated-state install path: pip warns about the conflict but
-# installs the explicit pin (pydantic 2.13.x) and lets the transitive
-# constraint slide. This is exactly the same state the host has been
-# running tests against, so the harness reproduces the same behavior.
-#
-# A proper fix belongs in a separate change to the requirements file
-# (either drop the ``pydantic`` pin or pin ``aws-sam-translator`` to a
-# version with a broader range, e.g. 1.106.0).
 COPY requirements.txt requirements-test-extras.txt /tmp/req/
-RUN pip install --no-cache-dir --use-deprecated=legacy-resolver \
-        -r /tmp/req/requirements.txt \
-    && pip install --no-cache-dir --use-deprecated=legacy-resolver \
-        -r /tmp/req/requirements-test-extras.txt
+RUN pip install --no-cache-dir -r /tmp/req/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/req/requirements-test-extras.txt
+
+# Run-time user. The harness ran as root on first cut, which is
+# acceptable for a never-pushed local-dev image but unnecessary --
+# pytest doesn't need privileged ops, and any test or transitively-
+# imported module that misbehaves now lacks the ability to chown the
+# repo, edit ``.git/hooks``, or write outside ``/workspace``. UID
+# 1000 matches the typical macOS / Linux developer UID so bind-mount
+# perms align without ``--user`` gymnastics.
+RUN useradd --create-home --uid 1000 --shell /bin/bash aura
+USER aura
 
 # Default command runs the suite with coverage off; callers can override.
 # The repo is expected to be bind-mounted at /workspace at run time --

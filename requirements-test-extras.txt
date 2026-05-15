@@ -16,16 +16,22 @@
 #    4  cairosvg              - SVG-rendering tests
 #    1  hdbscan               - one HDBSCAN clustering test
 
-mypy-boto3-dynamodb
-kubernetes
-opentelemetry-api
-opentelemetry-sdk
-opentelemetry-instrumentation
-cairosvg
-hdbscan
+# Minor-version pins (``>=X.Y,<X.(Y+N)``) bound the supply-chain blast
+# radius of a compromised upstream package without forcing weekly
+# Dependabot churn for patch releases. Versions chosen against the
+# 2026-05-14 harness build (commit 3d33efc). Bump deliberately when
+# picking up a new feature; the test harness rebuilds on every minor
+# bump.
+mypy-boto3-dynamodb>=1.43.0,<1.50
+kubernetes>=35.0.0,<37
+opentelemetry-api>=1.41.0,<1.45
+opentelemetry-sdk>=1.41.0,<1.45
+opentelemetry-instrumentation>=0.62b1,<0.66
+cairosvg>=2.9.0,<3.0
+hdbscan>=0.8.43,<0.9
 # email-validator: pydantic[email] runtime dep; production code uses
 # EmailStr in API models (src/api/team_endpoints.py, dashboard models).
 # Without it, collection of any test that touches those models errors
 # with "email-validator is not installed". Host has it via accumulated
 # state; harness needs to declare it explicitly.
-email-validator
+email-validator>=2.3.0,<3.0

@@ -41,6 +41,17 @@ NGINX_SOURCE="public.ecr.aws/docker/library/nginx:${NGINX_VERSION}"
 PYTHON_VERSION="3.11-slim"
 PYTHON_SOURCE="public.ecr.aws/docker/library/python:${PYTHON_VERSION}"
 
+# Additional Python variant for the local-developer test harness
+# (``deploy/docker/test-harness/Dockerfile.test-harness``). The harness
+# needs 3.12 because the codebase uses Python 3.12-only syntax in at
+# least one file (PEP 701 f-strings with backslashes in
+# ``src/services/community_summarization_service.py:474``). Production
+# services still run on 3.11 -- the CloudFormation lifecycle policy
+# under ``deploy/cloudformation/ecr-base-images.yaml`` already accepts
+# both ``3.11-*`` and ``3.12-*`` tags. Issue #195 P1.
+PYTHON_HARNESS_VERSION="3.12-slim"
+PYTHON_HARNESS_SOURCE="public.ecr.aws/docker/library/python:${PYTHON_HARNESS_VERSION}"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -184,7 +195,8 @@ main() {
     log_info "  - Alpine: ${ALPINE_VERSION}"
     log_info "  - Node.js: ${NODE_VERSION}"
     log_info "  - Nginx: ${NGINX_VERSION}"
-    log_info "  - Python: ${PYTHON_VERSION}"
+    log_info "  - Python: ${PYTHON_VERSION} (production services)"
+    log_info "  - Python: ${PYTHON_HARNESS_VERSION} (test harness only; #195 P1)"
 
     # Detect container runtime
     RUNTIME=$(detect_runtime)
@@ -215,6 +227,11 @@ main() {
     bootstrap_image "node" "${NODE_SOURCE}" "${NODE_VERSION}" "${NODE_ECR_URI}"
     bootstrap_image "nginx" "${NGINX_SOURCE}" "${NGINX_VERSION}" "${NGINX_ECR_URI}"
     bootstrap_image "python" "${PYTHON_SOURCE}" "${PYTHON_VERSION}" "${PYTHON_ECR_URI}"
+    # Second Python variant for the test harness. Same ECR repo
+    # (lifecycle policy already accepts ``3.11-*`` and ``3.12-*`` tag
+    # prefixes); just a different tag pushed into the existing repo
+    # so the harness can consume a hardened base. Issue #195 P1.
+    bootstrap_image "python" "${PYTHON_HARNESS_SOURCE}" "${PYTHON_HARNESS_VERSION}" "${PYTHON_ECR_URI}"
 
     log_info "=========================================="
     log_info "Bootstrap Complete!"
@@ -224,6 +241,7 @@ main() {
     log_info "  ${NODE_ECR_URI}:${NODE_VERSION}"
     log_info "  ${NGINX_ECR_URI}:${NGINX_VERSION}"
     log_info "  ${PYTHON_ECR_URI}:${PYTHON_VERSION}"
+    log_info "  ${PYTHON_ECR_URI}:${PYTHON_HARNESS_VERSION}"
     log_info ""
     log_info "Use in Dockerfiles with ARG pattern:"
     log_info "  ARG NODE_BASE_IMAGE_URI=public.ecr.aws/docker/library/node:20-alpine"

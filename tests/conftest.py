@@ -298,8 +298,6 @@ def _set_provenance_hmac_keys():
     yield
 
 
-
-
 # =============================================================================
 # Lambda Test Isolation Fixtures
 # =============================================================================
@@ -782,6 +780,48 @@ def mock_lambda(aws_credentials):
 # =============================================================================
 
 
+def _run_sys_modules_lint_warn(config: pytest.Config) -> None:
+    """Run the #194-class AST lint and print any findings as warnings.
+
+    Imported lazily to keep ``pytest_configure`` light when the lint
+    module is missing (e.g. trimmed-down test runner). Findings are
+    printed to the terminal writer so they're visible alongside
+    pytest's own collection messages.
+    """
+    try:
+        from tests._lint_sys_modules import find_all_violations
+    except Exception:
+        # Lint module isn't shipped in this checkout -- non-fatal.
+        return
+
+    tests_root = Path(__file__).resolve().parent
+    try:
+        violations = find_all_violations(tests_root)
+    except Exception:
+        # Defensive: never let the lint take down test collection.
+        return
+    if not violations:
+        return
+
+    # Plain stderr (config.get_terminal_writer() isn't ready during
+    # pytest_configure -- the terminal reporter plugin hasn't been
+    # wired in yet). Cap output so a noisy run doesn't dominate the
+    # terminal; the full list is reproducible via
+    # ``python -m tests._lint_sys_modules tests/``.
+    print(
+        f"\nAURA194 lint: {len(violations)} module-collection-time "
+        "sys.modules mutation(s) detected (warn-only; see "
+        "tests/_lint_sys_modules.py)",
+        file=sys.stderr,
+    )
+    cap = 5
+    for v in violations[:cap]:
+        print(f"  {v.path}:{v.lineno}: {v.reason}", file=sys.stderr)
+    if len(violations) > cap:
+        print(f"  ... {len(violations) - cap} more", file=sys.stderr)
+    print("", file=sys.stderr)
+
+
 def pytest_configure(config):
     """Register custom markers and capture initial sys.modules state."""
     global _initial_modules
@@ -807,6 +847,23 @@ def pytest_configure(config):
         "markers",
         "subprocess_isolated: tests requiring fresh subprocess isolation (spawn-safe)",
     )
+
+    # Issue #194 regression guard: AST-scan the tests/ tree for
+    # module-collection-time ``sys.modules`` mutations / ``importlib.
+    # reload`` calls. These caused the multi-hour bisection in #194
+    # (``del sys.modules["src.services.bedrock_llm_service"]`` at top
+    # level in ``tests/test_bedrock_llm_edge_cases.py`` left
+    # ``bedrock_adapter``'s cached ``BedrockMode`` reference stale
+    # relative to fresh re-imports in later tests, breaking an enum-
+    # identity comparison).
+    #
+    # WARN MODE: prints findings during session-start; does not fail.
+    # 151 legacy violations exist as of 2026-05-14; a separate
+    # follow-up will migrate to STRICT (fail-on-new) once those are
+    # drained or grandfathered via the ``# noqa: AURA194`` marker. The
+    # lint accepts the marker on the offending line for one-off
+    # exceptions; see ``tests/_lint_sys_modules.py`` for the API.
+    _run_sys_modules_lint_warn(config)
 
 
 # =============================================================================

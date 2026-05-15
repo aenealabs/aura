@@ -144,9 +144,20 @@ for mod_name, original in _original_modules.items():
         # Module wasn't present before - remove the mock to prevent pollution
         del sys.modules[mod_name]
 
-# Also remove the bedrock_llm_service from cache so other tests reimport fresh
-if "src.services.bedrock_llm_service" in sys.modules:
-    del sys.modules["src.services.bedrock_llm_service"]
+# Note: do NOT ``del sys.modules["src.services.bedrock_llm_service"]`` here.
+# An earlier version did, with the rationale "so other tests reimport fresh."
+# That deletion runs at module-collection time in the PARENT process and
+# turned out to be the root cause of issue #194's last residual: it leaves
+# ``bedrock_adapter``'s module-level ``BedrockMode`` reference pointing at
+# the OLD enum class while any subsequent test that does
+# ``from src.services.bedrock_llm_service import BedrockMode`` triggers a
+# fresh import and gets a NEW enum class. ``BedrockMode.AWS`` from the two
+# classes compare ``!=`` (plain ``Enum`` members are identity-compared) and
+# ``mock.assert_called_once_with(mode=BedrockMode.AWS)`` raises
+# ``Differing items: {'mode': <BedrockMode.AWS: 'aws'>} !=
+# {'mode': <BedrockMode.AWS: 'aws'>}``. This file is already
+# ``pytest.mark.forked`` so its own tests run in subprocesses and don't
+# need parent-process cache invalidation.
 
 
 # =============================================================================

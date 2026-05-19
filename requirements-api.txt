@@ -33,7 +33,7 @@ uvicorn>=0.32.0              # ASGI server
 httpx>=0.28.1                # HTTP client
 pydantic>=2.13.4             # Data validation
 email-validator>=2.3.0       # Email validation for Pydantic
-python-multipart>=0.0.20     # Form data support
+python-multipart>=0.0.29     # Form data support
 
 # Async HTTP Client (Enterprise Integrations)
 aiohttp>=3.13.5              # ServiceNow, Splunk, Terraform Cloud, etc.

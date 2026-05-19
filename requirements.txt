@@ -75,7 +75,7 @@ moto[all]>=5.0.0        # AWS service mocking for tests
 
 # CloudFormation validation (for infrastructure deployment)
 cfn-lint>=1.51.0
-PyYAML>=6.0.2
+PyYAML>=6.0.3
 
 # Code Quality (Optional)
 black==26.3.1

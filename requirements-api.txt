@@ -46,7 +46,7 @@ python-dotenv>=1.2.2         # Environment variable loading
 networkx>=3.6.1              # Graph processing (lightweight, used in API)
 
 # YAML Support (config parsing)
-PyYAML>=6.0.2
+PyYAML>=6.0.3
 
 # Multi-vendor LLM providers. OpenAI is the public-API path for direct
 # OpenAI usage (Azure OpenAI is a separate transport handled by

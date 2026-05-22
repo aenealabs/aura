@@ -225,8 +225,16 @@ class QualysConnector(ExternalToolConnector):
             logger.error(f"Failed to parse XML: {e}")
             return {"error": str(e), "raw": xml_text[:500]}
 
-    def _element_to_dict(self, element: ET.Element) -> dict[str, Any]:
-        """Convert XML element to dictionary."""
+    def _element_to_dict(self, element: ET.Element) -> Any:
+        """Convert XML element to dict (or plain string for leaf-text elements).
+
+        Leaf elements containing only text return the string directly so
+        downstream Qualys-response navigation (``.get("TITLE", "")``,
+        ``int(.get("SEVERITY", 1))``, etc.) continues to work. Elements
+        with children OR attributes return a dict; mixed content uses
+        ``#text`` for the inline text alongside child keys.
+        Issue #223 wave 4.
+        """
         result: dict[str, Any] = {}
 
         # Add element attributes
@@ -246,14 +254,17 @@ class QualysConnector(ExternalToolConnector):
                 result[child.tag] = child_data
 
         # Add text content
-        if element.text and element.text.strip():
+        text = element.text.strip() if element.text else ""
+        if text:
             if result:
-                result["#text"] = element.text.strip()
+                # Mixed content -- text alongside children/attributes.
+                result["#text"] = text
             else:
-                # Return dict with text content to maintain consistent return type
-                return {"#text": element.text.strip()}
+                # Pure leaf -- return the string directly so downstream
+                # ``.get("FIELD", "")`` consumers get a string, not a dict.
+                return text
 
-        return result if result else {}
+        return result
 
     # =========================================================================
     # Vulnerability Knowledge Base

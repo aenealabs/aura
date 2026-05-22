@@ -37,12 +37,23 @@ if platform.system() != "Linux":
 
 @pytest.fixture
 def mock_user():
-    """Create a mock authenticated user."""
+    """Create a mock authenticated user.
+
+    The User model in src/api/auth.py uses ``sub`` (Cognito user id),
+    not ``user_id`` -- endpoints route on ``user.sub`` and
+    ``user.groups``. Issue #223 wave 4 fix: align the mock with the
+    real model so Pydantic V2's tightened str-type validation accepts
+    the response payload (previously the endpoint passed
+    ``MagicMock().sub`` -- an unset attribute returning a MagicMock --
+    into Pydantic, which V1 coerced but V2 rejects).
+    """
     user = MagicMock()
-    user.user_id = "user-123"
+    user.sub = "user-123"
+    user.user_id = "user-123"  # retained for tests that reference both
     user.organization_id = "org-456"
     user.email = "test@example.com"
     user.is_admin = False
+    user.groups = []
     return user
 
 
@@ -50,10 +61,12 @@ def mock_user():
 def admin_user():
     """Create a mock admin user."""
     user = MagicMock()
+    user.sub = "admin-001"
     user.user_id = "admin-001"
     user.organization_id = "org-456"
     user.email = "admin@example.com"
     user.is_admin = True
+    user.groups = ["admin"]
     return user
 
 

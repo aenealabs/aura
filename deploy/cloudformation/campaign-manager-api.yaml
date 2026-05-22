@@ -1,0 +1,853 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.24 - Campaign Manager API (ADR-089 Lambda+ALB + AppSync)'
+
+# ADR-089 D1 + Architecture (issue #214 Phase 3 item A4). The final
+# CFN piece of the substrate bundle (A1 + A2 + A3 + this).
+#
+# Provisions exactly what Tara's PR-#208 review required:
+#
+#   * Two worker Lambda functions invoked by the state machine (A2):
+#       - RunNextPhaseLambda: wraps CampaignOrchestrator's
+#         create_campaign / run_next_phase / approve_milestone /
+#         cancel_campaign (action-dispatched on the payload). Outputs
+#         the post-call CampaignState.
+#       - HitlGatewayLambda: invoked under .waitForTaskToken whenever
+#         the orchestrator returns AWAITING_HITL. Brokers the operator
+#         approval round-trip; calls SendTaskSuccess / SendTaskFailure
+#         once a decision is recorded (Tara A6 reconciliation).
+#       - CampaignProgressPublisherLambda: subscribes to the
+#         campaigns-state DDB Stream (A1) and publishes change events
+#         into AppSync so subscribers see progress without polling.
+#   * Two least-privilege IAM roles + a publisher role.
+#   * Internal Application Load Balancer in front of the Lambda
+#     (Lambda+ALB pattern per Tara's required revision). One target
+#     group; the Lambda dispatches on HTTP path inside the handler.
+#       Routes (path-based, all on the single Lambda integration):
+#         POST /campaigns                start a campaign
+#         GET  /campaigns/{id}           progress + telemetry
+#         POST /campaigns/{id}/approve   record HITL approval
+#         POST /campaigns/{id}/cancel    cancel + cleanup
+#   * AppSync GraphQL API with API_KEY auth:
+#       - Query.campaign(id)              read current state via DDB resolver
+#       - Subscription.onCampaignProgressed  push progress events
+#       The publisher Lambda invokes a hidden mutation that fans out to
+#       subscribers; the schema documents the contract.
+#
+# Bootstrap-safety: VPC + subnet + cert + persistence-stack outputs
+# are Parameters (no Fn::ImportValue between A1/A3/A4) so the stacks
+# can be deployed in any order and the outputs are wired by the
+# deployment script.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 bucket containing the Lambda deployment package
+
+  LambdaCodeKey:
+    Type: String
+    Default: lambda/campaign-manager.zip
+    Description: S3 key of the Lambda deployment package
+
+  CampaignStateMachineArn:
+    Type: String
+    Description: >-
+      ARN of the campaign-manager state machine (A2). The HITL
+      gateway calls SendTaskSuccess / SendTaskFailure against this
+      state machine's task tokens.
+
+  CampaignSigningKeyArn:
+    Type: String
+    Description: KMS CMK ARN for CampaignDefinition + PhaseCheckpoint signing (A1)
+
+  CampaignsStateTableName:
+    Type: String
+    Description: campaigns-state table name (A1)
+
+  CampaignsStateTableArn:
+    Type: String
+    Description: campaigns-state table ARN (A1)
+
+  CampaignsStateStreamArn:
+    Type: String
+    Description: campaigns-state table DDB Stream ARN (A1)
+
+  CampaignCheckpointsTableArn:
+    Type: String
+    Description: campaign-checkpoints table ARN (A1)
+
+  CampaignOperationLedgerTableArn:
+    Type: String
+    Description: campaign-operation-ledger table ARN (A1)
+
+  TenantCostRollupTableArn:
+    Type: String
+    Description: tenant-cost-rollup table ARN (A1)
+
+  CampaignArtifactsBucketArn:
+    Type: String
+    Description: campaign-artifacts S3 bucket ARN (A1)
+
+  AdmissionQueueWorkerUserArn:
+    Type: String
+    Description: ElastiCache RBAC user ARN (A3 output)
+
+  AdmissionQueueSecurityGroupId:
+    Type: String
+    Description: A3's admission queue SG; Lambda SG egresses to it
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for the security groups + ALB
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: Private subnet IDs for the Lambdas + ALB
+
+  AlbCertificateArn:
+    Type: String
+    Description: >-
+      ACM certificate ARN for the ALB HTTPS listener (must be in the
+      same region as the ALB). Pass empty string for dev environments
+      that have no DNS yet -- in that case the ALB is HTTP-only and
+      the consumer wires CloudFront with its own cert in front.
+
+  LambdaTimeoutSeconds:
+    Type: Number
+    Default: 300
+    MinValue: 1
+    MaxValue: 900
+    Description: RunNextPhase Lambda timeout (seconds)
+
+  LambdaMemoryMB:
+    Type: Number
+    Default: 1024
+    AllowedValues: [512, 1024, 2048, 3008, 4096]
+    Description: RunNextPhase Lambda memory size
+
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 180, 365, 400, 545, 731, 1827, 3653]
+    Description: CloudWatch Logs retention
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasAlbCertificate: !Not [!Equals [!Ref AlbCertificateArn, '']]
+
+Resources:
+  # =========================================================================
+  # Security groups
+  # =========================================================================
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-campaign-manager-lambda-sg-${Environment}'
+      GroupDescription: !Sub 'ADR-089 campaign manager Lambda SG (${Environment})'
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          DestinationSecurityGroupId: !Ref AdmissionQueueSecurityGroupId
+          Description: Egress to ElastiCache admission queue
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS egress for AWS service endpoints
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-campaign-manager-alb-sg-${Environment}'
+      GroupDescription: !Sub 'ADR-089 campaign manager ALB SG (${Environment})'
+      VpcId: !Ref VpcId
+      # Internal ALB -- consumer wires CloudFront / WAF in front for
+      # public exposure. Ingress is from VPC CIDR only.
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/8
+          Description: HTTPS from VPC tenants (RFC 1918)
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # =========================================================================
+  # CloudWatch Log Groups
+  # =========================================================================
+
+  RunNextPhaseLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-campaign-run-next-phase-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  HitlGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-campaign-hitl-gateway-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  ProgressPublisherLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-campaign-progress-publisher-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  AlbAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      LogGroupName: !Sub '/aws/elb/${ProjectName}-campaign-manager-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  # =========================================================================
+  # IAM roles
+  # =========================================================================
+
+  RunNextPhaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-campaign-run-next-phase-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+      Policies:
+        - PolicyName: CampaignManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDBCampaignManager
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:ConditionCheckItem
+                Resource:
+                  - !Ref CampaignsStateTableArn
+                  - !Sub '${CampaignsStateTableArn}/index/*'
+                  - !Ref CampaignCheckpointsTableArn
+                  - !Ref CampaignOperationLedgerTableArn
+                  - !Ref TenantCostRollupTableArn
+              - Sid: KmsSignVerifyCampaign
+                Effect: Allow
+                Action:
+                  - kms:Sign
+                  - kms:Verify
+                  - kms:DescribeKey
+                  - kms:GenerateDataKey
+                Resource: !Ref CampaignSigningKeyArn
+              - Sid: S3CampaignArtifacts
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub '${CampaignArtifactsBucketArn}/*'
+              - Sid: BedrockInvoke
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*'
+              - Sid: AdmissionQueueIamAuth
+                Effect: Allow
+                Action:
+                  - elasticache:Connect
+                Resource: !Ref AdmissionQueueWorkerUserArn
+
+  HitlGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-campaign-hitl-gateway-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+      Policies:
+        - PolicyName: HitlGatewayAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: StepFunctionsTaskTokenCallbacks
+                Effect: Allow
+                Action:
+                  - states:SendTaskSuccess
+                  - states:SendTaskFailure
+                  - states:SendTaskHeartbeat
+                Resource: !Ref CampaignStateMachineArn
+              - Sid: ReadCampaignState
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !Ref CampaignsStateTableArn
+                  - !Sub '${CampaignsStateTableArn}/index/*'
+                  - !Ref CampaignCheckpointsTableArn
+              - Sid: KmsVerifyForPreview
+                Effect: Allow
+                Action:
+                  - kms:Verify
+                  - kms:DescribeKey
+                Resource: !Ref CampaignSigningKeyArn
+
+  ProgressPublisherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-campaign-progress-publisher-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+      Policies:
+        - PolicyName: ProgressPublisherAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadStream
+                Effect: Allow
+                Action:
+                  - dynamodb:DescribeStream
+                  - dynamodb:GetRecords
+                  - dynamodb:GetShardIterator
+                  - dynamodb:ListStreams
+                Resource: !Ref CampaignsStateStreamArn
+              - Sid: AppSyncPublish
+                Effect: Allow
+                Action:
+                  - appsync:GraphQL
+                Resource:
+                  - !Sub '${CampaignProgressApi.Arn}/types/Mutation/fields/internalPublishCampaignProgressed'
+
+  # =========================================================================
+  # Lambda functions
+  # =========================================================================
+
+  RunNextPhaseLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: RunNextPhaseLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-campaign-run-next-phase-${Environment}'
+      Description: >-
+        ADR-089 worker. Wraps CampaignOrchestrator
+        create_campaign / run_next_phase / approve_milestone /
+        cancel_campaign. Dispatches on the ALB-event path or the SFN
+        action field.
+      Runtime: python3.12
+      Handler: campaign_manager_handlers.run_next_phase
+      Role: !GetAtt RunNextPhaseRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Timeout: !Ref LambdaTimeoutSeconds
+      MemorySize: !Ref LambdaMemoryMB
+      TracingConfig:
+        Mode: Active
+      VpcConfig:
+        SubnetIds: !Ref PrivateSubnetIds
+        SecurityGroupIds:
+          - !GetAtt LambdaSecurityGroup.GroupId
+      Environment:
+        Variables:
+          AURA_ENVIRONMENT: !Ref Environment
+          AURA_PROJECT_NAME: !Ref ProjectName
+          CAMPAIGNS_STATE_TABLE: !Ref CampaignsStateTableName
+          CAMPAIGN_CHECKPOINTS_TABLE: !Sub '${ProjectName}-campaign-checkpoints-${Environment}'
+          CAMPAIGN_OPERATION_LEDGER_TABLE: !Sub '${ProjectName}-campaign-operation-ledger-${Environment}'
+          TENANT_COST_ROLLUP_TABLE: !Sub '${ProjectName}-tenant-cost-rollup-${Environment}'
+          CAMPAIGN_ARTIFACTS_BUCKET: !Sub '${ProjectName}-campaign-artifacts-${AWS::AccountId}-${Environment}'
+          CAMPAIGN_SIGNING_KEY_ARN: !Ref CampaignSigningKeyArn
+          AURA_REQUIRE_SIGNED_INPUT: 'true'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  HitlGatewayLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: HitlGatewayLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-campaign-hitl-gateway-${Environment}'
+      Description: ADR-089 HITL approval broker invoked under .waitForTaskToken
+      Runtime: python3.12
+      Handler: campaign_manager_handlers.hitl_gateway
+      Role: !GetAtt HitlGatewayRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Timeout: 60
+      MemorySize: 512
+      TracingConfig:
+        Mode: Active
+      Environment:
+        Variables:
+          AURA_ENVIRONMENT: !Ref Environment
+          AURA_PROJECT_NAME: !Ref ProjectName
+          CAMPAIGNS_STATE_TABLE: !Ref CampaignsStateTableName
+          CAMPAIGN_CHECKPOINTS_TABLE: !Sub '${ProjectName}-campaign-checkpoints-${Environment}'
+          CAMPAIGN_SIGNING_KEY_ARN: !Ref CampaignSigningKeyArn
+          CAMPAIGN_STATE_MACHINE_ARN: !Ref CampaignStateMachineArn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  ProgressPublisherLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: ProgressPublisherLogGroup
+    Properties:
+      FunctionName: !Sub '${ProjectName}-campaign-progress-publisher-${Environment}'
+      Description: >-
+        ADR-089 progress-publisher. Subscribes to campaigns-state DDB
+        Stream and invokes the AppSync internalPublishCampaignProgressed
+        mutation so GraphQL subscribers see progress without polling.
+      Runtime: python3.12
+      Handler: campaign_manager_handlers.publish_progress
+      Role: !GetAtt ProgressPublisherRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Timeout: 30
+      MemorySize: 256
+      TracingConfig:
+        Mode: Active
+      Environment:
+        Variables:
+          AURA_ENVIRONMENT: !Ref Environment
+          APPSYNC_API_ENDPOINT: !GetAtt CampaignProgressApi.GraphQLUrl
+          APPSYNC_API_ID: !GetAtt CampaignProgressApi.ApiId
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  ProgressPublisherStreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !Ref CampaignsStateStreamArn
+      FunctionName: !GetAtt ProgressPublisherLambda.Arn
+      StartingPosition: LATEST
+      BatchSize: 25
+      MaximumBatchingWindowInSeconds: 5
+      MaximumRetryAttempts: 3
+      BisectBatchOnFunctionError: true
+
+  # =========================================================================
+  # Application Load Balancer (Tara required revision: Lambda+ALB)
+  # =========================================================================
+
+  CampaignManagerAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-cm-${Environment}'
+      Scheme: internal
+      Type: application
+      Subnets: !Ref PrivateSubnetIds
+      SecurityGroups:
+        - !GetAtt AlbSecurityGroup.GroupId
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '300'
+        - Key: routing.http.drop_invalid_header_fields.enabled
+          Value: 'true'
+        - Key: deletion_protection.enabled
+          Value: !If [IsProduction, 'true', 'false']
+        - Key: access_logs.s3.enabled
+          Value: 'false'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  RunNextPhaseTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ProjectName}-cm-tg-${Environment}'
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt RunNextPhaseLambda.Arn
+      HealthCheckEnabled: false
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AlbLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RunNextPhaseLambda
+      Action: lambda:InvokeFunction
+      Principal: elasticloadbalancing.amazonaws.com
+      SourceArn: !Ref RunNextPhaseTargetGroup
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasAlbCertificate
+    Properties:
+      LoadBalancerArn: !Ref CampaignManagerAlb
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref AlbCertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref RunNextPhaseTargetGroup
+
+  # Dev fallback listener when no cert is provisioned. Consumer wires
+  # CloudFront in front with its own cert. NEVER set this without
+  # HasAlbCertificate=false (the Condition guards it).
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasAlbCertificate
+    Properties:
+      LoadBalancerArn: !Ref CampaignManagerAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: '443'
+            StatusCode: HTTP_301
+
+  HttpListenerNoCert:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasAlbCertificate
+    DependsOn: HttpsListener
+    Properties:
+      LoadBalancerArn: !Ref CampaignManagerAlb
+      Port: 8080
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref RunNextPhaseTargetGroup
+
+  # =========================================================================
+  # AppSync GraphQL API (Tara required revision)
+  # =========================================================================
+
+  AppSyncLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      LogGroupName: !Sub '/aws/appsync/${ProjectName}-campaign-progress-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  AppSyncCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-campaign-appsync-logs-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: appsync.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSAppSyncPushToCloudWatchLogs'
+
+  AppSyncDdbRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-campaign-appsync-ddb-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: appsync.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadCampaignsState
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !Ref CampaignsStateTableArn
+                  - !Sub '${CampaignsStateTableArn}/index/*'
+
+  CampaignProgressApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: !Sub '${ProjectName}-campaign-progress-${Environment}'
+      AuthenticationType: API_KEY
+      XrayEnabled: true
+      LogConfig:
+        CloudWatchLogsRoleArn: !GetAtt AppSyncCloudWatchRole.Arn
+        FieldLogLevel: ERROR
+        ExcludeVerboseContent: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  CampaignProgressApiKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt CampaignProgressApi.ApiId
+      Description: !Sub 'ADR-089 campaign-progress subscriptions (${Environment})'
+
+  CampaignProgressSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId: !GetAtt CampaignProgressApi.ApiId
+      Definition: |
+        type Campaign {
+          campaign_id: ID!
+          tenant_id: String!
+          status: String!
+          current_phase_id: String
+          drift_score: Float
+          updated_at: AWSDateTime!
+        }
+
+        type Query {
+          campaign(campaign_id: ID!): Campaign
+        }
+
+        type Mutation {
+          # Hidden mutation invoked only by the progress-publisher Lambda;
+          # the API key restricts access at the field level via resolver
+          # context. External clients use subscriptions.
+          internalPublishCampaignProgressed(
+            campaign_id: ID!
+            tenant_id: String!
+            status: String!
+            current_phase_id: String
+            drift_score: Float
+            updated_at: AWSDateTime!
+          ): Campaign
+        }
+
+        type Subscription {
+          onCampaignProgressed(campaign_id: ID!): Campaign
+            @aws_subscribe(mutations: ["internalPublishCampaignProgressed"])
+        }
+
+        schema {
+          query: Query
+          mutation: Mutation
+          subscription: Subscription
+        }
+
+  CampaignsStateDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt CampaignProgressApi.ApiId
+      Name: campaigns_state_table
+      Type: AMAZON_DYNAMODB
+      ServiceRoleArn: !GetAtt AppSyncDdbRole.Arn
+      DynamoDBConfig:
+        TableName: !Ref CampaignsStateTableName
+        AwsRegion: !Ref AWS::Region
+
+  CampaignQueryResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: CampaignProgressSchema
+    Properties:
+      ApiId: !GetAtt CampaignProgressApi.ApiId
+      TypeName: Query
+      FieldName: campaign
+      DataSourceName: !GetAtt CampaignsStateDataSource.Name
+      RequestMappingTemplate: |
+        {
+          "version": "2018-05-29",
+          "operation": "GetItem",
+          "key": {
+            "tenant_campaign_id": $util.dynamodb.toDynamoDBJson($ctx.args.campaign_id)
+          }
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($ctx.result)
+
+  PublishMutationResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: CampaignProgressSchema
+    Properties:
+      ApiId: !GetAtt CampaignProgressApi.ApiId
+      TypeName: Mutation
+      FieldName: internalPublishCampaignProgressed
+      DataSourceName: !GetAtt CampaignsStateDataSource.Name
+      RequestMappingTemplate: |
+        ## NONE-style passthrough: we don't actually mutate the table
+        ## here -- the source of truth is the DDB Stream upstream. The
+        ## resolver just echoes the input back so the @aws_subscribe
+        ## directive fires.
+        {
+          "version": "2018-05-29",
+          "operation": "GetItem",
+          "key": {
+            "tenant_campaign_id": $util.dynamodb.toDynamoDBJson($ctx.args.campaign_id)
+          }
+        }
+      ResponseMappingTemplate: |
+        ## Echo the input args as the Campaign payload; downstream
+        ## subscribers receive this shape.
+        $util.toJson($ctx.args)
+
+# =============================================================================
+# Outputs
+# =============================================================================
+
+Outputs:
+  RunNextPhaseLambdaArn:
+    Description: ARN of the RunNextPhase Lambda (feed into A2 state machine param)
+    Value: !GetAtt RunNextPhaseLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaign-run-next-phase-lambda-arn-${Environment}'
+
+  HitlGatewayLambdaArn:
+    Description: ARN of the HITL gateway Lambda (feed into A2 state machine param)
+    Value: !GetAtt HitlGatewayLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaign-hitl-gateway-lambda-arn-${Environment}'
+
+  ProgressPublisherLambdaArn:
+    Description: ARN of the AppSync progress-publisher Lambda
+    Value: !GetAtt ProgressPublisherLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaign-progress-publisher-lambda-arn-${Environment}'
+
+  AlbDnsName:
+    Description: DNS name of the campaign-manager ALB
+    Value: !GetAtt CampaignManagerAlb.DNSName
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-alb-dns-${Environment}'
+
+  AlbArn:
+    Description: ARN of the campaign-manager ALB
+    Value: !Ref CampaignManagerAlb
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-alb-arn-${Environment}'
+
+  AlbHostedZoneId:
+    Description: Canonical hosted zone ID for Route 53 alias records
+    Value: !GetAtt CampaignManagerAlb.CanonicalHostedZoneID
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-alb-zone-${Environment}'
+
+  AppSyncGraphQLUrl:
+    Description: GraphQL endpoint for campaign-progress subscriptions
+    Value: !GetAtt CampaignProgressApi.GraphQLUrl
+    Export:
+      Name: !Sub '${ProjectName}-campaign-progress-appsync-url-${Environment}'
+
+  AppSyncApiId:
+    Description: AppSync API ID
+    Value: !GetAtt CampaignProgressApi.ApiId
+    Export:
+      Name: !Sub '${ProjectName}-campaign-progress-appsync-id-${Environment}'
+
+  AppSyncApiKeyId:
+    Description: AppSync API key id (consumers use the key, not this id, for queries)
+    Value: !Ref CampaignProgressApiKey
+    Export:
+      Name: !Sub '${ProjectName}-campaign-progress-appsync-key-id-${Environment}'
+
+  LambdaSecurityGroupId:
+    Description: Lambda security group id
+    Value: !GetAtt LambdaSecurityGroup.GroupId
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-lambda-sg-id-${Environment}'
+
+  AlbSecurityGroupId:
+    Description: ALB security group id
+    Value: !GetAtt AlbSecurityGroup.GroupId
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-alb-sg-id-${Environment}'

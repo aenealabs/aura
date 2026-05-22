@@ -45,7 +45,7 @@ aiohttp>=3.13.5       # For ServiceNow, Splunk, Terraform Cloud, Snyk, CrowdStri
 
 # Neural Memory / Titan Integration (ADR-024)
 torch>=2.11.0          # For DeepMLPMemory, MIRAS, neural memory backends
-numpy>=2.4.4         # For constraint geometry, memory evolution, semantic guardrails, JEPA
+numpy>=1.26.0,<2.0   # Pinned to 1.x ABI. Dependabot PR #172 (2026-05-14) bumped to >=2.4.4 which broke CI (763 mypy errors + SIGSEGV in tests/services/memory_evolution at 14% mark on Ubuntu CI); native deps (sklearn/hdbscan/torch wheels in CI cache) needed a coordinated rebuild that wasn't done. Real numpy-2.x migration tracked separately; this pin restores CI green.
 
 # Structured Logging (Security/DevOps Agents)
 structlog>=25.5.0     # For security agent orchestrator and devops services

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 from src.services.vulnerability_scanner.analysis.capability import ModelCapabilityTier
@@ -34,6 +34,8 @@ from ..contracts import (
     ArtifactRef,
     CampaignPhase,
     CampaignType,
+    OperationOutcome,
+    OperationStatus,
     PhaseOutcome,
     SuccessCriteriaProgress,
 )
@@ -419,21 +421,47 @@ class PatchGenerationPhase(Phase):
 
         target = context.definition.target or {}
         repo_url = target.get("repo", "")
+        # #214-B3: attempt counter derived from phase-history. The
+        # current state machine treats FAILED as terminal, so attempts
+        # never exceed 1 today; the counter is forward-compatible for
+        # a future retry-from-FAILED mechanism without breaking the
+        # current op-ledger idempotency contract.
+        attempt = (
+            sum(
+                1
+                for entry in context.state.phase_history
+                if entry.phase_id == context.phase.phase_id
+                and entry.outcome
+                in {PhaseOutcome.FAILED, PhaseOutcome.COST_CAP_REACHED}
+            )
+            + 1
+        )
 
         patches: list[GeneratedPatch] = []
         verdicts: list[SandboxVerdict] = []
         failed: list[str] = []
 
         for item in board.remediation_plan.items:
-            op_id = f"patch:{item.item_id}"
+            op_id = f"patch:{item.item_id}:attempt-{attempt}"
             claim = await context.operation_ledger.claim(
+                context.definition.tenant_id,
                 context.definition.campaign_id,
                 context.phase.phase_id,
                 op_id,
             )
-            from ..contracts import OperationStatus  # local to avoid cycles
 
             if claim.status == OperationStatus.ALREADY_EXECUTED:
+                # #214-B1: re-hydrate the blackboard from the prior
+                # outcome's payload so DownstreamPhase sees the patch
+                # set after a crash + retry within the same attempt.
+                if claim.prior_outcome and claim.prior_outcome.payload:
+                    payload = claim.prior_outcome.payload
+                    patch = GeneratedPatch(**payload["patch"])
+                    verdict = SandboxVerdict(**payload["verdict"])
+                    patches.append(patch)
+                    verdicts.append(verdict)
+                    if not verdict.passed:
+                        failed.append(patch.patch_id)
                 continue
 
             patch = await deps.patch_generator.generate(item=item, repo_url=repo_url)
@@ -449,15 +477,18 @@ class PatchGenerationPhase(Phase):
                 context.cost_tracker.record_sandbox_cost(verdict.sandbox_cost_usd)
             verdicts.append(verdict)
 
-            from ..contracts import OperationOutcome
-
             await context.operation_ledger.record_outcome(
+                context.definition.tenant_id,
                 context.definition.campaign_id,
                 context.phase.phase_id,
                 op_id,
                 OperationOutcome(
                     success=verdict.passed,
                     summary=(f"patch={patch.patch_id} passed={verdict.passed}"),
+                    payload={
+                        "patch": asdict(patch),
+                        "verdict": asdict(verdict),
+                    },
                 ),
             )
 

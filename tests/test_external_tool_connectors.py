@@ -6,8 +6,10 @@ Uses mocked HTTP responses to avoid real API calls during testing.
 """
 
 import json
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
 # These tests require pytest-forked for isolation: prior tests in the suite
@@ -17,6 +19,7 @@ import pytest
 # runtime constraint) and required on macOS for torch-tainted suites.
 pytestmark = pytest.mark.forked
 
+from src.services import external_tool_connectors as _connector_mod
 from src.services.external_tool_connectors import (
     ConnectorStatus,
     ExternalToolConnectorFactory,
@@ -26,6 +29,23 @@ from src.services.external_tool_connectors import (
     PagerDutySeverity,
     SlackConnector,
 )
+
+
+@contextmanager
+def patched_connector_aiohttp(mock_session: MagicMock):
+    """Patch the connector module's ``aiohttp`` attribute with a mock.
+
+    The global ``patch("aiohttp.ClientSession", ...)`` target was observed to
+    leak real HTTP calls in CI Linux even under ``pytest.mark.forked`` --
+    replacing the connector module's own ``aiohttp`` reference is the most
+    direct path and isn't sensitive to module-level lookup ordering.
+    """
+    fake_aiohttp = MagicMock(wraps=aiohttp)
+    fake_aiohttp.ClientSession = MagicMock(return_value=mock_session)
+    fake_aiohttp.ClientTimeout = aiohttp.ClientTimeout
+    with patch.object(_connector_mod, "aiohttp", fake_aiohttp):
+        yield fake_aiohttp
+
 
 # =============================================================================
 # Helper for mocking aiohttp
@@ -158,7 +178,7 @@ class TestSlackConnector:
         """Test sending message via webhook successfully."""
         mock_session = create_mock_aiohttp_session(200, "ok")
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await slack_connector.send_message(
                 channel="#test",
                 text="Test message",
@@ -175,7 +195,7 @@ class TestSlackConnector:
         """Test handling webhook failure."""
         mock_session = create_mock_aiohttp_session(400, "invalid_payload")
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await slack_connector.send_message(text="Test")
 
             assert result.success is False
@@ -190,7 +210,7 @@ class TestSlackConnector:
             200, {"ok": True, "ts": "1234567890.123456"}
         )
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await slack_connector_with_token.send_message(
                 channel="#test",
                 text="Test message",
@@ -204,7 +224,7 @@ class TestSlackConnector:
         """Test sending formatted security alert."""
         mock_session = create_mock_aiohttp_session(200, "ok")
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await slack_connector.send_security_alert(
                 severity="CRITICAL",
                 title="SQL Injection Vulnerability",
@@ -224,7 +244,7 @@ class TestSlackConnector:
         """Test health check with bot token."""
         mock_session = create_mock_aiohttp_session(200, {"ok": True})
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await slack_connector_with_token.health_check()
 
             assert result is True
@@ -284,7 +304,7 @@ class TestJiraConnector:
             },
         )
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             issue = JiraIssue(
                 project_key="SEC",
                 summary="Test Issue",
@@ -307,7 +327,7 @@ class TestJiraConnector:
             400, {"errorMessages": ["Project not found"]}
         )
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             issue = JiraIssue(
                 project_key="INVALID",
                 summary="Test Issue",
@@ -326,7 +346,7 @@ class TestJiraConnector:
             201, {"id": "10002", "key": "SEC-124"}
         )
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await jira_connector.create_security_issue(
                 summary="SQL Injection in Login",
                 cve_id="CVE-2024-1234",
@@ -345,7 +365,7 @@ class TestJiraConnector:
             201, {"id": "10001", "body": "Test comment"}
         )
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await jira_connector.add_comment(
                 issue_key="SEC-123",
                 comment="Patch has been approved and deployed",
@@ -389,7 +409,7 @@ class TestJiraConnector:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session_instance)
         mock_session.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await jira_connector.transition_issue(
                 issue_key="SEC-123",
                 transition_name="Done",
@@ -403,7 +423,7 @@ class TestJiraConnector:
         """Test health check returns healthy."""
         mock_session = create_mock_aiohttp_session(200, {})
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await jira_connector.health_check()
 
             assert result is True
@@ -416,7 +436,7 @@ class TestJiraConnector:
         """Test health check handles auth failure."""
         mock_session = create_mock_aiohttp_session(401, "Unauthorized")
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await jira_connector.health_check()
 
             assert result is False
@@ -451,7 +471,7 @@ class TestPagerDutyConnector:
             },
         )
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await pagerduty_connector.trigger_incident(
                 summary="Test incident",
                 severity=PagerDutySeverity.CRITICAL,
@@ -470,7 +490,7 @@ class TestPagerDutyConnector:
         """Test triggering incident with custom dedup key."""
         mock_session = create_mock_aiohttp_session(202, {"status": "success"})
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await pagerduty_connector.trigger_incident(
                 summary="Test incident",
                 dedup_key="CVE-2024-1234",
@@ -488,7 +508,7 @@ class TestPagerDutyConnector:
             400, {"status": "invalid", "message": "Invalid routing key"}
         )
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await pagerduty_connector.trigger_incident(
                 summary="Test incident",
             )
@@ -503,7 +523,7 @@ class TestPagerDutyConnector:
         """Test triggering a formatted security incident."""
         mock_session = create_mock_aiohttp_session(202, {"status": "success"})
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await pagerduty_connector.trigger_security_incident(
                 title="SQL Injection Vulnerability",
                 cve_id="CVE-2024-1234",
@@ -524,7 +544,7 @@ class TestPagerDutyConnector:
         """Test acknowledging an incident."""
         mock_session = create_mock_aiohttp_session(202, {"status": "success"})
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await pagerduty_connector.acknowledge_incident(
                 dedup_key="test-dedup-key"
             )
@@ -536,7 +556,7 @@ class TestPagerDutyConnector:
         """Test resolving an incident."""
         mock_session = create_mock_aiohttp_session(202, {"status": "success"})
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patched_connector_aiohttp(mock_session):
             result = await pagerduty_connector.resolve_incident(
                 dedup_key="test-dedup-key"
             )
@@ -647,7 +667,7 @@ class TestConnectorWorkflows:
 
         # 1. Send Slack alert (webhooks expect "ok" string response)
         slack_mock = create_mock_aiohttp_session(200, "ok")
-        with patch("aiohttp.ClientSession", return_value=slack_mock):
+        with patched_connector_aiohttp(slack_mock):
             slack_result = await slack.send_security_alert(
                 severity="CRITICAL",
                 title="SQL Injection in Authentication",
@@ -658,7 +678,7 @@ class TestConnectorWorkflows:
 
         # 2. Create Jira ticket (uses JSON response with key)
         jira_mock = create_mock_aiohttp_session(201, {"key": "SEC-123"})
-        with patch("aiohttp.ClientSession", return_value=jira_mock):
+        with patched_connector_aiohttp(jira_mock):
             jira_result = await jira.create_security_issue(
                 summary="SQL Injection in Authentication",
                 cve_id="CVE-2024-1234",
@@ -669,7 +689,7 @@ class TestConnectorWorkflows:
 
         # 3. Trigger PagerDuty incident (uses status: success)
         pd_mock = create_mock_aiohttp_session(202, {"status": "success"})
-        with patch("aiohttp.ClientSession", return_value=pd_mock):
+        with patched_connector_aiohttp(pd_mock):
             pd_result = await pagerduty.trigger_security_incident(
                 title="SQL Injection in Authentication",
                 cve_id="CVE-2024-1234",

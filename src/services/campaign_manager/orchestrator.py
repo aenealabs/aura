@@ -24,6 +24,7 @@ import logging
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
+from typing import Any, Optional
 
 from .checkpoint_store import CheckpointStore
 from .contracts import (
@@ -210,8 +211,15 @@ class CampaignOrchestrator:
     async def run_next_phase(
         self,
         definition: CampaignDefinition,
+        phase_extra: Optional[dict[str, Any]] = None,
     ) -> CampaignState:
         """Run whichever phase the state machine says is next.
+
+        ``phase_extra`` is a per-campaign dict threaded into every
+        phase via ``PhaseExecutionContext.extra``. Production wires
+        the campaign's Dependencies bundle and Blackboard in here; the
+        in-memory orchestrator tests can pass ``None`` and exercise
+        the stub fallback path inside each phase.
 
         Returns the post-execution state. Callers iterate until the
         returned state's status is terminal or AWAITING_HITL.
@@ -262,6 +270,7 @@ class CampaignOrchestrator:
             cost_tracker=cost_tracker,
             operation_ledger=self._operation_ledger,
             prior_checkpoint=prior_checkpoint,
+            extra=dict(phase_extra) if phase_extra else {},
         )
 
         started_at = datetime.now(timezone.utc)

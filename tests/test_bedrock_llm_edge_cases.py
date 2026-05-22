@@ -34,13 +34,31 @@ _modules_to_save = [
 _original_modules = {m: sys.modules.get(m) for m in _modules_to_save}
 
 
-# Custom ClientError class for mocking
-class MockClientError(Exception):
+# Import the REAL botocore.exceptions.ClientError BEFORE the sys.modules
+# mock so MockClientError can subclass it. If bedrock_llm_service was
+# imported by a prior test (which happens often in the full CI suite),
+# its ``except ClientError`` clause is bound to the real class -- a
+# MockClientError that only inherits from Exception would not be caught,
+# and pytest.raises(BedrockError) would never fire. Issue #223 traced
+# 3 bedrock-edge-case test failures on CI to exactly this mismatch.
+try:
+    from botocore.exceptions import (
+        ClientError as _RealClientError,  # noqa: AURA194 -- predates mock
+    )
+except ImportError:  # botocore optional in some lightweight envs
+    _RealClientError = Exception
+
+
+# Custom ClientError class for mocking -- must inherit from the real
+# ClientError so existing ``except ClientError`` handlers catch it.
+class MockClientError(_RealClientError):
     """Mock ClientError for testing Bedrock API error handling."""
 
     def __init__(self, error_code: str, message: str = "Test error"):
         self.response = {"Error": {"Code": error_code, "Message": message}}
-        super().__init__(message)
+        # Call Exception.__init__ directly -- the real ClientError's
+        # __init__ has a different signature that doesn't match here.
+        Exception.__init__(self, message)
 
 
 # Set up mocks before importing the service

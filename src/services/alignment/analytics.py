@@ -959,20 +959,25 @@ class AlignmentAnalyticsService:
     def _enforce_limits(self) -> None:
         """Enforce retention and size limits.
 
-        Uses periodic cleanup instead of full list rebuild on every call.
-        Only rebuilds when size exceeds threshold (10% over max).
+        Retention (time-based) is always enforced -- it's a correctness
+        contract independent of memory usage. Size enforcement is the
+        performance-sensitive one; that's the cheap O(n) tail-trim
+        kept tight to ``max_data_points``.
+
+        Previously this method early-returned when ``len <= 1.1 *
+        max_data_points``, which (a) skipped retention entirely when
+        the buffer was small, (b) let the buffer oscillate between
+        max and max+10%. Both behaviours violated the public contract
+        the tests document. Fixed for issue #223.
         """
-        # Only enforce size limit when significantly over capacity
-        # This avoids O(n) rebuild on every record_metric call
-        threshold = int(self._max_data_points * 1.1)
-        if len(self._data_points) <= threshold:
-            return
-
-        # Remove expired data points
+        # Always enforce retention (cheap when nothing is old).
         cutoff = datetime.now(timezone.utc) - timedelta(days=self._retention_days)
-        self._data_points = [dp for dp in self._data_points if dp.timestamp >= cutoff]
+        if self._data_points and self._data_points[0].timestamp < cutoff:
+            self._data_points = [
+                dp for dp in self._data_points if dp.timestamp >= cutoff
+            ]
 
-        # Enforce max data points (remove oldest first)
+        # Enforce max data points (remove oldest first).
         if len(self._data_points) > self._max_data_points:
             excess = len(self._data_points) - self._max_data_points
             self._data_points = self._data_points[excess:]

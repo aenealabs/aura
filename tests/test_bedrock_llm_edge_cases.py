@@ -42,8 +42,8 @@ _original_modules = {m: sys.modules.get(m) for m in _modules_to_save}
 # and pytest.raises(BedrockError) would never fire. Issue #223 traced
 # 3 bedrock-edge-case test failures on CI to exactly this mismatch.
 try:
-    from botocore.exceptions import (
-        ClientError as _RealClientError,  # noqa: AURA194 -- predates mock
+    from botocore.exceptions import (  # noqa: AURA194 -- predates mock
+        ClientError as _RealClientError,
     )
 except ImportError:  # botocore optional in some lightweight envs
     _RealClientError = Exception

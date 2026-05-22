@@ -271,7 +271,7 @@ class TestEditionEndpoints:
 
     def test_get_edition(self, client):
         """Test GET /edition endpoint."""
-        response = client.get("/edition")
+        response = client.get("/api/v1/edition")
         assert response.status_code == 200
 
         data = response.json()
@@ -281,7 +281,7 @@ class TestEditionEndpoints:
 
     def test_get_features(self, client):
         """Test GET /edition/features endpoint."""
-        response = client.get("/edition/features")
+        response = client.get("/api/v1/edition/features")
         assert response.status_code == 200
 
         data = response.json()
@@ -291,7 +291,7 @@ class TestEditionEndpoints:
     def test_check_feature_available(self, client):
         """Test POST /edition/features/check for available feature."""
         response = client.post(
-            "/edition/features/check",
+            "/api/v1/edition/features/check",
             json={"feature": "code_search"},
         )
         assert response.status_code == 200
@@ -309,7 +309,7 @@ class TestEditionEndpoints:
             edition_service._edition_service = None
 
             response = client.post(
-                "/edition/features/check",
+                "/api/v1/edition/features/check",
                 json={"feature": "govcloud_support"},
             )
             assert response.status_code == 200
@@ -326,14 +326,14 @@ class TestEditionEndpoints:
 
         edition_service._edition_service = EditionService()
 
-        response = client.get("/edition/license")
+        response = client.get("/api/v1/edition/license")
         assert response.status_code == 200
         assert response.json() is None
 
     def test_validate_license_success(self, client):
         """Test POST /edition/license/validate with valid key."""
         response = client.post(
-            "/edition/license/validate",
+            "/api/v1/edition/license/validate",
             json={"license_key": "AURA-ENT-TESTORG-XXXX"},
         )
         assert response.status_code == 200
@@ -345,7 +345,7 @@ class TestEditionEndpoints:
     def test_validate_license_failure_short(self, client):
         """Test POST /edition/license/validate with too short key."""
         response = client.post(
-            "/edition/license/validate",
+            "/api/v1/edition/license/validate",
             json={"license_key": "short"},  # Way too short (min_length=20)
         )
         assert response.status_code == 422  # Pydantic validation error
@@ -353,7 +353,7 @@ class TestEditionEndpoints:
     def test_validate_license_failure_invalid_format(self, client):
         """Test POST /edition/license/validate with invalid format."""
         response = client.post(
-            "/edition/license/validate",
+            "/api/v1/edition/license/validate",
             json={"license_key": "INVALID-ENT-TESTORG-XXXXXXXXX"},  # Wrong prefix
         )
         assert response.status_code == 400  # Service returns 400 for invalid prefix
@@ -362,12 +362,12 @@ class TestEditionEndpoints:
         """Test DELETE /edition/license endpoint."""
         # First validate a license
         client.post(
-            "/edition/license/validate",
+            "/api/v1/edition/license/validate",
             json={"license_key": "AURA-ENT-TESTORG-XXXX"},
         )
 
         # Then clear it
-        response = client.delete("/edition/license")
+        response = client.delete("/api/v1/edition/license")
         assert response.status_code == 200
         assert response.json()["status"] == "success"
 
@@ -378,7 +378,7 @@ class TestEditionEndpoints:
 
             edition_service._edition_service = None
 
-            response = client.get("/edition/upgrade-info")
+            response = client.get("/api/v1/edition/upgrade-info")
             assert response.status_code == 200
 
             data = response.json()
@@ -392,7 +392,7 @@ class TestEditionEndpoints:
 
             edition_service._edition_service = None
 
-            response = client.get("/edition/upgrade-info")
+            response = client.get("/api/v1/edition/upgrade-info")
             assert response.status_code == 200
 
             data = response.json()

@@ -579,6 +579,14 @@ class TestClearCredentialsCache:
 
     def test_clear_credentials_cache(self):
         """Test clearing the credentials cache."""
+        # #223 fix: explicitly clear the module-global cache up front.
+        # Earlier tests in the suite may have populated
+        # _aws_credentials_valid, in which case the first call below
+        # would short-circuit on the cache and never invoke the mock,
+        # making the assertion 0 == 1 fail on CI (but pass locally
+        # when run in isolation).
+        clear_credentials_cache()
+
         with patch.object(
             db_connections_module, "check_aws_credentials", return_value=True
         ) as mock_check:

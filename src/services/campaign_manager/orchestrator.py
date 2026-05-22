@@ -283,6 +283,42 @@ class CampaignOrchestrator:
                 phase.definition.phase_id,
                 exc,
             )
+            # #214-B5: write a partial checkpoint before the terminal
+            # transition so the cost snapshot, wall-clock advance, and
+            # halt reason survive in the durable trail. Previously the
+            # campaign jumped straight to _mark_terminal and any
+            # artifacts accumulated before the cap blew were lost.
+            cap_halt_finished_at = datetime.now(timezone.utc)
+            cap_halt_duration = max(
+                0, int((cap_halt_finished_at - started_at).total_seconds())
+            )
+            unsigned_cap_halt_checkpoint = PhaseCheckpoint(
+                campaign_id=definition.campaign_id,
+                phase_id=phase.definition.phase_id,
+                artifact_manifest=(),
+                success_criteria_progress=(),
+                phase_summary=(
+                    f"Halted at cap during phase {phase.definition.phase_id}: " f"{exc}"
+                ),
+                cost_counters=cost_tracker.snapshot(),
+                wall_clock_counters=replace(
+                    state.clock,
+                    total_seconds=state.clock.total_seconds + cap_halt_duration,
+                ),
+            )
+            # #214-S2 + B5: sign with the real signer so the cap-halt
+            # checkpoint goes through the same tamper-detection gate
+            # as every other checkpoint.
+            cap_halt_checkpoint = self._sign_checkpoint(
+                unsigned_cap_halt_checkpoint, definition
+            )
+            try:
+                await self._checkpoint_store.write(cap_halt_checkpoint)
+            except Exception:  # pragma: no cover -- best-effort durability
+                logger.exception(
+                    "Campaign %s: failed to write cap-halt checkpoint",
+                    definition.campaign_id,
+                )
             cost_tracker.enter_cleanup_mode()
             return await self._mark_terminal(
                 state,
@@ -454,7 +490,22 @@ class CampaignOrchestrator:
         # Quorum met: clear the milestone and resume execution at the next
         # phase. The orchestrator's next ``run_next_phase`` call will pick
         # this up.
+        #
+        # #214-B2: assert the milestone phase is actually marked as a
+        # milestone in the worker's phase graph. If a future worker emits
+        # HITL_PENDING from a non-milestone phase, this assertion fires
+        # loudly instead of silently advancing past that phase's
+        # downstream work.
         worker = self._worker_for(definition.campaign_type)
+        milestone_phase = worker.get_phase(milestone.phase_id)
+        if not milestone_phase.definition.is_milestone:
+            raise SeparationOfDutiesError(
+                f"Phase {milestone.phase_id!r} emitted HITL_PENDING but is "
+                f"not marked is_milestone=True in the {type(worker).__name__} "
+                f"phase graph. HITL approval cannot advance the state machine "
+                f"safely; the worker must either mark this phase as a "
+                f"milestone or stop emitting HITL_PENDING from it."
+            )
         next_phase = worker.next_phase(milestone.phase_id)
         next_phase_id = next_phase.definition.phase_id if next_phase else None
         new_status = CampaignStatus.RUNNING if next_phase else CampaignStatus.COMPLETED

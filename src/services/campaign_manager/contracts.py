@@ -395,11 +395,21 @@ class OperationStatus(enum.Enum):
 
 @dataclass(frozen=True)
 class OperationOutcome:
-    """Outcome of a single recorded operation in the ledger."""
+    """Outcome of a single recorded operation in the ledger.
+
+    ``payload`` carries typed, JSON-serialisable state needed to
+    re-hydrate downstream consumers on idempotent replay (issue
+    #214-B1 fix). In-process workers store the live object dict
+    here; production swaps to ``payload_ref`` pointing at an S3
+    object. The two fields are intentionally separate so a future
+    move to S3-backed payloads does not change the in-process
+    contract.
+    """
 
     success: bool
     summary: str  # short human-readable
     payload_ref: str = ""  # S3 key for full payload if any
+    payload: Optional[dict] = None  # inline typed payload for in-process replay
     recorded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

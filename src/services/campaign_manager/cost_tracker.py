@@ -219,11 +219,19 @@ class CampaignCostTracker:
         with self._lock:
             std = self._tier_usage[ModelCapabilityTier.STANDARD].cost_usd
             adv = self._tier_usage[ModelCapabilityTier.ADVANCED].cost_usd
+            # total includes every configured tier, not just STD + ADV
+            # (#214-B4 fix). The CostSnapshot type retains the named
+            # std / adv fields for back-compat; any additional tier's
+            # cost shows up only in total_cost_usd.
+            total = (
+                sum(usage.cost_usd for usage in self._tier_usage.values())
+                + self._sandbox_cost
+            )
             return CostSnapshot(
                 standard_cost_usd=std,
                 advanced_cost_usd=adv,
                 sandbox_cost_usd=self._sandbox_cost,
-                total_cost_usd=std + adv + self._sandbox_cost,
+                total_cost_usd=total,
                 cleanup_reservation_usd=self._cleanup_reservation,
                 in_cleanup_mode=self._cleanup_mode,
             )
@@ -242,6 +250,8 @@ class CampaignCostTracker:
     # -- private helpers ------------------------------------------------------
 
     def _total_cost_locked(self) -> float:
-        std = self._tier_usage[ModelCapabilityTier.STANDARD].cost_usd
-        adv = self._tier_usage[ModelCapabilityTier.ADVANCED].cost_usd
-        return std + adv + self._sandbox_cost
+        # Sum across every configured tier (was hardcoded STANDARD +
+        # ADVANCED; a future Mythos / Premium tier would have bypassed
+        # the cap entirely). #214-B4 fix.
+        tier_total = sum(usage.cost_usd for usage in self._tier_usage.values())
+        return tier_total + self._sandbox_cost

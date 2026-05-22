@@ -41,6 +41,21 @@ class DVEConfig:
     # as soon as consensus is reached.
     exhaust_all_n_for_telemetry: bool = False
 
+    # ---------------------------------- LLM-independence (issue #209)
+
+    # When True, the consensus service runs a configured non-LLM
+    # static verifier on the selected centroid AND requires its
+    # agreement. Disagreement downgrades a CONVERGED outcome to
+    # DIVERGED so the orchestrator escalates to HITL. Default False
+    # for backward compatibility -- DAL A/B profiles flip this on.
+    require_non_llm_voice: bool = False
+
+    # When True, the static verifier runs even when
+    # ``require_non_llm_voice`` is False -- its verdict is recorded
+    # for audit but does not override the consensus outcome. Useful
+    # for telemetry / shadow-mode rollout. Default False.
+    static_verifier_shadow_mode: bool = False
+
     @classmethod
     def for_testing(cls) -> "DVEConfig":
         """Tight, fast config for unit tests."""

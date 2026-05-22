@@ -77,6 +77,37 @@ class EquivalenceCheck:
 
 
 @dataclass(frozen=True)
+class StaticVerificationSummary:
+    """Audit-trail summary of the non-LLM second voice (issue #209).
+
+    Embedded in :class:`ConsensusResult` so a single audit record
+    captures both the LLM-consensus decision and the independent
+    static verifier's verdict on the selected centroid. Defaults
+    represent the "no static verifier configured" state -- old
+    consumers can ignore this field without behaviour change.
+    """
+
+    enabled: bool = False
+    agreed_with_llm: bool = True
+    verifier_count: int = 0
+    verifier_ids: tuple[str, ...] = ()
+    blocking_finding_count: int = 0
+    aggregate_latency_ms: float = 0.0
+    rationale: str = ""
+
+    def to_audit_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "agreed_with_llm": self.agreed_with_llm,
+            "verifier_count": self.verifier_count,
+            "verifier_ids": list(self.verifier_ids),
+            "blocking_finding_count": self.blocking_finding_count,
+            "aggregate_latency_ms": self.aggregate_latency_ms,
+            "rationale": self.rationale,
+        }
+
+
+@dataclass(frozen=True)
 class ConsensusResult:
     """Result of an N-of-M consensus generation round.
 
@@ -86,6 +117,12 @@ class ConsensusResult:
     and the pairwise similarity matrix attached. ``PARTIAL`` is
     intermediate (used by callers that want to surface partial
     convergence without escalating immediately).
+
+    ``static_verification`` (added per issue #209) carries the
+    independent non-LLM second voice's verdict on the selected
+    centroid. When the policy ``require_non_llm_voice`` is enabled
+    and the static voice disagrees, ``outcome`` is overridden to
+    ``DIVERGED`` and the orchestrator escalates to HITL.
     """
 
     outcome: ConsensusOutcome
@@ -99,6 +136,9 @@ class ConsensusResult:
     convergence_rate: float
     audit_record_id: str
     computed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    static_verification: StaticVerificationSummary = field(
+        default_factory=StaticVerificationSummary
+    )
 
     @property
     def needs_hitl(self) -> bool:
@@ -117,6 +157,7 @@ class ConsensusResult:
             "canonical_hashes": [c.canonical_hash for c in self.canonical_forms],
             "pairwise_similarities": [list(row) for row in self.pairwise_similarities],
             "computed_at": self.computed_at.isoformat(),
+            "static_verification": self.static_verification.to_audit_dict(),
         }
 
 

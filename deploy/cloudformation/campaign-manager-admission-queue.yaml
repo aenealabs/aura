@@ -1,0 +1,396 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.10 - Campaign Manager Admission Queue (ADR-089 D10 ElastiCache Redis 7)'
+
+# ADR-089 D10 production substrate (issue #214 Phase 3 item A3).
+# The Bedrock admission queue is the only thing standing between
+# 1000 concurrent campaigns and an account-wide Bedrock throttle
+# storm (Tara's required-revision A7). Each campaign worker takes
+# an admission token before invoking Bedrock; the queue tracks
+# in-flight tokens per tier so the campaign manager stays under
+# 80% of the Bedrock TPM budget account-wide.
+#
+# Storage shape: metadata only (in-flight token counts, per-tier
+# usage windows). Working set is <1MB; Tara sized this as
+# cache.t4g.small Multi-AZ (~$50/mo dev, ~$130/mo prod). Do NOT
+# over-provision; this is metadata, not data.
+#
+# Cluster-mode-enabled is mandatory (Tara's required revision):
+# enables sharding for horizontal scale should the in-flight
+# bookkeeping ever grow, and unlocks RBAC.
+#
+# Encryption-in-transit + RBAC + at-rest KMS are also mandatory.
+# The worker IAM role authenticates via the IAM-auth + RBAC
+# combination; no AUTH token sprawl.
+#
+# Bootstrap-safety: VPC + subnet + app SG are Parameters (no
+# ImportValue). The consumer A4 (API) stack provides the worker
+# Lambdas + their IAM role that authenticates to this cluster.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for the security group
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: >-
+      Private subnet IDs for the ElastiCache subnet group. Must span
+      at least two AZs when Multi-AZ is enabled (prod / qa).
+
+  ApplicationSecurityGroupId:
+    Type: String
+    Description: Security group ID of the worker tier (Lambda VPC ENIs / EKS pods)
+
+  NodeType:
+    Type: String
+    Default: cache.t4g.small
+    AllowedValues:
+      - cache.t4g.micro
+      - cache.t4g.small
+      - cache.t4g.medium
+      - cache.r7g.large
+      - cache.r7g.xlarge
+    Description: >-
+      ElastiCache node type. Default cache.t4g.small per Tara's
+      sizing -- the admission queue is metadata-only (<1MB working
+      set); larger nodes are over-provisioning.
+
+  EngineVersion:
+    Type: String
+    Default: '7.1'
+    AllowedValues: ['7.0', '7.1']
+    Description: Redis engine version. 7.x is required for RBAC.
+
+  NumNodeGroups:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 4
+    Description: >-
+      Number of shards (node groups) in cluster mode. Default 1
+      because the in-flight bookkeeping is small; raise only if a
+      single shard becomes hot.
+
+  ReplicasPerNodeGroup:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    MaxValue: 5
+    Description: >-
+      Read replicas per shard. Default 0 (no replicas) for dev/qa;
+      production sets this to >=1 for Multi-AZ failover.
+
+  SnapshotRetentionLimitDays:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 35
+    Description: Daily snapshot retention. 1 is sufficient for metadata.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  HasReplicas: !Not [!Equals [!Ref ReplicasPerNodeGroup, 0]]
+
+Resources:
+  # -------------------------------------------------------------------------
+  # KMS CMK for at-rest encryption
+  # -------------------------------------------------------------------------
+
+  AdmissionQueueKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      Description: !Sub 'ADR-089 admission queue at-rest encryption (${Environment})'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowElastiCacheUse
+            Effect: Allow
+            Principal:
+              Service: !Sub 'elasticache.${AWS::Region}.amazonaws.com'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 'elasticache.${AWS::Region}.amazonaws.com'
+                'kms:CallerAccount': !Ref AWS::AccountId
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  AdmissionQueueKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}/admission-queue/${Environment}'
+      TargetKeyId: !Ref AdmissionQueueKey
+
+  # -------------------------------------------------------------------------
+  # Networking
+  # -------------------------------------------------------------------------
+
+  AdmissionQueueSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-admission-queue-sg-${Environment}'
+      GroupDescription: !Sub 'ADR-089 admission queue security group (${Environment})'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref ApplicationSecurityGroupId
+          Description: Redis from application tier (workers)
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  AdmissionQueueSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      CacheSubnetGroupName: !Sub '${ProjectName}-admission-queue-${Environment}'
+      Description: !Sub 'ADR-089 admission queue subnet group (${Environment})'
+      SubnetIds: !Ref PrivateSubnetIds
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # -------------------------------------------------------------------------
+  # Parameter group (cluster-mode-enabled Redis 7)
+  # -------------------------------------------------------------------------
+
+  AdmissionQueueParameterGroup:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      CacheParameterGroupFamily: !Sub 'redis${EngineVersion}.cluster.on'
+      Description: !Sub 'ADR-089 admission queue Redis ${EngineVersion} cluster-mode-enabled (${Environment})'
+      Properties:
+        # Reject writes when memory is exhausted; the admission queue
+        # MUST NOT silently drop in-flight bookkeeping or the
+        # Bedrock-throttle defence breaks.
+        maxmemory-policy: noeviction
+        # Surface slow queries that exceed 10ms (the bookkeeping ops
+        # are sub-millisecond; anything slow is a signal).
+        slowlog-log-slower-than: '10000'
+
+  # -------------------------------------------------------------------------
+  # RBAC -- users + group
+  # -------------------------------------------------------------------------
+
+  DefaultUser:
+    Type: AWS::ElastiCache::User
+    Properties:
+      # ElastiCache RBAC requires a 'default' user in every group.
+      # We disable it (no-commands ACL) so all access flows through
+      # the named worker user with IAM auth.
+      UserId: !Sub '${ProjectName}-admission-queue-default-${Environment}'
+      UserName: default
+      Engine: redis
+      AccessString: 'off resetkeys -@all'
+      AuthenticationMode:
+        Type: no-password-required
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AdmissionQueueWorkerUser:
+    Type: AWS::ElastiCache::User
+    Properties:
+      UserId: !Sub '${ProjectName}-admission-queue-worker-${Environment}'
+      UserName: !Sub '${ProjectName}-admission-queue-worker-${Environment}'
+      Engine: redis
+      # Minimal ACL: only the commands the admission queue actually
+      # uses. Excludes destructive admin commands (FLUSHDB, FLUSHALL,
+      # CONFIG, SHUTDOWN, DEBUG, CLUSTER ADMIN).
+      AccessString: >-
+        on
+        ~admission:*
+        ~bedrock-tpm:*
+        +@read +@write +@hash +@list +@sortedset +@string
+        -@dangerous -@admin -flushdb -flushall -config -shutdown -debug
+      AuthenticationMode:
+        Type: iam
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AdmissionQueueUserGroup:
+    Type: AWS::ElastiCache::UserGroup
+    Properties:
+      UserGroupId: !Sub '${ProjectName}-admission-queue-group-${Environment}'
+      Engine: redis
+      UserIds:
+        - !Ref DefaultUser
+        - !Ref AdmissionQueueWorkerUser
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # -------------------------------------------------------------------------
+  # CloudWatch Log Groups
+  # -------------------------------------------------------------------------
+
+  AdmissionQueueSlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      LogGroupName: !Sub '/aws/elasticache/${ProjectName}-admission-queue-${Environment}/slow-log'
+      RetentionInDays: !If [IsProduction, 365, 90]
+
+  AdmissionQueueEngineLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      LogGroupName: !Sub '/aws/elasticache/${ProjectName}-admission-queue-${Environment}/engine-log'
+      RetentionInDays: !If [IsProduction, 365, 90]
+
+  # -------------------------------------------------------------------------
+  # Replication Group (cluster-mode-enabled)
+  # -------------------------------------------------------------------------
+
+  AdmissionQueue:
+    Type: AWS::ElastiCache::ReplicationGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      ReplicationGroupId: !Sub '${ProjectName}-admission-queue-${Environment}'
+      ReplicationGroupDescription: !Sub 'ADR-089 D10 Bedrock admission queue (${Environment})'
+      Engine: redis
+      EngineVersion: !Ref EngineVersion
+      CacheNodeType: !Ref NodeType
+      # Cluster-mode-enabled (Tara required revision A3).
+      NumNodeGroups: !Ref NumNodeGroups
+      ReplicasPerNodeGroup: !Ref ReplicasPerNodeGroup
+      AutomaticFailoverEnabled: !If [HasReplicas, true, false]
+      MultiAZEnabled: !If [HasReplicas, true, false]
+      CacheParameterGroupName: !Ref AdmissionQueueParameterGroup
+      CacheSubnetGroupName: !Ref AdmissionQueueSubnetGroup
+      SecurityGroupIds:
+        - !GetAtt AdmissionQueueSecurityGroup.GroupId
+      Port: 6379
+      # Encryption (Tara required revision A3).
+      AtRestEncryptionEnabled: true
+      TransitEncryptionEnabled: true
+      KmsKeyId: !Ref AdmissionQueueKey
+      # RBAC (Tara required revision A3).
+      UserGroupIds:
+        - !Ref AdmissionQueueUserGroup
+      # Backups
+      SnapshotRetentionLimit: !Ref SnapshotRetentionLimitDays
+      SnapshotWindow: '03:00-05:00'
+      PreferredMaintenanceWindow: 'sun:05:00-sun:07:00'
+      AutoMinorVersionUpgrade: true
+      # Log delivery
+      LogDeliveryConfigurations:
+        - DestinationType: cloudwatch-logs
+          LogFormat: json
+          LogType: slow-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref AdmissionQueueSlowLogGroup
+        - DestinationType: cloudwatch-logs
+          LogFormat: json
+          LogType: engine-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref AdmissionQueueEngineLogGroup
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+        - Key: Purpose
+          Value: bedrock-admission-queue
+
+# -----------------------------------------------------------------------------
+# Outputs
+# -----------------------------------------------------------------------------
+
+Outputs:
+  AdmissionQueuePrimaryEndpoint:
+    Description: Configuration endpoint (cluster-mode-enabled)
+    Value: !GetAtt AdmissionQueue.ConfigurationEndPoint.Address
+    Export:
+      Name: !Sub '${ProjectName}-admission-queue-endpoint-${Environment}'
+
+  AdmissionQueuePort:
+    Description: TLS port (6379)
+    Value: !GetAtt AdmissionQueue.ConfigurationEndPoint.Port
+    Export:
+      Name: !Sub '${ProjectName}-admission-queue-port-${Environment}'
+
+  AdmissionQueueReplicationGroupId:
+    Description: Replication group id (for IAM auth + boto3)
+    Value: !Ref AdmissionQueue
+    Export:
+      Name: !Sub '${ProjectName}-admission-queue-replication-group-id-${Environment}'
+
+  AdmissionQueueSecurityGroupId:
+    Description: Security group consumers must attach to talk to the queue
+    Value: !GetAtt AdmissionQueueSecurityGroup.GroupId
+    Export:
+      Name: !Sub '${ProjectName}-admission-queue-sg-id-${Environment}'
+
+  AdmissionQueueKeyArn:
+    Description: KMS CMK ARN for at-rest encryption
+    Value: !GetAtt AdmissionQueueKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-admission-queue-key-arn-${Environment}'
+
+  AdmissionQueueWorkerUserId:
+    Description: RBAC user id the worker IAM role authenticates as
+    Value: !Ref AdmissionQueueWorkerUser
+    Export:
+      Name: !Sub '${ProjectName}-admission-queue-worker-user-id-${Environment}'
+
+  AdmissionQueueWorkerUserArn:
+    Description: ARN of the RBAC user the worker IAM role authenticates as
+    Value: !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:user:${AdmissionQueueWorkerUser}'
+    Export:
+      Name: !Sub '${ProjectName}-admission-queue-worker-user-arn-${Environment}'

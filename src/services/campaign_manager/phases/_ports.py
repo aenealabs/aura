@@ -504,5 +504,6 @@ class SelfPlayTrainingDependencies:
     dual_role: Optional[DualRolePort] = None
     evaluator: Optional[AdapterEvalPort] = None
     promoter: Optional[AdapterPromotionPort] = None
+    hitl_gateway: Optional[HitlGatewayPort] = None
     episode_budget: int = 32
     domain: str = "compliance-hardening"

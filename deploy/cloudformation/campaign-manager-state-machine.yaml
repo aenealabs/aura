@@ -1,0 +1,452 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 6.23 - Campaign Manager State Machine (ADR-089 Step Functions Standard)'
+
+# ADR-089 D1 production substrate (issue #214 Phase 3 item A2).
+# Provisions the Step Functions Standard state machine that drives
+# the campaign FSM defined by CampaignOrchestrator. The state machine
+# is the durable-execution wrapper around the orchestrator's in-process
+# state-transition logic; the Lambda task functions wrap the same
+# orchestrator methods so the in-process and SFN paths share semantics.
+#
+# FSM (mirrors CampaignOrchestrator.run_next_phase + approve_milestone):
+#
+#   ValidateAndCreate -> RunNextPhase -> CheckStatus ->
+#     - "completed"          -> CampaignSucceeded
+#     - "failed"             -> CampaignFailed
+#     - "cancelled"          -> CampaignTerminated
+#     - "halted_at_cap"      -> CampaignTerminated
+#     - "halted_at_anomaly"  -> CampaignTerminated
+#     - "awaiting_hitl"      -> AwaitHitlApproval (waitForTaskToken) ->
+#                               ApplyHitlResult -> CheckStatus
+#     - "running" / default  -> RunNextPhase (loop)
+#
+# Lambda ARNs are parameters (production wires the real Lambdas via
+# the A4 API stack; QA wires test Lambdas; dev can pass any handler).
+# Bootstrap-safe with respect to ImportValue: only the persistence
+# stack's exports are required.
+#
+# Tara's required revisions A6 (waitForTaskToken) and Sally's
+# recommendation (15-min approval timeout) baked in via the
+# AwaitHitlApproval state's TimeoutSeconds parameter.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  RunNextPhaseLambdaArn:
+    Type: String
+    Description: >-
+      ARN of the Lambda function that wraps
+      CampaignOrchestrator.run_next_phase. Invoked once per phase
+      transition; returns the post-execution CampaignState.
+
+  HitlGatewayLambdaArn:
+    Type: String
+    Description: >-
+      ARN of the Lambda function that brokers HITL approval. Invoked
+      via .waitForTaskToken when the orchestrator returns
+      AWAITING_HITL. The function MUST call SendTaskSuccess /
+      SendTaskFailure once the operator has approved or rejected.
+
+  HitlTimeoutSeconds:
+    Type: Number
+    Default: 86400
+    MinValue: 60
+    MaxValue: 604800
+    Description: >-
+      HITL approval timeout in seconds. Default 24h. Sally recommended
+      15min for high-impact campaigns; production policy maps autonomy
+      level + severity -> override via a per-campaign override path.
+
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 180, 365, 400, 545, 731, 1827, 3653]
+    Description: >-
+      Days to retain CloudWatch Logs for the state machine. ADR-089
+      compliance mapping requires >=30 days for SOX audit; 365+ for
+      FedRAMP boundary.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # -------------------------------------------------------------------------
+  # CloudWatch Log Group
+  # -------------------------------------------------------------------------
+
+  StateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      LogGroupName: !Sub '/aws/vendedlogs/states/${ProjectName}-campaign-manager-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  # -------------------------------------------------------------------------
+  # IAM Role for the state machine (least privilege)
+  # -------------------------------------------------------------------------
+
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-campaign-manager-sfn-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: !Sub 'states.${AWS::Region}.amazonaws.com'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref AWS::AccountId
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+      Policies:
+        - PolicyName: InvokeWorkerLambdas
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: InvokeRunNextPhase
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !Ref RunNextPhaseLambdaArn
+                  - !Sub '${RunNextPhaseLambdaArn}:*'
+              - Sid: InvokeHitlGateway
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !Ref HitlGatewayLambdaArn
+                  - !Sub '${HitlGatewayLambdaArn}:*'
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # SFN Standard requires these wildcard log-delivery
+              # actions (see AWS docs). The actions themselves do not
+              # let us write to other log groups -- they configure the
+              # vended-log delivery channel.
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !GetAtt StateMachineLogGroup.Arn
+                  - !Sub '${StateMachineLogGroup.Arn}:*'
+        - PolicyName: XRayTracing
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: '*'
+
+  # -------------------------------------------------------------------------
+  # State Machine
+  # -------------------------------------------------------------------------
+
+  CampaignStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ProjectName}-campaign-manager-${Environment}'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StateMachineRole.Arn
+      TracingConfiguration:
+        Enabled: true
+      LoggingConfiguration:
+        Level: ALL
+        IncludeExecutionData: false
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogGroup.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+      DefinitionSubstitutions:
+        RunNextPhaseLambdaArn: !Ref RunNextPhaseLambdaArn
+        HitlGatewayLambdaArn: !Ref HitlGatewayLambdaArn
+        HitlTimeoutSeconds: !Ref HitlTimeoutSeconds
+      DefinitionString: !Sub |
+        {
+          "Comment": "ADR-089 Long-Horizon Security Campaign FSM (issue #214 A2)",
+          "StartAt": "ValidateAndCreate",
+          "States": {
+            "ValidateAndCreate": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!RunNextPhaseLambdaArn}",
+                "Payload": {
+                  "action": "create_campaign",
+                  "definition.$": "$.definition",
+                  "billing_period.$": "$.billing_period"
+                }
+              },
+              "ResultSelector": {
+                "state.$": "$.Payload.state"
+              },
+              "ResultPath": "$.created",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.error",
+                  "Next": "CampaignFailed"
+                }
+              ],
+              "Next": "RunNextPhase"
+            },
+
+            "RunNextPhase": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!RunNextPhaseLambdaArn}",
+                "Payload": {
+                  "action": "run_next_phase",
+                  "definition.$": "$.definition"
+                }
+              },
+              "ResultSelector": {
+                "state.$": "$.Payload.state"
+              },
+              "ResultPath": "$.last",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.error",
+                  "Next": "CampaignFailed"
+                }
+              ],
+              "Next": "CheckStatus"
+            },
+
+            "CheckStatus": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.last.state.status",
+                  "StringEquals": "completed",
+                  "Next": "CampaignSucceeded"
+                },
+                {
+                  "Variable": "$.last.state.status",
+                  "StringEquals": "failed",
+                  "Next": "CampaignFailed"
+                },
+                {
+                  "Variable": "$.last.state.status",
+                  "StringEquals": "cancelled",
+                  "Next": "CampaignTerminated"
+                },
+                {
+                  "Variable": "$.last.state.status",
+                  "StringEquals": "halted_at_cap",
+                  "Next": "CampaignTerminated"
+                },
+                {
+                  "Variable": "$.last.state.status",
+                  "StringEquals": "halted_at_anomaly",
+                  "Next": "CampaignTerminated"
+                },
+                {
+                  "Variable": "$.last.state.status",
+                  "StringEquals": "awaiting_hitl",
+                  "Next": "AwaitHitlApproval"
+                }
+              ],
+              "Default": "RunNextPhase"
+            },
+
+            "AwaitHitlApproval": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke.waitForTaskToken",
+              "Parameters": {
+                "FunctionName": "${!HitlGatewayLambdaArn}",
+                "Payload": {
+                  "task_token.$": "$$.Task.Token",
+                  "definition.$": "$.definition",
+                  "pending_milestone.$": "$.last.state.pending_hitl_approval"
+                }
+              },
+              "ResultPath": "$.hitl",
+              "TimeoutSeconds": ${!HitlTimeoutSeconds},
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 5,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.Timeout"],
+                  "ResultPath": "$.error",
+                  "Next": "CampaignFailed"
+                },
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.error",
+                  "Next": "CampaignFailed"
+                }
+              ],
+              "Next": "ApplyHitlApproval"
+            },
+
+            "ApplyHitlApproval": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${!RunNextPhaseLambdaArn}",
+                "Payload": {
+                  "action": "approve_milestone",
+                  "definition.$": "$.definition",
+                  "approver_principal_arn.$": "$.hitl.approver_principal_arn"
+                }
+              },
+              "ResultSelector": {
+                "state.$": "$.Payload.state"
+              },
+              "ResultPath": "$.last",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.error",
+                  "Next": "CampaignFailed"
+                }
+              ],
+              "Next": "CheckStatus"
+            },
+
+            "CampaignSucceeded": {
+              "Type": "Succeed"
+            },
+
+            "CampaignTerminated": {
+              "Type": "Succeed",
+              "Comment": "Terminal non-success state (cancelled, halted_at_cap, halted_at_anomaly). Returns Succeed to SFN so the execution history is preserved for audit; the campaign state itself records the terminal reason."
+            },
+
+            "CampaignFailed": {
+              "Type": "Fail",
+              "Cause": "Campaign reached terminal FAILED state. See execution input.last.state and input.error for context.",
+              "Error": "AuraCampaignFailed"
+            }
+          }
+        }
+
+# -----------------------------------------------------------------------------
+# Outputs
+# -----------------------------------------------------------------------------
+
+Outputs:
+  CampaignStateMachineArn:
+    Description: ARN of the Campaign Manager state machine
+    Value: !Ref CampaignStateMachine
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-state-machine-arn-${Environment}'
+
+  CampaignStateMachineName:
+    Description: Name of the Campaign Manager state machine
+    Value: !GetAtt CampaignStateMachine.Name
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-state-machine-name-${Environment}'
+
+  StateMachineRoleArn:
+    Description: IAM role ARN the state machine assumes
+    Value: !GetAtt StateMachineRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-sfn-role-arn-${Environment}'
+
+  StateMachineLogGroupName:
+    Description: CloudWatch Log Group for state machine execution logs
+    Value: !Ref StateMachineLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-log-group-${Environment}'
+
+  StateMachineLogGroupArn:
+    Description: CloudWatch Log Group ARN
+    Value: !GetAtt StateMachineLogGroup.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaign-manager-log-group-arn-${Environment}'

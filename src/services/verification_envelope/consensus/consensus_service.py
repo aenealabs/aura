@@ -35,11 +35,15 @@ from src.services.verification_envelope.consensus.semantic_equivalence import (
     SemanticEquivalenceChecker,
     _EmbeddingProvider,
 )
+from src.services.verification_envelope.consensus.static_verifier import (
+    StaticVerifierDispatcher,
+)
 from src.services.verification_envelope.contracts import (
     ASTCanonicalForm,
     ConsensusOutcome,
     ConsensusResult,
     EquivalenceCheck,
+    StaticVerificationSummary,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +66,7 @@ class ConsensusService:
         *,
         normalizer: ASTNormalizer | None = None,
         equivalence_checker: SemanticEquivalenceChecker | None = None,
+        static_verifier: StaticVerifierDispatcher | None = None,
     ) -> None:
         self._config = config
         self._generator = generator
@@ -71,6 +76,12 @@ class ConsensusService:
             cosine_threshold=config.embedding_cosine_threshold,
             enable_embedding_fallback=config.enable_embedding_fallback,
         )
+        # Non-LLM second voice (issue #209). When None, the consensus
+        # service behaves identically to its pre-#209 form. When the
+        # dispatcher is provided AND ``require_non_llm_voice`` is set,
+        # disagreement on the selected centroid downgrades CONVERGED
+        # to DIVERGED.
+        self._static_verifier = static_verifier
 
     async def generate_and_check(
         self, prompt: str, *, audit_id: str | None = None
@@ -104,22 +115,93 @@ class ConsensusService:
 
         similarity_matrix = tuple(tuple(c.similarity for c in row) for row in pairwise)
 
+        # Non-LLM second voice (issue #209). Run only when the verifier
+        # is configured AND either the policy requires it OR we are in
+        # shadow mode. Verdict is recorded in the result regardless; it
+        # only overrides the consensus outcome when require_non_llm_voice
+        # is set AND the verifier disagrees on the selected centroid.
+        outcome = decision.outcome
+        static_summary = StaticVerificationSummary()
+        should_run_static = (
+            self._static_verifier is not None
+            and not self._static_verifier.is_empty()
+            and (
+                self._config.require_non_llm_voice
+                or self._config.static_verifier_shadow_mode
+            )
+        )
+        if should_run_static and selected_output is not None:
+            report = self._static_verifier.verify(selected_output)
+            static_summary = StaticVerificationSummary(
+                enabled=True,
+                agreed_with_llm=report.agreed_with_llm,
+                verifier_count=report.verifier_count,
+                verifier_ids=self._static_verifier.verifier_ids,
+                blocking_finding_count=sum(
+                    1
+                    for f in report.aggregated_findings
+                    if f.severity.upper() in {"CRITICAL", "HIGH"}
+                ),
+                aggregate_latency_ms=report.aggregate_latency_ms,
+                rationale=(
+                    "static voice agreed"
+                    if report.agreed_with_llm
+                    else "static voice disagreed -- forcing DIVERGED"
+                ),
+            )
+            if (
+                self._config.require_non_llm_voice
+                and report.disagreed_with_llm
+                and outcome == ConsensusOutcome.CONVERGED
+            ):
+                logger.warning(
+                    "consensus %s overridden CONVERGED->DIVERGED by static voice "
+                    "(%d blocking findings across %d verifiers)",
+                    record_id,
+                    static_summary.blocking_finding_count,
+                    static_summary.verifier_count,
+                )
+                outcome = ConsensusOutcome.DIVERGED
+                selected_output = None
+        elif (
+            self._config.require_non_llm_voice
+            and selected_output is not None
+            and (self._static_verifier is None or self._static_verifier.is_empty())
+        ):
+            # Policy requires a non-LLM voice but none is configured.
+            # Fail closed: downgrade to DIVERGED and surface in audit.
+            logger.warning(
+                "consensus %s requires non-LLM voice but no verifier configured; "
+                "downgrading CONVERGED->DIVERGED",
+                record_id,
+            )
+            outcome = ConsensusOutcome.DIVERGED
+            selected_output = None
+            static_summary = StaticVerificationSummary(
+                enabled=False,
+                agreed_with_llm=False,
+                rationale="policy requires non-LLM voice; none configured (fail-closed)",
+            )
+
         latency_ms = (time.time() - start) * 1000.0
         logger.info(
             "consensus %s outcome=%s n=%d m_required=%d converged=%d "
-            "selection=%s rate=%.2f latency_ms=%.0f",
+            "selection=%s rate=%.2f latency_ms=%.0f "
+            "static_voice=%s static_agreed=%s",
             record_id,
-            decision.outcome.value,
+            outcome.value,
             n,
             m,
             len(decision.converged_indices),
             decision.selection_method,
             convergence_rate,
             latency_ms,
+            static_summary.enabled,
+            static_summary.agreed_with_llm,
         )
 
         return ConsensusResult(
-            outcome=decision.outcome,
+            outcome=outcome,
             n_generated=n,
             m_required=m,
             m_converged=len(decision.converged_indices),
@@ -130,6 +212,7 @@ class ConsensusService:
             convergence_rate=convergence_rate,
             audit_record_id=record_id,
             computed_at=datetime.now(timezone.utc),
+            static_verification=static_summary,
         )
 
     # ------------------------------------------------------------ helpers

@@ -124,19 +124,23 @@ async def configured_orchestrator(tenant_id, billing_period) -> CampaignOrchestr
 class TestOperationLedger:
     def test_first_claim_succeeds(self):
         ledger = InMemoryOperationLedger()
-        claim = asyncio.run(ledger.claim("c1", "p1", "op1"))
+        claim = asyncio.run(ledger.claim("t1", "c1", "p1", "op1"))
         assert claim.status == OperationStatus.CLAIMED
         assert claim.prior_outcome is None
 
     def test_second_claim_returns_already_executed(self):
         ledger = InMemoryOperationLedger()
-        asyncio.run(ledger.claim("c1", "p1", "op1"))
+        asyncio.run(ledger.claim("t1", "c1", "p1", "op1"))
         asyncio.run(
             ledger.record_outcome(
-                "c1", "p1", "op1", OperationOutcome(success=True, summary="ok")
+                "t1",
+                "c1",
+                "p1",
+                "op1",
+                OperationOutcome(success=True, summary="ok"),
             )
         )
-        claim2 = asyncio.run(ledger.claim("c1", "p1", "op1"))
+        claim2 = asyncio.run(ledger.claim("t1", "c1", "p1", "op1"))
         assert claim2.status == OperationStatus.ALREADY_EXECUTED
         assert claim2.prior_outcome is not None
         assert claim2.prior_outcome.success is True
@@ -147,6 +151,7 @@ class TestOperationLedger:
         with pytest.raises(OperationAlreadyClaimedError):
             asyncio.run(
                 ledger.record_outcome(
+                    "t1",
                     "c1",
                     "p1",
                     "op1",
@@ -156,15 +161,20 @@ class TestOperationLedger:
 
     def test_record_outcome_is_one_shot(self):
         ledger = InMemoryOperationLedger()
-        asyncio.run(ledger.claim("c1", "p1", "op1"))
+        asyncio.run(ledger.claim("t1", "c1", "p1", "op1"))
         asyncio.run(
             ledger.record_outcome(
-                "c1", "p1", "op1", OperationOutcome(success=True, summary="ok")
+                "t1",
+                "c1",
+                "p1",
+                "op1",
+                OperationOutcome(success=True, summary="ok"),
             )
         )
         with pytest.raises(OperationAlreadyClaimedError):
             asyncio.run(
                 ledger.record_outcome(
+                    "t1",
                     "c1",
                     "p1",
                     "op1",
@@ -177,8 +187,8 @@ class TestOperationLedger:
         # The next attempt sees ALREADY_EXECUTED with a placeholder outcome
         # so it does not duplicate the side effect.
         ledger = InMemoryOperationLedger()
-        asyncio.run(ledger.claim("c1", "p1", "op1"))
-        claim2 = asyncio.run(ledger.claim("c1", "p1", "op1"))
+        asyncio.run(ledger.claim("t1", "c1", "p1", "op1"))
+        claim2 = asyncio.run(ledger.claim("t1", "c1", "p1", "op1"))
         assert claim2.status == OperationStatus.ALREADY_EXECUTED
         assert claim2.prior_outcome is not None
         assert claim2.prior_outcome.success is False  # placeholder
@@ -186,9 +196,9 @@ class TestOperationLedger:
 
     def test_keys_are_per_campaign(self):
         ledger = InMemoryOperationLedger()
-        asyncio.run(ledger.claim("c1", "p1", "op1"))
+        asyncio.run(ledger.claim("t1", "c1", "p1", "op1"))
         # Same op_id but different campaign should still claim
-        claim = asyncio.run(ledger.claim("c2", "p1", "op1"))
+        claim = asyncio.run(ledger.claim("t1", "c2", "p1", "op1"))
         assert claim.status == OperationStatus.CLAIMED
 
 

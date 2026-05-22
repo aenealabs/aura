@@ -17,6 +17,7 @@ verifier in the loop.
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -92,11 +93,17 @@ class ObjectCodeGate:
                 ),
             )
 
+        # When the caller does not pass an explicit scratch_dir, allocate
+        # one via tempfile so we don't hardcode /tmp (bandit B108).
+        # tempfile.gettempdir() respects $TMPDIR + platform defaults.
+        effective_scratch = scratch_dir or (
+            Path(tempfile.gettempdir()) / "aura-obj-code-scratch"
+        )
         verdict = self._verifier.verify(
             source=source,
             target_triple=target_triple,
             toolchain=toolchain,
-            scratch_dir=scratch_dir or Path("/tmp/aura-obj-code-scratch"),
+            scratch_dir=effective_scratch,
         )
 
         # MATCHED is the only passing state. NOT_IMPLEMENTED,

@@ -6,17 +6,16 @@ Uses mocked HTTP responses to avoid real API calls during testing.
 """
 
 import json
-import platform
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# These tests require pytest-forked for isolation. On Linux CI, mock
-# patches don't apply correctly without forked mode, so skip there.
-# Use forked mode on non-Linux to prevent state pollution
-# On Linux (CI), run normally and rely on conftest.py cleanup
-if platform.system() != "Linux":
-    pytestmark = pytest.mark.forked
+# These tests require pytest-forked for isolation: prior tests in the suite
+# can leave aiohttp state that prevents `patch("aiohttp.ClientSession", ...)`
+# from intercepting calls (real HTTP requests leak through). Forked mode
+# guarantees a clean process per test. Safe on Linux CI (no Objective-C
+# runtime constraint) and required on macOS for torch-tainted suites.
+pytestmark = pytest.mark.forked
 
 from src.services.external_tool_connectors import (
     ConnectorStatus,

@@ -42,7 +42,15 @@ from .exceptions import (
     CostCapExceededError,
     InvalidCampaignDefinitionError,
     SeparationOfDutiesError,
+    TamperedStateError,
     TenantCostCapExceededError,
+)
+from .kms_signing import (
+    CampaignSignerPort,
+    DeterministicCampaignSigner,
+    SignatureVerificationError,
+    canonicalize_campaign_definition,
+    canonicalize_phase_checkpoint,
 )
 from .operation_ledger import OperationLedger
 from .phases.base import CampaignWorker, Phase, PhaseExecutionContext, PhaseResult
@@ -80,6 +88,9 @@ class CampaignOrchestrator:
         operation_ledger: OperationLedger,
         tenant_rollup: TenantCostRollup,
         worker_registry: dict,
+        *,
+        signer: CampaignSignerPort | None = None,
+        require_signed_input: bool = False,
     ) -> None:
         self._state_store = state_store
         self._checkpoint_store = checkpoint_store
@@ -91,6 +102,24 @@ class CampaignOrchestrator:
         # implementation — production wraps cost trackers in a side store
         # so SFN workers can resume after a process restart.
         self._cost_trackers: dict[str, CampaignCostTracker] = {}
+        # #214-S1 + S2: signer + verifier for tamper-detection on
+        # CampaignDefinition and PhaseCheckpoint. Defaults to a
+        # deterministic HMAC implementation for tests and in-process
+        # development; production wires a KMS-backed implementation
+        # through the same Port.
+        #
+        # ``require_signed_input``: when True, the orchestrator rejects
+        # any CampaignDefinition that arrives unsigned. Production sets
+        # this True (the API layer is responsible for signing at the
+        # tenant boundary); the default is False for backward
+        # compatibility with in-process callers that pass unsigned
+        # definitions and rely on the orchestrator to sign them.
+        self._signer: CampaignSignerPort = signer or DeterministicCampaignSigner()
+        self._require_signed_input = require_signed_input
+        # Cache of verified-or-signed definitions so re-verification on
+        # every public-method entry stays O(1) after the first call.
+        # Keyed by ``(tenant_id, campaign_id)`` -> signed definition.
+        self._signed_definitions: dict[tuple[str, str], CampaignDefinition] = {}
 
     # -------------------------------------------------------------------------
     # Campaign creation
@@ -105,9 +134,11 @@ class CampaignOrchestrator:
 
         Validation enforces (a) campaign type is supported by a registered
         worker, (b) approver_quorum meets the type's minimum, (c) tenant
-        cost rollup has headroom, (d) success_criteria is non-empty.
+        cost rollup has headroom, (d) success_criteria is non-empty,
+        (e) signature is present and verifies (#214-S1).
         """
         self._validate_definition(definition)
+        definition = self._ensure_signed_definition(definition)
 
         # D9: tenant cost rollup gate
         if not await self._tenant_rollup.can_start_campaign(
@@ -185,6 +216,10 @@ class CampaignOrchestrator:
         Returns the post-execution state. Callers iterate until the
         returned state's status is terminal or AWAITING_HITL.
         """
+        # #214-S1: re-verify the caller-supplied definition every time;
+        # a mutated definition would otherwise sail past on subsequent
+        # phase invocations.
+        definition = self._ensure_signed_definition(definition)
         state = await self._load_state(definition)
         if state.status.is_terminal:
             return state
@@ -215,6 +250,11 @@ class CampaignOrchestrator:
         prior_checkpoint = await self._checkpoint_store.read(
             definition.campaign_id, phase.definition.phase_id
         )
+        # #214-S2: verify checkpoint signature before trusting it for
+        # resume. Store-level tamper detection is the first line of
+        # defence; signature verification is the second.
+        if prior_checkpoint is not None:
+            self._verify_checkpoint(prior_checkpoint, definition)
         context = PhaseExecutionContext(
             definition=definition,
             state=state,
@@ -265,7 +305,11 @@ class CampaignOrchestrator:
     ) -> CampaignState:
         """Translate a PhaseResult into a state-machine transition."""
         # Persist checkpoint regardless of outcome (resumable on retry).
-        checkpoint = PhaseCheckpoint(
+        # #214-S2: sign with the configured signer over canonical bytes
+        # (excludes ``kms_signature`` + ``created_at``). InMemory store
+        # already rejects empty signatures; production KMS impl returns
+        # an asymmetric signature that the verify path checks on read.
+        unsigned_checkpoint = PhaseCheckpoint(
             campaign_id=definition.campaign_id,
             phase_id=phase.definition.phase_id,
             artifact_manifest=result.artifacts,
@@ -278,8 +322,8 @@ class CampaignOrchestrator:
                 phases_completed=state.clock.phases_completed
                 + (1 if result.advances_state_machine else 0),
             ),
-            kms_signature=_dummy_kms_signature(definition.campaign_id),
         )
+        checkpoint = self._sign_checkpoint(unsigned_checkpoint, definition)
         checkpoint_key = await self._checkpoint_store.write(checkpoint)
 
         completed = CompletedPhaseRef(
@@ -354,6 +398,11 @@ class CampaignOrchestrator:
         campaign's milestones. High-impact campaigns require
         ``approver_quorum >= 2`` distinct approvers.
         """
+        # #214-S1: verify signature before honouring the approval --
+        # an attacker who tampers with the definition to lower
+        # approver_quorum should not be able to walk approvals
+        # through afterward.
+        definition = self._ensure_signed_definition(definition)
         if approver_principal_arn == definition.creator_principal_arn:
             raise SeparationOfDutiesError(
                 f"Principal {approver_principal_arn} created campaign "
@@ -418,6 +467,7 @@ class CampaignOrchestrator:
     # -------------------------------------------------------------------------
 
     async def cancel_campaign(self, definition: CampaignDefinition) -> CampaignState:
+        definition = self._ensure_signed_definition(definition)
         state = await self._load_state(definition)
         if state.status.is_terminal:
             return state
@@ -486,13 +536,123 @@ class CampaignOrchestrator:
         )
         return updated
 
+    # -------------------------------------------------------------------------
+    # #214-S1 + S2: signing + verification helpers
+    # -------------------------------------------------------------------------
 
-def _dummy_kms_signature(campaign_id: str) -> str:
-    """Stub signature for in-process use.
+    @staticmethod
+    def _definition_key_id(tenant_id: str) -> str:
+        """Stable per-tenant key id used by the signer Port.
 
-    Production swaps in a KMS-backed signer; the in-memory checkpoint
-    store accepts any non-empty string. Tests that exercise the
-    tamper-detection path use ``InMemoryCheckpointStore.simulate_tamper``
-    rather than checking signature validity.
-    """
-    return f"unsigned:{campaign_id}"
+        Production maps this to ``alias/aura/campaign-signing/<tenant>``
+        in the KMS-backed implementation.
+        """
+        return f"campaign-signing:{tenant_id}"
+
+    @staticmethod
+    def _checkpoint_key_id(tenant_id: str) -> str:
+        return f"campaign-checkpoint:{tenant_id}"
+
+    def _sign_definition(self, definition: CampaignDefinition) -> CampaignDefinition:
+        """Sign an unsigned definition; return a copy with the signature set."""
+        payload = canonicalize_campaign_definition(definition)
+        signature = self._signer.sign(
+            payload=payload, key_id=self._definition_key_id(definition.tenant_id)
+        )
+        return replace(definition, definition_signature=signature)
+
+    def _verify_definition(self, definition: CampaignDefinition) -> None:
+        """Verify ``definition_signature``; raise on mismatch (#214-S1)."""
+        if not definition.definition_signature:
+            raise SignatureVerificationError(
+                f"CampaignDefinition for tenant={definition.tenant_id} "
+                f"campaign={definition.campaign_id} carries no signature "
+                f"(definition_signature is empty). This is the T1565.001 "
+                f"tampering bypass closed by #214-S1; refuse to operate "
+                f"on unsigned definitions."
+            )
+        ok = False
+        try:
+            ok = self._signer.verify(
+                payload=canonicalize_campaign_definition(definition),
+                signature=definition.definition_signature,
+                key_id=self._definition_key_id(definition.tenant_id),
+            )
+        except Exception as exc:  # pragma: no cover -- KMS-unreachable etc.
+            raise SignatureVerificationError(
+                f"Signature verification raised for tenant={definition.tenant_id} "
+                f"campaign={definition.campaign_id}: {exc}"
+            ) from exc
+        if not ok:
+            raise SignatureVerificationError(
+                f"CampaignDefinition signature does not verify for "
+                f"tenant={definition.tenant_id} "
+                f"campaign={definition.campaign_id}. Definition has been "
+                f"tampered with or signed under a revoked key."
+            )
+
+    def _ensure_signed_definition(
+        self, definition: CampaignDefinition
+    ) -> CampaignDefinition:
+        """Sign-or-verify the definition before use.
+
+        Production behaviour (``require_signed_input=True``): rejects
+        unsigned input and verifies signed input. Test / in-process
+        behaviour (default): signs unsigned input automatically and
+        verifies signed input. The cached signed copy is reused so
+        re-verification on every public-method entry stays cheap.
+        """
+        key = (definition.tenant_id, definition.campaign_id)
+        if definition.definition_signature:
+            self._verify_definition(definition)
+            self._signed_definitions[key] = definition
+            return definition
+        if self._require_signed_input:
+            raise SignatureVerificationError(
+                f"require_signed_input=True but the definition for "
+                f"tenant={definition.tenant_id} "
+                f"campaign={definition.campaign_id} is unsigned. The API "
+                f"layer must sign before calling the orchestrator."
+            )
+        signed = self._sign_definition(definition)
+        self._signed_definitions[key] = signed
+        return signed
+
+    def _sign_checkpoint(
+        self,
+        checkpoint: PhaseCheckpoint,
+        definition: CampaignDefinition,
+    ) -> PhaseCheckpoint:
+        """Return a copy of ``checkpoint`` with a real signature populated."""
+        payload = canonicalize_phase_checkpoint(checkpoint)
+        signature = self._signer.sign(
+            payload=payload,
+            key_id=self._checkpoint_key_id(definition.tenant_id),
+        )
+        return replace(checkpoint, kms_signature=signature)
+
+    def _verify_checkpoint(
+        self,
+        checkpoint: PhaseCheckpoint,
+        definition: CampaignDefinition,
+    ) -> None:
+        """Verify ``checkpoint.kms_signature``; raise on mismatch (#214-S2)."""
+        payload = canonicalize_phase_checkpoint(checkpoint)
+        try:
+            ok = self._signer.verify(
+                payload=payload,
+                signature=checkpoint.kms_signature,
+                key_id=self._checkpoint_key_id(definition.tenant_id),
+            )
+        except Exception as exc:  # pragma: no cover
+            raise TamperedStateError(
+                f"Checkpoint signature verification raised for "
+                f"campaign={checkpoint.campaign_id} "
+                f"phase={checkpoint.phase_id}: {exc}"
+            ) from exc
+        if not ok:
+            raise TamperedStateError(
+                f"Checkpoint signature does not verify for "
+                f"campaign={checkpoint.campaign_id} "
+                f"phase={checkpoint.phase_id}. Refusing to resume."
+            )

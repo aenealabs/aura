@@ -1,0 +1,515 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 2.9 - Campaign Manager Persistence (ADR-089 DDB + S3 Object Lock + KMS)'
+
+# ADR-089 Phase 1 substrate (issue #214 Phase 3 item A1). Provisions:
+#   * Two KMS CMKs:
+#       - campaign-signing: signs CampaignDefinition + PhaseCheckpoint
+#                           (closes #214-S1 + S2 tampering attacks).
+#       - mythos-quarantine: separate key for the Mythos PoC bucket
+#                            (Sally's C-3 key separation requirement;
+#                            orchestrator role cannot decrypt).
+#   * Four DynamoDB tables:
+#       - campaigns-state            (campaign FSM state; PK: tenant_id#campaign_id;
+#                                     GSI on tenant_id + status for operator queries)
+#       - campaign-checkpoints       (signed phase checkpoints; PK + SK by phase)
+#       - campaign-operation-ledger  (idempotency claims + signed outcomes;
+#                                     #214-S5 tenant scoping built into the key)
+#       - tenant-cost-rollup         (per-tenant spend across the billing period;
+#                                     hard cap enforcement at campaign creation)
+#   * Two S3 buckets with Object Lock compliance mode:
+#       - campaign-artifacts         (audit-grade manifests + reasoning traces;
+#                                     7y default retention)
+#       - mythos-poc-quarantine      (separate CMK, MFA-delete enabled; isolated
+#                                     from general artifacts per Sally's annex)
+#
+# Bootstrap-safety: this stack is intentionally self-contained -- no
+# Fn::ImportValue dependencies. It can be deployed standalone in a
+# fresh account before the SFN state machine, admission queue, or
+# API stacks land (A2/A3/A4 follow-ups). Downstream stacks import
+# table names + bucket names + KMS ARNs via the Outputs.
+#
+# Implements ADR-089 Architecture §Persistence + #214 Phase 3 item A1.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment name
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  ArtifactRetentionYears:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 30
+    Description: >-
+      Object Lock retention in years for the campaign-artifacts and
+      mythos-poc-quarantine buckets. 7 years is the SOX / NIST 800-53
+      AU-11 default; federal customers may extend.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # -------------------------------------------------------------------------
+  # KMS CMKs
+  # -------------------------------------------------------------------------
+
+  CampaignSigningKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      Description: !Sub 'ADR-089 campaign signing CMK (${Environment}) -- signs CampaignDefinition + PhaseCheckpoint'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+        - Key: Purpose
+          Value: campaign-signing
+
+  CampaignSigningKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}/campaign-signing/${Environment}'
+      TargetKeyId: !Ref CampaignSigningKey
+
+  MythosQuarantineKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      Description: !Sub 'ADR-089 Mythos quarantine CMK (${Environment}) -- separate key for PoC bucket'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Root access only. Sally C-3: the campaign orchestrator role
+          # MUST NOT be able to decrypt this key -- enforcement of
+          # CMMC SC.L2-3.13.11 key separation between general campaign
+          # artifacts and quarantined exploit PoCs.
+          - Sid: EnableRootAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+        - Key: Purpose
+          Value: mythos-quarantine
+
+  MythosQuarantineKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}/mythos-quarantine/${Environment}'
+      TargetKeyId: !Ref MythosQuarantineKey
+
+  # -------------------------------------------------------------------------
+  # DynamoDB tables
+  # -------------------------------------------------------------------------
+
+  CampaignsStateTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub '${ProjectName}-campaigns-state-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenant_campaign_id
+          AttributeType: S
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_campaign_id
+          KeyType: HASH
+      # Tara's recommended addition: GSI on (tenant_id, status) so
+      # operator queries ("list AWAITING_HITL for tenant X") do not
+      # scan the table.
+      GlobalSecondaryIndexes:
+        - IndexName: tenant-status-index
+          KeySchema:
+            - AttributeName: tenant_id
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref CampaignSigningKey
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  CampaignCheckpointsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub '${ProjectName}-campaign-checkpoints-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenant_campaign_id
+          AttributeType: S
+        - AttributeName: phase_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_campaign_id
+          KeyType: HASH
+        - AttributeName: phase_id
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref CampaignSigningKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  CampaignOperationLedgerTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub '${ProjectName}-campaign-operation-ledger-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      # #214-S5: tenant_id is part of the PK so cross-tenant replay is
+      # impossible. Composite SK = phase_id#operation_id keeps idempotent
+      # claims uniquely addressable.
+      AttributeDefinitions:
+        - AttributeName: tenant_campaign_id
+          AttributeType: S
+        - AttributeName: phase_operation_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_campaign_id
+          KeyType: HASH
+        - AttributeName: phase_operation_id
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref CampaignSigningKey
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  TenantCostRollupTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub '${ProjectName}-tenant-cost-rollup-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      # Per-tenant spend rolled up across the billing period (D9).
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: billing_period
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+        - AttributeName: billing_period
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref CampaignSigningKey
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+
+  # -------------------------------------------------------------------------
+  # S3 buckets
+  # -------------------------------------------------------------------------
+
+  CampaignArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      BucketName: !Sub '${ProjectName}-campaign-artifacts-${AWS::AccountId}-${Environment}'
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: COMPLIANCE
+            Years: !Ref ArtifactRetentionYears
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt CampaignSigningKey.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+        - Key: Purpose
+          Value: campaign-artifacts
+
+  CampaignArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CampaignArtifactsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt CampaignArtifactsBucket.Arn
+              - !Sub '${CampaignArtifactsBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+          - Sid: DenyUnencryptedUploads
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:PutObject'
+            Resource: !Sub '${CampaignArtifactsBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                's3:x-amz-server-side-encryption': 'aws:kms'
+
+  MythosPocQuarantineBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      # Separate bucket, separate CMK, MFA-delete enabled. Per ADR-089
+      # Mythos Containment Annex + Sally's C-3 key separation
+      # requirement. The orchestrator role does NOT have decrypt access
+      # to MythosQuarantineKey, so even a compromised orchestrator
+      # cannot exfiltrate quarantined PoCs.
+      BucketName: !Sub '${ProjectName}-mythos-poc-quarantine-${AWS::AccountId}-${Environment}'
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: COMPLIANCE
+            Years: !Ref ArtifactRetentionYears
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt MythosQuarantineKey.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ADR
+          Value: ADR-089
+        - Key: Purpose
+          Value: mythos-quarantine
+
+  MythosPocQuarantineBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MythosPocQuarantineBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt MythosPocQuarantineBucket.Arn
+              - !Sub '${MythosPocQuarantineBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+          - Sid: DenyUnencryptedUploads
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:PutObject'
+            Resource: !Sub '${MythosPocQuarantineBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                's3:x-amz-server-side-encryption': 'aws:kms'
+
+# -----------------------------------------------------------------------------
+# Outputs (for cross-stack import by SFN state machine, API, worker IAM)
+# -----------------------------------------------------------------------------
+
+Outputs:
+  CampaignSigningKeyArn:
+    Description: ARN of the KMS CMK used for CampaignDefinition + PhaseCheckpoint signing
+    Value: !GetAtt CampaignSigningKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaign-signing-key-arn-${Environment}'
+
+  CampaignSigningKeyAliasName:
+    Description: Alias for the campaign signing key (used by KMS-backed signer)
+    Value: !Ref CampaignSigningKeyAlias
+    Export:
+      Name: !Sub '${ProjectName}-campaign-signing-key-alias-${Environment}'
+
+  MythosQuarantineKeyArn:
+    Description: ARN of the separate Mythos quarantine CMK
+    Value: !GetAtt MythosQuarantineKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-mythos-quarantine-key-arn-${Environment}'
+
+  CampaignsStateTableName:
+    Description: Campaign FSM state table
+    Value: !Ref CampaignsStateTable
+    Export:
+      Name: !Sub '${ProjectName}-campaigns-state-table-${Environment}'
+
+  CampaignsStateTableArn:
+    Description: Campaign FSM state table ARN
+    Value: !GetAtt CampaignsStateTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaigns-state-table-arn-${Environment}'
+
+  CampaignsStateStreamArn:
+    Description: Campaign state table stream ARN (for EventBridge Pipes / Lambda triggers)
+    Value: !GetAtt CampaignsStateTable.StreamArn
+    Export:
+      Name: !Sub '${ProjectName}-campaigns-state-stream-arn-${Environment}'
+
+  CampaignCheckpointsTableName:
+    Description: Signed phase checkpoints table
+    Value: !Ref CampaignCheckpointsTable
+    Export:
+      Name: !Sub '${ProjectName}-campaign-checkpoints-table-${Environment}'
+
+  CampaignCheckpointsTableArn:
+    Description: Signed phase checkpoints table ARN
+    Value: !GetAtt CampaignCheckpointsTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaign-checkpoints-table-arn-${Environment}'
+
+  CampaignOperationLedgerTableName:
+    Description: Operation ledger table (#214-S5 tenant-scoped)
+    Value: !Ref CampaignOperationLedgerTable
+    Export:
+      Name: !Sub '${ProjectName}-campaign-operation-ledger-table-${Environment}'
+
+  CampaignOperationLedgerTableArn:
+    Description: Operation ledger table ARN
+    Value: !GetAtt CampaignOperationLedgerTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaign-operation-ledger-table-arn-${Environment}'
+
+  TenantCostRollupTableName:
+    Description: Per-tenant cost rollup table (D9)
+    Value: !Ref TenantCostRollupTable
+    Export:
+      Name: !Sub '${ProjectName}-tenant-cost-rollup-table-${Environment}'
+
+  TenantCostRollupTableArn:
+    Description: Per-tenant cost rollup table ARN
+    Value: !GetAtt TenantCostRollupTable.Arn
+    Export:
+      Name: !Sub '${ProjectName}-tenant-cost-rollup-table-arn-${Environment}'
+
+  CampaignArtifactsBucketName:
+    Description: S3 bucket for audit-grade campaign artifacts
+    Value: !Ref CampaignArtifactsBucket
+    Export:
+      Name: !Sub '${ProjectName}-campaign-artifacts-bucket-${Environment}'
+
+  CampaignArtifactsBucketArn:
+    Description: S3 bucket ARN for audit-grade campaign artifacts
+    Value: !GetAtt CampaignArtifactsBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-campaign-artifacts-bucket-arn-${Environment}'
+
+  MythosPocQuarantineBucketName:
+    Description: S3 bucket for quarantined Mythos PoCs (separate CMK)
+    Value: !Ref MythosPocQuarantineBucket
+    Export:
+      Name: !Sub '${ProjectName}-mythos-poc-quarantine-bucket-${Environment}'
+
+  MythosPocQuarantineBucketArn:
+    Description: Mythos quarantine bucket ARN
+    Value: !GetAtt MythosPocQuarantineBucket.Arn
+    Export:
+      Name: !Sub '${ProjectName}-mythos-poc-quarantine-bucket-arn-${Environment}'

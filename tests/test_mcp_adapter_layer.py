@@ -7,6 +7,7 @@ for ENTERPRISE mode deployments with AgentCore Gateway integration.
 
 import os
 import platform
+import sys
 
 import pytest
 
@@ -17,6 +18,27 @@ import pytest
 if platform.system() != "Linux":
     pytestmark = pytest.mark.forked
 from unittest.mock import patch
+
+# tests/test_external_tool_registry.py performs module-collection-time
+# sys.modules mocking of src.services.mcp_gateway_client and then imports
+# src.services.external_tool_registry while those mocks are active. The
+# mocks are then restored, but src.services.external_tool_registry stays
+# in sys.modules with `MCPGatewayClient = MagicMock` baked into its
+# module namespace. On macOS the surrounding tests in this file run under
+# @pytest.mark.forked so each test gets a clean subprocess, masking the
+# pollution. On Linux CI no fork happens and ExternalToolRegistry()
+# below ends up with a MagicMock client whose async methods cannot be
+# awaited ("TypeError: object MagicMock can't be used in 'await'
+# expression"). Drop the polluted modules so our imports below trigger
+# a fresh, real import. Order matters: external_tool_registry must be
+# popped before its dependencies so its re-import picks up the real
+# mcp_gateway_client / mcp_tool_adapters bindings.
+for _polluted in (
+    "src.services.external_tool_registry",
+    "src.services.mcp_gateway_client",
+    "src.services.mcp_tool_adapters",
+):
+    sys.modules.pop(_polluted, None)
 
 from src.config import (
     CustomerMCPBudget,

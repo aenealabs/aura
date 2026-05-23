@@ -455,7 +455,7 @@ class TestFeedbackListing:
         from src.api.feedback_endpoints import list_feedback
 
         mock_service = MagicMock()
-        mock_service.list_feedback = AsyncMock(return_value=[sample_feedback])
+        mock_service.list_feedback = AsyncMock(return_value=([sample_feedback], None))
 
         with patch(
             "src.api.feedback_endpoints.get_feedback_service", return_value=mock_service
@@ -464,12 +464,12 @@ class TestFeedbackListing:
                 feedback_type=None,
                 status=None,
                 limit=50,
-                offset=0,
+                cursor=None,
                 current_user=mock_user,
             )
 
-        assert len(result) == 1
-        assert result[0].feedback_id == "fb-123"
+        assert len(result.items) == 1
+        assert result.items[0].feedback_id == "fb-123"
 
     @pytest.mark.asyncio
     async def test_list_feedback_by_type(self, mock_user, sample_feedback):
@@ -477,7 +477,7 @@ class TestFeedbackListing:
         from src.api.feedback_endpoints import list_feedback
 
         mock_service = MagicMock()
-        mock_service.list_feedback = AsyncMock(return_value=[sample_feedback])
+        mock_service.list_feedback = AsyncMock(return_value=([sample_feedback], None))
 
         with patch(
             "src.api.feedback_endpoints.get_feedback_service", return_value=mock_service
@@ -486,11 +486,11 @@ class TestFeedbackListing:
                 feedback_type="feature_request",
                 status=None,
                 limit=50,
-                offset=0,
+                cursor=None,
                 current_user=mock_user,
             )
 
-        assert len(result) == 1
+        assert len(result.items) == 1
         # Verify filter was passed
         call_args = mock_service.list_feedback.call_args
         assert call_args[1]["feedback_type"] == FeedbackType.FEATURE_REQUEST
@@ -501,7 +501,7 @@ class TestFeedbackListing:
         from src.api.feedback_endpoints import list_feedback
 
         mock_service = MagicMock()
-        mock_service.list_feedback = AsyncMock(return_value=[sample_feedback])
+        mock_service.list_feedback = AsyncMock(return_value=([sample_feedback], None))
 
         with patch(
             "src.api.feedback_endpoints.get_feedback_service", return_value=mock_service
@@ -510,7 +510,7 @@ class TestFeedbackListing:
                 feedback_type=None,
                 status="new",
                 limit=50,
-                offset=0,
+                cursor=None,
                 current_user=mock_user,
             )
 
@@ -532,7 +532,7 @@ class TestFeedbackListing:
                     feedback_type="invalid",
                     status=None,
                     limit=50,
-                    offset=0,
+                    cursor=None,
                     current_user=mock_user,
                 )
 
@@ -553,7 +553,7 @@ class TestFeedbackListing:
                     feedback_type=None,
                     status="invalid",
                     limit=50,
-                    offset=0,
+                    cursor=None,
                     current_user=mock_user,
                 )
 
@@ -565,7 +565,7 @@ class TestFeedbackListing:
         from src.api.feedback_endpoints import list_feedback
 
         mock_service = MagicMock()
-        mock_service.list_feedback = AsyncMock(return_value=[sample_feedback])
+        mock_service.list_feedback = AsyncMock(return_value=([sample_feedback], None))
 
         with patch(
             "src.api.feedback_endpoints.get_feedback_service", return_value=mock_service
@@ -574,7 +574,7 @@ class TestFeedbackListing:
                 feedback_type=None,
                 status=None,
                 limit=50,
-                offset=0,
+                cursor=None,
                 current_user=mock_admin_user,
             )
 
@@ -995,7 +995,9 @@ class TestEdgeCases:
         from src.api.feedback_endpoints import list_feedback
 
         mock_service = MagicMock()
-        mock_service.list_feedback = AsyncMock(return_value=[sample_feedback])
+        mock_service.list_feedback = AsyncMock(
+            return_value=([sample_feedback], "next-cursor-token")
+        )
 
         with patch(
             "src.api.feedback_endpoints.get_feedback_service", return_value=mock_service
@@ -1004,13 +1006,13 @@ class TestEdgeCases:
                 feedback_type=None,
                 status=None,
                 limit=10,
-                offset=20,
+                cursor="prev-cursor-token",
                 current_user=mock_user,
             )
 
         call_args = mock_service.list_feedback.call_args
         assert call_args[1]["limit"] == 10
-        assert call_args[1]["offset"] == 20
+        assert call_args[1]["cursor"] == "prev-cursor-token"
 
     def test_user_without_customer_id_defaults(self):
         """Test user without customer_id defaults correctly."""

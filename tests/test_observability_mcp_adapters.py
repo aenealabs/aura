@@ -1,9 +1,11 @@
 """Unit tests for Observability MCP Adapters (ADR-025 Phase 5)."""
 
 import platform
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
 # These tests require pytest-forked for isolation. On Linux CI, mock
@@ -13,6 +15,7 @@ import pytest
 if platform.system() != "Linux":
     pytestmark = pytest.mark.forked
 
+from src.services import observability_mcp_adapters as _adapter_mod
 from src.services.observability_mcp_adapters import ObservabilityMCPAdapters
 
 
@@ -27,6 +30,26 @@ class AsyncContextManagerMock:
 
     async def __aexit__(self, *args):
         pass
+
+
+@contextmanager
+def patched_adapter_aiohttp(mock_session: MagicMock):
+    """Patch the adapter module's ``aiohttp`` attribute with a mock.
+
+    The global ``patch("aiohttp.ClientSession", ...)`` target was observed to
+    leak real HTTP calls in CI Linux (sibling tests can pollute aiohttp's
+    module state), so replacing the adapter module's own ``aiohttp`` reference
+    is the most direct path and isn't sensitive to module-level lookup
+    ordering. Mirrors the pattern in
+    ``tests/test_external_tool_connectors.py::patched_connector_aiohttp``.
+    """
+    fake_aiohttp = MagicMock(wraps=aiohttp)
+    fake_aiohttp.ClientSession = MagicMock(
+        return_value=AsyncContextManagerMock(mock_session)
+    )
+    fake_aiohttp.ClientTimeout = aiohttp.ClientTimeout
+    with patch.object(_adapter_mod, "aiohttp", fake_aiohttp):
+        yield fake_aiohttp
 
 
 @pytest.fixture
@@ -83,9 +106,7 @@ class TestDatadogTraces:
         mock_session = MagicMock()
         mock_session.get.return_value = AsyncContextManagerMock(mock_response)
 
-        with patch(
-            "aiohttp.ClientSession", return_value=AsyncContextManagerMock(mock_session)
-        ):
+        with patched_adapter_aiohttp(mock_session):
             traces = await adapters.datadog_query_traces(
                 service="aura-api", time_range=(start, end), error_only=True
             )
@@ -130,9 +151,7 @@ class TestPrometheusMetrics:
         mock_session = MagicMock()
         mock_session.get.return_value = AsyncContextManagerMock(mock_response)
 
-        with patch(
-            "aiohttp.ClientSession", return_value=AsyncContextManagerMock(mock_session)
-        ):
+        with patched_adapter_aiohttp(mock_session):
             metrics = await adapters.prometheus_query_range(
                 query="rate(http_requests_total[5m])",
                 start_time=start,
@@ -157,9 +176,7 @@ class TestPrometheusMetrics:
         mock_session = MagicMock()
         mock_session.get.return_value = AsyncContextManagerMock(mock_response)
 
-        with patch(
-            "aiohttp.ClientSession", return_value=AsyncContextManagerMock(mock_session)
-        ):
+        with patched_adapter_aiohttp(mock_session):
             metrics = await adapters.prometheus_query_instant(
                 query='up{job="aura-api"}'
             )

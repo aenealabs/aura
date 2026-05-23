@@ -8,12 +8,14 @@ Comprehensive test coverage for file discovery, indexing operations, and edge ca
 # ruff: noqa: PLR2004
 
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import git
 import pytest
 
+from src.services import filesystem_indexer as _fs_indexer_mod
 from src.services.filesystem_indexer import (
     MIN_TEXT_LENGTH_FOR_EMBEDDING,
     FilesystemIndexer,
@@ -27,6 +29,21 @@ from src.services.filesystem_indexer import (
 # patch is honored. The previous Linux skip + "rely on conftest.py cleanup"
 # claim was incorrect; no such cleanup exists.
 pytestmark = pytest.mark.forked
+
+
+@contextmanager
+def patched_indexer_git(mock_repo):
+    """Replace the filesystem_indexer module's ``git`` reference with a mock.
+
+    ``patch("git.Repo", ...)`` does not reliably intercept under the CI
+    Linux test runner even with forked mode active. Replacing the consumer
+    module's own ``git`` attribute is the most direct path and isn't
+    sensitive to module-level lookup ordering.
+    """
+    fake_git = MagicMock(wraps=git)
+    fake_git.Repo = MagicMock(return_value=mock_repo)
+    with patch.object(_fs_indexer_mod, "git", fake_git):
+        yield fake_git
 
 
 class TestFilesystemIndexerInitialization:
@@ -733,19 +750,15 @@ class TestGetGitMetadata:
         """Test git metadata extraction with commit history."""
         with tempfile.TemporaryDirectory() as tmpdir:
             git.Repo.init(tmpdir)
-            with patch("git.Repo") as mock_repo_class:
-                # Create mock commit
-                mock_commit = Mock()
-                mock_commit.author.name = "Test Author"
-                mock_commit.hexsha = "abc123"
-                mock_commit.message = "Test commit\nMore details"
+            mock_commit = Mock()
+            mock_commit.author.name = "Test Author"
+            mock_commit.hexsha = "abc123"
+            mock_commit.message = "Test commit\nMore details"
 
-                mock_repo = Mock()
-                mock_repo.iter_commits.side_effect = lambda **kwargs: iter(
-                    [mock_commit]
-                )
-                mock_repo_class.return_value = mock_repo
+            mock_repo = Mock()
+            mock_repo.iter_commits.side_effect = lambda **kwargs: iter([mock_commit])
 
+            with patched_indexer_git(mock_repo):
                 indexer = FilesystemIndexer(AsyncMock(), Mock(), str(tmpdir))
 
                 result = await indexer._get_git_metadata(Path("test.py"))
@@ -760,19 +773,15 @@ class TestGetGitMetadata:
         """Test git metadata extraction when commit message is bytes."""
         with tempfile.TemporaryDirectory() as tmpdir:
             git.Repo.init(tmpdir)
-            with patch("git.Repo") as mock_repo_class:
-                # Create mock commit with bytes message
-                mock_commit = Mock()
-                mock_commit.author.name = "Test Author"
-                mock_commit.hexsha = "def456"
-                mock_commit.message = b"Bytes commit message\nDetails"
+            mock_commit = Mock()
+            mock_commit.author.name = "Test Author"
+            mock_commit.hexsha = "def456"
+            mock_commit.message = b"Bytes commit message\nDetails"
 
-                mock_repo = Mock()
-                mock_repo.iter_commits.side_effect = lambda **kwargs: iter(
-                    [mock_commit]
-                )
-                mock_repo_class.return_value = mock_repo
+            mock_repo = Mock()
+            mock_repo.iter_commits.side_effect = lambda **kwargs: iter([mock_commit])
 
+            with patched_indexer_git(mock_repo):
                 indexer = FilesystemIndexer(AsyncMock(), Mock(), str(tmpdir))
 
                 result = await indexer._get_git_metadata(Path("test.py"))
@@ -784,36 +793,31 @@ class TestGetGitMetadata:
         """Test git metadata extraction with multiple contributors."""
         with tempfile.TemporaryDirectory() as tmpdir:
             git.Repo.init(tmpdir)
-            with patch("git.Repo") as mock_repo_class:
-                # Create mock commits from different authors
-                mock_commit1 = Mock()
-                mock_commit1.author.name = "Author One"
-                mock_commit1.hexsha = "abc123"
-                mock_commit1.message = "First commit"
+            mock_commit1 = Mock()
+            mock_commit1.author.name = "Author One"
+            mock_commit1.hexsha = "abc123"
+            mock_commit1.message = "First commit"
 
-                mock_commit2 = Mock()
-                mock_commit2.author.name = "Author Two"
-                mock_commit2.hexsha = "def456"
-                mock_commit2.message = "Second commit"
+            mock_commit2 = Mock()
+            mock_commit2.author.name = "Author Two"
+            mock_commit2.hexsha = "def456"
+            mock_commit2.message = "Second commit"
 
-                mock_commit3 = Mock()
-                mock_commit3.author.name = "Author One"  # Same as first
-                mock_commit3.hexsha = "ghi789"
-                mock_commit3.message = "Third commit"
+            mock_commit3 = Mock()
+            mock_commit3.author.name = "Author One"  # Same as first
+            mock_commit3.hexsha = "ghi789"
+            mock_commit3.message = "Third commit"
 
-                mock_repo = Mock()
-                # First call returns most recent, second call returns all
-                call_count = [0]
+            mock_repo = Mock()
 
-                def mock_iter_commits(**kwargs):
-                    call_count[0] += 1
-                    if kwargs.get("max_count") == 1:
-                        return iter([mock_commit1])
-                    return iter([mock_commit1, mock_commit2, mock_commit3])
+            def mock_iter_commits(**kwargs):
+                if kwargs.get("max_count") == 1:
+                    return iter([mock_commit1])
+                return iter([mock_commit1, mock_commit2, mock_commit3])
 
-                mock_repo.iter_commits = mock_iter_commits
-                mock_repo_class.return_value = mock_repo
+            mock_repo.iter_commits = mock_iter_commits
 
+            with patched_indexer_git(mock_repo):
                 indexer = FilesystemIndexer(AsyncMock(), Mock(), str(tmpdir))
 
                 result = await indexer._get_git_metadata(Path("test.py"))
@@ -845,18 +849,15 @@ class TestExtractMetadata:
         """Test metadata extraction for Python file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             git.Repo.init(tmpdir)
-            with patch("git.Repo") as mock_repo_class:
-                mock_commit = Mock()
-                mock_commit.author.name = "Test Author"
-                mock_commit.hexsha = "abc123"
-                mock_commit.message = "Test commit"
+            mock_commit = Mock()
+            mock_commit.author.name = "Test Author"
+            mock_commit.hexsha = "abc123"
+            mock_commit.message = "Test commit"
 
-                mock_repo = Mock()
-                mock_repo.iter_commits.side_effect = lambda **kwargs: iter(
-                    [mock_commit]
-                )
-                mock_repo_class.return_value = mock_repo
+            mock_repo = Mock()
+            mock_repo.iter_commits.side_effect = lambda **kwargs: iter([mock_commit])
 
+            with patched_indexer_git(mock_repo):
                 indexer = FilesystemIndexer(AsyncMock(), Mock(), str(tmpdir))
 
                 # Create test Python file

@@ -126,29 +126,39 @@ def lambda_context():
 
 
 class TestAutonomyConfiguration:
-    """Tests for autonomy decision logic."""
+    """Tests for autonomy decision logic.
 
-    def test_should_auto_remediate_low_severity_dev(self, mock_aws_clients):
+    These tests exercise the pure-function autonomy gates
+    (``_should_auto_remediate`` / ``_should_require_hitl``) which only
+    depend on ``ENVIRONMENT`` and the autonomy_config dict. They do NOT
+    touch AWS, so the ``mock_aws_clients`` fixture is deliberately not
+    used here -- referencing it caused ``AttributeError`` on Linux CI
+    because the dispatcher module moved to lazy-init getters under
+    issue #466 and no longer exposes module-level ``dynamodb`` /
+    ``dynamodb_client`` / ``eks_client`` / ``sqs_client`` attributes.
+    """
+
+    def test_should_auto_remediate_low_severity_dev(self):
         """Test auto-remediate is enabled for low severity in dev."""
         with patch(f"{MODULE_PATH}.ENVIRONMENT", "dev"):
             assert dispatcher._should_auto_remediate("low", {}) is True
             assert dispatcher._should_auto_remediate("medium", {}) is True
             assert dispatcher._should_auto_remediate("info", {}) is True
 
-    def test_should_not_auto_remediate_high_severity_dev(self, mock_aws_clients):
+    def test_should_not_auto_remediate_high_severity_dev(self):
         """Test auto-remediate is disabled for high severity in dev."""
         with patch(f"{MODULE_PATH}.ENVIRONMENT", "dev"):
             assert dispatcher._should_auto_remediate("high", {}) is False
             assert dispatcher._should_auto_remediate("critical", {}) is False
 
-    def test_should_not_auto_remediate_in_prod(self, mock_aws_clients):
+    def test_should_not_auto_remediate_in_prod(self):
         """Test auto-remediate is always disabled in prod."""
         with patch(f"{MODULE_PATH}.ENVIRONMENT", "prod"):
             assert dispatcher._should_auto_remediate("low", {}) is False
             assert dispatcher._should_auto_remediate("medium", {}) is False
             assert dispatcher._should_auto_remediate("high", {}) is False
 
-    def test_should_auto_remediate_respects_config_override(self, mock_aws_clients):
+    def test_should_auto_remediate_respects_config_override(self):
         """Test auto-remediate respects explicit config."""
         with patch(f"{MODULE_PATH}.ENVIRONMENT", "dev"):
             # Explicit override to disable
@@ -162,7 +172,7 @@ class TestAutonomyConfiguration:
                 is True
             )
 
-    def test_should_require_hitl_in_prod(self, mock_aws_clients):
+    def test_should_require_hitl_in_prod(self):
         """Test HITL is always required in prod."""
         with patch(f"{MODULE_PATH}.ENVIRONMENT", "prod"):
             assert dispatcher._should_require_hitl("low", {}) is True
@@ -170,19 +180,19 @@ class TestAutonomyConfiguration:
             assert dispatcher._should_require_hitl("high", {}) is True
             assert dispatcher._should_require_hitl("critical", {}) is True
 
-    def test_should_require_hitl_high_severity_dev(self, mock_aws_clients):
+    def test_should_require_hitl_high_severity_dev(self):
         """Test HITL is required for high/critical in dev."""
         with patch(f"{MODULE_PATH}.ENVIRONMENT", "dev"):
             assert dispatcher._should_require_hitl("high", {}) is True
             assert dispatcher._should_require_hitl("critical", {}) is True
 
-    def test_should_not_require_hitl_low_severity_dev(self, mock_aws_clients):
+    def test_should_not_require_hitl_low_severity_dev(self):
         """Test HITL is not required for low/medium in dev."""
         with patch(f"{MODULE_PATH}.ENVIRONMENT", "dev"):
             assert dispatcher._should_require_hitl("low", {}) is False
             assert dispatcher._should_require_hitl("medium", {}) is False
 
-    def test_should_require_hitl_respects_config_override(self, mock_aws_clients):
+    def test_should_require_hitl_respects_config_override(self):
         """Test HITL respects explicit config."""
         with patch(f"{MODULE_PATH}.ENVIRONMENT", "dev"):
             # Explicit override to require

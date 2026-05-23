@@ -7,11 +7,11 @@ Comprehensive test coverage for file discovery, indexing operations, and edge ca
 
 # ruff: noqa: PLR2004
 
-import platform
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import git
 import pytest
 
 from src.services.filesystem_indexer import (
@@ -19,13 +19,14 @@ from src.services.filesystem_indexer import (
     FilesystemIndexer,
 )
 
-# Run tests in separate processes to avoid git.Repo patch pollution
-# These tests require pytest-forked for isolation. On Linux CI, mock
-# patches don't apply correctly without forked mode, so skip there.
-# Use forked mode on non-Linux to prevent state pollution
-# On Linux (CI), run normally and rely on conftest.py cleanup
-if platform.system() != "Linux":
-    pytestmark = pytest.mark.forked
+# Run tests in separate processes to avoid git.Repo patch pollution.
+# Forked mode applies unconditionally: `patch("git.Repo", ...)` does not
+# reliably intercept in CI Linux even with pytest-forked active, so the
+# fixtures below also call ``git.Repo.init(tmpdir)`` defensively -- the
+# constructor's `git.Repo(path)` call then succeeds whether or not the
+# patch is honored. The previous Linux skip + "rely on conftest.py cleanup"
+# claim was incorrect; no such cleanup exists.
+pytestmark = pytest.mark.forked
 
 
 class TestFilesystemIndexerInitialization:
@@ -65,16 +66,13 @@ class TestFilesystemIndexerInitialization:
         """Create temporary directory initialized as a real git repo.
 
         On Linux CI the ``patch("git.Repo", ...)`` from a yielding fixture
-        does not reliably apply inside the consuming test (see notes at
-        the top of this module), so we initialize a real git repository
-        in the tempdir instead of relying on the mock. This keeps the
-        ``__init__`` call's ``git.Repo(path)`` from raising
-        ``InvalidGitRepositoryError`` regardless of patch state.
+        does not reliably apply inside the consuming test, so we initialize
+        a real git repository in the tempdir to keep the constructor's
+        ``git.Repo(path)`` from raising ``InvalidGitRepositoryError``
+        regardless of patch state.
         """
-        import git as _git
-
         with tempfile.TemporaryDirectory() as tmpdir:
-            _git.Repo.init(tmpdir)
+            git.Repo.init(tmpdir)
             yield Path(tmpdir)
 
     def test_initialization(
@@ -146,6 +144,7 @@ class TestShouldIgnore:
     def indexer(self, mock_opensearch, mock_embedding_service, mock_git_repo):
         """Create indexer instance for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=mock_git_repo):
                 yield FilesystemIndexer(
                     mock_opensearch, mock_embedding_service, str(tmpdir)
@@ -242,6 +241,7 @@ class TestDetectLanguage:
     def indexer(self):
         """Create indexer instance for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 yield FilesystemIndexer(AsyncMock(), Mock(), str(tmpdir))
 
@@ -328,6 +328,7 @@ class TestCountLines:
     def indexer(self):
         """Create indexer instance for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 indexer = FilesystemIndexer(AsyncMock(), Mock(), str(tmpdir))
                 indexer._temp_dir = tmpdir
@@ -336,6 +337,7 @@ class TestCountLines:
     def test_count_lines(self, indexer):
         """Test line counting."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "test.txt"
             test_file.write_text("line1\nline2\nline3\n")
 
@@ -344,6 +346,7 @@ class TestCountLines:
     def test_count_lines_empty_file(self, indexer):
         """Test line counting for empty file."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "empty.txt"
             test_file.write_text("")
 
@@ -352,6 +355,7 @@ class TestCountLines:
     def test_count_lines_single_line_no_newline(self, indexer):
         """Test line counting for file with single line and no trailing newline."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "single.txt"
             test_file.write_text("single line")
 
@@ -364,6 +368,7 @@ class TestCountLines:
     def test_count_lines_with_encoding_errors(self, indexer):
         """Test line counting handles encoding errors gracefully."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "binary.bin"
             test_file.write_bytes(b"\x80\x81\x82\x83")
 
@@ -379,6 +384,7 @@ class TestGetFileId:
     def indexer_with_temp_dir(self):
         """Create indexer instance with temporary directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 indexer = FilesystemIndexer(AsyncMock(), Mock(), str(tmpdir))
                 yield indexer, Path(tmpdir)
@@ -430,6 +436,7 @@ class TestEmbedText:
     def indexer(self, mock_embedding_service):
         """Create indexer instance for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 yield FilesystemIndexer(
                     AsyncMock(), mock_embedding_service, str(tmpdir)
@@ -439,6 +446,7 @@ class TestEmbedText:
     async def test_embed_text_short_text(self, mock_embedding_service):
         """Test embedding generation for short text returns zero vector."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 indexer = FilesystemIndexer(
                     AsyncMock(), mock_embedding_service, str(tmpdir)
@@ -454,6 +462,7 @@ class TestEmbedText:
     async def test_embed_text_empty_string(self, mock_embedding_service):
         """Test embedding generation for empty string."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 indexer = FilesystemIndexer(
                     AsyncMock(), mock_embedding_service, str(tmpdir)
@@ -468,6 +477,7 @@ class TestEmbedText:
     async def test_embed_text_none(self, mock_embedding_service):
         """Test embedding generation for None returns zero vector."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 indexer = FilesystemIndexer(
                     AsyncMock(), mock_embedding_service, str(tmpdir)
@@ -482,6 +492,7 @@ class TestEmbedText:
     async def test_embed_text_exactly_min_length(self, mock_embedding_service):
         """Test embedding generation for text exactly at minimum length."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 indexer = FilesystemIndexer(
                     AsyncMock(), mock_embedding_service, str(tmpdir)
@@ -498,6 +509,7 @@ class TestEmbedText:
     async def test_embed_text_valid_text(self, mock_embedding_service):
         """Test embedding generation for valid text."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 indexer = FilesystemIndexer(
                     AsyncMock(), mock_embedding_service, str(tmpdir)
@@ -517,6 +529,8 @@ class TestEmbedText:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
+
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 indexer = FilesystemIndexer(AsyncMock(), mock_service, str(tmpdir))
 
@@ -532,6 +546,7 @@ class TestAnalyzePythonFile:
     def indexer(self):
         """Create indexer instance for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 yield FilesystemIndexer(AsyncMock(), Mock(), str(tmpdir))
 
@@ -539,6 +554,7 @@ class TestAnalyzePythonFile:
     async def test_analyze_python_file(self, indexer):
         """Test Python file analysis."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text('''"""Module docstring"""
 import os
@@ -570,6 +586,7 @@ def my_function():
     async def test_analyze_python_file_invalid_syntax(self, indexer):
         """Test Python file analysis with syntax errors."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "invalid.py"
             test_file.write_text("def invalid syntax;;")
 
@@ -582,6 +599,7 @@ def my_function():
     async def test_analyze_python_file_private_functions_excluded(self, indexer):
         """Test that private functions/classes are excluded."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("""
 def public_function():
@@ -608,6 +626,7 @@ class _PrivateClass:
     async def test_analyze_python_file_complexity_scoring(self, indexer):
         """Test complexity scoring with various control structures."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "complex.py"
             test_file.write_text("""
 def complex_function():
@@ -634,6 +653,7 @@ def complex_function():
     async def test_analyze_python_file_no_docstring(self, indexer):
         """Test Python file analysis when no docstring present."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "no_docstring.py"
             test_file.write_text("""
 import os
@@ -650,6 +670,7 @@ def my_function():
     async def test_analyze_python_file_import_from(self, indexer):
         """Test that ImportFrom statements are captured correctly."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "imports.py"
             test_file.write_text("""
 from os.path import join, exists
@@ -669,6 +690,7 @@ import json
     async def test_analyze_python_file_limits_results(self, indexer):
         """Test that results are limited to 50 items."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             test_file = Path(tmpdir) / "many_functions.py"
             # Create file with 60 functions
             functions = "\n".join([f"def func_{i}(): pass" for i in range(60)])
@@ -694,6 +716,7 @@ class TestGetGitMetadata:
     async def test_get_git_metadata_no_commits(self):
         """Test git metadata extraction when file has no commits."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo") as mock_repo_class:
                 mock_repo = Mock()
                 mock_repo.iter_commits.return_value = iter([])  # No commits
@@ -709,6 +732,7 @@ class TestGetGitMetadata:
     async def test_get_git_metadata_with_commits(self):
         """Test git metadata extraction with commit history."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo") as mock_repo_class:
                 # Create mock commit
                 mock_commit = Mock()
@@ -735,6 +759,7 @@ class TestGetGitMetadata:
     async def test_get_git_metadata_bytes_message(self):
         """Test git metadata extraction when commit message is bytes."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo") as mock_repo_class:
                 # Create mock commit with bytes message
                 mock_commit = Mock()
@@ -758,6 +783,7 @@ class TestGetGitMetadata:
     async def test_get_git_metadata_multiple_contributors(self):
         """Test git metadata extraction with multiple contributors."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo") as mock_repo_class:
                 # Create mock commits from different authors
                 mock_commit1 = Mock()
@@ -798,6 +824,7 @@ class TestGetGitMetadata:
     async def test_get_git_metadata_exception_handling(self):
         """Test git metadata extraction handles exceptions gracefully."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo") as mock_repo_class:
                 mock_repo = Mock()
                 mock_repo.iter_commits.side_effect = Exception("Git error")
@@ -817,6 +844,7 @@ class TestExtractMetadata:
     async def test_extract_metadata_python_file(self):
         """Test metadata extraction for Python file."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo") as mock_repo_class:
                 mock_commit = Mock()
                 mock_commit.author.name = "Test Author"
@@ -855,6 +883,7 @@ def my_function():
     async def test_extract_metadata_test_file(self):
         """Test metadata extraction identifies test files."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo") as mock_repo_class:
                 mock_repo = Mock()
                 mock_repo.iter_commits.return_value = iter([])
@@ -874,6 +903,7 @@ def my_function():
     async def test_extract_metadata_config_file(self):
         """Test metadata extraction identifies config files."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo") as mock_repo_class:
                 mock_repo = Mock()
                 mock_repo.iter_commits.return_value = iter([])
@@ -895,6 +925,7 @@ def my_function():
     async def test_extract_metadata_non_python_file(self):
         """Test metadata extraction for non-Python file skips code analysis."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo") as mock_repo_class:
                 mock_repo = Mock()
                 mock_repo.iter_commits.return_value = iter([])
@@ -923,6 +954,7 @@ class TestIndexFile:
     async def test_index_file_ignored(self):
         """Test that ignored files are skipped."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)
@@ -950,6 +982,7 @@ class TestIndexFile:
     async def test_index_file_success(self):
         """Test successful file indexing."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)
@@ -985,6 +1018,7 @@ class TestDeleteFile:
     async def test_delete_file_success(self):
         """Test file deletion from index."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
 
             with patch("git.Repo", return_value=MagicMock()):
@@ -1006,6 +1040,7 @@ class TestDeleteFile:
     async def test_delete_file_error_handling(self):
         """Test delete file handles errors gracefully."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_opensearch.delete.side_effect = Exception("Delete failed")
 
@@ -1029,6 +1064,7 @@ class TestUpdateFile:
     async def test_update_file_calls_index_file(self):
         """Test that update_file delegates to index_file."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             with patch("git.Repo", return_value=MagicMock()):
                 indexer = FilesystemIndexer(AsyncMock(), Mock(), str(tmpdir))
 
@@ -1049,6 +1085,7 @@ class TestBulkIndex:
     async def test_bulk_index_empty_list(self):
         """Test bulk indexing with empty list."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)
@@ -1067,6 +1104,7 @@ class TestBulkIndex:
     async def test_bulk_index_multiple_documents(self):
         """Test bulk indexing with multiple documents."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)
@@ -1097,6 +1135,7 @@ class TestBulkIndex:
     async def test_bulk_index_adds_embeddings(self):
         """Test that bulk indexing adds embeddings to documents."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.5] * 1536)
@@ -1129,6 +1168,7 @@ class TestIndexRepository:
     async def test_index_repository_empty_directory(self):
         """Test repository indexing with empty directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)
@@ -1147,6 +1187,7 @@ class TestIndexRepository:
     async def test_index_repository_with_files(self):
         """Test repository indexing with files."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)
@@ -1174,6 +1215,7 @@ class TestIndexRepository:
     async def test_index_repository_skips_ignored_files(self):
         """Test that repository indexing skips ignored files."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)
@@ -1206,6 +1248,7 @@ class TestIndexRepository:
     async def test_index_repository_batching(self):
         """Test that repository indexing respects batch size."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)
@@ -1233,6 +1276,7 @@ class TestIndexRepository:
     async def test_index_repository_handles_errors(self):
         """Test that repository indexing handles file errors gracefully."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)
@@ -1266,6 +1310,7 @@ class TestIndexRepository:
     async def test_index_repository_skips_directories(self):
         """Test that repository indexing only processes files, not directories."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            git.Repo.init(tmpdir)
             mock_opensearch = AsyncMock()
             mock_embedding = Mock()
             mock_embedding.generate_embedding = AsyncMock(return_value=[0.1] * 1536)

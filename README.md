@@ -4,8 +4,8 @@
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-24%2C800%2B-brightgreen.svg)](tests/)
-[![Lines of Code](https://img.shields.io/badge/Lines_of_Code-375K%2B-informational.svg)](docs/PROJECT_STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-26%2C559-brightgreen.svg)](tests/)
+[![Lines of Code](https://img.shields.io/badge/Lines_of_Code-408%2C377-informational.svg)](docs/PROJECT_STATUS.md)
 
 Project Aura detects vulnerabilities, generates production-ready patches, validates fixes in isolated sandboxes, and queues them for human approval -- all autonomously. Unlike traditional security scanners that stop at detection, Aura provides end-to-end remediation through a multi-agent AI system built for regulated industries.
 
@@ -348,10 +348,10 @@ The project maintains [Architecture Decision Records](docs/architecture-decision
 
 | Metric | Value |
 |--------|-------|
-| Lines of Code | 375,000+ |
-| Test Suite | 24,800+ tests (0 failures) |
-| Architecture Decision Records | 91 ADRs |
-| CloudFormation Templates | 183 (24 CodeBuild + 159 infrastructure) |
+| Lines of Code | 408,377 (`src/` + `deploy/`; tests counted separately at 308,337). Reproduce: `cloc src/ deploy/ --md` |
+| Test Suite | 26,559 tests (0 failures, main CI green). Reproduce: `pytest --collect-only -q tests/` |
+| Architecture Decision Records | 93 ADRs |
+| CloudFormation Templates | 176 templates (excluding archive) |
 | Infrastructure Phases | 9 of 9 complete |
 
 ---

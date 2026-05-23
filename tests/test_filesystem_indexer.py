@@ -61,11 +61,21 @@ class TestFilesystemIndexerInitialization:
         return mock_repo
 
     @pytest.fixture
-    def temp_git_repo(self, mock_git_repo):
-        """Create temporary directory for testing with mocked git."""
+    def temp_git_repo(self):
+        """Create temporary directory initialized as a real git repo.
+
+        On Linux CI the ``patch("git.Repo", ...)`` from a yielding fixture
+        does not reliably apply inside the consuming test (see notes at
+        the top of this module), so we initialize a real git repository
+        in the tempdir instead of relying on the mock. This keeps the
+        ``__init__`` call's ``git.Repo(path)`` from raising
+        ``InvalidGitRepositoryError`` regardless of patch state.
+        """
+        import git as _git
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("git.Repo", return_value=mock_git_repo):
-                yield Path(tmpdir)
+            _git.Repo.init(tmpdir)
+            yield Path(tmpdir)
 
     def test_initialization(
         self, mock_opensearch, mock_embedding_service, temp_git_repo, mock_git_repo

@@ -9,6 +9,7 @@ Target: 85% coverage of src/services/opensearch_vector_service.py
 
 import os
 import platform
+from collections.abc import MutableMapping
 
 import pytest
 
@@ -40,7 +41,10 @@ class TestOpenSearchVectorService:
         assert service.vector_dimension == 1024
         assert service.use_iam_auth is True
         assert isinstance(service.mock_index, dict)
-        assert isinstance(service.query_cache, dict)
+        # query_cache is a dict when cachetools is unavailable, otherwise a
+        # cachetools.TTLCache (MutableMapping but not a dict subclass). Use
+        # MutableMapping for polymorphic checking across both paths.
+        assert isinstance(service.query_cache, MutableMapping)
 
     def test_initialization_custom_config(self):
         """Test service initialization with custom configuration."""
@@ -1145,11 +1149,31 @@ class TestOpenSearchCacheManagement:
         """Test that cache is pruned when limit is exceeded."""
         service = OpenSearchVectorService(mode=OpenSearchMode.MOCK)
 
-        # Temporarily set a very low cache limit for testing
+        # Temporarily set a very low cache limit for testing. We also need
+        # to rebuild service.query_cache so its internal maxsize reflects
+        # the new class-level limit -- TTLCache captures maxsize at
+        # construction time and a plain dict has no built-in cap, so the
+        # cache instance created in __init__ would otherwise hold all 10
+        # entries on the CACHETOOLS_AVAILABLE Linux CI path.
         original_limit = OpenSearchVectorService.MAX_QUERY_CACHE_SIZE
         OpenSearchVectorService.MAX_QUERY_CACHE_SIZE = 5
 
         try:
+            # Reset the cache instance so its capacity matches the lowered
+            # class-level constant (and so _enforce_cache_limit() prunes
+            # the dict-mode fallback correctly).
+            from src.services.opensearch_vector_service import CACHETOOLS_AVAILABLE
+
+            if CACHETOOLS_AVAILABLE:
+                from cachetools import TTLCache
+
+                service.query_cache = TTLCache(
+                    maxsize=OpenSearchVectorService.MAX_QUERY_CACHE_SIZE,
+                    ttl=OpenSearchVectorService.QUERY_CACHE_TTL_SECONDS,
+                )
+            else:
+                service.query_cache = {}
+
             # Add many entries to exceed the limit
             for i in range(10):
                 # Create unique search queries to populate cache

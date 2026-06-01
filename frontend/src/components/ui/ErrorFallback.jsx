@@ -277,10 +277,21 @@ export function ErrorFallback({
         <div className="mt-8 text-center text-sm text-surface-500 dark:text-surface-400">
           Need help?{' '}
           <a
-            href="mailto:support@aenealabs.com"
+            href="https://github.com/aenealabs/aura/discussions/categories/q-a"
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
           >
-            Contact Support
+            Ask in GitHub Discussions
+          </a>
+          {' · '}
+          <a
+            href="https://github.com/aenealabs/aura/issues/new/choose"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+          >
+            Report this bug
           </a>
         </div>
       </div>

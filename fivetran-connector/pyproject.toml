@@ -9,7 +9,7 @@ description = "Fivetran connector for Aura Code Intelligence Platform"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "Aenea Labs", email = "support@aenealabs.com"}
+    {name = "Aenea Labs"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -38,8 +38,9 @@ aura-fivetran = "src.connector:main"
 
 [project.urls]
 Homepage = "https://github.com/aenealabs/aura"
-Documentation = "https://docs.aenealabs.com/integrations/fivetran"
+Documentation = "https://github.com/aenealabs/aura/tree/main/fivetran-connector"
 Repository = "https://github.com/aenealabs/aura"
+Issues = "https://github.com/aenealabs/aura/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

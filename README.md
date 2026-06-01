@@ -384,11 +384,23 @@ We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
 ## Reporting Security Vulnerabilities
 
-If you discover a security vulnerability, please report it responsibly. Do **not** open a public GitHub issue for security vulnerabilities.
+If you discover a security vulnerability, please report it privately via [**GitHub Security Advisories**](https://github.com/aenealabs/aura/security/advisories/new). Do **not** open a public GitHub issue for security vulnerabilities.
 
-Email: **security@aenealabs.com**
+See [SECURITY.md](SECURITY.md) for the full reporting process, severity classification, and response timelines.
 
-We will acknowledge receipt within 48 hours and provide a detailed response within 5 business days.
+---
+
+## Support & Community
+
+All support and community interaction happens on GitHub — there are no email channels.
+
+- **Questions, troubleshooting, "how do I…"** → [GitHub Discussions](https://github.com/aenealabs/aura/discussions)
+- **Bug reports** → [GitHub Issues](https://github.com/aenealabs/aura/issues/new/choose)
+- **Feature requests** → [GitHub Issues](https://github.com/aenealabs/aura/issues/new/choose)
+- **Security vulnerabilities** → [GitHub Security Advisories](https://github.com/aenealabs/aura/security/advisories/new) (private)
+- **Code of Conduct reports** → see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+See [SUPPORT.md](.github/SUPPORT.md) for full details on which channel to use.
 
 ---
 

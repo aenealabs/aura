@@ -278,10 +278,10 @@ class TestAgentCard:
             name="Support Agent",
             description="Has contact info",
             documentation_url="https://docs.example.com",
-            support_email="support@example.com",
+            support_url="https://github.com/example/repo/discussions",
         )
         assert card.documentation_url == "https://docs.example.com"
-        assert card.support_email == "support@example.com"
+        assert card.support_url == "https://github.com/example/repo/discussions"
 
 
 class TestTaskArtifact:

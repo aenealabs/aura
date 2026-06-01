@@ -424,8 +424,13 @@ def cmd_license_request(args: argparse.Namespace) -> int:
             print(json.dumps(request_data, indent=2))
         else:
             print_header("Offline License Request")
-            support_email = os.environ.get("SUPPORT_EMAIL", "support@aura.local")
-            print_info(f"Send this information to {support_email}")
+            support_url = os.environ.get(
+                "SUPPORT_URL",
+                "https://github.com/aenealabs/aura/discussions/categories/general",
+            )
+            print_info(
+                f"Submit this information via {support_url} (use the [Commercial] title prefix)"
+            )
             print()
             print(json.dumps(request_data, indent=2))
             print()

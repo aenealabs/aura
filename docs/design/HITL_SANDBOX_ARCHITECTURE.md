@@ -338,7 +338,7 @@ Review & Approve:  https://console.aws.amazon.com/aura/approvals/abc123
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This is an automated notification from Project Aura.
-For questions, contact: aura-support@company.com
+For questions, open a Discussion at https://github.com/aenealabs/aura/discussions/categories/q-a
 
 Compliance: SOX/CMMC Audit Trail #AUR-2025-10-30-abc123
 ```

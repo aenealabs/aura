@@ -1,0 +1,55 @@
+name: Documentation Issue
+description: Report a documentation problem (typo, broken link, unclear section, missing content)
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the docs. For general "how do I..." questions, please use [GitHub Discussions Q&A](https://github.com/aenealabs/aura/discussions/categories/q-a) instead.
+
+  - type: input
+    id: location
+    attributes:
+      label: Documentation Location
+      description: File path or URL of the documentation with the issue
+      placeholder: "docs/product/getting-started/quick-start.md or https://github.com/aenealabs/aura/blob/main/README.md"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Issue Type
+      options:
+        - Typo or grammar
+        - Broken link
+        - Outdated information
+        - Unclear or confusing section
+        - Missing content
+        - Incorrect code example
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the Problem?
+      description: Describe what's wrong or what's missing
+      placeholder: "The example on line 42 references a flag that no longer exists in the CLI..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Fix (Optional)
+      description: If you have a concrete suggestion or correction, share it here. Or open a PR directly.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true

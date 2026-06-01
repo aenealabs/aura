@@ -414,20 +414,20 @@ kubectl logs -f deployment/agent-orchestrator -n aura
 kubectl get configmap aura-service-config -n aura -o yaml
 
 # Expected variables (production values):
-# - SUPPORT_EMAIL: support@aenealabs.com
+# - SUPPORT_URL: https://github.com/aenealabs/aura/discussions
 # - PRICING_PAGE_URL: https://app.aenealabs.com/pricing
 # - LICENSE_RENEWAL_URL: https://app.aenealabs.com/renew
 # - GPU_DASHBOARD_BASE_URL: https://app.aenealabs.com
 
 # Verify environment variables are injected into pods
-kubectl exec deployment/aura-api -n aura -- env | grep -E "(SUPPORT_EMAIL|PRICING_PAGE_URL|GPU_DASHBOARD_BASE_URL)"
+kubectl exec deployment/aura-api -n aura -- env | grep -E "(SUPPORT_URL|PRICING_PAGE_URL|GPU_DASHBOARD_BASE_URL)"
 
 # Verify AWS_ACCOUNT_ID is correctly detected
 kubectl exec deployment/aura-api -n aura -- env | grep AWS_ACCOUNT_ID
 ```
 
 **Environment Variables Checklist:**
-- [ ] `SUPPORT_EMAIL` set to production email (NOT `support@aura.local`)
+- [ ] `SUPPORT_URL` set to production support URL (NOT `support@aura.local`)
 - [ ] `PRICING_PAGE_URL` set to production URL (NOT `*.aura.local`)
 - [ ] `LICENSE_RENEWAL_URL` set to production URL
 - [ ] `GPU_DASHBOARD_BASE_URL` set to production URL

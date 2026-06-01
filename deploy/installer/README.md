@@ -203,6 +203,7 @@ kubectl port-forward svc/aura-frontend 8080:80
 
 ### Getting Help
 
-- Documentation: https://docs.aenealabs.com
-- Support: support@aenealabs.com
-- Emergency: Contact your account manager
+- Documentation: https://github.com/aenealabs/aura/tree/main/docs
+- Questions & help: https://github.com/aenealabs/aura/discussions/categories/q-a
+- Bug reports: https://github.com/aenealabs/aura/issues
+- Security vulnerabilities: https://github.com/aenealabs/aura/security/advisories/new (private)

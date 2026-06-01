@@ -230,7 +230,7 @@ This section contains detailed security and compliance documentation organized b
 
 If you discover a security vulnerability in Project Aura, please report it responsibly:
 
-- **Security Email:** security@aenealabs.com
+- **Report at:** https://github.com/aenealabs/aura/security/advisories/new
 - **Response Time:** Initial response within 24 hours
 - **Disclosure Policy:** 90-day coordinated disclosure
 

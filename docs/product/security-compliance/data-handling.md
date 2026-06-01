@@ -313,7 +313,7 @@ For EU customers, Project Aura supports GDPR requirements:
 - **Right to Object:** Opt out of non-essential processing
 
 **Data Processing Agreement (DPA):**
-Available for all customers. Contact legal@aenealabs.com to request.
+Available for all customers. Open a Discussion titled [Legal] at https://github.com/aenealabs/aura/discussions/categories/general to request.
 
 ### Data Minimization
 

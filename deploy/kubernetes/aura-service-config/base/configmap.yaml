@@ -24,8 +24,10 @@ metadata:
     app.kubernetes.io/part-of: aura
 data:
   # Contact Information
-  # Default uses *.aura.local for local development/service discovery
-  SUPPORT_EMAIL: "support@aura.local"
+  # SUPPORT_URL is the URL surfaced to end users for help / commercial inquiries.
+  # Project Aura uses GitHub Discussions as the primary support channel — see
+  # SUPPORT.md at the repository root.
+  SUPPORT_URL: "https://github.com/aenealabs/aura/discussions"
 
   # Service URLs
   # These defaults use the service discovery pattern for local development

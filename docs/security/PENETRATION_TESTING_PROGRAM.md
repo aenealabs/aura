@@ -97,7 +97,7 @@ All penetration tests follow industry-standard methodologies:
 - Attacks against third-party systems without consent
 
 **Emergency Stop:**
-- Security Lead: security@aenealabs.com
+- Security Lead: https://github.com/aenealabs/aura/security/advisories/new
 - On-Call: PagerDuty `aura-oncall`
 - Code word: "SAFEGUARD" (immediate halt)
 
@@ -254,7 +254,7 @@ curl http://169.254.169.254/latest/meta-data/
 
 ### Contacts
 - Technical POC: [ENGINEER]
-- Security POC: security@aenealabs.com
+- Security POC: https://github.com/aenealabs/aura/security/advisories/new
 - Emergency: PagerDuty `aura-oncall`
 ```
 
@@ -447,8 +447,9 @@ Red Team exercises include Purple Team sessions:
 │   • Low: 180 days                                               │
 │                                                                 │
 │ EMERGENCY CONTACTS:                                             │
-│   • Security Lead: security@aenealabs.com                       │
-│   • On-Call: PagerDuty `aura-oncall`                           │
+│   • Security Reports (private):                                 │
+│     https://github.com/aenealabs/aura/security/advisories/new   │
+│   • On-Call: PagerDuty `aura-oncall`                            │
 │   • Stop Code: "SAFEGUARD"                                      │
 └─────────────────────────────────────────────────────────────────┘
 ```

@@ -494,7 +494,7 @@ Deployed first by `buildspec-application-k8s.yml` to provide environment-specifi
 
 | Variable | Description | Dev Value | Prod Value |
 |----------|-------------|-----------|------------|
-| `SUPPORT_EMAIL` | Support contact email | `support-dev@aenealabs.com` | `support@aenealabs.com` |
+| `SUPPORT_URL` | Support contact URL | `https://github.com/aenealabs/aura/discussions/categories/q-a` | `https://github.com/aenealabs/aura/discussions/categories/q-a` |
 | `PRICING_PAGE_URL` | Pricing page URL | `https://dev.aenealabs.com/pricing` | `https://app.aenealabs.com/pricing` |
 | `LICENSE_RENEWAL_URL` | License renewal URL | `https://dev.aenealabs.com/renew` | `https://app.aenealabs.com/renew` |
 | `GPU_DASHBOARD_BASE_URL` | GPU dashboard URL | `https://dev.aenealabs.com` | `https://app.aenealabs.com` |

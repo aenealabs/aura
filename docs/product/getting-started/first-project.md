@@ -618,7 +618,7 @@ If you encounter issues or have questions:
 - **Documentation:** [docs.aenealabs.com](https://docs.aenealabs.com)
 - **Support Portal:** [support.aenealabs.com](https://support.aenealabs.com)
 - **Community Forum:** [community.aenealabs.com](https://community.aenealabs.com)
-- **Email:** support@aenealabs.com
+- **Discussions (Q&A):** https://github.com/aenealabs/aura/discussions/categories/q-a
 
 ---
 

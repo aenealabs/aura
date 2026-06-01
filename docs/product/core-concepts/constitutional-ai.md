@@ -322,4 +322,4 @@ If you have questions about Constitutional AI:
 
 - **Documentation:** [docs.aenealabs.com](https://docs.aenealabs.com)
 - **Support Portal:** [support.aenealabs.com](https://support.aenealabs.com)
-- **Email:** support@aenealabs.com
+- **Discussions (Q&A):** https://github.com/aenealabs/aura/discussions/categories/q-a

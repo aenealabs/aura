@@ -6,7 +6,13 @@ If you discover a security vulnerability in Project Aura, please report it respo
 
 ### How to Report
 
-Email: **security@aenealabs.com**
+Use [**GitHub Security Advisories**](https://github.com/aenealabs/aura/security/advisories/new) to submit a private vulnerability report.
+
+1. Go to https://github.com/aenealabs/aura/security/advisories/new
+2. Fill in the advisory form (title, description, affected versions, severity)
+3. Submit — the report is visible only to repository maintainers until disclosed
+
+Project Aura does not operate an email-based security inbox. All inbound vulnerability reports must go through GitHub Security Advisories so they're tracked, triaged, and disclosed alongside their fix in a single auditable workflow.
 
 Please include:
 - Description of the vulnerability

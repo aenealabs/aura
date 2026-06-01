@@ -108,7 +108,7 @@ function ConfigurationForm({ provider, config, onChange, onTest, testing, isLoad
           Configure {providerData.name}
         </h4>
         <a
-          href={`https://docs.aenealabs.com/integrations/${provider}`}
+          href={`https://github.com/aenealabs/aura/tree/main/docs/integrations/${provider}`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1 text-sm text-aura-600 dark:text-aura-400 hover:underline"

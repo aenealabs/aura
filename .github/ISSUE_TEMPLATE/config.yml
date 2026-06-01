@@ -1,11 +1,20 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Question or Help Request
+    url: https://github.com/aenealabs/aura/discussions/categories/q-a
+    about: Ask a question or get help in GitHub Discussions Q&A — use this for "how do I..." and troubleshooting
+  - name: Ideas & Discussion
+    url: https://github.com/aenealabs/aura/discussions/categories/ideas
+    about: Discuss ideas before opening a feature request issue
   - name: Documentation
     url: https://github.com/aenealabs/aura/tree/main/docs
     about: Browse project documentation
   - name: Security Vulnerability
     url: https://github.com/aenealabs/aura/security/advisories/new
     about: Report a security vulnerability privately (do NOT open a public issue)
+  - name: Code of Conduct Report
+    url: https://github.com/aenealabs/aura/security/advisories/new
+    about: Report a Code of Conduct violation privately — prefix advisory title with [CoC]
   - name: Contributing Guide
     url: https://github.com/aenealabs/aura/blob/main/CONTRIBUTING.md
     about: Read the contributing guidelines

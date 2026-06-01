@@ -321,10 +321,13 @@ class OfflineLicenseValidator:
             current_fingerprint[:16],
         )
 
-        support_email = os.environ.get("SUPPORT_EMAIL", "support@aura.local")
+        support_url = os.environ.get(
+            "SUPPORT_URL",
+            "https://github.com/aenealabs/aura/discussions/categories/q-a",
+        )
         raise LicenseValidationError(
             f"License is not valid for this hardware. "
-            f"Contact {support_email} for assistance.",
+            f"Visit {support_url} for assistance.",
             code="HARDWARE_MISMATCH",
         )
 

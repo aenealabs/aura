@@ -130,7 +130,7 @@ class AgentCardModel(BaseModel):
     capabilities: list[CapabilityModel] = Field(default_factory=list)
     version: str = Field(default="1.0.0")
     documentation_url: str | None = None
-    support_email: str | None = None
+    support_url: str | None = None
 
 
 class AgentRegistrationRequest(BaseModel):
@@ -342,7 +342,7 @@ async def register_agent(
         provider=request.agent_card.provider,
         version=request.agent_card.version,
         documentation_url=request.agent_card.documentation_url,
-        support_email=request.agent_card.support_email,
+        support_url=request.agent_card.support_url,
         capabilities=[
             AgentCapability(
                 name=cap.name,

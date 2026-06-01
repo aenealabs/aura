@@ -31,7 +31,7 @@ This directory contains incident response playbooks for Project Aura security in
 | Role | Contact |
 |------|---------|
 | On-Call Engineer | PagerDuty: `aura-oncall` |
-| Security Lead | security@aenealabs.com |
+| Security Lead | https://github.com/aenealabs/aura/security/advisories/new |
 | CTO | cto@aenealabs.com |
 
 ## Related Documentation

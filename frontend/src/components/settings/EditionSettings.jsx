@@ -85,14 +85,22 @@ export default function EditionSettings({ onSuccess, onError }) {
     setShowActivation(true);
   };
 
-  // Handle contact sales
+  // Handle contact sales — opens a GitHub Discussion in the General category
+  // for commercial / licensing inquiries (use the [Commercial] title convention).
   const handleContactSales = () => {
-    window.open('https://aenealabs.com/contact-sales', '_blank');
+    window.open(
+      'https://github.com/aenealabs/aura/discussions/categories/general',
+      '_blank',
+    );
   };
 
-  // Handle renew click from expiration banner
+  // Handle renew click — same channel as contact sales since renewals are
+  // handled as commercial inquiries via GitHub Discussions.
   const handleRenew = () => {
-    window.open('https://aenealabs.com/renew', '_blank');
+    window.open(
+      'https://github.com/aenealabs/aura/discussions/categories/general',
+      '_blank',
+    );
   };
 
   // Calculate warning level
@@ -168,12 +176,12 @@ export default function EditionSettings({ onSuccess, onError }) {
             FIPS 140-2 compliance, custom LLM integration, and dedicated support.
           </p>
           <a
-            href="https://aenealabs.com/docs/enterprise-plus"
+            href="https://github.com/aenealabs/aura/tree/main/docs"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block mt-4 text-sm font-medium text-amber-800 dark:text-amber-200 hover:underline"
           >
-            View Enterprise Plus Documentation →
+            View Documentation →
           </a>
         </div>
       )}

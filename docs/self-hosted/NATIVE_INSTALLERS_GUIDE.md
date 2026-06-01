@@ -338,4 +338,4 @@ pip install pyinstaller
 
 - Documentation: https://docs.aenealabs.com/cli
 - Issues: https://github.com/aenealabs/aura/issues
-- Email: support@aenealabs.com
+- Discussions: https://github.com/aenealabs/aura/discussions/categories/q-a

@@ -168,7 +168,7 @@ If you encounter issues while following these guides:
 - **In-App Help:** Click the **?** icon in the navigation bar
 - **Documentation:** [docs.aenealabs.com](https://docs.aenealabs.com)
 - **Support Portal:** [support.aenealabs.com](https://support.aenealabs.com)
-- **Email:** support@aenealabs.com
+- **Discussions (Q&A):** https://github.com/aenealabs/aura/discussions/categories/q-a
 
 For feature requests or documentation feedback, use the **Feedback** button in the documentation sidebar.
 

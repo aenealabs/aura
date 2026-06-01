@@ -165,7 +165,9 @@ Resources:
       ResourceRecords:
         - '0 issue "amazon.com"'
         - '0 issue "amazontrust.com"'
-        - '0 iodef "mailto:aura-security@aenealabs.com"'
+        # iodef per RFC 8659: certificate-authority incident reports route to
+        # GitHub Security Advisories (no email channels operated for this domain).
+        - '0 iodef "https://github.com/aenealabs/aura/security/advisories/new"'
 
 Outputs:
   Route53CrossAccountRoleArn:

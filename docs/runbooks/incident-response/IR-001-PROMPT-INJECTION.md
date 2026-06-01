@@ -263,7 +263,7 @@ Complete within 72 hours:
 | Role | Contact | Method |
 |------|---------|--------|
 | On-Call Engineer | PagerDuty | `aura-oncall` rotation |
-| Security Lead | security@aenealabs.com | Email + Slack |
+| Security Lead | https://github.com/aenealabs/aura/security/advisories/new | GitHub Security Advisory + Slack |
 | CTO | cto@aenealabs.com | Phone for Critical |
 | AWS Support | Enterprise Support | AWS Console |
 

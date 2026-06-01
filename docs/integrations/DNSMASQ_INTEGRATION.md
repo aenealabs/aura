@@ -1108,7 +1108,7 @@ For questions or issues with dnsmasq integration:
 1. Check this documentation
 2. Review logs for error messages
 3. Check GitHub issues: https://github.com/aenealabs/aura/issues
-4. Contact Project Aura team: support@project-aura.com
+4. Open a Discussion at https://github.com/aenealabs/aura/discussions/categories/q-a
 
 ---
 

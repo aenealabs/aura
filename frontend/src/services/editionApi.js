@@ -94,8 +94,8 @@ const MOCK_UPGRADE_INFO = {
       ],
     },
   ],
-  contact_sales_url: 'https://aenealabs.com/contact-sales',
-  pricing_url: 'https://aenealabs.com/pricing',
+  contact_sales_url: 'https://github.com/aenealabs/aura/discussions/categories/general',
+  pricing_url: 'https://github.com/aenealabs/aura/discussions/categories/general',
 };
 
 // License warning thresholds (days)

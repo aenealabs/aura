@@ -673,7 +673,7 @@ aws kms get-key-policy \
 ### Support Contacts
 
 - **Platform Team:** platform@aenealabs.com
-- **Security Team:** security@aenealabs.com
+- **Security Team:** https://github.com/aenealabs/aura/security/advisories/new
 
 ---
 

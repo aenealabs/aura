@@ -4,13 +4,12 @@ description: Project Aura - Autonomous AI SaaS Platform for Enterprise Code Inte
 type: application
 version: 1.0.0
 appVersion: "1.3.0"
-home: https://aenealabs.com
-icon: https://aenealabs.com/logo.png
+home: https://github.com/aenealabs/aura
 sources:
   - https://github.com/aenealabs/aura
 maintainers:
   - name: Aenea Labs
-    email: support@aenealabs.com
+    url: https://github.com/aenealabs
 keywords:
   - ai
   - code-intelligence

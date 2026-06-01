@@ -119,7 +119,7 @@ export default function ExpirationBanner({
               {warningLevel.level === 'expired' ? 'Reactivate License' : 'Renew Now'}
             </button>
             <a
-              href="https://aenealabs.com/contact-sales"
+              href="https://github.com/aenealabs/aura/discussions/categories/general"
               target="_blank"
               rel="noopener noreferrer"
               className={`

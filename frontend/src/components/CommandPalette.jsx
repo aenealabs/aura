@@ -428,7 +428,7 @@ function CommandPaletteModal({ isOpen, onClose }) {
         navigate('/repositories');
         break;
       case 'docs':
-        window.open('https://docs.aenealabs.com', '_blank');
+        window.open('https://github.com/aenealabs/aura/tree/main/docs', '_blank');
         break;
       default:
         // Unknown action - no-op

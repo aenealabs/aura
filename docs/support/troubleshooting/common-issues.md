@@ -232,7 +232,7 @@ Retry-After: 45
    ```
 
 3. **Request rate limit increase** for enterprise accounts:
-   - Contact support@aenealabs.com with usage requirements
+   - Open a Discussion at https://github.com/aenealabs/aura/discussions/categories/q-a with usage requirements
 
 ---
 

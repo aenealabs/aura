@@ -473,7 +473,7 @@ For technical deep-dives, architecture reviews, or proof-of-concept engagements,
 
 - **Enterprise inquiries:** enterprise@aenealabs.com
 - **Documentation portal:** docs.aenealabs.com
-- **Support:** support@aenealabs.com
+- **Support:** Open a Discussion at https://github.com/aenealabs/aura/discussions/categories/q-a
 
 ---
 

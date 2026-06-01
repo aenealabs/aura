@@ -171,7 +171,7 @@ Project Aura is designed for regulated industries with comprehensive security co
 ### Contact Information
 
 - **Support Portal:** [support.aenealabs.com](https://support.aenealabs.com)
-- **Security Issues:** security@aenealabs.com
+- **Security Issues:** Report at https://github.com/aenealabs/aura/security/advisories/new
 - **Sales Inquiries:** sales@aenealabs.com
 
 ---

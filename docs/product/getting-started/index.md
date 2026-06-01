@@ -306,6 +306,6 @@ Ready to get started with Project Aura? Continue with these guides:
 - **Documentation:** [docs.aenealabs.com](https://docs.aenealabs.com)
 - **Support Portal:** [support.aenealabs.com](https://support.aenealabs.com)
 - **Status Page:** [status.aenealabs.com](https://status.aenealabs.com)
-- **Email:** support@aenealabs.com
+- **Discussions (Q&A):** https://github.com/aenealabs/aura/discussions/categories/q-a
 
 For enterprise support inquiries, contact your account representative or email enterprise@aenealabs.com.

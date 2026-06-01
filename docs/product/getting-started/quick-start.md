@@ -301,7 +301,7 @@ If you encounter issues not covered in this guide:
 
 - **Documentation:** [docs.aenealabs.com](https://docs.aenealabs.com)
 - **Support Portal:** [support.aenealabs.com](https://support.aenealabs.com)
-- **Email:** support@aenealabs.com
+- **Discussions (Q&A):** https://github.com/aenealabs/aura/discussions/categories/q-a
 - **In-App Help:** Click the **?** icon in the top navigation
 
 For urgent issues affecting production systems, use the **Critical Support** option in the support portal.

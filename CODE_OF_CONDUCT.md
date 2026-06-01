@@ -34,7 +34,16 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders at **conduct@aenealabs.com**.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported privately via [**GitHub Security Advisories**](https://github.com/aenealabs/aura/security/advisories/new).
+
+Project Aura does not operate an email reporting inbox. To file a Code of Conduct report:
+
+1. Go to https://github.com/aenealabs/aura/security/advisories/new
+2. Prefix the title with `[CoC]` (e.g., `[CoC] Report regarding behavior in PR #123`)
+3. Describe the incident, when and where it occurred, and any supporting context (links, screenshots)
+4. Submit — the report is visible only to repository maintainers
+
+Although the GitHub Security Advisories channel is primarily intended for security vulnerabilities, Project Aura reuses it for Code of Conduct reports because it provides the same privacy, auditability, and maintainer-only visibility that confidential reports require.
 
 All complaints will be reviewed and investigated promptly and fairly. All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 

@@ -27,8 +27,8 @@ patches:
       name: aura-service-config
     patch: |-
       - op: replace
-        path: /data/SUPPORT_EMAIL
-        value: "support-dev@aenealabs.com"
+        path: /data/SUPPORT_URL
+        value: "https://github.com/aenealabs/aura/discussions"
       - op: replace
         path: /data/PRICING_PAGE_URL
         value: "https://dev.aenealabs.com/pricing"

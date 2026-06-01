@@ -224,8 +224,8 @@ aws dynamodb describe-table --table-name aura-approval-requests-${ENV}
 
 | Priority | Channel | Response Time |
 |----------|---------|---------------|
-| P1 - Critical | support@aenealabs.com | 1 hour |
-| P2 - High | support@aenealabs.com | 4 hours |
+| P1 - Critical | https://github.com/aenealabs/aura/discussions/categories/q-a | 1 hour |
+| P2 - High | https://github.com/aenealabs/aura/discussions/categories/q-a | 4 hours |
 | P3 - Medium | Support Portal | 1 business day |
 | P4 - Low | Support Portal | 3 business days |
 

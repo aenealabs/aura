@@ -3,7 +3,8 @@
 # Usage:
 #   kubectl apply -k deploy/kubernetes/aura-service-config/overlays/prod/
 #
-# Production environment uses official aenealabs.com domain.
+# Production environment uses official aenealabs.com domain for app URLs;
+# support routes through GitHub Discussions (no email channels).
 # IMPORTANT: Verify all URLs are correct before deploying to production.
 
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -27,8 +28,8 @@ patches:
       name: aura-service-config
     patch: |-
       - op: replace
-        path: /data/SUPPORT_EMAIL
-        value: "support@aenealabs.com"
+        path: /data/SUPPORT_URL
+        value: "https://github.com/aenealabs/aura/discussions"
       - op: replace
         path: /data/PRICING_PAGE_URL
         value: "https://app.aenealabs.com/pricing"

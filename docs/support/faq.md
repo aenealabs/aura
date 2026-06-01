@@ -608,7 +608,7 @@ To change your plan:
 | Phone Support | Immediate | Enterprise, emergencies |
 
 **Support Portal:** [support.aenealabs.com](https://support.aenealabs.com)
-**Email:** support@aenealabs.com
+**Discussions:** https://github.com/aenealabs/aura/discussions/categories/q-a
 
 ### Where can I report a bug?
 
@@ -617,7 +617,7 @@ To change your plan:
 3. Submit via:
    - Support portal (preferred)
    - GitHub issues (for self-hosted)
-   - Email to support@aenealabs.com
+   - Open a Discussion at https://github.com/aenealabs/aura/discussions/categories/q-a
 
 ### How do I request a new feature?
 

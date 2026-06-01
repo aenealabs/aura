@@ -393,7 +393,7 @@ What you can do: [User action items]
 We take the security of your information seriously and have implemented
 additional safeguards to prevent similar incidents.
 
-For questions, contact: security@aenealabs.com
+For questions, report at https://github.com/aenealabs/aura/security/advisories/new
 ```
 
 ### 6.3 Regulatory Notification
@@ -427,7 +427,7 @@ ${IMPACT_DESCRIPTION}
 ${REMEDIATION_ACTIONS}
 
 ### Point of Contact
-security@aenealabs.com
+https://github.com/aenealabs/aura/security/advisories/new
 EOF
 ```
 

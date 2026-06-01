@@ -155,7 +155,7 @@ class AgentCard:
 
     # Contact
     documentation_url: str | None = None
-    support_email: str | None = None
+    support_url: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to A2A-compliant JSON format."""
@@ -184,7 +184,7 @@ class AgentCard:
             "version": self.version,
             "default_rate_limit": self.default_rate_limit,
             "documentation_url": self.documentation_url,
-            "support_email": self.support_email,
+            "support_url": self.support_url,
         }
 
 
@@ -461,7 +461,10 @@ class A2AGateway:
             ],
             documentation_url=os.environ.get("DOCS_BASE_URL", "https://docs.aura.local")
             + "/agents/coder",
-            support_email=os.environ.get("SUPPORT_EMAIL", "support@aura.local"),
+            support_url=os.environ.get(
+                "SUPPORT_URL",
+                "https://github.com/aenealabs/aura/discussions",
+            ),
         )
 
         # Reviewer Agent
@@ -532,7 +535,10 @@ class A2AGateway:
             ],
             documentation_url=os.environ.get("DOCS_BASE_URL", "https://docs.aura.local")
             + "/agents/reviewer",
-            support_email=os.environ.get("SUPPORT_EMAIL", "support@aura.local"),
+            support_url=os.environ.get(
+                "SUPPORT_URL",
+                "https://github.com/aenealabs/aura/discussions",
+            ),
         )
 
         # Validator Agent
@@ -572,7 +578,10 @@ class A2AGateway:
             ],
             documentation_url=os.environ.get("DOCS_BASE_URL", "https://docs.aura.local")
             + "/agents/validator",
-            support_email=os.environ.get("SUPPORT_EMAIL", "support@aura.local"),
+            support_url=os.environ.get(
+                "SUPPORT_URL",
+                "https://github.com/aenealabs/aura/discussions",
+            ),
         )
 
         logger.info(

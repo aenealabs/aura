@@ -2,7 +2,7 @@
   "name": "@aenealabs/aura-sdk",
   "version": "0.2.0",
   "description": "TypeScript SDK for the Aura Code Intelligence Platform",
-  "author": "Aenea Labs <support@aenealabs.com>",
+  "author": "Aenea Labs (https://github.com/aenealabs)",
   "license": "MIT",
   "repository": {
     "type": "git",

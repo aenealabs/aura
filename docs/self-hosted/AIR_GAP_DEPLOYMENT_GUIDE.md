@@ -416,7 +416,7 @@ kubectl describe pod -l app.kubernetes.io/component=vllm -n aura | grep nvidia
 For air-gapped deployment support:
 
 - **Enterprise Support Portal**: https://support.aenealabs.com (from connected system)
-- **Email**: airgap-support@aenealabs.com
+- **GitHub Discussions**: https://github.com/aenealabs/aura/discussions/categories/q-a
 - **Phone**: +1-888-AURA-SEC (for P1 issues)
 
 Include with support requests:

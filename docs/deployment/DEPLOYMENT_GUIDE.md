@@ -879,7 +879,7 @@ These variables configure service endpoints and contact information. Defaults us
 
 | Variable | Description | Default Value |
 |----------|-------------|---------------|
-| `SUPPORT_EMAIL` | Support contact email address | `support@aura.local` |
+| `SUPPORT_URL` | Support contact URL | `https://github.com/aenealabs/aura/discussions` |
 | `PRICING_PAGE_URL` | Pricing page URL for upgrade prompts | `https://app.aura.local/pricing` |
 | `LICENSE_RENEWAL_URL` | License renewal URL | `https://app.aura.local/renew` |
 | `GPU_DASHBOARD_BASE_URL` | GPU job monitoring dashboard URL | `https://app.aura.local` |
@@ -891,14 +891,14 @@ For production deployments, override these variables with your actual values:
 ```bash
 # Set via Kubernetes ConfigMap
 kubectl create configmap aura-service-config \
-  --from-literal=SUPPORT_EMAIL=support@aenealabs.com \
+  --from-literal=SUPPORT_URL=https://github.com/aenealabs/aura/discussions \
   --from-literal=PRICING_PAGE_URL=https://app.aenealabs.com/pricing \
   --from-literal=LICENSE_RENEWAL_URL=https://app.aenealabs.com/renew \
   --from-literal=GPU_DASHBOARD_BASE_URL=https://app.aenealabs.com
 
 # Or via environment file
 cat > .env.prod << 'EOF'
-SUPPORT_EMAIL=support@aenealabs.com
+SUPPORT_URL=https://github.com/aenealabs/aura/discussions
 PRICING_PAGE_URL=https://app.aenealabs.com/pricing
 LICENSE_RENEWAL_URL=https://app.aenealabs.com/renew
 GPU_DASHBOARD_BASE_URL=https://app.aenealabs.com
@@ -919,11 +919,11 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.annotations['eks.amazonaws.com/account-id']
-        - name: SUPPORT_EMAIL
+        - name: SUPPORT_URL
           valueFrom:
             configMapKeyRef:
               name: aura-service-config
-              key: SUPPORT_EMAIL
+              key: SUPPORT_URL
         - name: GPU_DASHBOARD_BASE_URL
           valueFrom:
             configMapKeyRef:
@@ -938,7 +938,7 @@ spec:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `AURA_LICENSE_PUBLIC_KEY` | Ed25519 public key for offline license validation | Development key |
-| `SUPPORT_EMAIL` | Contact for hardware mismatch errors | `support@aura.local` |
+| `SUPPORT_URL` | Contact URL for hardware mismatch errors | `https://github.com/aenealabs/aura/discussions` |
 | `LICENSE_RENEWAL_URL` | URL for license renewal prompts | `https://app.aura.local/renew` |
 
 #### GPU Scheduler (`src/services/gpu_scheduler/`)
@@ -952,13 +952,13 @@ spec:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PRICING_PAGE_URL` | Pricing page for upgrade suggestions | `https://app.aura.local/pricing` |
-| `SUPPORT_EMAIL` | Contact for support ticket submission | `support@aura.local` |
+| `SUPPORT_URL` | Contact URL for support ticket submission | `https://github.com/aenealabs/aura/discussions` |
 
 #### A2A Gateway (`src/services/a2a_gateway.py`)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SUPPORT_EMAIL` | Contact in error responses | `support@aura.local` |
+| `SUPPORT_URL` | Contact URL in error responses | `https://github.com/aenealabs/aura/discussions` |
 
 ---
 

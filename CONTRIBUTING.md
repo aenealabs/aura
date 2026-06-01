@@ -480,6 +480,8 @@ gh project list
 
 ## Questions?
 
+- **Ask a question:** [GitHub Discussions Q&A](https://github.com/aenealabs/aura/discussions/categories/q-a)
 - **Documentation:** See `docs/` directory
 - **Architecture:** See `SYSTEM_ARCHITECTURE.md`
 - **Design:** See `agent-config/design-workflows/design-principles.md`
+- **Support channel guide:** See [SUPPORT.md](.github/SUPPORT.md)

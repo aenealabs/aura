@@ -799,7 +799,12 @@ class TestEdgeCases:
             )
 
         assert result["success"] is False
-        assert "Connection failed" in result["error_message"]
+        # Production sanitises the raw exception message to a generic
+        # "Connection test failed due to an internal error." string
+        # (ticketing_endpoints.py:292) to avoid leaking internal error
+        # detail to callers. The raw "Connection failed" sentinel
+        # remains in server-side logs.
+        assert "Connection test failed" in result["error_message"]
 
     @pytest.mark.asyncio
     async def test_invalid_priority_fallback(self, mock_rate_limit, sample_ticket):

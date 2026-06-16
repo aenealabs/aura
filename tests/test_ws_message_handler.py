@@ -96,6 +96,19 @@ get_conversation_history = ws_message.get_conversation_history
 save_message = ws_message.save_message
 send_to_connection = ws_message.send_to_connection
 
+# Re-bind ws_message's references to the test mocks AFTER import. On Linux
+# CI the file isn't fork-isolated, so if any earlier test imported
+# ws_message (or boto3 / botocore.exceptions / the lazy aws_clients
+# getters), the production module's symbols are bound to the real
+# objects and the sys.modules mutation above is a no-op. Explicit
+# attribute rebinding makes the patches stick regardless of import
+# order. See the wave-2 fix in test_realtime_event_publisher.py for
+# the same pattern.
+ws_message.boto3 = mock_boto3
+ws_message.ClientError = MockClientError
+ws_message.get_dynamodb_resource = lambda *a, **kw: mock_dynamodb_resource
+ws_message.get_bedrock_runtime_client = lambda *a, **kw: mock_bedrock_client
+
 # Restore original modules to prevent pollution of other tests
 for mod_name, original in _original_modules.items():
     if original is not None:

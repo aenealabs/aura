@@ -765,7 +765,7 @@ class TestShareableLink:
         """Test shareable link with default base URL."""
         link = await service.generate_shareable_link("org_001")
 
-        assert "https://app.aenealabs.com/join/org_001/" in link
+        assert "https://app.aura.local/join/org_001/" in link
         # Should contain a token
         assert len(link.split("/")[-1]) > 10
 
@@ -1415,6 +1415,6 @@ class TestShareableLinkEdgeCases:
         """Test shareable link format."""
         link = await service.generate_shareable_link("org_test")
 
-        assert link.startswith("https://app.aenealabs.com/join/org_test/")
+        assert link.startswith("https://app.aura.local/join/org_test/")
         parts = link.split("/")
         assert len(parts[-1]) > 10  # Token has sufficient length

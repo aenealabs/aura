@@ -7,7 +7,7 @@ ADR-055: Agent Scheduling View and Job Queue Management
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -81,25 +81,14 @@ class ScheduleJobRequest:
             errors.append("scheduled_at must be in the future")
 
         # Max 30 days in the future
-        max_future = now.replace(day=now.day + 30) if now.day <= 1 else now
-        try:
-            from datetime import timedelta
-
-            max_future = now + timedelta(days=30)
-            if self.scheduled_at > max_future:
-                errors.append("scheduled_at cannot be more than 30 days in the future")
-        except Exception:
-            pass
+        max_future = now + timedelta(days=30)
+        if self.scheduled_at > max_future:
+            errors.append("scheduled_at cannot be more than 30 days in the future")
 
         # Min 5 minutes in the future
-        try:
-            from datetime import timedelta
-
-            min_future = now + timedelta(minutes=5)
-            if self.scheduled_at < min_future:
-                errors.append("scheduled_at must be at least 5 minutes in the future")
-        except Exception:
-            pass
+        min_future = now + timedelta(minutes=5)
+        if self.scheduled_at < min_future:
+            errors.append("scheduled_at must be at least 5 minutes in the future")
 
         return errors
 
@@ -192,8 +181,6 @@ class ScheduledJob:
             item["error_message"] = self.error_message
 
         # TTL: 30 days after scheduled time
-        from datetime import timedelta
-
         ttl_time = self.scheduled_at + timedelta(days=30)
         item["ttl"] = int(ttl_time.timestamp())
 

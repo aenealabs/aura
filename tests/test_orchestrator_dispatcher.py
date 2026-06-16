@@ -219,7 +219,7 @@ class TestAutonomyConfiguration:
 class TestJobSpecBuilding:
     """Tests for Kubernetes Job spec building."""
 
-    def test_build_job_spec_basic(self, mock_aws_clients):
+    def test_build_job_spec_basic(self):
         """Test building a basic job spec."""
         job_spec = dispatcher._build_job_spec(
             job_id="test-job-001",
@@ -234,7 +234,7 @@ class TestJobSpecBuilding:
         assert job_spec["metadata"]["labels"]["job-id"] == "test-job-001"
         assert job_spec["metadata"]["labels"]["task-id"] == "task-001"
 
-    def test_build_job_spec_has_correct_container_resources(self, mock_aws_clients):
+    def test_build_job_spec_has_correct_container_resources(self):
         """Test job spec has correct container resources."""
         job_spec = dispatcher._build_job_spec(
             job_id="test-job-002",
@@ -249,7 +249,7 @@ class TestJobSpecBuilding:
         assert container["resources"]["limits"]["memory"] == "4Gi"
         assert container["resources"]["limits"]["cpu"] == "2"
 
-    def test_build_job_spec_encodes_payload_as_base64(self, mock_aws_clients):
+    def test_build_job_spec_encodes_payload_as_base64(self):
         """Test that payload is base64 encoded."""
         payload = {"test": "data", "nested": {"value": 123}}
         job_spec = dispatcher._build_job_spec(
@@ -269,7 +269,7 @@ class TestJobSpecBuilding:
         assert decoded["payload"] == payload
         assert decoded["task_id"] == "task-003"
 
-    def test_build_job_spec_has_ttl_and_deadline(self, mock_aws_clients):
+    def test_build_job_spec_has_ttl_and_deadline(self):
         """Test job spec has TTL and deadline settings."""
         job_spec = dispatcher._build_job_spec(
             job_id="test-job-004",
@@ -282,7 +282,7 @@ class TestJobSpecBuilding:
         assert job_spec["spec"]["backoffLimit"] == 2
         assert job_spec["spec"]["activeDeadlineSeconds"] == 1800
 
-    def test_build_job_spec_has_service_account(self, mock_aws_clients):
+    def test_build_job_spec_has_service_account(self):
         """Test job spec uses correct service account."""
         job_spec = dispatcher._build_job_spec(
             job_id="test-job-005",

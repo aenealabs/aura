@@ -369,9 +369,15 @@ class TestBudgetChecking:
             }
         }
 
-        # Setup low cost usage
+        # Setup very low cost usage so monthly forecast stays well under
+        # the 80% threshold and 90% forecast-warning trigger on every day
+        # of the month. The forecast extrapolation is
+        # (total_cost / now.day) * days_in_month, so on day 1 of a 30-day
+        # month a $20 charge projects to $600 (600% of $100 budget) and
+        # trips a forecast_warning. Using $1 caps the day-1 projection at
+        # $30 (30%), keeping the assertion stable year-round.
         cost_service._jobs_table.query.return_value = {
-            "Items": [{"cost_usd": Decimal("20"), "created_at": "2026-01-13T10:00:00Z"}]
+            "Items": [{"cost_usd": Decimal("1"), "created_at": "2026-01-13T10:00:00Z"}]
         }
 
         within_budget, alert = await cost_service.check_budget("org-123")

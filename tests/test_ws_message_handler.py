@@ -104,10 +104,23 @@ send_to_connection = ws_message.send_to_connection
 # attribute rebinding makes the patches stick regardless of import
 # order. See the wave-2 fix in test_realtime_event_publisher.py for
 # the same pattern.
+#
+# Crucially, we also rebind the per-table accessors (`get_connections_table`
+# etc.) directly to the specific mock-tables rather than going through
+# `get_dynamodb_resource().Table(<name>)`. The `<name>` constants
+# (`CONNECTIONS_TABLE`, ...) are evaluated at module-import time from
+# env vars; if an earlier test mutated `ENVIRONMENT` / `PROJECT_NAME`,
+# those constants drift and `mock_dynamodb_resource.Table.side_effect`
+# falls through to its `MagicMock()` fallback, producing an unmocked
+# table chain that breaks every test below. Binding the accessors
+# sidesteps the env-coupling entirely.
 ws_message.boto3 = mock_boto3
 ws_message.ClientError = MockClientError
 ws_message.get_dynamodb_resource = lambda *a, **kw: mock_dynamodb_resource
 ws_message.get_bedrock_runtime_client = lambda *a, **kw: mock_bedrock_client
+ws_message.get_connections_table = lambda: mock_connections_table
+ws_message.get_conversations_table = lambda: mock_conversations_table
+ws_message.get_messages_table = lambda: mock_messages_table
 
 # Restore original modules to prevent pollution of other tests
 for mod_name, original in _original_modules.items():

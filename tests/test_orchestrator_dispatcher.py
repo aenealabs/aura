@@ -64,23 +64,39 @@ with (
 
 @pytest.fixture
 def mock_aws_clients():
-    """Mock all AWS clients."""
+    """Mock all AWS clients.
+
+    Patches the lazy-init getters (`get_dynamodb_client` / `get_dynamodb_resource`
+    / `get_eks_client` / `get_sqs_client`) introduced by issue #466 instead of
+    the long-gone module-level `dynamodb` / `dynamodb_client` / `eks_client` /
+    `sqs_client` attributes. Tests can set call expectations on the returned
+    MagicMocks; the dispatcher's `get_*()` calls resolve to them via the patched
+    factories.
+    """
+    mock_dynamodb = MagicMock()
+    mock_dynamodb_client = MagicMock()
+    mock_eks_client = MagicMock()
+    mock_sqs_client = MagicMock()
+    mock_sts_client = MagicMock()
+    mock_sts_client.generate_presigned_url.return_value = (
+        "https://sts.amazonaws.com/test-presigned"
+    )
+    mock_table = MagicMock()
+    mock_dynamodb.Table.return_value = mock_table
+
     with (
-        patch(f"{MODULE_PATH}.dynamodb") as mock_dynamodb,
-        patch(f"{MODULE_PATH}.dynamodb_client") as mock_dynamodb_client,
-        patch(f"{MODULE_PATH}.eks_client") as mock_eks_client,
-        patch(f"{MODULE_PATH}.sqs_client") as mock_sqs_client,
+        patch(f"{MODULE_PATH}.get_dynamodb_resource", return_value=mock_dynamodb),
+        patch(f"{MODULE_PATH}.get_dynamodb_client", return_value=mock_dynamodb_client),
+        patch(f"{MODULE_PATH}.get_eks_client", return_value=mock_eks_client),
+        patch(f"{MODULE_PATH}.get_sqs_client", return_value=mock_sqs_client),
+        patch(f"{MODULE_PATH}.get_sts_client", return_value=mock_sts_client),
     ):
-
-        # Setup mock table
-        mock_table = MagicMock()
-        mock_dynamodb.Table.return_value = mock_table
-
         yield {
             "dynamodb": mock_dynamodb,
             "dynamodb_client": mock_dynamodb_client,
             "eks_client": mock_eks_client,
             "sqs_client": mock_sqs_client,
+            "sts_client": mock_sts_client,
             "table": mock_table,
         }
 
@@ -471,9 +487,10 @@ class TestLambdaHandler:
         mock_sts.generate_presigned_url.return_value = "https://sts.amazonaws.com/test"
 
         # Patch both eks_client and boto3.client for STS
+        patched_eks = MagicMock()
         with (
-            patch.object(dispatcher, "eks_client") as patched_eks,
-            patch(f"{MODULE_PATH}.boto3.client", return_value=mock_sts),
+            patch.object(dispatcher, "get_eks_client", return_value=patched_eks),
+            patch.object(dispatcher, "get_sts_client", return_value=mock_sts),
         ):
             patched_eks.describe_cluster.return_value = {
                 "cluster": {
@@ -566,9 +583,10 @@ class TestLambdaHandler:
         mock_sts.generate_presigned_url.return_value = "https://sts.amazonaws.com/test"
 
         # Patch both eks_client and boto3.client for STS
+        patched_eks = MagicMock()
         with (
-            patch.object(dispatcher, "eks_client") as patched_eks,
-            patch(f"{MODULE_PATH}.boto3.client", return_value=mock_sts),
+            patch.object(dispatcher, "get_eks_client", return_value=patched_eks),
+            patch.object(dispatcher, "get_sts_client", return_value=mock_sts),
         ):
             patched_eks.describe_cluster.return_value = {
                 "cluster": {
@@ -695,9 +713,10 @@ class TestLambdaHandler:
         mock_sts = MagicMock()
         mock_sts.generate_presigned_url.return_value = "https://sts.amazonaws.com/test"
 
+        patched_eks = MagicMock()
         with (
-            patch.object(dispatcher, "eks_client") as patched_eks,
-            patch(f"{MODULE_PATH}.boto3.client", return_value=mock_sts),
+            patch.object(dispatcher, "get_eks_client", return_value=patched_eks),
+            patch.object(dispatcher, "get_sts_client", return_value=mock_sts),
         ):
             patched_eks.describe_cluster.return_value = {
                 "cluster": {
@@ -728,9 +747,10 @@ class TestEKSDispatch:
         mock_sts = MagicMock()
         mock_sts.generate_presigned_url.return_value = "https://sts.amazonaws.com/test"
 
+        patched_eks = MagicMock()
         with (
-            patch.object(dispatcher, "eks_client") as patched_eks,
-            patch(f"{MODULE_PATH}.boto3.client", return_value=mock_sts),
+            patch.object(dispatcher, "get_eks_client", return_value=patched_eks),
+            patch.object(dispatcher, "get_sts_client", return_value=mock_sts),
         ):
             patched_eks.describe_cluster.return_value = {
                 "cluster": {
@@ -747,7 +767,8 @@ class TestEKSDispatch:
 
     def test_dispatch_to_eks_missing_endpoint(self, mock_aws_clients):
         """Test dispatch fails when cluster endpoint is missing."""
-        with patch.object(dispatcher, "eks_client") as patched_eks:
+        patched_eks = MagicMock()
+        with patch.object(dispatcher, "get_eks_client", return_value=patched_eks):
             patched_eks.describe_cluster.return_value = {"cluster": {}}
 
             result = dispatcher._dispatch_to_eks("test-job", {})
@@ -759,7 +780,8 @@ class TestEKSDispatch:
         """Test dispatch handles EKS client error."""
         from botocore.exceptions import ClientError
 
-        with patch.object(dispatcher, "eks_client") as patched_eks:
+        patched_eks = MagicMock()
+        with patch.object(dispatcher, "get_eks_client", return_value=patched_eks):
             patched_eks.describe_cluster.side_effect = ClientError(
                 {
                     "Error": {
@@ -786,13 +808,9 @@ class TestEKSToken:
 
     def test_get_eks_token_format(self, mock_aws_clients):
         """Test EKS token has correct format."""
-        with patch(f"{MODULE_PATH}.boto3.client") as mock_boto:
-            mock_sts = MagicMock()
-            mock_sts.generate_presigned_url.return_value = (
-                "https://sts.amazonaws.com/..."
-            )
-            mock_boto.return_value = mock_sts
-
+        mock_sts = MagicMock()
+        mock_sts.generate_presigned_url.return_value = "https://sts.amazonaws.com/..."
+        with patch.object(dispatcher, "get_sts_client", return_value=mock_sts):
             token = dispatcher._get_eks_token("test-cluster")
 
             assert token.startswith("k8s-aws-v1.")
@@ -822,9 +840,10 @@ class TestEdgeCases:
         mock_sts = MagicMock()
         mock_sts.generate_presigned_url.return_value = "https://sts.amazonaws.com/test"
 
+        patched_eks = MagicMock()
         with (
-            patch.object(dispatcher, "eks_client") as patched_eks,
-            patch(f"{MODULE_PATH}.boto3.client", return_value=mock_sts),
+            patch.object(dispatcher, "get_eks_client", return_value=patched_eks),
+            patch.object(dispatcher, "get_sts_client", return_value=mock_sts),
         ):
             patched_eks.describe_cluster.return_value = {
                 "cluster": {
@@ -862,9 +881,10 @@ class TestEdgeCases:
         mock_sts = MagicMock()
         mock_sts.generate_presigned_url.return_value = "https://sts.amazonaws.com/test"
 
+        patched_eks = MagicMock()
         with (
-            patch.object(dispatcher, "eks_client") as patched_eks,
-            patch(f"{MODULE_PATH}.boto3.client", return_value=mock_sts),
+            patch.object(dispatcher, "get_eks_client", return_value=patched_eks),
+            patch.object(dispatcher, "get_sts_client", return_value=mock_sts),
         ):
             patched_eks.describe_cluster.return_value = {
                 "cluster": {

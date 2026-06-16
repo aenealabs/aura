@@ -318,9 +318,10 @@ class TestSettingsUpdate:
 
         mock_service = MagicMock()
         mock_service.get_setting = AsyncMock(return_value=default_settings)
-        mock_service.save_setting = AsyncMock(return_value=True)
+        mock_service.update_setting = AsyncMock(return_value=True)
 
         mock_publisher = MagicMock()
+        mock_publisher.publish_metric = AsyncMock()
         mock_background = MagicMock()
 
         request = UpdateOrchestratorSettingsRequest(warm_pool_replicas=3)
@@ -339,7 +340,7 @@ class TestSettingsUpdate:
             )
 
         assert result is not None
-        mock_service.save_setting.assert_called_once()
+        mock_service.update_setting.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_update_settings_no_updates(self, mock_admin_user, mock_rate_limit):
@@ -347,6 +348,7 @@ class TestSettingsUpdate:
         from src.api.orchestrator_settings_endpoints import update_orchestrator_settings
 
         mock_publisher = MagicMock()
+        mock_publisher.publish_metric = AsyncMock()
         mock_background = MagicMock()
 
         request = UpdateOrchestratorSettingsRequest()
@@ -375,6 +377,7 @@ class TestSettingsUpdate:
         mock_service.get_setting = AsyncMock(return_value=default_settings)
 
         mock_publisher = MagicMock()
+        mock_publisher.publish_metric = AsyncMock()
         mock_background = MagicMock()
 
         # Try to enable hybrid while explicitly disabling warm pool
@@ -415,6 +418,7 @@ class TestSettingsUpdate:
         mock_service.update_organization_setting = AsyncMock(return_value=True)
 
         mock_publisher = MagicMock()
+        mock_publisher.publish_metric = AsyncMock()
         mock_background = MagicMock()
 
         request = UpdateOrchestratorSettingsRequest(warm_pool_replicas=5)
@@ -452,9 +456,10 @@ class TestModeSwitching:
 
         mock_service = MagicMock()
         mock_service.get_setting = AsyncMock(return_value=default_settings)
-        mock_service.save_setting = AsyncMock(return_value=True)
+        mock_service.update_setting = AsyncMock(return_value=True)
 
         mock_publisher = MagicMock()
+        mock_publisher.publish_metric = AsyncMock()
         mock_background = MagicMock()
 
         request = SwitchModeRequest(target_mode=DeploymentMode.WARM_POOL)
@@ -473,7 +478,7 @@ class TestModeSwitching:
             )
 
         assert result is not None
-        mock_service.save_setting.assert_called_once()
+        mock_service.update_setting.assert_called_once()
         mock_background.add_task.assert_called_once()
 
     @pytest.mark.asyncio
@@ -487,6 +492,7 @@ class TestModeSwitching:
         mock_service.get_setting = AsyncMock(return_value=warm_pool_settings)
 
         mock_publisher = MagicMock()
+        mock_publisher.publish_metric = AsyncMock()
         mock_background = MagicMock()
 
         request = SwitchModeRequest(target_mode=DeploymentMode.WARM_POOL)
@@ -505,7 +511,7 @@ class TestModeSwitching:
             )
 
         # Should return without saving when already in target mode
-        mock_service.save_setting.assert_not_called()
+        mock_service.update_setting.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_switch_mode_cooldown_active(self, mock_admin_user, mock_rate_limit):
@@ -525,6 +531,7 @@ class TestModeSwitching:
         mock_service.get_setting = AsyncMock(return_value=settings)
 
         mock_publisher = MagicMock()
+        mock_publisher.publish_metric = AsyncMock()
         mock_background = MagicMock()
 
         request = SwitchModeRequest(target_mode=DeploymentMode.WARM_POOL)
@@ -564,9 +571,10 @@ class TestModeSwitching:
 
         mock_service = MagicMock()
         mock_service.get_setting = AsyncMock(return_value=settings)
-        mock_service.save_setting = AsyncMock(return_value=True)
+        mock_service.update_setting = AsyncMock(return_value=True)
 
         mock_publisher = MagicMock()
+        mock_publisher.publish_metric = AsyncMock()
         mock_background = MagicMock()
 
         request = SwitchModeRequest(
@@ -589,7 +597,7 @@ class TestModeSwitching:
             )
 
         assert result is not None
-        mock_service.save_setting.assert_called_once()
+        mock_service.update_setting.assert_called_once()
 
 
 # =============================================================================

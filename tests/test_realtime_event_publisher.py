@@ -39,11 +39,23 @@ class MockClientError(Exception):
 
 mock_botocore.exceptions.ClientError = MockClientError
 
+# If another test already imported realtime_event_publisher before this
+# file's setup ran, its `from botocore.exceptions import ClientError` is
+# bound to the real ClientError, not MockClientError -- so `except
+# ClientError` in production won't catch the MockClientError instances
+# raised by tests below. Re-bind the production module's name explicitly
+# so the test exception class is what the production module sees,
+# regardless of import order. (Linux CI doesn't fork-isolate this file,
+# unlike macOS where `pytestmark = pytest.mark.forked` sidesteps the
+# issue per-test.)
+import src.services.realtime_event_publisher as _rep_module
 from src.services.realtime_event_publisher import (
     ConnectionInfo,
     LocalEventPublisher,
     RealtimeEventPublisher,
 )
+
+_rep_module.ClientError = MockClientError
 
 # Restore original modules to prevent pollution of other tests
 for mod_name, original in _original_modules.items():

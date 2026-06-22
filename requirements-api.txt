@@ -74,4 +74,4 @@ scikit-learn>=1.8.0
 # dependency continue to load and fall back to the SKIPPED verdict
 # until an alternative adapter (CVC5, Yices2) is configured. MIT
 # license, runs in-process, no network calls.
-z3-solver>=4.13.0
+z3-solver>=4.16.0.0

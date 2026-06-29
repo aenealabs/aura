@@ -63,7 +63,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         # fetch-depth: 0 retrieves full history so the diff-scoped
         # pre-commit step below can resolve `${{ github.event.before }}`
         # / PR base SHAs. The default depth=1 makes HEAD~1 unreachable
@@ -252,7 +252,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Run Trivy vulnerability scanner
         # SHA verified against the v0.36.0 release tag via the GitHub

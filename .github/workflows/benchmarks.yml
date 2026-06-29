@@ -64,7 +64,10 @@ jobs:
           # (time.perf_counter, statistics, resource) -- no
           # pytest-benchmark or other external bench libraries.
           pip install --upgrade pip
-          pip install -r requirements.txt
+          # --no-cache-dir on the native-dep install so a stale cached
+          # numpy-ABI wheel can't crash the benchmark run after a numpy
+          # bump (see issue #221).
+          pip install --no-cache-dir -r requirements.txt
 
       - name: Run ingestion benchmarks
         run: |

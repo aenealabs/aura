@@ -71,7 +71,9 @@ jobs:
           # the live-LLM smoke uses only stdlib + the project's own
           # BedrockLLMService -- no extra test deps.
           pip install --upgrade pip
-          pip install -r requirements.txt
+          # --no-cache-dir avoids stale numpy-ABI wheels after a numpy
+          # bump (see issue #221).
+          pip install --no-cache-dir -r requirements.txt
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1

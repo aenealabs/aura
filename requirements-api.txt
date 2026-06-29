@@ -39,7 +39,7 @@ python-multipart>=0.0.20     # Form data support
 aiohttp>=3.13.5              # ServiceNow, Splunk, Terraform Cloud, etc.
 
 # Structured Logging
-structlog>=25.5.0            # Security agent orchestrator logging
+structlog>=26.1.0            # Security agent orchestrator logging
 
 # Configuration
 python-dotenv>=1.2.2         # Environment variable loading

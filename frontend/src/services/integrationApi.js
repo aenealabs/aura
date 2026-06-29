@@ -583,7 +583,7 @@ let mockConnectedIntegrations = [
     organization_id: 'org-acme-corp-7x2',
     organization_name: 'Acme Corporation',
     config: {
-      webhook_url: 'https://hooks.slack.com/services/T02XXXXXX/B04YYYYYY/zzzzzzzzzzzzzzzzzzzzzzzz',
+      webhook_url: 'https://hooks.slack.example/services/T02XXXXXX/B04YYYYYY/zzzzzzzzzzzzzzzzzzzzzzzz',
       default_channel: '#security-alerts',
       bot_token: '***configured***',
       channels: {

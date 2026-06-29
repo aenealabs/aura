@@ -81,13 +81,21 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install black==26.3.1 flake8 mypy bandit[toml]
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          # Native deps (torch + everything via requirements.txt -- numpy,
+          # sklearn, hdbscan) install with --no-cache-dir to force a fresh
+          # wheel fetch every run. The pip cache otherwise hangs onto wheels
+          # compiled against a stale numpy ABI (issue #221 / PR #172): when
+          # numpy is bumped across the 1.x->2.x ABI boundary, cached native
+          # wheels built against numpy 1.x crash with SIGSEGV when handed
+          # numpy 2.x arrays by other native deps. Bypassing the cache here
+          # is the prerequisite for unpinning numpy.
+          pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
           # requirements.txt install must fail loudly. Previously this line
           # ended in `|| true`, which silently masked transient PyPI errors
           # and unavailable wheels and left required packages uninstalled --
           # subsequent pytest steps then failed with ModuleNotFoundError,
           # creating opaque "green-by-flake" CI behaviour. See issue #190.
-          pip install -r requirements.txt
+          pip install --no-cache-dir -r requirements.txt
           pip install pytest pytest-cov pytest-asyncio pytest-forked pytest-xdist
           pip install 'pydantic[email]'  # Required for email validation in tests
 

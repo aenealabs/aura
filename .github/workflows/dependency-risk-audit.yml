@@ -83,7 +83,9 @@ jobs:
           # so we install the tracked Watch / At-Risk packages. This
           # is intentionally narrow -- the audit doesn't need the full
           # project install, only the deps it tracks for staleness.
-          pip install -r requirements.txt || true
+          # --no-cache-dir avoids a stale-ABI scenario after a numpy
+          # bump (see issue #221).
+          pip install --no-cache-dir -r requirements.txt || true
 
       - name: Install frontend deps for npm audit
         working-directory: frontend

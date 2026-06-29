@@ -2,7 +2,7 @@
 # Reference: ADR-024 - Titan Neural Memory Architecture Integration
 
 # Core ML/DL (PyTorch installed separately with CUDA)
-numpy>=1.24.0,<2.0.0
+numpy>=2.0,<3.0  # Migrated to 2.x per issue #221; keep in lock-step with root requirements.txt.
 scipy>=1.11.0
 
 # gRPC for service communication

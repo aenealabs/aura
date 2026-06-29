@@ -34,7 +34,7 @@ cryptography>=48.0.0  # For RSA key support in PyJWT (GitHub App auth)
 defusedxml>=0.7.1    # For secure XML parsing (prevents XXE attacks) in SAML/Qualys
 
 # API Framework Dependencies
-fastapi>=0.136.1      # For REST API endpoints
+fastapi>=0.138.0      # For REST API endpoints
 uvicorn>=0.32.0       # ASGI server for FastAPI
 httpx>=0.28.1         # HTTP client for testing
 pydantic>=2.12.5      # Data validation. Upper bound comes from the moto[all]->cfn-lint->aws-sam-translator transitive chain (the last pins pydantic~=2.12.5, i.e. <2.13). Broader pins triggered a hard pip resolver failure on clean installs (test-harness build, fresh CI). Tightening to match the transitive constraint instead of forcing it through the legacy-resolver flag. If a future feature requires pydantic 2.13+, bump cfn-lint AND aws-sam-translator together in the same PR.

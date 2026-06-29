@@ -564,7 +564,12 @@ class FailureAnalyzer:
         for module in import_match:
             suggestions.append(f"Module: {module}")
 
-        return list(set(suggestions))[:5]
+        # dict.fromkeys preserves first-seen order while deduping; plain
+        # set() does not, so the [:5] slice would drop a random suggestion
+        # depending on PYTHONHASHSEED -- which made
+        # test_suggest_context_for_api_misuse flaky / hash-randomization-
+        # dependent.
+        return list(dict.fromkeys(suggestions))[:5]
 
     def _calculate_confidence(
         self,

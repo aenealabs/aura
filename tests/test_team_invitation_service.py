@@ -38,6 +38,30 @@ from src.services.team_invitation_service import (
 # =============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _stub_boto3_resource(monkeypatch):
+    """Stub boto3.resource so the service's lazy ``table`` property never
+    tries a real DynamoDB call on Linux CI (where credentials are absent
+    and a ``put_item`` raises ``UnrecognizedClientException``).
+
+    The stub returns a permissive MagicMock chain, so
+    ``boto3.resource("dynamodb").Table(...)`` yields a MagicMock that
+    silently absorbs ``put_item`` / ``update_item`` / ``delete_item``
+    and returns ``{"Items": []}`` from ``query``. Tests that need
+    specific table behaviour still override ``service._table`` with
+    their own ``mock_dynamodb_table`` fixture, which takes precedence
+    over the lazy property's stub.
+    """
+    import boto3
+
+    fake_table = MagicMock()
+    fake_table.query.return_value = {"Items": []}
+    fake_table.get_item.return_value = {}
+    fake_resource = MagicMock()
+    fake_resource.Table.return_value = fake_table
+    monkeypatch.setattr(boto3, "resource", lambda *a, **kw: fake_resource)
+
+
 @pytest.fixture
 def service():
     """Create a team invitation service for testing."""
@@ -654,7 +678,15 @@ class TestRevokeInvitation:
     @pytest.mark.asyncio
     async def test_revoke_invitation_no_table(self, service):
         """Test revoke when table not available."""
-        result = await service.revoke_invitation("inv_123", "user_001")
+        # The autouse boto3 stub would otherwise leave ``self.table`` truthy
+        # via the lazy property; null it out explicitly to exercise the
+        # "no table" code path on line 412 of team_invitation_service.
+        service._table = None
+        service._dynamodb = None
+        import boto3
+
+        with patch.object(boto3, "resource", side_effect=Exception("no creds")):
+            result = await service.revoke_invitation("inv_123", "user_001")
         assert result is False
 
     @pytest.mark.asyncio
@@ -733,7 +765,7 @@ class TestShareableLink:
         """Test shareable link with default base URL."""
         link = await service.generate_shareable_link("org_001")
 
-        assert "https://app.aenealabs.com/join/org_001/" in link
+        assert "https://app.aura.local/join/org_001/" in link
         # Should contain a token
         assert len(link.split("/")[-1]) > 10
 
@@ -1383,6 +1415,6 @@ class TestShareableLinkEdgeCases:
         """Test shareable link format."""
         link = await service.generate_shareable_link("org_test")
 
-        assert link.startswith("https://app.aenealabs.com/join/org_test/")
+        assert link.startswith("https://app.aura.local/join/org_test/")
         parts = link.split("/")
         assert len(parts[-1]) > 10  # Token has sufficient length

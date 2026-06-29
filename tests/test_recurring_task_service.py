@@ -894,8 +894,21 @@ class TestServiceErrorPaths:
     """Tests for service error handling paths."""
 
     @pytest.fixture
-    def service_no_table(self):
-        """Create a service with no DynamoDB table."""
+    def service_no_table(self, monkeypatch):
+        """Create a service with no DynamoDB table.
+
+        Patches ``boto3.resource`` to raise so the production ``table``
+        property's lazy init falls through to ``self._table = None``
+        (see recurring_task_service.py:372-381). Without this, the
+        lazy init creates a real boto3 Table on Linux CI and the
+        subsequent ``put_item`` fails with
+        ``UnrecognizedClientException`` because CI has no credentials.
+        """
+        import boto3
+
+        monkeypatch.setattr(
+            boto3, "resource", MagicMock(side_effect=Exception("no creds in test"))
+        )
         service = RecurringTaskService(table_name="test-table")
         service._table = None
         return service

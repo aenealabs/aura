@@ -223,7 +223,10 @@ class TestCreateRecurringTask:
         )
 
         assert response.status_code == 400
-        assert "Invalid cron expression" in response.json()["detail"]
+        # The create endpoint deliberately sanitises ValueError messages to a
+        # generic detail to avoid leaking internal validation strings; the raw
+        # message is logged server-side. See recurring_task_endpoints.py:218.
+        assert "Invalid task configuration" in response.json()["detail"]
 
     def test_create_task_missing_name(self, client, mock_service):
         """Test creation without required name field."""

@@ -12,6 +12,17 @@ from unittest.mock import AsyncMock, MagicMock
 import numpy as np
 import pytest
 
+# Issue #221: numpy 2.x migration -- this module loads hdbscan + numpy
+# native code paths (MemoryClusteringService.cluster_memories ->
+# hdbscan.HDBSCAN(...) at abstract_operation.py:210). Under numpy 2.x,
+# pytest's single-worker run reliably SIGSEGVs around the 14% mark when
+# the cumulative state of prior tests primes a native-code crash here.
+# Running every test in this file in a forked subprocess contains the
+# damage: any SIGSEGV becomes a single test failure rather than killing
+# the worker. CI is Linux so fork() works as expected; the darwin
+# Objective-C fork guard in conftest.py:1042-1048 doesn't apply.
+pytestmark = pytest.mark.forked
+
 from src.services.memory_evolution.abstract_operation import (
     AbstractionConfig,
     AbstractionService,

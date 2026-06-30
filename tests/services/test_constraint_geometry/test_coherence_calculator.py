@@ -21,35 +21,20 @@ from src.services.constraint_geometry.contracts import (
 # =============================================================================
 
 
-_NUMPY_2X_IMPORT_SKIP = pytest.mark.skip(
-    reason=(
-        "TODO(#221): 'cannot load module more than once per process' cascade "
-        "from the forked subprocesses in test_abstract_operation.py under "
-        "numpy 2.x. The forked tests there leave the parent pytest worker's "
-        "sys.modules in a state where re-importing the C extensions backing "
-        "this test's calculator fixture fails. Resolves when issue #221's "
-        "Phase 2 root-causes the native interaction."
-    )
-)
-
-
 class TestCosineSimilarity:
     """Test deterministic cosine similarity computation."""
 
-    @_NUMPY_2X_IMPORT_SKIP
     def test_identical_vectors(self, calculator):
         """Identical vectors have similarity 1.0."""
         v = np.array([1.0, 0.0, 0.0, 0.0])
         assert calculator._cosine_similarity(v, v) == pytest.approx(1.0)
 
-    @_NUMPY_2X_IMPORT_SKIP
     def test_opposite_vectors(self, calculator):
         """Opposite vectors have similarity -1.0."""
         v1 = np.array([1.0, 0.0, 0.0, 0.0])
         v2 = np.array([-1.0, 0.0, 0.0, 0.0])
         assert calculator._cosine_similarity(v1, v2) == pytest.approx(-1.0)
 
-    @_NUMPY_2X_IMPORT_SKIP
     def test_orthogonal_vectors(self, calculator):
         """Orthogonal vectors have similarity 0.0."""
         v1 = np.array([1.0, 0.0, 0.0, 0.0])
@@ -62,7 +47,6 @@ class TestCosineSimilarity:
         v2 = np.array([0.0, 0.0])
         assert calculator._cosine_similarity(v1, v2) == 0.0
 
-    @_NUMPY_2X_IMPORT_SKIP
     def test_high_dimensional(self, calculator):
         """Works with high-dimensional vectors (1024)."""
         rng = np.random.RandomState(42)
@@ -71,7 +55,6 @@ class TestCosineSimilarity:
         sim = calculator._cosine_similarity(v1, v2)
         assert -1.0 <= sim <= 1.0
 
-    @_NUMPY_2X_IMPORT_SKIP
     def test_result_clipped(self, calculator):
         """Result is always in [-1.0, 1.0]."""
         for seed in range(10):
@@ -81,7 +64,6 @@ class TestCosineSimilarity:
             sim = calculator._cosine_similarity(v1, v2)
             assert -1.0 <= sim <= 1.0
 
-    @_NUMPY_2X_IMPORT_SKIP
     def test_symmetry(self, calculator):
         """cosine(a, b) == cosine(b, a)."""
         rng = np.random.RandomState(99)
@@ -100,7 +82,6 @@ class TestCosineSimilarity:
 class TestWeightedHarmonicMean:
     """Test weighted harmonic mean computation."""
 
-    @_NUMPY_2X_IMPORT_SKIP
     def test_equal_values(self, calculator):
         """Equal values produce that value."""
         result = calculator._weighted_harmonic_mean(
@@ -109,7 +90,6 @@ class TestWeightedHarmonicMean:
         )
         assert result == pytest.approx(0.8, abs=1e-6)
 
-    @_NUMPY_2X_IMPORT_SKIP
     def test_penalizes_low_values(self, calculator):
         """Harmonic mean penalizes low values more than arithmetic."""
         values = [0.95, 0.95, 0.95, 0.2]
@@ -118,7 +98,6 @@ class TestWeightedHarmonicMean:
         arithmetic = sum(v * w for v, w in zip(values, weights)) / sum(weights)
         assert harmonic < arithmetic  # Harmonic penalizes more
 
-    @_NUMPY_2X_IMPORT_SKIP
     def test_near_zero_drops_sharply(self, calculator):
         """Near-zero value drops harmonic mean significantly."""
         result = calculator._weighted_harmonic_mean(

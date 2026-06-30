@@ -1003,41 +1003,26 @@ def _sync_setupstate_for_forked_test(item: pytest.Item, nextitem: pytest.Item | 
 
 def _refresh_src_modules_for_fork():
     """
-    Refresh src.* modules to ensure fresh state in forked subprocess.
+    Reset src.* module state for fresh forked subprocesses.
 
     When pytest-forked creates a subprocess, the child inherits the parent's
-    sys.modules with already-imported modules. This can cause issues where:
-    1. lru_cache decorators have stale cached values
-    2. Module-level singletons or state are copies from the parent
-    3. Class identity differs between parent-imported and child-imported modules
+    sys.modules. This causes stale lru_cache hits, module-level singletons
+    carried over from the parent, and (rarely) class-identity mismatches.
 
-    This function clears and reimports key modules to ensure fresh state.
+    Earlier revisions of this hook called `importlib.reload()` on
+    `src.api.auth` / `src.services.api_rate_limiter` / `src.config`. That
+    approach was retired (#221, #291): under numpy 2.x more of the C
+    extensions transitively imported by those modules use single-phase
+    init, and reloading them raises `cannot load module more than once
+    per process`, which then corrupted the parent worker's sys.modules
+    and tripped a cascade of ImportErrors in unrelated tests (e.g.,
+    tests/services/test_constraint_geometry/test_coherence_calculator.py).
+
+    Each affected module already exposes a targeted cleanup function that
+    resets exactly the state the reload was trying to clear, without
+    touching any C extensions. Call those directly instead.
     """
-    import importlib
-
-    # Modules that have known state issues in forked processes
-    # NOTE: FastAPI router modules are NOT reloaded here because reloading
-    # breaks FastAPI's include_router mechanism (routes don't get added properly).
-    # Router-based endpoint tests should handle their own isolation.
-    modules_to_refresh = [
-        # Auth module has lru_cache that needs clearing
-        "src.api.auth",
-        # Rate limiter has global state
-        "src.services.api_rate_limiter",
-        # Config modules may cache values
-        "src.config",
-    ]
-
-    for mod_name in modules_to_refresh:
-        if mod_name in sys.modules:
-            try:
-                # Reload to get fresh module state
-                importlib.reload(sys.modules[mod_name])
-            except Exception:
-                # If reload fails, remove and let it be reimported on demand
-                sys.modules.pop(mod_name, None)
-
-    # Also clear auth caches specifically (in case reload didn't reset them)
+    # Auth module: clears lru_cache + JWKS cache + lazy boto3 client.
     try:
         from src.api.auth import clear_auth_caches
 
@@ -1045,11 +1030,19 @@ def _refresh_src_modules_for_fork():
     except Exception:
         pass
 
-    # Reset rate limiter state
+    # Rate limiter: resets the sliding-window counters.
     try:
         from src.services.api_rate_limiter import reset_rate_limiter
 
         reset_rate_limiter()
+    except Exception:
+        pass
+
+    # Integration config: clears the cached get_integration_config() result.
+    try:
+        from src.config.integration_config import clear_integration_config_cache
+
+        clear_integration_config_cache()
     except Exception:
         pass
 

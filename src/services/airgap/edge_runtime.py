@@ -63,6 +63,21 @@ class LocalGraphStore:
 
         self._initialize_database()
 
+    def _get_connection(self) -> sqlite3.Connection:
+        """Return the live SQLite connection.
+
+        Raises GraphConnectionError if the store hasn't been initialized
+        or the connection has been closed. Centralizes the None guard
+        so callers can use the live connection without per-call
+        defensive checks (and mypy can narrow the type).
+        """
+        if self._connection is None:
+            raise GraphConnectionError(
+                "LocalGraphStore connection is not initialized or has been closed",
+                self._db_path,
+            )
+        return self._connection
+
     def _initialize_database(self) -> None:
         """Initialize database schema."""
         try:
@@ -73,12 +88,12 @@ class LocalGraphStore:
             self._connection.row_factory = sqlite3.Row
 
             if self._config.graph.wal_mode:
-                self._connection.execute("PRAGMA journal_mode=WAL")
+                self._get_connection().execute("PRAGMA journal_mode=WAL")
 
             cache_size_kb = self._config.graph.cache_size_mb * 1024
-            self._connection.execute(f"PRAGMA cache_size=-{cache_size_kb}")
-            self._connection.execute(f"PRAGMA page_size={self._config.graph.page_size}")
-            self._connection.execute(
+            self._get_connection().execute(f"PRAGMA cache_size=-{cache_size_kb}")
+            self._get_connection().execute(f"PRAGMA page_size={self._config.graph.page_size}")
+            self._get_connection().execute(
                 f"PRAGMA synchronous={self._config.graph.sync_mode}"
             )
 
@@ -108,7 +123,7 @@ class LocalGraphStore:
                 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_label ON edges(label);
             """)
-            self._connection.commit()
+            self._get_connection().commit()
 
         except Exception as e:
             raise GraphConnectionError(
@@ -125,20 +140,20 @@ class LocalGraphStore:
         """Add a vertex to the graph."""
         now = datetime.now(timezone.utc).isoformat()
         with self._lock:
-            self._connection.execute(
+            self._get_connection().execute(
                 """
                 INSERT OR REPLACE INTO vertices (id, label, properties, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (vertex_id, label, json.dumps(properties), now, now),
             )
-            self._connection.commit()
+            self._get_connection().commit()
         return vertex_id
 
     def get_vertex(self, vertex_id: str) -> Optional[dict[str, Any]]:
         """Get a vertex by ID."""
         with self._lock:
-            cursor = self._connection.execute(
+            cursor = self._get_connection().execute(
                 "SELECT * FROM vertices WHERE id = ?",
                 (vertex_id,),
             )
@@ -157,16 +172,16 @@ class LocalGraphStore:
         """Delete a vertex and its edges."""
         with self._lock:
             # Delete edges
-            self._connection.execute(
+            self._get_connection().execute(
                 "DELETE FROM edges WHERE source_id = ? OR target_id = ?",
                 (vertex_id, vertex_id),
             )
             # Delete vertex
-            cursor = self._connection.execute(
+            cursor = self._get_connection().execute(
                 "DELETE FROM vertices WHERE id = ?",
                 (vertex_id,),
             )
-            self._connection.commit()
+            self._get_connection().commit()
             return cursor.rowcount > 0
 
     def add_edge(
@@ -180,7 +195,7 @@ class LocalGraphStore:
         """Add an edge to the graph."""
         now = datetime.now(timezone.utc).isoformat()
         with self._lock:
-            self._connection.execute(
+            self._get_connection().execute(
                 """
                 INSERT OR REPLACE INTO edges (id, source_id, target_id, label, properties, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -194,7 +209,7 @@ class LocalGraphStore:
                     now,
                 ),
             )
-            self._connection.commit()
+            self._get_connection().commit()
         return edge_id
 
     def get_edges(
@@ -222,7 +237,7 @@ class LocalGraphStore:
             query += " WHERE " + " AND ".join(conditions)
 
         with self._lock:
-            cursor = self._connection.execute(query, params)
+            cursor = self._get_connection().execute(query, params)
             return [
                 {
                     "id": row["id"],
@@ -244,9 +259,9 @@ class LocalGraphStore:
         """Execute a SQL query."""
         timeout = timeout_ms or self._config.graph.query_timeout_ms
         with self._lock:
-            self._connection.execute(f"PRAGMA busy_timeout = {timeout}")
+            self._get_connection().execute(f"PRAGMA busy_timeout = {timeout}")
             try:
-                cursor = self._connection.execute(sql, params or ())
+                cursor = self._get_connection().execute(sql, params or ())
                 columns = (
                     [desc[0] for desc in cursor.description]
                     if cursor.description
@@ -261,10 +276,10 @@ class LocalGraphStore:
     def get_stats(self) -> dict[str, Any]:
         """Get database statistics."""
         with self._lock:
-            vertex_count = self._connection.execute(
+            vertex_count = self._get_connection().execute(
                 "SELECT COUNT(*) FROM vertices"
             ).fetchone()[0]
-            edge_count = self._connection.execute(
+            edge_count = self._get_connection().execute(
                 "SELECT COUNT(*) FROM edges"
             ).fetchone()[0]
 
@@ -284,7 +299,7 @@ class LocalGraphStore:
         """Close database connection."""
         if self._connection:
             if self._config.graph.vacuum_on_close:
-                self._connection.execute("VACUUM")
+                self._get_connection().execute("VACUUM")
             self._connection.close()
             self._connection = None
 
@@ -302,7 +317,7 @@ class OfflineCacheManager:
         self._hit_count = 0
         self._miss_count = 0
         self._eviction_count = 0
-        self._current_size = 0
+        self._current_size: float = 0.0
 
         self._cache_id = f"cache-{uuid.uuid4().hex[:8]}"
 
@@ -374,7 +389,7 @@ class OfflineCacheManager:
         """Clear the cache."""
         with self._lock:
             self._cache.clear()
-            self._current_size = 0
+            self._current_size = 0.0
 
     def get_stats(self) -> OfflineCache:
         """Get cache statistics."""

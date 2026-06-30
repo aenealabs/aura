@@ -51,7 +51,7 @@ class SandboxExecutionResult:
     stdout: str
     stderr: str
     duration_seconds: float
-    test_results: dict[str, str] = field(default_factory=dict)
+    test_results: dict[str, int] = field(default_factory=dict)
 
 
 class ValidationPipeline:

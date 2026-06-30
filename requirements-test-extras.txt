@@ -25,7 +25,7 @@
 mypy-boto3-dynamodb>=1.43.0,<1.50
 kubernetes>=36.0.2,<37
 opentelemetry-api>=1.41.0,<1.45
-opentelemetry-sdk>=1.41.0,<1.45
+opentelemetry-sdk>=1.43.0,<1.45
 opentelemetry-instrumentation>=0.62b1,<0.66
 cairosvg>=2.9.0,<3.0
 hdbscan>=0.8.44,<0.9

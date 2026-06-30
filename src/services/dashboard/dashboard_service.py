@@ -44,6 +44,43 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+
+def _as_str(value: Any) -> str:
+    """Narrow a DynamoDB AttributeValue to str.
+
+    boto3's DynamoDB client returns dict items whose values are typed as a
+    wide union (`Any | bytes | bytearray | str | int | Decimal | ... | None`).
+    Most fields in this service are stored as strings; this helper asserts
+    that and gives mypy the narrow type it needs.
+    """
+    if not isinstance(value, str):
+        raise TypeError(
+            f"Expected str from DynamoDB attribute, got {type(value).__name__}"
+        )
+    return value
+
+
+def _as_opt_str(value: Any) -> str | None:
+    """Like `_as_str` but tolerates None (e.g. for optional GSI keys)."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(
+            f"Expected str or None from DynamoDB attribute, got "
+            f"{type(value).__name__}"
+        )
+    return value
+
+
+def _as_bool(value: Any) -> bool:
+    """Narrow a DynamoDB AttributeValue to bool."""
+    if not isinstance(value, bool):
+        raise TypeError(
+            f"Expected bool from DynamoDB attribute, got {type(value).__name__}"
+        )
+    return value
+
+
 # Configuration
 DEFAULT_MAX_DASHBOARDS_PER_USER = 10
 TABLE_NAME = os.environ.get("DASHBOARD_TABLE_NAME", "aura-dashboard-configs-dev")
@@ -375,6 +412,10 @@ class DashboardService:
 
         now = datetime.now(timezone.utc)
         target_id = share_data.user_id or share_data.org_id
+        if target_id is None:
+            raise DashboardValidationError(
+                "Share request must specify either user_id or org_id"
+            )
 
         # Check if share already exists
         existing = self._get_share_record(dashboard_id, target_id)
@@ -494,12 +535,14 @@ class DashboardService:
             for item in response.get("Items", []):
                 shares.append(
                     ShareRecord(
-                        dashboard_id=item["dashboard_id"],
-                        shared_with_user_id=item.get("shared_with_user_id"),
-                        shared_with_org_id=item.get("shared_with_org_id"),
-                        permission=SharePermission(item["permission"]),
-                        shared_by=item["shared_by"],
-                        shared_at=datetime.fromisoformat(item["shared_at"]),
+                        dashboard_id=_as_str(item["dashboard_id"]),
+                        shared_with_user_id=_as_opt_str(
+                            item.get("shared_with_user_id")
+                        ),
+                        shared_with_org_id=_as_opt_str(item.get("shared_with_org_id")),
+                        permission=SharePermission(_as_str(item["permission"])),
+                        shared_by=_as_str(item["shared_by"]),
+                        shared_at=datetime.fromisoformat(_as_str(item["shared_at"])),
                     )
                 )
 
@@ -670,20 +713,20 @@ class DashboardService:
 
             summaries = []
             for item in response.get("Items", []):
-                widgets = json.loads(item.get("widgets_json", "[]"))
+                widgets = json.loads(_as_str(item.get("widgets_json", "[]")))
                 role_default = None
                 if item.get("role_default_for"):
-                    role_default = UserRole(item["role_default_for"])
+                    role_default = UserRole(_as_str(item["role_default_for"]))
 
                 summaries.append(
                     DashboardSummary(
-                        dashboard_id=item["dashboard_id"],
-                        name=item["name"],
-                        description=item.get("description", ""),
+                        dashboard_id=_as_str(item["dashboard_id"]),
+                        name=_as_str(item["name"]),
+                        description=_as_str(item.get("description", "")),
                         widget_count=len(widgets),
-                        is_default=item.get("is_default", False),
+                        is_default=_as_bool(item.get("is_default", False)),
                         role_default_for=role_default,
-                        updated_at=datetime.fromisoformat(item["updated_at"]),
+                        updated_at=datetime.fromisoformat(_as_str(item["updated_at"])),
                         shared=False,
                     )
                 )
@@ -753,12 +796,12 @@ class DashboardService:
             if "Item" in response:
                 item = response["Item"]
                 return ShareRecord(
-                    dashboard_id=item["dashboard_id"],
-                    shared_with_user_id=item.get("shared_with_user_id"),
-                    shared_with_org_id=item.get("shared_with_org_id"),
-                    permission=SharePermission(item["permission"]),
-                    shared_by=item["shared_by"],
-                    shared_at=datetime.fromisoformat(item["shared_at"]),
+                    dashboard_id=_as_str(item["dashboard_id"]),
+                    shared_with_user_id=_as_opt_str(item.get("shared_with_user_id")),
+                    shared_with_org_id=_as_opt_str(item.get("shared_with_org_id")),
+                    permission=SharePermission(_as_str(item["permission"])),
+                    shared_by=_as_str(item["shared_by"]),
+                    shared_at=datetime.fromisoformat(_as_str(item["shared_at"])),
                 )
 
             # Try org share
@@ -772,12 +815,12 @@ class DashboardService:
             if "Item" in response:
                 item = response["Item"]
                 return ShareRecord(
-                    dashboard_id=item["dashboard_id"],
-                    shared_with_user_id=item.get("shared_with_user_id"),
-                    shared_with_org_id=item.get("shared_with_org_id"),
-                    permission=SharePermission(item["permission"]),
-                    shared_by=item["shared_by"],
-                    shared_at=datetime.fromisoformat(item["shared_at"]),
+                    dashboard_id=_as_str(item["dashboard_id"]),
+                    shared_with_user_id=_as_opt_str(item.get("shared_with_user_id")),
+                    shared_with_org_id=_as_opt_str(item.get("shared_with_org_id")),
+                    permission=SharePermission(_as_str(item["permission"])),
+                    shared_by=_as_str(item["shared_by"]),
+                    shared_at=datetime.fromisoformat(_as_str(item["shared_at"])),
                 )
 
             return None

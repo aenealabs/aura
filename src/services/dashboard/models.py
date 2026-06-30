@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -571,7 +571,7 @@ def get_executive_default() -> DashboardCreate:
     )
 
 
-ROLE_DEFAULTS: dict[UserRole, callable] = {
+ROLE_DEFAULTS: dict[UserRole, Callable[[], "DashboardCreate"]] = {
     UserRole.SECURITY_ENGINEER: get_security_engineer_default,
     UserRole.DEVOPS: get_devops_default,
     UserRole.ENGINEERING_MANAGER: get_devops_default,  # Uses DevOps as base

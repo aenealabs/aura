@@ -931,32 +931,35 @@ def pytest_collection_modifyitems(
 
     This prevents the scenario where torch is imported, then a forked test
     tries to fork the process and crashes due to Objective-C runtime safety.
+
+    Also batches any `@pytest.mark.subprocess_isolated` items into one
+    `SubprocessBatchItem` per module (see issue #291). That step runs on
+    every platform.
     """
-    if not _is_macos:
-        # Only reorder on macOS where fork + torch is problematic
-        return
+    if _is_macos:
+        forked_tests = []
+        regular_tests = []
+        torch_tests = []
 
-    forked_tests = []
-    regular_tests = []
-    torch_tests = []
+        for item in items:
+            if _is_forked_test(item):
+                forked_tests.append(item)
+            elif _is_torch_test(item):
+                torch_tests.append(item)
+            else:
+                regular_tests.append(item)
 
-    for item in items:
-        if _is_forked_test(item):
-            forked_tests.append(item)
-        elif _is_torch_test(item):
-            torch_tests.append(item)
-        else:
-            regular_tests.append(item)
+        # Log ordering info for debugging
+        if forked_tests or torch_tests:
+            print("\n[conftest] Test ordering for macOS fork safety:")
+            print(f"  - Forked tests (run first): {len(forked_tests)}")
+            print(f"  - Regular tests: {len(regular_tests)}")
+            print(f"  - Torch tests (run last): {len(torch_tests)}")
 
-    # Log ordering info for debugging
-    if forked_tests or torch_tests:
-        print("\n[conftest] Test ordering for macOS fork safety:")
-        print(f"  - Forked tests (run first): {len(forked_tests)}")
-        print(f"  - Regular tests: {len(regular_tests)}")
-        print(f"  - Torch tests (run last): {len(torch_tests)}")
+        # Clear and rebuild the items list in the correct order
+        items[:] = forked_tests + regular_tests + torch_tests
 
-    # Clear and rebuild the items list in the correct order
-    items[:] = forked_tests + regular_tests + torch_tests
+    _batch_subprocess_isolated_items(items)
 
 
 def _sync_setupstate_for_forked_test(item: pytest.Item, nextitem: pytest.Item | None):
@@ -1148,6 +1151,137 @@ def pytest_runtest_teardown(item, nextitem):
 # =============================================================================
 # Subprocess Isolation Fixture (Spawn-Safe Alternative to @pytest.mark.forked)
 # =============================================================================
+
+
+class SubprocessBatchItem(pytest.Item):
+    """Synthetic pytest item that runs an entire module via a fresh subprocess.
+
+    Created by `pytest_collection_modifyitems` below for modules tagged with
+    `pytest.mark.subprocess_isolated`. The original per-test items in those
+    modules are removed from the in-process collection and re-run together
+    inside a single `python -m pytest <module>` subprocess.
+
+    This is the spawn-safe alternative to `pytest.mark.forked` for tests that
+    need true process isolation (e.g. native C extensions whose state can't
+    survive a fork without crashing -- the numpy 2.x + hdbscan scenario from
+    issue #291). `os.fork()` inherits the parent's polluted memory; this
+    spawn-based approach starts from a fresh interpreter.
+
+    Coverage: the subprocess invocation runs with `--no-cov`. The tests it
+    runs do not contribute to the parent suite's coverage. For the current
+    use case (#291) that's a no-op because those tests were `@pytest.mark.skip`
+    before this -- zero coverage either way. Wiring proper subprocess coverage
+    via `COVERAGE_PROCESS_START` + a `sitecustomize.py` is tracked as the
+    follow-up on #291.
+    """
+
+    BATCH_TIMEOUT_SECONDS = 600
+    SPAWN_SENTINEL_ENV = "AURA_TEST_IN_SPAWN_BATCH"
+
+    @classmethod
+    def from_parent(cls, parent, name, module_path):  # type: ignore[override]
+        item = super().from_parent(parent=parent, name=name)
+        item.module_path = module_path
+        # Pytest's default per-test timeout (pyproject.toml addopts:
+        # --timeout=120) would interrupt the subprocess well before the
+        # subprocess.run() timeout fires. Raise it to match
+        # BATCH_TIMEOUT_SECONDS so the subprocess's own timeout is the
+        # actual cap.
+        item.add_marker(pytest.mark.timeout(cls.BATCH_TIMEOUT_SECONDS))
+        return item
+
+    def runtest(self):
+        cmd = [
+            sys.executable,
+            "-m",
+            "pytest",
+            self.module_path,
+            "-v",
+            "--tb=short",
+            "-p",
+            "no:xdist",  # don't recursively spawn xdist workers
+            "--no-cov",  # subprocess coverage not yet wired; see docstring
+        ]
+        # Set sentinel so the subprocess's own
+        # `_batch_subprocess_isolated_items` knows to leave items alone
+        # (otherwise we recurse: subprocess collects the same marker,
+        # builds another SubprocessBatchItem, spawns another subprocess...)
+        env = os.environ.copy()
+        env[self.SPAWN_SENTINEL_ENV] = "1"
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=self.BATCH_TIMEOUT_SECONDS,
+            cwd=str(Path.cwd()),
+            env=env,
+        )
+        if result.returncode != 0:
+            tail = (result.stdout + "\n--- stderr ---\n" + result.stderr)[-12000:]
+            raise AssertionError(
+                f"Subprocess batch returned exit {result.returncode} for "
+                f"{self.module_path}\n\n{tail}"
+            )
+
+    def reportinfo(self):
+        return self.module_path, 0, f"subprocess-batch:{Path(self.module_path).name}"
+
+
+def _batch_subprocess_isolated_items(items: list[pytest.Item]) -> None:
+    """Group `@pytest.mark.subprocess_isolated` items by module and replace
+    each group with a single `SubprocessBatchItem`.
+
+    Items inside a marked module are removed from the in-process collection
+    and re-run together inside a fresh `python -m pytest <module>` subprocess
+    at the end of the test session. This gives true spawn-based isolation
+    (no inherited memory from a forking parent), unlike `pytest.mark.forked`
+    which uses `os.fork()`.
+
+    Invoked from `pytest_collection_modifyitems` after the macOS fork-safety
+    reordering has run so it sees the final item list.
+
+    Suppressed (no-op) when the `SubprocessBatchItem.SPAWN_SENTINEL_ENV`
+    env var is set -- that indicates we're already inside a spawned
+    subprocess pytest invocation and the subprocess should run the
+    individual marked tests directly rather than recursing into yet
+    another subprocess.
+    """
+    if os.environ.get(SubprocessBatchItem.SPAWN_SENTINEL_ENV) == "1":
+        return
+
+    from collections import defaultdict
+
+    groups: dict[str, list[pytest.Item]] = defaultdict(list)
+    for item in items:
+        if item.get_closest_marker("subprocess_isolated"):
+            module_file = item.module.__file__
+            module_path = str(Path(module_file).relative_to(Path.cwd()))
+            groups[module_path].append(item)
+
+    if not groups:
+        return
+
+    # Remove spawn-marked items from in-process collection.
+    ids_to_remove = {id(it) for grp in groups.values() for it in grp}
+    items[:] = [it for it in items if id(it) not in ids_to_remove]
+
+    # Append one batch item per module, parented to the actual Module
+    # collector (walk up `parent` from a Function-or-Class item to the
+    # enclosing Module). Keeps the pytest node-id chain sensible
+    # (`tests/path/file.py::<batch:file.py>` rather than nested under
+    # a Class).
+    for module_path, grp in groups.items():
+        module_collector = grp[0].parent
+        while module_collector is not None and not isinstance(
+            module_collector, pytest.Module
+        ):
+            module_collector = module_collector.parent
+        batch = SubprocessBatchItem.from_parent(
+            parent=module_collector or grp[0].parent,
+            name=f"<batch:{Path(module_path).name}>",
+            module_path=module_path,
+        )
+        items.append(batch)
 
 
 def run_test_in_subprocess(

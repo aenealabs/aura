@@ -165,6 +165,19 @@ _protected_prefixes = (
     "conftest",
     "torch",  # Once loaded, cannot be safely unloaded
     "_C",  # torch internals
+    # Native dep C extensions that share torch's "single-phase init,
+    # cannot reinit" constraint. Under numpy 2.x, more numpy submodules
+    # use single-phase init than under 1.x, so the same teardown pop
+    # that was harmless before now triggers
+    # `ImportError: cannot load module more than once per process`
+    # in the next test that re-touches them (issue #291). Protecting
+    # the whole import family is the conservative fix; targeted
+    # protection didn't catch the long tail of transitive submodules.
+    "numpy",
+    "scipy",
+    "sklearn",
+    "hdbscan",
+    "cryptography",
 )
 
 

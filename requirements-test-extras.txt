@@ -28,7 +28,7 @@ opentelemetry-api>=1.41.0,<1.45
 opentelemetry-sdk>=1.41.0,<1.45
 opentelemetry-instrumentation>=0.62b1,<0.66
 cairosvg>=2.9.0,<3.0
-hdbscan>=0.8.43,<0.9
+hdbscan>=0.8.44,<0.9
 # email-validator: pydantic[email] runtime dep; production code uses
 # EmailStr in API models (src/api/team_endpoints.py, dashboard models).
 # Without it, collection of any test that touches those models errors

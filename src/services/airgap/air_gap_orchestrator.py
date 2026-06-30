@@ -16,7 +16,7 @@ import tarfile
 import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from .config import AirGapConfig, get_airgap_config
 from .contracts import (
@@ -102,12 +102,15 @@ class AirGapOrchestrator:
     ) -> str:
         """Compute hash of a file."""
         if algorithm == HashAlgorithm.SHA256:
-            hasher = hashlib.sha256()
+            hasher: Any = hashlib.sha256()
         elif algorithm == HashAlgorithm.SHA384:
             hasher = hashlib.sha384()
         elif algorithm == HashAlgorithm.SHA512:
             hasher = hashlib.sha512()
         elif algorithm == HashAlgorithm.BLAKE2B:
+            # blake2b is a distinct class in the hashlib stubs, not a HASH
+            # subclass, so the loose `Any` annotation above is required to
+            # let the variable hold either branch's return type.
             hasher = hashlib.blake2b()
         else:
             hasher = hashlib.sha256()
@@ -115,7 +118,8 @@ class AirGapOrchestrator:
         with open(file_path, "rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
                 hasher.update(chunk)
-        return hasher.hexdigest()
+        digest: str = hasher.hexdigest()
+        return digest
 
     def _get_compression_extension(self, compression: CompressionType) -> str:
         """Get file extension for compression type."""
@@ -128,9 +132,11 @@ class AirGapOrchestrator:
         }
         return extensions.get(compression, ".tar.gz")
 
-    def _get_tarfile_mode(self, compression: CompressionType) -> str:
+    def _get_tarfile_mode(
+        self, compression: CompressionType
+    ) -> Literal["w", "w:gz", "w:xz"]:
         """Get tarfile mode for compression type."""
-        modes = {
+        modes: dict[CompressionType, Literal["w", "w:gz", "w:xz"]] = {
             CompressionType.NONE: "w",
             CompressionType.GZIP: "w:gz",
             CompressionType.XZ: "w:xz",
@@ -328,15 +334,19 @@ class AirGapOrchestrator:
                 Ed25519PrivateKey,
             )
 
-            private_key = Ed25519PrivateKey.generate()
-            public_key = private_key.public_key()
+            # Rename: the earlier `private_key = os.urandom(64)` branch
+            # bound `private_key` to bytes, so mypy can't accept the
+            # Ed25519PrivateKey object here. Use distinct names; the
+            # function returns `(bytes, bytes)` either way.
+            ed_private = Ed25519PrivateKey.generate()
+            ed_public = ed_private.public_key()
 
-            private_bytes = private_key.private_bytes(
+            private_bytes = ed_private.private_bytes(
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PrivateFormat.Raw,
                 encryption_algorithm=serialization.NoEncryption(),
             )
-            public_bytes = public_key.public_bytes(
+            public_bytes = ed_public.public_bytes(
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PublicFormat.Raw,
             )

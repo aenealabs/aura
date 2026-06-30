@@ -92,7 +92,9 @@ class LocalGraphStore:
 
             cache_size_kb = self._config.graph.cache_size_mb * 1024
             self._get_connection().execute(f"PRAGMA cache_size=-{cache_size_kb}")
-            self._get_connection().execute(f"PRAGMA page_size={self._config.graph.page_size}")
+            self._get_connection().execute(
+                f"PRAGMA page_size={self._config.graph.page_size}"
+            )
             self._get_connection().execute(
                 f"PRAGMA synchronous={self._config.graph.sync_mode}"
             )
@@ -276,12 +278,16 @@ class LocalGraphStore:
     def get_stats(self) -> dict[str, Any]:
         """Get database statistics."""
         with self._lock:
-            vertex_count = self._get_connection().execute(
-                "SELECT COUNT(*) FROM vertices"
-            ).fetchone()[0]
-            edge_count = self._get_connection().execute(
-                "SELECT COUNT(*) FROM edges"
-            ).fetchone()[0]
+            vertex_count = (
+                self._get_connection()
+                .execute("SELECT COUNT(*) FROM vertices")
+                .fetchone()[0]
+            )
+            edge_count = (
+                self._get_connection()
+                .execute("SELECT COUNT(*) FROM edges")
+                .fetchone()[0]
+            )
 
             # Get database size
             if self._db_path != ":memory:":

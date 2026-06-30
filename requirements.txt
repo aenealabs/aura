@@ -44,7 +44,7 @@ python-multipart>=0.0.20  # Required for FastAPI form data (fixes deprecation wa
 aiohttp>=3.13.5       # For ServiceNow, Splunk, Terraform Cloud, Snyk, CrowdStrike, Qualys, Azure DevOps connectors
 
 # Neural Memory / Titan Integration (ADR-024)
-torch>=2.11.0          # For DeepMLPMemory, MIRAS, neural memory backends
+torch>=2.12.1          # For DeepMLPMemory, MIRAS, neural memory backends
 numpy>=2.0,<3.0       # Migrated to 2.x per issue #221. PR #272 added --no-cache-dir to CI native-dep installs (kills stale-wheel ABI failure); 9 tests known to crash under numpy 2.x are explicitly @skip'd with TODOs referencing #221 (see tests/services/memory_evolution/test_abstract_operation.py + tests/services/test_constraint_geometry/test_coherence_calculator.py). Upper cap matches hdbscan's declared `numpy<3`.
 
 # Structured Logging (Security/DevOps Agents)

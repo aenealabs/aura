@@ -149,10 +149,7 @@ class SAMLProvider(IdentityProvider):
 
         conn = config.connection_settings
         self.sp_entity_id = conn.get("sp_entity_id", "https://api.aenealabs.com/saml")
-        self.idp_entity_id = conn.get("idp_entity_id")
-        self.idp_sso_url = conn.get("idp_sso_url")
         self.idp_slo_url = conn.get("idp_slo_url")
-        self.idp_certificate = conn.get("idp_certificate")  # Base64 PEM
         self.acs_url = conn.get("acs_url", "https://api.aenealabs.com/auth/saml/acs")
         self.name_id_format = conn.get(
             "name_id_format",
@@ -163,13 +160,22 @@ class SAMLProvider(IdentityProvider):
         self.want_assertions_encrypted = conn.get("want_assertions_encrypted", False)
         self.allowed_clock_skew = conn.get("allowed_clock_skew", 300)
 
-        # Validate required settings
-        if not self.idp_entity_id:
+        # Validate required settings and bind with explicit `str` annotation
+        # so downstream code (and mypy) sees them as non-Optional.
+        idp_entity_id = conn.get("idp_entity_id")
+        if not idp_entity_id:
             raise ConfigurationError("SAML idp_entity_id is required")
-        if not self.idp_sso_url:
+        self.idp_entity_id: str = idp_entity_id
+
+        idp_sso_url = conn.get("idp_sso_url")
+        if not idp_sso_url:
             raise ConfigurationError("SAML idp_sso_url is required")
-        if not self.idp_certificate:
+        self.idp_sso_url: str = idp_sso_url
+
+        idp_certificate = conn.get("idp_certificate")  # Base64 PEM
+        if not idp_certificate:
             raise ConfigurationError("SAML idp_certificate is required")
+        self.idp_certificate: str = idp_certificate
 
         # SP credentials loaded from Secrets Manager
         self._sp_private_key: str | None = None
@@ -280,14 +286,28 @@ class SAMLProvider(IdentityProvider):
         # Build signing input
         query_string = urlencode(params)
 
+        if self._sp_private_key is None:
+            logger.warning("SP private key not loaded; skipping request signing")
+            return params
+
         # Sign with SP private key
         try:
             from cryptography.hazmat.primitives import hashes, serialization
-            from cryptography.hazmat.primitives.asymmetric import padding
+            from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
             private_key = serialization.load_pem_private_key(
                 self._sp_private_key.encode(), password=None
             )
+            if not isinstance(private_key, rsa.RSAPrivateKey):
+                # The SigAlg above is RSA-SHA256; reject non-RSA keys
+                # explicitly rather than silently producing an invalid
+                # signature.
+                logger.error(
+                    "SP private key is not an RSA key (got %s); skipping "
+                    "request signing",
+                    type(private_key).__name__,
+                )
+                return params
             signature = private_key.sign(
                 query_string.encode(),
                 padding.PKCS1v15(),
@@ -544,6 +564,7 @@ class SAMLProvider(IdentityProvider):
 
             values = attr.findall(f"{{{SAML_NS}}}AttributeValue")
             if values:
+                attr_value: str | list[str]
                 if len(values) == 1:
                     attr_value = values[0].text or ""
                 else:

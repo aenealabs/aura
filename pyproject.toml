@@ -285,7 +285,7 @@ markers = [
     # Isolation markers (applied as needed for test stability)
     "torch_required: Tests that require PyTorch (run in isolated worker or last)",
     "forked: Tests requiring process isolation (prevents mock pollution)",
-    "subprocess_isolated: Tests requiring fresh subprocess isolation (spawn-safe)",
+    "subprocess_isolated: Module-level marker. Runs the whole module in a single fresh `python -m pytest <module>` subprocess; the parent worker keeps no inherited state. Spawn-safe alternative to `forked` for native-code tests (issue #291).",
     "gpu_required: Tests requiring NVIDIA GPU (skip on Apple Silicon)",
 ]
 asyncio_mode = "auto"

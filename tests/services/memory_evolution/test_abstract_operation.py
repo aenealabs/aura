@@ -12,19 +12,19 @@ from unittest.mock import AsyncMock, MagicMock
 import numpy as np
 import pytest
 
-# Issue #221: numpy 2.x migration -- this module exercises hdbscan +
-# numpy native code paths (MemoryClusteringService.cluster_memories ->
-# hdbscan.HDBSCAN(...) at abstract_operation.py:210). Under numpy 2.x +
-# hdbscan 0.8.43+, pytest's single-worker run reliably SIGSEGVs around
-# the 14% mark on the first such test, killing the worker.
-# `pytest.mark.forked` runs every test in this file in its own
-# subprocess so any SIGSEGV becomes a per-test failure rather than a
-# worker-kill (CI is Linux; the darwin Objective-C fork guard in
-# conftest.py:1042-1048 does not apply here). The specific tests that
-# still crash inside the forked subprocess are individually @skip'd
-# below with TODO(#221) markers -- root-causing the native interaction
-# is tracked as the next step on issue #221.
-pytestmark = pytest.mark.forked
+# Issue #221 / #291: this module exercises hdbscan + numpy native code
+# paths (MemoryClusteringService.cluster_memories -> hdbscan.HDBSCAN(...)
+# at abstract_operation.py:210). Under numpy 2.x + hdbscan 0.8.43+,
+# pytest-forked's `os.fork()`-based isolation is insufficient -- the
+# forked child inherits the parent's already-loaded numpy / hdbscan
+# state and several tests SIGSEGV inside the child.
+#
+# `subprocess_isolated` triggers the batched spawn pathway implemented
+# in `tests/conftest.py` (SubprocessBatchItem + the
+# pytest_collection_modifyitems hook): the whole module runs in a single
+# fresh `python -m pytest <module>` subprocess with no inherited memory,
+# which is what's needed when the failure is in native code state.
+pytestmark = pytest.mark.subprocess_isolated
 
 from src.services.memory_evolution.abstract_operation import (
     AbstractionConfig,
@@ -373,9 +373,6 @@ class TestMemoryClusteringService:
 
         assert candidates == []
 
-    @pytest.mark.skip(
-        reason="TODO(#221): SIGSEGV under numpy 2.x + hdbscan 0.8.43; root-cause + fix tracked on the issue's Phase 2 deliverable."
-    )
     def test_cluster_memories_fallback(self, sample_memories, abstraction_config):
         """Test fallback clustering without HDBSCAN."""
         service = MemoryClusteringService(config=abstraction_config)
@@ -412,9 +409,6 @@ class TestMemoryClusteringService:
         # HDBSCAN may or may not form clusters depending on parameters
         assert isinstance(candidates, list)
 
-    @pytest.mark.skip(
-        reason="TODO(#221): SIGSEGV under numpy 2.x; see also test_cluster_memories_fallback."
-    )
     def test_compute_coherence_high(self, abstraction_config):
         """Test coherence computation for similar embeddings."""
         service = MemoryClusteringService(config=abstraction_config)
@@ -430,9 +424,6 @@ class TestMemoryClusteringService:
 
         assert coherence > 0.95
 
-    @pytest.mark.skip(
-        reason="TODO(#221): SIGSEGV under numpy 2.x; see also test_cluster_memories_fallback."
-    )
     def test_compute_coherence_low(self, abstraction_config):
         """Test coherence computation for dissimilar embeddings."""
         service = MemoryClusteringService(config=abstraction_config)
@@ -463,9 +454,6 @@ class TestMemoryClusteringService:
 
         assert 0.0 <= diversity <= 1.0
 
-    @pytest.mark.skip(
-        reason="TODO(#221): _compute_coherence's np.nan_to_num path produces non-finite output under numpy 2.x even though numpy 1.x sanitized cleanly; needs a real fix, not just isolation."
-    )
     def test_compute_coherence_handles_nan(self, abstraction_config):
         """Non-finite embeddings must not poison the coherence score."""
         service = MemoryClusteringService(config=abstraction_config)
@@ -481,9 +469,6 @@ class TestMemoryClusteringService:
         assert np.isfinite(coherence)
         assert 0.0 <= coherence <= 1.0
 
-    @pytest.mark.skip(
-        reason="TODO(#221): SIGSEGV under numpy 2.x; see also test_cluster_memories_fallback."
-    )
     def test_compute_coherence_handles_zero_vectors(self, abstraction_config):
         """All-zero embeddings must not divide-by-zero."""
         service = MemoryClusteringService(config=abstraction_config)
@@ -658,9 +643,6 @@ class TestAbstractionService:
         assert not result.success
         assert "isolation" in result.error.lower()
 
-    @pytest.mark.skip(
-        reason="TODO(#221): SIGSEGV under numpy 2.x via the AbstractionService -> MemoryClusteringService call chain."
-    )
     @pytest.mark.asyncio
     async def test_abstract_successful(
         self,
@@ -962,9 +944,6 @@ class TestAbstractionService:
 class TestAbstractionIntegration:
     """Integration tests for the abstraction pipeline."""
 
-    @pytest.mark.skip(
-        reason="TODO(#221): SIGSEGV under numpy 2.x via the end-to-end MemoryClusteringService path."
-    )
     @pytest.mark.asyncio
     async def test_full_abstraction_pipeline(
         self,

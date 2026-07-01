@@ -2,7 +2,7 @@
 
 This document tracks accepted limitations, pre-existing test failures, and technical debt that don't warrant immediate action. For active bugs and feature requests, see [GitHub Issues](https://github.com/aenealabs/aura/issues).
 
-**Last Updated:** 2026-01-11
+**Last Updated:** 2026-07-01
 
 ---
 
@@ -107,6 +107,18 @@ The following cfn-lint warnings are suppressed in buildspecs. They are either fa
 - EKS on Fargate is NOT available in AWS GovCloud
 - Mitigation: Using EC2 Managed Node Groups instead
 - See: `docs/cloud-strategy/GOVCLOUD_MIGRATION_SUMMARY.md`
+
+### Tree-sitter Parse Timeout — Pinned to `<0.26`
+
+**Status:** Accepted limitation (upstream-blocked)
+**Date Added:** 2026-07-01
+**Tracking:** Relocated from GitHub Issue #292 (closed as not-viable-as-specified); re-engage condition in `docs/DEFERRED_WORK_REGISTRY.md` (Upstream-maintainer-gate row)
+
+The AST parser is pinned to `tree-sitter>=0.25.2,<0.26` (`requirements.txt`, `requirements-agents.txt`). 0.26.0 removed the `parser.timeout_micros` setter that `src/services/vulnerability_scanner/parsing/ast.py` uses to bound parse time — the DoS guard on untrusted customer/third-party code (`ParsingConfig.tree_sitter_timeout_ms` over 1 MB size-capped input).
+
+Issue #292 proposed migrating to `parser.parse(source, progress_callback=...)` and relaxing the cap to `>=0.26.0`. A spike (verified 2026-07-01) showed that migration is **not viable on 0.26.0**: `progress_callback` is silently ignored for bytestring sources (never fires, cannot cancel) and **segfaults** when combined with a reader source. A real timeout on 0.26 therefore requires process-isolated parse workers, not the callback swap — an architectural change, not the one-site fix #292 assumed. The `<0.26` pin is stable meanwhile (0.25.2 ships cp312 wheels for the Python 3.12 runtime).
+
+**Re-engage when:** py-tree-sitter ships a 0.26.x that fixes the reader + `progress_callback` segfault and restores a working bytestring parse timeout — OR the process-isolated-parser rewrite is scheduled independently.
 
 ---
 

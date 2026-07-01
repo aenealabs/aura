@@ -418,7 +418,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-cost-aggregator-${Environment}'
       Description: Aggregates costs across accounts and services for organization-level tracking
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt CostAggregatorRole.Arn
       Timeout: 300
@@ -789,7 +789,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-threshold-calc-${Environment}'
       Description: Calculates service-specific budget thresholds
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt ThresholdCalculatorRole.Arn
       Code:

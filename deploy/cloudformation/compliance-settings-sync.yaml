@@ -110,7 +110,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-compliance-settings-sync-${Environment}'
       Description: 'Syncs compliance settings to SSM Parameter Store for CodeBuild'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: compliance_settings_sync.handler
       Role: !GetAtt ComplianceSyncLambdaRole.Arn
       MemorySize: 256

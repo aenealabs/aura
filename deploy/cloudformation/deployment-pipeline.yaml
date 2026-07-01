@@ -219,7 +219,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-codebuild-poller-${Environment}'
       Description: Polls CodeBuild build status for Step Functions orchestration
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 30
@@ -283,7 +283,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-k8s-config-generator-${Environment}'
       Description: Generates Kubernetes configuration files for environment deployment
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 300
@@ -380,7 +380,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-k8s-deployer-${Environment}'
       Description: Checks Kubernetes deployment status for Step Functions orchestration
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 60

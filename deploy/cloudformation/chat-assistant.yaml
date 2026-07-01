@@ -382,7 +382,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-chat-handler-${Environment}'
       Description: Processes chat messages via Bedrock Claude with tool use
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: chat_handler.handler
       Role: !GetAtt ChatLambdaRole.Arn
       MemorySize: !Ref LambdaMemorySize
@@ -420,7 +420,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-chat-ws-connect-${Environment}'
       Description: Handles WebSocket connection establishment
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: ws_connect.handler
       Role: !GetAtt ChatLambdaRole.Arn
       MemorySize: 256
@@ -446,7 +446,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-chat-ws-disconnect-${Environment}'
       Description: Handles WebSocket disconnection cleanup
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: ws_disconnect.handler
       Role: !GetAtt ChatLambdaRole.Arn
       MemorySize: 256
@@ -472,7 +472,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-chat-ws-message-${Environment}'
       Description: Handles incoming WebSocket messages for streaming
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: ws_message.handler
       Role: !GetAtt ChatLambdaRole.Arn
       MemorySize: !Ref LambdaMemorySize

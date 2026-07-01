@@ -153,7 +153,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-test-env-marketplace-submit-${Environment}'
       Description: 'Handles user template submissions to the marketplace'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: marketplace_handler.submit_handler
       Role: !Ref MarketplaceRoleArn
       MemorySize: 256
@@ -207,7 +207,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-test-env-marketplace-approve-${Environment}'
       Description: 'Handles admin approval/rejection of marketplace templates'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: marketplace_handler.approve_handler
       Role: !Ref MarketplaceRoleArn
       MemorySize: 256

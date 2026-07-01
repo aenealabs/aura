@@ -155,7 +155,7 @@ Resources:
     Properties:
       FunctionName: !Sub ${ProjectName}-expiration-processor-${Environment}
       Description: Processes expired HITL approval requests with auto-escalation
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: src.lambda.expiration_processor.handler
       Role: !GetAtt ExpirationProcessorRole.Arn
       MemorySize: !Ref LambdaMemorySize

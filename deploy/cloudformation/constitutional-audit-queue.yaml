@@ -203,7 +203,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-constitutional-audit-consumer-${Environment}'
       Description: Constitutional AI audit queue consumer (ADR-063 Phase 3)
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: src.lambda.constitutional_audit.handler.lambda_handler
       Role: !GetAtt AuditConsumerLambdaRole.Arn
       Code:

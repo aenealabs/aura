@@ -246,7 +246,7 @@ Resources:
     Properties:
       FunctionName: !Sub 'aura-calculate-threshold-${Environment}'
       Description: Calculates budget threshold percentages for AWS cost alert notifications
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt CalculateThresholdRole.Arn
       Code:
@@ -369,7 +369,7 @@ Resources:
     Condition: EnableEnforcement
     Properties:
       FunctionName: !Sub 'aura-budget-enforcement-${Environment}'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt BudgetEnforcementRole.Arn
       Environment:

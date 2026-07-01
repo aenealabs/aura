@@ -127,7 +127,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-orchestrator-dispatcher-${Environment}'
       Description: Dispatches SQS messages to EKS MetaOrchestrator Jobs
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: orchestrator_dispatcher.lambda_handler
       Role: !GetAtt OrchestratorDispatcherRole.Arn
       Timeout: 30

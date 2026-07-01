@@ -202,7 +202,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-calibration-pipeline-${Environment}'
       Description: 'Nightly calibration training for documentation confidence scores'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt CalibrationLambdaRole.Arn
       Timeout: 900

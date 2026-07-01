@@ -216,7 +216,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-test-env-cost-aggregator-${Environment}'
       Description: Aggregates test environment costs and publishes to CloudWatch
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Timeout: 60
       MemorySize: 256

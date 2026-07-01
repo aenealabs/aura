@@ -118,7 +118,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-log-retention-sync-${Environment}'
       Description: 'Syncs CloudWatch log retention policies based on UI settings'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.lambda_handler
       Role: !GetAtt LogRetentionLambdaRole.Arn
       Timeout: 300

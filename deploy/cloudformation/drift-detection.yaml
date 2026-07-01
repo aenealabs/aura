@@ -208,7 +208,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-drift-detector-${Environment}'
       Description: !Sub 'Detects CloudFormation drift for ${ProjectName} stacks in ${Environment}'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.lambda_handler
       Role: !GetAtt DriftDetectorLambdaRole.Arn
       Timeout: !Ref LambdaTimeout

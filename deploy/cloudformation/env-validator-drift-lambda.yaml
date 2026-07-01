@@ -112,7 +112,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-env-drift-detector-${Environment}'
       Description: Scheduled drift detection for environment validator (ADR-062)
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: src.services.env_validator.lambda_handler.lambda_handler
       Role: !GetAtt DriftLambdaRole.Arn
       Code:

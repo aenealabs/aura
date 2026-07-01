@@ -260,7 +260,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-cai-evaluation-${Environment}'
       Description: Nightly Constitutional AI evaluation - LLM-as-Judge, golden set regression
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: src.lambda.constitutional_evaluation.handler.handler
       Role: !GetAtt EvaluationLambdaRole.Arn
       MemorySize: !Ref LambdaMemorySize

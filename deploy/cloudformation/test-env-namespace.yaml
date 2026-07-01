@@ -97,7 +97,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-test-env-namespace-controller-${Environment}'
       Description: 'Manages EKS namespaces for quick test environments'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: namespace_controller.handler
       Role: !Ref NamespaceControllerRoleArn
       MemorySize: 512

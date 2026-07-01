@@ -226,7 +226,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-scheduler-dispatcher-${Environment}'
       Description: Dispatches due scheduled jobs to the orchestration queue
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt SchedulerDispatcherRole.Arn
       Timeout: 60

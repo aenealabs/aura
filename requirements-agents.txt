@@ -10,7 +10,12 @@
 -r requirements-api.txt
 
 # AST Parsing (tree-sitter)
-tree-sitter>=0.25.2
+# Cap must match requirements.txt. 0.26.0 removed parser.timeout_micros (the DoS
+# guard at src/services/vulnerability_scanner/parsing/ast.py:205) with no usable
+# replacement -- progress_callback is ignored for bytestrings and segfaults with a
+# reader source. This is the image that actually runs the parser, so the cap
+# matters most here. Deferred: docs/DEFERRED_WORK_REGISTRY.md (Upstream-maintainer-gate).
+tree-sitter>=0.25.2,<0.26
 tree-sitter-python>=0.25.0
 tree-sitter-javascript>=0.25.0
 tree-sitter-typescript>=0.23.2

@@ -173,7 +173,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-qa-scaler-${Environment}'
       Description: Scales QA EKS nodegroup for cost optimization
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt QAScalerRole.Arn
       Timeout: 600  # 10 min -- accommodates EKS nodegroup scale-completion polling (#186 H4)

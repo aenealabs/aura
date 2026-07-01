@@ -155,7 +155,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-test-env-scheduler-processor-${Environment}'
       Description: 'Processes scheduled test environment provisioning requests'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: scheduled_provisioner.handler
       Role: !Ref SchedulerRoleArn
       MemorySize: 256

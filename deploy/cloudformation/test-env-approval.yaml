@@ -63,7 +63,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-test-env-request-approval-${Environment}'
       Description: 'Sends HITL approval request for test environment provisioning'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !Ref StepFunctionsRoleArn
       Timeout: 30
@@ -152,7 +152,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-test-env-process-approval-${Environment}'
       Description: 'Processes HITL approval decision for test environment'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !Ref StepFunctionsRoleArn
       Timeout: 30
@@ -230,7 +230,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-test-env-provision-${Environment}'
       Description: 'Provisions approved test environment via Service Catalog'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !Ref StepFunctionsRoleArn
       Timeout: 300
@@ -325,7 +325,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-test-env-handle-timeout-${Environment}'
       Description: 'Handles approval timeout for test environment requests'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !Ref StepFunctionsRoleArn
       Timeout: 30

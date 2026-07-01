@@ -167,7 +167,7 @@ Resources:
     Properties:
       FunctionName: !Sub ${ProjectName}-threat-intel-processor-${Environment}
       Description: Daily threat intelligence pipeline - gathers CVE/CISA/GitHub advisories
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: src.lambda.threat_intelligence_processor.handler
       Role: !GetAtt ThreatIntelProcessorRole.Arn
       MemorySize: !Ref LambdaMemorySize

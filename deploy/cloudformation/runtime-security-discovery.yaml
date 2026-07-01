@@ -210,7 +210,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-ghost-agent-scanner-${Environment}'
       Description: Weekly ghost agent scanner for decommission assurance (ADR-086)
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: !If
         - HasLambdaPackage
         - ghost_agent_scanner.lambda_handler

@@ -153,7 +153,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-blocklist-updater-${Environment}'
       Description: 'Generates DNS blocklists from threat intelligence feeds'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.lambda_handler
       Role: !GetAtt BlocklistLambdaRole.Arn
       Timeout: 300

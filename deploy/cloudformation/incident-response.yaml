@@ -247,7 +247,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-deployment-recorder-${Environment}'
       Description: Records ArgoCD deployment events to DynamoDB
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.lambda_handler
       Role: !GetAtt DeploymentRecorderRole.Arn
       Timeout: 30

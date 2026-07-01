@@ -146,7 +146,7 @@ Resources:
     Properties:
       FunctionName: !Sub ${ProjectName}-approval-callback-${Environment}
       Description: Processes approval decisions and sends Step Functions callbacks
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: src.lambda.approval_callback_handler.handler
       Role: !GetAtt ApprovalCallbackRole.Arn
       MemorySize: !Ref LambdaMemorySize

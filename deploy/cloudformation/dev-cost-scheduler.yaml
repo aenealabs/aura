@@ -212,7 +212,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-dev-cost-scaler-${Environment}'
       Description: Scales all DEV EKS nodegroups for off-hours cost optimization
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt DevScalerRole.Arn
       Timeout: 900  # 15 min, Lambda max -- accommodates per-nodegroup polling (#186 H4)

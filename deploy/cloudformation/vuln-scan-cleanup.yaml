@@ -45,7 +45,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-vuln-scan-cleanup-${Environment}'
       Description: Scheduled cleanup for expired scan artifacts and orphaned state
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.lambda_handler
       Role: !ImportValue
         Fn::Sub: '${ProjectName}-vuln-scan-cleanup-role-arn-${Environment}'

@@ -16,6 +16,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
@@ -91,8 +92,10 @@ class CheckpointPersistenceService:
             table_name: DynamoDB table name (default from env)
             ttl_days: Days to retain checkpoints (default from env or 7)
         """
-        self._table_name = table_name or os.getenv(
-            "CHECKPOINT_TABLE_NAME", "aura-checkpoints-dev"
+        self._table_name: str = (
+            table_name
+            if table_name
+            else os.getenv("CHECKPOINT_TABLE_NAME", "aura-checkpoints-dev")
         )
         self._ttl_days = ttl_days or int(os.getenv("CHECKPOINT_TTL_DAYS", "7"))
         self._table: "Table | None" = None
@@ -127,8 +130,10 @@ class CheckpointPersistenceService:
             ValueError: If checkpoint_id is missing
         """
         checkpoint_id = checkpoint_data.get("checkpoint_id")
-        if not checkpoint_id:
-            raise ValueError("checkpoint_data must contain checkpoint_id")
+        if not isinstance(checkpoint_id, str) or not checkpoint_id:
+            raise ValueError(
+                "checkpoint_data must contain checkpoint_id as a non-empty string"
+            )
 
         # Ensure execution_id is set for GSI
         if "execution_id" not in checkpoint_data:
@@ -198,12 +203,17 @@ class CheckpointPersistenceService:
                 return None
 
             # Check if expired (DynamoDB TTL is eventually consistent)
-            if "ttl" in item and item["ttl"] < time.time():
+            ttl_value = item.get("ttl")
+            if (
+                isinstance(ttl_value, (int, float, Decimal))
+                and float(ttl_value) < time.time()
+            ):
                 logger.warning(f"Checkpoint {checkpoint_id} has expired")
                 return None
 
             logger.info(
-                f"Loaded checkpoint {checkpoint_id} " f"(phase={item.get('status')})"
+                f"Loaded checkpoint {checkpoint_id} "
+                f"(phase={item.get('status', 'unknown')!s})"
             )
             return self._deserialize_item(item)
         except Exception as e:

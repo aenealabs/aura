@@ -26,10 +26,13 @@ on:
           - force_ingestion
           - health_check
 
-# Cancel in-progress runs when new commits are pushed
+# This workflow delivers each push/PR/release as a webhook to the Aura platform,
+# so runs must NOT cancel one another -- a cancelled run is a dropped delivery.
+# Group per-commit (not per-ref) so rapid pushes to the same branch each deliver
+# independently instead of a newer run cancelling the in-flight one.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 permissions:
   contents: read

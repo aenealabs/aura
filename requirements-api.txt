@@ -58,7 +58,7 @@ PyYAML>=6.0.2
 # mode when absent.
 openai>=2.44.0
 google-genai>=1.0.0 ; python_version >= "3.10"
-google-cloud-aiplatform>=1.151.0 ; python_version >= "3.10"
+google-cloud-aiplatform>=1.159.0 ; python_version >= "3.10"
 
 # Calibration / Explainability (ADR-068)
 # IsotonicRegression powers confidence calibration

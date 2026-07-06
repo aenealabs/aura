@@ -24,7 +24,7 @@ tree-sitter>=0.25.2,<0.26   # 0.26 dropped the `parser.timeout_micros` setter th
 # Graph Database and Vector Store Dependencies
 gremlinpython>=3.8.1  # For Amazon Neptune connectivity
 opensearch-py>=3.2.0  # For OpenSearch vector store
-cachetools>=5.5.0     # TTLCache for query/embedding caches (opensearch_vector_service, titan_embedding_service, semantic_guardrails)
+cachetools>=7.1.4     # TTLCache for query/embedding caches (opensearch_vector_service, titan_embedding_service, semantic_guardrails)
 requests>=2.34.1      # HTTP client (used by PyGithub, cfn-lint, ad-hoc HTTP calls)
 tenacity>=9.1.4       # Retry decorators (used by bedrock_llm_service, diagrams/diagram_model_router)
 GitPython>=3.1.50     # For Git metadata extraction in filesystem indexer

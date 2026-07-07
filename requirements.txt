@@ -19,7 +19,7 @@ python-dotenv>=1.2.2
 # AWS and Core Agent Dependencies:
 boto3>=1.43.41
 botocore>=1.43.35
-tree-sitter>=0.25.2,<0.26   # 0.26 dropped the `parser.timeout_micros` setter that src/services/vulnerability_scanner/parsing/ast.py:205 uses to bound parse time (DoS guard on untrusted input, ParsingConfig.tree_sitter_timeout_ms). 0.26.0 has NO usable replacement: progress_callback is silently ignored for bytestring sources, and combining it with a callable/reader source segfaults the interpreter (verified 2026-07-01). Migration therefore needs process-isolated parse workers, not a one-function swap -- deferred (see docs/DEFERRED_WORK_REGISTRY.md, Upstream-maintainer-gate). Hold on 0.25.x until upstream ships a working timeout API. The cap surfaced under PR #272's --no-cache-dir: prior CI runs were served the cached 0.25.x wheel from the lock-by-hash pip cache.
+tree-sitter>=0.26.0,<0.27   # 0.26 dropped the `parser.timeout_micros` setter that src/services/vulnerability_scanner/parsing/ast.py:205 uses to bound parse time (DoS guard on untrusted input, ParsingConfig.tree_sitter_timeout_ms). 0.26.0 has NO usable replacement: progress_callback is silently ignored for bytestring sources, and combining it with a callable/reader source segfaults the interpreter (verified 2026-07-01). Migration therefore needs process-isolated parse workers, not a one-function swap -- deferred (see docs/DEFERRED_WORK_REGISTRY.md, Upstream-maintainer-gate). Hold on 0.25.x until upstream ships a working timeout API. The cap surfaced under PR #272's --no-cache-dir: prior CI runs were served the cached 0.25.x wheel from the lock-by-hash pip cache.
 
 # Graph Database and Vector Store Dependencies
 gremlinpython>=3.8.1  # For Amazon Neptune connectivity

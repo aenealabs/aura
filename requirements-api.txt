@@ -10,13 +10,13 @@
 # Estimated image size reduction: ~2GB (excludes torch ~1.8GB, tree-sitter ~50MB)
 
 # AWS SDK
-boto3>=1.43.37
+boto3>=1.43.41
 botocore>=1.43.35
 
 # Graph Database and Vector Store
 gremlinpython>=3.8.1         # Amazon Neptune connectivity
 opensearch-py>=3.2.0         # OpenSearch vector store
-cachetools>=5.5.0            # TTLCache for vector/embedding caches
+cachetools>=7.1.4            # TTLCache for vector/embedding caches
 requests>=2.34.1             # HTTP client (used by PyGithub, ad-hoc HTTP)
 
 # Git Integration
@@ -25,11 +25,11 @@ PyGithub>=2.9.1              # GitHub API integration
 
 # Authentication
 PyJWT[crypto]>=2.13.0         # JWT validation (GitHub App auth + Cognito JWKS)
-cryptography>=48.0.0         # RSA key support
+cryptography>=49.0.0         # RSA key support
 
 # API Framework
 fastapi>=0.138.2             # REST API
-uvicorn>=0.32.0              # ASGI server
+uvicorn>=0.50.2              # ASGI server
 httpx>=0.28.1                # HTTP client
 pydantic>=2.13.4             # Data validation
 email-validator>=2.3.0       # Email validation for Pydantic
@@ -58,7 +58,7 @@ PyYAML>=6.0.2
 # mode when absent.
 openai>=2.44.0
 google-genai>=1.0.0 ; python_version >= "3.10"
-google-cloud-aiplatform>=1.151.0 ; python_version >= "3.10"
+google-cloud-aiplatform>=1.159.0 ; python_version >= "3.10"
 
 # Calibration / Explainability (ADR-068)
 # IsotonicRegression powers confidence calibration

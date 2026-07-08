@@ -15,6 +15,17 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # tree-sitter 0.26+ removed parser.timeout_micros — the parse-time bound
+      # used as a DoS guard on untrusted input in
+      # src/services/vulnerability_scanner/parsing/ast.py. 0.26 offers no working
+      # replacement (progress_callback is ignored for bytestrings and segfaults
+      # with a reader source; verified 2026-07-01). Deliberate hold — see
+      # docs/DEFERRED_WORK_REGISTRY.md ("tree-sitter 0.26+ migration") and
+      # requirements.txt:22. Re-evaluated quarterly; reinforced until upstream
+      # ships a working bytestring parse-timeout API.
+      - dependency-name: "tree-sitter"
+        versions: [">=0.26"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"

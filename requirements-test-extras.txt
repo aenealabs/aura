@@ -23,7 +23,7 @@
 # picking up a new feature; the test harness rebuilds on every minor
 # bump.
 mypy-boto3-dynamodb>=1.43.0,<1.50
-kubernetes>=36.0.2,<37
+kubernetes>=36.0.3,<37
 opentelemetry-api>=1.43.0,<1.45
 opentelemetry-sdk>=1.43.0,<1.45
 opentelemetry-instrumentation>=0.64b0,<0.66

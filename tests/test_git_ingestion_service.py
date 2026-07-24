@@ -1345,30 +1345,58 @@ class TestAsyncConcurrency:
                 max_concurrent_index=1,
             )
 
-    def test_semaphore_initialization(self, service_with_concurrency):
-        """Test that semaphores are initialized with correct limits."""
+    def test_semaphore_limits_stored(self, service_with_concurrency):
+        """Concurrency limits are stored eagerly; semaphores are lazy.
+
+        Semaphores bind to the running event loop on first use, so they are
+        created on demand by ``_loop_bound_semaphore`` rather than in
+        ``__init__`` -- only the integer limits are stored up front.
+        """
         service = service_with_concurrency
-        # Semaphores should be created
-        assert hasattr(service, "_parse_semaphore")
-        assert hasattr(service, "_graph_semaphore")
-        assert hasattr(service, "_index_semaphore")
-        # Semaphores are asyncio.Semaphore instances
-        assert isinstance(service._parse_semaphore, asyncio.Semaphore)
-        assert isinstance(service._graph_semaphore, asyncio.Semaphore)
-        assert isinstance(service._index_semaphore, asyncio.Semaphore)
+        assert service._max_concurrent_parse == 2
+        assert service._max_concurrent_graph == 3
+        assert service._max_concurrent_index == 1
+        # No eager semaphores cached until a coroutine uses one.
+        assert service._semaphores == {}
 
     def test_default_concurrency_limits(self, service):
         """Test that default concurrency limits are applied."""
-        assert service._parse_semaphore._value == 10  # DEFAULT_MAX_CONCURRENT_PARSE
-        assert service._graph_semaphore._value == 20  # DEFAULT_MAX_CONCURRENT_GRAPH
-        assert service._index_semaphore._value == 5  # DEFAULT_MAX_CONCURRENT_INDEX
+        assert service._max_concurrent_parse == 10  # DEFAULT_MAX_CONCURRENT_PARSE
+        assert service._max_concurrent_graph == 20  # DEFAULT_MAX_CONCURRENT_GRAPH
+        assert service._max_concurrent_index == 5  # DEFAULT_MAX_CONCURRENT_INDEX
 
-    def test_custom_concurrency_limits(self, service_with_concurrency):
-        """Test that custom concurrency limits are applied."""
+    @pytest.mark.asyncio
+    async def test_loop_bound_semaphore_is_stable_within_loop(
+        self, service_with_concurrency
+    ):
+        """The same loop yields the same semaphore, sized to the limit."""
         service = service_with_concurrency
-        assert service._parse_semaphore._value == 2
-        assert service._graph_semaphore._value == 3
-        assert service._index_semaphore._value == 1
+        sem = service._loop_bound_semaphore("parse", service._max_concurrent_parse)
+        assert isinstance(sem, asyncio.Semaphore)
+        assert sem._value == 2
+        # Repeated calls within the same loop return the identical instance so
+        # the concurrency limit is actually shared across coroutines.
+        assert service._loop_bound_semaphore("parse", 2) is sem
+
+    def test_loop_bound_semaphore_rebinds_across_loops(self, service_with_concurrency):
+        """A reused service instance rebinds semaphores per event loop.
+
+        Regression guard: a single ``asyncio.Semaphore`` binds to the loop it
+        is first awaited on, so reusing one service across ``asyncio.run``
+        calls previously raised "bound to a different event loop".
+        """
+        service = service_with_concurrency
+
+        async def _grab():
+            sem = service._loop_bound_semaphore("parse", 2)
+            async with sem:
+                return sem
+
+        first = asyncio.run(_grab())
+        second = asyncio.run(_grab())
+        # Different loops -> different semaphore instances, and acquiring in the
+        # second loop must not raise the cross-loop RuntimeError.
+        assert first is not second
 
     @pytest.mark.asyncio
     async def test_discover_files_is_async(self, service):

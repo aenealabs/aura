@@ -228,22 +228,34 @@ class GitIngestionService:
         )
 
         # Concurrency limits for thread pool operations
-        # These prevent spawning too many threads during large ingestion jobs
-        self._parse_semaphore = asyncio.Semaphore(
+        # These prevent spawning too many threads during large ingestion jobs.
+        # Semaphores are created lazily and bound to the running event loop the
+        # first time they are used (see ``_loop_bound_semaphore``): an
+        # ``asyncio.Semaphore`` binds to the loop it is first awaited on, so a
+        # single long-lived service instance reused across event loops (e.g.
+        # repeated ``asyncio.run`` calls) would otherwise raise "bound to a
+        # different event loop".
+        self._max_concurrent_parse = (
             max_concurrent_parse
             if max_concurrent_parse is not None
             else self.DEFAULT_MAX_CONCURRENT_PARSE
         )
-        self._graph_semaphore = asyncio.Semaphore(
+        self._max_concurrent_graph = (
             max_concurrent_graph
             if max_concurrent_graph is not None
             else self.DEFAULT_MAX_CONCURRENT_GRAPH
         )
-        self._index_semaphore = asyncio.Semaphore(
+        self._max_concurrent_index = (
             max_concurrent_index
             if max_concurrent_index is not None
             else self.DEFAULT_MAX_CONCURRENT_INDEX
         )
+        # Cache of (event loop, semaphore) per logical name. Rebuilt when the
+        # running loop changes so concurrency limiting stays correct without
+        # leaking a semaphore bound to a closed loop.
+        self._semaphores: dict[
+            str, tuple[asyncio.AbstractEventLoop, asyncio.Semaphore]
+        ] = {}
 
         # OpenSearch bulk indexing configuration
         self.opensearch_bulk_size = (
@@ -905,9 +917,26 @@ class GitIngestionService:
             entities = self.ast_parser.parse_file(file_path)
             return list(entities), []
 
+    def _loop_bound_semaphore(self, name: str, limit: int) -> asyncio.Semaphore:
+        """Return a semaphore bound to the currently running event loop.
+
+        ``asyncio.Semaphore`` binds to the loop it is first used on. A single
+        service instance can outlive an event loop (repeated ``asyncio.run``
+        in benchmarks, worker restarts), so we cache one semaphore per loop and
+        rebuild it when the running loop changes. All coroutines sharing a loop
+        get the same instance, preserving the concurrency limit.
+        """
+        loop = asyncio.get_running_loop()
+        cached = self._semaphores.get(name)
+        if cached is None or cached[0] is not loop:
+            semaphore = asyncio.Semaphore(limit)
+            self._semaphores[name] = (loop, semaphore)
+            return semaphore
+        return cached[1]
+
     async def _parse_file_with_limit(self, file_path: Path, repo_path: Path) -> tuple:
         """Parse a single file with concurrency limiting."""
-        async with self._parse_semaphore:
+        async with self._loop_bound_semaphore("parse", self._max_concurrent_parse):
             return await asyncio.to_thread(
                 self._parse_single_file, file_path, repo_path
             )
@@ -1024,7 +1053,7 @@ class GitIngestionService:
         fqn_builder: FQNBuilder | None = None,
     ) -> None:
         """Add entity to graph with concurrency limiting."""
-        async with self._graph_semaphore:
+        async with self._loop_bound_semaphore("graph", self._max_concurrent_graph):
             await asyncio.to_thread(
                 self._add_entity_to_graph, entity, repo_id, branch, fqn_builder
             )
@@ -1066,7 +1095,7 @@ class GitIngestionService:
         self, relationship, repo_id: str, branch: str
     ) -> None:
         """Add relationship to graph with concurrency limiting."""
-        async with self._graph_semaphore:
+        async with self._loop_bound_semaphore("graph", self._max_concurrent_graph):
             await asyncio.to_thread(
                 self._add_relationship_to_graph, relationship, repo_id, branch
             )
@@ -1212,7 +1241,7 @@ class GitIngestionService:
 
         Offloads blocking Neptune calls to thread pool to avoid blocking
         the event loop. Entities are processed concurrently with limited
-        parallelism controlled by _graph_semaphore.
+        parallelism controlled by the loop-bound "graph" semaphore.
 
         When upsert=True (incremental re-ingest), outgoing edges of every
         entity in each affected file are deleted before new edges are
@@ -1493,7 +1522,7 @@ class GitIngestionService:
 
         Returns a document dict ready for bulk_index_embeddings, or None if preparation fails.
         """
-        async with self._index_semaphore:
+        async with self._loop_bound_semaphore("index", self._max_concurrent_index):
             try:
                 # Offload blocking file read to thread
                 content = await asyncio.to_thread(self._read_file_content, file_path)

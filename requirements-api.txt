@@ -20,7 +20,7 @@ cachetools>=7.1.4            # TTLCache for vector/embedding caches
 requests>=2.34.1             # HTTP client (used by PyGithub, ad-hoc HTTP)
 
 # Git Integration
-GitPython>=3.1.50            # Git metadata extraction
+GitPython>=3.1.51            # Git metadata extraction
 PyGithub>=2.9.1              # GitHub API integration
 
 # Authentication

@@ -14,7 +14,7 @@
 # Dependencies for the CKGE Core Agents and Testing
 # networkx is used for graph processing simulation
 networkx>=3.6.1
-python-dotenv>=1.2.2
+python-dotenv>=1.2.3
 
 # AWS and Core Agent Dependencies:
 boto3>=1.43.47

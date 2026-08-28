@@ -5,10 +5,19 @@ on:
     branches:
       - main
       - develop
-    # Only run on code changes - skip for docs/config-only changes
+    # Only run on code changes - skip for docs/config-only changes.
+    #
+    # `deploy/cloudformation/**` is included because "Python Quality & Tests"
+    # is a REQUIRED status check in the main-protection ruleset. A required
+    # check that never runs is reported as missing, not as passing, so an
+    # infrastructure-only PR was blocked indefinitely with every check it did
+    # run showing green. Including the path here means the required context
+    # always reports. The job body skips the Python-only work when no Python
+    # changed, so this does not run the full suite for a template edit.
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'deploy/cloudformation/**'
       - 'requirements*.txt'
       - 'pyproject.toml'
       - 'setup.py'
@@ -21,6 +30,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'deploy/cloudformation/**'
   workflow_dispatch:
 
 # Cancel in-progress runs when new commits are pushed
@@ -71,13 +81,113 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Resolve which areas changed so a template-only PR does not pay for the
+      # full Python toolchain (torch et al) and the full test suite, and a
+      # Python-only PR does not pay for cfn-lint. Uses the same diff-window
+      # resolution as the pre-commit step below. On any ambiguity it fails
+      # SAFE -- both areas true, i.e. run everything.
+      - name: Detect changed areas
+        id: changes
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          ZERO=0000000000000000000000000000000000000000
+
+          if [ -n "${PR_BASE:-}" ] && [ -n "${PR_HEAD:-}" ]; then
+            FROM="$PR_BASE"; TO="$PR_HEAD"
+          elif [ -n "${PUSH_BEFORE:-}" ] && [ "$PUSH_BEFORE" != "$ZERO" ]; then
+            FROM="$PUSH_BEFORE"; TO="${PUSH_AFTER:-HEAD}"
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            FROM="$(git rev-parse HEAD^)"; TO="HEAD"
+          else
+            echo "Cannot resolve a diff window - running everything."
+            echo "python_changed=true" >> "$GITHUB_OUTPUT"
+            echo "cfn_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED="$(git diff --name-only "$FROM" "$TO")"
+          echo "Changed files in $FROM..$TO:"
+          echo "$CHANGED"
+
+          PY=false
+          CFN=false
+          if echo "$CHANGED" | grep -qE '^(src/|tests/|requirements.*\.txt$|pyproject\.toml$|setup\.(py|cfg)$|\.github/workflows/code-quality\.yml$)'; then
+            PY=true
+          fi
+          if echo "$CHANGED" | grep -qE '^deploy/cloudformation/.*\.(yaml|yml)$'; then
+            CFN=true
+          fi
+
+          echo "python_changed=$PY" >> "$GITHUB_OUTPUT"
+          echo "cfn_changed=$CFN" >> "$GITHUB_OUTPUT"
+          echo "python_changed=$PY  cfn_changed=$CFN"
+
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
           cache: 'pip'
 
+      # --- CLOUDFORMATION VALIDATION ---
+      # Previously no workflow triggered on deploy/cloudformation/** at all,
+      # so 176+ templates reached CI only via the 02:00 nightly job -- after
+      # merge. This is the pull-request gate for them. The wrapper implements
+      # the documented exit-code contract (4 -> pass, 2/6/8 -> fail).
+      - name: Install cfn-lint
+        if: steps.changes.outputs.cfn_changed == 'true'
+        run: pip install cfn-lint
+
+      - name: Validate changed CloudFormation templates
+        if: steps.changes.outputs.cfn_changed == 'true'
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          ZERO=0000000000000000000000000000000000000000
+
+          if [ -n "${PR_BASE:-}" ] && [ -n "${PR_HEAD:-}" ]; then
+            FROM="$PR_BASE"; TO="$PR_HEAD"
+          elif [ -n "${PUSH_BEFORE:-}" ] && [ "$PUSH_BEFORE" != "$ZERO" ]; then
+            FROM="$PUSH_BEFORE"; TO="${PUSH_AFTER:-HEAD}"
+          else
+            FROM="$(git rev-parse HEAD^)"; TO="HEAD"
+          fi
+
+          # Only templates that still exist (a deleted template must not fail
+          # the run), and never the archive/ tree.
+          TEMPLATES="$(git diff --name-only --diff-filter=d "$FROM" "$TO" \
+            | grep -E '^deploy/cloudformation/.*\.(yaml|yml)$' \
+            | grep -v '/archive/' || true)"
+
+          if [ -z "$TEMPLATES" ]; then
+            echo "No CloudFormation templates to validate."
+            exit 0
+          fi
+
+          echo "Validating:"
+          echo "$TEMPLATES"
+
+          chmod +x scripts/cfn-lint-wrapper.sh
+          FAILED=0
+          for t in $TEMPLATES; do
+            echo "--- $t"
+            if ! ./scripts/cfn-lint-wrapper.sh "$t"; then
+              echo "::error file=$t::cfn-lint reported errors"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
       - name: Install dependencies
+        if: steps.changes.outputs.python_changed == 'true'
         run: |
           pip install --upgrade pip
           pip install black==26.3.1 flake8 mypy bandit[toml]
@@ -156,6 +266,7 @@ jobs:
 
       - name: Run Black (formatting check)
         id: black-check
+        if: steps.changes.outputs.python_changed == 'true'
         run: |
           if ! black --check --fast src/ tests/ 2>&1; then
             echo "needs_format=true" >> $GITHUB_OUTPUT
@@ -176,20 +287,23 @@ jobs:
           exit 1
 
       - name: Run Flake8 (linting)
+        if: steps.changes.outputs.python_changed == 'true'
         run: flake8 src/ tests/
 
       - name: Run MyPy (type checking)
+        if: steps.changes.outputs.python_changed == 'true'
         continue-on-error: true
         run: mypy src/ --ignore-missing-imports
 
       - name: Run Bandit (security lint)
+        if: steps.changes.outputs.python_changed == 'true'
         run: |
           bandit -r src/ -f json -o bandit-report.json || true
           bandit -r src/ -ll -ii  # Only MEDIUM+ severity
 
       # --- TESTS (PRs only) ---
       - name: Run tests with coverage
-        if: needs.check-trigger.outputs.run_full_tests == 'true'
+        if: needs.check-trigger.outputs.run_full_tests == 'true' && steps.changes.outputs.python_changed == 'true'
         run: |
           # pytest-cov handles coverage collection automatically
           # Do NOT set COVERAGE_PROCESS_START - it conflicts with pytest-cov

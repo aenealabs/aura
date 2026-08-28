@@ -56,9 +56,13 @@ INFRASTRUCTURE_LAYERS = {
     },
     "application": {
         "name": "Application Layer",
-        "stacks": ["aura-bedrock-infrastructure"],
+        "stacks": [
+            "aura-bedrock-infrastructure",
+            "bedrock-invocation-logging",
+        ],
         "files": [
             "deploy/cloudformation/aura-bedrock-infrastructure.yaml",
+            "deploy/cloudformation/bedrock-invocation-logging.yaml",
         ],
         "buildspec": "deploy/buildspecs/buildspec-application.yml",
         "dependencies": ["foundation", "data", "compute"],

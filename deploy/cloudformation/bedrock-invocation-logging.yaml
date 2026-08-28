@@ -1,0 +1,504 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 4.15 - Bedrock Invocation Logging (Model I/O Audit)'
+
+Metadata:
+  Version: '1.0'
+  LastUpdated: '2026-08-28'
+  DescriptionSync: 'Layer-4.15'
+  Control: 'AURA-CTL-001 - Model I/O Audit Logging (see docs/security/CONTROL_REGISTRY.md)'
+  ControlFrameworks: 'NIST 800-53 AU-2, AU-3, AU-9, AU-11, SC-28'
+  Note: >-
+    Bedrock model invocation logging has no native CloudFormation resource type
+    (AWS::Bedrock::ModelInvocationLoggingConfiguration does not exist). The
+    configuration is applied by a Lambda-backed custom resource calling
+    bedrock:PutModelInvocationLoggingConfiguration. This mirrors the AWS
+    Prescriptive Guidance pattern for the same problem.
+
+Mappings:
+  PartitionMap:
+    aws:
+      Partition: 'aws'
+    aws-us-gov:
+      Partition: 'aws-us-gov'
+
+  EnvironmentConfig:
+    # Audit retention, not application retention. Root CLAUDE.md sets a 90-day
+    # floor for application logs; model I/O is compliance evidence, so prod is
+    # held for a year.
+    dev:
+      LogRetentionDays: 90
+    qa:
+      LogRetentionDays: 180
+    prod:
+      LogRetentionDays: 365
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, qa, prod]
+    Default: dev
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: aura
+    Description: Project name for resource naming
+
+  TextDataDeliveryEnabled:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: Deliver text prompt and completion bodies to the logging destinations
+
+  ImageDataDeliveryEnabled:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: Deliver image data to the S3 destinations
+
+  EmbeddingDataDeliveryEnabled:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: Deliver embedding data to the logging destinations
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ==========================================================================
+  # KMS - Customer-managed key for the log group and the overflow bucket
+  # ==========================================================================
+  # AURA-CTL-001: audit records containing model input/output must rest under a
+  # customer-managed key. The same key encrypts the S3 overflow bucket so a
+  # single key covers the whole evidence path and only one key has to be
+  # attested.
+  InvocationLoggingKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      Description: !Sub 'KMS key for ${ProjectName} Bedrock model invocation logs in ${Environment}'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RootAccountAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+
+          # CloudWatch Logs uses an encryption-context condition rather than
+          # kms:ViaService. Copying the ViaService pattern used elsewhere in
+          # this repo produces a key the log group cannot use.
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - kms:Encrypt*
+              - kms:Decrypt*
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:Describe*
+            Resource: '*'
+            Condition:
+              ArnLike:
+                'kms:EncryptionContext:aws:logs:arn': !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+
+          # Bedrock needs GenerateDataKey only - not Decrypt - to write
+          # overflow bodies into the S3 bucket.
+          - Sid: AllowBedrockLargeDataDelivery
+            Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: kms:GenerateDataKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+              ArnLike:
+                'aws:SourceArn': !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: application
+        - Key: Component
+          Value: bedrock-invocation-logging
+
+  InvocationLoggingKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-bedrock-invocation-logs-${Environment}'
+      TargetKeyId: !Ref InvocationLoggingKey
+
+  # ==========================================================================
+  # CloudWatch Logs - primary destination for model I/O audit records
+  # (AURA-CTL-001)
+  # ==========================================================================
+  InvocationLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      LogGroupName: !Sub '/aws/${ProjectName}/bedrock-invocation-logs/${Environment}'
+      RetentionInDays: !FindInMap [EnvironmentConfig, !Ref Environment, LogRetentionDays]
+      KmsKeyId: !GetAtt InvocationLoggingKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: bedrock-invocation-logging
+
+  # ==========================================================================
+  # S3 - authoritative audit corpus (full delivery) + large-data overflow
+  # ==========================================================================
+  # Two prefixes, two jobs:
+  #   invocation-logs/  full delivery - every record, any size (s3Config)
+  #   large-data/       bodies over 100 KB referenced from CloudWatch events
+  #
+  # Bedrock writes bodies inline to CloudWatch Logs only up to 100 KB. Above
+  # that they go to S3, or are dropped silently if no S3 destination exists.
+  # This is the normal operating range for Aura, not an edge case: the context
+  # stack budget is 100,000 tokens at ~4 chars/token (~400 KB), and the
+  # retrieved-documents layer alone is budgeted at 50,000 tokens (~200 KB).
+  # See src/services/context_stack_manager.py:85 and :548.
+  #
+  # Full delivery is what keeps the audit corpus whole. Without it, a record
+  # over 100 KB lives half in CloudWatch and half in S3, and a Logs Insights
+  # query returns nothing for exactly the largest invocations - which reads
+  # identically to "no such prompt".
+  LargeDataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      BucketName: !Sub '${ProjectName}-bedrock-invocation-logs-${AWS::AccountId}-${Environment}'
+      # ACLs must be disabled or the bucket policy below does not take effect.
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt InvocationLoggingKey.Arn
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          # Both prefixes expire on the same schedule as the log group, so a
+          # CloudWatch pointer can never outlive the body it points at.
+          - Id: ExpireInvocationLogs
+            Status: Enabled
+            Prefix: invocation-logs/
+            ExpirationInDays: !FindInMap [EnvironmentConfig, !Ref Environment, LogRetentionDays]
+            NoncurrentVersionExpirationInDays: 30
+          - Id: ExpireOverflowBodies
+            Status: Enabled
+            Prefix: large-data/
+            ExpirationInDays: !FindInMap [EnvironmentConfig, !Ref Environment, LogRetentionDays]
+            NoncurrentVersionExpirationInDays: 30
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: bedrock-invocation-logging
+
+  LargeDataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LargeDataBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowBedrockPutInvocationLogs
+            Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: s3:PutObject
+            Resource:
+              # Full delivery - every invocation record, any size.
+              - !Sub 'arn:${AWS::Partition}:s3:::${LargeDataBucket}/invocation-logs/AWSLogs/${AWS::AccountId}/BedrockModelInvocationLogs/*'
+              # Overflow bodies referenced from the CloudWatch log events.
+              - !Sub 'arn:${AWS::Partition}:s3:::${LargeDataBucket}/large-data/AWSLogs/${AWS::AccountId}/BedrockModelInvocationLogs/*'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+              ArnLike:
+                'aws:SourceArn': !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:*'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${LargeDataBucket}'
+              - !Sub 'arn:${AWS::Partition}:s3:::${LargeDataBucket}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  # ==========================================================================
+  # IAM - Bedrock delivery role
+  # ==========================================================================
+  BedrockLoggingDeliveryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-bedrock-logging-delivery-${Environment}'
+      Description: Allows Amazon Bedrock to deliver model invocation logs to CloudWatch Logs
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+              ArnLike:
+                'aws:SourceArn': !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:*'
+      Policies:
+        - PolicyName: BedrockInvocationLogDelivery
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub '${InvocationLogGroup.Arn}:log-stream:aws/bedrock/modelinvocations'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # Custom resource - applies the logging configuration
+  # ==========================================================================
+  LoggingConfigFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub
+          - 'arn:${Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+          - Partition: !FindInMap [PartitionMap, !Ref 'AWS::Partition', Partition]
+      Policies:
+        - PolicyName: ManageInvocationLoggingConfig
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # These three APIs act on an account+region singleton and accept
+              # no resource ARN, so Resource must be '*' (see ADR-041 on
+              # AWS-required wildcards).
+              - Effect: Allow
+                Action:
+                  - bedrock:PutModelInvocationLoggingConfiguration
+                  - bedrock:GetModelInvocationLoggingConfiguration
+                  - bedrock:DeleteModelInvocationLoggingConfiguration
+                Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt BedrockLoggingDeliveryRole.Arn
+                Condition:
+                  StringEquals:
+                    'iam:PassedToService': bedrock.amazonaws.com
+
+  LoggingConfigFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-bedrock-logging-config-${Environment}'
+      Description: Applies and removes the Bedrock model invocation logging configuration for this account and region
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 60
+      Role: !GetAtt LoggingConfigFunctionRole.Arn
+      Code:
+        ZipFile: |
+          """Applies the Bedrock model invocation logging configuration.
+
+          There is no CloudFormation resource type for this configuration, so it
+          is managed here. The configuration is an account+region singleton: it
+          is not scoped to this stack, and Delete removes it for the whole
+          account in this region.
+          """
+          import boto3
+          import cfnresponse
+
+          def _logging_config(props):
+              bucket = props['LargeDataBucketName']
+              return {
+                  'cloudWatchConfig': {
+                      'logGroupName': props['LogGroupName'],
+                      'roleArn': props['DeliveryRoleArn'],
+                      # Nested inside cloudWatchConfig, NOT a sibling of
+                      # s3Config. Bodies over 100 KB land here; without this
+                      # they are dropped silently.
+                      'largeDataDeliveryS3Config': {
+                          'bucketName': bucket,
+                          'keyPrefix': 'large-data',
+                      },
+                  },
+                  # Full delivery. Above 100 KB CloudWatch keeps only metadata
+                  # plus an S3 pointer, which splits an audit record across two
+                  # stores and makes a Logs Insights query silently return
+                  # nothing for exactly the largest invocations. Delivering
+                  # every record to S3 as well means one store holds a
+                  # complete, unsplit corpus.
+                  's3Config': {
+                      'bucketName': bucket,
+                      'keyPrefix': 'invocation-logs',
+                  },
+                  'textDataDeliveryEnabled': props['TextDataDeliveryEnabled'] == 'true',
+                  'imageDataDeliveryEnabled': props['ImageDataDeliveryEnabled'] == 'true',
+                  'embeddingDataDeliveryEnabled': props['EmbeddingDataDeliveryEnabled'] == 'true',
+              }
+
+          def handler(event, context):
+              # Stable physical id so an Update never triggers a spurious
+              # replacement-and-delete, which would clear the live config.
+              physical_id = 'bedrock-invocation-logging'
+              try:
+                  bedrock = boto3.client('bedrock')
+                  request_type = event['RequestType']
+
+                  if request_type == 'Delete':
+                      try:
+                          bedrock.delete_model_invocation_logging_configuration()
+                          print('Deleted model invocation logging configuration')
+                      except bedrock.exceptions.ResourceNotFoundException:
+                          print('No logging configuration present; nothing to delete')
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                      return
+
+                  props = event['ResourceProperties']
+                  bedrock.put_model_invocation_logging_configuration(
+                      loggingConfig=_logging_config(props)
+                  )
+                  print('Applied model invocation logging configuration')
+
+                  # Read back so the stack fails loudly if the write did not
+                  # take effect, rather than reporting a success that did
+                  # nothing.
+                  current = bedrock.get_model_invocation_logging_configuration()
+                  applied = current.get('loggingConfig', {})
+                  cw = applied.get('cloudWatchConfig', {})
+                  if cw.get('logGroupName') != props['LogGroupName']:
+                      raise RuntimeError(
+                          'Read-back mismatch: expected log group '
+                          f"{props['LogGroupName']}, found {cw.get('logGroupName')}"
+                      )
+                  if not cw.get('largeDataDeliveryS3Config'):
+                      raise RuntimeError(
+                          'Read-back mismatch: largeDataDeliveryS3Config absent; '
+                          'bodies over 100 KB would be dropped'
+                      )
+                  if not applied.get('s3Config'):
+                      raise RuntimeError(
+                          'Read-back mismatch: s3Config absent; the S3 audit '
+                          'corpus would be incomplete and records over 100 KB '
+                          'would exist only as split CloudWatch pointers'
+                      )
+                  if not applied.get('textDataDeliveryEnabled'):
+                      raise RuntimeError(
+                          'Read-back mismatch: textDataDeliveryEnabled is false; '
+                          'prompt and completion bodies would not be captured'
+                      )
+
+                  cfnresponse.send(
+                      event, context, cfnresponse.SUCCESS,
+                      {'LogGroupName': props['LogGroupName']}, physical_id
+                  )
+              except Exception as exc:  # noqa: BLE001 - must report to CFN
+                  print(f'Error: {exc}')
+                  cfnresponse.send(
+                      event, context, cfnresponse.FAILED,
+                      {'Error': str(exc)}, physical_id
+                  )
+
+  ModelInvocationLogging:
+    Type: Custom::ModelInvocationLogging
+    # The bucket policy is not referenced by any property here, so the
+    # dependency must be explicit: Bedrock cannot write overflow bodies until
+    # the policy exists. The log group ordering is already enforced by the Ref
+    # in LogGroupName below.
+    DependsOn: [LargeDataBucketPolicy]
+    Properties:
+      ServiceToken: !GetAtt LoggingConfigFunction.Arn
+      LogGroupName: !Ref InvocationLogGroup
+      DeliveryRoleArn: !GetAtt BedrockLoggingDeliveryRole.Arn
+      LargeDataBucketName: !Ref LargeDataBucket
+      TextDataDeliveryEnabled: !Ref TextDataDeliveryEnabled
+      ImageDataDeliveryEnabled: !Ref ImageDataDeliveryEnabled
+      EmbeddingDataDeliveryEnabled: !Ref EmbeddingDataDeliveryEnabled
+
+  # ==========================================================================
+  # SSM Parameters - runtime discovery (mirrors bedrock-guardrails.yaml)
+  # ==========================================================================
+  InvocationLogGroupNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/bedrock/invocation-log-group-name'
+      Type: String
+      Value: !Ref InvocationLogGroup
+      Description: CloudWatch log group receiving Bedrock model input and output
+
+  InvocationLogGroupArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/bedrock/invocation-log-group-arn'
+      Type: String
+      Value: !GetAtt InvocationLogGroup.Arn
+      Description: ARN of the Bedrock model invocation log group for IAM policies
+
+Outputs:
+  LogGroupName:
+    Description: CloudWatch log group receiving Bedrock model input and output
+    Value: !Ref InvocationLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroupName'
+
+  LogGroupArn:
+    Description: ARN of the Bedrock model invocation log group
+    Value: !GetAtt InvocationLogGroup.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroupArn'
+
+  KmsKeyArn:
+    Description: Customer-managed key encrypting the invocation logs and overflow bodies
+    Value: !GetAtt InvocationLoggingKey.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-KmsKeyArn'
+
+  LargeDataBucketName:
+    Description: S3 bucket holding the full invocation audit corpus (invocation-logs/) and overflow bodies over 100 KB (large-data/)
+    Value: !Ref LargeDataBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-LargeDataBucketName'
+
+  DeliveryRoleArn:
+    Description: IAM role Bedrock assumes to write invocation logs
+    Value: !GetAtt BedrockLoggingDeliveryRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DeliveryRoleArn'

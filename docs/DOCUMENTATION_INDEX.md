@@ -346,6 +346,7 @@ Technical documentation for developers, cybersecurity professionals, and IT admi
 | File | Purpose | Last Updated |
 |------|---------|--------------|
 | [security/SECURITY_FIXES_QUICK_REFERENCE.md](security/SECURITY_FIXES_QUICK_REFERENCE.md) | Quick reference for security fixes (current) | Nov 22, 2025 |
+| [security/CONTROL_REGISTRY.md](security/CONTROL_REGISTRY.md) | `AURA-CTL-###` internal security control registry and framework mappings | Aug 28, 2026 |
 | [ERROR_HANDLING_AUDIT.md](reference/ERROR_HANDLING_AUDIT.md) | Memory services error handling audit and fixes | Dec 6, 2025 |
 
 ---

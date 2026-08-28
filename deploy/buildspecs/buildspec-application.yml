@@ -53,6 +53,7 @@ phases:
       - cfn-lint deploy/cloudformation/irsa-aura-api.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
       - cfn-lint deploy/cloudformation/cognito.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
       - cfn-lint deploy/cloudformation/bedrock-guardrails.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - cfn-lint deploy/cloudformation/bedrock-invocation-logging.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
       - cfn-lint deploy/cloudformation/ecr-agent-orchestrator.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
       - cfn-lint deploy/cloudformation/ecr-frontend.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
       - cfn-lint deploy/cloudformation/ecr-memory-service.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
@@ -528,6 +529,27 @@ phases:
         echo "Customer Onboarding stack ready"
 
       # ============================================
+      # PHASE 3.4: Deploy Bedrock Invocation Logging
+      # ============================================
+      # NOTE: the logging configuration this stack applies is an account +
+      # region singleton, not a per-stack resource. Deleting this stack turns
+      # model invocation logging off for the whole account in this region.
+      - |
+        echo "Deploying Bedrock Invocation Logging..."
+        INVOCATION_LOGGING_STACK="${PROJECT_NAME}-bedrock-invocation-logging-${ENVIRONMENT}"
+
+        aws cloudformation deploy \
+          --stack-name $INVOCATION_LOGGING_STACK \
+          --template-file deploy/cloudformation/bedrock-invocation-logging.yaml \
+          --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=4.15 DeployTimestamp=$DEPLOY_TIMESTAMP \
+          --region $AWS_DEFAULT_REGION \
+          --no-fail-on-empty-changeset
+
+        echo "Bedrock Invocation Logging stack ready"
+
+      # ============================================
       # PHASE 3.5: Deploy IRSA for aura-api
       # ============================================
       - |
@@ -852,6 +874,7 @@ artifacts:
     - deploy/cloudformation/irsa-aura-api.yaml
     - deploy/cloudformation/cognito.yaml
     - deploy/cloudformation/bedrock-guardrails.yaml
+    - deploy/cloudformation/bedrock-invocation-logging.yaml
     - deploy/cloudformation/onboarding.yaml
     - deploy/cloudformation/gpu-scheduler-irsa.yaml
     - deploy/cloudformation/env-validator-irsa.yaml

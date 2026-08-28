@@ -1,6 +1,6 @@
 # Project Aura: Development Status
 
-**Last Assessment:** May 22, 2026
+**Last Assessment:** August 28, 2026
 **Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues + 5 follow-ups closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward, orphan stacks wired). May 9, 2026 documentation + security pass closed an additional 4 doc-refresh follow-ups (#158, #159, #160, #161) and 2 CodeQL alerts (#271 critical code injection, #272 medium unpinned action). Issue #142 (eslint-plugin-react swap) reviewed and deferred per its own trigger conditions. **GTM-readiness audit (#163) CLOSED on May 12, 2026 after 14 waves of remediation (Waves 1-14).** Waves 6-14 followed Wave 5a and shipped: defense-in-depth guardrails (IMMUTABLE_GUARDRAILS, prod-tier signer assertion, log retention 7d→30d, workflow pinning), doc accuracy corrections (React 19 / JavaScript / Vite stack restatement, broken-link fixes), top-level dashboard widget live-wiring (5 metrics endpoints + system-health endpoint backing MTTR/AssetCriticality/ComplianceDrift/InsiderRisk widgets + HealthCheckModal -- closes the audit's "DO-NOT-SHIP" frontend-mock finding), customer-visible TODO/toast remediation (8 CommandPalette/CKGEConsole/KnowledgeGraph silent click-handlers replaced with toast feedback), buildspec inline create/update refactor (29 sites → canonical `aws cloudformation deploy --no-fail-on-empty-changeset`, -640 LOC across 3 buildspecs), frontend lint sweep (281→93 problems, 20→0 errors), and ADR-092 (CFN deploy-role wildcard scoping, **Accepted v2 with deploy phases Deferred (Cost Gate)** -- Phase 2 code complete + offline static action scanner substitute). **DEV/QA Deployment Capability Audit (May 14, 2026) CLOSED: 16 findings → 10 GitHub issues filed (#184-#193); all 10 now closed (9 fixed in-tree + 1 won't-fix).** Same-day fixes shipped Wave-10 idempotency completion (14 buildspec blocks converted across 5 files), environment-conditional DeletionPolicy pattern applied to 54 templates (`!If [IsProduction, Retain, Delete]`), CodeBuild project count drift reconciled (19 → 25), customer parameter overlay parity (EKSNode prefix unified across templates + new dev.json/qa.json overlays), three CI hygiene fixes (`code-quality.yml` `|| true` removed, `aura-security-review.yml` Dependabot skip removed, `nightly-iam-validation.yml` workflow-level failure alarm wired), kill-switch hardening (fcntl-backed concurrent-run lock + EKS scaling-completion polling on both cost schedulers + `wait_for_stack_complete` defense-in-depth + restore success message reworded to "Script Phase Complete" with explicit post-restore verification block), and the final two #185 sub-tracks (`nightly-live-llm.yml` schedule trigger commented out -- workflow had `startup_failure` on every run since inception May 9 because `id-token: write` forces OIDC handshake at workflow-start and the required secret + var were never configured; `benchmarks.yml` runner swapped from unavailable `ubuntu-24.04-large` to `ubuntu-latest` with documented variance trade-off). Remaining tracked work: #180 (out-of-band SNS/PagerDuty/Slack subscribers + GitHub secrets + 68 deaf alarms, OPEN, external-endpoint dependency), #181 (vulnerability_scanner/parsing real tree-sitter implementation, OPEN, multi-week pure-code effort), #182 (tech-debt tracker, substantially closed -- buildspec/lint/IAM code-merge complete; ADR-092 deploy phases Deferred (Cost Gate); "Coming Soon" panels won't-fix).
 
 ---
@@ -13,7 +13,7 @@
 | **Lines of Code** | 408,377 code lines for `src/` + `deploy/` (production + infrastructure; tests counted separately at 308,337). Methodology: `cloc src/ deploy/ --md` "code" column on 2026-05-22. Prior "375,000+" claim was unverifiable as written -- replaced with the explicit count + reproducible command. |
 | **Test Suite** | 26,559 tests as of May 22, 2026 (reproduce: `pytest --collect-only -q tests/`). Issue #223 (pre-existing test failures cascade surfaced after the numpy-pin CI fix) **CLOSED on 2026-05-22** after 6 waves / 8 PRs (#224-#231) fixed 106 tests across 9 root-cause clusters; main CI green at run `26320092456`. See "Issue #223 Test Failure Cascade" audit note below for the root-cause taxonomy and recurring patterns. Prior 2026-05-14 milestone (issue #194 final closeout) remains the last full-suite pass-count baseline: **19,701 passed, 0 failed, 0 errors, 6,731 skipped** in 538s. The order-dependent residual (`test_aws_provider_adapters::TestBedrockLLMAdapter::test_get_service_creates_service`) was traced to a module-collection-time `del sys.modules["src.services.bedrock_llm_service"]` at `tests/test_bedrock_llm_edge_cases.py:149` that left `bedrock_adapter`'s cached `BedrockMode` reference stale relative to fresh re-imports in later tests (different enum class instances -> `mock.assert_called_once_with(mode=BedrockMode.AWS)` mismatch even though reprs were identical). Removing the deletion (the file is already `pytest.mark.forked` so its tests run in subprocesses and don't need parent-process cache invalidation) eliminated the drift. Prior history: the May 10 GTM audit observed 25 hard failures at maxfail in a full sweep; the four pre-existing CI-only failure clusters surfaced by the pytest-timeout fix were resolved in #183 (`62dba9a`, May 13); the second-wave audit (#194) found 79 failures + 23 errors in the first clean full-suite run and closed all 102 across commits `4823f80`, `432b289`, `775954d`, `858f332`, and the 2026-05-14 commit. |
 | **Architecture Decision Records** | 93 ADRs (88 Deployed/Accepted, 1 Reserved [082], 2 Proposed [087, 089], 1 Accepted-with-deploy-Deferred [092], 1 Accepted-Phase-1-unblocked [093]; ADR-090 GraphRAG ingestion edge completeness + ADR-091 Cognito cross-region DR + ADR-092 CFN deploy-role wildcard scoping + ADR-093 Neptune-backed cross-file taint resolver added in May 2026; counted via `ls docs/architecture-decisions/ADR-*.md | wc -l`) |
-| **CloudFormation Templates** | 176 templates (`deploy/cloudformation/` + `deploy/cloudformation/service-catalog-products/`, excluding archive). Reproduce: `find deploy/cloudformation -path "*/archive" -prune -o -name "*.yaml" -type f -print | grep -v "/archive/" | wc -l`. The 13 templates under `deploy/cloudformation/archive/` are excluded. (Prior "175 templates" claim was off by one; corrected May 14 per audit finding M3.) |
+| **CloudFormation Templates** | 182 templates (`deploy/cloudformation/` + `deploy/cloudformation/service-catalog-products/`, excluding archive). Reproduce: `find deploy/cloudformation -path "*/archive" -prune -o -name "*.yaml" -type f -print | grep -v "/archive/" | wc -l`. The 13 templates under `deploy/cloudformation/archive/` are excluded. (Prior "175" corrected to 176 on May 14 per audit finding M3. Recounted Aug 28, 2026: the command returned **181** before this session's work, meaning 5 templates were added between May 22 and Aug 28 without the count being updated -- the same drift class as audit finding M3. `bedrock-invocation-logging.yaml` is the 182nd.) |
 | **Buildspecs** | 28 buildspec files in deploy/buildspecs/ (down from 38 after #131 cleanup -- 11 dead scaffolds deleted, -1,467 LOC) |
 | **CodeBuild Projects** | 25 `AWS::CodeBuild::Project` resources across the `codebuild-*.yaml` templates. Reproduce: `grep -rh "AWS::CodeBuild::Project" deploy/cloudformation/*.yaml | wc -l`. (Prior "19 projects" claim reflected only the originally documented 9 parent + 10 sub-layers; subsequent layers were added without updating the count. Corrected May 14 per audit finding C6.) |
 | **Deployment Phases** | 9 of 9 complete |
@@ -61,6 +61,7 @@
 | Policy-as-Code GitOps | Complete | OPA Rego validation, policy simulation, 98 tests (ADR-070) |
 | ABAC Authorization | Complete | Clearance levels, multi-tenant isolation, 115 tests (ADR-073) |
 | Agentic Identity Lifecycle | 100% | Decommission assurance, 15 credential enumerators, ghost scanner, self-modification sentinel, delegation trust envelope, 7 channel verifiers, 271 tests (ADR-086) |
+| Model I/O Audit Logging (`AURA-CTL-001`) | Template complete, **not yet deployed** | Bedrock invocation logging via Lambda-backed custom resource (no native CFN resource type exists), CMK-encrypted log group + S3 overflow for bodies >100 KB. `deploy/cloudformation/bedrock-invocation-logging.yaml` (Layer 4.15). See `docs/security/CONTROL_REGISTRY.md`. |
 
 ### AI Optimizations
 
@@ -200,6 +201,56 @@ Issue #223 ("Pre-existing test failures surfaced after numpy-pin CI fix") opened
 3. **Cross-file `sys.modules` pollution from module-collection-time mocks** bleeds into sibling test files. Fix: `sys.modules.pop(...)` before fresh imports in the consuming file. The existing `AURA194` lint warns on this pattern; escalating to strict mode is out of scope here but worth tracking.
 
 **Related deferred work:** Issue #221 (proper numpy 2.x migration with native-dep rebuild) remains OPEN as gated future work; tracked in [`docs/DEFERRED_WORK_REGISTRY.md`](DEFERRED_WORK_REGISTRY.md).
+
+### Model I/O Audit Logging Gap (2026-08-28) -- template complete, deployment pending
+
+A platform capability review compared Aura's agent runtime, evaluation, observability, and
+infrastructure-as-code posture against a managed agent-runtime alternative. Most dimensions resolved
+in Aura's favour or were non-comparable, but the review surfaced one control gap where Aura had **no
+implementation at all**: Bedrock model invocation logging was not configured anywhere in `deploy/` or
+`src/`, and the primary application log group carried no customer-managed key.
+
+**Remediation (this session, uncommitted at time of writing):**
+
+- New `deploy/cloudformation/bedrock-invocation-logging.yaml` (Layer 4.15) implementing
+  **`AURA-CTL-001`**: CMK-encrypted CloudWatch log group, S3 overflow bucket, Bedrock delivery role,
+  and a Lambda-backed custom resource that applies the logging configuration.
+- New `docs/security/CONTROL_REGISTRY.md` establishing the `AURA-CTL-###` namespace for implemented
+  security controls, deliberately distinct from the existing `AURA-<DOMAIN>-###` runtime **error
+  code** namespace and the `SEC-###` org-standards **rule ID** namespace.
+- Wired into `buildspec-application.yml` (PHASE 3.4) and `deploy/scripts/detect_changes.py`.
+
+**Design findings worth carrying forward:**
+
+1. **No native CloudFormation resource type exists.** `AWS::Bedrock::ModelInvocationLoggingConfiguration`
+   is not in the CFN registry -- verified two ways against cfn-lint 1.51.0 (`E3006` on a probe
+   template, plus schema enumeration showing 20 `AWS::Bedrock::*` types with no logging configuration
+   among them). A Lambda-backed custom resource is therefore required, matching the AWS Prescriptive
+   Guidance pattern for the same problem.
+2. **CloudWatch Logs alone silently defeats the control at 100 KB.** Bodies above that threshold are
+   delivered to S3, or dropped entirely when no S3 destination is configured -- with the metadata
+   event still landing, so the loss is silent. GraphRAG-assembled prompts routinely exceed 100 KB, so
+   `largeDataDeliveryS3Config` is mandatory rather than optional; omitting it would drop exactly the
+   largest and most security-relevant invocations.
+3. **The logging configuration is an account + region singleton.** It is not scoped to the stack;
+   deleting the stack disables model invocation logging for the whole account in that region.
+   DEV and QA are confirmed to occupy **distinct AWS accounts** (`deploy/config/account-mapping.env`),
+   so there is no cross-environment collision. `PROD_ACCOUNT_ID` remains `PENDING`.
+
+**Open, not closed:** the stack has **not been deployed**. Local verification only -- `cfn-lint`
+wrapper PASSED, three injected fault classes correctly caught (`E3002`/`E1010`/`E3030`),
+`validate_iam_actions.py` 16 valid / 0 invalid, pre-commit clean, inline Lambda AST-compiles. The
+control cannot be considered satisfied until a dev deploy confirms the applied configuration and the
+100 KB boundary test passes in both directions. GovCloud availability of
+`PutModelInvocationLoggingConfiguration` is **likely but unverified** and needs an owner.
+
+**Related gaps identified but not addressed:** CMK coverage remains partial across the estate (6 of
+124 log-group resources, 35 CMK settings across 98 DynamoDB tables); no workflow triggers on
+`deploy/cloudformation/**`, so template changes reach CI only via the nightly job; and
+`--strict-markers` in `pyproject.toml` addopts is configured but inert at pytest 9.0.0 (reproducible:
+addopts exits 0 with a warning, the explicit CLI flag exits 2 on the same file).
+
+---
 
 ### Integrations & Deployment
 

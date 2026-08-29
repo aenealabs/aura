@@ -1,8 +1,8 @@
 # Control Registry - Aura Internal Security Controls
 
 **Status:** Active
-**Version:** 1.1.0
-**Last Updated:** 2026-08-28
+**Version:** 1.2.0
+**Last Updated:** 2026-08-29
 
 ---
 
@@ -42,6 +42,16 @@ from the identifier schemes already in use, none of which mean "control":
   not the ID.
 - Retired controls stay in this table with status `Retired` and the reason.
 
+**Status vocabulary.** "Implemented" describes the code or template in this repository, **not** the
+running estate. A control is not satisfied and must not be attested until its Evidence section has
+been executed against a deployed environment.
+
+| Status | Meaning |
+|---|---|
+| `Implemented` | Merged and in effect on the code path it governs |
+| `Implemented, not deployed` | Merged and locally verified; the infrastructure it configures has never been deployed, so the control is **not** active anywhere |
+| `Retired` | No longer in force; row kept with the reason |
+
 ### Customer and framework mappings
 
 **Do not record customer-specific control identifiers in this repository.** The `Frameworks` column
@@ -58,12 +68,22 @@ history can reference a control without disclosing who asked for it or how they 
 
 | ID | Control | Status | Implementation | Frameworks |
 |----|---------|--------|----------------|------------|
-| `AURA-CTL-001` | **Model I/O Audit Logging** — Bedrock model invocation input and output are captured as audit records. Every record is delivered in full to an encrypted S3 corpus; CloudWatch Logs, encrypted with a customer-managed key, carries the same records for operational query, with bodies over 100 KB referenced from S3 rather than dropped. | Implemented | `deploy/cloudformation/bedrock-invocation-logging.yaml` (Layer 4.15) | NIST 800-53 AU-2, AU-3, AU-9, AU-11, SC-28 |
+| `AURA-CTL-001` | **Model I/O Audit Logging** -- Bedrock model invocation input and output are captured as audit records. Every record is delivered in full to an encrypted S3 corpus; CloudWatch Logs, encrypted with a customer-managed key, carries the same records for operational query, with bodies over 100 KB referenced from S3 rather than dropped. | **Implemented, not deployed** | `deploy/cloudformation/bedrock-invocation-logging.yaml` (Layer 4.15) | NIST 800-53 AU-2, AU-3, AU-9, AU-11, SC-28 |
 | `AURA-CTL-002` | **Sandbox Network Boundary Truthfulness** -- the sandbox provisioning path refuses any network isolation level it does not actually enforce, instead of accepting the request and provisioning a weaker boundary under the stronger name. `ENFORCED_ISOLATION_LEVELS` is the single source of truth for what is implemented. | Implemented | `src/services/sandbox_network_service.py:79` (`ENFORCED_ISOLATION_LEVELS`, `UnsupportedIsolationLevelError`); `deploy/cloudformation/sandbox.yaml` (Layer 7.1) | NIST 800-53 SC-7, SC-7(21), AC-4, SA-4(9), CM-4 |
 
 ---
 
 ## AURA-CTL-001: Model I/O Audit Logging
+
+> **Status: Implemented, not deployed (as of 2026-08-29).** The template is merged; the stack has
+> never been deployed to any environment. **Model invocation logging is not capturing anything
+> today, in dev, qa or prod.** Do not cite this control as active, and do not use it as evidence for
+> AU-2 / AU-3 / AU-9 / AU-11 / SC-28 until the Evidence section below has actually been executed
+> against a deployed stack -- including the 100 KB boundary test in both directions. Verification to
+> date is local only: `cfn-lint` wrapper passed, three injected fault classes correctly caught,
+> `validate_iam_actions.py` 16 valid / 0 invalid, inline Lambda AST-compiles. GovCloud availability
+> of `PutModelInvocationLoggingConfiguration` is **unverified**. Deployment is cost-gated on the DEV
+> environment being restored; see `docs/DEFERRED_WORK_REGISTRY.md`.
 
 ### Requirement
 
@@ -73,7 +93,8 @@ under a key the organization controls.
 
 ### Implementation
 
-Deployed by `deploy/cloudformation/bedrock-invocation-logging.yaml`:
+Defined by `deploy/cloudformation/bedrock-invocation-logging.yaml`. Everything below describes what
+the template does **when deployed**; it has not been:
 
 - **Capture.** A Lambda-backed custom resource applies the Bedrock model invocation logging
   configuration. There is no native CloudFormation resource type for this configuration, so it is

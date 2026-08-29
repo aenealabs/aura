@@ -102,16 +102,16 @@ Technical documentation for ADR-049 self-hosted deployment implementation.
 | Document | Purpose | Lines |
 |----------|---------|-------|
 | [self-hosted/ADR-049-IMPLEMENTATION-DETAILS.md](self-hosted/ADR-049-IMPLEMENTATION-DETAILS.md) | Technical specs, expert reviews, appendices (split from ADR-049) | 516 |
-| [self-hosted/NATIVE_INSTALLERS_GUIDE.md](self-hosted/NATIVE_INSTALLERS_GUIDE.md) | Installation guide for MSI, DEB, RPM, PKG, Homebrew | 342 |
+| [self-hosted/NATIVE_INSTALLERS_GUIDE.md](self-hosted/NATIVE_INSTALLERS_GUIDE.md) | Installation guide for MSI, DEB, RPM, PKG, Homebrew | 341 |
 
 ### Phase 0 Prerequisites
 | Document | Purpose | Lines |
 |----------|---------|-------|
 | [self-hosted/DYNAMODB_SCHEMA_REFERENCE.md](self-hosted/DYNAMODB_SCHEMA_REFERENCE.md) | DynamoDB→PostgreSQL migration schemas for 28 tables | 654 |
-| [self-hosted/QUERY_LANGUAGE_STRATEGY.md](self-hosted/QUERY_LANGUAGE_STRATEGY.md) | Gremlin vs Cypher decision (native Cypher for Neo4j) | 313 |
-| [self-hosted/LICENSE_VALIDATION_SCHEME.md](self-hosted/LICENSE_VALIDATION_SCHEME.md) | Ed25519 license validation, hardware fingerprinting, feature gating | 712 |
-| [self-hosted/RESOURCE_BASELINES.md](self-hosted/RESOURCE_BASELINES.md) | HPA resource baselines, scaling thresholds, deployment sizes | 580 |
-| [self-hosted/FEATURE_FLAG_EDITION_MAPPING.md](self-hosted/FEATURE_FLAG_EDITION_MAPPING.md) | SaaS→Self-hosted tier mapping, edition schema, feature gating | 680 |
+| [self-hosted/QUERY_LANGUAGE_STRATEGY.md](self-hosted/QUERY_LANGUAGE_STRATEGY.md) | Gremlin vs Cypher decision (native Cypher for Neo4j) | 312 |
+| [self-hosted/LICENSE_VALIDATION_SCHEME.md](self-hosted/LICENSE_VALIDATION_SCHEME.md) | Ed25519 license validation, hardware fingerprinting, feature gating | 1021 |
+| [self-hosted/RESOURCE_BASELINES.md](self-hosted/RESOURCE_BASELINES.md) | HPA resource baselines, scaling thresholds, deployment sizes | 696 |
+| [self-hosted/FEATURE_FLAG_EDITION_MAPPING.md](self-hosted/FEATURE_FLAG_EDITION_MAPPING.md) | SaaS -> Self-hosted tier mapping, edition schema, feature gating | 962 |
 
 ### HPA Templates (deploy/self-hosted/hpa/)
 | File | Purpose |
@@ -199,41 +199,41 @@ Enterprise-grade product documentation for Project Aura platform users, security
 
 | Document | Purpose | Lines |
 |----------|---------|-------|
-| [product/getting-started/index.md](product/getting-started/index.md) | Platform overview, key benefits, architecture, use cases | 311 |
+| [product/getting-started/index.md](product/getting-started/index.md) | Platform overview, key benefits, architecture, use cases | 315 |
 | [product/getting-started/quick-start.md](product/getting-started/quick-start.md) | 5-minute setup guide for SaaS deployment | 315 |
 | [product/getting-started/system-requirements.md](product/getting-started/system-requirements.md) | Prerequisites for SaaS, Kubernetes, Podman deployments | 483 |
-| [product/getting-started/installation.md](product/getting-started/installation.md) | Detailed setup for all deployment options | 970 |
+| [product/getting-started/installation.md](product/getting-started/installation.md) | Detailed setup for all deployment options | 901 |
 | [product/getting-started/first-project.md](product/getting-started/first-project.md) | Repository onboarding walkthrough | 650 |
 
 ### Core Concepts (docs/product/core-concepts/)
 
 | Document | Purpose | Lines |
 |----------|---------|-------|
-| [product/core-concepts/index.md](product/core-concepts/index.md) | Technology pillars overview, learning paths by role | 217 |
-| [product/core-concepts/autonomous-security-intelligence.md](product/core-concepts/autonomous-security-intelligence.md) | LLM-powered vulnerability detection and remediation | 326 |
-| [product/core-concepts/hybrid-graphrag.md](product/core-concepts/hybrid-graphrag.md) | Neptune graph + OpenSearch vector architecture | 444 |
-| [product/core-concepts/multi-agent-system.md](product/core-concepts/multi-agent-system.md) | Orchestrator, Coder, Reviewer, Validator agents | 579 |
+| [product/core-concepts/index.md](product/core-concepts/index.md) | Technology pillars overview, learning paths by role | 224 |
+| [product/core-concepts/autonomous-security-intelligence.md](product/core-concepts/autonomous-security-intelligence.md) | LLM-powered vulnerability detection and remediation | 330 |
+| [product/core-concepts/hybrid-graphrag.md](product/core-concepts/hybrid-graphrag.md) | Neptune graph + OpenSearch vector architecture | 467 |
+| [product/core-concepts/multi-agent-system.md](product/core-concepts/multi-agent-system.md) | Orchestrator, Coder, Reviewer, Validator agents | 662 |
 | [product/core-concepts/hitl-workflows.md](product/core-concepts/hitl-workflows.md) | 4 autonomy levels, 7 policy presets, guardrails | 773 |
-| [product/core-concepts/sandbox-security.md](product/core-concepts/sandbox-security.md) | ECS Fargate container-level isolation (enforced levels only), 5 validation categories | 867 |
+| [product/core-concepts/sandbox-security.md](product/core-concepts/sandbox-security.md) | ECS Fargate container-level isolation (enforced levels only), 5 validation categories | 868 |
 
 ### User Guides (docs/product/user-guides/)
 
 | Document | Purpose | Lines |
 |----------|---------|-------|
-| [product/user-guides/index.md](product/user-guides/index.md) | User guides overview and navigation | 166 |
+| [product/user-guides/index.md](product/user-guides/index.md) | User guides overview and navigation | 182 |
 | [product/user-guides/repository-onboarding.md](product/user-guides/repository-onboarding.md) | Connect GitHub/GitLab repos, configure scanning | - |
 | [product/user-guides/vulnerability-remediation.md](product/user-guides/vulnerability-remediation.md) | Find, understand, and fix security vulnerabilities | - |
 | [product/user-guides/patch-approval.md](product/user-guides/patch-approval.md) | HITL patch review and approval workflows | - |
 | [product/user-guides/dashboard-customization.md](product/user-guides/dashboard-customization.md) | Dashboard widgets, layout editor, sharing (ADR-064) | - |
 | [product/user-guides/team-collaboration.md](product/user-guides/team-collaboration.md) | Team management, permissions, notifications | - |
-| [product/user-guides/capability-graph.md](product/user-guides/capability-graph.md) | Agent capability visualization, filtering, risk analysis (ADR-071) | 236 |
+| [product/user-guides/capability-graph.md](product/user-guides/capability-graph.md) | Agent capability visualization, filtering, risk analysis (ADR-071) | 251 |
 
 ### Executive Summaries (docs/product/executive-summaries/)
 
 | Document | Purpose | Lines |
 |----------|---------|-------|
-| [product/executive-summaries/development-assurance.md](product/executive-summaries/development-assurance.md) | Development assurance capabilities for CTOs/CIOs — 10 governance mechanisms, compliance mapping, competitive differentiation | 481 |
-| [product/executive-summaries/faa-do178c-gap-analysis.md](product/executive-summaries/faa-do178c-gap-analysis.md) | FAA DO-178C gap analysis for FADEC/EEC software — DAL A/B certification requirements, DO-330 tool qualification, roadmap to compliance | 593 |
+| [product/executive-summaries/development-assurance.md](product/executive-summaries/development-assurance.md) | Development assurance capabilities for CTOs/CIOs -- 10 governance mechanisms, compliance mapping, competitive differentiation | 479 |
+| [product/executive-summaries/faa-do178c-gap-analysis.md](product/executive-summaries/faa-do178c-gap-analysis.md) | FAA DO-178C gap analysis for FADEC/EEC software -- DAL A/B certification requirements, DO-330 tool qualification, roadmap to compliance | 595 |
 
 ### Product Documentation (docs/product/)
 
@@ -274,17 +274,17 @@ Technical documentation for developers, cybersecurity professionals, and IT admi
 | Document | Purpose | Lines |
 |----------|---------|-------|
 | [support/architecture/index.md](support/architecture/index.md) | Architecture documentation overview | 276 |
-| [support/architecture/system-overview.md](support/architecture/system-overview.md) | High-level system architecture with ASCII diagrams | 458 |
+| [support/architecture/system-overview.md](support/architecture/system-overview.md) | High-level system architecture with ASCII diagrams | 462 |
 | [support/architecture/data-flow.md](support/architecture/data-flow.md) | How data moves through the system | 497 |
 | [support/architecture/security-architecture.md](support/architecture/security-architecture.md) | Security controls, encryption, network isolation | 689 |
-| [support/architecture/disaster-recovery.md](support/architecture/disaster-recovery.md) | Backup, recovery, RTO/RPO | 498 |
+| [support/architecture/disaster-recovery.md](support/architecture/disaster-recovery.md) | Backup, recovery, RTO/RPO | 556 |
 
 ### Operations (docs/support/operations/)
 
 | Document | Purpose | Lines |
 |----------|---------|-------|
 | [support/operations/index.md](support/operations/index.md) | Operations guide overview | 324 |
-| [support/operations/monitoring.md](support/operations/monitoring.md) | CloudWatch, dashboards, alerts | 392 |
+| [support/operations/monitoring.md](support/operations/monitoring.md) | CloudWatch, dashboards, alerts, per-namespace metric tables | 429 |
 | [support/operations/logging.md](support/operations/logging.md) | Log formats, retention, analysis | 470 |
 | [support/operations/backup-restore.md](support/operations/backup-restore.md) | Data backup and restoration procedures | 417 |
 | [support/operations/scaling.md](support/operations/scaling.md) | Horizontal/vertical scaling, auto-scaling | 700 |
@@ -297,9 +297,22 @@ Technical documentation for developers, cybersecurity professionals, and IT admi
 | File | Purpose | Last Updated |
 |------|---------|--------------|
 | [README.md](../README.md) | Project overview, quick start | Feb 11, 2026 |
-| [PROJECT_STATUS.md](PROJECT_STATUS.md) | Living status document (includes Recent Challenges section) | Mar 4, 2026 |
+| [PROJECT_STATUS.md](PROJECT_STATUS.md) | Living status document (includes dated audit notes) | Aug 29, 2026 |
 | [CHANGELOG.md](../CHANGELOG.md) | Version history and changes | Jan 2, 2026 |
-| [CLAUDE.md](../CLAUDE.md) | AI assistant instructions & context management | Mar 4, 2026 |
+| [CLAUDE.md](../CLAUDE.md) | Repository instructions & context management | Mar 4, 2026 |
+
+### Scoped Directory Guides
+
+Additive to the root `CLAUDE.md`; loaded automatically when working in the directory.
+
+| File | Purpose | Last Updated |
+|------|---------|--------------|
+| [../deploy/cloudformation/CLAUDE.md](../deploy/cloudformation/CLAUDE.md) | Description standards, layer table, cfn-lint contract, PR-level template gate | Aug 29, 2026 |
+| [../deploy/buildspecs/CLAUDE.md](../deploy/buildspecs/CLAUDE.md) | CodeBuild rules, runtime-budget rule, which PR gate covers which tree | Aug 29, 2026 |
+| [../frontend/CLAUDE.md](../frontend/CLAUDE.md) | Design system, React conventions, Node 22 requirement, frontend CI gate | Aug 29, 2026 |
+| [../tests/CLAUDE.md](../tests/CLAUDE.md) | 70% coverage threshold, parallel execution, AWS call guard, frontend suite pointer | Aug 29, 2026 |
+| [../src/services/CLAUDE.md](../src/services/CLAUDE.md) | Python service patterns, fork-join boundaries, shared dependencies | -- |
+| [../scripts/CLAUDE.md](../scripts/CLAUDE.md) | Credential handling, kill-switch operations, security hooks | -- |
 
 ### Architecture & Design
 | File | Purpose | Last Updated |
@@ -346,7 +359,7 @@ Technical documentation for developers, cybersecurity professionals, and IT admi
 | File | Purpose | Last Updated |
 |------|---------|--------------|
 | [security/SECURITY_FIXES_QUICK_REFERENCE.md](security/SECURITY_FIXES_QUICK_REFERENCE.md) | Quick reference for security fixes (current) | Nov 22, 2025 |
-| [security/CONTROL_REGISTRY.md](security/CONTROL_REGISTRY.md) | `AURA-CTL-###` internal security control registry and framework mappings | Aug 28, 2026 |
+| [security/CONTROL_REGISTRY.md](security/CONTROL_REGISTRY.md) | `AURA-CTL-###` internal security control registry and framework mappings | Aug 29, 2026 |
 | [ERROR_HANDLING_AUDIT.md](reference/ERROR_HANDLING_AUDIT.md) | Memory services error handling audit and fixes | Dec 6, 2025 |
 
 ---
@@ -481,7 +494,7 @@ Comprehensive certification roadmaps for government and defense market access.
 |------|---------|
 | [CICD_SETUP_GUIDE.md](deployment/CICD_SETUP_GUIDE.md) | CI/CD setup instructions (Podman-first strategy) |
 | [DOCKER_BEST_PRACTICES.md](deployment/DOCKER_BEST_PRACTICES.md) | Container build best practices (Podman-first per ADR-049) |
-| [GITHUB_ACTIONS_SETUP.md](deployment/GITHUB_ACTIONS_SETUP.md) | GitHub Actions configuration |
+| [GITHUB_ACTIONS_SETUP.md](deployment/GITHUB_ACTIONS_SETUP.md) | GitHub Actions workflows: the three PR quality gates, change detection, required checks |
 | [RELEASE_PLEASE_GUIDE.md](deployment/RELEASE_PLEASE_GUIDE.md) | Automated changelog & release management |
 
 ### CloudFormation Validation

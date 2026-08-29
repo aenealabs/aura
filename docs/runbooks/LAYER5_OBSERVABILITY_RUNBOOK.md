@@ -28,6 +28,21 @@ The Observability layer deploys secrets management, monitoring dashboards, cost 
 | `aura-disaster-recovery-{env}` | disaster-recovery.yaml | AWS Backup Vault, Plans, Selections |
 | `aura-otel-collector-{env}` | otel-collector.yaml | OpenTelemetry IRSA Role |
 
+### Emitted-but-unalarmed application metrics
+
+The `Aura/*` namespaces this layer actually alarms on are `Aura/LLM` (`monitoring.yaml:355`) and
+`Aura/Anomalies` / `Aura/Orchestrator` / `Aura/HITL` / `Aura/Security` (`realtime-monitoring.yaml`).
+The application publishes to others that no template references:
+
+| Namespace | Since | Alarm defined? | Notes |
+|---|---|---|---|
+| `Aura/Tools` | #408 (2026-08-28) | No | `InvocationCount` (dimensioned `ToolName` + `Outcome`), `ReportedFailureCount`, `ToolLatency`. See [monitoring.md -> Tool Invocation Metrics](../support/operations/monitoring.md). |
+
+`ReportedFailureCount` is the one an operator most wants: a non-zero value means tools are failing
+while nothing raises, which exception-based monitoring cannot see. It is emitted as `0.0` on the
+healthy path, so an alarm on `Sum` has data points immediately and does not sit in
+`INSUFFICIENT_DATA`. Adding the alarm is a `monitoring.yaml` change; it has not been made.
+
 ---
 
 ## Dependencies

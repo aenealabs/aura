@@ -627,6 +627,7 @@ class FargateSandboxOrchestrator:
     def __init__(
         self,
         environment: str = "dev",
+        project_name: str = "aura",
         aws_region: str = "us-east-1",
     ):
         """
@@ -634,13 +635,21 @@ class FargateSandboxOrchestrator:
 
         Args:
             environment: Environment name (dev, qa, prod)
+            project_name: Resource name prefix; must match the ProjectName
+                parameter used when deploying the CloudFormation templates
             aws_region: AWS region
         """
         self.environment = environment
         self.aws_region = aws_region
-        self.cluster_name = f"aura-sandboxes-{environment}"
+        self.project_name = project_name
+        self.cluster_name = f"{project_name}-sandboxes-{environment}"
         self.task_definition = f"sandbox-patch-test-{environment}"
-        self.state_table = f"aura-sandbox-state-{environment}"
+        self.state_table = f"{project_name}-sandbox-state-{environment}"
+        # Must match the Name tag that sandbox.yaml puts on the security
+        # group: `!Sub '${ProjectName}-sandbox-isolated-${Environment}'`.
+        # This previously looked for `sg-{env}-sandbox-isolated`, which the
+        # templates never create, so discovery always fell through.
+        self.sandbox_sg_name = f"{project_name}-sandbox-isolated-{environment}"
 
         # AWS clients
         self.ecs = boto3.client("ecs", region_name=aws_region)
@@ -1026,10 +1035,7 @@ class FargateSandboxOrchestrator:
             self.ec2.describe_security_groups,
             Filters=[
                 {"Name": "tag:Environment", "Values": [self.environment]},
-                {
-                    "Name": "tag:Name",
-                    "Values": [f"sg-{self.environment}-sandbox-isolated"],
-                },
+                {"Name": "tag:Name", "Values": [self.sandbox_sg_name]},
             ],
         )
 
@@ -1057,7 +1063,7 @@ class FargateSandboxOrchestrator:
             raise RuntimeError(
                 f"No sandbox security group found for environment '{self.environment}'. "
                 f"Please configure security group with tags Environment={self.environment} and "
-                f"Name=sg-{self.environment}-sandbox-isolated, "
+                f"Name={self.sandbox_sg_name}, "
                 f"or set SSM parameter /aura/{self.environment}/sandbox/security-group-id"
             )
 

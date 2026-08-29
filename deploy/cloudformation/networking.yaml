@@ -150,6 +150,10 @@ Resources:
           Value: !Ref Environment
         - Key: kubernetes.io/role/internal-elb
           Value: "1"
+        # Consumed by FargateSandboxOrchestrator._get_sandbox_subnets,
+        # which filters describe_subnets on tag:Type=private.
+        - Key: Type
+          Value: private
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
@@ -166,6 +170,10 @@ Resources:
           Value: !Ref Environment
         - Key: kubernetes.io/role/internal-elb
           Value: "1"
+        # Consumed by FargateSandboxOrchestrator._get_sandbox_subnets,
+        # which filters describe_subnets on tag:Type=private.
+        - Key: Type
+          Value: private
 
   PrivateSubnet3:
     Type: AWS::EC2::Subnet
@@ -183,6 +191,10 @@ Resources:
           Value: !Ref Environment
         - Key: kubernetes.io/role/internal-elb
           Value: "1"
+        # Consumed by FargateSandboxOrchestrator._get_sandbox_subnets,
+        # which filters describe_subnets on tag:Type=private.
+        - Key: Type
+          Value: private
 
   # NAT Gateways - REMOVED (Replaced with VPC Endpoints)
   # Project Aura uses VPC Endpoints exclusively for AWS service connectivity.

@@ -1346,8 +1346,16 @@ function SecuritySettingsTab({ settings, integrationMode, onChange, saving }) {
       {/* Sandbox Isolation */}
       <div className="bg-white dark:bg-surface-800 backdrop-blur-xl rounded-xl border border-surface-200/50 dark:border-surface-700/30 p-6 shadow-[var(--shadow-glass)]">
         <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100 mb-4">Sandbox Isolation Level</h3>
+        {/*
+          Only levels the backend actually enforces are offered.
+          ENFORCED_ISOLATION_LEVELS in src/services/sandbox_network_service.py
+          admits 'none' and 'container'; 'vpc' and 'full' are declared in
+          NetworkIsolationLevel but raise UnsupportedIsolationLevelError rather
+          than silently degrading to container-level networking. Offering them
+          here promised a network boundary the platform does not provide.
+        */}
         <div className="flex gap-4">
-          {['container', 'vpc', 'full'].map((level) => (
+          {['none', 'container'].map((level) => (
             <div
               key={level}
               className={`
@@ -1360,9 +1368,8 @@ function SecuritySettingsTab({ settings, integrationMode, onChange, saving }) {
             >
               <p className="font-medium text-surface-900 dark:text-surface-100 capitalize">{level}</p>
               <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">
-                {level === 'container' && 'Isolated container'}
-                {level === 'vpc' && 'Dedicated VPC'}
-                {level === 'full' && 'Complete isolation'}
+                {level === 'none' && 'Host network, no isolation'}
+                {level === 'container' && 'Dedicated task, private subnets, no inbound'}
               </p>
             </div>
           ))}

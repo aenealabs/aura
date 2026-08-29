@@ -657,10 +657,18 @@ class SpawnableGitHubIntegrationAgent(AgentAdapter):
 
             from src.services.github_pr_service import GitHubPRService
 
-            # Use mock mode if no AWS region configured (test environment)
-            use_mock = not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get(
-                "AWS_REGION"
-            )
+            # Mock mode is keyed off an explicit test signal, not off whether
+            # an AWS region happens to be configured.
+            #
+            # The previous heuristic was:
+            #     use_mock = not AWS_DEFAULT_REGION and not AWS_REGION
+            #
+            # which conflated "a region is set" with "we are in production".
+            # AWS_DEFAULT_REGION is exported in most developers' shell
+            # profiles, and the repo's own ``aws_credentials`` test fixture
+            # sets it -- so this silently selected the real service during
+            # unit tests and reached SSM Parameter Store for real.
+            use_mock = os.environ.get("TESTING", "").lower() == "true"
             self._wrapped_agent = GitHubPRService(use_mock=use_mock)
         return self._wrapped_agent
 

@@ -676,10 +676,10 @@ Platform Default: on_demand
 │  │  └────────────────────────────────────────────────────────────────┘  │   │
 │  │                                                                      │   │
 │  │  ┌────────────────────────────────────────────────────────────────┐  │   │
-│  │  │  Network Isolation (Security Group)                            │  │   │
-│  │  │  • Ingress: DENY ALL                                           │  │   │
-│  │  │  • Egress: ALLOW only to dnsmasq (port 53)                     │  │   │
-│  │  │  • Metadata service: 169.254.169.254 BLOCKED                   │  │   │
+│  │  │  Network Constraint (Security Group, container-level only)     │  │   │
+│  │  │  - Ingress: no rules declared                                  │  │   │
+│  │  │  - Egress: UDP 53 (DNS) + TCP 443 to 0.0.0.0/0                 │  │   │
+│  │  │  - assignPublicIp: DISABLED; no dedicated sandbox VPC          │  │   │
 │  │  └────────────────────────────────────────────────────────────────┘  │   │
 │  │                                                                      │   │
 │  │  ┌────────────────────────────────────────────────────────────────┐  │   │

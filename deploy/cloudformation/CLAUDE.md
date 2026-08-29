@@ -153,6 +153,10 @@ NewPermissionsManagedPolicy:
 | 4 | Warnings only | Non-blocking (pass) |
 | 2, 6, 8 | Errors found | Fail build |
 
+`scripts/cfn-lint-wrapper.sh` implements exactly this contract: it converts
+exit 4 to 0 and propagates 2 / 6 / 8 unchanged. Use the wrapper and let a
+non-zero exit fail the step.
+
 **Usage:**
 ```bash
 # Use wrapper script (recommended)
@@ -160,19 +164,69 @@ NewPermissionsManagedPolicy:
 
 # Validate IAM actions (W3037 warnings)
 python scripts/validate_iam_actions.py --report
-
-# In buildspecs, always use graceful fallback pattern:
-cfn-lint template.yaml || echo "cfn-lint warnings (non-blocking)"
 ```
+
+> **UNRESOLVED CONTRADICTION -- do not treat either half as settled.** This
+> section previously also prescribed, for buildspecs:
+> `cfn-lint template.yaml || echo "cfn-lint warnings (non-blocking)"`.
+> That snippet contradicts the exit-code table directly above it: `|| echo`
+> makes *every* exit code pass, so exit 2 / 6 / 8 ("Fail build" per the table)
+> does not fail the build. The snippet has been removed from the prescription
+> here so the file no longer instructs two incompatible behaviours, but the
+> underlying divergence is real and unresolved in the tree:
+>
+> - **PR gate (`.github/workflows/code-quality.yml:145-187`)**: uses the
+>   wrapper and fails on non-zero. Matches the table.
+> - **Nightly (`.github/workflows/nightly-iam-validation.yml:47-61`)**: uses
+>   the wrapper. Matches the table.
+> - **Buildspecs**: 122 call sites across `deploy/buildspecs/*.yml` still use
+>   the bare `cfn-lint ... || echo` form (e.g.
+>   `deploy/buildspecs/buildspec-application.yml:50-55`). A template error in a
+>   deploy build is therefore swallowed today.
+>
+> Deciding which side wins is a real change with real blast radius (converting
+> 122 sites to the wrapper could start failing deploy builds that currently
+> pass), so it is flagged here rather than silently picked. Whoever picks it up
+> should file an issue and either convert the buildspec sites to
+> `./scripts/cfn-lint-wrapper.sh` or amend the table to say buildspec linting is
+> advisory-only -- not leave both statements standing.
 
 **Known Valid IAM Actions:**
 When cfn-lint reports W3037 for actions not in its database, add verified actions to `scripts/validate_iam_actions.py` KNOWN_VALID_ACTIONS set after confirming they exist in AWS documentation.
 
+**Pull-Request Validation (as of #406, 2026-08-28):**
+`.github/workflows/code-quality.yml` now triggers on `deploy/cloudformation/**`.
+A `Detect changed areas` step resolves `python_changed` / `cfn_changed` from the
+PR diff; when `cfn_changed` is true the workflow installs cfn-lint and runs
+`scripts/cfn-lint-wrapper.sh` over each changed template, failing the job on any
+non-zero exit. Deleted templates are excluded via `--diff-filter=d` and
+`archive/` is skipped. Templates therefore reach CI **on the pull request**, not
+only after merge.
+
+Two consequences worth knowing:
+
+- A template-only PR does not pay for the full Python toolchain or the test
+  suite; a Python-only PR does not pay for cfn-lint. On any ambiguity the
+  detection step fails safe and runs everything.
+- `deploy/cloudformation/**` is in the trigger paths partly because
+  "Python Quality & Tests" is a **required** status check. A required check that
+  never runs is reported as missing, not passing, which previously blocked
+  infrastructure-only PRs indefinitely. Do not remove that path from the trigger
+  list without also removing the required-check requirement.
+
 **Nightly Validation:**
-`.github/workflows/nightly-iam-validation.yml` runs daily at 2 AM UTC to validate all templates and IAM actions.
+`.github/workflows/nightly-iam-validation.yml` runs daily at 2 AM UTC to validate all templates and IAM actions. It is now a backstop for the whole estate rather than the first time a changed template is linted.
 
 ---
 
 ## Fork-Join Parallelism
 
-All 155 CloudFormation templates are independently validatable. When batch-validating templates, each can be linted in an isolated worktree without cross-template dependencies. Use parallel agent work for bulk template updates (e.g., description format migrations, parameter standardization).
+All 182 CloudFormation templates are independently validatable. When batch-validating templates, each can be linted in an isolated worktree without cross-template dependencies. Use parallel agent work for bulk template updates (e.g., description format migrations, parameter standardization).
+
+Reproduce the count (matches `docs/PROJECT_STATUS.md`):
+
+```bash
+find deploy/cloudformation -path "*/archive" -prune -o -name "*.yaml" -type f -print | grep -v "/archive/" | wc -l
+```
+
+(Prior "155" was drift; recounted 2026-08-28.)

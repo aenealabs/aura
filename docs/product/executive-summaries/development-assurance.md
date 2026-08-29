@@ -235,7 +235,6 @@ Aura implements 10 governance mechanisms organized into four phases of the agent
 - **Validation categories:** 5 (Syntax/1 min, Unit Tests/10 min with 70% coverage threshold, Security Scans/5 min, Performance/5 min with 10% regression threshold, Integration/10 min)
 - **Security scan tools:** Semgrep, Bandit, Snyk, Safety, TruffleHog, GitLeaks, Trivy
 - **Resource limits:** 0.5 vCPU, 1 GB memory, 20 GB storage, 30-minute hard timeout
-- **Production success rate:** 99.2% for patches passing sandbox validation
 - **Mock services:** Neptune via LocalStack, OpenSearch via local mock, External APIs via fixture responses
 
 **Enforcement model:** Preventive -- patches that fail any validation category are automatically rejected and never reach human reviewers.

@@ -141,9 +141,22 @@ Deploy to small percentage of production, monitor, then expand.
 
 ## Sandbox Isolation Requirements
 
+> **Status note (2026-08-28) -- the Network Isolation row is a requirement, not
+> a shipped implementation.** No dedicated sandbox VPC exists.
+> `deploy/cloudformation/sandbox.yaml` imports `VpcId` / `PrivateSubnetIds` from
+> the networking stack, so sandbox tasks run in the platform VPC's private
+> subnets. `ENFORCED_ISOLATION_LEVELS`
+> (`src/services/sandbox_network_service.py:79`) restricts the provisioning path
+> to `none` and `container`; requesting `vpc` or `full` now raises
+> `UnsupportedIsolationLevelError` rather than returning success on
+> container-level networking. What is enforced: no inbound security-group rules,
+> `assignPublicIp: DISABLED`, egress limited to UDP 53 and TCP 443, and a
+> least-privilege task role. The remaining rows in this table are accurate. The
+> decision rationale below is preserved unchanged.
+
 | Requirement | Implementation |
 |-------------|----------------|
-| **Network Isolation** | Separate VPC, no peering, no transit gateway |
+| **Network Isolation** | Separate VPC, no peering, no transit gateway (**not implemented** -- see status note) |
 | **Data Isolation** | Synthetic/mock data only, no production DB access |
 | **Compute Isolation** | Dedicated ECS cluster, no shared task execution |
 | **Time Limits** | Auto-terminate after 2 hours |

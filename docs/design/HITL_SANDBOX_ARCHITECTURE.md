@@ -589,11 +589,28 @@ class ExpirationProcessor:
 
 ### 6.1 Sandbox Isolation
 
-**Network Isolation:**
+> **Status note (2026-08-28).** The network-isolation design below describes
+> intent, not shipped state. No dedicated sandbox VPC was ever deployed:
+> `deploy/cloudformation/sandbox.yaml` imports `VpcId` / `PrivateSubnetIds`
+> from the networking stack, so sandbox tasks run in the platform VPC's private
+> subnets. `ENFORCED_ISOLATION_LEVELS`
+> (`src/services/sandbox_network_service.py:79`) now limits the provisioning
+> path to `none` and `container`; `vpc` and `full` raise
+> `UnsupportedIsolationLevelError` instead of silently serving container-level
+> networking. Data isolation and compute isolation below are accurate. The
+> design intent is preserved as written for the historical record.
+
+**Network Isolation (design intent -- see status note above):**
 - Sandbox VPC completely isolated from production VPC
 - No VPC peering or transit gateway connections
 - NAT Gateway for outbound internet (package downloads only)
 - Security groups deny all inbound traffic
+
+**Network constraint as actually deployed:**
+- Sandbox tasks run in the platform VPC's private subnets, not a dedicated VPC
+- `SandboxSecurityGroup` declares no inbound rules
+- Egress limited to UDP 53 (DNS) and TCP 443, both to `0.0.0.0/0`
+- `assignPublicIp: DISABLED` on every task (`src/services/sandbox_network_service.py:750`)
 
 **Data Isolation:**
 - Sandbox uses synthetic/anonymized test data only

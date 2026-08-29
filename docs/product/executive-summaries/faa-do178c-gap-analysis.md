@@ -242,7 +242,9 @@ DO-178C requires retention of all life cycle data for the operational life of th
 
 ### 4.6 Isolation Testing Architecture
 
-Aura's Sandbox Security implements 4-layer isolation (separate VPC at 10.200.0.0/16, Security Groups, IAM explicit DENY, DNS isolation) with 5-category validation (Syntax, Unit Tests, Security Scans, Performance, Integration). Patches are tested in a fully isolated environment before any human reviewer sees them.
+Aura's Sandbox Security constrains patch validation with a restrictive security group (no inbound rules, no public IP, egress limited to UDP 53 and TCP 443), a least-privilege ECS task role that grants only the two sandbox DynamoDB tables, one log group and one S3 artifact prefix, and the per-environment AWS account boundary. Validation covers 5 categories (Syntax, Unit Tests, Security Scans, Performance, Integration), and patches are tested there before any human reviewer sees them.
+
+Aura does **not** provide a dedicated sandbox VPC. Sandbox tasks run in the platform VPC's private subnets; the `vpc` and `full` isolation levels are declared but refused with `UnsupportedIsolationLevelError` rather than served as container-level networking under a stronger name. See `ENFORCED_ISOLATION_LEVELS` in `src/services/sandbox_network_service.py:79`.
 
 This approach parallels Hardware-in-the-Loop (HIL) and Software-in-the-Loop (SIL) testing in aviation, where engine control software is validated in isolated, representative environments before integration with actual engine hardware.
 
@@ -441,7 +443,7 @@ No AI code generation or remediation tool has been certified for safety-critical
 | Agent capability restriction | Yes -- 4-tier classification | No | No | No | No |
 | Non-negotiable guardrails | Yes -- hardcoded frozenset | No | No | No | No |
 | Immutable audit trail | Yes -- 7-year DynamoDB | No | Limited | No | Limited |
-| Sandbox isolation testing | Yes -- 4-layer VPC isolation | No | No | No | No |
+| Sandbox isolation testing | Yes -- container-level (security group + least-privilege task role + account boundary); no dedicated sandbox VPC | No | No | No | No |
 | Supply chain attestation (SBOM) | Yes -- CycloneDX/SPDX/Sigstore | No | No | No | No |
 | Runtime behavioral monitoring | Yes -- baselines, drift detection | No | No | No | No |
 | Policy-as-code governance | Yes -- GitOps, drift reconciliation | No | No | No | No |
@@ -536,7 +538,7 @@ The path forward is not to wait for regulatory clarity but to close the engineer
 | Configurable Autonomy Framework | ADR-032 | N/A | N/A | Pre-Execution | 4 autonomy levels, 5 hardcoded guardrails |
 | Constitutional AI Integration | ADR-063 | 463 | N/A | Post-Generation | 16 principles, 410ms P95, up to 3 revisions |
 | Constraint Geometry Engine | ADR-081 | 358 | ~4.5K | Post-Generation | 7 constraint axes, deterministic scoring |
-| Sandbox Security | N/A | N/A | N/A | Sandbox/Approval | 4-layer isolation, 5-category validation, 99.2% success rate |
+| Sandbox Security | N/A | N/A | N/A | Sandbox/Approval | Container-level isolation, 5-category validation |
 | HITL Approval Workflow | N/A | N/A | N/A | Sandbox/Approval | 5-stage workflow, 3 decision options |
 | Real-Time Agent Intervention | ADR-042 | N/A | N/A | Sandbox/Approval | 6 intervention modes, WebSocket per-action checkpoints |
 | Runtime Agent Security Platform | ADR-083 | 1005 | ~10.3K | Continuous Monitoring | >99.5% traffic capture, <5ms P95, 97-technique red team |

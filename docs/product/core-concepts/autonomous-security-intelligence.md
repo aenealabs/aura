@@ -73,7 +73,10 @@ Aura uses foundation models from leading AI providers, accessed through AWS Bedr
 
 ### Chain of Draft (CoD) Prompting
 
-Aura uses an optimized prompting technique called Chain of Draft that reduces token usage by 92% while maintaining accuracy. Instead of verbose Chain of Thought reasoning, CoD produces concise, structured outputs.
+Aura uses a prompting technique called Chain of Draft. Instead of verbose
+Chain of Thought reasoning, CoD produces concise, structured outputs. The
+commonly cited 92% token reduction comes from the published CoD research,
+not from a measurement of Aura's own workloads.
 
 ```python
 # Traditional CoT approach (verbose)

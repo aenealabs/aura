@@ -535,7 +535,7 @@ The AI agent responsible for validating generated patches against security best 
 
 ### Sandbox {#sandbox}
 
-An isolated testing environment where patches are validated before reaching human reviewers. Aura sandboxes run in [Fargate](#fargate) with network isolation, resource limits, and automatic cleanup.
+An ephemeral testing environment where patches are validated before reaching human reviewers. Aura sandboxes run in [Fargate](#fargate) at container-level isolation (no inbound rules, no public IP, egress limited to UDP 53 and TCP 443, least-privilege task role), with resource limits and automatic cleanup. `container` is the strongest isolation level the provisioning path enforces; `vpc` and `full` are refused. See [Sandbox Security Model](../core-concepts/sandbox-security.md).
 
 **Validation categories:**
 1. Syntax validation (compiles without errors)

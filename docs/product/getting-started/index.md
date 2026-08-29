@@ -172,31 +172,35 @@ All records are retained for 7 years to meet SOX and other regulatory requiremen
 
 ---
 
-## Use Cases
+## Intended Use Cases
+
+These are the workflows Aura is designed for. They are illustrative scenarios,
+not customer deployments -- Aura has no customer codebases onboarded, so no
+outcome figures are quoted.
 
 ### Enterprise Security Team
 
-A defense contractor with 500+ vulnerabilities in their backlog uses Aura to automate remediation. The platform generates patches for 80% of issues autonomously, allowing security engineers to focus on complex vulnerabilities that require human judgment.
-
-**Outcome:** MTTR reduced from 45 days to 4 hours, CMMC Level 2 certification achieved.
+A team with a large vulnerability backlog uses Aura to automate remediation.
+The platform generates candidate patches autonomously so security engineers can
+concentrate on the vulnerabilities that need human judgement.
 
 ### DevSecOps Pipeline Integration
 
-A financial services company integrates Aura into their CI/CD pipeline. Security scanning runs on every pull request, and low-severity issues are automatically patched. High-severity findings trigger approval workflows for security team review.
-
-**Outcome:** 90% reduction in security-related deployment delays, zero production incidents from auto-patched code.
+Aura runs inside a CI/CD pipeline. Security scanning executes on every pull
+request; lower-severity issues are patched automatically, while higher-severity
+findings raise an approval workflow for security review.
 
 ### Regulated Industry Deployment
 
-A healthcare SaaS provider deploys Aura in their AWS GovCloud environment. HIPAA-compliant audit trails track every remediation action, and quarterly compliance reports are generated automatically.
-
-**Outcome:** Successful audit completion, 65% reduction in compliance documentation effort.
+An organisation with regulatory obligations uses Aura's audit trail to record
+every remediation action and to generate periodic compliance reports. Note that
+GovCloud deployment is planned rather than available -- see the roadmap.
 
 ### Incident Response Acceleration
 
-A technology company uses Aura's Runtime Incident Agent to accelerate root cause analysis. When production incidents occur, the agent correlates error logs with recent deployments and code changes, generating remediation hypotheses with confidence scores.
-
-**Outcome:** Mean Time to Resolution reduced by 70%, fewer repeat incidents.
+The Runtime Incident Agent correlates error logs with recent deployments and
+code changes when a production incident occurs, producing remediation
+hypotheses with confidence scores to shorten root-cause analysis.
 
 ---
 

@@ -157,8 +157,15 @@ All customer data is processed within dedicated VPC infrastructure with strict n
 |-----------|----------------|----------------|
 | Application Services | Private Subnets | VPC Endpoints only |
 | Database Layer | Isolated Subnets | No internet access |
-| Sandbox Environments | Fully Isolated | No egress, read-only data |
+| Sandbox Environments | Container-level (see note) | No inbound, no public IP, egress limited to UDP 53 + TCP 443 |
 | API Gateway | Public Subnet (ALB) | WAF-protected ingress |
+
+**Sandbox note.** Sandbox tasks run in the platform VPC's private subnets, not
+in a dedicated sandbox VPC. `container` is the strongest isolation level the
+provisioning path enforces; `vpc` and `full` are declared on
+`NetworkIsolationLevel` but refused with `UnsupportedIsolationLevelError`. See
+`ENFORCED_ISOLATION_LEVELS` in `src/services/sandbox_network_service.py:79` and
+[Sandbox Security Model](../core-concepts/sandbox-security.md).
 
 ### AI-Specific Security Controls
 

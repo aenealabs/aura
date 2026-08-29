@@ -25,6 +25,14 @@ pytest -n auto                         # Parallel execution
 pytest -m integration                  # Integration tests only
 ```
 
+`TESTING=true` is set for the whole run by `tests/conftest.py` (via
+`os.environ.setdefault`, so a test that deliberately wants the production
+branch can still override it). Several endpoints branch on `TESTING` before
+constructing a boto3 client -- `src/api/settings_endpoints.py:420` (log
+retention sync Lambda) and `:893` (compliance settings sync Lambda) are the
+current two. Assert the *guard short-circuits*, not that the variable is set;
+see `tests/test_production_guards.py`.
+
 A per-test wall-clock cap of 120 seconds is enforced via `pytest-timeout`
 (`--timeout=120 --timeout-method=thread` in default `addopts`). Override
 for legitimately long tests via `@pytest.mark.timeout(N)` at the file or
@@ -53,12 +61,111 @@ three runs on the target environment plus explicit reviewer sign-off.
 
 ---
 
+## Parallel Execution (`pytest -n auto`)
+
+`-n auto` is supported and is expected to produce the same result as a serial
+run. `tests/services/test_constraint_geometry/` was the last known directory
+where it did not: it passed 403/403 serially and failed 134 of 403 under
+xdist. Fixed in #412; that directory now runs 190 items and passes identically
+with and without `-n auto`.
+
+**Anti-pattern that caused it -- do not reintroduce.** Five parametrized tests
+stashed a baseline on the test *class* on the first parameter value and read it
+back on later ones:
+
+```python
+# WRONG -- writer and readers land on different xdist workers
+if iteration == 0:
+    TestCalculatorDeterminism._baseline_coherence = score.coherence
+else:
+    assert score.coherence == TestCalculatorDeterminism._baseline_coherence
+```
+
+xdist distributes parametrized cases across worker *processes*. The case that
+writes the attribute routinely lands on a different worker from the ones that
+read it, and the readers fail with `AttributeError`.
+
+**Rule:** never carry state between parametrized cases via a class attribute,
+module global, or any other cross-item channel. For a determinism assertion,
+repeat inside a single test and compare every result against every other -- it
+is parallel-safe and a stronger assertion than comparing each result against
+one arbitrary baseline. That change also drops item count (403 -> 190 in that
+directory) without dropping computations; the same work runs inside the tests
+rather than as separate items.
+
+Two latent defects were found in the same file and are worth recognising as
+classes:
+
+- An assertion comparing a value to itself (`assert result == pytest.approx(result, abs=0)`)
+  passes unconditionally regardless of the code under test.
+- An `expected` constant declared but never asserted, whose value did not match
+  the real output. Anyone "completing" the test by asserting against it would
+  have broken the build.
+
+The class-attribute pattern was swept out of the whole tests tree in #412 and
+verified with a positive control against the parent commit (7 writes before,
+0 after).
+
+---
+
 ## Mock Patterns
 
 - Use mocks for external service boundaries (AWS APIs, LLM calls)
 - Do NOT mock internal service interfaces unless testing failure scenarios
 - Integration tests should validate real service interactions where feasible
 - See `docs/reference/TESTING_STRATEGY.md` for the full testing pyramid and mock rationale
+
+---
+
+## Tests Cannot Reach Real AWS
+
+**Mocking AWS is no longer opt-in.** Two autouse fixtures in `tests/conftest.py`
+apply to every test:
+
+- `_fake_aws_credentials_everywhere` (session-scoped) sets fake credentials for
+  the whole run via `setdefault`. It does **not** overwrite a real credential
+  you have exported -- blocking that is the other fixture's job. Its purpose is
+  to make request signing possible so a failure surfaces as a named blocked
+  call instead of an opaque `NoCredentialsError`.
+- `_block_unmocked_aws_calls` (function-scoped) patches `URLLib3Session.send`
+  and raises `UnmockedAWSCallError` naming the method and URL.
+
+The patch sits at the HTTP transport layer rather than at botocore's
+`before-send` event because moto registers its interception *at* `before-send`
+via `BUILTIN_HANDLERS`; a guard there would race moto's handler and depend on
+registration order. At the transport layer the semantics are unambiguous: moto
+short-circuits above it, so anything arriving is by definition unmocked.
+
+**What the failure looks like:**
+
+```
+UnmockedAWSCallError: Unmocked AWS call: POST https://ssm.us-east-1.amazonaws.com/
+Tests must not reach real AWS. Use the moto fixtures (mock_aws_services,
+mock_dynamodb, mock_s3) or mock the client. If this fired from production code,
+check that its test-mode guard is keyed off TESTING rather than an AWS
+environment variable.
+```
+
+**How to fix it:**
+
+1. Wrap the test in a moto fixture (`mock_aws_services`, `mock_dynamodb`,
+   `mock_s3`) or `mock_aws()`, or patch the client directly.
+2. If the call came from production code rather than the test, the code's
+   test-mode guard is wrong. Key it off `TESTING`, never off an AWS environment
+   variable. `src/agents/spawnable_agent_adapters.py` used
+   `use_mock = not AWS_DEFAULT_REGION and not AWS_REGION`, which conflates "a
+   region is configured" with "we are in production" -- `AWS_DEFAULT_REGION` is
+   exported in most shell profiles, so unit tests silently selected the real
+   service and reached SSM Parameter Store. That was a real bug the guard caught
+   on its first run (#411).
+3. Only if the test genuinely needs the real transport (a contract test against
+   a local endpoint, say), unpatch locally. The fixture restores the original
+   in a `finally`, so the patch cannot leak into the next test.
+
+A guard that fires under moto would be worse than no guard, so
+`tests/test_aws_call_guard.py` asserts both directions: fires on a real call,
+stays silent under `mock_aws()` including a create/put/get round trip. Keep it
+that way if you touch the guard.
 
 ---
 

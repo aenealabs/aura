@@ -11,6 +11,12 @@ Author: Project Aura Team
 Created: 2025-12-12
 """
 
+import os
+import pathlib
+import subprocess
+import sys
+import textwrap
+
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
@@ -330,6 +336,69 @@ class TestSecureExceptionHandler:
         client = TestClient(base_app, raise_server_exceptions=False)
 
         assert "debug" in client.get("/error").json()
+
+    @pytest.mark.parametrize(
+        "env_overrides,expect_debug",
+        [
+            # The regression this guards: main.py used to pass its own
+            # "dev" fallback, so an unset ENVIRONMENT honored DEBUG=true and
+            # the middleware's "prod" default was unreachable through main.
+            ({"ENVIRONMENT": None}, False),
+            ({"ENVIRONMENT": ""}, False),
+            ({"ENVIRONMENT": "   "}, False),
+            ({"ENVIRONMENT": "prod"}, False),
+            ({"ENVIRONMENT": "production"}, False),
+            ({"ENVIRONMENT": "qa"}, False),
+            ({"ENVIRONMENT": "dev"}, True),
+            ({"ENVIRONMENT": "DEV"}, True),
+            ({"ENVIRONMENT": "  Dev  "}, True),
+        ],
+    )
+    def test_main_wires_debug_interlock(self, env_overrides, expect_debug):
+        """main.py must not hand the middleware a dev default it invented.
+
+        Exercises the real wiring: imports src.api.main under a controlled
+        environment, pulls the kwargs it actually passed for
+        SecureExceptionMiddleware, and builds the real class from them. A
+        middleware-level test cannot catch a regression here, because the
+        defect was main.py passing the wrong value, not the middleware
+        mishandling it.
+
+        Runs in a subprocess so the repeated import cannot mutate this
+        process's module cache (the issue #194 class -- see tests/CLAUDE.md).
+        """
+        script = textwrap.dedent("""
+            import src.api.main as m
+            from src.api.security_middleware import SecureExceptionMiddleware
+
+            entry = next(
+                x for x in m.app.user_middleware
+                if x.cls.__name__ == "SecureExceptionMiddleware"
+            )
+            mw = SecureExceptionMiddleware(app=None, **entry.kwargs)
+            print("DEBUG_RESOLVED=%s" % mw.debug)
+            """)
+        env = dict(os.environ)
+        env["TESTING"] = "true"
+        env["DEBUG"] = "true"  # always requested; the interlock decides
+        for key, value in env_overrides.items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
+
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=str(pathlib.Path(__file__).resolve().parent.parent),
+            env=env,
+            timeout=180,
+        )
+        assert result.returncode == 0, result.stderr[-3000:]
+        assert (
+            f"DEBUG_RESOLVED={expect_debug}" in result.stdout
+        ), f"stdout={result.stdout!r} stderr={result.stderr[-2000:]!r}"
 
     def test_request_id_in_error_response(self, base_app):
         """Test that request ID is included in error response."""

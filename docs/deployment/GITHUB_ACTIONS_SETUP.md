@@ -76,6 +76,22 @@ Python job.
 | `.github/workflows/code-quality.yml` | Run | Only if templates also changed | Run |
 | Diff window unresolvable | Run | Run | Run |
 
+**The detectors key on path prefixes, not on file type.** `python_changed` matches
+`^(src/|tests/|requirements.*\.txt$|pyproject\.toml$|setup\.(py|cfg)$|\.github/workflows/code-quality\.yml$)`
+(`code-quality.yml:132`). There is no `.md` exclusion, so **a markdown-only edit under `src/` or
+`tests/` runs the full Python job** -- torch install, Black, Flake8, MyPy, Bandit and the whole
+pytest suite. This is not hypothetical: #420 changed one file, `tests/CLAUDE.md`, and its
+`Python Quality & Tests` job ran 19m44s (run `33238518088`, `06:27:55Z` to `06:47:39Z`, against a
+`timeout-minutes` ceiling of 25). Markdown anywhere else in the tree, including `docs/`, costs
+nothing.
+
+The full run buys no coverage that a markdown diff does not already get: the `pre-commit` step runs
+unconditionally regardless of `python_changed` and carries the markdown hooks. Narrowing the pattern
+would be safe in principle -- but it is a change to a required check, so the fail-safe direction
+matters more than the minutes, and the current behaviour errs the right way. Flagged rather than
+changed; if it is fixed, exclude `.md` explicitly rather than enumerating Python extensions, so a new
+Python file type cannot silently fall outside the gate.
+
 Three properties are deliberate:
 
 1. **Trigger paths and job-body gating are separate mechanisms.** `deploy/cloudformation/**` and
@@ -363,7 +379,9 @@ precisely so the gate cannot report green without exercising itself.
 ### Job Timeouts (the enforced ceiling, not an observed average)
 
 `code-quality.yml` caps each job with `timeout-minutes`. These are the only minute figures in this
-document that are verifiable from the repository; per-run durations vary and are not tracked here.
+document verifiable from the repository itself; per-run durations vary and are not tracked here. The
+one per-run duration quoted in "Change detection" above is attributed to a specific run ID so it can
+be re-checked, and is an observation of that run rather than an average.
 
 | Job | `timeout-minutes` |
 |---|---|

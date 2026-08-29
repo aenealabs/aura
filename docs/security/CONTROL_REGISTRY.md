@@ -1,7 +1,7 @@
 # Control Registry - Aura Internal Security Controls
 
 **Status:** Active
-**Version:** 1.2.0
+**Version:** 1.3.0
 **Last Updated:** 2026-08-29
 
 ---
@@ -70,6 +70,7 @@ history can reference a control without disclosing who asked for it or how they 
 |----|---------|--------|----------------|------------|
 | `AURA-CTL-001` | **Model I/O Audit Logging** -- Bedrock model invocation input and output are captured as audit records. Every record is delivered in full to an encrypted S3 corpus; CloudWatch Logs, encrypted with a customer-managed key, carries the same records for operational query, with bodies over 100 KB referenced from S3 rather than dropped. | **Implemented, not deployed** | `deploy/cloudformation/bedrock-invocation-logging.yaml` (Layer 4.15) | NIST 800-53 AU-2, AU-3, AU-9, AU-11, SC-28 |
 | `AURA-CTL-002` | **Sandbox Network Boundary Truthfulness** -- the sandbox provisioning path refuses any network isolation level it does not actually enforce, instead of accepting the request and provisioning a weaker boundary under the stronger name. `ENFORCED_ISOLATION_LEVELS` is the single source of truth for what is implemented. | Implemented | `src/services/sandbox_network_service.py:79` (`ENFORCED_ISOLATION_LEVELS`, `UnsupportedIsolationLevelError`); `deploy/cloudformation/sandbox.yaml` (Layer 7.1) | NIST 800-53 SC-7, SC-7(21), AC-4, SA-4(9), CM-4 |
+| `AURA-CTL-003` | **Error Response Detail Suppression** -- unhandled API exceptions return a generic body. The exception message is never included in any environment, and a debug request is honored only where the resolved environment is debug-safe. Full detail is logged server-side against the `request_id` the caller receives. | Implemented | `src/api/security_middleware.py:34` (`DEBUG_SAFE_ENVIRONMENTS`), `:283-301` (interlock), `:334-341` (response body); `src/api/main.py:395`, `:481` (wiring) | NIST 800-53 SI-11, AU-3, AU-9, CM-7(1) |
 
 ---
 
@@ -233,6 +234,87 @@ live path implements: `NONE` and `CONTAINER`.
 - Verification that the refusal is live: call
   `FargateSandboxOrchestrator.create_sandbox(..., isolation_level="full")` and
   confirm `UnsupportedIsolationLevelError` with no ECS `RunTask` attempted.
+
+---
+
+## AURA-CTL-003: Error Response Detail Suppression
+
+> **Status: Implemented (as of 2026-08-29).** This control is in force on the code path from the
+> moment the application starts; it configures no infrastructure and has no deployment dependency,
+> which is why it is `Implemented` rather than `Implemented, not deployed`. **This is a statement
+> about the code path, not about a running estate** -- dev and qa are spun down, so the control has
+> not been observed operating against live traffic. Verification to date is the unit suite in
+> `tests/test_security_middleware.py`, plus the fault injection recorded in `fc9ab72` (restoring
+> `"message": str(e)` fails `test_debug_never_returns_exception_message`; reverting it passes, while
+> the interlock tests stay green under the injection, confirming the two mechanisms are tested
+> independently rather than one masking the other).
+
+### Requirement
+
+An unhandled exception must not become a disclosure channel. Exception text produced deep in a
+service routinely embeds the operational detail that produced it -- connection strings, ARNs, account
+identifiers, fragments of the request body -- and an error response is reachable by whoever sent the
+request. Detail needed for diagnosis belongs in the server log, correlated to the request, not in the
+response.
+
+### Implementation
+
+Defined by `SecureExceptionMiddleware` in `src/api/security_middleware.py`. Two mechanisms, either of
+which is sufficient on its own; both are present deliberately.
+
+- **The message is never returned.** The response body names the exception and points at the log:
+  `{"exception": "<type name>", "detail": "<pointer to the server log>"}` (`:334-341`). `str(e)` is
+  absent from the response in every environment, debug or not. Nothing is lost -- `logger.exception`
+  at `:312` has already recorded the message and the full traceback against the same `request_id`
+  that the caller receives in the body and on the `X-Request-ID` header.
+- **A debug request is checked against the environment, not trusted.** `DEBUG_SAFE_ENVIRONMENTS`
+  (`:34`) is a module-level frozenset naming the four environments where a debug body is permitted:
+  `dev`, `development`, `local`, `test`. The constructor (`:283-301`) resolves the environment,
+  normalizes it with `.strip().lower()`, and drops `debug` with a logged `ERROR` if the environment
+  is not in that set. The check is in `__init__`, so the refusal is decided once at startup rather
+  than per request.
+
+The interlock exists because the two variables were independent. `main.py` reads `DEBUG` as its own
+variable (`main.py:443`) with no relationship to `ENVIRONMENT`, so a single stray `DEBUG=true` on a
+production deployment previously turned every unhandled exception into `str(e)` on the wire. `main.py`
+now passes the canonical resolution of `ENVIRONMENT` through (`main.py:481`), so the two cannot
+disagree, and the middleware re-checks rather than relying on the call site having done so.
+
+### Scope and limitations
+
+- **The `prod` fail-closed default applies to the assembled application.** `main.py` passes the raw
+  resolution of `ENVIRONMENT` -- `None` when unset or blank -- so the middleware's own `prod`
+  fallback (`:284`) is reached rather than bypassed. With `ENVIRONMENT` unset, `DEBUG=true` is
+  refused. This was not true when the control was first recorded: `main.py` passed its own `dev`
+  fallback, so an unconfigured deployment honored `DEBUG=true` and the fail-closed default protected
+  only a direct consumer of the middleware. Residual exposure in that state was the exception *type
+  name* only, since the first mechanism withholds the message unconditionally. Corrected in the same
+  change that added `test_main_wires_debug_interlock`, which pins the wiring rather than the
+  middleware in isolation.
+- **`ENVIRONMENT` is normalized once** (`main.py:395`, `.strip().lower()`, blank treated as unset)
+  and every environment-dependent decision derives from that value, so case and whitespace cannot
+  make two decisions disagree. Two derived defaults remain, deliberately: `dev` for HSTS and the
+  docs gate, the raw value for the debug interlock. Both are tabulated in
+  `docs/runbooks/API_DEBUG_ERROR_RESPONSES.md`. Normalizing also closed a separate fail-open: a
+  padded `ENVIRONMENT="  prod  "` previously failed to match `("prod", "production")` and skipped
+  the CORS empty-origin refusal in production.
+- **Scope is unhandled exceptions reaching this middleware.** Detail deliberately returned by an
+  endpoint's own error handling, by FastAPI request validation, or by a handler that catches and
+  formats its own failure, is outside this control.
+
+### Evidence
+
+- `DEBUG_SAFE_ENVIRONMENTS` is the assertable artifact: a module constant, not a config value, so the
+  permitted set cannot drift at runtime.
+- `tests/test_security_middleware.py::TestSecureExceptionHandler` covers refusal across `prod`,
+  `production`, `qa` and `staging`; the unset-`ENVIRONMENT` path; case and whitespace normalization;
+  that the debug body names the type; and that the raised message never appears in the response text.
+- Verification that the suppression is live: issue a request that raises, and confirm the response
+  contains no exception message while the service log carries the message and traceback under the
+  same `request_id`. Procedure in `docs/runbooks/API_DEBUG_ERROR_RESPONSES.md`.
+- Verification that the interlock is live: start the application with `DEBUG=true` and
+  `ENVIRONMENT=prod` and confirm the startup log carries `Debug error responses requested but
+  refused: environment=prod ...` at `ERROR`, and that a 500 response carries no `debug` key.
 
 ---
 

@@ -81,6 +81,14 @@ separate `buildspec-validation.yml`. Which ones fire depends on which tree you t
 | `frontend/**` | `Frontend Quality & Tests` (#415) |
 | `src/`, `tests/`, Python config | Full Python steps in `Python Quality & Tests` |
 
+The `src/` and `tests/` row keys on the **path prefix only**. The `python_changed` detector
+(`code-quality.yml:132`) matches bare `^src/` and `^tests/` with no `.md` exclusion, so a
+markdown-only edit under either tree runs the entire Python job. #420 changed one file,
+`tests/CLAUDE.md`, and its `Python Quality & Tests` job ran 19m44s (run `33238518088`). Markdown
+elsewhere, including `docs/`, costs nothing. The `pre-commit` step runs unconditionally and already
+covers markdown, so the full run adds no signal -- but it is a required check, so it fails in the
+safe direction. See `docs/deployment/GITHUB_ACTIONS_SETUP.md`.
+
 Two consequences that matter when editing a buildspec:
 
 1. **A buildspec change does not run cfn-lint.** The PR-level template gate added in #406 keys on

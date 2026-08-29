@@ -873,6 +873,30 @@ These variables **must** be set in production deployments:
 
 **Note:** `AWS_ACCOUNT_ID` is automatically retrieved via STS `get_caller_identity()` if not set.
 
+**`ENVIRONMENT` is security-relevant, not just a label.** It gates HSTS, the interactive API docs
+(`/docs`, `/redoc`, `/openapi.json`), the CORS empty-origin refusal, and whether `DEBUG` is honored
+at all. It is normalized once at startup, but two derived defaults exist by design: an unset value
+behaves as `dev` for HSTS and the docs gate, and as `prod` for the debug interlock, so leaving it
+unset does not produce one uniform posture -- see `docs/runbooks/API_DEBUG_ERROR_RESPONSES.md`. Set
+it explicitly in every deployed environment.
+
+### Error Response and Debug Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DEBUG` | Requests a richer body on unhandled-exception (500) responses. **Honored only when `ENVIRONMENT` is one of `dev`, `development`, `local`, `test`.** Anywhere else the request is refused and logged at `ERROR` once at startup. | `false` |
+
+What `DEBUG=true` adds, where it is honored, is a `debug` object naming the exception **type** and
+pointing at the server log. **The exception message is never in the response, in any environment.**
+It is recorded server-side by `logger.exception` against the same `request_id` returned in the body
+and on the `X-Request-ID` response header; correlate on that value.
+
+Setting `DEBUG=true` on a production deployment to diagnose an incident will not produce additional
+output. The procedure that does is in `docs/runbooks/API_DEBUG_ERROR_RESPONSES.md`.
+
+Note that this `DEBUG` variable is an error-response flag and is unrelated to the `DEBUG` **log
+level** described in `docs/standards/LOGGING_STANDARDS.md`.
+
 ### Service Configuration Variables
 
 These variables configure service endpoints and contact information. Defaults use `*.aura.local` for local development and service discovery.

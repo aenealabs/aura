@@ -381,11 +381,29 @@ def get_anomaly_triggers() -> AnomalyTriggers | None:
 # FastAPI Application
 # ============================================================================
 
+# Canonical resolution of ENVIRONMENT, shared by every environment-dependent
+# decision in this module. Three sites used to read the variable independently
+# and could disagree: one normalized case and two did not, and only one treated
+# a blank value as unset. ENVIRONMENT="" is not None, so it slipped past an
+# `is None` check and yielded a different answer at each site with no warning.
+# Normalizing once here means case, surrounding whitespace and blankness cannot
+# make two security decisions disagree.
+#
+# _environment_configured is None when nothing usable was set. Callers pick
+# their own default from it, because the safe default is not the same for every
+# decision -- see the HSTS and debug wiring further down.
+_environment_configured: str | None = (
+    os.environ.get("ENVIRONMENT") or ""
+).strip().lower() or None
+
+# Development-friendly default, for decisions where an unconfigured environment
+# should behave like a developer laptop.
+_environment = _environment_configured or "dev"
+
 # Disable interactive API docs (/docs, /redoc) in production. They reveal
 # the full endpoint surface and schema map and don't add value to authenticated
-# clients in prod. Gated on the canonical ENVIRONMENT variable used elsewhere.
-_env_for_docs = (os.environ.get("ENVIRONMENT") or "dev").lower()
-_docs_enabled = _env_for_docs not in ("prod", "production")
+# clients in prod.
+_docs_enabled = _environment not in ("prod", "production")
 
 app = FastAPI(
     title="Project Aura API",
@@ -407,7 +425,7 @@ cors_origins_raw = os.environ.get(
     "http://localhost:3000,http://localhost:5173",
 )
 cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
-if not cors_origins and _env_for_docs in ("prod", "production"):
+if not cors_origins and _environment in ("prod", "production"):
     raise RuntimeError(
         "CORS_ALLOWED_ORIGINS is empty in production. Refusing to start with "
         "permissive CORS posture."
@@ -428,17 +446,19 @@ app.add_middleware(
 )
 
 # Security middleware (headers, request ID, size limits, exception handling)
-# Enable HSTS in production, disable in development
-# Explicit validation: ENVIRONMENT should always be set in deployed environments
-_environment = os.environ.get("ENVIRONMENT")
-if _environment is None:
+# Enable HSTS in production, disable in development.
+# ENVIRONMENT should always be set in deployed environments; warn when it is
+# not. The check is against the normalized value, so ENVIRONMENT="" and
+# ENVIRONMENT="   " now warn like a genuinely unset variable instead of
+# silently passing an `is None` test.
+if _environment_configured is None:
     import logging as _logging
 
     _logging.warning(
         "ENVIRONMENT not set, defaulting to 'dev'. "
-        "HSTS will be disabled. Set ENVIRONMENT=prod for production security."
+        "HSTS will be disabled and debug error responses will be refused. "
+        "Set ENVIRONMENT=prod for production security."
     )
-    _environment = "dev"
 enable_hsts = _environment != "dev"
 debug_mode = os.environ.get("DEBUG", "false").lower() == "true"
 add_security_middleware(
@@ -446,10 +466,19 @@ add_security_middleware(
     enable_hsts=enable_hsts,
     max_content_length=10 * 1024 * 1024,  # 10 MB
     debug=debug_mode,
-    # DEBUG is read independently of ENVIRONMENT above, so pass the
-    # environment through: the middleware refuses debug error responses
-    # outside dev/test rather than trusting this call site.
-    environment=_environment,
+    # Deliberately the raw resolution, not `_environment`.
+    #
+    # DEBUG is read independently of ENVIRONMENT, so the middleware, not this
+    # call site, decides whether debug responses are allowed. Passing
+    # `_environment` would defeat that: when ENVIRONMENT is unset it is "dev",
+    # which is in DEBUG_SAFE_ENVIRONMENTS, so DEBUG=true would be honored on an
+    # unconfigured deployment and the middleware's own "prod" default would
+    # never be reachable through this module.
+    #
+    # "dev" is the right default for HSTS and the docs gate -- forcing HSTS on
+    # a developer laptop breaks local HTTP -- and the wrong one for returning
+    # exception detail. Passing None lets each side keep its own safe default.
+    environment=_environment_configured,
 )
 
 # API latency tracking middleware (optimization #10)

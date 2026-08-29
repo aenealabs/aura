@@ -100,7 +100,7 @@ phases:
         # Get base image URIs from ECR Base Images stack (controlled supply chain)
         BASE_IMAGES_STACK="${PROJECT_NAME}-ecr-base-images-${ENVIRONMENT}"
         NODE_BASE_IMAGE_URI=$(aws cloudformation describe-stacks --stack-name $BASE_IMAGES_STACK \
-          --query 'Stacks[0].Outputs[?OutputKey==`NodeRepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION):20-alpine
+          --query 'Stacks[0].Outputs[?OutputKey==`NodeRepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION):22-alpine
         NGINX_BASE_IMAGE_URI=$(aws cloudformation describe-stacks --stack-name $BASE_IMAGES_STACK \
           --query 'Stacks[0].Outputs[?OutputKey==`NginxRepositoryUri`].OutputValue' --output text --region $AWS_DEFAULT_REGION):1.25-alpine
 

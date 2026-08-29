@@ -331,6 +331,76 @@ Registered as **`AURA-CTL-002`** (Sandbox Network Boundary Truthfulness) in `doc
 
 ---
 
+### API Error-Response Disclosure (#421, 2026-08-29) -- in the code path, not deployed anywhere
+
+`fc9ab72` closed CodeQL alert #288 (`py/stack-trace-exposure`, medium) in
+`src/api/security_middleware.py`. Three user-visible behaviour changes, none of which had any
+documentation before this note. Registered as **`AURA-CTL-003`** (Error Response Detail Suppression)
+in `docs/security/CONTROL_REGISTRY.md`, status `Implemented` -- the control configures no
+infrastructure and is in force from application start, which is a different claim from "deployed".
+Dev and qa are spun down; it has not been observed against live traffic.
+
+| Change | Before | After |
+|---|---|---|
+| Exception message in the response | `str(e)` returned whenever the debug flag was set | Never returned, in any environment. The debug body is `{"exception": "<type name>", "detail": "<pointer to the server log>"}` |
+| `DEBUG=true` | Read as a wholly independent variable, unrelated to `ENVIRONMENT` | Honored only when the environment is in `DEBUG_SAFE_ENVIRONMENTS` (`dev`, `development`, `local`, `test`); refused elsewhere with an `ERROR` logged once at startup |
+| Environment resolution in the middleware | Not resolved; the call site was trusted | Resolved and normalized in `__init__`, falling back to `prod` when the constructor gets no `environment` argument |
+
+Nothing is lost by removing `str(e)`: `logger.exception` already recorded the message and the full
+traceback against the same `request_id` the caller receives in the body and on the `X-Request-ID`
+header. Returning it again duplicated log content into an attacker-reachable channel, where it
+routinely carried connection strings, ARNs and request-body fragments.
+
+**The operational consequence, which is why a runbook exists.** The realistic failure is an engineer
+debugging a production incident who sets `DEBUG=true`, sees no change in the response, and has no way
+to know why -- the refusal is logged, but only discoverable after the fact, and at *startup* rather
+than around the failing request. `docs/runbooks/API_DEBUG_ERROR_RESPONSES.md` is the documented
+answer: what to set, what it produces, and how to pull the exception detail out of the server log by
+`request_id` (including passing an inbound `X-Request-ID` to choose the correlation value up front).
+
+**Corrected before the documentation landed.** The first version of this fix did not actually fail
+closed on the assembled application. The middleware's `prod` fallback is reached only when
+`SecureExceptionMiddleware` is constructed with no `environment` argument, and `main.py` always
+passes one -- originally its own `dev` fallback for an unset `ENVIRONMENT`. An unconfigured
+deployment therefore resolved to `dev` and honored `DEBUG=true`; the fail-closed default protected a
+direct consumer of the middleware, not this application. Residual exposure was the exception type
+name only, since the message is withheld unconditionally.
+
+`main.py` now normalizes `ENVIRONMENT` once (`main.py:395`) and passes the raw resolution -- `None`
+when unset or blank -- so the middleware's default applies. `dev` remains the default for HSTS and
+the docs gate, where forcing HSTS on a developer laptop would break local HTTP. Normalizing once
+also closed a separate fail-open found in the process: a padded `ENVIRONMENT="  prod  "` did not
+match `("prod", "production")` and so skipped the CORS empty-origin refusal in production.
+`test_main_wires_debug_interlock` pins the wiring by importing `main.py` under nine environment
+configurations; reverting the one-line wiring change fails exactly the three unset/blank cases.
+
+Verified by fault injection in the PR: restoring `"message": str(e)` fails
+`test_debug_never_returns_exception_message`, and the interlock tests stay green under that
+injection, confirming the two mechanisms are tested independently rather than one masking the other.
+
+**Also closed in #421:** CodeQL #84 / #85 (`py/incomplete-url-substring-sanitization`) in the
+ticketing connector tests -- false positives on the rule, but genuinely weak assertions, so fixed
+rather than re-dismissed. `assert "<host>" in caplog.text` passed if the host appeared in any record
+from any logger; both now select the record from the connector's own logger, assert exactly one was
+emitted, and compare the message exactly. **Left open and recorded here:** of the 32 alerts of that
+rule dismissed together as "used in tests", #55 and #56 are in production code
+(`src/services/env_validator/validators/configmap.py`), so the dismissal reason is wrong for those
+two. Both are detection-widening predicates deciding whether to run a manifest check, where an
+over-broad match validates more rather than less. Not changed; the mismatch is on record.
+
+**CI finding from the same session (verified, not inferred).** The `python_changed` detector at
+`.github/workflows/code-quality.yml:132` keys on the bare `^src/` and `^tests/` prefixes with no
+`.md` exclusion, so a markdown-only edit under either tree runs the full Python job. #420 did exactly
+that via `tests/CLAUDE.md`: its `Python Quality & Tests` job ran 19m44s (run `33238518088`, `06:27:55Z`
+to `06:47:39Z`; `timeout-minutes` ceiling is 25). The run buys no coverage a markdown diff does not
+already have -- the `pre-commit` step runs unconditionally and carries the markdown hooks -- but the
+job is a required check, so the current behaviour errs in the safe direction. Flagged rather than
+changed, and documented in `docs/deployment/GITHUB_ACTIONS_SETUP.md` and
+`deploy/buildspecs/CLAUDE.md`. If it is fixed, exclude `.md` explicitly rather than enumerating
+Python extensions, so a new Python file type cannot silently fall outside the gate.
+
+---
+
 ### Integrations & Deployment
 
 | Component | Status | Details |

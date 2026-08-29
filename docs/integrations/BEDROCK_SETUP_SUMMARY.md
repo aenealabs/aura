@@ -490,7 +490,7 @@ You'll know everything is working when:
 
 ---
 
-**Built by:** Claude (Anthropic)
+**Built by:** Project Aura Team
 **For:** Project Aura
 **Date:** November 2025
 **Version:** 1.0

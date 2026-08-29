@@ -414,6 +414,7 @@ Additive to the root `CLAUDE.md`; loaded automatically when working in the direc
 | [runbooks/COGNITO_FAILOVER_RUNBOOK.md](runbooks/COGNITO_FAILOVER_RUNBOOK.md) | DR-2 (#145): Cognito cross-region failover via Lambda-based user-mirror Global Table + standby pool + hydrator (ADR-091) |
 | [runbooks/MULTI_REGION_DR_OPERATIONS.md](runbooks/MULTI_REGION_DR_OPERATIONS.md) | DR-7 (#150): End-to-end multi-region failover orchestration -- prerequisites, 4-phase failover sequence (initiate / data-plane / traffic / rollback), drill cadence; composes the Neptune / OpenSearch / Cognito per-service runbooks |
 | [runbooks/DR_COMPLIANCE_CONTROLS_GUIDE.md](runbooks/DR_COMPLIANCE_CONTROLS_GUIDE.md) | DR-8 (#151): NIST 800-53 compliance controls (Sally's seven) -- two-person approval, evidence packages, drill-cadence enforcement, Signer profile, session recording |
+| [runbooks/API_DEBUG_ERROR_RESPONSES.md](runbooks/API_DEBUG_ERROR_RESPONSES.md) | `AURA-CTL-003` (#421): why `DEBUG=true` produces no extra output outside dev/test, how to pull exception detail from the server log by `request_id`, and the three `ENVIRONMENT` resolutions on the startup path |
 
 ### Operations (docs/operations/)
 | File | Purpose |

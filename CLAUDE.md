@@ -114,7 +114,7 @@ Read on-demand only. The full path map lives in `docs/DOCUMENTATION_INDEX.md`; t
 ```
 aura-base-images/python:3.11-slim
 aura-base-images/alpine:3.19
-aura-base-images/node:20-slim
+aura-base-images/node:22-alpine
 aura-base-images/nginx:1.25
 ```
 

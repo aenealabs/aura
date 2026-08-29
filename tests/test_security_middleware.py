@@ -261,9 +261,11 @@ class TestSecureExceptionHandler:
         assert "ValueError" not in str(data)
         assert "debug" not in data
 
-    def test_exception_shows_details_in_debug(self, base_app):
-        """Test that exception details are shown in debug mode."""
-        base_app.add_middleware(SecureExceptionMiddleware, debug=True)
+    def test_exception_shows_type_in_debug(self, base_app):
+        """Debug mode names the exception type in a dev environment."""
+        base_app.add_middleware(
+            SecureExceptionMiddleware, debug=True, environment="dev"
+        )
         client = TestClient(base_app, raise_server_exceptions=False)
 
         response = client.get("/error")
@@ -271,7 +273,63 @@ class TestSecureExceptionHandler:
         data = response.json()
         assert "debug" in data
         assert data["debug"]["exception"] == "ValueError"
-        assert "Test error" in data["debug"]["message"]
+
+    def test_debug_never_returns_exception_message(self, base_app):
+        """Even in debug mode, str(e) must not reach the response body.
+
+        Guards CodeQL py/stack-trace-exposure (alert #288). The exception
+        message is logged server-side; returning it duplicates log content
+        into an attacker-reachable channel, where it routinely carries
+        connection strings, ARNs and request-body fragments.
+        """
+        base_app.add_middleware(
+            SecureExceptionMiddleware, debug=True, environment="dev"
+        )
+        client = TestClient(base_app, raise_server_exceptions=False)
+
+        response = client.get("/error")
+
+        # "Test error" is the message raised by the /error route fixture.
+        assert "Test error" not in response.text
+
+    @pytest.mark.parametrize("environment", ["prod", "production", "qa", "staging"])
+    def test_debug_refused_outside_dev_environments(self, base_app, environment):
+        """debug=True is ignored outside DEBUG_SAFE_ENVIRONMENTS."""
+        base_app.add_middleware(
+            SecureExceptionMiddleware, debug=True, environment=environment
+        )
+        client = TestClient(base_app, raise_server_exceptions=False)
+
+        response = client.get("/error")
+
+        data = response.json()
+        assert "debug" not in data
+        assert "ValueError" not in response.text
+
+    def test_debug_refused_when_environment_unset(self, base_app, monkeypatch):
+        """An unset ENVIRONMENT fails closed rather than open.
+
+        main.py reads DEBUG independently of ENVIRONMENT, so an unconfigured
+        deployment with DEBUG=true must still withhold exception details.
+        """
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        base_app.add_middleware(SecureExceptionMiddleware, debug=True)
+        client = TestClient(base_app, raise_server_exceptions=False)
+
+        response = client.get("/error")
+
+        data = response.json()
+        assert "debug" not in data
+        assert "ValueError" not in response.text
+
+    def test_debug_environment_is_case_insensitive(self, base_app):
+        """ENVIRONMENT=DEV is the same environment as dev."""
+        base_app.add_middleware(
+            SecureExceptionMiddleware, debug=True, environment="  DEV  "
+        )
+        client = TestClient(base_app, raise_server_exceptions=False)
+
+        assert "debug" in client.get("/error").json()
 
     def test_request_id_in_error_response(self, base_app):
         """Test that request ID is included in error response."""

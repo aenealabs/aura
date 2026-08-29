@@ -12,6 +12,7 @@ Created: 2025-12-12
 """
 
 import logging
+import os
 import time
 import uuid
 from contextvars import ContextVar
@@ -26,6 +27,11 @@ logger = logging.getLogger(__name__)
 
 # Context variable for request ID (thread-safe)
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="")
+
+# Environments where SecureExceptionMiddleware will honor a debug=True request.
+# Anything not listed here -- including an unset ENVIRONMENT -- is treated as
+# production and gets the generic error body.
+DEBUG_SAFE_ENVIRONMENTS = frozenset({"dev", "development", "local", "test"})
 
 
 def get_request_id() -> str:
@@ -258,18 +264,41 @@ class SecureExceptionMiddleware(BaseHTTPMiddleware):
         app: ASGIApp,
         debug: bool = False,
         include_request_id: bool = True,
+        environment: str | None = None,
     ):
         """
         Initialize secure exception middleware.
 
         Args:
             app: The ASGI application
-            debug: If True, include stack traces in responses (dev only)
+            debug: Request richer error responses. Honored only in the
+                environments listed in DEBUG_SAFE_ENVIRONMENTS; ignored with a
+                logged error anywhere else.
             include_request_id: Include request ID in error responses
+            environment: Deployment environment. Defaults to the ENVIRONMENT
+                variable, and to "prod" when that is unset so that an
+                unconfigured deployment fails closed.
         """
         super().__init__(app)
-        self.debug = debug
+        if environment is None:
+            environment = os.environ.get("ENVIRONMENT", "prod")
+        self.environment = environment.strip().lower()
         self.include_request_id = include_request_id
+
+        # The caller is not trusted to have checked the environment itself.
+        # main.py reads DEBUG from the environment independently of
+        # ENVIRONMENT, so a single stray "DEBUG=true" would otherwise turn on
+        # debug responses in production.
+        if debug and self.environment not in DEBUG_SAFE_ENVIRONMENTS:
+            logger.error(
+                "Debug error responses requested but refused: "
+                "environment=%s is not one of %s. "
+                "Exception details stay server-side.",
+                self.environment,
+                sorted(DEBUG_SAFE_ENVIRONMENTS),
+            )
+            debug = False
+        self.debug = debug
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Handle exceptions securely."""
@@ -295,11 +324,20 @@ class SecureExceptionMiddleware(BaseHTTPMiddleware):
             if self.include_request_id:
                 error_response["request_id"] = request_id
 
-            # In debug mode, include exception details
+            # In debug mode, name the exception type and stop there.
+            # The message and traceback are deliberately not returned:
+            # logger.exception above already recorded both server-side against
+            # this request_id, and str(e) routinely carries connection strings,
+            # ARNs, and fragments of the request body. Returning it duplicates
+            # log content into an attacker-reachable channel for no diagnostic
+            # gain -- the developer has the request_id and the full traceback.
             if self.debug:
                 error_response["debug"] = {
                     "exception": type(e).__name__,
-                    "message": str(e),
+                    "detail": (
+                        "Exception message and traceback are in the server "
+                        "log; correlate using request_id."
+                    ),
                 }
 
             return JSONResponse(
@@ -318,6 +356,7 @@ def add_security_middleware(
     enable_hsts: bool = True,
     max_content_length: int = 10 * 1024 * 1024,
     debug: bool = False,
+    environment: str | None = None,
 ) -> None:
     """
     Add all security middleware to a FastAPI application.
@@ -332,7 +371,10 @@ def add_security_middleware(
         app: FastAPI application instance
         enable_hsts: Enable HTTP Strict Transport Security
         max_content_length: Maximum request body size in bytes
-        debug: Enable debug mode (includes exception details)
+        debug: Request debug error responses. Honored only in
+            DEBUG_SAFE_ENVIRONMENTS; see SecureExceptionMiddleware.
+        environment: Deployment environment. Defaults to ENVIRONMENT, and to
+            "prod" when that is unset.
     """
     # Add in reverse order (last added = first executed)
 
@@ -341,6 +383,7 @@ def add_security_middleware(
         SecureExceptionMiddleware,
         debug=debug,
         include_request_id=True,
+        environment=environment,
     )
 
     # 3. Security headers

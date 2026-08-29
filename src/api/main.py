@@ -446,6 +446,10 @@ add_security_middleware(
     enable_hsts=enable_hsts,
     max_content_length=10 * 1024 * 1024,  # 10 MB
     debug=debug_mode,
+    # DEBUG is read independently of ENVIRONMENT above, so pass the
+    # environment through: the middleware refuses debug error responses
+    # outside dev/test rather than trusting this call site.
+    environment=_environment,
 )
 
 # API latency tracking middleware (optimization #10)

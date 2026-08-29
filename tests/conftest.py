@@ -64,8 +64,30 @@ if _is_macos:
         # Already set, ignore
         pass
 
-# Environment variable to disable Objective-C fork safety crash (partial mitigation)
+# Environment variable to disable Objective-C fork safety crash (partial mitigation).
+#
+# "Partial" is accurate: this suppresses the "may have been initialized" variant
+# but NOT "may have been in progress in another thread", which the ObjC runtime
+# refuses to ignore -- it aborts with SIGABRT regardless of this setting.
 os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
+
+# Arm the production-path guards that several endpoints check before calling
+# AWS. Without this, tests take the real branch and construct boto3 clients.
+#
+# That is wrong on its own terms -- a unit test should not be reaching for
+# Lambda -- and on macOS it is also the direct cause of SIGABRT crashes in
+# `pytest.mark.forked` tests: constructing a boto3 client initialises
+# Objective-C machinery (`+[NSCharacterSet initialize]`) on a background
+# thread, and pytest-forked then calls fork() mid-initialisation. The ObjC
+# runtime cannot ignore an initializer that was *in progress*, so it crashes,
+# and OBJC_DISABLE_INITIALIZE_FORK_SAFETY above cannot help.
+#
+# Guarded paths as of this writing: src/api/settings_endpoints.py:420
+# (log retention sync Lambda) and :893 (compliance settings sync Lambda).
+#
+# setdefault, not assignment: a test that deliberately exercises the
+# production branch can still override it.
+os.environ.setdefault("TESTING", "true")
 
 
 def _check_torch_imported() -> bool:

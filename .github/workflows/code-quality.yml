@@ -446,7 +446,16 @@ jobs:
             exit 0
           fi
 
-          if git diff --name-only "$FROM" "$TO" | grep -qE '^frontend/'; then
+          # The workflow file counts as a frontend change so that any edit to
+          # this gate exercises it. Without that, a PR touching only the
+          # workflow skips every meaningful step and reports a green
+          # "Frontend Quality & Tests" in about five seconds -- a passing
+          # check that installed nothing, linted nothing and built nothing.
+          # A broken gate would then surface on the next contributor's
+          # frontend PR and look like their failure. The Python detection
+          # above already treats this file the same way.
+          if git diff --name-only "$FROM" "$TO" \
+              | grep -qE '^(frontend/|\.github/workflows/code-quality\.yml$)'; then
             echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "frontend_changed=false" >> "$GITHUB_OUTPUT"

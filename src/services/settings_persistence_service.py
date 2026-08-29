@@ -118,7 +118,13 @@ DEFAULT_PLATFORM_SETTINGS = {
     "security": {
         "enforce_air_gap": False,
         "block_external_network": True,
-        "sandbox_isolation_level": "vpc",
+        # "container" is the only level the sandbox path enforces. The prior
+        # default of "vpc" advertised a boundary that nothing implemented --
+        # the setting is persisted and surfaced through the API but never read
+        # by provisioning, so an operator selecting it saw it accepted and got
+        # container-level networking. See ENFORCED_ISOLATION_LEVELS in
+        # src/services/sandbox_network_service.py.
+        "sandbox_isolation_level": "container",
         "audit_all_actions": True,
         "retain_logs_for_days": 365,
     },

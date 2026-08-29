@@ -271,8 +271,9 @@ class TestTraceToolCallNoOp:
         old_tracer = otel_instrumentation._tracer
         otel_instrumentation._tracer = None
         try:
-            with trace_tool_call("neptune_query") as span:
+            with trace_tool_call("neptune_query") as (span, mark_failed):
                 assert span is None
+                assert callable(mark_failed)
         finally:
             otel_instrumentation._tracer = old_tracer
 
@@ -282,7 +283,7 @@ class TestTraceToolCallNoOp:
         otel_instrumentation._tracer = None
         try:
             result = None
-            with trace_tool_call("test_tool", {"param": "value"}) as _span:
+            with trace_tool_call("test_tool", {"param": "value"}) as (_span, _mf):
                 result = "executed"
             assert result == "executed"
         finally:
@@ -296,7 +297,10 @@ class TestTraceToolCallWithOtel:
     def test_creates_span_with_tool_name(self):
         """Test span is created with tool name attribute."""
         setup_otel(otlp_endpoint="localhost:4317")
-        with trace_tool_call("neptune_query", {"query": "g.V().limit(10)"}) as span:
+        with trace_tool_call("neptune_query", {"query": "g.V().limit(10)"}) as (
+            span,
+            _mf,
+        ):
             assert span is not None
 
 
@@ -437,7 +441,7 @@ class TestOtelAvailability:
                 assert span is None
                 record(input_tokens=100, output_tokens=50)
 
-            with trace_tool_call("tool") as span:
+            with trace_tool_call("tool") as (span, _mf):
                 assert span is None
         finally:
             otel_instrumentation._tracer = old_tracer
@@ -453,7 +457,7 @@ class TestIntegration:
         try:
             with trace_agent_execution("OuterAgent", "outer_op") as outer:
                 with trace_llm_call("model", "inner_op") as (inner, record):
-                    with trace_tool_call("tool") as tool_span:
+                    with trace_tool_call("tool") as (tool_span, _mf):
                         # All should be None when tracer unavailable
                         assert outer is None
                         assert inner is None
@@ -524,3 +528,76 @@ class TestIntegration:
             ]
         finally:
             otel_instrumentation._tracer = old_tracer
+
+
+class TestTraceToolCallFailureMarking:
+    """A tool that fails without raising must not leave an OK span.
+
+    Deliberately exercised against a real in-memory SDK exporter rather than a
+    MagicMock span: attribute lookups on a Mock return truthy Mocks, so a
+    mocked span would let a broken guard pass for the wrong reason.
+    """
+
+    @requires_otel
+    def test_mark_failed_sets_error_status_and_is_not_overwritten(self):
+        from opentelemetry import trace as _trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+            InMemorySpanExporter,
+        )
+        from opentelemetry.trace import StatusCode
+
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        tracer = provider.get_tracer(__name__)
+
+        with patch.object(otel_instrumentation, "get_tracer", return_value=tracer):
+            with trace_tool_call("failing_tool") as (span, mark_failed):
+                # Simulates a handler that caught its own error and returned a
+                # failure payload -- nothing propagates to the context manager.
+                mark_failed("handler reported an error")
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        recorded = spans[0]
+        assert recorded.status.status_code == StatusCode.ERROR
+        assert recorded.attributes.get("aura.tool.reported_failure") is True
+        assert "handler reported" in recorded.attributes.get(
+            "aura.tool.failure_reason", ""
+        )
+        _trace  # referenced to keep the import meaningful for readers
+
+    @requires_otel
+    def test_unmarked_span_is_ok(self):
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+            InMemorySpanExporter,
+        )
+        from opentelemetry.trace import StatusCode
+
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        tracer = provider.get_tracer(__name__)
+
+        with patch.object(otel_instrumentation, "get_tracer", return_value=tracer):
+            with trace_tool_call("ok_tool") as (span, mark_failed):
+                pass
+
+        spans = exporter.get_finished_spans()
+        assert spans[0].status.status_code == StatusCode.OK
+        assert spans[0].attributes.get("aura.tool.reported_failure") is None
+
+    def test_yields_a_two_tuple_when_tracing_disabled(self):
+        """With no tracer the contract still yields (span, mark_failed)."""
+        with patch.object(otel_instrumentation, "get_tracer", return_value=None):
+            with trace_tool_call("noop_tool") as yielded:
+                assert isinstance(yielded, tuple)
+                assert len(yielded) == 2
+                span, mark_failed = yielded
+                assert span is None
+                # Must be safe to call -- callers should not have to branch.
+                mark_failed("still fine")

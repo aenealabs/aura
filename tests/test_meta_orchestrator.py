@@ -1051,3 +1051,68 @@ class TestMetaOrchestratorResult:
 
         assert result.status == "failed"
         assert result.error == "Agent execution timeout"
+
+
+class TestGenericAgentReportsLLMFailure:
+    """A caught LLM exception must not be reported as a successful execution.
+
+    The error was previously visible only to whoever read
+    ``output["llm_error"]``; the ``success`` flag that callers and metrics
+    branch on said everything was fine.
+    """
+
+    async def test_llm_failure_sets_success_false_and_error(self):
+        from src.agents.meta_orchestrator import (
+            AgentCapability,
+            AgentRegistry,
+            AgentSpec,
+        )
+
+        class ExplodingLLM:
+            async def generate(self, prompt, operation=None):
+                raise RuntimeError("bedrock throttled")
+
+        registry = AgentRegistry()
+        agent = registry.spawn_agent(
+            AgentSpec(
+                capability=AgentCapability.CODE_GENERATION,
+                task_description="t",
+                context_requirements=[],
+            ),
+            llm_client=ExplodingLLM(),
+        )
+
+        result = await agent.execute("do the thing")
+
+        assert result.success is False
+        assert result.error is not None
+        assert "bedrock throttled" in result.error
+        assert result.output["llm_error"] == "bedrock throttled"
+        assert result.output["status"] == "failed"
+
+    async def test_llm_success_still_reports_success(self):
+        from src.agents.meta_orchestrator import (
+            AgentCapability,
+            AgentRegistry,
+            AgentSpec,
+        )
+
+        class WorkingLLM:
+            async def generate(self, prompt, operation=None):
+                return "a response"
+
+        registry = AgentRegistry()
+        agent = registry.spawn_agent(
+            AgentSpec(
+                capability=AgentCapability.CODE_GENERATION,
+                task_description="t",
+                context_requirements=[],
+            ),
+            llm_client=WorkingLLM(),
+        )
+
+        result = await agent.execute("do the thing")
+
+        assert result.success is True
+        assert result.error is None
+        assert result.output["llm_response"] == "a response"

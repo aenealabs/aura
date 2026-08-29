@@ -264,7 +264,7 @@ class ParallelQueryExecutor:
 
         with trace_tool_call(
             subquery.search_type, {"query": subquery.query_text[:100]}
-        ):
+        ) as (_span, mark_failed):
             try:
                 # Route to appropriate search backend
                 if subquery.search_type == "graph":
@@ -298,6 +298,10 @@ class ParallelQueryExecutor:
 
             except Exception as e:
                 logger.error(f"Subquery {subquery.id} failed: {e}")
+                # The exception is handled here and never reaches the context
+                # manager, so without this the span would be stamped OK and a
+                # failed subquery would be invisible in traces.
+                mark_failed(f"subquery {subquery.id} failed")
                 return SubQueryResult(
                     subquery_id=subquery.id,
                     query_text=subquery.query_text,

@@ -318,16 +318,28 @@ def trace_tool_call(tool_name: str, parameters: dict[str, Any] | None = None):
         parameters: Tool parameters (will be serialized)
 
     Yields:
-        The current span
+        A ``(span, mark_failed)`` tuple. Call ``mark_failed(reason)`` when the
+        call failed but no exception will propagate -- a handler that caught
+        its own error and returned a failure payload is invisible to
+        exception-based tracing and would otherwise be stamped OK.
 
     Example:
-        >>> with trace_tool_call("neptune_query", {"query": "g.V().limit(10)"}) as span:
-        ...     result = neptune.execute(query)
+        >>> with trace_tool_call("neptune_query", {"q": "g.V()"}) as (span, mark_failed):
+        ...     result = await handler(params)
+        ...     if result.get("error"):
+        ...         mark_failed("handler reported an error")
     """
     tracer = get_tracer()
 
     if tracer is None:
-        yield None
+        # Must still yield the (span, mark_failed) pair. Yielding a bare None
+        # here would make ``as (span, mark_failed)`` raise TypeError in every
+        # environment where tracing is disabled -- turning an observability
+        # feature into a hard runtime dependency.
+        def _noop_mark_failed(reason: str) -> None:
+            return None
+
+        yield None, _noop_mark_failed
         return
 
     span_attributes = {
@@ -344,9 +356,28 @@ def trace_tool_call(tool_name: str, parameters: dict[str, Any] | None = None):
         kind=SpanKind.INTERNAL,
         attributes=span_attributes,
     ) as span:
+        # Closure state rather than an attribute on the span object. Spans are
+        # library-owned: ``NonRecordingSpan`` is a process-global singleton
+        # whose bases lack ``__slots__``, so stamping a flag on it would leak
+        # across unrelated requests, and ``getattr`` on a mocked span returns a
+        # truthy Mock, which would silently disable the OK path under test.
+        state = {"failed": False}
+
+        def mark_failed(reason: str) -> None:
+            """Mark this span as failed without raising."""
+            state["failed"] = True
+            span.set_status(Status(StatusCode.ERROR, reason))
+            span.set_attribute("aura.tool.reported_failure", True)
+            span.set_attribute("aura.tool.failure_reason", str(reason)[:200])
+
         try:
-            yield span
-            span.set_status(Status(StatusCode.OK))
+            yield span, mark_failed
+            # Only default to OK when nothing marked the span failed. A tool
+            # that returned a failure payload never raises, so an
+            # unconditional OK here would overwrite the ERROR status and
+            # reproduce the exact blind spot this guard exists to close.
+            if not state["failed"]:
+                span.set_status(Status(StatusCode.OK))
         except Exception as e:
             span.set_status(Status(StatusCode.ERROR, str(e)))
             span.record_exception(e)
@@ -549,7 +580,10 @@ if __name__ == "__main__":
 
         # Demo tool tracing
         print("\nTracing tool call...")
-        with trace_tool_call("neptune_query", {"query": "g.V().limit(10)"}) as span:
+        with trace_tool_call("neptune_query", {"query": "g.V().limit(10)"}) as (
+            span,
+            mark_failed,
+        ):
             time.sleep(0.02)  # Simulate query
             print("  Tool call traced")
 

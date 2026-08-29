@@ -49,6 +49,7 @@ class MetricNamespace(Enum):
     AUTONOMY = "Aura/Autonomy"
     GPU_SCHEDULER = "Aura/GPUScheduler"
     CONSTITUTIONAL_AI = "Aura/ConstitutionalAI"
+    TOOLS = "Aura/Tools"
 
 
 class PublisherMode(Enum):
@@ -407,6 +408,64 @@ class CloudWatchMetricsPublisher:
                 value=duration_seconds,
                 unit="Seconds",
                 dimensions={"EventType": event_type},
+                timestamp=timestamp,
+            )
+
+        return True
+
+    async def publish_tool_invocation(
+        self,
+        tool_name: str,
+        outcome: str,
+        latency_ms: float | None = None,
+    ) -> bool:
+        """
+        Publish tool invocation metrics.
+
+        Emits a dedicated ``ReportedFailureCount`` alongside the dimensioned
+        invocation count. The dedicated metric exists so an alarm can be
+        written without the author having to know that an ``Outcome`` dimension
+        value called ``reported_failure`` exists -- a metric nobody can find is
+        not observability. A non-zero value here means tools are failing while
+        nothing raises, which is invisible to exception-based monitoring.
+
+        Args:
+            tool_name: Name of the invoked tool
+            outcome: ``success``, ``error``, or ``reported_failure``
+                (the values of :class:`ToolOutcome`)
+            latency_ms: Invocation latency in milliseconds
+
+        Returns:
+            True if metrics were buffered successfully
+        """
+        timestamp = datetime.now(timezone.utc)
+
+        await self.publish_metric(
+            namespace=MetricNamespace.TOOLS,
+            metric_name="InvocationCount",
+            value=1.0,
+            dimensions={"ToolName": tool_name, "Outcome": outcome},
+            timestamp=timestamp,
+        )
+
+        # Explicit, zero-valued on the healthy path so the metric always has
+        # data points -- an alarm on a metric that only appears during an
+        # incident sits in INSUFFICIENT_DATA until the incident starts.
+        await self.publish_metric(
+            namespace=MetricNamespace.TOOLS,
+            metric_name="ReportedFailureCount",
+            value=1.0 if outcome == "reported_failure" else 0.0,
+            dimensions={"ToolName": tool_name},
+            timestamp=timestamp,
+        )
+
+        if latency_ms is not None:
+            await self.publish_metric(
+                namespace=MetricNamespace.TOOLS,
+                metric_name="ToolLatency",
+                value=latency_ms,
+                unit="Milliseconds",
+                dimensions={"ToolName": tool_name, "Outcome": outcome},
                 timestamp=timestamp,
             )
 

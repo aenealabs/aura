@@ -57,6 +57,116 @@ class MCPToolPermission(Enum):
     ADMIN = "admin"  # Administrative operations
 
 
+class ToolOutcome(str, Enum):
+    """How a tool invocation actually ended.
+
+    Distinguishing ``REPORTED_FAILURE`` from ``SUCCESS`` is the point of this
+    enum. A handler that catches its own error and returns a well-formed
+    failure payload has *not* succeeded, but it also did not raise -- so
+    exception-based classification counts it as a success and the per-tool
+    error metrics never fire. That blind spot hides exactly the failures an
+    operator most needs to see: the ones the system already knows about.
+    """
+
+    SUCCESS = "success"  # Returned normally; payload reports no failure.
+    ERROR = "error"  # Raised, timed out, or was rejected before dispatch.
+    REPORTED_FAILURE = "reported_failure"  # Returned normally, payload reports failure.
+
+
+# Keys whose truthy presence denotes failure. Both snake_case and the
+# camelCase spellings used by the MCP protocol and AWS Lambda are covered,
+# since a tool wrapping either would otherwise fail silently.
+_FAILURE_MARKER_KEYS = (
+    "error",
+    "isError",
+    "is_error",
+    "error_message",
+    "errorMessage",
+    "errors",
+)
+
+# Keys that denote failure when explicitly False.
+_FALSE_MEANS_FAILURE_KEYS = ("ok", "success", "succeeded")
+
+# ``errors`` is only a failure signal when it is a non-empty collection. A
+# scalar ``errors`` is a count field on reporting tools ("errors": 2 in a
+# summary) and must not be read as a failure of the call itself.
+_COLLECTION_TYPES = (list, tuple, set, dict)
+
+
+def classify_tool_payload(payload: Any) -> str | None:
+    """Detect whether a normally-returned payload reports a failure.
+
+    The contract is deliberately **explicit and narrow**. Only the documented
+    markers below are treated as failure signals; arbitrary falsey values are
+    not, because plenty of legitimate payloads carry them (``{"cached": False}``
+    and ``{"count": 0}`` are successes). Guessing more aggressively would trade
+    a false-negative problem for a false-positive one, and a tool layer that
+    cries wolf gets ignored just as fast as one that stays silent.
+
+    Recognised failure markers:
+
+    ================================  ============================================
+    Marker                            Failure when
+    ================================  ============================================
+    ``error``                         present and truthy
+    ``isError`` / ``is_error``        present and truthy (MCP protocol spelling)
+    ``error_message`` /               present and truthy (Lambda spelling)
+    ``errorMessage``
+    ``errors``                        present and a non-empty collection
+    ``ok`` / ``success`` /            present and exactly ``False``
+    ``succeeded``
+    ================================  ============================================
+
+    **``status`` is deliberately not a marker.** For a query tool, ``status``
+    describes the *subject*, not the *call*: ``get_sandbox_status`` returning
+    ``{"status": "failed"}`` is a fully successful query whose answer happens
+    to be bad news, and a policy tool returning ``{"status": "denied"}`` has
+    successfully evaluated a policy. Treating those as call failures would
+    discard the very answer the caller asked for -- a false positive that
+    breaks working flows, which is worse than the under-reporting this
+    function exists to fix.
+
+    **Only top-level keys are inspected.** A nested ``{"result": {"error": ...}}``
+    classifies as success. All current handlers return flat payloads; a handler
+    that nests its error must surface it at the top level to be seen.
+
+    Args:
+        payload: The value a tool handler returned.
+
+    Returns:
+        A short human-readable reason when the payload reports a failure,
+        otherwise ``None``. The reason names the *marker key* and never
+        interpolates the marker's value, which routinely carries endpoints,
+        connection strings, and occasionally credentials -- this string is
+        logged and surfaced in exception messages. The value stays in
+        ``MCPToolResult.data`` for callers that need it.
+
+        Non-dict payloads always return ``None`` -- there is no reliable way
+        to classify them, and assuming success is the behaviour callers
+        already expect.
+    """
+    if not isinstance(payload, dict):
+        return None
+
+    for key in _FAILURE_MARKER_KEYS:
+        if key not in payload:
+            continue
+        value = payload[key]
+        if key == "errors":
+            if isinstance(value, _COLLECTION_TYPES) and len(value) > 0:
+                return f"payload reported '{key}' with {len(value)} entr(ies)"
+            continue
+        if value:
+            return f"payload reported '{key}'"
+
+    for key in _FALSE_MEANS_FAILURE_KEYS:
+        if key in payload and payload[key] is False:
+            return f"payload reported '{key}'=False"
+
+    return None
+
+
 @dataclass
 class MCPToolDefinition:
     """MCP-compliant tool definition."""
@@ -86,10 +196,37 @@ class MCPToolResult:
     latency_ms: float = 0.0
     request_id: str | None = None
     timestamp: float = field(default_factory=time.time)
+    # Defaults to the coarse two-state reading of ``success`` so that results
+    # constructed by older callers stay self-consistent. ``invoke_tool``
+    # always sets it explicitly.
+    outcome: ToolOutcome | None = None
+
+    def __post_init__(self) -> None:
+        if self.outcome is None:
+            self.outcome = ToolOutcome.SUCCESS if self.success else ToolOutcome.ERROR
+            return
+
+        # ``success`` and ``outcome`` are two views of the same fact, and
+        # callers branch on both. Letting them disagree would reintroduce the
+        # ambiguity this type exists to remove.
+        expected_success = self.outcome == ToolOutcome.SUCCESS
+        if self.success != expected_success:
+            raise ValueError(
+                f"MCPToolResult is inconsistent: success={self.success} "
+                f"contradicts outcome={self.outcome.value}"
+            )
 
     @property
     def is_success(self) -> bool:
         return self.success
+
+    @property
+    def reported_failure(self) -> bool:
+        """True when the handler returned normally but reported a failure.
+
+        This is the case that exception-based monitoring misses entirely.
+        """
+        return self.outcome == ToolOutcome.REPORTED_FAILURE
 
 
 @dataclass
@@ -99,13 +236,47 @@ class MCPServerStats:
     total_invocations: int = 0
     successful_invocations: int = 0
     failed_invocations: int = 0
+    # Handler returned normally but the payload reported a failure. Counted
+    # separately so it is visible on its own rather than folded into either
+    # bucket -- a spike here means tools are failing while nothing raises.
+    reported_failure_invocations: int = 0
+    # Started but not yet resolved. ``total_invocations`` increments on entry
+    # while the outcome buckets increment on exit, so without this term every
+    # concurrent call in flight looks like a missing outcome.
+    in_flight_invocations: int = 0
     total_latency_ms: float = 0.0
 
     @property
+    def completed_invocations(self) -> int:
+        """Invocations that have resolved into an outcome bucket."""
+        return (
+            self.successful_invocations
+            + self.failed_invocations
+            + self.reported_failure_invocations
+        )
+
+    @property
     def success_rate(self) -> float:
-        if self.total_invocations == 0:
+        """Share of *completed* invocations that succeeded.
+
+        Deliberately excludes in-flight calls. Dividing by
+        ``total_invocations`` would depress the rate during any burst of
+        concurrency purely because calls had not finished yet.
+        """
+        if self.completed_invocations == 0:
             return 0.0
-        return self.successful_invocations / self.total_invocations
+        return self.successful_invocations / self.completed_invocations
+
+    @property
+    def failure_rate(self) -> float:
+        """Share of completed invocations that failed for any reason.
+
+        Includes reported failures, which ``success_rate`` alone would hide.
+        """
+        if self.completed_invocations == 0:
+            return 0.0
+        failures = self.failed_invocations + self.reported_failure_invocations
+        return failures / self.completed_invocations
 
     @property
     def avg_latency_ms(self) -> float:
@@ -113,13 +284,32 @@ class MCPServerStats:
             return 0.0
         return self.total_latency_ms / self.total_invocations
 
+    @property
+    def counters_reconcile(self) -> bool:
+        """True when every started invocation is accounted for.
+
+        Each invocation is either still in flight or has landed in exactly one
+        outcome bucket. A False here means a code path incremented the total
+        without recording an outcome, which silently biases every rate derived
+        from these counters -- so this is safe to alarm on, and holds during
+        concurrent traffic rather than flapping on every burst.
+        """
+        return (
+            self.completed_invocations + self.in_flight_invocations
+        ) == self.total_invocations
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "total_invocations": self.total_invocations,
+            "completed_invocations": self.completed_invocations,
+            "in_flight_invocations": self.in_flight_invocations,
             "successful_invocations": self.successful_invocations,
             "failed_invocations": self.failed_invocations,
+            "reported_failure_invocations": self.reported_failure_invocations,
             "success_rate_percent": round(self.success_rate * 100, 2),
+            "failure_rate_percent": round(self.failure_rate * 100, 2),
             "avg_latency_ms": round(self.avg_latency_ms, 2),
+            "counters_reconcile": self.counters_reconcile,
         }
 
 
@@ -274,18 +464,28 @@ class VectorToolHandler:
             raise RuntimeError("OpenSearch service not initialized")
 
         vector = self.embedder.generate_embedding(text)
-        success = self.opensearch.index_embedding(
+        indexed = self.opensearch.index_embedding(
             doc_id=doc_id,
             text=text,
             vector=vector,
             metadata=metadata,
         )
 
-        return {
-            "indexed": success,
+        result: dict[str, Any] = {
+            "indexed": indexed,
             "doc_id": doc_id,
             "embedding_dimension": len(vector),
         }
+
+        # ``indexed: False`` is a failure, but "indexed" is not one of the
+        # documented failure markers -- and it should not be, since a bare
+        # boolean field name carries no general meaning. Surface it explicitly
+        # so the server classifies this as a reported failure instead of
+        # counting a failed index as a successful tool call.
+        if not indexed:
+            result["error"] = f"OpenSearch did not index document '{doc_id}'"
+
+        return result
 
 
 class SandboxToolHandler:
@@ -404,6 +604,7 @@ class MCPToolServer:
         opensearch_service: "OpenSearchVectorService | None" = None,
         embedding_service: "TitanEmbeddingService | None" = None,
         sandbox_service: "SandboxNetwork | None" = None,
+        metrics_publisher: Any = None,
     ):
         """
         Initialize MCP Tool Server.
@@ -413,6 +614,11 @@ class MCPToolServer:
             opensearch_service: OpenSearch vector service (optional)
             embedding_service: Titan embedding service (optional)
             sandbox_service: Sandbox network service (optional)
+            metrics_publisher: Optional CloudWatchMetricsPublisher. When
+                supplied, every invocation emits its outcome so that
+                ``reported_failure`` is visible to operators rather than only
+                to in-process counters. Typed loosely to avoid importing the
+                publisher (and boto3) into every consumer of this module.
         """
         # Initialize handlers
         self._graph_handler = GraphToolHandler(neptune_service)
@@ -443,6 +649,9 @@ class MCPToolServer:
 
         # Rate limiting
         self._rate_limit_tracker: dict[str, list[float]] = {}
+
+        # Optional metric emission
+        self._metrics_publisher = metrics_publisher
 
         logger.info(f"MCPToolServer initialized with {len(self._tools)} tools")
 
@@ -730,13 +939,62 @@ class MCPToolServer:
         Returns:
             MCPToolResult with invocation outcome
         """
-        start_time = time.perf_counter()
-        request_id = self._generate_request_id(tool_name, params)
-
-        # Update stats
+        # The in-flight counter is incremented here and released in the
+        # ``finally`` so that no early return can leak it. Without it, every
+        # concurrent call between entry and outcome would read as an
+        # unaccounted invocation and make ``counters_reconcile`` flap.
         self._stats.total_invocations += 1
+        self._stats.in_flight_invocations += 1
         if tool_name in self._tool_stats:
             self._tool_stats[tool_name].total_invocations += 1
+            self._tool_stats[tool_name].in_flight_invocations += 1
+
+        try:
+            result = await self._invoke_tool_inner(tool_name, params, skip_approval)
+            await self._emit_tool_metric(result)
+            return result
+        finally:
+            self._stats.in_flight_invocations -= 1
+            if tool_name in self._tool_stats:
+                self._tool_stats[tool_name].in_flight_invocations -= 1
+
+    async def _emit_tool_metric(self, result: MCPToolResult) -> None:
+        """Publish the invocation outcome, if a metrics publisher is wired.
+
+        In-process counters are not observability: without emission, a
+        ``reported_failure`` is visible only to whoever calls ``get_stats()``,
+        and nobody gets paged. This is what makes the outcome operator-visible.
+
+        Never raises. A metrics backend being unavailable must not turn a
+        successful tool call into a failed one -- the observability layer is
+        not permitted to become a new failure mode for the thing it observes.
+        """
+        if self._metrics_publisher is None:
+            return
+
+        try:
+            outcome = result.outcome.value if result.outcome else "unknown"
+            await self._metrics_publisher.publish_tool_invocation(
+                tool_name=result.tool_name,
+                outcome=outcome,
+                latency_ms=result.latency_ms or None,
+            )
+        except Exception as e:  # noqa: BLE001 - metrics must never break tools
+            logger.warning(f"Failed to publish tool metric for {result.tool_name}: {e}")
+
+    async def _invoke_tool_inner(
+        self,
+        tool_name: str,
+        params: dict[str, Any],
+        skip_approval: bool = False,
+    ) -> MCPToolResult:
+        """Dispatch body for :meth:`invoke_tool`.
+
+        Split out so entry/exit accounting lives in exactly one place rather
+        than being repeated at each of the six return points.
+        """
+        start_time = time.perf_counter()
+        request_id = self._generate_request_id(tool_name, params)
 
         # Validate tool exists
         tool = self._tools.get(tool_name)
@@ -745,6 +1003,7 @@ class MCPToolServer:
             return MCPToolResult(
                 tool_name=tool_name,
                 success=False,
+                outcome=ToolOutcome.ERROR,
                 error=f"Tool '{tool_name}' not found",
                 request_id=request_id,
             )
@@ -752,9 +1011,12 @@ class MCPToolServer:
         # Check rate limit
         if self._is_rate_limited(tool_name, tool.rate_limit_per_minute):
             self._stats.failed_invocations += 1
+            if tool_name in self._tool_stats:
+                self._tool_stats[tool_name].failed_invocations += 1
             return MCPToolResult(
                 tool_name=tool_name,
                 success=False,
+                outcome=ToolOutcome.ERROR,
                 error=f"Rate limit exceeded: {tool.rate_limit_per_minute}/min",
                 request_id=request_id,
             )
@@ -764,9 +1026,16 @@ class MCPToolServer:
             logger.warning(
                 f"Tool '{tool_name}' requires HITL approval - returning pending status"
             )
+            # This path previously incremented ``total_invocations`` without
+            # recording any outcome, so the buckets did not sum to the total
+            # and every derived rate was quietly skewed.
+            self._stats.failed_invocations += 1
+            if tool_name in self._tool_stats:
+                self._tool_stats[tool_name].failed_invocations += 1
             return MCPToolResult(
                 tool_name=tool_name,
                 success=False,
+                outcome=ToolOutcome.ERROR,
                 error="HITL approval required",
                 data={
                     "pending_approval": True,
@@ -780,9 +1049,12 @@ class MCPToolServer:
         handler = self._handlers.get(tool_name)
         if not handler:
             self._stats.failed_invocations += 1
+            if tool_name in self._tool_stats:
+                self._tool_stats[tool_name].failed_invocations += 1
             return MCPToolResult(
                 tool_name=tool_name,
                 success=False,
+                outcome=ToolOutcome.ERROR,
                 error=f"No handler registered for '{tool_name}'",
                 request_id=request_id,
             )
@@ -795,15 +1067,47 @@ class MCPToolServer:
             )
 
             latency_ms = (time.perf_counter() - start_time) * 1000
-            self._stats.successful_invocations += 1
             self._stats.total_latency_ms += latency_ms
-
             if tool_name in self._tool_stats:
-                self._tool_stats[tool_name].successful_invocations += 1
                 self._tool_stats[tool_name].total_latency_ms += latency_ms
 
-            # Record for rate limiting
+            # Record for rate limiting. NOTE: this sits on the handler-returned
+            # path only, so timeouts and raised exceptions do NOT consume
+            # rate-limit budget. That is pre-existing behaviour, not a decision
+            # made here -- a tool failing by timeout can currently be retried
+            # without limit. Left as-is because changing it is a behavioural
+            # change to throttling, which belongs in its own review.
             self._record_invocation(tool_name)
+
+            # A handler that returns normally has not necessarily succeeded.
+            # Classify the payload before crediting a success, otherwise a
+            # well-formed error is indistinguishable from a real result at the
+            # metric layer.
+            failure_reason = classify_tool_payload(result_data)
+
+            if failure_reason is not None:
+                self._stats.reported_failure_invocations += 1
+                if tool_name in self._tool_stats:
+                    self._tool_stats[tool_name].reported_failure_invocations += 1
+
+                logger.warning(
+                    f"MCP tool reported failure: {tool_name}, reason={failure_reason}, "
+                    f"latency={latency_ms:.1f}ms, request_id={request_id}"
+                )
+
+                return MCPToolResult(
+                    tool_name=tool_name,
+                    success=False,
+                    outcome=ToolOutcome.REPORTED_FAILURE,
+                    data=result_data,
+                    error=failure_reason,
+                    latency_ms=latency_ms,
+                    request_id=request_id,
+                )
+
+            self._stats.successful_invocations += 1
+            if tool_name in self._tool_stats:
+                self._tool_stats[tool_name].successful_invocations += 1
 
             logger.info(
                 f"MCP tool invocation: {tool_name}, latency={latency_ms:.1f}ms, "
@@ -813,6 +1117,7 @@ class MCPToolServer:
             return MCPToolResult(
                 tool_name=tool_name,
                 success=True,
+                outcome=ToolOutcome.SUCCESS,
                 data=result_data,
                 latency_ms=latency_ms,
                 request_id=request_id,
@@ -826,6 +1131,7 @@ class MCPToolServer:
             return MCPToolResult(
                 tool_name=tool_name,
                 success=False,
+                outcome=ToolOutcome.ERROR,
                 error=f"Tool execution timed out after {tool.timeout_seconds}s",
                 request_id=request_id,
             )
@@ -839,6 +1145,7 @@ class MCPToolServer:
             return MCPToolResult(
                 tool_name=tool_name,
                 success=False,
+                outcome=ToolOutcome.ERROR,
                 error=str(e),
                 request_id=request_id,
             )

@@ -463,6 +463,7 @@ class AgentRegistry:
                     }
 
                     # If LLM available, use it
+                    llm_error: str | None = None
                     if self.llm:
                         try:
                             response = await self.llm.generate(
@@ -472,16 +473,24 @@ class AgentRegistry:
                             output["llm_response"] = response
                         except Exception as e:
                             logger.warning(f"LLM call failed: {e}")
-                            output["llm_error"] = str(e)
+                            llm_error = str(e)
+                            output["llm_error"] = llm_error
+                            output["status"] = "failed"
 
                     execution_time = (datetime.now() - start_time).total_seconds()
 
+                    # A caught LLM failure is still a failure. Reporting
+                    # success here made the error visible only to whoever
+                    # happened to read ``output["llm_error"]`` -- the
+                    # ``success`` flag that callers and metrics actually
+                    # branch on said everything was fine.
                     return AgentResult(
                         agent_id=self.agent_id,
                         capability=self.capability,
-                        success=True,
+                        success=llm_error is None,
                         output=output,
                         execution_time_seconds=execution_time,
+                        error=llm_error,
                         children_results=[],
                     )
 

@@ -25,6 +25,7 @@ from enum import Enum
 from typing import Any
 
 from src.config import require_enterprise_mode
+from src.services.mcp_tool_server import classify_tool_payload
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,14 @@ class AuraToolDefinition:
 
 @dataclass
 class AdapterInvocationResult:
-    """Result from invoking an Aura agent via adapter."""
+    """Result from invoking an Aura agent via adapter.
+
+    Each adapter's ``invoke`` constructs this directly, so the failure-payload
+    check lives here rather than in ``BaseAgentAdapter`` -- one choke point
+    that covers all adapters, including any added later. Without it this class
+    reproduces the same blind spot ``MCPToolServer`` had: ``success=True`` is
+    set on the "handler returned" path regardless of what the payload says.
+    """
 
     tool_id: str
     success: bool
@@ -94,6 +102,24 @@ class AdapterInvocationResult:
     execution_time_ms: float = 0.0
     tokens_used: int = 0
     agent_trace: list[str] = field(default_factory=list)
+    # True when ``success`` was downgraded because the payload reported a
+    # failure -- the case exception-based monitoring cannot see.
+    reported_failure: bool = False
+
+    def __post_init__(self) -> None:
+        # Only downgrade; never upgrade. An adapter that explicitly reports
+        # failure is authoritative and must not be second-guessed by a
+        # payload heuristic.
+        if not self.success or not self.data:
+            return
+
+        reason = classify_tool_payload(self.data)
+        if reason is not None:
+            self.success = False
+            self.reported_failure = True
+            # The reason names the marker key only -- the value stays in
+            # ``data`` because it routinely carries endpoints and credentials.
+            self.error = self.error or reason
 
 
 # =============================================================================

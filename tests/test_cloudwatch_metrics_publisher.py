@@ -85,9 +85,24 @@ class TestMetricNamespace:
         assert MetricNamespace.CONSTITUTIONAL_AI.value == "Aura/ConstitutionalAI"
 
     def test_all_namespaces_exist(self):
-        """Test all expected namespaces exist."""
-        namespaces = list(MetricNamespace)
-        assert len(namespaces) == 8
+        """Test all expected namespaces exist.
+
+        Asserts membership rather than a bare count so that adding a namespace
+        names what changed instead of failing with an opaque off-by-one.
+        """
+        names = {ns.name for ns in MetricNamespace}
+        assert names == {
+            "ANOMALIES",
+            "SECURITY",
+            "ORCHESTRATOR",
+            "NOTIFICATIONS",
+            "OBSERVABILITY",
+            "AUTONOMY",
+            "GPU_SCHEDULER",
+            "CONSTITUTIONAL_AI",
+            "TOOLS",
+        }
+        assert MetricNamespace.TOOLS.value == "Aura/Tools"
 
 
 class TestPublisherMode:

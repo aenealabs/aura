@@ -7,17 +7,19 @@ on:
       - develop
     # Only run on code changes - skip for docs/config-only changes.
     #
-    # `deploy/cloudformation/**` is included because "Python Quality & Tests"
-    # is a REQUIRED status check in the main-protection ruleset. A required
-    # check that never runs is reported as missing, not as passing, so an
-    # infrastructure-only PR was blocked indefinitely with every check it did
-    # run showing green. Including the path here means the required context
-    # always reports. The job body skips the Python-only work when no Python
-    # changed, so this does not run the full suite for a template edit.
+    # `deploy/cloudformation/**` and `frontend/**` are included because
+    # "Python Quality & Tests" is a REQUIRED status check in the
+    # main-protection ruleset. A required check that never runs is reported as
+    # missing, not as passing, so a PR touching only those trees would be
+    # blocked indefinitely with every check it did run showing green. Listing
+    # the paths here means the required context always reports. The job body
+    # skips the Python-only work when no Python changed, so this does not run
+    # the full suite for a template or component edit.
     paths:
       - 'src/**'
       - 'tests/**'
       - 'deploy/cloudformation/**'
+      - 'frontend/**'
       - 'requirements*.txt'
       - 'pyproject.toml'
       - 'setup.py'
@@ -31,6 +33,7 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'deploy/cloudformation/**'
+      - 'frontend/**'
   workflow_dispatch:
 
 # Cancel in-progress runs when new commits are pushed
@@ -396,3 +399,89 @@ jobs:
         continue-on-error: true  # GitHub Advanced Security may not be enabled
         with:
           sarif_file: 'trivy-results.sarif'
+
+  # ==========================================================================
+  # Frontend quality gate
+  # ==========================================================================
+  # Before this job, nothing in CI touched `frontend/`. `code-quality.yml` was
+  # path-filtered to Python and CloudFormation, and `buildspec-validation.yml`
+  # covers only buildspecs -- so 1,880 tests across 80 files ran on developer
+  # machines and nowhere else, and a frontend regression merged green.
+  #
+  # This is a separate job rather than steps inside `python-quality` because
+  # the two need different toolchains and should fail independently: a broken
+  # component should not read as a Python failure.
+  frontend-quality:
+    name: Frontend Quality & Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      # Self-contained detection rather than reading an output from
+      # `python-quality`, so this job does not need to wait on it.
+      - name: Detect frontend changes
+        id: changes
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          ZERO=0000000000000000000000000000000000000000
+
+          if [ -n "${PR_BASE:-}" ] && [ -n "${PR_HEAD:-}" ]; then
+            FROM="$PR_BASE"; TO="$PR_HEAD"
+          elif [ -n "${PUSH_BEFORE:-}" ] && [ "$PUSH_BEFORE" != "$ZERO" ]; then
+            FROM="$PUSH_BEFORE"; TO="${PUSH_AFTER:-HEAD}"
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            FROM="$(git rev-parse HEAD^)"; TO="HEAD"
+          else
+            echo "Cannot resolve a diff window - running the frontend gate."
+            echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --name-only "$FROM" "$TO" | grep -qE '^frontend/'; then
+            echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        if: steps.changes.outputs.frontend_changed == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      # `--legacy-peer-deps` is mandatory here, not a shortcut:
+      # eslint-plugin-react@7.37.5 caps its peer-eslint range at ^9.7 while the
+      # project is on eslint@10.x, so npm refuses to resolve without it. The
+      # rationale and the replacement plan are in `frontend/CLAUDE.md`.
+      - name: Install dependencies
+        if: steps.changes.outputs.frontend_changed == 'true'
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+
+      - name: Lint
+        if: steps.changes.outputs.frontend_changed == 'true'
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Tests
+        if: steps.changes.outputs.frontend_changed == 'true'
+        working-directory: frontend
+        run: npm run test:run
+
+      # A component can lint and test clean and still break the bundle --
+      # an unresolved import only surfaces at build time.
+      - name: Build
+        if: steps.changes.outputs.frontend_changed == 'true'
+        working-directory: frontend
+        run: npm run build

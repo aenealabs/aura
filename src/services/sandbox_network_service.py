@@ -46,12 +46,51 @@ class SandboxNetworkStatus(Enum):
 
 
 class NetworkIsolationLevel(Enum):
-    """Level of network isolation for sandbox."""
+    """Level of network isolation for sandbox.
+
+    Declaring a level here does **not** mean it is enforced. See
+    :data:`ENFORCED_ISOLATION_LEVELS` for what the live provisioning path
+    actually implements.
+    """
 
     NONE = "none"  # No isolation (use host network)
     CONTAINER = "container"  # Container-level isolation
-    VPC = "vpc"  # Dedicated VPC subnet
-    FULL = "full"  # Completely isolated VPC
+    VPC = "vpc"  # Dedicated VPC subnet -- NOT ENFORCED, see below
+    FULL = "full"  # Completely isolated VPC -- NOT ENFORCED, see below
+
+
+# Isolation levels the live Fargate path actually enforces.
+#
+# CONTAINER is real: the task runs in pre-provisioned sandbox subnets with
+# their security groups and `assignPublicIp: DISABLED`.
+#
+# VPC and FULL are NOT enforced. `FargateSandboxOrchestrator.create_sandbox`
+# previously accepted them and passed the value through as an ISOLATION_LEVEL
+# environment variable on the container, while the `networkConfiguration`
+# block -- subnets, security groups, public-IP assignment -- stayed byte for
+# byte identical to CONTAINER. A caller asking for FULL got container-level
+# networking and a success response, which for a platform whose threat model
+# names "network isolation bypass" is a control that reports success and does
+# nothing.
+#
+# Enforcing them requires per-level subnets and security groups provisioned in
+# CloudFormation and selected by `_get_sandbox_subnets`. Until that exists,
+# requesting them raises rather than silently degrading.
+ENFORCED_ISOLATION_LEVELS = frozenset(
+    {
+        NetworkIsolationLevel.NONE,
+        NetworkIsolationLevel.CONTAINER,
+    }
+)
+
+
+class UnsupportedIsolationLevelError(ValueError):
+    """Raised when a caller requests an isolation level that is not enforced.
+
+    Deliberately an error rather than a warning-and-downgrade: a caller that
+    asked for VPC isolation and got container-level networking has a weaker
+    boundary than it believes, and belief is the whole point of a sandbox.
+    """
 
 
 @dataclass
@@ -158,11 +197,17 @@ class SandboxNetwork:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     terminated_at: datetime | None = None
     metadata: dict[str, str] = field(default_factory=dict)
+    # True when the identifiers on this record were fabricated by the
+    # simulation harness rather than returned by AWS. Carried in the data so a
+    # consumer can tell a real network from a placeholder without reading the
+    # provisioning code.
+    simulated: bool = False
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
             "sandbox_id": self.sandbox_id,
+            "simulated": self.simulated,
             "status": self.status.value,
             "isolation_level": self.isolation_level.value,
             "vpc_id": self.vpc_id,
@@ -181,32 +226,20 @@ class SandboxNetwork:
 
 
 class SandboxNetworkOrchestrator:
-    """
-    Orchestrates isolated network environments for sandbox testing.
+    """SIMULATION HARNESS -- does not provision real AWS network resources.
 
-    Responsibilities:
-        - Provision ephemeral dnsmasq containers/tasks for each sandbox
-        - Configure isolated DNS zones with custom resolution
-        - Manage network lifecycle (provision, monitor, teardown)
-        - Track active sandbox networks for cleanup
-        - Integrate with HITL approval workflow
+    None of the four isolation levels are implemented here. Every provisioning
+    method fabricates identifiers (``vpc-simulated``, ``subnet-<sandbox_id>``),
+    sets status ACTIVE, and returns; the teardown path logs what it would
+    delete and makes no AWS call. Records it produces are flagged
+    ``simulated=True`` so a consumer can tell without reading this code.
 
-    Usage:
-        orchestrator = SandboxNetworkOrchestrator(
-            environment="dev",
-            project_name="aura"
-        )
+    The live provisioning path is :class:`FargateSandboxOrchestrator`, which is
+    what the validator, bug-solving and self-play agents actually use. This
+    class currently has no callers outside its own tests.
 
-        # Provision sandbox network
-        network = await orchestrator.provision_sandbox_network(
-            sandbox_id="sandbox-12345",
-            isolation_level=NetworkIsolationLevel.CONTAINER
-        )
-
-        # Use network in tests...
-
-        # Cleanup
-        await orchestrator.terminate_sandbox_network("sandbox-12345")
+    Do not wire this into a path that needs a real network boundary. It exists
+    to exercise the surrounding data model, not to isolate anything.
     """
 
     def __init__(
@@ -316,6 +349,11 @@ class SandboxNetworkOrchestrator:
         self.active_networks[sandbox_id] = network
 
         try:
+            # Every branch below is simulated -- see the class docstring. The
+            # flag is set once here rather than in each branch so a new
+            # isolation level cannot be added without inheriting it.
+            network.simulated = True
+
             # Provision based on isolation level
             if isolation_level == NetworkIsolationLevel.CONTAINER:
                 await self._provision_container_network(network)
@@ -395,6 +433,7 @@ class SandboxNetworkOrchestrator:
 
         # For now, simulate successful provisioning
         network.status = SandboxNetworkStatus.ACTIVE
+        network.simulated = True
         network.vpc_id = "vpc-simulated"
         network.subnet_id = f"subnet-{network.sandbox_id}"
         network.security_group_id = f"sg-{network.sandbox_id}"
@@ -419,6 +458,7 @@ class SandboxNetworkOrchestrator:
 
         # For now, simulate successful provisioning
         network.status = SandboxNetworkStatus.ACTIVE
+        network.simulated = True
         network.vpc_id = f"vpc-isolated-{network.sandbox_id}"
         network.subnet_id = f"subnet-isolated-{network.sandbox_id}"
         network.dns_endpoint = f"192.168.{len(self.active_networks)}.2:53"
@@ -616,6 +656,33 @@ class FargateSandboxOrchestrator:
             f"environment={environment}, cluster={self.cluster_name}"
         )
 
+    @staticmethod
+    def _require_enforced_isolation(isolation_level: str) -> None:
+        """Reject isolation levels this path does not actually enforce.
+
+        Raises:
+            UnsupportedIsolationLevelError: for a declared-but-unenforced level.
+            ValueError: for a value that is not an isolation level at all.
+        """
+        try:
+            level = NetworkIsolationLevel(isolation_level)
+        except ValueError:
+            valid = sorted(lv.value for lv in NetworkIsolationLevel)
+            raise ValueError(
+                f"Unknown isolation level {isolation_level!r}. Valid: {valid}"
+            ) from None
+
+        if level not in ENFORCED_ISOLATION_LEVELS:
+            enforced = sorted(lv.value for lv in ENFORCED_ISOLATION_LEVELS)
+            raise UnsupportedIsolationLevelError(
+                f"Isolation level {level.value!r} is declared but not enforced by "
+                f"FargateSandboxOrchestrator: the task network configuration is "
+                f"identical to {NetworkIsolationLevel.CONTAINER.value!r}. Enforced "
+                f"levels: {enforced}. Requesting it would yield a weaker network "
+                f"boundary than the name implies, so it is refused rather than "
+                f"silently downgraded."
+            )
+
     async def create_sandbox(
         self,
         sandbox_id: str,
@@ -641,7 +708,11 @@ class FargateSandboxOrchestrator:
 
         Raises:
             RuntimeError: If task launch fails
+            UnsupportedIsolationLevelError: If ``isolation_level`` is declared
+                in :class:`NetworkIsolationLevel` but not enforced by this
+                path. See :data:`ENFORCED_ISOLATION_LEVELS`.
         """
+        self._require_enforced_isolation(isolation_level)
         logger.info(f"Creating sandbox {sandbox_id} for patch {patch_id}")
 
         # Get network configuration from CloudFormation exports

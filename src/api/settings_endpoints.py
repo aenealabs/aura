@@ -118,7 +118,14 @@ class SecuritySettingsModel(BaseModel):
         default=True, description="Block external network from sandboxes"
     )
     sandbox_isolation_level: str = Field(
-        default="vpc", description="Sandbox isolation level (container/vpc/full)"
+        default="container",
+        description=(
+            "Sandbox isolation level. Only 'container' and 'none' are enforced "
+            "by the provisioning path; 'vpc' and 'full' are declared but not "
+            "implemented and are refused rather than silently downgraded. "
+            "NOTE: this setting is persisted but not yet read by sandbox "
+            "provisioning -- see ENFORCED_ISOLATION_LEVELS."
+        ),
     )
     audit_all_actions: bool = Field(default=True, description="Log all actions")
     retain_logs_for_days: int = Field(

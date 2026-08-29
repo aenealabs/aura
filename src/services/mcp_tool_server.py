@@ -513,15 +513,29 @@ class SandboxToolHandler:
                 "status": "provisioning",
             }
 
-        # Real implementation would provision via SandboxNetwork
         if self.sandbox is None:
             raise RuntimeError("Sandbox service not initialized")
 
-        # Note: provision_sandbox is a placeholder for actual sandbox provisioning method
-        result = await self.sandbox.provision_sandbox(  # type: ignore[attr-defined]
+        # This previously called ``self.sandbox.provision_sandbox(...)`` behind
+        # a ``# type: ignore[attr-defined]``. No class in the codebase defines
+        # that method -- the only real entry point is
+        # ``FargateSandboxOrchestrator.create_sandbox``, with a different
+        # signature. The call therefore raised AttributeError on any non-mock
+        # invocation, and was invisible because everything runs in mock mode.
+        create = getattr(self.sandbox, "create_sandbox", None)
+        if create is None:
+            raise RuntimeError(
+                f"Sandbox service {type(self.sandbox).__name__} does not implement "
+                "create_sandbox; wire a FargateSandboxOrchestrator to use this tool"
+            )
+
+        result = await create(
+            sandbox_id=params.get("sandbox_id", ""),
+            patch_id=params.get("patch_id", ""),
+            test_suite=params.get("test_suite", ""),
             isolation_level=isolation_level,
-            duration_minutes=duration_minutes,
-            resources=resources,
+            timeout_seconds=duration_minutes * 60,
+            metadata={"resources": str(resources)} if resources else None,
         )
         return dict(result)
 

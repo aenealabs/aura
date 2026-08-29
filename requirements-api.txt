@@ -28,7 +28,7 @@ PyJWT[crypto]>=2.13.0         # JWT validation (GitHub App auth + Cognito JWKS)
 cryptography>=49.0.0         # RSA key support
 
 # API Framework
-fastapi>=0.140.7             # REST API
+fastapi>=0.141.1             # REST API
 uvicorn>=0.52.4              # ASGI server
 httpx>=0.28.1                # HTTP client
 pydantic>=2.13.4             # Data validation
@@ -57,7 +57,7 @@ PyYAML>=6.0.2
 # google packages are optional — GeminiLLMService falls back to mock
 # mode when absent.
 openai>=2.48.0
-google-genai>=2.14.0 ; python_version >= "3.10"
+google-genai>=2.19.0 ; python_version >= "3.10"
 google-cloud-aiplatform>=1.165.1 ; python_version >= "3.10"
 
 # Calibration / Explainability (ADR-068)

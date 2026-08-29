@@ -106,7 +106,7 @@ These are the deps with corporate or foundation backing where we accept the risk
 | --- | --- |
 | `public.ecr.aws/docker/library/python:3.11-slim` | Mirrored to private ECR per CLAUDE.md mandate; Docker official image |
 | `public.ecr.aws/docker/library/alpine:3.19` | Same; Alpine Linux (community) |
-| `public.ecr.aws/docker/library/node:20-alpine` | Same; Node.js |
+| `public.ecr.aws/docker/library/node:22-alpine` | Same; Node.js |
 | `public.ecr.aws/docker/library/nginx:1.28-alpine` | Same; nginx (F5) |
 | `nvcr.io/nvidia/cuda:cudnn-runtime-ubuntu22.04` | NVIDIA-published; mirrored to private ECR for GPU workloads |
 | `actions/checkout`, `actions/setup-python`, `actions/upload-artifact`, `actions/github-script` | GitHub-owned official actions |

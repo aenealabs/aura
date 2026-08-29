@@ -151,9 +151,9 @@ phases:
             ;;
           node)
             BASE_IMAGE_OUTPUT="NodeRepositoryUri"
-            BASE_IMAGE_TAG="20-alpine"
+            BASE_IMAGE_TAG="22-alpine"
             BASE_IMAGE_ARG="NODE_BASE_IMAGE_URI"
-            FALLBACK_IMAGE="public.ecr.aws/docker/library/node:20-alpine"
+            FALLBACK_IMAGE="public.ecr.aws/docker/library/node:22-alpine"
             ;;
           *)
             echo "WARNING: Unknown base image type, skipping base image injection"

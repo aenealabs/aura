@@ -14,13 +14,13 @@
 #
 # Usage (CodeBuild - private ECR URIs set automatically):
 #   podman build --platform linux/amd64 \
-#     --build-arg NODE_BASE_IMAGE_URI=${NODE_ECR_URI}:20-alpine \
+#     --build-arg NODE_BASE_IMAGE_URI=${NODE_ECR_URI}:22-alpine \
 #     --build-arg NGINX_BASE_IMAGE_URI=${NGINX_ECR_URI}:1.25-alpine \
 #     -t aura-frontend:v1.0.0 -f Dockerfile.frontend .
 
 # Base images from private ECR (controlled supply chain)
 # Fallback to public ECR Gallery if ARG not provided (for local dev without bootstrap)
-ARG NODE_BASE_IMAGE_URI=public.ecr.aws/docker/library/node:20-alpine
+ARG NODE_BASE_IMAGE_URI=public.ecr.aws/docker/library/node:22-alpine
 ARG NGINX_BASE_IMAGE_URI=public.ecr.aws/docker/library/nginx:1.28-alpine
 
 # Stage 1: Build the React app
@@ -34,8 +34,15 @@ WORKDIR /app
 # Copy package files first for better layer caching
 COPY frontend/package.json frontend/package-lock.json ./
 
-# Install dependencies
-RUN npm ci --silent
+# Install dependencies.
+# --legacy-peer-deps is mandatory and is not a style choice: eslint-plugin-react
+# @7.37.5 caps its eslint peer at ^9.7 while the project is on eslint@10, so a
+# bare `npm ci` exits 1 with ERESOLVE and installs nothing. CI and the
+# dependency audit already pass this flag; this stage did not, which meant the
+# image could not build at all. Tracked in docs/security/DEPENDENCY_RISK_REGISTER.md.
+# --omit=dev is not an option here: vite and tailwind are devDependencies and
+# `npm run build` below needs them.
+RUN npm ci --legacy-peer-deps --silent
 
 # Copy source files
 COPY frontend/ ./

@@ -32,7 +32,7 @@ PROJECT_NAME="aura"
 ALPINE_VERSION="3.19"
 ALPINE_SOURCE="public.ecr.aws/docker/library/alpine:${ALPINE_VERSION}"
 
-NODE_VERSION="20-alpine"
+NODE_VERSION="22-alpine"
 NODE_SOURCE="public.ecr.aws/docker/library/node:${NODE_VERSION}"
 
 NGINX_VERSION="1.25-alpine"
@@ -244,7 +244,7 @@ main() {
     log_info "  ${PYTHON_ECR_URI}:${PYTHON_HARNESS_VERSION}"
     log_info ""
     log_info "Use in Dockerfiles with ARG pattern:"
-    log_info "  ARG NODE_BASE_IMAGE_URI=public.ecr.aws/docker/library/node:20-alpine"
+    log_info "  ARG NODE_BASE_IMAGE_URI=public.ecr.aws/docker/library/node:22-alpine"
     log_info "  FROM \${NODE_BASE_IMAGE_URI}"
     log_info ""
     log_info "Security scanning will complete in ~60 seconds."

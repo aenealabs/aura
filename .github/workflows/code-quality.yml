@@ -461,11 +461,19 @@ jobs:
             echo "frontend_changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Node 22, not 20. The lockfile's own engines fields require it:
+      # jsdom needs ^22.22.2 || ^24.15.0 || >=26.0.0 and undici needs
+      # >=22.19.0, both pulled in by the jsdom 29 -> 30 bump in #368. On
+      # Node 20 every vitest worker fails to start with
+      # "webidl.util.markAsUncloneable is not a function".
+      #
+      # npm only warns on engines mismatches rather than failing, so this
+      # was invisible until the frontend gate ran for the first time.
       - name: Setup Node
         if: steps.changes.outputs.frontend_changed == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 

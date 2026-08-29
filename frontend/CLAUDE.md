@@ -26,7 +26,42 @@
 - **Language:** JavaScript with JSX (no TypeScript). When converting modules to TS, do it incrementally per-file and update this entry.
 - **Styling:** Tailwind CSS
 - **State Management:** Follow existing patterns in the codebase
-- **Build:** Node 20 (private ECR base image: `aura-base-images/node:20-slim`); bundle via Vite + Rollup
+- **Build:** Node 22 (see Node version requirement below); bundle via Vite + Rollup
+
+---
+
+## Node version requirement
+
+**Node 22 minimum -- `^22.22.2 || ^24.15.0 || >=26.0.0`**, declared in
+`package.json` `engines` and enforced in CI by the `Frontend Quality & Tests`
+job.
+
+This guide previously said Node 20, and that became wrong when the
+`jsdom 29.1.1 -> 30.0.1` bump (#368) pulled the dependency tree forward:
+
+| Package | Requires |
+|---|---|
+| `jsdom` | `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0` |
+| `undici` | `>=22.19.0` |
+| `@testing-library/jest-dom` | `>=22` |
+
+On Node 20 every vitest worker fails to start with:
+
+```
+TypeError: webidl.util.markAsUncloneable is not a function
+```
+
+**Two things made this invisible.** npm only *warns* on an `engines` mismatch
+rather than failing, so a local install on an unsupported Node appears to
+succeed. And a developer with a `node_modules` predating #368 keeps the older
+`undici` and sees tests pass against a tree that no longer matches the
+lockfile -- `npm ci` on a clean checkout behaves differently from `npm install`
+on a stale one.
+
+If tests pass locally but fail in CI, check `node --version` against the table
+above and re-run `npm ci --legacy-peer-deps` before assuming the change is at
+fault. Note that Node 25 does **not** satisfy the range: `jsdom` skips odd
+majors.
 
 ---
 

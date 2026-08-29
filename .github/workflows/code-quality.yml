@@ -5,26 +5,35 @@ on:
     branches:
       - main
       - develop
-    # Only run on code changes - skip for docs/config-only changes.
+    # NO `paths:` FILTER -- THIS IS DELIBERATE. DO NOT ADD ONE.
     #
-    # `deploy/cloudformation/**` and `frontend/**` are included because
     # "Python Quality & Tests" is a REQUIRED status check in the
     # main-protection ruleset. A required check that never runs is reported as
-    # missing, not as passing, so a PR touching only those trees would be
-    # blocked indefinitely with every check it did run showing green. Listing
-    # the paths here means the required context always reports. The job body
-    # skips the Python-only work when no Python changed, so this does not run
-    # the full suite for a template or component edit.
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'deploy/cloudformation/**'
-      - 'frontend/**'
-      - 'requirements*.txt'
-      - 'pyproject.toml'
-      - 'setup.py'
-      - 'setup.cfg'
-      - '.github/workflows/code-quality.yml'
+    # *missing* rather than passing, so any PR that fails to trigger this
+    # workflow sits blocked indefinitely, with every check it did run showing
+    # green and no error explaining why.
+    #
+    # A path filter on a required check is therefore a deadlock generator. It
+    # produced the same failure three times in three different trees:
+    #
+    #   deploy/cloudformation/**  observed on #405, "fixed" in #406
+    #   frontend/**               "fixed" in #415
+    #   deploy/buildspecs/**, deploy/scripts/**, deploy/kubernetes/**,
+    #   deploy/helm/**, deploy/docker/**, scripts/**, docs/**
+    #                             found by coverage audit
+    #
+    # Each earlier fix added exactly the one tree that had just broken, which
+    # is why it kept coming back. Enumerating trees cannot work: the list has
+    # to be complete forever, and it silently fails the moment someone adds a
+    # directory.
+    #
+    # The filtering that actually matters happens in the JOB BODY. The change
+    # detection below decides what work to do, so a docs-only PR still gets a
+    # reporting context but skips the toolchain and the test suite. The cost
+    # is one cheap job per PR; the cost of getting the list wrong is a PR
+    # nobody can merge.
+    #
+    # If you are here to make PRs faster, gate steps in the job -- not here.
   # Push to main only runs smoke tests (fast validation after merge)
   push:
     branches:
@@ -32,8 +41,9 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
-      - 'deploy/cloudformation/**'
+      - 'deploy/**'
       - 'frontend/**'
+      - 'scripts/**'
   workflow_dispatch:
 
 # Cancel in-progress runs when new commits are pushed

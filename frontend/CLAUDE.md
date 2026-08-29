@@ -61,7 +61,73 @@ on a stale one.
 If tests pass locally but fail in CI, check `node --version` against the table
 above and re-run `npm ci --legacy-peer-deps` before assuming the change is at
 fault. Note that Node 25 does **not** satisfy the range: `jsdom` skips odd
-majors.
+majors. The declared range is the contract regardless of whether an unlisted
+major happens to run the suite -- CI pins `node-version: '22'`, so that is the
+only version the tests are actually verified against.
+
+**Not yet reconciled:** the container build path still names Node 20 --
+`deploy/docker/frontend/Dockerfile.frontend:23`,
+`deploy/buildspecs/buildspec-docker-build.yml:156`,
+`deploy/buildspecs/buildspec-marketing.yml:9` -- and the private-ECR base-image
+list in the root `CLAUDE.md` offers only `aura-base-images/node:20-slim`.
+Whether the production bundle breaks on Node 20 is unverified: the observed
+failure was in vitest, which the image does not run. Tracked in
+`docs/PROJECT_STATUS.md`. That Dockerfile also runs bare `npm ci --silent`
+without `--legacy-peer-deps`, which CI requires (see below).
+
+---
+
+## CI gate: `Frontend Quality & Tests`
+
+Added in #415. Before it, nothing in CI touched `frontend/` -- `code-quality.yml`
+was path-filtered to Python and CloudFormation and `buildspec-validation.yml`
+covers only buildspecs, so the whole suite ran on developer machines and a
+frontend regression merged green.
+
+The gate is a job in `.github/workflows/code-quality.yml`, not a separate
+workflow. It runs, in order, with `working-directory: frontend`:
+
+```bash
+npm ci --legacy-peer-deps
+npm run lint
+npm run test:run
+npm run build
+```
+
+**Build is part of the gate on purpose.** A component can lint and test clean
+and still break the bundle -- an unresolved import only surfaces at build time.
+
+**When it runs.** A self-contained detection step resolves `frontend_changed`
+from the PR diff, so a Python-only or template-only PR does not pay for an
+`npm ci`. Editing `code-quality.yml` itself also counts as a frontend change:
+without that, a PR touching only the gate reports green in about five seconds
+having installed, linted and built nothing, and the breakage lands on the next
+contributor's frontend PR looking like their fault.
+
+**The `frontend/**` glob is in the workflow's trigger paths as well as in the
+job.** That is
+load-bearing and must not be removed: `Python Quality & Tests` is a *required*
+status check, and a required check that never runs is reported as missing rather
+than passing, so a frontend-only PR would be blocked indefinitely with every
+check it did run green. A standalone frontend workflow would reproduce that
+deadlock exactly.
+
+**Lint baseline.** `npm run lint` currently reports **93 problems, 0 errors**.
+The gate exits 0 on that baseline and 1 when a real error is introduced, so it
+catches regressions without being blocked by the existing warnings. Do not
+"fix" the gate by adding `--max-warnings` -- reduce the warnings instead.
+
+`Frontend Quality & Tests` is **not** itself a required status check as of this
+writing; promoting it is a main-protection ruleset change made in GitHub
+settings, outside this repository.
+
+Local equivalent before pushing:
+
+```bash
+cd frontend
+npm ci --legacy-peer-deps   # not `npm install` -- see Node version requirement
+npm run lint && npm run test:run && npm run build
+```
 
 ---
 

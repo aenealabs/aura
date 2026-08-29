@@ -214,6 +214,18 @@ Two consequences worth knowing:
   infrastructure-only PRs indefinitely. Do not remove that path from the trigger
   list without also removing the required-check requirement.
 
+**Sibling gates (as of #415, 2026-08-29):** `frontend/**` was added to the same
+workflow -- both to the trigger paths and as a separate `Frontend Quality & Tests`
+job -- for exactly the reason above. `code-quality.yml` now carries three PR
+gates: the Python steps, this cfn-lint step, and the frontend job. Each has its
+own change detection, so editing a template runs cfn-lint only. Editing the
+workflow file counts as a change for every detector, so any edit to a gate
+exercises that gate. The `main-protection` ruleset requires four contexts
+(`Analyze (python)`, `Analyze (javascript-typescript)`, `Analyze (actions)`,
+`Python Quality & Tests`); of those, only `Python Quality & Tests` is
+path-filtered, which is why it is the only one that can deadlock a PR. Full
+breakdown in `docs/deployment/GITHUB_ACTIONS_SETUP.md`.
+
 **Nightly Validation:**
 `.github/workflows/nightly-iam-validation.yml` runs daily at 2 AM UTC to validate all templates and IAM actions. It is now a backstop for the whole estate rather than the first time a changed template is linted.
 

@@ -97,6 +97,27 @@ This guide covers monitoring strategies, dashboards, metrics, and alerting for P
 | `node_ready` | k8s | Node health status | != True |
 | `pvc_usage_percent` | k8s | PVC disk usage | > 80% |
 
+### Tool Invocation Metrics (#408)
+
+**Status:** Emitted by `MCPToolServer.invoke_tool` via `src/services/cloudwatch_metrics_publisher.py:416`. **No CloudWatch alarm is defined on this namespace yet** -- no template in `deploy/cloudformation/` references `Aura/Tools`. The metrics are available to query and to alarm on; nothing is currently alarming.
+
+| Metric | Namespace | Dimensions | Description | Suggested threshold |
+|--------|-----------|------------|-------------|---------------------|
+| `InvocationCount` | Aura/Tools | `ToolName`, `Outcome` | One data point per tool call. `Outcome` is `success`, `error` or `reported_failure` | N/A |
+| `ReportedFailureCount` | Aura/Tools | `ToolName` | `1.0` when the outcome was `reported_failure`, `0.0` otherwise | Sustained > 0 per tool |
+| `ToolLatency` | Aura/Tools | `ToolName`, `Outcome` | Invocation latency in milliseconds | Per-tool p95 budget |
+
+**Why `ReportedFailureCount` exists separately from the `Outcome` dimension.** A `reported_failure` is a tool that caught its own error and returned a well-formed failure payload -- it did not raise, so exception-based monitoring cannot see it. Before #408 those calls incremented `successful_invocations` and returned `success=True`, which is structurally an HTTP 200 carrying an error body. The dedicated metric exists so an alarm can be written without the author having to know that an `Outcome` dimension value called `reported_failure` exists; a metric nobody can find is not observability.
+
+**Read a non-zero `ReportedFailureCount` as "tools are failing while nothing raises."** That is a different incident class from `Outcome=error`, which covers raises, timeouts and pre-dispatch rejections. Both are real; only the first is invisible to the exception path.
+
+Two properties worth knowing before writing an alarm:
+
+- The metric is emitted as `0.0` on the healthy path, deliberately, so an alarm has data points before an incident rather than sitting in `INSUFFICIENT_DATA` until one starts. Alarm on the `Sum` statistic, not on missing data.
+- Emission never raises. A metrics outage cannot turn a successful tool call into a failed one, which also means **absence of data points does not imply absence of tool traffic**. Pair any alarm on this metric with one on `InvocationCount`.
+
+`status` in a tool payload is deliberately **not** treated as a failure marker. For a query tool it describes the subject, not the call: `get_sandbox_status` returning `{"status": "failed"}` is a successful query whose answer is bad news, and a policy tool returning `{"status": "denied"}` has successfully evaluated a policy. Do not build alarms that assume otherwise.
+
 ### Scanner Taint Resolver Metrics (ADR-093)
 
 **Status:** Code-complete (May 13, 2026); Phases 6-7 **Deferred (Cost Gate)** -- alarms are defined but will arm when live deploy resumes. See [ADR-093](../../architecture-decisions/ADR-093-neptune-cross-file-taint-resolver.md) and the [taint resolver runbook](../../runbooks/NEPTUNE_TAINT_RESOLVER_RUNBOOK.md).

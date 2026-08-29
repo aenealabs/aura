@@ -53,6 +53,33 @@ three runs on the target environment plus explicit reviewer sign-off.
 
 ---
 
+## Frontend Tests Are a Separate Suite
+
+`tests/` is Python only. The frontend has its own vitest suite under
+`frontend/src/`, **1,880 tests across 80 files** (verified 2026-08-29), which is
+not included in any `pytest --collect-only` count.
+
+```bash
+cd frontend
+npm ci --legacy-peer-deps   # the flag is mandatory; see frontend/CLAUDE.md
+npm run test:run
+```
+
+**Node 22 is required** (`^22.22.2 || ^24.15.0 || >=26.0.0`, declared in
+`frontend/package.json` `engines`). On Node 20 every vitest worker fails to start
+with `TypeError: webidl.util.markAsUncloneable is not a function`. npm only
+*warns* on an `engines` mismatch, and a stale `node_modules` keeps the older
+`undici`, so a local run can pass against a tree that no longer matches the
+lockfile.
+
+Both suites are gated on pull requests as of #415, in separate jobs in
+`.github/workflows/code-quality.yml`: `Python Quality & Tests` and
+`Frontend Quality & Tests`. Each has its own change detection, so a Python-only
+PR does not run `npm ci` and a frontend-only PR does not run pytest. Before #415
+the frontend suite ran on developer machines only.
+
+---
+
 ## Test File Conventions
 
 - Test files: `test_{service_name}.py` matching the service under test

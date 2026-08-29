@@ -28,6 +28,7 @@ from pathlib import Path
 
 import boto3
 import pytest
+from botocore.httpsession import URLLib3Session
 from moto import mock_aws
 
 # Lazy import to avoid importing torch at collection time
@@ -290,7 +291,13 @@ def anyio_backend():
 
 @pytest.fixture(scope="function")
 def aws_credentials():
-    """Mock AWS credentials for moto."""
+    """Mock AWS credentials for moto.
+
+    Retained for explicitness and for tests that request it by name. The
+    session-scoped ``_fake_aws_credentials_everywhere`` fixture below now sets
+    the same values for the whole run, so opting in is no longer what stands
+    between a test and your real AWS account.
+    """
     os.environ["AWS_ACCESS_KEY_ID"] = "testing"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
     os.environ["AWS_SECURITY_TOKEN"] = "testing"
@@ -298,6 +305,79 @@ def aws_credentials():
     os.environ["AWS_DEFAULT_REGION"] = AWS_REGION
     yield
     # Cleanup is automatic when fixture goes out of scope
+
+
+class UnmockedAWSCallError(RuntimeError):
+    """Raised when a test attempts a real AWS API call.
+
+    Deliberately an error, not a warning. A test that silently reaches a real
+    account costs money, can mutate live state, and -- as the bug that
+    motivated this guard showed -- fails in ways that look like unrelated
+    flakiness on someone else's machine.
+    """
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _fake_aws_credentials_everywhere():
+    """Give every test fake AWS credentials, not just the ones that opt in.
+
+    Before this, ``aws_credentials`` was function-scoped and opt-in: 62 of 740
+    test files requested an AWS/moto fixture, and no autouse fixture faked
+    credentials. The other 678 ran against whatever credential chain the
+    developer happened to have configured.
+
+    ``setdefault`` semantics: a real credential already exported into the
+    environment is NOT overwritten here -- that is what
+    ``_block_unmocked_aws_calls`` below is for. This fixture makes signing
+    possible so failures surface as a blocked call with a useful message,
+    rather than an opaque NoCredentialsError.
+    """
+    for key, value in {
+        "AWS_ACCESS_KEY_ID": "testing",
+        "AWS_SECRET_ACCESS_KEY": "testing",
+        "AWS_SECURITY_TOKEN": "testing",
+        "AWS_SESSION_TOKEN": "testing",
+        "AWS_DEFAULT_REGION": AWS_REGION,
+    }.items():
+        os.environ.setdefault(key, value)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _block_unmocked_aws_calls():
+    """Fail any test that attempts a real AWS API call.
+
+    Patched at ``URLLib3Session.send`` -- the HTTP transport layer -- rather
+    than at botocore's ``before-send`` event. moto registers its interception
+    *at* ``before-send`` via ``BUILTIN_HANDLERS``, so a guard at that layer
+    would race moto's handler and its behaviour would depend on registration
+    order. Patching the transport is unambiguous: moto short-circuits above it
+    and never reaches this, so a call arriving here is by definition unmocked.
+
+    Verified both directions in ``tests/test_aws_call_guard.py``: fires on a
+    real call, stays silent under ``mock_aws()``.
+
+    Function-scoped and restored in a ``finally`` so a test that genuinely
+    needs the transport (contract tests against a local endpoint, say) can
+    unpatch it without leaking that state into the next test.
+    """
+    original_send = URLLib3Session.send
+
+    def _guarded_send(self, request, *args, **kwargs):
+        raise UnmockedAWSCallError(
+            f"Unmocked AWS call: {request.method} {request.url}\n"
+            "Tests must not reach real AWS. Use the moto fixtures "
+            "(mock_aws_services, mock_dynamodb, mock_s3) or mock the client. "
+            "If this fired from production code, check that its test-mode "
+            "guard is keyed off TESTING rather than an AWS environment "
+            "variable."
+        )
+
+    URLLib3Session.send = _guarded_send
+    try:
+        yield
+    finally:
+        URLLib3Session.send = original_send
 
 
 # Disable the HITL demo-approval seeding for the entire test run.

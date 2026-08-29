@@ -576,9 +576,26 @@ podman compose exec dns-test-client nslookup -port=5353 neptune.aura.local dnsma
 class NetworkIsolationLevel(Enum):
     NONE = "none"              # No isolation (use host network)
     CONTAINER = "container"    # Container-level isolation (recommended)
-    VPC = "vpc"               # Dedicated VPC subnet
-    FULL = "full"             # Completely isolated VPC
+    VPC = "vpc"                # Dedicated VPC subnet -- DECLARED, NOT ENFORCED
+    FULL = "full"              # Completely isolated VPC -- DECLARED, NOT ENFORCED
 ```
+
+**Declaring a level does not mean it is enforced.**
+`ENFORCED_ISOLATION_LEVELS` (`src/services/sandbox_network_service.py:79`) is
+the single source of truth for what the live provisioning path implements, and
+it contains only `NONE` and `CONTAINER`.
+
+`FargateSandboxOrchestrator.create_sandbox` previously accepted `vpc` and
+`full`, passed the value through as an `ISOLATION_LEVEL` environment variable on
+the container, and built a `networkConfiguration` block -- subnets, security
+groups, `assignPublicIp` -- that was byte-for-byte identical to `container`. A
+caller asking for `full` got container-level networking and a success response.
+Requesting either level now raises `UnsupportedIsolationLevelError` before any
+AWS call, rather than degrading silently.
+
+Enforcing them requires per-level subnets and security groups provisioned in
+CloudFormation and selected by `_get_sandbox_subnets`. That work has not been
+done.
 
 ### Example: Provisioning Sandbox
 
@@ -644,7 +661,11 @@ asyncio.run(test_security_patch())
 
 ### Current Implementation Status
 
-⚠️ **Note:** The `SandboxNetworkOrchestrator` is currently a **simulation/stub** implementation. Full AWS integration requires:
+**Note:** The `SandboxNetworkOrchestrator` shown in the example above is a **simulation harness**, not a provisioning path. None of its four isolation levels are implemented: every provisioning method fabricates identifiers (`vpc-simulated`, `subnet-<sandbox_id>`), sets status `ACTIVE` and returns, and teardown logs what it would delete without making an AWS call. `container` is simulated too, not only `vpc` / `full`. Records it produces carry `simulated=True` in the dataclass and in `to_dict()`, so a consumer can distinguish a placeholder from a real network without reading the provisioning code. It has no callers outside its own tests.
+
+The live provisioning path is `FargateSandboxOrchestrator`, which is what the validator, bug-solving and self-play agents use.
+
+Full AWS integration requires:
 
 1. **ECS Task Definition:** Register dnsmasq task definition with proper configuration
 2. **Security Groups:** Create and manage per-sandbox security groups
@@ -653,9 +674,11 @@ asyncio.run(test_security_patch())
 5. **Lifecycle Management:** Implement proper health checks and cleanup
 
 **Recommended Approach for V2.0:**
-- Phase 1: Implement container-level isolation (ECS Fargate)
-- Phase 2: Add VPC-level isolation for higher security
-- Phase 3: Full VPC isolation for production workloads
+- Phase 1: Implement container-level isolation (ECS Fargate) -- **done**; this is the only level the live path enforces
+- Phase 2: Add VPC-level isolation for higher security -- **not started**; `vpc` is refused today
+- Phase 3: Full VPC isolation for production workloads -- **not started**; `full` is refused today
+
+Phases 2 and 3 both require per-level subnets and security groups in CloudFormation plus selection logic in `_get_sandbox_subnets`. Until then, `ENFORCED_ISOLATION_LEVELS` refuses those levels rather than presenting container-level networking under their name.
 
 ---
 

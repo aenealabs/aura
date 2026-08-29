@@ -1,7 +1,7 @@
 # Control Registry - Aura Internal Security Controls
 
 **Status:** Active
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Last Updated:** 2026-08-28
 
 ---
@@ -59,6 +59,7 @@ history can reference a control without disclosing who asked for it or how they 
 | ID | Control | Status | Implementation | Frameworks |
 |----|---------|--------|----------------|------------|
 | `AURA-CTL-001` | **Model I/O Audit Logging** — Bedrock model invocation input and output are captured as audit records. Every record is delivered in full to an encrypted S3 corpus; CloudWatch Logs, encrypted with a customer-managed key, carries the same records for operational query, with bodies over 100 KB referenced from S3 rather than dropped. | Implemented | `deploy/cloudformation/bedrock-invocation-logging.yaml` (Layer 4.15) | NIST 800-53 AU-2, AU-3, AU-9, AU-11, SC-28 |
+| `AURA-CTL-002` | **Sandbox Network Boundary Truthfulness** -- the sandbox provisioning path refuses any network isolation level it does not actually enforce, instead of accepting the request and provisioning a weaker boundary under the stronger name. `ENFORCED_ISOLATION_LEVELS` is the single source of truth for what is implemented. | Implemented | `src/services/sandbox_network_service.py:79` (`ENFORCED_ISOLATION_LEVELS`, `UnsupportedIsolationLevelError`); `deploy/cloudformation/sandbox.yaml` (Layer 7.1) | NIST 800-53 SC-7, SC-7(21), AC-4, SA-4(9), CM-4 |
 
 ---
 
@@ -129,6 +130,88 @@ Deployed by `deploy/cloudformation/bedrock-invocation-logging.yaml`:
   encrypted with the CMK). In both cases a complete record must also be present under
   `invocation-logs/`. Without both halves, a working overflow path is indistinguishable from a
   silently dropped body.
+
+---
+
+## AURA-CTL-002: Sandbox Network Boundary Truthfulness
+
+### Requirement
+
+A sandbox is a security boundary whose value depends entirely on the caller
+believing the boundary is what it was told it is. A provisioning path that
+accepts a request for a strong isolation level and delivers a weaker one is
+worse than one that has no isolation at all, because the caller then reasons
+about a boundary that does not exist. The platform threat model names "network
+isolation bypass" explicitly, so this is in scope rather than a style
+preference.
+
+The control: the requested isolation level is either enforced as named, or the
+request is refused. There is no silent downgrade path.
+
+### Implementation
+
+`NetworkIsolationLevel` declares four levels (`none`, `container`, `vpc`,
+`full`). `ENFORCED_ISOLATION_LEVELS`
+(`src/services/sandbox_network_service.py:79`) is a frozenset naming the two the
+live path implements: `NONE` and `CONTAINER`.
+
+- **Refusal.** `FargateSandboxOrchestrator._require_enforced_isolation` runs at
+  the top of `create_sandbox`, before any AWS call, so the refusal does not
+  depend on reaching ECS. An unenforced-but-declared level raises
+  `UnsupportedIsolationLevelError` (a `ValueError` subclass) naming what would
+  otherwise have happened; a value that is not an isolation level at all raises
+  plain `ValueError` listing the valid names.
+- **What `container` actually enforces.** The task runs in the private subnets
+  with the sandbox security group and `assignPublicIp: DISABLED`.
+  `SandboxSecurityGroup` in `deploy/cloudformation/sandbox.yaml` declares no
+  inbound rules and limits egress to UDP 53 and TCP 443. `SandboxTaskRole` is an
+  allow-list covering two DynamoDB tables, one log group and one S3 artifact
+  prefix.
+- **Simulation is labelled as such.** `SandboxNetworkOrchestrator` is a
+  simulation harness with no callers outside its own tests; all four of its
+  levels fabricate identifiers and make no AWS call. Records it produces carry
+  `simulated=True` in the dataclass and in `to_dict()`, so a consumer can tell a
+  placeholder from a real network without reading the provisioning code.
+- **Defaults.** `sandbox_isolation_level` defaulted to `"vpc"` in both the
+  persistence layer and the settings API, which was persisted and shown to
+  operators but never read by provisioning. The default is now `"container"`,
+  and the API field description states which levels are enforced.
+
+### Scope and limitations
+
+- **`vpc` and `full` are not provided.** This control makes their absence
+  explicit; it does not implement them. Doing so requires per-level subnets and
+  security groups provisioned in CloudFormation and selected by
+  `_get_sandbox_subnets`.
+- Sandbox tasks share the platform VPC's private subnets. There is no dedicated
+  sandbox VPC (`deploy/cloudformation/sandbox.yaml` takes `VpcId` and
+  `PrivateSubnetIds` as parameters imported from the networking stack).
+- TCP 443 egress is open to `0.0.0.0/0`. It is scoped by port, not by
+  destination, so a sandbox is not egress-free.
+- Resource discovery previously could not succeed at all: `_get_sandbox_subnets`
+  filtered on `tag:Type=private`, which `networking.yaml` did not create, and
+  `_get_sandbox_security_groups` expected a Name tag of
+  `sg-{env}-sandbox-isolated` while `sandbox.yaml` creates
+  `${ProjectName}-sandbox-isolated-${Environment}`. Both documented SSM
+  fallbacks are published by no template, so each lookup always raised.
+  **Fixed in #413** -- the subnets now carry `Type: private`, and the
+  security-group lookup follows the repo's naming convention.
+- The SSM fallbacks (`/aura/{env}/sandbox/subnet-ids`,
+  `/aura/{env}/sandbox/security-group-id`) remain unpublished. The tag-based
+  primary path works, so these are now genuinely fallbacks rather than the only
+  remaining hope, but the code's error messages still offer them as an option.
+
+### Evidence
+
+- `ENFORCED_ISOLATION_LEVELS` is the assertable artifact: it is a module
+  constant, not a config value, so the enforced set cannot drift from the code
+  at runtime.
+- `tests/test_sandbox_isolation_enforcement.py` covers refusal of each
+  unenforced level, acceptance of each enforced level, rejection of unknown
+  values, and that validation precedes any AWS call.
+- Verification that the refusal is live: call
+  `FargateSandboxOrchestrator.create_sandbox(..., isolation_level="full")` and
+  confirm `UnsupportedIsolationLevelError` with no ECS `RunTask` attempted.
 
 ---
 

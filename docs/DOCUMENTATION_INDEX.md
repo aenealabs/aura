@@ -214,7 +214,7 @@ Enterprise-grade product documentation for Project Aura platform users, security
 | [product/core-concepts/hybrid-graphrag.md](product/core-concepts/hybrid-graphrag.md) | Neptune graph + OpenSearch vector architecture | 444 |
 | [product/core-concepts/multi-agent-system.md](product/core-concepts/multi-agent-system.md) | Orchestrator, Coder, Reviewer, Validator agents | 579 |
 | [product/core-concepts/hitl-workflows.md](product/core-concepts/hitl-workflows.md) | 4 autonomy levels, 7 policy presets, guardrails | 773 |
-| [product/core-concepts/sandbox-security.md](product/core-concepts/sandbox-security.md) | ECS Fargate isolation, 5 validation categories | 826 |
+| [product/core-concepts/sandbox-security.md](product/core-concepts/sandbox-security.md) | ECS Fargate container-level isolation (enforced levels only), 5 validation categories | 867 |
 
 ### User Guides (docs/product/user-guides/)
 
@@ -276,7 +276,7 @@ Technical documentation for developers, cybersecurity professionals, and IT admi
 | [support/architecture/index.md](support/architecture/index.md) | Architecture documentation overview | 276 |
 | [support/architecture/system-overview.md](support/architecture/system-overview.md) | High-level system architecture with ASCII diagrams | 458 |
 | [support/architecture/data-flow.md](support/architecture/data-flow.md) | How data moves through the system | 497 |
-| [support/architecture/security-architecture.md](support/architecture/security-architecture.md) | Security controls, encryption, network isolation | 505 |
+| [support/architecture/security-architecture.md](support/architecture/security-architecture.md) | Security controls, encryption, network isolation | 689 |
 | [support/architecture/disaster-recovery.md](support/architecture/disaster-recovery.md) | Backup, recovery, RTO/RPO | 498 |
 
 ### Operations (docs/support/operations/)

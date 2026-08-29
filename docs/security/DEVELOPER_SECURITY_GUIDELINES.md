@@ -363,16 +363,25 @@ def execute_tool(agent_role: str, tool_name: str, **kwargs):
 
 ### Sandbox Isolation
 
+Only the isolation levels in `ENFORCED_ISOLATION_LEVELS`
+(`src/services/sandbox_network_service.py:79`) are actually implemented by the
+provisioning path: `none` and `container`. `vpc` and `full` are declared on
+`NetworkIsolationLevel` but not enforced -- requesting either raises
+`UnsupportedIsolationLevelError` before any AWS call. Do not write `"vpc"` or
+`"full"` into new code expecting a stronger boundary; you will get an exception,
+which is the point (previously you got container-level networking and a success
+response).
+
 ```python
-# Agents must run in isolated sandboxes
+# Agents must run in sandboxes at the strongest ENFORCED isolation level
 from src.services.sandbox_network_service import SandboxNetworkService
 
 sandbox_service = SandboxNetworkService()
 
 async def run_agent_safely(agent, task):
-    # Create isolated environment
+    # Create sandbox environment
     sandbox = await sandbox_service.create_sandbox(
-        isolation_level="vpc",  # Full VPC isolation
+        isolation_level="container",  # Strongest level currently enforced
         resource_limits={
             "cpu": "1",
             "memory": "512Mi",

@@ -103,10 +103,10 @@ No implicit trust within the network:
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ SANDBOX SUBNETS (10.0.48.0/20) - Completely Isolated                 │   │
-│  │ ┌───────────────────────┐                                           │   │
-│  │ │ Sandbox Fargate Tasks │  No NAT, No VPC Endpoints                 │   │
-│  │ │ (Test execution only) │  Read-only access to test data            │   │
+│  │ SANDBOX TASKS - platform private subnets (NO dedicated sandbox VPC) │   │
+│  │ ┌───────────────────────┐  No public IP; no inbound SG rules        │   │
+│  │ │ Sandbox Fargate Tasks │  Egress: UDP 53 + TCP 443 only            │   │
+│  │ │ (Test execution only) │  Task role: allow-list, no Neptune/OS     │   │
 │  │ └───────────────────────┘                                           │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                              │
@@ -125,7 +125,7 @@ No implicit trust within the network:
 | eks-node-sg | 8080 (ALB), 443 (Control plane) | All VPC endpoints | Worker nodes |
 | neptune-sg | 8182 (EKS nodes) | None | Graph database |
 | opensearch-sg | 9200 (EKS nodes) | None | Vector database |
-| sandbox-sg | None | Test repos only | Sandbox isolation |
+| sandbox-sg | None (no inbound rules) | UDP 53, TCP 443 (0.0.0.0/0) | Sandbox task constraint |
 
 ### Network ACLs
 
@@ -554,7 +554,7 @@ TopicPolicyConfig:
 
 | Control | Implementation |
 |---------|----------------|
-| Network isolation | No internet, VPC endpoints only |
+| Network constraint | No inbound rules, no public IP (`assignPublicIp: DISABLED`), egress limited to UDP 53 and TCP 443. Not a dedicated-VPC boundary; `vpc` / `full` isolation levels are refused, see `ENFORCED_ISOLATION_LEVELS` in `src/services/sandbox_network_service.py:79` |
 | Filesystem | Read-only root, temp write only |
 | Process limits | seccomp, AppArmor profiles |
 | Resource limits | CPU, memory, time caps |

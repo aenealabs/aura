@@ -2,8 +2,8 @@
 
 > **Renamed from `COST_GATE_DEFERRED.md` on 2026-05-13.** Cost-gate is the most common deferral trigger but not the only one; this registry covers every kind of event-driven external condition.  Old filename redirects via `COST_GATE_DEFERRED.md` for back-compat with closed-issue links.
 
-**Last reviewed:** May 15, 2026 (added #195 test-harness ECR promotion row)
-**Next review:** August 13, 2026 (quarterly)
+**Last reviewed:** August 29, 2026 (added AURA-CTL-001 deploy verification + GovCloud invocation-logging rows)
+**Next review:** November 29, 2026 (quarterly). The August 13, 2026 review was missed; rows below have not been walked since May 15, 2026.
 **Owner of this registry:** Platform team
 
 ---
@@ -50,6 +50,8 @@ The "Re-engage when" column is always prefixed with the trigger type (e.g., **Co
 
 | Item | ADR / source | Description | Re-engage when | Owner | Added |
 |------|---|---|---|---|---|
+| **AURA-CTL-001 deploy verification** | [CONTROL_REGISTRY](security/CONTROL_REGISTRY.md) / #407 | `bedrock-invocation-logging.yaml` (Layer 4.15) is merged but never deployed. The control is not satisfied until a dev deploy confirms `get-model-invocation-logging-configuration` returns the applied config, the log group reports a `kmsKeyId`, and the **100 KB boundary test** passes in both directions -- one invocation under the threshold (body inline in CloudWatch) and one over (S3 reference, object present, CMK-encrypted). Verifying with a small prompt only exercises the inline path and cannot distinguish a working overflow path from a silently dropped body. | **Cost-gate:** DEV environment restored | Platform team | 2026-08-29 |
+| **GovCloud invocation-logging availability** | #407 | Whether `bedrock:PutModelInvocationLoggingConfiguration` is supported in `us-gov-west-1` is **likely but unverified**. Bedrock is available in both GovCloud regions and the control-plane endpoint exists including FIPS variants, but no AWS document affirmatively confirms this API there, and inferring GovCloud parity from Commercial is the common way to get this wrong. Settle with one read-only call: `aws bedrock get-model-invocation-logging-configuration --region us-gov-west-1`. | **Cost-gate:** GovCloud account provisioned (`PROD_ACCOUNT_ID` is `PENDING` in `deploy/config/account-mapping.env`) | Needs owner | 2026-08-29 |
 | **ADR-092 Phase 1** | [ADR-092](architecture-decisions/ADR-092-cfn-deploy-role-wildcard-scoping.md) | CloudTrail Lake inventory + `cfn-policy-validator` + DR replay + cold-path checklist. **Offline substitute shipped:** `scripts/adr_092_static_action_scan.py` + `docs/assessments/ADR_092_STATIC_SCAN_REPORT.md`. | **Cost-gate:** Live-AWS budget restored OR static substitute deemed sufficient | Platform team | 2026-05-12 |
 | **ADR-092 Phase 3** | [ADR-092](architecture-decisions/ADR-092-cfn-deploy-role-wildcard-scoping.md) | Validate `iam.yaml` against dev with `UseLegacyDeployRole=false`; exercise every CodeBuild project; capture any AccessDenied. | **Cost-gate:** Live-AWS budget restored | Platform team | 2026-05-12 |
 | **ADR-092 Phase 3.5** | [ADR-092](architecture-decisions/ADR-092-cfn-deploy-role-wildcard-scoping.md) | Deliberately fail a deploy to exercise rollback path on the scoped policy. | **Cost-gate:** Live-AWS budget restored | Platform team | 2026-05-12 |

@@ -1,15 +1,15 @@
 # Sandbox Security Model
 
-**Version:** 1.0
-**Last Updated:** January 2026
+**Version:** 1.1
+**Last Updated:** 2026-08-28
 
 ---
 
 ## Overview
 
-The Sandbox Security Model is the validation layer that ensures every AI-generated patch is thoroughly tested before reaching human reviewers or production systems. Project Aura provisions ephemeral, network-isolated environments where patches undergo comprehensive testing including syntax validation, functional verification, security scanning, and performance benchmarking.
+The Sandbox Security Model is the validation layer that ensures every AI-generated patch is tested before reaching human reviewers or production systems. Project Aura provisions ephemeral Fargate environments, constrained by a restrictive security group and a least-privilege task role, where patches undergo syntax validation, functional verification, security scanning, and performance benchmarking.
 
-This document explains how sandbox environments work, the isolation mechanisms that protect your production systems, the validation categories that every patch must pass, and the resource controls that prevent runaway processes.
+This document explains how sandbox environments work, which isolation controls are actually enforced, the validation categories that every patch must pass, and the resource controls that prevent runaway processes.
 
 ---
 
@@ -40,47 +40,54 @@ AI-generated code, like human-written code, can contain bugs. The sandbox layer 
 
 The sandbox layer filters out problematic patches before they consume human attention or risk production stability.
 
-### Validation Statistics
+### What Validation Covers
 
-Based on internal analysis, sandbox validation catches issues at the following rates:
+Sandbox validation runs these checks before a patch reaches human review:
 
-| Issue Type | Catch Rate | Average Detection Time |
-|------------|------------|------------------------|
-| Syntax errors | 100% | < 30 seconds |
-| Unit test failures | 100% | < 5 minutes |
-| Security regressions | 94% | < 3 minutes |
-| Performance regressions | 87% | < 5 minutes |
-| Integration failures | 91% | < 8 minutes |
+| Issue Type | How it is detected |
+|------------|--------------------|
+| Syntax errors | Parse failure |
+| Unit test failures | Repository test suite exit status |
+| Security regressions | Scanner re-run against the patched tree |
+| Performance regressions | Benchmark comparison against the pre-patch baseline |
+| Integration failures | Integration suite exit status |
 
-Patches that pass sandbox validation have a 99.2% success rate in production deployment.
+No catch-rate or production-success figures are published here. Aura has no
+customer deployments, so any such rate would be unmeasured.
 
 ---
 
 ## Sandbox Architecture
 
-Each sandbox is a complete, isolated environment that mirrors your production configuration while remaining completely disconnected from production data and services.
+Each sandbox is an ephemeral Fargate task that runs patched code under a
+dedicated task role and a dedicated security group, separated from production
+data by IAM allow-list and by the environment's AWS account boundary.
+
+> **Scope note (2026-08-28).** Sandbox tasks run in the platform VPC's private
+> subnets, not in a dedicated sandbox VPC. There is no separate sandbox VPC and
+> no `10.200.0.0/16` CIDR: `deploy/cloudformation/sandbox.yaml` takes `VpcId`
+> and `PrivateSubnetIds` as parameters imported from the networking stack, and
+> `deploy/cloudformation/networking.yaml` creates exactly three public and three
+> private subnets in one VPC. Earlier revisions of this page described a
+> separate sandbox VPC; that was never deployed. The boundary Aura actually
+> enforces is described below and in `ENFORCED_ISOLATION_LEVELS`
+> (`src/services/sandbox_network_service.py:79`).
 
 ### Environment Topology
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    PRODUCTION VPC (us-east-1)                           │
+│                    PLATFORM VPC (per environment/account)               │
+│                                                                         │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐          │
 │  │  Application    │  │  Neptune        │  │  OpenSearch     │          │
 │  │  Services       │  │  (Graph DB)     │  │  (Vector DB)    │          │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘          │
-│                                                                         │
-│  ══════════════════════════════════════════════════════════════════════ │
-│ │                    NO CONNECTION                                    │ │
-│  ══════════════════════════════════════════════════════════════════════ │
-└─────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    SANDBOX VPC (isolated)                               │
+│         (private subnets, own security groups + IAM roles)              │
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                    Sandbox Environment                            │  │
-│  │                    sandbox-2026-01-19-abc123                      │  │
+│  │             Sandbox Fargate Task (same private subnets)           │  │
+│  │             sandbox-2026-01-19-abc123                             │  │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                │  │
 │  │  │  Patched    │  │  Mock       │  │  Test       │                │  │
 │  │  │  Code       │  │  Services   │  │  Data       │                │  │
@@ -91,14 +98,19 @@ Each sandbox is a complete, isolated environment that mirrors your production co
 │  │  │  - CPU: 0.5 vCPU                                            │  │  │
 │  │  │  - Memory: 1 GB                                             │  │  │
 │  │  │  - Timeout: 30 minutes max                                  │  │  │
+│  │  │  - assignPublicIp: DISABLED                                 │  │  │
 │  │  └─────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                   │  │
+│  │  Security group: no inbound rules at all                          │  │
+│  │  Egress: UDP 53 (DNS) + TCP 443 only                              │  │
+│  │  Task role: allow-list only (2 DynamoDB tables, 1 log group,      │  │
+│  │             1 S3 artifact prefix). No Neptune, no OpenSearch.      │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                         │
-│  Security Groups: DENY ALL INBOUND (except internal test traffic)       │
-│  NAT Gateway: Outbound only (package downloads)                         │
-│  VPC Peering: NONE                                                      │
-│  Transit Gateway: NONE                                                  │
 └─────────────────────────────────────────────────────────────────────────┘
+
+  Separation from production is by AWS ACCOUNT (dev and qa occupy distinct
+  accounts per deploy/config/account-mapping.env; PROD_ACCOUNT_ID is still
+  PENDING) plus IAM allow-list and security group, NOT by a VPC boundary.
 ```
 
 ### Component Description
@@ -115,89 +127,119 @@ Each sandbox is a complete, isolated environment that mirrors your production co
 
 ## Network Isolation
 
-The sandbox network isolation model ensures that test environments cannot access production systems under any circumstances.
+The sandbox network model constrains what a sandbox task can reach. It is a
+security-group and IAM boundary, not a network-partition boundary.
 
-### Isolation Layers
+### Isolation Levels: What Is Enforced
+
+`NetworkIsolationLevel` declares four levels. `ENFORCED_ISOLATION_LEVELS`
+(`src/services/sandbox_network_service.py:79`) is the single source of truth for
+which of them the provisioning path actually implements.
+
+| Level | Enforced | Behaviour |
+|-------|----------|-----------|
+| `none` | Yes | No isolation (host network) |
+| `container` | Yes | Task in private subnets, sandbox security group, `assignPublicIp: DISABLED`. **Default and strongest enforced level.** |
+| `vpc` | **No** | Declared but not implemented. Requesting it raises `UnsupportedIsolationLevelError`. |
+| `full` | **No** | Declared but not implemented. Requesting it raises `UnsupportedIsolationLevelError`. |
+
+`vpc` and `full` were previously accepted and silently served container-level
+networking with a success response, because the task `networkConfiguration`
+block was byte-for-byte identical across all three levels. They are now refused
+before any AWS call rather than misrepresenting the boundary. Implementing them
+requires per-level subnets and security groups in CloudFormation, selected by
+`_get_sandbox_subnets`; that infrastructure work has not been done.
+
+### Enforced Controls
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    NETWORK ISOLATION MODEL                              │
+│                    SANDBOX NETWORK MODEL (as deployed)                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  LAYER 1: VPC Isolation                                                 │
+│  LAYER 1: Security Group Rules                                          │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  - Sandbox VPC has NO peering connections to production VPC             │
-│  - No Transit Gateway attachments                                       │
-│  - Separate CIDR blocks (10.200.0.0/16 for sandbox)                     │
+│  - No inbound rules at all (nothing may initiate a connection in)       │
+│  - Egress restricted to UDP 53 (DNS) and TCP 443                        │
+│  - No public IP: assignPublicIp DISABLED on every task                  │
+│  - Source: deploy/cloudformation/sandbox.yaml SandboxSecurityGroup      │
 │                                                                         │
-│  LAYER 2: Security Group Rules                                          │
+│  LAYER 2: IAM Task Role (allow-list, not explicit deny)                 │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  - Default DENY ALL inbound traffic                                     │
-│  - Allow only internal sandbox-to-sandbox communication                 │
-│  - Outbound limited to package registries (PyPI, npm)                   │
+│  - SandboxTaskRole grants ONLY: GetItem/PutItem/UpdateItem on the two   │
+│    sandbox DynamoDB tables, CreateLogStream/PutLogEvents on the         │
+│    sandbox log group, and GetObject on the sandbox artifacts prefix     │
+│  - Neptune, OpenSearch and all other data stores are absent from the    │
+│    policy, so access is denied by omission                              │
+│  - No cross-account role assumption is granted                          │
 │                                                                         │
-│  LAYER 3: IAM Policies                                                  │
+│  LAYER 3: Account Boundary                                              │
 │  ─────────────────────────────────────────────────────────────────────  │
-│  - Sandbox IAM role cannot access production resources                  │
-│  - No cross-account role assumption                                     │
-│  - Explicit deny policies for production S3, Neptune, OpenSearch        │
+│  - dev and qa are separate AWS accounts                                 │
+│  - This, not a VPC boundary, is what separates environments             │
 │                                                                         │
-│  LAYER 4: DNS Isolation                                                 │
-│  ─────────────────────────────────────────────────────────────────────  │
-│  - Private hosted zone for sandbox (sandbox.aura.internal)              │
-│  - Production DNS names not resolvable from sandbox                     │
-│  - Mock endpoints resolve to local services only                        │
+│  NOT ENFORCED: dedicated sandbox VPC, VPC peering restrictions as a     │
+│  sandbox-specific control, sandbox-specific private hosted zone.        │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Security Group Configuration
 
+As deployed in `deploy/cloudformation/sandbox.yaml`:
+
 ```yaml
-# Sandbox Security Group (simplified)
 SandboxSecurityGroup:
   Type: AWS::EC2::SecurityGroup
+  Condition: HasVpc
   Properties:
-    GroupDescription: Sandbox task network isolation
-    VpcId: !Ref SandboxVPC
-    SecurityGroupIngress:
-      # Only allow traffic from other sandbox components
-      - IpProtocol: tcp
-        FromPort: 8080
-        ToPort: 8080
-        SourceSecurityGroupId: !Ref SandboxInternalSG
+    GroupName: !Sub '${ProjectName}-sandbox-isolated-${Environment}'
+    GroupDescription: Highly restrictive security group for sandbox patch testing
+    # VPC is imported from the networking stack -- the platform VPC,
+    # not a dedicated sandbox VPC.
+    VpcId: !Ref VpcId
+    # Inbound: no rules declared, so nothing may initiate a connection in.
     SecurityGroupEgress:
-      # Allow HTTPS for package downloads
+      - IpProtocol: udp
+        FromPort: 53
+        ToPort: 53
+        CidrIp: 0.0.0.0/0
+        Description: DNS resolution
       - IpProtocol: tcp
         FromPort: 443
         ToPort: 443
         CidrIp: 0.0.0.0/0
-      # Deny all other egress (implicit in practice)
+        Description: HTTPS for AWS APIs and package downloads
 ```
 
-### IAM Explicit Deny
+Note that TCP 443 egress is open to `0.0.0.0/0`. It is scoped by port, not by
+destination, so the sandbox is not egress-free.
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "DenyProductionAccess",
-      "Effect": "Deny",
-      "Action": [
-        "neptune-db:*",
-        "es:*",
-        "s3:*"
-      ],
-      "Resource": [
-        "arn:aws:neptune-db:*:*:cluster:aura-prod-*",
-        "arn:aws:es:*:*:domain/aura-prod-*",
-        "arn:aws:s3:::aura-prod-*"
-      ]
-    }
-  ]
-}
+### IAM Task Role
+
+Production data stores are unreachable because the task role never grants them,
+not because an explicit `Deny` statement blocks them. `SandboxTaskRole` in
+`deploy/cloudformation/sandbox.yaml` is an allow-list:
+
+```yaml
+Statement:
+  - Effect: Allow
+    Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+    Resource:
+      - !GetAtt SandboxStateTable.Arn
+      - !GetAtt SandboxResultsTable.Arn
+  - Effect: Allow
+    Action: [logs:CreateLogStream, logs:PutLogEvents]
+    Resource:
+      - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/sandboxes-${Environment}:*'
+  - Effect: Allow
+    Action: [s3:GetObject]
+    Resource:
+      - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-sandbox-artifacts-${AWS::AccountId}-${Environment}/*'
 ```
+
+There is no `neptune-db`, `es`, or broad `s3` grant, and no `sts:AssumeRole`
+grant for another account.
 
 ---
 
@@ -799,7 +841,7 @@ All sandbox executions produce audit evidence:
 
 > **Every patch is validated before human review.** The sandbox layer ensures that human reviewers only see patches that have passed automated validation, saving time and reducing risk.
 
-> **Network isolation is non-negotiable.** Sandboxes cannot access production systems under any circumstances, protecting your production data and services.
+> **Sandbox reachability is constrained by security group and IAM allow-list.** A sandbox task has no inbound rules, no public IP, egress only on UDP 53 and TCP 443, and a task role that grants nothing beyond two sandbox DynamoDB tables, one log group and one S3 artifact prefix. It is not a dedicated-VPC boundary, and `vpc` / `full` isolation levels are refused rather than provided -- see the Isolation Levels table above.
 
 > **Five validation categories provide comprehensive coverage.** Syntax, unit tests, security scans, performance, and integration tests catch different categories of issues.
 

@@ -54,7 +54,12 @@ Neither structural nor semantic retrieval alone provides complete context:
 | **Semantic (Vector)** | Captures meaning, finds patterns | Misses explicit connections |
 | **Hybrid (Both)** | Comprehensive context | Requires fusion logic |
 
-Aura's hybrid approach achieves 22-25% improvement in retrieval accuracy compared to single-method approaches.
+Published research on three-way hybrid retrieval reports a 22-25% MRR
+improvement over two-way retrieval; ADR-034 adopts that finding as the
+rationale for this design. The figure is the research result, not a
+measurement of Aura -- retrieval quality has not been benchmarked against a
+single-method baseline on customer data, because no customer codebases are
+onboarded. See `src/services/three_way_retrieval_service.py`.
 
 ---
 

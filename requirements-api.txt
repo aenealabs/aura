@@ -11,7 +11,7 @@
 
 # AWS SDK
 boto3>=1.43.47
-botocore>=1.43.55
+botocore>=1.43.78
 
 # Graph Database and Vector Store
 gremlinpython>=3.8.1         # Amazon Neptune connectivity
@@ -20,7 +20,7 @@ cachetools>=7.1.6            # TTLCache for vector/embedding caches
 requests>=2.34.1             # HTTP client (used by PyGithub, ad-hoc HTTP)
 
 # Git Integration
-GitPython>=3.1.57            # Git metadata extraction
+GitPython>=3.1.59            # Git metadata extraction
 PyGithub>=2.9.1              # GitHub API integration
 
 # Authentication
@@ -28,8 +28,8 @@ PyJWT[crypto]>=2.13.0         # JWT validation (GitHub App auth + Cognito JWKS)
 cryptography>=49.0.0         # RSA key support
 
 # API Framework
-fastapi>=0.140.7             # REST API
-uvicorn>=0.51.0              # ASGI server
+fastapi>=0.141.1             # REST API
+uvicorn>=0.52.4              # ASGI server
 httpx>=0.28.1                # HTTP client
 pydantic>=2.13.4             # Data validation
 email-validator>=2.3.0       # Email validation for Pydantic
@@ -42,7 +42,7 @@ aiohttp>=3.14.3              # ServiceNow, Splunk, Terraform Cloud, etc.
 structlog>=26.1.0            # Security agent orchestrator logging
 
 # Configuration
-python-dotenv>=1.2.2         # Environment variable loading
+python-dotenv>=1.2.3         # Environment variable loading
 networkx>=3.6.1              # Graph processing (lightweight, used in API)
 
 # YAML Support (config parsing)
@@ -57,8 +57,8 @@ PyYAML>=6.0.2
 # google packages are optional — GeminiLLMService falls back to mock
 # mode when absent.
 openai>=2.48.0
-google-genai>=2.14.0 ; python_version >= "3.10"
-google-cloud-aiplatform>=1.162.0 ; python_version >= "3.10"
+google-genai>=2.19.0 ; python_version >= "3.10"
+google-cloud-aiplatform>=1.165.1 ; python_version >= "3.10"
 
 # Calibration / Explainability (ADR-068)
 # IsotonicRegression powers confidence calibration

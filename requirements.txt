@@ -14,11 +14,11 @@
 # Dependencies for the CKGE Core Agents and Testing
 # networkx is used for graph processing simulation
 networkx>=3.6.1
-python-dotenv>=1.2.2
+python-dotenv>=1.2.3
 
 # AWS and Core Agent Dependencies:
 boto3>=1.43.47
-botocore>=1.43.55
+botocore>=1.43.78
 tree-sitter>=0.25.2,<0.26   # 0.26 dropped the `parser.timeout_micros` setter that src/services/vulnerability_scanner/parsing/ast.py:205 uses to bound parse time (DoS guard on untrusted input, ParsingConfig.tree_sitter_timeout_ms). 0.26.0 has NO usable replacement: progress_callback is silently ignored for bytestring sources, and combining it with a callable/reader source segfaults the interpreter (verified 2026-07-01). Migration therefore needs process-isolated parse workers, not a one-function swap -- deferred (see docs/DEFERRED_WORK_REGISTRY.md, Upstream-maintainer-gate). Hold on 0.25.x until upstream ships a working timeout API. The cap surfaced under PR #272's --no-cache-dir: prior CI runs were served the cached 0.25.x wheel from the lock-by-hash pip cache.
 
 # Graph Database and Vector Store Dependencies
@@ -27,15 +27,15 @@ opensearch-py>=3.2.0  # For OpenSearch vector store
 cachetools>=7.1.6     # TTLCache for query/embedding caches (opensearch_vector_service, titan_embedding_service, semantic_guardrails)
 requests>=2.34.1      # HTTP client (used by PyGithub, cfn-lint, ad-hoc HTTP calls)
 tenacity>=9.1.4       # Retry decorators (used by bedrock_llm_service, diagrams/diagram_model_router)
-GitPython>=3.1.57     # For Git metadata extraction in filesystem indexer
+GitPython>=3.1.59     # For Git metadata extraction in filesystem indexer
 PyGithub>=2.9.1       # For GitHub API integration (PR creation, branch management)
 PyJWT[crypto]>=2.13.0  # For JWT validation (GitHub App auth + Cognito JWKS; replaces deprecated python-jose)
 cryptography>=49.0.0  # For RSA key support in PyJWT (GitHub App auth)
 defusedxml>=0.7.1    # For secure XML parsing (prevents XXE attacks) in SAML/Qualys
 
 # API Framework Dependencies
-fastapi>=0.140.7      # For REST API endpoints
-uvicorn>=0.51.0       # ASGI server for FastAPI
+fastapi>=0.141.1      # For REST API endpoints
+uvicorn>=0.52.4       # ASGI server for FastAPI
 httpx>=0.28.1         # HTTP client for testing
 pydantic>=2.12.5      # Data validation. Upper bound comes from the moto[all]->cfn-lint->aws-sam-translator transitive chain (the last pins pydantic~=2.12.5, i.e. <2.13). Broader pins triggered a hard pip resolver failure on clean installs (test-harness build, fresh CI). Tightening to match the transitive constraint instead of forcing it through the legacy-resolver flag. If a future feature requires pydantic 2.13+, bump cfn-lint AND aws-sam-translator together in the same PR.
 python-multipart>=0.0.32  # Required for FastAPI form data (fixes deprecation warning)
@@ -70,7 +70,7 @@ pytest-asyncio>=0.24.0  # For async test support (replaces pytest-anyio)
 pytest-xdist>=3.5.0     # For parallel test execution (pytest -n auto)
 pytest-forked>=1.6.0    # For test isolation (pytest.mark.forked)
 pytest-timeout>=2.4.0   # Per-test wall-clock timeout (pyproject.toml addopts depends on it)
-hypothesis>=6.161.8     # Property-based tests (dataflow analyzer invariants)
+hypothesis>=6.165.10     # Property-based tests (dataflow analyzer invariants)
 moto[all]>=5.0.0        # AWS service mocking for tests
 
 # CloudFormation validation (for infrastructure deployment)

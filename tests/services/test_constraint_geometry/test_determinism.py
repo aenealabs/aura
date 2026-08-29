@@ -26,6 +26,27 @@ from src.services.constraint_geometry.engine import ConstraintGeometryEngine
 from src.services.constraint_geometry.policy_profile import PolicyProfileManager
 from src.services.constraint_geometry.provenance_adapter import ProvenanceAdapter
 
+# Repetition counts. These tests previously used
+# ``@pytest.mark.parametrize("iteration", range(N))`` and stashed a baseline on
+# the test class when ``iteration == 0``, comparing against it on every later
+# iteration.
+#
+# That pattern is not parallel-safe. Under ``pytest -n auto`` -- which
+# ``tests/CLAUDE.md`` documents as a supported way to run the suite -- xdist
+# distributes the parametrized cases across worker processes, so the case that
+# writes the baseline frequently lands on a different worker from the ones that
+# read it. The readers then fail with ``AttributeError: type object
+# 'TestCalculatorDeterminism' has no attribute '_baseline_coherence'``.
+# Measured cost before this change: 134 of 403 tests failing under ``-n auto``,
+# all 403 passing without it.
+#
+# Repeating inside a single test is both parallel-safe and a stronger
+# assertion: it compares every result against every other, rather than each
+# against one arbitrary baseline. It also collapses ~150 test items into 6.
+REPEATS = 50
+SHORT_REPEATS = 20
+PIPELINE_REPEATS = 10
+
 # =============================================================================
 # Calculator Determinism
 # =============================================================================
@@ -34,47 +55,50 @@ from src.services.constraint_geometry.provenance_adapter import ProvenanceAdapte
 class TestCalculatorDeterminism:
     """Verify calculator always produces identical results."""
 
-    @pytest.mark.parametrize("iteration", range(50))
-    def test_cosine_similarity_deterministic(self, calculator, iteration):
+    def test_cosine_similarity_deterministic(self, calculator):
         """cosine(a, b) returns the same value every time."""
         rng = np.random.RandomState(42)
         a = rng.randn(16)
         b = rng.randn(16)
-        result = calculator._cosine_similarity(a, b)
-        # Fixed expected value from seed 42
-        assert result == pytest.approx(result, abs=0)  # Exact match with itself
 
-    @pytest.mark.parametrize("iteration", range(50))
-    def test_rule_coherence_deterministic(self, calculator, rule_c1_syntax, iteration):
-        """Rule coherence is identical across iterations."""
+        results = [calculator._cosine_similarity(a, b) for _ in range(REPEATS)]
+
+        assert len(set(results)) == 1, f"non-deterministic: {sorted(set(results))}"
+
+    def test_rule_coherence_deterministic(self, calculator, rule_c1_syntax):
+        """Rule coherence is identical across repeated computation."""
         output = np.array(rule_c1_syntax.positive_centroid, dtype=np.float64)
-        score = calculator.compute_rule_coherence(output, rule_c1_syntax)
-        if iteration == 0:
-            TestCalculatorDeterminism._baseline_coherence = score.coherence
-        else:
-            assert score.coherence == TestCalculatorDeterminism._baseline_coherence
 
-    @pytest.mark.parametrize("iteration", range(20))
-    def test_harmonic_mean_deterministic(self, calculator, iteration):
-        """Harmonic mean is identical across iterations."""
+        results = [
+            calculator.compute_rule_coherence(output, rule_c1_syntax).coherence
+            for _ in range(REPEATS)
+        ]
+
+        assert len(set(results)) == 1, f"non-deterministic: {sorted(set(results))}"
+
+    def test_harmonic_mean_deterministic(self, calculator):
+        """Harmonic mean is identical across repeated computation."""
         values = [0.95, 0.82, 0.91, 0.3, 0.77]
         weights = [1.0, 1.2, 1.0, 1.5, 0.8]
-        result = calculator._weighted_harmonic_mean(values, weights)
-        if iteration == 0:
-            TestCalculatorDeterminism._baseline_harmonic = result
-        else:
-            assert result == TestCalculatorDeterminism._baseline_harmonic
 
-    @pytest.mark.parametrize("iteration", range(20))
-    def test_geometric_mean_deterministic(self, calculator, iteration):
-        """Geometric mean is identical across iterations."""
+        results = [
+            calculator._weighted_harmonic_mean(values, weights)
+            for _ in range(SHORT_REPEATS)
+        ]
+
+        assert len(set(results)) == 1, f"non-deterministic: {sorted(set(results))}"
+
+    def test_geometric_mean_deterministic(self, calculator):
+        """Geometric mean is identical across repeated computation."""
         values = [0.8, 0.75, 0.9, 0.65, 0.85, 0.7, 0.92]
         weights = [1.0, 1.0, 1.2, 1.0, 1.3, 0.8, 0.8]
-        result = calculator._weighted_geometric_mean(values, weights)
-        if iteration == 0:
-            TestCalculatorDeterminism._baseline_geometric = result
-        else:
-            assert result == TestCalculatorDeterminism._baseline_geometric
+
+        results = [
+            calculator._weighted_geometric_mean(values, weights)
+            for _ in range(SHORT_REPEATS)
+        ]
+
+        assert len(set(results)) == 1, f"non-deterministic: {sorted(set(results))}"
 
 
 # =============================================================================
@@ -85,22 +109,37 @@ class TestCalculatorDeterminism:
 class TestHashDeterminism:
     """Verify hash computation is deterministic."""
 
-    @pytest.mark.parametrize("iteration", range(50))
-    def test_sha256_deterministic(self, iteration):
-        """SHA-256 of same text is identical."""
+    def test_sha256_deterministic(self):
+        """SHA-256 of the same normalized text is identical, and stable.
+
+        The previous version carried an ``expected`` constant that was never
+        asserted -- and did not match the real digest, so anyone "completing"
+        the test by using it would have broken the build. The correct value is
+        pinned here: a change means normalization changed, which is exactly
+        what a determinism test should catch.
+        """
         text = "def validate_user(user_id: str) -> bool:\n    return True"
         normalized = " ".join(text.strip().split())
-        h = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-        expected = "7d3e8f05acfa1b6b5f6b69e1e6ab8b478f61dc919e4c4f03b88b8d63d0e74a5e"
-        # The exact hash doesn't matter, just that it's the same every time
-        if iteration == 0:
-            TestHashDeterminism._baseline_hash = h
-        else:
-            assert h == TestHashDeterminism._baseline_hash
 
-    @pytest.mark.parametrize("iteration", range(20))
-    def test_normalize_then_hash_deterministic(self, iteration):
-        """Normalization + hash is deterministic for varied whitespace."""
+        hashes = [
+            hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+            for _ in range(REPEATS)
+        ]
+
+        assert len(set(hashes)) == 1, f"non-deterministic: {sorted(set(hashes))}"
+        assert (
+            hashes[0]
+            == "631b3b690696486ce7ac7f56c932a540573c8ae5b5fe56d4c1e6a8d072f985da"
+        )
+
+    def test_normalize_then_hash_deterministic(self):
+        """Normalization + hash is deterministic for varied whitespace.
+
+        This one was already parallel-safe -- it kept its state inside the
+        test -- but ran the identical assertion as 20 separate items with the
+        ``iteration`` parameter unused. Collapsed for consistency with the
+        rest of the module.
+        """
         texts = [
             "  hello   world  ",
             "hello world",
@@ -156,27 +195,22 @@ class TestEngineDeterminism:
         return engine
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("iteration", range(10))
-    async def test_full_pipeline_deterministic(self, deterministic_engine, iteration):
+    async def test_full_pipeline_deterministic(self, deterministic_engine):
         """Full pipeline produces identical CCS for identical input."""
         output = AgentOutput(
             text="def validate_user(user_id: str) -> bool:\n    return check_permissions(user_id)",
             agent_id="coder-001",
         )
 
-        result = await deterministic_engine.assess_coherence(
-            output=output,
-            policy_profile="default",
-        )
+        results = []
+        for _ in range(PIPELINE_REPEATS):
+            result = await deterministic_engine.assess_coherence(
+                output=output,
+                policy_profile="default",
+            )
+            results.append((result.composite_score, result.action, result.output_hash))
 
-        if iteration == 0:
-            TestEngineDeterminism._baseline_score = result.composite_score
-            TestEngineDeterminism._baseline_action = result.action
-            TestEngineDeterminism._baseline_hash = result.output_hash
-        else:
-            assert result.composite_score == TestEngineDeterminism._baseline_score
-            assert result.action == TestEngineDeterminism._baseline_action
-            assert result.output_hash == TestEngineDeterminism._baseline_hash
+        assert len(set(results)) == 1, f"non-deterministic: {sorted(set(results))}"
 
     @pytest.mark.asyncio
     async def test_different_whitespace_same_score(self, deterministic_engine):

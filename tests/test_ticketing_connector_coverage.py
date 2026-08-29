@@ -83,15 +83,31 @@ class TestZendeskConnectorFullCoverage:
         assert connector._base_url == "https://enterprise.zendesk.com/api/v2"
 
     def test_zendesk_init_logs_initialization(self, caplog):
-        """Test that initialization logs a message."""
+        """Test that initialization logs a message.
+
+        Asserts the exact record from the connector's own logger rather than
+        a substring of caplog.text. The substring form matched anywhere in the
+        combined output of every logger, so it stayed green if the host landed
+        in an unrelated record -- and CodeQL read it as an incomplete URL
+        sanitization check (alert #84).
+        """
         with caplog.at_level(logging.INFO):
             ZendeskConnector(
                 subdomain="logtest",
                 email="log@test.com",
                 api_token="token",
             )
-        assert "logtest.zendesk.com" in caplog.text
-        assert "stub" in caplog.text.lower()
+
+        records = [
+            r
+            for r in caplog.records
+            if r.name == "src.services.ticketing.zendesk_connector"
+        ]
+        assert len(records) == 1
+        assert (
+            records[0].getMessage()
+            == "Zendesk connector initialized for logtest.zendesk.com (stub)"
+        )
 
     # -------------------------------------------------------------------------
     # Property Tests
@@ -362,15 +378,29 @@ class TestServiceNowConnectorFullCoverage:
         )
 
     def test_servicenow_init_logs_initialization(self, caplog):
-        """Test that initialization logs a message."""
+        """Test that initialization logs a message.
+
+        Exact-matches the record from the connector's own logger; see the
+        Zendesk equivalent above for why the substring form was replaced
+        (CodeQL alert #85).
+        """
         with caplog.at_level(logging.INFO):
             ServiceNowTicketConnector(
                 instance_url="https://logtest.service-now.com",
                 username="user",
                 password="pass",
             )
-        assert "logtest.service-now.com" in caplog.text
-        assert "stub" in caplog.text.lower()
+
+        records = [
+            r
+            for r in caplog.records
+            if r.name == "src.services.ticketing.servicenow_connector"
+        ]
+        assert len(records) == 1
+        assert records[0].getMessage() == (
+            "ServiceNow connector initialized for "
+            "https://logtest.service-now.com (stub)"
+        )
 
     # -------------------------------------------------------------------------
     # Property Tests

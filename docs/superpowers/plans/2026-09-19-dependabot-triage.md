@@ -2645,6 +2645,15 @@ The heavy lifting is in Python, so this job stays a single command.
   consolidate:
     name: Open consolidated PRs for coupled families
     needs: classify
+    # Staged rollout: this is the only job that writes branches, opens PRs and
+    # comments on other PRs. Until it has produced a few correct consolidated
+    # PRs under observation, it runs ONLY on a manual workflow_dispatch, never
+    # on the weekly schedule. The classify/report path still runs weekly and
+    # names any coupled family, so nothing is missed -- an operator triggers
+    # the consolidation.
+    #
+    # To promote it to unattended weekly operation, delete this `if:` line.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:

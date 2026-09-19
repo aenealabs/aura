@@ -19,22 +19,36 @@ def added_lines(diff: str) -> set[str]:
     Two details are load-bearing, because this set is what decides whether a
     consolidation branch carries anything its member pull requests did not.
 
-    Indentation is preserved. Only trailing whitespace is stripped. In YAML --
-    which is what these consolidations mostly touch -- indentation is
-    semantics, so the same text at a different depth is a different change, and
-    comparing without it would accept a line relocated into another scope as
-    identical to the reviewed one.
+    Indentation is preserved; only trailing whitespace is stripped. In YAML --
+    which is what these consolidations mostly touch -- indentation is semantics,
+    so the same text at a different depth is a different change. Comparing
+    without it would accept a line relocated into another scope as identical to
+    the reviewed one.
 
-    The `+++ b/path` file header is recognised by its position, not its prefix:
-    it counts as a header only when it directly follows the matching `--- a/path`
-    line. Matching the `+++` prefix anywhere would also swallow a genuine added
-    line whose own content begins with `++`, making an unreviewed addition
-    invisible rather than reporting it as extra.
+    The `+++ b/path` file header is recognised by diff structure, not by prefix.
+    A header pair only ever appears before a file section's first `@@` hunk, so
+    once inside a hunk every `+` line is content. Anchoring on the previous
+    line's text instead would let a *removed* line whose content starts with two
+    dashes arm the skip, and the following `+`-prefixed line would vanish --
+    silently dropping an unreviewed addition instead of reporting it as extra,
+    which is the unsafe direction.
+
+    A multi-file diff that omits `diff --git` separators may classify a later
+    file's `+++` header as content. That over-reports rather than under-reports,
+    and the diffs this consumes come from `git diff`, which always emits the
+    separators.
     """
     out: set[str] = set()
+    in_hunk = False
     previous = ""
     for line in diff.splitlines():
-        if line.startswith("+++") and previous.startswith("---"):
+        if line.startswith("diff --git "):
+            in_hunk = False
+        elif line.startswith("--- "):
+            in_hunk = False
+        elif line.startswith("@@"):
+            in_hunk = True
+        elif not in_hunk and line.startswith("+++") and previous.startswith("--- "):
             previous = line
             continue
         if line.startswith("+"):

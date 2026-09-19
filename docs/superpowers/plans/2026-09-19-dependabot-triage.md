@@ -886,7 +886,7 @@ git commit -m "feat: add dependabot triage check-evaluation rules"
 
 **Interfaces:**
 - Consumes: Task 1 types; `CODE_MAJOR`, `CODE_COOLDOWN`.
-- Produces: `PACKAGE_COOLDOWN_DAYS`, `ACTION_COOLDOWN_DAYS`, `major_of(version) -> int | None`, `rule_major(pr) -> Decision | None`, `rule_cooldown(pr) -> Decision | None`.
+- Produces: `PACKAGE_COOLDOWN_DAYS`, `ACTION_COOLDOWN_DAYS`, `major_of(version) -> int | None`, `rule_major(pr) -> Decision | None`, `rule_cooldown(pr) -> Decision | None`, and the `PRSnapshot.security_advisory` field (added here, default `False`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1018,13 +1018,114 @@ Move the `import re` to the top of the module with the other imports rather than
 Run: `pytest tests/scripts/test_dep_triage.py -v --no-cov`
 Expected: PASS (39 tests)
 
-- [ ] **Step 5: Format, lint, commit**
+- [ ] **Step 5: Write the failing test for the security-advisory fast path**
+
+A Dependabot *security* update fixes a live CVE. Holding it for a cooldown
+window -- or for a major-version review -- inverts the purpose of the cooldown,
+which exists to defend against compromised releases, not to slow down fixes.
+Security updates therefore bypass both holds and go straight to the batch proof.
+
+```python
+def test_security_advisory_bypasses_cooldown():
+    pr = _pr(ecosystem="pip", release_age_days=0.5, security_advisory=True)
+    assert dt.rule_cooldown(pr) is None
+
+
+def test_security_advisory_bypasses_unknown_release_age():
+    pr = _pr(release_age_days=None, security_advisory=True)
+    assert dt.rule_cooldown(pr) is None
+
+
+def test_security_advisory_bypasses_major_hold():
+    pr = _pr(from_version="4.1.11", to_version="5.0.0", security_advisory=True)
+    assert dt.rule_major(pr) is None
+
+
+def test_non_security_major_is_still_held():
+    pr = _pr(from_version="4.1.11", to_version="5.0.0", security_advisory=False)
+    assert dt.rule_major(pr) is not None
+
+
+def test_security_advisory_does_not_bypass_policy_holds():
+    """A CVE fix is still not permission to rewrite a base image unreviewed."""
+    pr = _pr(files=("deploy/docker/api/Dockerfile",), security_advisory=True)
+    assert dt.rule_policy_path(pr) is not None
+    held = _pr(package="tree-sitter", security_advisory=True)
+    assert dt.rule_held_package(held) is not None
+
+
+def test_security_advisory_defaults_to_false(tmp_path):
+    """Snapshots written before this field existed still load."""
+    prs = dt.load_snapshot(FIXTURE)
+    assert all(p.security_advisory is False for p in prs)
+```
+
+- [ ] **Step 6: Run test to verify it fails**
+
+Run: `pytest tests/scripts/test_dep_triage.py -k security -v --no-cov`
+Expected: FAIL with `TypeError: PRSnapshot.__init__() got an unexpected keyword argument 'security_advisory'`
+
+- [ ] **Step 7: Add the field, the loader support, and the two guards**
+
+Add a trailing field to `PRSnapshot` (it must be last, because it carries a
+default and every earlier field does not):
+
+```python
+    security_advisory: bool = False
+```
+
+Add the matching line to the `PRSnapshot(...)` construction inside
+`load_snapshot`, after `risk_tier`:
+
+```python
+                security_advisory=bool(item.get("security_advisory", False)),
+```
+
+Add a `security_advisory=False` default to the `_pr(**kw)` test factory's
+`base` dict so existing tests keep working unchanged.
+
+Then guard both rules. In `rule_major`, immediately after the docstring:
+
+```python
+    if pr.security_advisory:
+        return None
+```
+
+In `rule_cooldown`, immediately after the docstring:
+
+```python
+    if pr.security_advisory:
+        return None
+```
+
+Extend each docstring with one sentence naming the bypass, for example in
+`rule_cooldown`:
+
+```python
+    """R9: hold releases younger than the cooldown window.
+
+    A freshly published version is the window in which a compromised release is
+    still undetected. Actions wait longer because they are SHA-pinned
+    supply-chain surface executed with repository credentials.
+
+    Security advisories bypass this hold entirely: the cooldown defends against
+    compromised releases, and applying it to a CVE fix would delay the patch it
+    exists to protect.
+    """
+```
+
+- [ ] **Step 8: Run test to verify it passes**
+
+Run: `pytest tests/scripts/test_dep_triage.py -v --no-cov`
+Expected: PASS, including every previously passing test.
+
+- [ ] **Step 9: Format, lint, commit**
 
 ```bash
 black scripts/security/dep_triage.py tests/scripts/test_dep_triage.py
 flake8 scripts/security/dep_triage.py tests/scripts/test_dep_triage.py
 git add -u
-git commit -m "feat: add dependabot triage major-version and cooldown rules"
+git commit -m "feat: add major-version, cooldown and security fast-path rules"
 ```
 
 ---
@@ -1450,7 +1551,7 @@ git commit -m "feat: add dependabot triage report renderer and CLI"
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks at runtime; must emit JSON matching the schema `load_snapshot` reads (Task 1).
-- Produces: `parse_bump_title(title) -> tuple[str, str, str]`, `build_snapshot(prs_json, checks_by_pr, required, ages, tiers) -> dict`, `main(argv) -> int`.
+- Produces: `parse_bump_title(title) -> tuple[str, str, str]`, `is_security_advisory(body) -> bool`, `build_snapshot(prs_json, checks_by_pr, required, ages, tiers) -> dict`, `main(argv) -> int`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1721,10 +1822,93 @@ if __name__ == "__main__":
 
 Note: `release_ages` is left empty by `main` in this task; Task 10 populates it. `rule_cooldown` already treats an unknown age as held, so the pipeline is conservative until then.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Write the failing test for security-advisory detection**
+
+The security fast path added in Task 6 reads `PRSnapshot.security_advisory`.
+Nothing sets it unless the collector detects it, so without this step the fast
+path is dead code and CVE fixes still sit in the cooldown queue.
+
+Dependabot's security updates describe the vulnerabilities they fix in the PR
+body, citing a GHSA or CVE identifier. Regular version bumps do not.
+
+```python
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        ("Bumps cryptography from 49.0.0 to 50.0.1.", False),
+        ("", False),
+        (None, False),
+        ("Bumps urllib3. Fixes [GHSA-1234-abcd-5678](https://x).", True),
+        ("Patches CVE-2026-12345 in the transitive dependency.", True),
+        ("mentions ghsa-lower-case-id", True),
+    ],
+)
+def test_is_security_advisory(body, expected):
+    assert dc.is_security_advisory(body) is expected
+
+
+def test_build_snapshot_carries_the_security_flag(tmp_path):
+    snapshot = dc.build_snapshot(
+        prs=[{
+            "number": 1,
+            "title": "chore(deps): bump urllib3 from 2.0.0 to 2.0.1",
+            "author": {"login": "dependabot[bot]"},
+            "files": ["requirements.txt"],
+            "security_advisory": True,
+        }],
+        checks_by_pr={1: [
+            {"name": "Analyze (python)", "status": "completed",
+             "conclusion": "success", "failing_log_excerpt": ""},
+        ]},
+        required_checks=["Analyze (python)"],
+        release_ages={"urllib3": 0.2},
+        risk_tiers={},
+    )
+    assert snapshot["pull_requests"][0]["security_advisory"] is True
+    path = tmp_path / "snap.json"
+    path.write_text(json.dumps(snapshot), encoding="utf-8")
+    assert dt.load_snapshot(path)[0].security_advisory is True
+```
+
+- [ ] **Step 5: Run test to verify it fails**
+
+Run: `pytest tests/scripts/test_dep_triage_collect.py -k security -v --no-cov`
+Expected: FAIL with `AttributeError: module ... has no attribute 'is_security_advisory'`
+
+- [ ] **Step 6: Implement detection and carry the flag**
+
+```python
+_ADVISORY = re.compile(r"(GHSA-[0-9a-z-]+|CVE-\d{4}-\d+)", re.IGNORECASE)
+
+
+def is_security_advisory(body: str | None) -> bool:
+    """True when a pull request body cites a GHSA or CVE identifier.
+
+    Dependabot security updates describe the vulnerabilities they fix and cite
+    an advisory id; ordinary version bumps do not. The flag lets a CVE fix skip
+    the cooldown and major-version holds, which exist to slow down *unproven*
+    releases, not patches.
+    """
+    return bool(_ADVISORY.search(body or ""))
+```
+
+In `build_snapshot`, add this key to each emitted record, after `risk_tier`:
+
+```python
+                "security_advisory": bool(pr.get("security_advisory", False)),
+```
+
+In `main`, request the body from `gh` by changing the `--json` field list to
+`number,title,author,files,body`, and set the flag when building each record:
+
+```python
+            "security_advisory": is_security_advisory(item.get("body")),
+```
+
+- [ ] **Step 7: Run test to verify it passes**
 
 Run: `pytest tests/scripts/test_dep_triage_collect.py -v --no-cov`
-Expected: PASS (11 tests)
+Expected: PASS
 
 - [ ] **Step 5: Commit**
 
@@ -2213,35 +2397,35 @@ jobs:
           pytest -q
 
   report:
-    name: Open triage report PR
+    name: Publish triage report
     needs: [classify, batch-proof]
     if: always() && needs.classify.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      issues: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          fetch-depth: 0
+          python-version: '3.11'
 
       - name: Download triage artifacts
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: triage
 
-      - name: Commit report and open PR
+      - name: Publish the rolling triage issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PROOF: ${{ needs.batch-proof.result }}
           CANDIDATES: ${{ needs.classify.outputs.candidates }}
         run: |
           set -euo pipefail
-          week="$(date -u +%Y-W%V)"
-          dest="docs/security/dep-triage/${week}.md"
-          mkdir -p "$(dirname "$dest")"
           # Only a green batch proof promotes candidates to merge-safe. Any
           # other outcome leaves them as candidates, so a skipped or failed
           # proof never reports anything as mergeable.
@@ -2251,20 +2435,23 @@ jobs:
               --output triage-report.md \
               --proved "$CANDIDATES"
           fi
-          cp triage-report.md "$dest"
-          printf '\n> Batch proof result: %s\n' "$PROOF" >> "$dest"
-          branch="dep-triage/report-${week}"
-          git config user.name "aura-ci"
-          git config user.email "ci@aenealabs.com"
-          git switch -c "$branch"
-          git add "$dest"
-          git commit -m "docs: dependabot triage report ${week}"
-          git push -u origin "$branch" --force
-          gh pr create --base main --head "$branch" \
-            --title "docs: dependabot triage report ${week}" \
-            --body "Automated triage report. Operator review and merge required; nothing was merged or approved by this workflow. Batch proof result: ${PROOF}." \
-            --label dependencies --label automated || \
-            echo "PR already exists for ${branch}"
+          printf '\n> Batch proof result: %s\n' "$PROOF" >> triage-report.md
+
+          # The report is a rolling issue rewritten in place, not a weekly PR.
+          # An issue needs no approval to update, so the team carries no
+          # recurring merge chore for a document that only offers advice.
+          title="Dependabot triage"
+          number="$(gh issue list --state open --label automated \
+            --search "$title in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$title\")] | first | .number // empty")"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file triage-report.md
+            echo "updated issue #${number}"
+          else
+            gh issue create --title "$title" \
+              --body-file triage-report.md \
+              --label dependencies --label automated
+          fi
 ```
 
 - [ ] **Step 5: Validate the workflow parses and passes lint**

@@ -12,6 +12,7 @@ import argparse
 import json
 import re
 import subprocess
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -142,12 +143,17 @@ def release_age_days(
     abort the entire collection run and leave the queue with no snapshot at
     all, which is strictly worse than holding one PR's cooldown decision.
     """
-    clean = _VERSION_CLEAN.sub("", _VERSION_PREFIX.sub("", version or ""))
-    if not clean or not package:
-        return None
     try:
+        clean = _VERSION_CLEAN.sub("", _VERSION_PREFIX.sub("", version or ""))
+        if not clean or not package:
+            return None
+        # The package name comes from a Dependabot PR title. The capture excludes
+        # whitespace and the host below is hardcoded, so this is not a header
+        # injection or SSRF vector -- quoting only guards against a name
+        # containing '/', '?' or '#' reaching an unintended path on that host.
+        safe_package = urllib.parse.quote(package, safe="")
         if ecosystem == "pip":
-            data = fetch(f"https://pypi.org/pypi/{package}/{clean}/json")
+            data = fetch(f"https://pypi.org/pypi/{safe_package}/{clean}/json")
             stamps = [
                 u["upload_time_iso_8601"]
                 for u in data.get("urls", [])
@@ -157,7 +163,7 @@ def release_age_days(
                 return None
             released = datetime.fromisoformat(min(stamps).replace("Z", "+00:00"))
         elif ecosystem == "npm":
-            data = fetch(f"https://registry.npmjs.org/{package}")
+            data = fetch(f"https://registry.npmjs.org/{safe_package}")
             stamp = data.get("time", {}).get(clean)
             if not stamp:
                 return None
@@ -182,14 +188,20 @@ def build_snapshot(
     prs: list[dict],
     checks_by_pr: dict[int, list[dict]],
     required_checks: list[str],
-    release_ages: dict[str, float | None],
+    release_ages: dict[tuple[str, str], float | None],
     risk_tiers: dict[str, str],
 ) -> dict:
-    """Assemble the snapshot document consumed by dep_triage.load_snapshot."""
+    """Assemble the snapshot document consumed by dep_triage.load_snapshot.
+
+    ``release_ages`` is keyed by ``(ecosystem, package)`` rather than bare
+    package name, so a same-named pip and npm package in one batch cannot
+    clobber each other's cached age.
+    """
     out: list[dict] = []
     for pr in prs:
         files = list(pr.get("files", []))
         package, old, new = parse_bump_title(pr.get("title", ""))
+        ecosystem = infer_ecosystem(files)
         out.append(
             {
                 "number": pr["number"],
@@ -198,12 +210,12 @@ def build_snapshot(
                 "files": files,
                 "checks": checks_by_pr.get(pr["number"], []),
                 "required_checks": required_checks,
-                "ecosystem": infer_ecosystem(files),
+                "ecosystem": ecosystem,
                 "directory": infer_directory(files),
                 "package": package,
                 "from_version": old,
                 "to_version": new,
-                "release_age_days": release_ages.get(package),
+                "release_age_days": release_ages.get((ecosystem, package)),
                 "risk_tier": risk_tiers.get(package, "unknown"),
                 "security_advisory": bool(pr.get("security_advisory", False)),
             }
@@ -215,8 +227,23 @@ def build_snapshot(
 
 
 def _gh_json(args: list[str]) -> object:
-    """Run a gh command and parse its JSON output."""
-    result = subprocess.run(["gh", *args], capture_output=True, text=True, check=True)
+    """Run a gh command and parse its JSON output.
+
+    Raises ``RuntimeError`` naming the command and including its stderr on
+    failure, rather than letting a raw ``CalledProcessError`` traceback surface
+    on auth failure, rate limiting, or a bad repo. This must not be swallowed:
+    a failed collection should fail loudly rather than silently producing a
+    partial snapshot.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, check=True
+        )
+    except subprocess.CalledProcessError as exc:
+        command = " ".join(["gh", *args])
+        raise RuntimeError(
+            f"command failed: {command!r} (exit {exc.returncode}): {exc.stderr}"
+        ) from exc
     return json.loads(result.stdout)
 
 
@@ -281,7 +308,11 @@ def main(argv: list[str] | None = None) -> int:
         checks_by_pr[pr["number"]] = [
             {
                 "name": r["name"],
-                "status": "completed",
+                "status": (
+                    "in_progress"
+                    if r["state"] in ("PENDING", "IN_PROGRESS")
+                    else "completed"
+                ),
                 "conclusion": (
                     "success"
                     if r["state"] == "SUCCESS"
@@ -297,16 +328,17 @@ def main(argv: list[str] | None = None) -> int:
         ]
 
     now = datetime.now(timezone.utc)
-    release_ages: dict[str, float | None] = {}
+    release_ages: dict[tuple[str, str], float | None] = {}
     for pr in prs:
         package, _, new = parse_bump_title(pr["title"])
-        if package and package not in release_ages:
+        ecosystem = infer_ecosystem(pr["files"])
+        key = (ecosystem, package)
+        if package and key not in release_ages:
             # Store even a None: build_snapshot reads this with .get(), so a
             # cached None and an absent key behave identically, and caching the
-            # failure stops every later PR for the same package refetching it.
-            release_ages[package] = release_age_days(
-                infer_ecosystem(pr["files"]), package, new, now
-            )
+            # failure stops every later PR for the same (ecosystem, package)
+            # refetching it.
+            release_ages[key] = release_age_days(ecosystem, package, new, now)
 
     snapshot = build_snapshot(
         prs=prs,

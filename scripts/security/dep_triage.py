@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -84,7 +85,7 @@ class Decision:
 
 def load_snapshot(path: Path) -> list[PRSnapshot]:
     """Read a snapshot JSON file into immutable PRSnapshot records."""
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    raw = json.loads(path.read_text(encoding="utf-8"))
     snapshots: list[PRSnapshot] = []
     for item in raw["pull_requests"]:
         checks = tuple(
@@ -154,7 +155,7 @@ POLICY_PATHS: dict[str, str] = {
         "container base images must come from private ECR "
         "(aura-base-images); a bump can silently reintroduce a public image"
     ),
-    "pyproject.toml": ("carries the 70% coverage threshold, which must not be lowered"),
+    "pyproject.toml": "carries the 70% coverage threshold, which must not be lowered",
 }
 
 # Packages deliberately capped for a documented reason.
@@ -638,11 +639,17 @@ def main(argv: list[str] | None = None) -> int:
     prs = load_snapshot(args.snapshot)
     decisions = classify(prs)
     if args.proved or args.conflicted:
-        decisions = promote(
-            decisions,
-            proved=json.loads(args.proved) if args.proved else [],
-            conflicted=json.loads(args.conflicted) if args.conflicted else [],
-        )
+        try:
+            proved = json.loads(args.proved) if args.proved else []
+        except json.JSONDecodeError as exc:
+            print(f"error: --proved is not valid JSON: {exc}", file=sys.stderr)
+            return 1
+        try:
+            conflicted = json.loads(args.conflicted) if args.conflicted else []
+        except json.JSONDecodeError as exc:
+            print(f"error: --conflicted is not valid JSON: {exc}", file=sys.stderr)
+            return 1
+        decisions = promote(decisions, proved=proved, conflicted=conflicted)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

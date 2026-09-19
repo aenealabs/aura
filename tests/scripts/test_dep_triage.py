@@ -115,6 +115,17 @@ def test_healthy_tier_not_held():
     assert dt.rule_held_package(_pr(package="pydantic")) is None
 
 
+def test_deliberate_hold_takes_precedence_over_risk_tier():
+    """tree-sitter is a deliberate hold; pin the more specific reason as the
+    winner over a same-package At-Risk register entry, matching current
+    first-match-wins behaviour in rule_held_package."""
+    pr = _pr(package="tree-sitter", risk_tier="at-risk")
+    d = dt.rule_held_package(pr)
+    assert d is not None
+    assert d.code == dt.CODE_PINNED_BY_POLICY
+    assert "timeout_micros" in d.reason or "DoS" in d.reason
+
+
 def test_policy_path_does_not_match_substring_lookalikes():
     """A component named after Dockerfile is not a Dockerfile."""
     pr = _pr(files=("frontend/src/components/DockerfileViewer.jsx",))
@@ -287,6 +298,11 @@ def test_all_required_checks_present_returns_none():
     assert dt.rule_missing_required(_pr()) is None
 
 
+def test_missing_required_with_no_required_checks_returns_none():
+    """An empty required-checks list has nothing to be missing."""
+    assert dt.rule_missing_required(_pr(required_checks=())) is None
+
+
 def test_mixed_genuine_and_flake_failures_report_the_genuine_one():
     """A real failure must not be hidden behind a flake in the same PR."""
     pr = _pr(
@@ -328,6 +344,19 @@ def test_all_failures_flaky_is_still_a_flake():
         )
     )
     assert dt.rule_failing(pr).code == dt.CODE_SUSPECTED_FLAKE
+
+
+def test_rule_failing_ignores_non_failed_conclusions():
+    """skipped, neutral, cancelled and None conclusions are not failures."""
+    pr = _pr(
+        checks=(
+            dt.CheckRun("A", "completed", "skipped"),
+            dt.CheckRun("B", "completed", "neutral"),
+            dt.CheckRun("C", "completed", "cancelled"),
+            dt.CheckRun("D", "completed", None),
+        )
+    )
+    assert dt.rule_failing(pr) is None
 
 
 def test_missing_path_alone_is_not_treated_as_a_flake():
@@ -399,6 +428,14 @@ def test_action_uses_longer_cooldown():
     )
 
 
+def test_cooldown_boundary_exactly_at_limit_is_not_held():
+    """The comparison is a strict less-than, so a release aged exactly the
+    cooldown limit has cleared it -- this pins the boundary deliberately
+    rather than leaving it to accident."""
+    pr = _pr(ecosystem="pip", release_age_days=float(dt.PACKAGE_COOLDOWN_DAYS))
+    assert dt.rule_cooldown(pr) is None
+
+
 def test_unknown_release_age_is_held():
     d = dt.rule_cooldown(_pr(release_age_days=None))
     assert d is not None
@@ -433,7 +470,7 @@ def test_security_advisory_does_not_bypass_policy_holds():
     assert dt.rule_held_package(held) is not None
 
 
-def test_security_advisory_defaults_to_false(tmp_path):
+def test_security_advisory_defaults_to_false():
     """Snapshots written before this field existed still load."""
     prs = dt.load_snapshot(FIXTURE)
     assert all(p.security_advisory is False for p in prs)
@@ -564,6 +601,31 @@ def test_main_writes_decisions_json_when_requested(tmp_path):
     assert rc == 0
     payload = json.loads(dec.read_text(encoding="utf-8"))
     assert {d["number"] for d in payload["decisions"]} >= {386, 439, 450}
+
+
+def test_main_returns_nonzero_on_malformed_proved_json(tmp_path, capsys):
+    out = tmp_path / "report.md"
+    rc = dt.main(
+        ["--snapshot", str(FIXTURE), "--output", str(out), "--proved", "{not json"]
+    )
+    assert rc != 0
+    assert "--proved" in capsys.readouterr().err
+
+
+def test_main_returns_nonzero_on_malformed_conflicted_json(tmp_path, capsys):
+    out = tmp_path / "report.md"
+    rc = dt.main(
+        [
+            "--snapshot",
+            str(FIXTURE),
+            "--output",
+            str(out),
+            "--conflicted",
+            "{not json",
+        ]
+    )
+    assert rc != 0
+    assert "--conflicted" in capsys.readouterr().err
 
 
 def test_render_report_escapes_pipes_in_titles_and_reasons():

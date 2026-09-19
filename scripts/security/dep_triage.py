@@ -12,6 +12,7 @@ Nothing in this module merges or approves a pull request. See
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -32,6 +33,11 @@ CODE_MAJOR = "held:major-review"
 CODE_COOLDOWN = "held:cooldown"
 CODE_CANDIDATE = "candidate"
 CODE_MERGE_SAFE = "merge-safe"
+
+PACKAGE_COOLDOWN_DAYS = 3
+ACTION_COOLDOWN_DAYS = 7
+
+_LEADING_INT = re.compile(r"\D*(\d+)")
 
 
 @dataclass(frozen=True)
@@ -61,6 +67,7 @@ class PRSnapshot:
     to_version: str
     release_age_days: float | None
     risk_tier: str
+    security_advisory: bool = False
 
 
 @dataclass(frozen=True)
@@ -102,6 +109,7 @@ def load_snapshot(path: Path) -> list[PRSnapshot]:
                 to_version=item["to_version"],
                 release_age_days=item.get("release_age_days"),
                 risk_tier=item.get("risk_tier", "unknown"),
+                security_advisory=bool(item.get("security_advisory", False)),
             )
         )
     return snapshots
@@ -358,3 +366,70 @@ def rule_coupled(pr: PRSnapshot, families: dict[int, str]) -> Decision | None:
         ),
         family=key,
     )
+
+
+def major_of(version: str) -> int | None:
+    """Return the leading integer of a version string, ignoring range markers.
+
+    Handles the forms Dependabot produces: ``5.0.0``, ``^4.1.11``, ``>=2.13.5``
+    and ``v7.0.1``. Returns None when no leading integer is present.
+    """
+    match = _LEADING_INT.match(version or "")
+    return int(match.group(1)) if match else None
+
+
+def rule_major(pr: PRSnapshot) -> Decision | None:
+    """R8: major bumps carry breaking changes CI may not exercise.
+
+    Security advisories bypass this hold entirely: a CVE fix must not be
+    delayed for a major-version review.
+    """
+    if pr.security_advisory:
+        return None
+    before, after = major_of(pr.from_version), major_of(pr.to_version)
+    if before is None or after is None or after <= before:
+        return None
+    return Decision(
+        number=pr.number,
+        code=CODE_MAJOR,
+        reason=(
+            f"major bump {pr.from_version} -> {pr.to_version} "
+            f"({before} -> {after}); breaking changes may not be covered by CI"
+        ),
+    )
+
+
+def rule_cooldown(pr: PRSnapshot) -> Decision | None:
+    """R9: hold releases younger than the cooldown window.
+
+    A freshly published version is the window in which a compromised release is
+    still undetected. Actions wait longer because they are SHA-pinned
+    supply-chain surface executed with repository credentials.
+
+    Security advisories bypass this hold entirely: the cooldown defends against
+    compromised releases, and applying it to a CVE fix would delay the patch it
+    exists to protect.
+    """
+    if pr.security_advisory:
+        return None
+    limit = (
+        ACTION_COOLDOWN_DAYS
+        if pr.ecosystem == "github-actions"
+        else PACKAGE_COOLDOWN_DAYS
+    )
+    if pr.release_age_days is None:
+        return Decision(
+            number=pr.number,
+            code=CODE_COOLDOWN,
+            reason="release age unknown; cannot confirm the cooldown elapsed",
+        )
+    if pr.release_age_days < limit:
+        return Decision(
+            number=pr.number,
+            code=CODE_COOLDOWN,
+            reason=(
+                f"{pr.to_version} is {pr.release_age_days:.0f}d old, "
+                f"under the {limit}d cooldown for {pr.ecosystem}"
+            ),
+        )
+    return None

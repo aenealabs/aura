@@ -50,6 +50,7 @@ def _pr(**kw):
         to_version="1.0.1",
         release_age_days=30.0,
         risk_tier="healthy",
+        security_advisory=False,
     )
     base.update(kw)
     return dt.PRSnapshot(**base)
@@ -342,3 +343,97 @@ def test_missing_path_alone_is_not_treated_as_a_flake():
         )
     )
     assert dt.rule_failing(pr).code == dt.CODE_FAILING
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("5.0.0", 5),
+        ("^4.1.11", 4),
+        (">=2.13.5", 2),
+        ("v7.0.1", 7),
+        ("4.38.0", 4),
+        ("", None),
+        ("latest", None),
+    ],
+)
+def test_major_of_parses_leading_integer(raw, expected):
+    assert dt.major_of(raw) == expected
+
+
+def test_major_bump_is_held():
+    d = dt.rule_major(_pr(package="vitest", from_version="4.1.11", to_version="5.0.0"))
+    assert d is not None
+    assert d.code == dt.CODE_MAJOR
+
+
+def test_minor_bump_is_not_major():
+    assert dt.rule_major(_pr(from_version="2.12.5", to_version="2.13.5")) is None
+
+
+def test_unparseable_version_is_not_major():
+    assert dt.rule_major(_pr(from_version="", to_version="")) is None
+
+
+def test_fresh_package_release_held_for_cooldown():
+    d = dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=1.0))
+    assert d is not None
+    assert d.code == dt.CODE_COOLDOWN
+
+
+def test_aged_package_release_passes_cooldown():
+    assert dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=5.0)) is None
+
+
+def test_action_uses_longer_cooldown():
+    """Actions are SHA-pinned supply-chain surface, so they wait longer."""
+    pr = _pr(ecosystem="github-actions", package="a/b/c", release_age_days=5.0)
+    d = dt.rule_cooldown(pr)
+    assert d is not None
+    assert d.code == dt.CODE_COOLDOWN
+    assert (
+        dt.rule_cooldown(
+            _pr(ecosystem="github-actions", package="a/b/c", release_age_days=9.0)
+        )
+        is None
+    )
+
+
+def test_unknown_release_age_is_held():
+    d = dt.rule_cooldown(_pr(release_age_days=None))
+    assert d is not None
+    assert d.code == dt.CODE_COOLDOWN
+
+
+def test_security_advisory_bypasses_cooldown():
+    pr = _pr(ecosystem="pip", release_age_days=0.5, security_advisory=True)
+    assert dt.rule_cooldown(pr) is None
+
+
+def test_security_advisory_bypasses_unknown_release_age():
+    pr = _pr(release_age_days=None, security_advisory=True)
+    assert dt.rule_cooldown(pr) is None
+
+
+def test_security_advisory_bypasses_major_hold():
+    pr = _pr(from_version="4.1.11", to_version="5.0.0", security_advisory=True)
+    assert dt.rule_major(pr) is None
+
+
+def test_non_security_major_is_still_held():
+    pr = _pr(from_version="4.1.11", to_version="5.0.0", security_advisory=False)
+    assert dt.rule_major(pr) is not None
+
+
+def test_security_advisory_does_not_bypass_policy_holds():
+    """A CVE fix is still not permission to rewrite a base image unreviewed."""
+    pr = _pr(files=("deploy/docker/api/Dockerfile",), security_advisory=True)
+    assert dt.rule_policy_path(pr) is not None
+    held = _pr(package="tree-sitter", security_advisory=True)
+    assert dt.rule_held_package(held) is not None
+
+
+def test_security_advisory_defaults_to_false(tmp_path):
+    """Snapshots written before this field existed still load."""
+    prs = dt.load_snapshot(FIXTURE)
+    assert all(p.security_advisory is False for p in prs)

@@ -564,3 +564,20 @@ def test_main_writes_decisions_json_when_requested(tmp_path):
     assert rc == 0
     payload = json.loads(dec.read_text(encoding="utf-8"))
     assert {d["number"] for d in payload["decisions"]} >= {386, 439, 450}
+
+
+def test_render_report_escapes_pipes_in_titles_and_reasons():
+    """An unescaped pipe would break the Markdown table row it sits in."""
+    pr = _pr(number=99, title="bump foo from 1.0 | 2.0 to 3.0")
+    decision = dt.Decision(
+        number=99,
+        code=dt.CODE_CANDIDATE,
+        reason="held because a | appeared in the reason",
+    )
+    md = dt.render_report([decision], [pr])
+    row = next(line for line in md.splitlines() if line.startswith("| #99 "))
+    assert "1.0 \\| 2.0" in row
+    assert "a \\| appeared" in row
+    # The row must have exactly the 4 declared columns plus the leading and
+    # trailing delimiters; an unescaped pipe would add cells.
+    assert row.count("|") - row.count("\\|") == 5

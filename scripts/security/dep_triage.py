@@ -567,10 +567,7 @@ def render_report(
         lines.append(f"## {heading}")
         lines.append("")
         if not selected:
-            if heading == "Coupled sets":
-                lines.append("(none)")
-            else:
-                lines.append("(none)")
+            lines.append("(none)")
             lines.append("")
             continue
         if heading == "Coupled sets":
@@ -588,7 +585,6 @@ def render_report(
                     "together; no member is individually mergeable."
                 )
                 lines.append("")
-            lines.append("")
             continue
         lines.append("| PR | Code | Title | Reason |")
         lines.append("|----|------|-------|--------|")

@@ -1,0 +1,208 @@
+name: Dependabot Triage
+
+# Classifies open Dependabot PRs, proves the safe subset resolves and tests as a
+# batch, and opens a weekly report PR for operator review.
+#
+# This workflow NEVER merges or approves a pull request. Operator review and
+# merge remain required, consistent with dependency-risk-audit.yml and the
+# main-protection ruleset.
+#
+# Trigger is schedule/workflow_dispatch only. `pull_request_target` is
+# deliberately NOT used: combined with a checkout of PR head it grants a
+# write-scoped token to untrusted code.
+
+on:
+  schedule:
+    # 16:00 UTC Monday -- after Dependabot opens PRs and after the 14:00 audit.
+    - cron: '0 16 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    name: Classify open Dependabot PRs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      candidates: ${{ steps.classify.outputs.candidates }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Collect snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m scripts.security.dep_triage_collect \
+            --repo "${{ github.repository }}" \
+            --output snapshot.json \
+            --required-check "Python Quality & Tests" \
+            --required-check "Analyze (python)" \
+            --required-check "Analyze (javascript-typescript)" \
+            --required-check "Analyze (actions)"
+
+      - name: Classify
+        id: classify
+        run: |
+          python -m scripts.security.dep_triage \
+            --snapshot snapshot.json \
+            --output triage-report.md \
+            --decisions decisions.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          data = json.load(open("decisions.json"))
+          nums = [d["number"] for d in data["decisions"]
+                  if d["code"] == "candidate"]
+          print("candidates=" + json.dumps(nums))
+          PY
+
+      - name: Upload triage artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: triage
+          path: |
+            snapshot.json
+            decisions.json
+            triage-report.md
+
+  batch-proof:
+    name: Prove candidate batch
+    needs: classify
+    if: needs.classify.outputs.candidates != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Build candidate integration branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATES: ${{ needs.classify.outputs.candidates }}
+        run: |
+          set -euo pipefail
+          git config user.name "aura-ci"
+          git config user.email "ci@aenealabs.com"
+          git switch -c "dep-triage/candidate-${GITHUB_RUN_ID}"
+          for pr in $(echo "$CANDIDATES" | python -c \
+              'import json,sys; print(" ".join(map(str, json.load(sys.stdin))))'); do
+            git fetch origin "pull/${pr}/head:pr-${pr}"
+            if ! git merge --no-edit "pr-${pr}"; then
+              echo "::warning::PR #${pr} conflicts with the batch; excluding it"
+              git merge --abort
+            fi
+          done
+
+      - name: Prove dependency resolution
+        run: |
+          set -euo pipefail
+          for req in requirements.txt requirements-api.txt \
+                     requirements-test-extras.txt requirements-agents.txt; do
+            [ -f "$req" ] || continue
+            echo "::group::resolve $req"
+            python -m pip install --dry-run --quiet --report /dev/null -r "$req"
+            echo "::endgroup::"
+          done
+
+      - name: Prove npm resolution
+        # `--legacy-peer-deps` is mandatory in frontend/, not a shortcut: the
+        # eslint-plugin-react peer cap on eslint@^9.7 makes a plain `npm ci`
+        # fail outright. See frontend/CLAUDE.md and code-quality.yml.
+        #
+        # Consequence, recorded deliberately: the flag silences peer-dependency
+        # conflicts globally, so this step is weaker assurance than it looks and
+        # would NOT on its own have caught PR #443's vitest/coverage-v8 skew.
+        # Coupled-family detection (R5) is the primary control for that class,
+        # and it catches #443 deterministically before the proof ever runs.
+        run: |
+          set -euo pipefail
+          for dir in frontend sdk/typescript; do
+            [ -f "$dir/package.json" ] || continue
+            echo "::group::npm ci $dir"
+            (cd "$dir" && npm ci --legacy-peer-deps)
+            echo "::endgroup::"
+          done
+
+      - name: Run test suite
+        run: |
+          python -m pip install --quiet -r requirements.txt
+          pytest -q
+
+  report:
+    name: Publish triage report
+    needs: [classify, batch-proof]
+    if: always() && needs.classify.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Download triage artifacts
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: triage
+
+      - name: Publish the rolling triage issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROOF: ${{ needs.batch-proof.result }}
+          CANDIDATES: ${{ needs.classify.outputs.candidates }}
+        run: |
+          set -euo pipefail
+          # Only a green batch proof promotes candidates to merge-safe. Any
+          # other outcome leaves them as candidates, so a skipped or failed
+          # proof never reports anything as mergeable.
+          if [ "$PROOF" = "success" ]; then
+            python -m scripts.security.dep_triage \
+              --snapshot snapshot.json \
+              --output triage-report.md \
+              --proved "$CANDIDATES"
+          fi
+          printf '\n> Batch proof result: %s\n' "$PROOF" >> triage-report.md
+
+          # The report is a rolling issue rewritten in place, not a weekly PR.
+          # An issue needs no approval to update, so the team carries no
+          # recurring merge chore for a document that only offers advice.
+          title="Dependabot triage"
+          number="$(gh issue list --state open --label automated \
+            --search "$title in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$title\")] | first | .number // empty")"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file triage-report.md
+            echo "updated issue #${number}"
+          else
+            gh issue create --title "$title" \
+              --body-file triage-report.md \
+              --label dependencies --label automated
+          fi

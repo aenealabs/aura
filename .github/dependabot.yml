@@ -2,7 +2,12 @@ version: 2
 updates:
   # Python dependencies
   - package-ecosystem: "pip"
-    directory: "/"
+    directories:
+      - "/"
+      # deploy/docker/memory-service/requirements.txt was previously unwatched:
+      # the single "/" scope does not reach nested requirements files, so this
+      # image's dependencies were never updated.
+      - "/deploy/docker/memory-service"
     schedule:
       interval: "weekly"
       day: "monday"

@@ -1,7 +1,11 @@
 name: Dependabot Triage
 
 # Classifies open Dependabot PRs, proves the safe subset resolves and tests as a
-# batch, and opens a weekly report PR for operator review.
+# batch, and publishes a rolling triage issue for operator review.
+#
+# The report is a single long-lived issue rewritten in place rather than a weekly
+# pull request: an issue needs no approval to update, so the team carries no
+# recurring merge chore for a document that only offers advice.
 #
 # This workflow NEVER merges or approves a pull request. Operator review and
 # merge remain required, consistent with dependency-risk-audit.yml and the
@@ -31,6 +35,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      checks: read
+      statuses: read
     outputs:
       candidates: ${{ steps.classify.outputs.candidates }}
     steps:
@@ -46,6 +52,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           python -m scripts.security.dep_triage_collect \
             --repo "${{ github.repository }}" \
             --output snapshot.json \
@@ -57,6 +64,7 @@ jobs:
       - name: Classify
         id: classify
         run: |
+          set -euo pipefail
           python -m scripts.security.dep_triage \
             --snapshot snapshot.json \
             --output triage-report.md \
@@ -147,6 +155,7 @@ jobs:
 
       - name: Run test suite
         run: |
+          set -euo pipefail
           python -m pip install --quiet -r requirements.txt
           pytest -q
 

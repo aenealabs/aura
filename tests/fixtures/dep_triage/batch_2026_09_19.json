@@ -1,0 +1,129 @@
+{
+  "generated_at": "2026-09-19T00:00:00Z",
+  "pull_requests": [
+    {
+      "number": 386,
+      "title": "chore: release 1.8.0",
+      "author": "app/github-actions",
+      "files": ["CHANGELOG.md", "version.txt"],
+      "checks": [],
+      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
+      "ecosystem": "unknown",
+      "directory": "/",
+      "package": "",
+      "from_version": "",
+      "to_version": "",
+      "release_age_days": null,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 439,
+      "title": "chore(deps): update pydantic requirement from >=2.12.5 to >=2.13.5",
+      "author": "dependabot[bot]",
+      "files": ["requirements.txt", "requirements-api.txt"],
+      "checks": [
+        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
+        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""}
+      ],
+      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "pydantic",
+      "from_version": "2.12.5",
+      "to_version": "2.13.5",
+      "release_age_days": 30.0,
+      "risk_tier": "healthy"
+    },
+    {
+      "number": 442,
+      "title": "chore(deps-dev): bump vitest from 4.1.11 to 5.0.0 in /frontend",
+      "author": "dependabot[bot]",
+      "files": ["frontend/package.json", "frontend/package-lock.json"],
+      "checks": [
+        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
+        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
+        {"name": "Security Scanning", "status": "completed", "conclusion": "failure", "failing_log_excerpt": "##[error]Process completed with exit code 35.\n##[error]Path does not exist: trivy-results.sarif"}
+      ],
+      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
+      "ecosystem": "npm",
+      "directory": "/frontend",
+      "package": "vitest",
+      "from_version": "4.1.11",
+      "to_version": "5.0.0",
+      "release_age_days": 20.0,
+      "risk_tier": "healthy"
+    },
+    {
+      "number": 443,
+      "title": "chore(deps-dev): bump @vitest/coverage-v8 from 4.1.11 to 5.0.0 in /frontend",
+      "author": "dependabot[bot]",
+      "files": ["frontend/package.json", "frontend/package-lock.json"],
+      "checks": [
+        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
+        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""}
+      ],
+      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
+      "ecosystem": "npm",
+      "directory": "/frontend",
+      "package": "@vitest/coverage-v8",
+      "from_version": "4.1.11",
+      "to_version": "5.0.0",
+      "release_age_days": 20.0,
+      "risk_tier": "healthy"
+    },
+    {
+      "number": 446,
+      "title": "chore(deps): update cfn-lint requirement from >=1.53.2 to >=1.56.0",
+      "author": "dependabot[bot]",
+      "files": ["requirements.txt"],
+      "checks": [
+        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
+        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""}
+      ],
+      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "cfn-lint",
+      "from_version": "1.53.2",
+      "to_version": "1.56.0",
+      "release_age_days": 12.0,
+      "risk_tier": "healthy"
+    },
+    {
+      "number": 450,
+      "title": "chore(deps): bump github/codeql-action/upload-sarif from 4.37.9 to 4.38.0",
+      "author": "dependabot[bot]",
+      "files": [".github/workflows/code-quality.yml"],
+      "checks": [
+        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
+        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""}
+      ],
+      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
+      "ecosystem": "github-actions",
+      "directory": "/",
+      "package": "github/codeql-action/upload-sarif",
+      "from_version": "4.37.9",
+      "to_version": "4.38.0",
+      "release_age_days": 9.0,
+      "risk_tier": "healthy"
+    },
+    {
+      "number": 452,
+      "title": "chore(deps): bump github/codeql-action/analyze from 4.37.9 to 4.38.0",
+      "author": "dependabot[bot]",
+      "files": [".github/workflows/codeql.yml"],
+      "checks": [
+        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
+        {"name": "Analyze (python)", "status": "completed", "conclusion": "failure", "failing_log_excerpt": "Not all workflow steps that use `github/codeql-action` actions use the same version."}
+      ],
+      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
+      "ecosystem": "github-actions",
+      "directory": "/",
+      "package": "github/codeql-action/analyze",
+      "from_version": "4.37.9",
+      "to_version": "4.38.0",
+      "release_age_days": 9.0,
+      "risk_tier": "healthy"
+    }
+  ]
+}

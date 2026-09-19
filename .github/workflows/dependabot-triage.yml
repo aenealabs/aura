@@ -170,7 +170,7 @@ jobs:
     # the consolidation.
     #
     # To promote it to unattended weekly operation, delete this `if:` line.
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && needs.classify.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:

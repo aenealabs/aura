@@ -169,69 +169,85 @@ def consolidate_family(
     `git`/`gh` calls go through the injected `run` callable rather than calling
     `subprocess` directly, so this orchestration is unit-testable with a fake
     that never touches the network or a real git checkout.
+
+    Every command failure is converted into a returned `(False, message)` rather
+    than raised. This component holds write access, so a raised exception is the
+    expensive outcome: the branch may already be pushed, and an escape past the
+    caller's loop would leave the repository on a consolidation branch and
+    silently skip every remaining family. The `finally` returns to `main` on all
+    paths for the same reason.
     """
     branch = branch_name(family, version)
-    run(["git", "switch", "-c", branch, "origin/main"])
+    try:
+        run(["git", "switch", "-c", branch, "origin/main"])
 
-    member_diffs: list[str] = []
-    for pr in members:
-        run(["git", "fetch", "origin", f"pull/{pr}/head:pr-{pr}"])
-        member_diffs.append(
-            run(["git", "diff", f"origin/main...pr-{pr}"], capture=True)
-        )
-        try:
-            run(["git", "merge", "--no-edit", f"pr-{pr}"])
-        except CommandFailed:
-            # A merge conflict must not leave the repo on a half-merged branch:
-            # abort the in-progress merge and return to main before reporting.
-            run(["git", "merge", "--abort"])
-            run(["git", "switch", "main"])
-            return (False, f"family {family}: PR #{pr} conflicts; skipped")
+        member_diffs: list[str] = []
+        for pr in members:
+            run(["git", "fetch", "origin", f"pull/{pr}/head:pr-{pr}"])
+            member_diffs.append(
+                run(["git", "diff", f"origin/main...pr-{pr}"], capture=True)
+            )
+            try:
+                run(["git", "merge", "--no-edit", f"pr-{pr}"])
+            except CommandFailed:
+                # A merge conflict must not leave the repo on a half-merged
+                # branch: abort the in-progress merge before reporting. The
+                # return to main is handled by the outer `finally`.
+                run(["git", "merge", "--abort"])
+                return (False, f"family {family}: PR #{pr} conflicts; skipped")
 
-    combined = run(["git", "diff", "origin/main...HEAD"], capture=True)
-    ok, missing, extra = verify_union(member_diffs, combined)
-    if not ok:
-        run(["git", "switch", "main"])
-        return (
-            False,
-            f"family {family}: union mismatch; "
-            f"missing={sorted(missing)} extra={sorted(extra)}",
-        )
+        combined = run(["git", "diff", "origin/main...HEAD"], capture=True)
+        ok, missing, extra = verify_union(member_diffs, combined)
+        if not ok:
+            return (
+                False,
+                f"family {family}: union mismatch; "
+                f"missing={sorted(missing)} extra={sorted(extra)}",
+            )
 
-    run(["git", "push", "-u", "origin", branch, "--force"])
-    run(
-        [
-            "gh",
-            "pr",
-            "create",
-            "--base",
-            "main",
-            "--head",
-            branch,
-            "--title",
-            f"chore(deps): bump {family} to {version} across all refs",
-            "--body",
-            consolidation_body(family, version, members),
-            "--label",
-            "dependencies",
-            "--label",
-            "automated",
-        ]
-    )
-    for pr in members:
+        run(["git", "push", "-u", "origin", branch, "--force"])
         run(
             [
                 "gh",
                 "pr",
-                "comment",
-                str(pr),
+                "create",
+                "--base",
+                "main",
+                "--head",
+                branch,
+                "--title",
+                f"chore(deps): bump {family} to {version} across all refs",
                 "--body",
-                f"Superseded by the consolidated PR on `{branch}`; this PR cannot "
-                "be merged on its own.",
+                consolidation_body(family, version, members),
+                "--label",
+                "dependencies",
+                "--label",
+                "automated",
             ]
         )
-    run(["git", "switch", "main"])
-    return (True, f"family {family}: opened {branch}")
+        for pr in members:
+            run(
+                [
+                    "gh",
+                    "pr",
+                    "comment",
+                    str(pr),
+                    "--body",
+                    f"Superseded by the consolidated PR on `{branch}`; this PR "
+                    "cannot be merged on its own.",
+                ]
+            )
+        return (True, f"family {family}: opened {branch}")
+    except CommandFailed as exc:
+        return (False, f"family {family}: aborted after a command failure: {exc}")
+    finally:
+        # Return to main on every path, including the failure paths above. A
+        # failure that left the repository on a consolidation branch would
+        # make the next family in the loop branch from the wrong base.
+        try:
+            run(["git", "switch", "main"])
+        except CommandFailed:
+            pass
 
 
 def main(argv: list[str] | None = None) -> int:

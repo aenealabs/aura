@@ -1370,6 +1370,24 @@ def test_promote_leaves_unproved_candidates_as_candidates():
     decisions = dt.classify(dt.load_snapshot(FIXTURE))
     promoted = {d.number: d for d in dt.promote(decisions, proved=[])}
     assert promoted[439].code == dt.CODE_CANDIDATE
+
+
+def test_conflict_wins_when_a_pr_is_both_proved_and_conflicted():
+    """The worst possible wrong answer is reporting a conflict as merge-safe."""
+    decisions = dt.classify(dt.load_snapshot(FIXTURE))
+    promoted = {
+        d.number: d
+        for d in dt.promote(decisions, proved=[439], conflicted=[439])
+    }
+    assert promoted[439].code == dt.CODE_CONFLICT
+
+
+def test_promote_does_not_mutate_its_input():
+    decisions = dt.classify(dt.load_snapshot(FIXTURE))
+    before = [(d.number, d.code) for d in decisions]
+    dt.promote(decisions, proved=[439, 446], conflicted=[])
+    after = [(d.number, d.code) for d in decisions]
+    assert before == after
 ```
 
 - [ ] **Step 6: Run test to verify it fails**

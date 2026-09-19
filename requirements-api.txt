@@ -16,22 +16,22 @@ botocore>=1.43.78
 # Graph Database and Vector Store
 gremlinpython>=3.8.1         # Amazon Neptune connectivity
 opensearch-py>=3.2.0         # OpenSearch vector store
-cachetools>=7.1.6            # TTLCache for vector/embedding caches
+cachetools>=7.1.8            # TTLCache for vector/embedding caches
 requests>=2.34.1             # HTTP client (used by PyGithub, ad-hoc HTTP)
 
 # Git Integration
-GitPython>=3.1.59            # Git metadata extraction
+GitPython>=3.1.61            # Git metadata extraction
 PyGithub>=2.9.1              # GitHub API integration
 
 # Authentication
 PyJWT[crypto]>=2.13.0         # JWT validation (GitHub App auth + Cognito JWKS)
-cryptography>=49.0.0         # RSA key support
+cryptography>=50.0.1         # RSA key support
 
 # API Framework
 fastapi>=0.141.1             # REST API
 uvicorn>=0.52.4              # ASGI server
 httpx>=0.28.1                # HTTP client
-pydantic>=2.13.4             # Data validation
+pydantic>=2.13.5             # Data validation
 email-validator>=2.3.0       # Email validation for Pydantic
 python-multipart>=0.0.32     # Form data support
 
@@ -58,7 +58,7 @@ PyYAML>=6.0.2
 # mode when absent.
 openai>=2.48.0
 google-genai>=2.19.0 ; python_version >= "3.10"
-google-cloud-aiplatform>=1.165.1 ; python_version >= "3.10"
+google-cloud-aiplatform>=2.1.0 ; python_version >= "3.10"
 
 # Calibration / Explainability (ADR-068)
 # IsotonicRegression powers confidence calibration
@@ -74,4 +74,4 @@ scikit-learn>=1.9.0
 # dependency continue to load and fall back to the SKIPPED verdict
 # until an alternative adapter (CVC5, Yices2) is configured. MIT
 # license, runs in-process, no network calls.
-z3-solver>=4.16.0.0
+z3-solver>=5.1.0.0

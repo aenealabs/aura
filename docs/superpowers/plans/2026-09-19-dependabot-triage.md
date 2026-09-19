@@ -2012,18 +2012,35 @@ Expected: FAIL with `AttributeError: module ... has no attribute 'is_security_ad
 - [ ] **Step 6: Implement detection and carry the flag**
 
 ```python
+# Dependabot states its own case in the preamble, before the first collapsible
+# block; everything from that tag onward is upstream release notes and commit
+# lists it merely embedded. Truncating at the first tag -- rather than stripping
+# matched pairs -- is deliberate: paired stripping is not nesting-aware, so an
+# outer block whose first close tag belongs to an inner block leaks its tail back
+# into scope. The tolerant pattern also catches `<details open>` and
+# `< DETAILS >`. Both choices shrink the search scope, which is the safe
+# direction here.
+_DETAILS_OPEN = re.compile(r"<\s*details\b", re.IGNORECASE)
 _ADVISORY = re.compile(r"(GHSA-[0-9a-z-]+|CVE-\d{4}-\d+)", re.IGNORECASE)
 
 
 def is_security_advisory(body: str | None) -> bool:
-    """True when a pull request body cites a GHSA or CVE identifier.
+    """True when Dependabot itself cites a GHSA or CVE for this update.
 
-    Dependabot security updates describe the vulnerabilities they fix and cite
-    an advisory id; ordinary version bumps do not. The flag lets a CVE fix skip
-    the cooldown and major-version holds, which exist to slow down *unproven*
-    releases, not patches.
+    Dependabot security updates name the advisory they fix in their own
+    preamble. Ordinary version bumps embed upstream release notes in collapsible
+    blocks, and those routinely mention CVEs fixed in earlier releases within the
+    range -- text that says nothing about whether *this* update is a security
+    fix.
+
+    That matters because the flag bypasses both the cooldown and the
+    major-version hold. The two error directions are not symmetric: a missed
+    advisory only means the patch queues through the cooldown normally, while a
+    false positive strips both protections from an ordinary bump. Only the
+    preamble is searched, and detection errs toward not-security.
     """
-    return bool(_ADVISORY.search(body or ""))
+    preamble = _DETAILS_OPEN.split(body or "", maxsplit=1)[0]
+    return bool(_ADVISORY.search(preamble))
 ```
 
 In `build_snapshot`, add this key to each emitted record, after `risk_tier`:

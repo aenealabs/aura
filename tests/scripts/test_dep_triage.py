@@ -284,3 +284,61 @@ def test_missing_required_check_is_not_treated_as_pass():
 
 def test_all_required_checks_present_returns_none():
     assert dt.rule_missing_required(_pr()) is None
+
+
+def test_mixed_genuine_and_flake_failures_report_the_genuine_one():
+    """A real failure must not be hidden behind a flake in the same PR."""
+    pr = _pr(
+        checks=(
+            dt.CheckRun(
+                "Python Quality & Tests",
+                "completed",
+                "failure",
+                "AssertionError: expected 3, got 4",
+            ),
+            dt.CheckRun(
+                "Security Scanning",
+                "completed",
+                "failure",
+                "##[error]Process completed with exit code 35.",
+            ),
+        )
+    )
+    decision = dt.rule_failing(pr)
+    assert decision.code == dt.CODE_FAILING
+    assert "Python Quality & Tests" in decision.reason
+
+
+def test_all_failures_flaky_is_still_a_flake():
+    pr = _pr(
+        checks=(
+            dt.CheckRun(
+                "Security Scanning",
+                "completed",
+                "failure",
+                "##[error]Process completed with exit code 35.",
+            ),
+            dt.CheckRun(
+                "Container Build",
+                "completed",
+                "failure",
+                "Could not resolve host: registry.example",
+            ),
+        )
+    )
+    assert dt.rule_failing(pr).code == dt.CODE_SUSPECTED_FLAKE
+
+
+def test_missing_path_alone_is_not_treated_as_a_flake():
+    """A broken path introduced by the change is a real failure."""
+    pr = _pr(
+        checks=(
+            dt.CheckRun(
+                "Python Quality & Tests",
+                "completed",
+                "failure",
+                "Path does not exist: src/module.py",
+            ),
+        )
+    )
+    assert dt.rule_failing(pr).code == dt.CODE_FAILING

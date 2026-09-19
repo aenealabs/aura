@@ -257,10 +257,10 @@ def detect_families(prs: list[PRSnapshot]) -> dict[int, str]:
 
 
 # Substrings in a failing step's log that indicate infrastructure trouble
-# rather than a defect in the change under test.
+# rather than a defect in the change under test. Each entry must be specific
+# enough that a genuinely broken change cannot produce it.
 FLAKE_SIGNATURES: tuple[str, ...] = (
     "exit code 35",
-    "Path does not exist:",
     "Could not resolve host",
     "connection reset",
     "TLS handshake timeout",
@@ -272,38 +272,59 @@ FLAKE_SIGNATURES: tuple[str, ...] = (
 FAILED_CONCLUSIONS: frozenset[str] = frozenset({"failure", "timed_out"})
 
 
+def _is_flake(check: CheckRun) -> bool:
+    """True when a failed check's log carries an infrastructure signature."""
+    excerpt = check.failing_log_excerpt.lower()
+    return any(signature.lower() in excerpt for signature in FLAKE_SIGNATURES)
+
+
 def rule_failing(pr: PRSnapshot) -> Decision | None:
     """R6: classify failing checks, separating infrastructure flakes.
 
     A flake is worth a rerun; a real failure is worth a human. Conflating them
     means genuine failures get retried and flakes rot untouched.
+
+    Each failed check is judged on its own log. A PR is only called a flake
+    when every failed check is one: if a genuine failure and a flake land
+    together, the genuine failure decides, because a "rerun once" label on a
+    real defect hides it until someone reruns and watches it fail again.
     """
     failed = [c for c in pr.checks if (c.conclusion or "") in FAILED_CONCLUSIONS]
     if not failed:
         return None
-    names = ", ".join(c.name for c in failed)
-    if any(
-        sig.lower() in c.failing_log_excerpt.lower()
-        for c in failed
-        for sig in FLAKE_SIGNATURES
-    ):
-        return Decision(
-            number=pr.number,
-            code=CODE_SUSPECTED_FLAKE,
-            reason=(
-                f"{names} failed with an infrastructure signature, not a "
-                "defect in the change; rerun once before escalating"
-            ),
-        )
+
+    flaky: list[CheckRun] = []
+    genuine: list[CheckRun] = []
+    for check in failed:
+        (flaky if _is_flake(check) else genuine).append(check)
+
+    if genuine:
+        reason = f"{', '.join(c.name for c in genuine)} failed"
+        if flaky:
+            reason += (
+                f" (also failing with an infrastructure signature: "
+                f"{', '.join(c.name for c in flaky)})"
+            )
+        return Decision(number=pr.number, code=CODE_FAILING, reason=reason)
+
     return Decision(
         number=pr.number,
-        code=CODE_FAILING,
-        reason=f"{names} failed",
+        code=CODE_SUSPECTED_FLAKE,
+        reason=(
+            f"{', '.join(c.name for c in flaky)} failed with an "
+            "infrastructure signature, not a defect in the change; rerun once "
+            "before escalating"
+        ),
     )
 
 
 def rule_missing_required(pr: PRSnapshot) -> Decision | None:
-    """R7: a required check that never ran is missing, never passing."""
+    """R7: a required check that never ran is missing, never passing.
+
+    A required check absent from the run set looks identical to "nothing
+    failed" when only conclusions are inspected. Treating absence as success is
+    how a PR that never triggered its own test workflow gets reported as safe.
+    """
     present = {c.name for c in pr.checks}
     missing = [name for name in pr.required_checks if name not in present]
     if not missing:

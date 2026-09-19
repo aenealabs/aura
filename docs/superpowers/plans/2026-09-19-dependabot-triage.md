@@ -1569,10 +1569,16 @@ def render_report(
 
     for heading, codes in _SECTIONS:
         selected = [d for d in decisions if d.code in codes]
-        if not selected:
-            continue
         lines.append(f"## {heading}")
         lines.append("")
+        if not selected:
+            # Emit the heading with an explicit "(none)" rather than omitting
+            # it. A reader needs to know the section was considered and came
+            # back empty; a missing heading is indistinguishable from a
+            # renderer that forgot to check.
+            lines.append("(none)")
+            lines.append("")
+            continue
         if heading == "Coupled sets":
             by_family: dict[str, list[Decision]] = {}
             for d in selected:

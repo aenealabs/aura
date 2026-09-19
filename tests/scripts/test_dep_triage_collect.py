@@ -92,6 +92,40 @@ def test_is_security_advisory(body, expected):
     assert dc.is_security_advisory(body) is expected
 
 
+def test_advisory_ignores_cve_mentions_inside_release_notes():
+    """Upstream changelogs cite old CVEs; that is not this PR being a fix."""
+    body = (
+        "Bumps [foo](https://github.com/foo/foo) from 1.0.0 to 2.0.0.\n"
+        "<details>\n<summary>Release notes</summary>\n"
+        "<p>2.0.0 also carried the fix for CVE-2024-11111 and GHSA-aaaa-bbbb-cccc.</p>\n"
+        "</details>\n"
+    )
+    assert dc.is_security_advisory(body) is False
+
+
+def test_advisory_detected_when_cited_in_the_preamble():
+    body = (
+        "Bumps [urllib3](https://github.com/urllib3/urllib3) from 2.0.0 to 2.0.7.\n"
+        "This update fixes GHSA-aaaa-bbbb-cccc.\n"
+        "<details>\n<summary>Release notes</summary>\n<p>unrelated</p>\n</details>\n"
+    )
+    assert dc.is_security_advisory(body) is True
+
+
+def test_advisory_ignores_tail_after_an_unclosed_details_block():
+    body = "Bumps foo from 1 to 2.\n<details>\n<summary>x</summary>\nCVE-2024-22222\n"
+    assert dc.is_security_advisory(body) is False
+
+
+def test_advisory_handles_multiple_details_blocks():
+    body = (
+        "Bumps foo from 1 to 2.\n"
+        "<details><summary>Release notes</summary>CVE-2024-33333</details>\n"
+        "<details><summary>Commits</summary>GHSA-dddd-eeee-ffff</details>\n"
+    )
+    assert dc.is_security_advisory(body) is False
+
+
 def test_build_snapshot_carries_the_security_flag(tmp_path):
     snapshot = dc.build_snapshot(
         prs=[

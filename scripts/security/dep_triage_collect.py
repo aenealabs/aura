@@ -23,6 +23,8 @@ _BUMP = re.compile(
     r"from\s+(?P<old>\S+)\s+to\s+(?P<new>\S+)"
 )
 
+_DETAILS_BLOCK = re.compile(r"<details>.*?</details>", re.DOTALL | re.IGNORECASE)
+_DETAILS_OPEN = re.compile(r"<details>", re.IGNORECASE)
 _ADVISORY = re.compile(r"(GHSA-[0-9a-z-]+|CVE-\d{4}-\d+)", re.IGNORECASE)
 
 
@@ -64,14 +66,25 @@ def infer_directory(files: list[str]) -> str:
 
 
 def is_security_advisory(body: str | None) -> bool:
-    """True when a pull request body cites a GHSA or CVE identifier.
+    """True when Dependabot itself cites a GHSA or CVE for this update.
 
-    Dependabot security updates describe the vulnerabilities they fix and cite
-    an advisory id; ordinary version bumps do not. The flag lets a CVE fix skip
-    the cooldown and major-version holds, which exist to slow down *unproven*
-    releases, not patches.
+    Dependabot security updates name the advisory they fix in their own
+    preamble. Ordinary version bumps embed upstream release notes inside
+    <details> blocks, and those routinely mention CVEs fixed in earlier
+    releases within the range -- text that says nothing about whether *this*
+    update is a security fix. Matching the whole body therefore reads an
+    unrelated changelog as an advisory.
+
+    That matters because the flag bypasses both the cooldown and the
+    major-version hold. The two error directions are not symmetric: a missed
+    advisory only means the patch queues normally, while a false positive
+    strips both protections from an ordinary bump. So <details> content is
+    excluded and detection errs toward not-security.
     """
-    return bool(_ADVISORY.search(body or ""))
+    text = _DETAILS_BLOCK.sub("", body or "")
+    # An unclosed <details> would otherwise leave its whole tail in scope.
+    text = _DETAILS_OPEN.split(text, maxsplit=1)[0]
+    return bool(_ADVISORY.search(text))
 
 
 def _risk_tiers(register: Path) -> dict[str, str]:

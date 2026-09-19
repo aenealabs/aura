@@ -2445,7 +2445,11 @@ git commit -m "fix: watch memory-service requirements with dependabot"
 name: Dependabot Triage
 
 # Classifies open Dependabot PRs, proves the safe subset resolves and tests as a
-# batch, and opens a weekly report PR for operator review.
+# batch, and publishes a rolling triage issue for operator review.
+#
+# The report is a single long-lived issue rewritten in place rather than a weekly
+# pull request: an issue needs no approval to update, so the team carries no
+# recurring merge chore for a document that only offers advice.
 #
 # This workflow NEVER merges or approves a pull request. Operator review and
 # merge remain required, consistent with dependency-risk-audit.yml and the
@@ -2475,6 +2479,12 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      # gh pr checks reads the commit status-check rollup, which these two gate.
+      # Without them the collector returns empty check lists, every PR classifies
+      # as excluded:no-checks, and the report is vacuous while the job still
+      # reports green -- a failure that produces a plausible empty answer.
+      checks: read
+      statuses: read
     outputs:
       candidates: ${{ steps.classify.outputs.candidates }}
     steps:

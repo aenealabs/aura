@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 DEPENDABOT_AUTHOR = "dependabot[bot]"
 
@@ -164,8 +164,9 @@ HELD_TIERS: frozenset[str] = frozenset({"at-risk", "replace-now"})
 def rule_policy_path(pr: PRSnapshot) -> Decision | None:
     """R3: changes to policy-sensitive paths need human review."""
     for path in pr.files:
+        name = PurePosixPath(path).name
         for marker, why in POLICY_PATHS.items():
-            if path.endswith(marker) or marker in path:
+            if name == marker or name.startswith(f"{marker}."):
                 return Decision(
                     number=pr.number,
                     code=CODE_POLICY_REVIEW,

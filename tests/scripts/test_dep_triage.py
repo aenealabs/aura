@@ -112,3 +112,20 @@ def test_at_risk_tier_is_held():
 
 def test_healthy_tier_not_held():
     assert dt.rule_held_package(_pr(package="pydantic")) is None
+
+
+def test_policy_path_does_not_match_substring_lookalikes():
+    """A component named after Dockerfile is not a Dockerfile."""
+    pr = _pr(files=("frontend/src/components/DockerfileViewer.jsx",))
+    assert dt.rule_policy_path(pr) is None
+
+
+def test_policy_path_matches_dockerfile_variants():
+    assert (
+        dt.rule_policy_path(_pr(files=("deploy/docker/api/Dockerfile.prod",)))
+        is not None
+    )
+
+
+def test_policy_path_matches_nested_pyproject():
+    assert dt.rule_policy_path(_pr(files=("tools/pyproject.toml",))) is not None

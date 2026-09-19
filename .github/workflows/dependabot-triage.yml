@@ -159,6 +159,51 @@ jobs:
           python -m pip install --quiet -r requirements.txt
           pytest -q
 
+  consolidate:
+    name: Open consolidated PRs for coupled families
+    needs: classify
+    # Staged rollout: this is the only job that writes branches, opens PRs and
+    # comments on other PRs. Until it has produced a few correct consolidated
+    # PRs under observation, it runs ONLY on a manual workflow_dispatch, never
+    # on the weekly schedule. The classify/report path still runs weekly and
+    # names any coupled family, so nothing is missed -- an operator triggers
+    # the consolidation.
+    #
+    # To promote it to unattended weekly operation, delete this `if:` line.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Download triage artifacts
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: triage
+
+      - name: Open consolidated PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "aura-ci"
+          git config user.email "ci@aenealabs.com"
+          python -m scripts.security.dep_triage_consolidate \
+            --decisions decisions.json \
+            --snapshot snapshot.json \
+            --execute
+
   report:
     name: Publish triage report
     needs: [classify, batch-proof]

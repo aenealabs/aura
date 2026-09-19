@@ -105,3 +105,33 @@ def load_snapshot(path: Path) -> list[PRSnapshot]:
             )
         )
     return snapshots
+
+
+def rule_non_dependabot(pr: PRSnapshot) -> Decision | None:
+    """R1: only Dependabot PRs are in scope.
+
+    Keyed on author identity rather than title text, so Release Please and
+    other bot PRs are excluded regardless of how they are titled.
+    """
+    if pr.author != DEPENDABOT_AUTHOR:
+        return Decision(
+            number=pr.number,
+            code=CODE_NON_DEPENDABOT,
+            reason=f"author is {pr.author!r}, not {DEPENDABOT_AUTHOR!r}",
+        )
+    return None
+
+
+def rule_no_checks(pr: PRSnapshot) -> Decision | None:
+    """R2: a PR with no check runs has not been validated.
+
+    Without this, "no failing checks" is vacuously true for any PR whose
+    workflows never ran, which would read as safe.
+    """
+    if not pr.checks:
+        return Decision(
+            number=pr.number,
+            code=CODE_NO_CHECKS,
+            reason="no check runs present; absence of failures proves nothing",
+        )
+    return None

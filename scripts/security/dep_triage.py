@@ -193,3 +193,60 @@ def rule_held_package(pr: PRSnapshot) -> Decision | None:
             ),
         )
     return None
+
+
+def family_key(pr: PRSnapshot) -> str | None:
+    """Return the update-family key for a PR, or None if it cannot be grouped.
+
+    Two signals produce a family:
+
+    * A GitHub Action whose package path has a sub-action segment
+      (``github/codeql-action/init``) groups under its owner/repo. Those
+      sub-actions must move in lockstep or CodeQL refuses to run.
+    * An npm package groups with its scoped peers in the same directory, so
+      ``vitest`` and ``@vitest/coverage-v8`` land together rather than leaving
+      a peer-version conflict.
+    """
+    if pr.ecosystem == "github-actions" and pr.package.count("/") >= 2:
+        owner, repo, *_ = pr.package.split("/")
+        return f"{owner}/{repo}"
+    if pr.ecosystem == "npm" and pr.package:
+        root = pr.package.lstrip("@").split("/")[0]
+        return f"npm:{pr.directory}:{root}"
+    return None
+
+
+def detect_families(prs: list[PRSnapshot]) -> dict[int, str]:
+    """Map PR number to family key, for families with more than one member."""
+    grouped: dict[str, list[int]] = {}
+    for pr in prs:
+        key = family_key(pr)
+        if key is not None:
+            grouped.setdefault(key, []).append(pr.number)
+    return {
+        number: key
+        for key, numbers in grouped.items()
+        if len(numbers) > 1
+        for number in numbers
+    }
+
+
+def rule_coupled(pr: PRSnapshot, families: dict[int, str]) -> Decision | None:
+    """R5: no member of a multi-PR family is individually mergeable.
+
+    Evaluated before check results, because the dangerous case is a *green*
+    sibling: a PR can pass every check and still leave the repository
+    inconsistent once merged alone.
+    """
+    key = families.get(pr.number)
+    if key is None:
+        return None
+    return Decision(
+        number=pr.number,
+        code=CODE_COUPLED,
+        reason=(
+            f"member of update family {key!r}; members must land together, so "
+            "this PR is not individually mergeable regardless of its checks"
+        ),
+        family=key,
+    )

@@ -129,3 +129,70 @@ def test_policy_path_matches_dockerfile_variants():
 
 def test_policy_path_matches_nested_pyproject():
     assert dt.rule_policy_path(_pr(files=("tools/pyproject.toml",))) is not None
+
+
+def test_family_key_groups_codeql_action_subactions():
+    a = _pr(
+        number=450,
+        ecosystem="github-actions",
+        package="github/codeql-action/upload-sarif",
+    )
+    b = _pr(
+        number=452, ecosystem="github-actions", package="github/codeql-action/analyze"
+    )
+    assert dt.family_key(a) == dt.family_key(b) == "github/codeql-action"
+
+
+def test_family_key_groups_vitest_peer_cluster_per_directory():
+    a = _pr(number=442, ecosystem="npm", directory="/frontend", package="vitest")
+    b = _pr(
+        number=443,
+        ecosystem="npm",
+        directory="/frontend",
+        package="@vitest/coverage-v8",
+    )
+    assert dt.family_key(a) == dt.family_key(b) == "npm:/frontend:vitest"
+
+
+def test_family_key_separates_same_package_in_different_directories():
+    a = _pr(ecosystem="npm", directory="/frontend", package="vitest")
+    b = _pr(ecosystem="npm", directory="/sdk/typescript", package="vitest")
+    assert dt.family_key(a) != dt.family_key(b)
+
+
+def test_detect_families_ignores_singletons():
+    prs = [
+        _pr(number=439, ecosystem="pip", package="pydantic"),
+        _pr(
+            number=450,
+            ecosystem="github-actions",
+            package="github/codeql-action/upload-sarif",
+        ),
+        _pr(
+            number=452,
+            ecosystem="github-actions",
+            package="github/codeql-action/analyze",
+        ),
+    ]
+    families = dt.detect_families(prs)
+    assert 439 not in families
+    assert families[450] == families[452] == "github/codeql-action"
+
+
+def test_green_pr_in_coupled_family_is_still_coupled():
+    """#450 was fully green and still unsafe to merge alone."""
+    prs = dt.load_snapshot(FIXTURE)
+    families = dt.detect_families(prs)
+    pr450 = next(p for p in prs if p.number == 450)
+    assert all(c.conclusion == "success" for c in pr450.checks)
+    d = dt.rule_coupled(pr450, families)
+    assert d is not None
+    assert d.code == dt.CODE_COUPLED
+    assert d.family == "github/codeql-action"
+
+
+def test_uncoupled_pr_returns_none():
+    prs = dt.load_snapshot(FIXTURE)
+    families = dt.detect_families(prs)
+    pr439 = next(p for p in prs if p.number == 439)
+    assert dt.rule_coupled(pr439, families) is None

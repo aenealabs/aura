@@ -485,6 +485,21 @@ def test_requirements_change_not_policy_held():
     assert dt.rule_policy_path(_pr(files=("requirements.txt",))) is None
 
 
+def test_policy_path_does_not_match_substring_lookalikes():
+    """A component named after Dockerfile is not a Dockerfile."""
+    pr = _pr(files=("frontend/src/components/DockerfileViewer.jsx",))
+    assert dt.rule_policy_path(pr) is None
+
+
+def test_policy_path_matches_dockerfile_variants():
+    pr = _pr(files=("deploy/docker/api/Dockerfile.prod",))
+    assert dt.rule_policy_path(pr) is not None
+
+
+def test_policy_path_matches_nested_pyproject():
+    assert dt.rule_policy_path(_pr(files=("tools/pyproject.toml",))) is not None
+
+
 def test_tree_sitter_is_pinned_by_policy():
     pr = _pr(package="tree-sitter", from_version="0.25.2", to_version="0.26.0")
     d = dt.rule_held_package(pr)
@@ -511,7 +526,9 @@ Expected: FAIL with `AttributeError: module ... has no attribute 'rule_policy_pa
 - [ ] **Step 3: Write minimal implementation**
 
 ```python
-# Path globs whose changes require human policy review rather than a version
+# Requires `from pathlib import PurePosixPath` in the module header.
+#
+# Path markers whose changes require human policy review rather than a version
 # judgement. Keep each entry commented with the rule it protects.
 POLICY_PATHS: dict[str, str] = {
     "Dockerfile": (
@@ -538,10 +555,19 @@ HELD_TIERS: frozenset[str] = frozenset({"at-risk", "replace-now"})
 
 
 def rule_policy_path(pr: PRSnapshot) -> Decision | None:
-    """R3: changes to policy-sensitive paths need human review."""
+    """R3: changes to policy-sensitive paths need human review.
+
+    Matching is on a path-segment boundary, not substring containment. A file
+    named DockerfileViewer.jsx is not a Dockerfile, and holding it would be a
+    false positive -- the report's value rests on a human trusting its reasons.
+    The dotted-suffix case is deliberate: Dockerfile.prod and friends are real
+    and are policy-sensitive. PurePosixPath keeps the behaviour independent of
+    the host OS.
+    """
     for path in pr.files:
+        name = PurePosixPath(path).name
         for marker, why in POLICY_PATHS.items():
-            if path.endswith(marker) or marker in path:
+            if name == marker or name.startswith(f"{marker}."):
                 return Decision(
                     number=pr.number,
                     code=CODE_POLICY_REVIEW,

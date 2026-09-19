@@ -196,16 +196,16 @@ def rule_held_package(pr: PRSnapshot) -> Decision | None:
 
 
 def family_key(pr: PRSnapshot) -> str | None:
-    """Return the update-family key for a PR, or None if it cannot be grouped.
+    """Return a candidate update-family key for a PR, or None if not groupable.
 
-    Two signals produce a family:
+    Two signals produce a candidate:
 
     * A GitHub Action whose package path has a sub-action segment
       (``github/codeql-action/init``) groups under its owner/repo. Those
       sub-actions must move in lockstep or CodeQL refuses to run.
-    * An npm package groups with its scoped peers in the same directory, so
-      ``vitest`` and ``@vitest/coverage-v8`` land together rather than leaving
-      a peer-version conflict.
+    * An npm package groups with its scoped peers in the same directory. A
+      shared scope alone is not coupling; validation in ``detect_families``
+      ensures the group contains the unscoped root the scope is named for.
     """
     if pr.ecosystem == "github-actions" and pr.package.count("/") >= 2:
         owner, repo, *_ = pr.package.split("/")
@@ -216,19 +216,44 @@ def family_key(pr: PRSnapshot) -> str | None:
     return None
 
 
+def _has_unscoped_root(key: str, members: list[PRSnapshot]) -> bool:
+    """True when one member is the unscoped package the scope is named for.
+
+    A shared npm scope is not evidence of coupling: @types/react and
+    @types/node release on independent cadences. The coupling that matters is a
+    scoped package pinned to its unscoped namesake, as @vitest/coverage-v8 is
+    to vitest, so a family requires that namesake to be under update as well.
+
+    Known limitation, accepted deliberately: a scoped cluster with no unscoped
+    root in the batch (@vitest/coverage-v8 alongside @vitest/ui, with no vitest
+    PR) is not detected. It loses nothing, because either member alone is a
+    singleton that no grouping rule would have caught either.
+    """
+    root = key.rsplit(":", 1)[-1]
+    return any(member.package == root for member in members)
+
+
 def detect_families(prs: list[PRSnapshot]) -> dict[int, str]:
-    """Map PR number to family key, for families with more than one member."""
-    grouped: dict[str, list[int]] = {}
+    """Map PR number to family key, for families with more than one member.
+
+    An npm candidate family is kept only when it contains the unscoped package
+    its scope is named for. A shared scope alone is not coupling.
+    """
+    grouped: dict[str, list[PRSnapshot]] = {}
     for pr in prs:
         key = family_key(pr)
         if key is not None:
-            grouped.setdefault(key, []).append(pr.number)
-    return {
-        number: key
-        for key, numbers in grouped.items()
-        if len(numbers) > 1
-        for number in numbers
-    }
+            grouped.setdefault(key, []).append(pr)
+
+    families: dict[int, str] = {}
+    for key, members in grouped.items():
+        if len(members) < 2:
+            continue
+        if key.startswith("npm:") and not _has_unscoped_root(key, members):
+            continue
+        for pr in members:
+            families[pr.number] = key
+    return families
 
 
 def rule_coupled(pr: PRSnapshot, families: dict[int, str]) -> Decision | None:

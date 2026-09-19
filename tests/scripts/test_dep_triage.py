@@ -196,3 +196,47 @@ def test_uncoupled_pr_returns_none():
     families = dt.detect_families(prs)
     pr439 = next(p for p in prs if p.number == 439)
     assert dt.rule_coupled(pr439, families) is None
+
+
+def test_shared_npm_scope_alone_is_not_a_family():
+    """@types/react and @types/node release independently."""
+    prs = [
+        _pr(number=1, ecosystem="npm", directory="/frontend", package="@types/react"),
+        _pr(number=2, ecosystem="npm", directory="/frontend", package="@types/node"),
+    ]
+    assert dt.detect_families(prs) == {}
+
+
+def test_shared_babel_scope_alone_is_not_a_family():
+    prs = [
+        _pr(number=1, ecosystem="npm", directory="/frontend", package="@babel/core"),
+        _pr(
+            number=2,
+            ecosystem="npm",
+            directory="/frontend",
+            package="@babel/preset-env",
+        ),
+    ]
+    assert dt.detect_families(prs) == {}
+
+
+def test_scoped_package_couples_with_its_unscoped_namesake():
+    prs = [
+        _pr(number=442, ecosystem="npm", directory="/frontend", package="vitest"),
+        _pr(
+            number=443,
+            ecosystem="npm",
+            directory="/frontend",
+            package="@vitest/coverage-v8",
+        ),
+    ]
+    families = dt.detect_families(prs)
+    assert families[442] == families[443] == "npm:/frontend:vitest"
+
+
+def test_single_segment_action_is_not_grouped():
+    """actions/checkout has no sub-action segment, so it has no family."""
+    assert (
+        dt.family_key(_pr(ecosystem="github-actions", package="actions/checkout"))
+        is None
+    )

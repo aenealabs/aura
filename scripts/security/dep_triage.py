@@ -433,3 +433,83 @@ def rule_cooldown(pr: PRSnapshot) -> Decision | None:
             ),
         )
     return None
+
+
+def classify(prs: list[PRSnapshot]) -> list[Decision]:
+    """Classify every PR with the first matching rule.
+
+    Rule order is load-bearing. Author and check-presence exclusions run first
+    so non-Dependabot and unvalidated PRs never reach version logic. Coupling
+    runs before check evaluation because the failure mode it guards against is a
+    *green* sibling. Everything surviving is a candidate, which only becomes
+    merge-safe by passing the batch proof.
+    """
+    families = detect_families(prs)
+    decisions: list[Decision] = []
+    for pr in prs:
+        decision = (
+            rule_non_dependabot(pr)
+            or rule_no_checks(pr)
+            or rule_policy_path(pr)
+            or rule_held_package(pr)
+            or rule_coupled(pr, families)
+            or rule_failing(pr)
+            or rule_missing_required(pr)
+            or rule_major(pr)
+            or rule_cooldown(pr)
+            # R10: nothing objected.
+            or Decision(
+                number=pr.number,
+                code=CODE_CANDIDATE,
+                reason=(
+                    "no rule objected; pending batch proof before it is "
+                    "reported merge-safe"
+                ),
+            )
+        )
+        decisions.append(decision)
+    return decisions
+
+
+def promote(
+    decisions: list[Decision],
+    proved: list[int],
+    conflicted: list[int] | None = None,
+) -> list[Decision]:
+    """Apply batch-proof results to a classification.
+
+    Only a ``candidate`` may be promoted. Anything the rules already excluded,
+    held or marked coupled keeps its original classification, so a passing batch
+    proof can never override a policy decision.
+    """
+    proved_set = set(proved)
+    conflicted_set = set(conflicted or ())
+    out: list[Decision] = []
+    for d in decisions:
+        if d.code != CODE_CANDIDATE:
+            out.append(d)
+        elif d.number in conflicted_set:
+            out.append(
+                Decision(
+                    number=d.number,
+                    code=CODE_CONFLICT,
+                    reason="conflicts with the candidate integration branch",
+                    family=d.family,
+                )
+            )
+        elif d.number in proved_set:
+            out.append(
+                Decision(
+                    number=d.number,
+                    code=CODE_MERGE_SAFE,
+                    reason=(
+                        "passed the batch proof as a unit: dependency "
+                        "resolution and the test suite succeeded with every "
+                        "other candidate merged alongside it"
+                    ),
+                    family=d.family,
+                )
+            )
+        else:
+            out.append(d)
+    return out

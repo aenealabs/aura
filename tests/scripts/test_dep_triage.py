@@ -437,3 +437,67 @@ def test_security_advisory_defaults_to_false(tmp_path):
     """Snapshots written before this field existed still load."""
     prs = dt.load_snapshot(FIXTURE)
     assert all(p.security_advisory is False for p in prs)
+
+
+def test_classify_covers_every_pr_exactly_once():
+    prs = dt.load_snapshot(FIXTURE)
+    decisions = dt.classify(prs)
+    assert len(decisions) == len(prs)
+    assert {d.number for d in decisions} == {p.number for p in prs}
+
+
+def test_classify_assigns_expected_codes_for_the_observed_batch():
+    """Regression lock on the real 2026-09-19 batch."""
+    by_number = {d.number: d for d in dt.classify(dt.load_snapshot(FIXTURE))}
+    assert by_number[386].code == dt.CODE_NON_DEPENDABOT
+    assert by_number[450].code == dt.CODE_COUPLED  # green but coupled
+    assert by_number[452].code == dt.CODE_COUPLED  # coupling precedes failure
+    assert by_number[442].code == dt.CODE_COUPLED  # coupling precedes flake
+    assert by_number[443].code == dt.CODE_COUPLED  # green but peer-coupled
+    assert by_number[439].code == dt.CODE_CANDIDATE
+    assert by_number[446].code == dt.CODE_CANDIDATE
+
+
+def test_author_exclusion_precedes_all_other_rules():
+    pr = _pr(
+        number=386, author="app/github-actions", checks=(), files=("pyproject.toml",)
+    )
+    assert dt.classify([pr])[0].code == dt.CODE_NON_DEPENDABOT
+
+
+def test_every_decision_carries_a_nonempty_reason():
+    for d in dt.classify(dt.load_snapshot(FIXTURE)):
+        assert d.reason.strip(), f"PR #{d.number} has no reason"
+
+
+def test_promote_marks_proved_candidates_merge_safe():
+    prs = dt.load_snapshot(FIXTURE)
+    decisions = dt.classify(prs)
+    promoted = {d.number: d for d in dt.promote(decisions, proved=[439, 446])}
+    assert promoted[439].code == dt.CODE_MERGE_SAFE
+    assert promoted[446].code == dt.CODE_MERGE_SAFE
+    assert "batch proof" in promoted[439].reason.lower()
+
+
+def test_promote_marks_conflicted_candidates_attention():
+    decisions = dt.classify(dt.load_snapshot(FIXTURE))
+    promoted = {
+        d.number: d for d in dt.promote(decisions, proved=[446], conflicted=[439])
+    }
+    assert promoted[439].code == dt.CODE_CONFLICT
+    assert promoted[446].code == dt.CODE_MERGE_SAFE
+
+
+def test_promote_never_upgrades_a_non_candidate():
+    """A coupled or excluded PR must not become merge-safe by promotion."""
+    decisions = dt.classify(dt.load_snapshot(FIXTURE))
+    promoted = {d.number: d for d in dt.promote(decisions, proved=[386, 450, 452])}
+    assert promoted[386].code == dt.CODE_NON_DEPENDABOT
+    assert promoted[450].code == dt.CODE_COUPLED
+    assert promoted[452].code == dt.CODE_COUPLED
+
+
+def test_promote_leaves_unproved_candidates_as_candidates():
+    decisions = dt.classify(dt.load_snapshot(FIXTURE))
+    promoted = {d.number: d for d in dt.promote(decisions, proved=[])}
+    assert promoted[439].code == dt.CODE_CANDIDATE

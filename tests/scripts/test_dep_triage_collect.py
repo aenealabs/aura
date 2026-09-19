@@ -126,6 +126,30 @@ def test_advisory_handles_multiple_details_blocks():
     assert dc.is_security_advisory(body) is False
 
 
+def test_advisory_ignores_cve_in_a_nested_details_tail():
+    """A non-greedy paired strip would leak the outer tail back into scope."""
+    body = (
+        "Bumps foo from 1.0.0 to 2.0.0.\n"
+        "<details><summary>Notes</summary>Intro\n"
+        "<details><summary>inner</summary>Inner text</details>\n"
+        "CVE-2024-99999 in outer tail</details>\n"
+    )
+    assert dc.is_security_advisory(body) is False
+
+
+def test_advisory_ignores_details_with_attributes():
+    body = (
+        "Bumps foo from 1.0.0 to 2.0.0.\n"
+        "<details open><summary>Notes</summary>CVE-2024-88888</details>\n"
+    )
+    assert dc.is_security_advisory(body) is False
+
+
+def test_advisory_ignores_uppercase_and_spaced_details_tags():
+    body = "Bumps foo from 1 to 2.\n< DETAILS >GHSA-aaaa-bbbb-cccc</DETAILS>\n"
+    assert dc.is_security_advisory(body) is False
+
+
 def test_build_snapshot_carries_the_security_flag(tmp_path):
     snapshot = dc.build_snapshot(
         prs=[

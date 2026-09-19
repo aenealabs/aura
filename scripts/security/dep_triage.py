@@ -256,6 +256,68 @@ def detect_families(prs: list[PRSnapshot]) -> dict[int, str]:
     return families
 
 
+# Substrings in a failing step's log that indicate infrastructure trouble
+# rather than a defect in the change under test.
+FLAKE_SIGNATURES: tuple[str, ...] = (
+    "exit code 35",
+    "Path does not exist:",
+    "Could not resolve host",
+    "connection reset",
+    "TLS handshake timeout",
+    "rate limit",
+    "429 Too Many Requests",
+    "ECONNRESET",
+)
+
+FAILED_CONCLUSIONS: frozenset[str] = frozenset({"failure", "timed_out"})
+
+
+def rule_failing(pr: PRSnapshot) -> Decision | None:
+    """R6: classify failing checks, separating infrastructure flakes.
+
+    A flake is worth a rerun; a real failure is worth a human. Conflating them
+    means genuine failures get retried and flakes rot untouched.
+    """
+    failed = [c for c in pr.checks if (c.conclusion or "") in FAILED_CONCLUSIONS]
+    if not failed:
+        return None
+    names = ", ".join(c.name for c in failed)
+    if any(
+        sig.lower() in c.failing_log_excerpt.lower()
+        for c in failed
+        for sig in FLAKE_SIGNATURES
+    ):
+        return Decision(
+            number=pr.number,
+            code=CODE_SUSPECTED_FLAKE,
+            reason=(
+                f"{names} failed with an infrastructure signature, not a "
+                "defect in the change; rerun once before escalating"
+            ),
+        )
+    return Decision(
+        number=pr.number,
+        code=CODE_FAILING,
+        reason=f"{names} failed",
+    )
+
+
+def rule_missing_required(pr: PRSnapshot) -> Decision | None:
+    """R7: a required check that never ran is missing, never passing."""
+    present = {c.name for c in pr.checks}
+    missing = [name for name in pr.required_checks if name not in present]
+    if not missing:
+        return None
+    return Decision(
+        number=pr.number,
+        code=CODE_MISSING_REQUIRED,
+        reason=(
+            "required check(s) absent from the run set: "
+            f"{', '.join(missing)}; an unrun check is not a passing check"
+        ),
+    )
+
+
 def rule_coupled(pr: PRSnapshot, families: dict[int, str]) -> Decision | None:
     """R5: no member of a multi-PR family is individually mergeable.
 

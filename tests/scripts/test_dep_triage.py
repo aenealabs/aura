@@ -240,3 +240,47 @@ def test_single_segment_action_is_not_grouped():
         dt.family_key(_pr(ecosystem="github-actions", package="actions/checkout"))
         is None
     )
+
+
+def test_trivy_download_failure_is_suspected_flake():
+    """#442 failed because the trivy installer died, not because of a defect."""
+    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
+    d = dt.rule_failing(prs[442])
+    assert d is not None
+    assert d.code == dt.CODE_SUSPECTED_FLAKE
+    assert "Security Scanning" in d.reason
+
+
+def test_codeql_version_mismatch_is_real_failure():
+    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
+    d = dt.rule_failing(prs[452])
+    assert d is not None
+    assert d.code == dt.CODE_FAILING
+
+
+def test_all_green_pr_has_no_failure_decision():
+    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
+    assert dt.rule_failing(prs[439]) is None
+
+
+def test_timed_out_counts_as_failure():
+    pr = _pr(checks=(dt.CheckRun("Python Quality & Tests", "completed", "timed_out"),))
+    d = dt.rule_failing(pr)
+    assert d is not None
+    assert d.code == dt.CODE_FAILING
+
+
+def test_missing_required_check_is_not_treated_as_pass():
+    """An unrun required check is missing, not passing."""
+    pr = _pr(
+        checks=(dt.CheckRun("Analyze (python)", "completed", "success"),),
+        required_checks=("Analyze (python)", "Python Quality & Tests"),
+    )
+    d = dt.rule_missing_required(pr)
+    assert d is not None
+    assert d.code == dt.CODE_MISSING_REQUIRED
+    assert "Python Quality & Tests" in d.reason
+
+
+def test_all_required_checks_present_returns_none():
+    assert dt.rule_missing_required(_pr()) is None

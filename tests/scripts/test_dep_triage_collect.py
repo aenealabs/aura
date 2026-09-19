@@ -1,6 +1,7 @@
 """Tests for the Dependabot triage snapshot collector."""
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -179,3 +180,115 @@ def test_build_snapshot_carries_the_security_flag(tmp_path):
     path = tmp_path / "snap.json"
     path.write_text(json.dumps(snapshot), encoding="utf-8")
     assert dt.load_snapshot(path)[0].security_advisory is True
+
+
+def test_release_age_days_computes_from_pip_upload_time():
+    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+
+    def fake_fetch(url):
+        assert url == "https://pypi.org/pypi/pydantic/2.13.5/json"
+        return {"urls": [{"upload_time_iso_8601": "2026-09-09T00:00:00Z"}]}
+
+    age = dc.release_age_days("pip", "pydantic", "2.13.5", now, fake_fetch)
+    assert age == pytest.approx(10.0, abs=0.1)
+
+
+def test_release_age_days_pip_uses_the_earliest_upload_across_files():
+    """A version's files (sdist, wheels) upload at slightly different times;
+    the version became available at the earliest of them."""
+    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+
+    def fake_fetch(url):
+        return {
+            "urls": [
+                {"upload_time_iso_8601": "2026-09-09T12:00:00Z"},
+                {"upload_time_iso_8601": "2026-09-09T00:00:00Z"},
+                {"upload_time_iso_8601": "2026-09-09T18:00:00Z"},
+            ]
+        }
+
+    age = dc.release_age_days("pip", "pydantic", "2.13.5", now, fake_fetch)
+    assert age == pytest.approx(10.0, abs=0.1)
+
+
+def test_release_age_days_computes_from_npm_time_map():
+    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+
+    def fake_fetch(url):
+        assert url == "https://registry.npmjs.org/vitest"
+        return {"time": {"5.0.0": "2026-09-14T00:00:00Z"}}
+
+    age = dc.release_age_days("npm", "vitest", "5.0.0", now, fake_fetch)
+    assert age == pytest.approx(5.0, abs=0.1)
+
+
+def test_release_age_days_returns_none_on_fetch_failure():
+    def boom(url):
+        raise OSError("network down")
+
+    assert (
+        dc.release_age_days("pip", "x", "1.0.0", datetime.now(timezone.utc), boom)
+        is None
+    )
+
+
+def test_release_age_days_returns_none_when_pip_urls_are_empty():
+    assert (
+        dc.release_age_days(
+            "pip", "x", "1.0.0", datetime.now(timezone.utc), lambda u: {"urls": []}
+        )
+        is None
+    )
+
+
+def test_release_age_days_returns_none_when_npm_version_is_missing():
+    assert (
+        dc.release_age_days(
+            "npm",
+            "x",
+            "9.9.9",
+            datetime.now(timezone.utc),
+            lambda u: {"time": {}},
+        )
+        is None
+    )
+
+
+def test_release_age_days_returns_none_on_malformed_timestamp():
+    assert (
+        dc.release_age_days(
+            "pip",
+            "x",
+            "1.0.0",
+            datetime.now(timezone.utc),
+            lambda u: {"urls": [{"upload_time_iso_8601": "not-a-timestamp"}]},
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("ecosystem", ["docker", "github-actions", "unknown"])
+def test_release_age_days_unresolvable_ecosystems_return_none(ecosystem):
+    assert (
+        dc.release_age_days(
+            ecosystem, "x", "1", datetime.now(timezone.utc), lambda u: {}
+        )
+        is None
+    )
+
+
+def test_release_age_days_returns_none_for_empty_package_or_version():
+    now = datetime.now(timezone.utc)
+    assert dc.release_age_days("pip", "", "1.0.0", now, lambda u: {}) is None
+    assert dc.release_age_days("pip", "x", "", now, lambda u: {}) is None
+
+
+def test_release_age_days_strips_requirement_specifier_operators():
+    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+
+    def fake_fetch(url):
+        assert url == "https://pypi.org/pypi/pydantic/2.13.5/json"
+        return {"urls": [{"upload_time_iso_8601": "2026-09-09T00:00:00Z"}]}
+
+    age = dc.release_age_days("pip", "pydantic", ">=2.13.5", now, fake_fetch)
+    assert age == pytest.approx(10.0, abs=0.1)

@@ -12,8 +12,10 @@ import argparse
 import json
 import re
 import subprocess
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTER_PATH = REPO_ROOT / "docs/security/DEPENDENCY_RISK_REGISTER.md"
@@ -22,6 +24,12 @@ _BUMP = re.compile(
     r"\b(?:bump|update)\s+(?P<pkg>\S+?)(?:\s+requirement)?\s+"
     r"from\s+(?P<old>\S+)\s+to\s+(?P<new>\S+)"
 )
+
+# Strips a leading requirement-specifier operator (^, ~, >=, <, etc.) and
+# anything from the first non-version character onward, so inputs like
+# ">=2.13.5" or "2.13.5-rc.1 " normalize to the bare version the registry
+# APIs key their release metadata by.
+_VERSION_CLEAN = re.compile(r"[^\d.].*$")
 
 # Dependabot states its own case in the preamble, before the first collapsible
 # block; everything from that tag onward is upstream release notes and commit
@@ -107,6 +115,60 @@ def _risk_tiers(register: Path) -> dict[str, str]:
         if tier in {"at-risk", "replace-now", "watch", "healthy"}:
             tiers[name] = tier
     return tiers
+
+
+def _fetch_json(url: str) -> dict:
+    """Fetch and parse a JSON document over HTTPS."""
+    with urllib.request.urlopen(url, timeout=20) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def release_age_days(
+    ecosystem: str,
+    package: str,
+    version: str,
+    now: datetime,
+    fetch: Callable[[str], dict] = _fetch_json,
+) -> float | None:
+    """Return the age in days of a package version, or None if unavailable.
+
+    Returns None rather than raising on any lookup failure -- network down,
+    the package or version missing from the index, an unparseable version
+    string, a malformed timestamp, anything. This is deliberate and must stay
+    a broad ``except Exception``, not narrowed to a specific error type:
+    ``rule_cooldown`` treats an unknown age as held, so a lookup failure here
+    is the conservative outcome. Letting an exception propagate instead would
+    abort the entire collection run and leave the queue with no snapshot at
+    all, which is strictly worse than holding one PR's cooldown decision.
+    """
+    clean = _VERSION_CLEAN.sub("", (version or "").lstrip("^~>=< "))
+    if not clean or not package:
+        return None
+    try:
+        if ecosystem == "pip":
+            data = fetch(f"https://pypi.org/pypi/{package}/{clean}/json")
+            stamps = [
+                u["upload_time_iso_8601"]
+                for u in data.get("urls", [])
+                if u.get("upload_time_iso_8601")
+            ]
+            if not stamps:
+                return None
+            released = datetime.fromisoformat(min(stamps).replace("Z", "+00:00"))
+        elif ecosystem == "npm":
+            data = fetch(f"https://registry.npmjs.org/{package}")
+            stamp = data.get("time", {}).get(clean)
+            if not stamp:
+                return None
+            released = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        else:
+            # docker, github-actions, unknown: no stdlib-reachable registry
+            # exposes a release timestamp keyed by version. rule_cooldown
+            # holds these PRs, which is the intended conservative outcome.
+            return None
+    except Exception:
+        return None
+    return (now - released).total_seconds() / 86400.0
 
 
 def build_snapshot(
@@ -227,11 +289,20 @@ def main(argv: list[str] | None = None) -> int:
             for r in runs  # type: ignore[union-attr]
         ]
 
+    now = datetime.now(timezone.utc)
+    release_ages: dict[str, float] = {}
+    for pr in prs:
+        package, _, new = parse_bump_title(pr["title"])
+        if package and package not in release_ages:
+            age = release_age_days(infer_ecosystem(pr["files"]), package, new, now)
+            if age is not None:
+                release_ages[package] = age
+
     snapshot = build_snapshot(
         prs=prs,
         checks_by_pr=checks_by_pr,
         required_checks=args.required_check,
-        release_ages={},
+        release_ages=release_ages,
         risk_tiers=_risk_tiers(REGISTER_PATH),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

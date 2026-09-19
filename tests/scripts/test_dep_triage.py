@@ -76,3 +76,39 @@ def test_zero_checks_excluded():
 
 def test_pr_with_checks_not_excluded_by_no_checks():
     assert dt.rule_no_checks(_pr()) is None
+
+
+def test_dockerfile_change_held_for_policy_review():
+    pr = _pr(files=("deploy/docker/api/Dockerfile",), ecosystem="docker")
+    d = dt.rule_policy_path(pr)
+    assert d is not None
+    assert d.code == dt.CODE_POLICY_REVIEW
+    assert "ECR" in d.reason or "base image" in d.reason
+
+
+def test_coverage_threshold_file_held_for_policy_review():
+    d = dt.rule_policy_path(_pr(files=("pyproject.toml",)))
+    assert d is not None
+    assert d.code == dt.CODE_POLICY_REVIEW
+
+
+def test_requirements_change_not_policy_held():
+    assert dt.rule_policy_path(_pr(files=("requirements.txt",))) is None
+
+
+def test_tree_sitter_is_pinned_by_policy():
+    pr = _pr(package="tree-sitter", from_version="0.25.2", to_version="0.26.0")
+    d = dt.rule_held_package(pr)
+    assert d is not None
+    assert d.code == dt.CODE_PINNED_BY_POLICY
+    assert "timeout_micros" in d.reason or "DoS" in d.reason
+
+
+def test_at_risk_tier_is_held():
+    d = dt.rule_held_package(_pr(package="gremlinpython", risk_tier="at-risk"))
+    assert d is not None
+    assert d.code == dt.CODE_RISK_TIER
+
+
+def test_healthy_tier_not_held():
+    assert dt.rule_held_package(_pr(package="pydantic")) is None

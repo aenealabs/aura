@@ -135,3 +135,60 @@ def rule_no_checks(pr: PRSnapshot) -> Decision | None:
             reason="no check runs present; absence of failures proves nothing",
         )
     return None
+
+
+# Path globs whose changes require human policy review rather than a version
+# judgement. Keep each entry commented with the rule it protects.
+POLICY_PATHS: dict[str, str] = {
+    "Dockerfile": (
+        "container base images must come from private ECR "
+        "(aura-base-images); a bump can silently reintroduce a public image"
+    ),
+    "pyproject.toml": ("carries the 70% coverage threshold, which must not be lowered"),
+}
+
+# Packages deliberately capped for a documented reason.
+DELIBERATE_HOLDS: dict[str, str] = {
+    "tree-sitter": (
+        "capped below 0.26: that release removed parser.timeout_micros, the "
+        "parse-time DoS guard used in "
+        "src/services/vulnerability_scanner/parsing/ast.py. See "
+        "docs/DEFERRED_WORK_REGISTRY.md"
+    ),
+}
+
+# Risk-register tiers whose entries say "pin precisely".
+HELD_TIERS: frozenset[str] = frozenset({"at-risk", "replace-now"})
+
+
+def rule_policy_path(pr: PRSnapshot) -> Decision | None:
+    """R3: changes to policy-sensitive paths need human review."""
+    for path in pr.files:
+        for marker, why in POLICY_PATHS.items():
+            if path.endswith(marker) or marker in path:
+                return Decision(
+                    number=pr.number,
+                    code=CODE_POLICY_REVIEW,
+                    reason=f"touches {path}: {why}",
+                )
+    return None
+
+
+def rule_held_package(pr: PRSnapshot) -> Decision | None:
+    """R4: deliberate holds and At-Risk register entries are not bumped."""
+    if pr.package in DELIBERATE_HOLDS:
+        return Decision(
+            number=pr.number,
+            code=CODE_PINNED_BY_POLICY,
+            reason=DELIBERATE_HOLDS[pr.package],
+        )
+    if pr.risk_tier.lower() in HELD_TIERS:
+        return Decision(
+            number=pr.number,
+            code=CODE_RISK_TIER,
+            reason=(
+                f"{pr.package} is tier {pr.risk_tier!r} in the dependency risk "
+                "register, which specifies pinning precisely"
+            ),
+        )
+    return None

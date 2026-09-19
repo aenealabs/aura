@@ -11,9 +11,11 @@ Nothing in this module merges or approves a pull request. See
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 DEPENDABOT_AUTHOR = "dependabot[bot]"
@@ -513,3 +515,151 @@ def promote(
         else:
             out.append(d)
     return out
+
+
+_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Merge-safe", (CODE_MERGE_SAFE,)),
+    ("Candidates (pending batch proof)", (CODE_CANDIDATE,)),
+    ("Coupled sets", (CODE_COUPLED,)),
+    (
+        "Held",
+        (
+            CODE_POLICY_REVIEW,
+            CODE_PINNED_BY_POLICY,
+            CODE_RISK_TIER,
+            CODE_MAJOR,
+            CODE_COOLDOWN,
+        ),
+    ),
+    (
+        "Needs attention",
+        (
+            CODE_FAILING,
+            CODE_SUSPECTED_FLAKE,
+            CODE_MISSING_REQUIRED,
+            CODE_CONFLICT,
+        ),
+    ),
+    ("Excluded", (CODE_NON_DEPENDABOT, CODE_NO_CHECKS)),
+)
+
+
+def render_report(
+    decisions: list[Decision],
+    prs: list[PRSnapshot],
+    proof_url: str | None = None,
+) -> str:
+    """Build the markdown triage report."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    titles = {p.number: p.title for p in prs}
+    lines: list[str] = [f"# Dependabot Triage -- {now}", ""]
+    lines.append(
+        "Automated classification. Every merge is performed by an operator; "
+        "nothing here merges or approves a pull request."
+    )
+    lines.append("")
+    if proof_url:
+        lines.append(f"Batch proof run: {proof_url}")
+        lines.append("")
+
+    for heading, codes in _SECTIONS:
+        selected = [d for d in decisions if d.code in codes]
+        lines.append(f"## {heading}")
+        lines.append("")
+        if not selected:
+            if heading == "Coupled sets":
+                lines.append("(none)")
+            else:
+                lines.append("(none)")
+            lines.append("")
+            continue
+        if heading == "Coupled sets":
+            by_family: dict[str, list[Decision]] = {}
+            for d in selected:
+                by_family.setdefault(d.family or "unknown", []).append(d)
+            for family, members in sorted(by_family.items()):
+                numbers = ", ".join(
+                    f"#{d.number}" for d in sorted(members, key=lambda m: m.number)
+                )
+                lines.append(f"### `{family}`")
+                lines.append("")
+                lines.append(
+                    f"Members ({len(members)}): {numbers}. These must land "
+                    "together; no member is individually mergeable."
+                )
+                lines.append("")
+            lines.append("")
+            continue
+        lines.append("| PR | Code | Title | Reason |")
+        lines.append("|----|------|-------|--------|")
+        for d in sorted(selected, key=lambda x: x.number):
+            title = titles.get(d.number, "").replace("|", "\\|")
+            reason = d.reason.replace("|", "\\|")
+            lines.append(f"| #{d.number} | `{d.code}` | {title} | {reason} |")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Classify a snapshot and write the markdown report."""
+    parser = argparse.ArgumentParser(
+        description="Classify open Dependabot PRs for Project Aura."
+    )
+    parser.add_argument(
+        "--snapshot",
+        type=Path,
+        required=True,
+        help="Path to the snapshot JSON from dep_triage_collect.",
+    )
+    parser.add_argument(
+        "--output", type=Path, required=True, help="Path to write the markdown report."
+    )
+    parser.add_argument(
+        "--decisions",
+        type=Path,
+        default=None,
+        help="Optional path to write decisions as JSON.",
+    )
+    parser.add_argument(
+        "--proof-url",
+        default=None,
+        help="URL of the batch-proof run, embedded in the report.",
+    )
+    parser.add_argument(
+        "--proved",
+        default=None,
+        help="JSON list of PR numbers that passed the batch "
+        "proof; promotes them to merge-safe.",
+    )
+    parser.add_argument(
+        "--conflicted",
+        default=None,
+        help="JSON list of PR numbers that conflicted with the "
+        "candidate integration branch.",
+    )
+    args = parser.parse_args(argv)
+
+    prs = load_snapshot(args.snapshot)
+    decisions = classify(prs)
+    if args.proved or args.conflicted:
+        decisions = promote(
+            decisions,
+            proved=json.loads(args.proved) if args.proved else [],
+            conflicted=json.loads(args.conflicted) if args.conflicted else [],
+        )
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(
+        render_report(decisions, prs, args.proof_url), encoding="utf-8"
+    )
+    if args.decisions:
+        args.decisions.parent.mkdir(parents=True, exist_ok=True)
+        args.decisions.write_text(
+            json.dumps({"decisions": [d.__dict__ for d in decisions]}, indent=2),
+            encoding="utf-8",
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

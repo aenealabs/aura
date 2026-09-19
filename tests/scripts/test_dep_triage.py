@@ -518,3 +518,49 @@ def test_promote_does_not_mutate_its_input():
     dt.promote(decisions, proved=[439, 446], conflicted=[])
     after = [(d.number, d.code) for d in decisions]
     assert before == after
+
+
+def test_render_report_groups_by_classification():
+    prs = dt.load_snapshot(FIXTURE)
+    md = dt.render_report(dt.classify(prs), prs)
+    assert md.startswith("# Dependabot Triage --")
+    for heading in (
+        "## Merge-safe",
+        "## Coupled sets",
+        "## Held",
+        "## Needs attention",
+        "## Excluded",
+    ):
+        assert heading in md
+
+
+def test_render_report_lists_family_members_together():
+    prs = dt.load_snapshot(FIXTURE)
+    md = dt.render_report(dt.classify(prs), prs)
+    assert "github/codeql-action" in md
+    assert "#450" in md and "#452" in md
+
+
+def test_render_report_states_a_reason_for_every_pr():
+    prs = dt.load_snapshot(FIXTURE)
+    md = dt.render_report(dt.classify(prs), prs)
+    for pr in prs:
+        assert f"#{pr.number}" in md
+
+
+def test_main_writes_report_and_returns_zero(tmp_path):
+    out = tmp_path / "report.md"
+    rc = dt.main(["--snapshot", str(FIXTURE), "--output", str(out)])
+    assert rc == 0
+    assert out.read_text(encoding="utf-8").startswith("# Dependabot Triage --")
+
+
+def test_main_writes_decisions_json_when_requested(tmp_path):
+    out = tmp_path / "report.md"
+    dec = tmp_path / "decisions.json"
+    rc = dt.main(
+        ["--snapshot", str(FIXTURE), "--output", str(out), "--decisions", str(dec)]
+    )
+    assert rc == 0
+    payload = json.loads(dec.read_text(encoding="utf-8"))
+    assert {d["number"] for d in payload["decisions"]} >= {386, 439, 450}

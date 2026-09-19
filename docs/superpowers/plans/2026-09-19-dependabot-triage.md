@@ -2124,6 +2124,11 @@ Expected: FAIL with `AttributeError: module ... has no attribute 'release_age_da
 import urllib.request
 from typing import Callable
 
+# Dependabot reports versions as `>=2.13.5`, `^4.1.11` or `v7.0.1`. Strip the
+# range operators and any single leading `v` before querying a registry; a
+# leading `v` would otherwise blank the whole string below and read as an
+# unresolvable version rather than a tagged one.
+_VERSION_PREFIX = re.compile(r"^[\^~>=<\s]*[vV]?")
 _VERSION_CLEAN = re.compile(r"[^\d.].*$")
 
 
@@ -2145,7 +2150,7 @@ def release_age_days(
     Returns None rather than raising on any lookup failure. An unknown age is
     treated as held by ``rule_cooldown``, so failure is conservative.
     """
-    clean = _VERSION_CLEAN.sub("", (version or "").lstrip("^~>=< "))
+    clean = _VERSION_CLEAN.sub("", _VERSION_PREFIX.sub("", version or ""))
     if not clean or not package:
         return None
     try:
@@ -2169,9 +2174,15 @@ def release_age_days(
             released = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
         else:
             return None
+        if released.tzinfo is None:
+            # A timestamp with no offset cannot be compared against an aware
+            # `now`. Guessing UTC would invent precision we do not have, and
+            # letting the subtraction raise would abort the whole collection
+            # run, so treat it as unavailable.
+            return None
+        return (now - released).total_seconds() / 86400.0
     except Exception:
         return None
-    return (now - released).total_seconds() / 86400.0
 ```
 
 Wire it into `main` by replacing `release_ages={}` with:
@@ -2182,11 +2193,12 @@ Wire it into `main` by replacing `release_ages={}` with:
     for pr in prs:
         package, _, new = parse_bump_title(pr["title"])
         if package and package not in release_ages:
-            age = release_age_days(
+            # Store even a None: build_snapshot reads this with .get(), so a
+            # cached None and an absent key behave identically, and caching the
+            # failure stops every later PR for the same package refetching it.
+            release_ages[package] = release_age_days(
                 infer_ecosystem(pr["files"]), package, new, now
             )
-            if age is not None:
-                release_ages[package] = age
 ```
 
 - [ ] **Step 4: Run test to verify it passes**

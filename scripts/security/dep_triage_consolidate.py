@@ -37,6 +37,11 @@ def added_lines(diff: str) -> set[str]:
     A multi-file diff that omits `diff --git` separators may classify a later
     file's `+++` header as content. That over-reports rather than under-reports,
     and these diffs come from `git diff`, which always emits the separators.
+
+    The antecedent check requires the space in `--- `, because a real header is
+    always `--- a/path`, `--- b/path` or `--- /dev/null`. Without it, a diff
+    containing no `@@` at all would let a dashes-prefixed line arm the skip and
+    swallow the following addition.
     """
     out: set[str] = set()
     in_hunk = False
@@ -46,7 +51,7 @@ def added_lines(diff: str) -> set[str]:
             in_hunk = False
         elif line.startswith("@@"):
             in_hunk = True
-        elif not in_hunk and line.startswith("+++") and previous.startswith("---"):
+        elif not in_hunk and line.startswith("+++") and previous.startswith("--- "):
             previous = line
             continue
         if line.startswith("+"):

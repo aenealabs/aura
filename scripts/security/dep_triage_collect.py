@@ -25,10 +25,11 @@ _BUMP = re.compile(
     r"from\s+(?P<old>\S+)\s+to\s+(?P<new>\S+)"
 )
 
-# Strips a leading requirement-specifier operator (^, ~, >=, <, etc.) and
-# anything from the first non-version character onward, so inputs like
-# ">=2.13.5" or "2.13.5-rc.1 " normalize to the bare version the registry
-# APIs key their release metadata by.
+# Dependabot reports versions as `>=2.13.5`, `^4.1.11` or `v7.0.1`. Strip the
+# range operators and any single leading `v` before querying a registry; a
+# leading `v` would otherwise blank the whole string below and read as an
+# unresolvable version rather than a tagged one.
+_VERSION_PREFIX = re.compile(r"^[\^~>=<\s]*[vV]?")
 _VERSION_CLEAN = re.compile(r"[^\d.].*$")
 
 # Dependabot states its own case in the preamble, before the first collapsible
@@ -141,7 +142,7 @@ def release_age_days(
     abort the entire collection run and leave the queue with no snapshot at
     all, which is strictly worse than holding one PR's cooldown decision.
     """
-    clean = _VERSION_CLEAN.sub("", (version or "").lstrip("^~>=< "))
+    clean = _VERSION_CLEAN.sub("", _VERSION_PREFIX.sub("", version or ""))
     if not clean or not package:
         return None
     try:
@@ -166,16 +167,22 @@ def release_age_days(
             # exposes a release timestamp keyed by version. rule_cooldown
             # holds these PRs, which is the intended conservative outcome.
             return None
+        if released.tzinfo is None:
+            # A timestamp with no offset cannot be compared against an aware
+            # `now`. Guessing UTC would invent precision we do not have, and
+            # letting the subtraction raise would abort the whole collection
+            # run, so treat it as unavailable.
+            return None
+        return (now - released).total_seconds() / 86400.0
     except Exception:
         return None
-    return (now - released).total_seconds() / 86400.0
 
 
 def build_snapshot(
     prs: list[dict],
     checks_by_pr: dict[int, list[dict]],
     required_checks: list[str],
-    release_ages: dict[str, float],
+    release_ages: dict[str, float | None],
     risk_tiers: dict[str, str],
 ) -> dict:
     """Assemble the snapshot document consumed by dep_triage.load_snapshot."""
@@ -290,13 +297,16 @@ def main(argv: list[str] | None = None) -> int:
         ]
 
     now = datetime.now(timezone.utc)
-    release_ages: dict[str, float] = {}
+    release_ages: dict[str, float | None] = {}
     for pr in prs:
         package, _, new = parse_bump_title(pr["title"])
         if package and package not in release_ages:
-            age = release_age_days(infer_ecosystem(pr["files"]), package, new, now)
-            if age is not None:
-                release_ages[package] = age
+            # Store even a None: build_snapshot reads this with .get(), so a
+            # cached None and an absent key behave identically, and caching the
+            # failure stops every later PR for the same package refetching it.
+            release_ages[package] = release_age_days(
+                infer_ecosystem(pr["files"]), package, new, now
+            )
 
     snapshot = build_snapshot(
         prs=prs,

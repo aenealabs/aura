@@ -2313,15 +2313,34 @@ _SLUG = re.compile(r"[^a-z0-9.]+")
 
 
 def added_lines(diff: str) -> set[str]:
-    """Return the set of content lines added by a unified diff."""
+    """Return the set of content lines added by a unified diff.
+
+    Two details are load-bearing, because this set is what decides whether a
+    consolidation branch carries anything its member pull requests did not.
+
+    Indentation is preserved; only trailing whitespace is stripped. In YAML --
+    which is what these consolidations mostly touch -- indentation is semantics,
+    so the same text at a different depth is a different change. Comparing
+    without it would accept a line relocated into another scope as identical to
+    the reviewed one.
+
+    The `+++ b/path` file header is recognised by position, not prefix: it counts
+    as a header only when it directly follows the matching `--- a/path` line.
+    Matching the `+++` prefix anywhere would also swallow a genuine added line
+    whose own content begins with `++`, making an unreviewed addition invisible
+    rather than reporting it as extra.
+    """
     out: set[str] = set()
+    previous = ""
     for line in diff.splitlines():
-        if line.startswith("+++"):
+        if line.startswith("+++") and previous.startswith("---"):
+            previous = line
             continue
         if line.startswith("+"):
-            stripped = line[1:].strip()
-            if stripped:
-                out.add(stripped)
+            content = line[1:].rstrip()
+            if content:
+                out.add(content)
+        previous = line
     return out
 
 

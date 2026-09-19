@@ -622,7 +622,7 @@ The highest-value rule. Both #450 and #443 were fully green; coupling must be de
 
 **Interfaces:**
 - Consumes: Task 1 types; `CODE_COUPLED`.
-- Produces: `family_key(pr) -> str | None`, `detect_families(prs) -> dict[int, str]`, `rule_coupled(pr, families) -> Decision | None`.
+- Produces: `family_key(pr) -> str | None` (a *candidate* key), `detect_families(prs) -> dict[int, str]` (confirms candidates), `_has_unscoped_root(key, members) -> bool`, `rule_coupled(pr, families) -> Decision | None`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -678,6 +678,40 @@ def test_uncoupled_pr_returns_none():
     families = dt.detect_families(prs)
     pr439 = next(p for p in prs if p.number == 439)
     assert dt.rule_coupled(pr439, families) is None
+
+
+def test_shared_npm_scope_alone_is_not_a_family():
+    """@types/react and @types/node release independently."""
+    prs = [
+        _pr(number=1, ecosystem="npm", directory="/frontend", package="@types/react"),
+        _pr(number=2, ecosystem="npm", directory="/frontend", package="@types/node"),
+    ]
+    assert dt.detect_families(prs) == {}
+
+
+def test_shared_babel_scope_alone_is_not_a_family():
+    prs = [
+        _pr(number=1, ecosystem="npm", directory="/frontend", package="@babel/core"),
+        _pr(number=2, ecosystem="npm", directory="/frontend",
+            package="@babel/preset-env"),
+    ]
+    assert dt.detect_families(prs) == {}
+
+
+def test_scoped_package_couples_with_its_unscoped_namesake():
+    prs = [
+        _pr(number=442, ecosystem="npm", directory="/frontend", package="vitest"),
+        _pr(number=443, ecosystem="npm", directory="/frontend",
+            package="@vitest/coverage-v8"),
+    ]
+    families = dt.detect_families(prs)
+    assert families[442] == families[443] == "npm:/frontend:vitest"
+
+
+def test_single_segment_action_is_not_grouped():
+    """actions/checkout has no sub-action segment, so it has no family."""
+    pr = _pr(ecosystem="github-actions", package="actions/checkout")
+    assert dt.family_key(pr) is None
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -710,18 +744,44 @@ def family_key(pr: PRSnapshot) -> str | None:
 
 
 def detect_families(prs: list[PRSnapshot]) -> dict[int, str]:
-    """Map PR number to family key, for families with more than one member."""
-    grouped: dict[str, list[int]] = {}
+    """Map PR number to family key, for families with more than one member.
+
+    An npm candidate family is kept only when it contains the unscoped package
+    its scope is named for. A shared scope alone is not coupling.
+    """
+    grouped: dict[str, list[PRSnapshot]] = {}
     for pr in prs:
         key = family_key(pr)
         if key is not None:
-            grouped.setdefault(key, []).append(pr.number)
-    return {
-        number: key
-        for key, numbers in grouped.items()
-        if len(numbers) > 1
-        for number in numbers
-    }
+            grouped.setdefault(key, []).append(pr)
+
+    families: dict[int, str] = {}
+    for key, members in grouped.items():
+        if len(members) < 2:
+            continue
+        if key.startswith("npm:") and not _has_unscoped_root(key, members):
+            continue
+        for pr in members:
+            families[pr.number] = key
+    return families
+
+
+def _has_unscoped_root(key: str, members: list[PRSnapshot]) -> bool:
+    """True when one member is the unscoped package the scope is named for.
+
+    A shared npm scope is not evidence of coupling: @types/react and
+    @types/node release on independent cadences, as do @babel/core and
+    @babel/preset-env. The coupling that matters is a scoped package pinned to
+    its unscoped namesake, as @vitest/coverage-v8 is to vitest, so a family
+    requires that namesake to be under update as well.
+
+    Known limitation, accepted deliberately: a scoped cluster with no unscoped
+    root in the batch (@vitest/coverage-v8 alongside @vitest/ui, with no vitest
+    PR) is not detected. It loses nothing, because either member alone is a
+    singleton that no grouping rule would have caught either.
+    """
+    root = key.rsplit(":", 1)[-1]
+    return any(member.package == root for member in members)
 
 
 def rule_coupled(pr: PRSnapshot, families: dict[int, str]) -> Decision | None:

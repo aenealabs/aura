@@ -25,18 +25,18 @@ def added_lines(diff: str) -> set[str]:
     without it would accept a line relocated into another scope as identical to
     the reviewed one.
 
-    The `+++ b/path` file header is recognised by diff structure, not by prefix.
-    A header pair only ever appears before a file section's first `@@` hunk, so
-    once inside a hunk every `+` line is content. Anchoring on the previous
-    line's text instead would let a *removed* line whose content starts with two
-    dashes arm the skip, and the following `+`-prefixed line would vanish --
-    silently dropping an unreviewed addition instead of reporting it as extra,
-    which is the unsafe direction.
+    The `+++ b/path` file header is recognised by diff structure, not by text. A
+    header pair only ever appears before a file section's first `@@` hunk, so
+    once inside a hunk every `+` line is content. Only a `diff --git` separator
+    returns to header territory; nothing inside a hunk may clear that state.
+    Anchoring on line text instead lets a *removed* line whose content starts
+    with dashes arm the skip, and the following `+`-prefixed line vanishes --
+    silently dropping an unreviewed addition rather than reporting it as extra,
+    which is the unsafe direction. Three earlier attempts failed exactly there.
 
     A multi-file diff that omits `diff --git` separators may classify a later
     file's `+++` header as content. That over-reports rather than under-reports,
-    and the diffs this consumes come from `git diff`, which always emits the
-    separators.
+    and these diffs come from `git diff`, which always emits the separators.
     """
     out: set[str] = set()
     in_hunk = False
@@ -44,11 +44,9 @@ def added_lines(diff: str) -> set[str]:
     for line in diff.splitlines():
         if line.startswith("diff --git "):
             in_hunk = False
-        elif line.startswith("--- "):
-            in_hunk = False
         elif line.startswith("@@"):
             in_hunk = True
-        elif not in_hunk and line.startswith("+++") and previous.startswith("--- "):
+        elif not in_hunk and line.startswith("+++") and previous.startswith("---"):
             previous = line
             continue
         if line.startswith("+"):

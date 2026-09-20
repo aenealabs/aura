@@ -72,8 +72,8 @@ jobs:
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           data = json.load(open("decisions.json"))
-          nums = [d["number"] for d in data["decisions"]
-                  if d["code"] == "candidate"]
+          nums = sorted(d["number"] for d in data["decisions"]
+                        if d["code"] == "candidate")
           print("candidates=" + json.dumps(nums))
           PY
 
@@ -94,6 +94,8 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+    outputs:
+      conflicted: ${{ steps.build.outputs.conflicted }}
     steps:
       - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,6 +108,7 @@ jobs:
           python-version: '3.11'
 
       - name: Build candidate integration branch
+        id: build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CANDIDATES: ${{ needs.classify.outputs.candidates }}
@@ -114,14 +117,17 @@ jobs:
           git config user.name "aura-ci"
           git config user.email "ci@aenealabs.com"
           git switch -c "dep-triage/candidate-${GITHUB_RUN_ID}"
-          for pr in $(echo "$CANDIDATES" | python -c \
+          conflicted=""
+          for pr in $(echo "$CANDIDATES" | python3 -c \
               'import json,sys; print(" ".join(map(str, json.load(sys.stdin))))'); do
             git fetch origin "pull/${pr}/head:pr-${pr}"
             if ! git merge --no-edit "pr-${pr}"; then
               echo "::warning::PR #${pr} conflicts with the batch; excluding it"
               git merge --abort
+              conflicted="${conflicted:+${conflicted},}${pr}"
             fi
           done
+          python3 -c "import json,sys; print('conflicted=' + json.dumps([int(x) for x in sys.argv[1].split(',') if x]))" "$conflicted" >> "$GITHUB_OUTPUT"
 
       - name: Prove dependency resolution
         run: |
@@ -232,6 +238,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PROOF: ${{ needs.batch-proof.result }}
           CANDIDATES: ${{ needs.classify.outputs.candidates }}
+          CONFLICTED: ${{ needs.batch-proof.outputs.conflicted || '[]' }}
         run: |
           set -euo pipefail
           # Only a green batch proof promotes candidates to merge-safe. Any
@@ -241,7 +248,8 @@ jobs:
             python -m scripts.security.dep_triage \
               --snapshot snapshot.json \
               --output triage-report.md \
-              --proved "$CANDIDATES"
+              --proved "$CANDIDATES" \
+              --conflicted "$CONFLICTED"
           fi
           printf '\n> Batch proof result: %s\n' "$PROOF" >> triage-report.md
 

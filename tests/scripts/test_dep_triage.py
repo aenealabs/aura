@@ -601,6 +601,12 @@ def test_main_writes_decisions_json_when_requested(tmp_path):
     assert rc == 0
     payload = json.loads(dec.read_text(encoding="utf-8"))
     assert {d["number"] for d in payload["decisions"]} >= {386, 439, 450}
+    # families_from_decisions (dep_triage_consolidate.py) depends on the
+    # "family" key surviving serialisation here -- a field rename on either
+    # side would silently kill consolidation with no test catching it.
+    coupled = next(d for d in payload["decisions"] if d["number"] == 450)
+    assert coupled["code"] == "coupled"
+    assert coupled["family"] == "github/codeql-action"
 
 
 def test_main_returns_nonzero_on_malformed_proved_json(tmp_path, capsys):

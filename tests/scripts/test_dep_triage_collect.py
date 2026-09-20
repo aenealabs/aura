@@ -26,6 +26,19 @@ from scripts.security import dep_triage_collect as dc
             ("pydantic", ">=2.12.5", ">=2.13.5"),
         ),
         ("chore: release 1.8.0", ("", "", "")),
+        # Dependabot's own default title forms (no conventional-commit
+        # prefix). This repo only sees the lowercase "chore(deps): bump ..."
+        # form because Dependabot infers that prefix from repo history --
+        # .github/dependabot.yml sets no commit-message.prefix to guarantee
+        # it -- so these must parse too, not just the inferred form.
+        (
+            "Bump vitest from 4.0.16 to 5.0.0",
+            ("vitest", "4.0.16", "5.0.0"),
+        ),
+        (
+            "Update vitest requirement from ^4.0.16 to ^5.0.0",
+            ("vitest", "^4.0.16", "^5.0.0"),
+        ),
     ],
 )
 def test_parse_bump_title(title, expected):
@@ -395,6 +408,29 @@ def test_release_age_days_strips_range_operators():
     dc.release_age_days("pip", "foo", "^4.1.11", now, fetch)
     assert "/foo/2.13.5/" in seen[0]
     assert "/foo/4.1.11/" in seen[1]
+
+
+def test_risk_tiers_extracts_the_first_backticked_token_from_an_annotated_cell(
+    tmp_path,
+):
+    """A register row whose name cell carries an annotation, e.g.
+    "`image-size` (via `pptxgenjs`)", must resolve to the package the
+    backticks name first -- not the whole cell text with backticks stripped,
+    which produces a key like 'image-size` (via `pptxgenjs' that never
+    matches a real package."""
+    register = tmp_path / "register.md"
+    register.write_text(
+        "| Package | Scope | Tier | Notes |\n"
+        "|---|---|---|---|\n"
+        "| `image-size` (via `pptxgenjs`) | Frontend | **At-Risk** | narrow |\n"
+        "| `gremlinpython` | Python | **At-Risk** | tied to Neptune |\n"
+        "| `pptxgenjs` | Frontend | **Watch** | niche |\n",
+        encoding="utf-8",
+    )
+    tiers = dc._risk_tiers(register)
+    assert tiers["image-size"] == "at-risk"
+    assert tiers["gremlinpython"] == "at-risk"
+    assert tiers["pptxgenjs"] == "watch"
 
 
 def test_gh_json_wraps_called_process_error_with_command_and_stderr(monkeypatch):

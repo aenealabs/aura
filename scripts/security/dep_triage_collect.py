@@ -21,9 +21,17 @@ from typing import Callable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTER_PATH = REPO_ROOT / "docs/security/DEPENDENCY_RISK_REGISTER.md"
 
+# Case-insensitive: "Bump vitest from ..." and "Update vitest requirement
+# from ..." are Dependabot's own default title forms. This repo happens to
+# see the lowercase "bump"/"update" form only because Dependabot infers a
+# conventional-commit prefix ("chore(deps): bump ...") from repo history --
+# .github/dependabot.yml sets no commit-message.prefix to guarantee that. If
+# that inference ever produces a differently-cased title, a case-sensitive
+# pattern here would silently fail to parse every PR title.
 _BUMP = re.compile(
     r"\b(?:bump|update)\s+(?P<pkg>\S+?)(?:\s+requirement)?\s+"
-    r"from\s+(?P<old>\S+)\s+to\s+(?P<new>\S+)"
+    r"from\s+(?P<old>\S+)\s+to\s+(?P<new>\S+)",
+    re.IGNORECASE,
 )
 
 # Dependabot reports versions as `>=2.13.5`, `^4.1.11` or `v7.0.1`. Strip the
@@ -43,6 +51,12 @@ _VERSION_CLEAN = re.compile(r"[^\d.].*$")
 # direction here.
 _DETAILS_OPEN = re.compile(r"<\s*details\b", re.IGNORECASE)
 _ADVISORY = re.compile(r"(GHSA-[0-9a-z-]+|CVE-\d{4}-\d+)", re.IGNORECASE)
+
+# Matches the first backticked token in a risk-register table cell, e.g. the
+# `image-size` in "`image-size` (via `pptxgenjs`)". The register annotates
+# some entries with their transitive source in the same cell, so the package
+# name is never assumed to be the entire cell contents.
+_FIRST_BACKTICKED = re.compile(r"`([^`]+)`")
 
 
 def parse_bump_title(title: str) -> tuple[str, str, str]:
@@ -112,7 +126,14 @@ def _risk_tiers(register: Path) -> dict[str, str]:
         cells = [c.strip() for c in line.strip("|").split("|")]
         if len(cells) < 3:
             continue
-        name = cells[0].strip("`")
+        # The name cell is usually just a bare backticked package name, but
+        # some rows annotate it further, e.g. "`image-size` (via
+        # `pptxgenjs`)". Stripping backticks off the whole cell in that case
+        # yields "image-size` (via `pptxgenjs" -- garbage that never matches
+        # a real package. Extract the first backticked token instead, falling
+        # back to the stripped cell when there is no backtick at all.
+        match = _FIRST_BACKTICKED.search(cells[0])
+        name = match.group(1) if match else cells[0].strip("`")
         tier = cells[2].strip("*").lower()
         if tier in {"at-risk", "replace-now", "watch", "healthy"}:
             tiers[name] = tier

@@ -93,11 +93,16 @@ def verify_union(
 def branch_name(family: str, version: str) -> str:
     """Build the consolidation branch name for a family and target version.
 
-    Only ``family`` is slugified; ``version`` is assumed to already be a plain
-    release identifier as parsed from a bump title.
+    Both ``family`` and ``version`` are slugified. ``version`` legitimately
+    carries npm requirement-range markers such as ``^`` or ``~`` (Dependabot
+    titles like "Update vitest requirement from ^4.0.16 to ^5.0.0"), and those
+    characters are not valid in a git ref, so leaving it unslugified breaks
+    branch creation for exactly the coupled-npm case this module exists to
+    consolidate.
     """
-    slug = _SLUG.sub("-", family.lower()).strip("-")
-    return f"dep-consolidate/{slug}-{version}"
+    family_slug = _SLUG.sub("-", family.lower()).strip("-")
+    version_slug = _SLUG.sub("-", version.lower()).strip("-")
+    return f"dep-consolidate/{family_slug}-{version_slug}"
 
 
 def families_from_decisions(decisions: list[dict]) -> dict[str, list[int]]:
@@ -196,6 +201,13 @@ def consolidate_family(
                 run(["git", "merge", "--abort"])
                 return (False, f"family {family}: PR #{pr} conflicts; skipped")
 
+        if not any(added_lines(d) for d in member_diffs):
+            return (
+                False,
+                f"family {family}: no member contributed an added line; "
+                "refusing to open an empty consolidation",
+            )
+
         combined = run(["git", "diff", "origin/main...HEAD"], capture=True)
         ok, missing, extra = verify_union(member_diffs, combined)
         if not ok:
@@ -205,7 +217,7 @@ def consolidate_family(
                 f"missing={sorted(missing)} extra={sorted(extra)}",
             )
 
-        run(["git", "push", "-u", "origin", branch, "--force"])
+        run(["git", "push", "-u", "origin", branch, "--force-with-lease"])
         run(
             [
                 "gh",
@@ -288,6 +300,7 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     families = families_from_decisions(decisions)
+    any_failed = False
     for family, members in sorted(families.items()):
         if len(members) < 2:
             continue
@@ -298,8 +311,13 @@ def main(argv: list[str] | None = None) -> int:
         ok, message = consolidate_family(family, target, members)
         print(message)
         if not ok:
-            print(f"::warning::{message}")
-    return 0
+            # The union check is a security control: an unreviewed line
+            # riding along inside an approved consolidation. A ::warning::
+            # is easy to miss on a manually dispatched run, so a failed
+            # family is reported as an error and fails the job.
+            print(f"::error::{message}")
+            any_failed = True
+    return 1 if any_failed else 0
 
 
 if __name__ == "__main__":

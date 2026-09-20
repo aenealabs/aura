@@ -75,6 +75,23 @@ def test_branch_name_is_slugified():
     )
 
 
+def test_branch_name_slugifies_an_npm_requirement_range_version():
+    """`to_version` legitimately carries `^`/`~` for npm requirement bumps
+    (e.g. "Update vitest requirement from ^4.0.16 to ^5.0.0"). Those
+    characters are invalid in a git ref, so the version must be slugified
+    too, not just the family -- otherwise consolidation is dead for exactly
+    the coupled-npm case it exists to handle."""
+    branch = dcon.branch_name("npm:/frontend:vitest", "^5.0.0")
+    # Asserted structurally rather than by shelling out to
+    # `git check-ref-format`: none of git's forbidden ref characters may
+    # appear, and the slug may not start or end with a dash.
+    forbidden = set("^~:?*[\\")
+    assert not (forbidden & set(branch))
+    slug = branch.split("/", 1)[1]
+    assert not slug.startswith("-")
+    assert not slug.endswith("-")
+
+
 def test_added_lines_preserves_indentation():
     """Indentation is semantics in YAML, so it is part of the comparison."""
     diff = (
@@ -293,6 +310,12 @@ def test_consolidate_family_opens_pr_when_union_matches():
     assert ok, message
     assert run.ran("switch -c dep-consolidate/github-codeql-action-4.38.0")
     assert run.ran("pr create")
+    # A plain --force on a stable branch name would let this call clobber
+    # commits an operator added to an already-open consolidation PR.
+    assert run.ran(
+        "push -u origin dep-consolidate/github-codeql-action-4.38.0 "
+        "--force-with-lease"
+    )
 
 
 def test_consolidate_family_refuses_when_union_has_extra_lines():
@@ -369,6 +392,25 @@ def test_consolidate_family_returns_cleanly_when_push_fails():
     assert not ok
     assert not run.ran("pr create")
     assert run.ran("switch main")
+
+
+def test_consolidate_family_refuses_when_no_member_contributed_an_added_line():
+    """verify_union([], "") passes vacuously (True, set(), set()). If every
+    member diff came back empty, that vacuous pass must not let an empty
+    branch and an empty PR get created."""
+    run = FakeRun(
+        responses={
+            "diff origin/main...pr-450": "",
+            "diff origin/main...pr-452": "",
+            "diff origin/main...HEAD": "",
+        }
+    )
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "no member contributed" in message.lower()
+    assert not run.ran("pr create")
 
 
 def test_consolidate_family_aborts_on_merge_conflict():
@@ -472,7 +514,12 @@ def test_main_execute_invokes_consolidate_family_per_family(
     assert "opened dep-consolidate/fake" in capsys.readouterr().out
 
 
-def test_main_execute_reports_warning_on_family_failure(tmp_path, monkeypatch, capsys):
+def test_main_execute_reports_error_and_nonzero_on_family_failure(
+    tmp_path, monkeypatch, capsys
+):
+    """The union check is a security control. A ::warning:: with exit 0 is
+    easy to miss on a manually dispatched run, so a failed family must be
+    reported as an ::error:: and fail the job."""
     dec_path, snap_path = _write_fixtures(tmp_path)
 
     def fake_consolidate_family(family, version, members, run=dcon._run):
@@ -482,5 +529,7 @@ def test_main_execute_reports_warning_on_family_failure(tmp_path, monkeypatch, c
     rc = dcon.main(
         ["--decisions", str(dec_path), "--snapshot", str(snap_path), "--execute"]
     )
-    assert rc == 0
-    assert "::warning::" in capsys.readouterr().out
+    assert rc != 0
+    out = capsys.readouterr().out
+    assert "::error::" in out
+    assert "::warning::" not in out

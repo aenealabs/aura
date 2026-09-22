@@ -588,10 +588,70 @@ _SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def load_controls(path: Path) -> dict:
+    """Read the snapshot's recorded control inputs, or {} if it has none.
+
+    Kept separate from ``load_snapshot`` so the return type of that function --
+    which other tools consume -- does not change shape.
+    """
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    controls = raw.get("controls")
+    return controls if isinstance(controls, dict) else {}
+
+
+def _control_input_lines(prs: list[PRSnapshot], controls: dict | None) -> list[str]:
+    """Render the parsed control inputs the classification depended on.
+
+    A classification is only as good as its inputs, and both inputs fail
+    quietly: a risk register that moved parses to no tiers, and a title format
+    Dependabot changes parses to no package. Either produces a confident report
+    in which no hold fires. Stating them puts the check in front of the only
+    reader who can judge whether they look right.
+    """
+    lines = ["## Control inputs", ""]
+
+    tiers = (controls or {}).get("risk_register_tiers")
+    if isinstance(tiers, dict) and tiers:
+        register = (controls or {}).get("risk_register_path", "the risk register")
+        held = sorted(
+            f"`{name}` ({tier})"
+            for name, tier in tiers.items()
+            if str(tier).lower() in HELD_TIERS
+        )
+        held_text = ", ".join(held) if held else "none"
+        lines.append(
+            f"- Risk register (`{register}`): {len(tiers)} package tier(s) "
+            f"parsed. Held tiers: {held_text}."
+        )
+    else:
+        lines.append(
+            "- Risk register: **no tiers recorded in this snapshot**, so no "
+            "At-Risk hold could have fired. Treat every verdict below as "
+            "unverified against the register."
+        )
+
+    attempted = [p for p in prs if p.author in DEPENDABOT_AUTHORS]
+    unparsed = [p for p in attempted if not p.package]
+    parsed = len(attempted) - len(unparsed)
+    line = f"- Bump titles: {parsed} of {len(attempted)} Dependabot title(s) parsed."
+    if unparsed:
+        numbers = ", ".join(
+            f"#{p.number}" for p in sorted(unparsed, key=lambda x: x.number)
+        )
+        line += (
+            f" Unparsed: {numbers} -- these carry no package name, so the "
+            "per-package holds cannot fire for them."
+        )
+    lines.append(line)
+    lines.append("")
+    return lines
+
+
 def render_report(
     decisions: list[Decision],
     prs: list[PRSnapshot],
     proof_url: str | None = None,
+    controls: dict | None = None,
 ) -> str:
     """Build the markdown triage report."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -605,6 +665,7 @@ def render_report(
     if proof_url:
         lines.append(f"Batch proof run: {proof_url}")
         lines.append("")
+    lines.extend(_control_input_lines(prs, controls))
 
     for heading, codes in _SECTIONS:
         selected = [d for d in decisions if d.code in codes]
@@ -680,6 +741,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     prs = load_snapshot(args.snapshot)
+    controls = load_controls(args.snapshot)
     decisions = classify(prs)
     if args.proved or args.conflicted:
         try:
@@ -696,7 +758,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        render_report(decisions, prs, args.proof_url), encoding="utf-8"
+        render_report(decisions, prs, args.proof_url, controls), encoding="utf-8"
     )
     if args.decisions:
         args.decisions.parent.mkdir(parents=True, exist_ok=True)

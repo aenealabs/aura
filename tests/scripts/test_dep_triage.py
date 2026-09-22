@@ -779,6 +779,62 @@ def test_render_report_groups_by_classification():
         assert heading in md
 
 
+def test_report_header_echoes_the_control_inputs_it_classified_against():
+    """A wrong control input otherwise produces a confident, wrong report.
+
+    Both inputs fail quietly: a moved register parses to no tiers and a
+    changed title format parses to no package, and in either case no hold
+    fires and every verdict still reads as authoritative."""
+    prs = dt.load_snapshot(FIXTURE)
+    controls = dt.load_controls(FIXTURE)
+    md = dt.render_report(dt.classify(prs), prs, controls=controls)
+    header = md.split("## Control inputs", 1)[1].split("## ", 1)[0]
+    assert "DEPENDENCY_RISK_REGISTER.md" in header
+    assert f"{len(controls['risk_register_tiers'])} package tier(s) parsed" in header
+    # The held tiers are named, not just counted: a count cannot tell an
+    # operator whether the package they care about is among them.
+    assert "`gremlinpython` (at-risk)" in header
+    attempted = sum(1 for p in prs if p.author in dt.DEPENDABOT_AUTHORS)
+    assert f"of {attempted} Dependabot title(s) parsed" in header
+
+
+def test_report_header_says_so_when_no_register_tiers_were_recorded():
+    """A snapshot with no controls block must not read as a clean register."""
+    pr = _pr(number=99)
+    md = dt.render_report(dt.classify([pr]), [pr], controls=None)
+    header = md.split("## Control inputs", 1)[1].split("## ", 1)[0]
+    assert "no tiers recorded" in header
+    assert "unverified against the register" in header
+
+
+def test_report_header_names_every_unparsed_dependabot_title():
+    """An unparsed title carries no package, so its holds cannot fire.
+
+    Counting them is not enough -- the operator needs the PR numbers to judge
+    whether the tool has stopped understanding a whole title shape."""
+    parsed = _pr(number=1, package="six")
+    unparsed = _pr(number=2, package="", title="chore(deps): bump something odd")
+    prs = [parsed, unparsed]
+    md = dt.render_report(dt.classify(prs), prs)
+    header = md.split("## Control inputs", 1)[1].split("## ", 1)[0]
+    assert "1 of 2 Dependabot title(s) parsed" in header
+    assert "#2" in header
+    assert "#1" not in header
+
+
+def test_load_controls_of_a_snapshot_without_the_block_is_empty(tmp_path):
+    """A snapshot predating the controls block must still load, as {}.
+
+    Returning {} routes to the "no tiers recorded" warning above rather than
+    raising, so an old artifact can still be re-reported."""
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    raw.pop("controls")
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    assert dt.load_controls(path) == {}
+    assert dt.load_controls(FIXTURE)["risk_register_tiers"]
+
+
 def test_render_report_lists_family_members_together():
     prs = dt.load_snapshot(FIXTURE)
     md = dt.render_report(dt.classify(prs), prs)

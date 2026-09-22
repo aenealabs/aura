@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-22T18:41:37.567116+00:00",
+  "captured_at": "2026-09-22T18:43:55.925215+00:00",
   "pr_checks": {
     "386": {
       "error": "command failed: 'gh pr checks 386 --repo aenealabs/aura --json name,state,bucket' (exit 1): no checks reported on the 'release-please--branches--main' branch\n"

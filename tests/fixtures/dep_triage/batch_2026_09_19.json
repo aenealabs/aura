@@ -1,5 +1,14 @@
 {
-  "generated_at": "2026-09-22T18:41:40.490781+00:00",
+  "generated_at": "2026-09-22T18:43:58.713514+00:00",
+  "controls": {
+    "risk_register_path": "docs/security/DEPENDENCY_RISK_REGISTER.md",
+    "risk_register_tiers": {
+      "eslint-plugin-react": "at-risk",
+      "gremlinpython": "at-risk",
+      "image-size": "at-risk",
+      "pptxgenjs": "watch"
+    }
+  },
   "pull_requests": [
     {
       "number": 475,
@@ -87,7 +96,7 @@
       "package": "google-genai",
       "from_version": ">=2.19.0",
       "to_version": ">=2.24.0",
-      "release_age_days": 5.8354425602083335,
+      "release_age_days": 5.837043928460648,
       "risk_tier": "unknown"
     },
     {
@@ -261,7 +270,7 @@
       "package": "pygithub",
       "from_version": ">=2.9.1",
       "to_version": ">=2.10.0",
-      "release_age_days": 33.35868724747685,
+      "release_age_days": 33.36028861572917,
       "risk_tier": "unknown"
     },
     {
@@ -350,7 +359,7 @@
       "package": "openai",
       "from_version": ">=2.48.0",
       "to_version": ">=3.16.1",
-      "release_age_days": 3.985966123449074,
+      "release_age_days": 3.987567491701389,
       "risk_tier": "unknown"
     },
     {
@@ -439,7 +448,7 @@
       "package": "cairosvg",
       "from_version": "<3.0,>=2.9.0",
       "to_version": ">=2.9.1,<3.0",
-      "release_age_days": 15.337842797731481,
+      "release_age_days": 15.339444165983796,
       "risk_tier": "unknown"
     },
     {
@@ -528,7 +537,7 @@
       "package": "google-cloud-aiplatform",
       "from_version": ">=2.1.0",
       "to_version": ">=2.1.3",
-      "release_age_days": 6.675013018518518,
+      "release_age_days": 6.676614386770834,
       "risk_tier": "unknown"
     },
     {
@@ -617,7 +626,7 @@
       "package": "scikit-learn",
       "from_version": ">=1.9.0",
       "to_version": ">=1.9.1",
-      "release_age_days": 12.006338869733797,
+      "release_age_days": 12.007940237986112,
       "risk_tier": "unknown"
     },
     {
@@ -707,7 +716,7 @@
       "package": "gremlinpython",
       "from_version": ">=3.8.1",
       "to_version": ">=3.8.2",
-      "release_age_days": 13.86952326693287,
+      "release_age_days": 13.871124635185184,
       "risk_tier": "at-risk"
     },
     {
@@ -797,7 +806,7 @@
       "package": "cachetools",
       "from_version": ">=7.1.8",
       "to_version": ">=7.2.0",
-      "release_age_days": 5.911944382893519,
+      "release_age_days": 5.913545751145834,
       "risk_tier": "unknown"
     },
     {
@@ -886,7 +895,7 @@
       "package": "hypothesis",
       "from_version": ">=6.165.10",
       "to_version": ">=6.168.0",
-      "release_age_days": 13.99670836550926,
+      "release_age_days": 13.998309733761575,
       "risk_tier": "unknown"
     },
     {
@@ -1060,7 +1069,7 @@
       "package": "vitest",
       "from_version": "4.1.11",
       "to_version": "5.0.1",
-      "release_age_days": 7.411131248796297,
+      "release_age_days": 7.412732617048611,
       "risk_tier": "unknown"
     },
     {
@@ -1150,7 +1159,7 @@
       "package": "@vitest/coverage-v8",
       "from_version": "4.1.11",
       "to_version": "5.0.1",
-      "release_age_days": 7.411290484907408,
+      "release_age_days": 7.412891853159722,
       "risk_tier": "unknown"
     },
     {
@@ -1239,7 +1248,7 @@
       "package": "ruff",
       "from_version": "0.16.6",
       "to_version": "0.16.8",
-      "release_age_days": 6.116434778344908,
+      "release_age_days": 6.118036146597222,
       "risk_tier": "unknown"
     },
     {
@@ -1329,7 +1338,7 @@
       "package": "mermaid",
       "from_version": "11.17.2",
       "to_version": "12.0.0",
-      "release_age_days": 12.457318285833333,
+      "release_age_days": 12.458919654085648,
       "risk_tier": "unknown"
     },
     {

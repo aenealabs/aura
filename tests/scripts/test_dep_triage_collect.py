@@ -403,6 +403,60 @@ def test_risk_tiers_extracts_the_first_backticked_token_from_an_annotated_cell(
     assert tiers["pptxgenjs"] == "watch"
 
 
+def test_missing_risk_register_raises_rather_than_reading_as_no_holds(tmp_path):
+    """An absent register must not parse to "nothing is At-Risk".
+
+    An empty tier map is indistinguishable from a register in which no package
+    is held, so a moved or renamed file silently disarms rule_held_package.
+    That is how an At-Risk package carrying two unpatched CVEs reached a
+    candidate verdict and was caught only by human review.
+    """
+    with pytest.raises(RuntimeError, match="risk register not found"):
+        dc._risk_tiers(tmp_path / "absent.md")
+
+
+def test_register_that_parses_to_zero_tiers_raises(tmp_path):
+    """A register whose table shape changed is the same failure as a missing
+    one: present on disk, contributing no holds, and silent about it."""
+    register = tmp_path / "register.md"
+    register.write_text("# Dependency Risk Register\n\nNo tables here.\n", "utf-8")
+    with pytest.raises(RuntimeError, match="zero package"):
+        dc._risk_tiers(register)
+
+
+def test_a_full_pr_listing_is_treated_as_truncated(tmp_path, monkeypatch):
+    """`gh pr list --limit N` truncates silently at N.
+
+    A security report that omits pull requests without saying so is worse than
+    one that errors, so a listing that comes back at exactly the limit aborts
+    the collection instead of under-reporting.
+    """
+    listing = [
+        {
+            "number": n,
+            "title": f"chore(deps): bump pkg{n} from 1.0.0 to 1.0.1",
+            "author": GH_DEPENDABOT,
+            "files": [{"path": "requirements.txt"}],
+        }
+        for n in range(dc.PR_LIST_LIMIT)
+    ]
+    monkeypatch.setattr(dc, "_gh_json", _fake_gh(listing, {}))
+    with pytest.raises(RuntimeError, match="truncated"):
+        dc.main(["--output", str(tmp_path / "s.json"), "--repo", "org/repo"])
+
+
+def test_snapshot_records_the_control_inputs_it_classified_against():
+    """The register tiers are echoed into the snapshot for the report header.
+
+    Without them the report cannot state which holds were even loadable, and a
+    register that contributed nothing looks identical to one in which nothing
+    is held."""
+    snapshot = json.loads(SNAPSHOT_FIXTURE.read_text(encoding="utf-8"))
+    controls = snapshot["controls"]
+    assert controls["risk_register_path"].endswith("DEPENDENCY_RISK_REGISTER.md")
+    assert controls["risk_register_tiers"]["gremlinpython"] == "at-risk"
+
+
 def test_gh_json_wraps_called_process_error_with_command_and_stderr(monkeypatch):
     """A raw CalledProcessError traceback on auth failure or rate limiting is
     not actionable; the wrapped RuntimeError must name the command and carry

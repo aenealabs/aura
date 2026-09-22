@@ -28,6 +28,12 @@ from typing import Callable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTER_PATH = REPO_ROOT / "docs/security/DEPENDENCY_RISK_REGISTER.md"
 
+# `gh pr list --limit N` truncates silently at N. A triage report that omits
+# pull requests without saying so is worse than one that errors, so a listing
+# that comes back at exactly the limit is treated as truncated and aborts.
+# Raise this constant rather than letting the run quietly under-report.
+PR_LIST_LIMIT = 100
+
 # Case-insensitive: "Bump vitest from ..." and "Update vitest requirement
 # from ..." are Dependabot's own default title forms. This repo happens to
 # see the lowercase "bump"/"update" form only because Dependabot infers a
@@ -123,10 +129,22 @@ def check_state(bucket: str, state: str) -> tuple[str, str | None]:
 
 
 def _risk_tiers(register: Path) -> dict[str, str]:
-    """Map package name to tier by reading the risk register's tables."""
-    tiers: dict[str, str] = {}
+    """Map package name to tier by reading the risk register's tables.
+
+    Raises rather than returning an empty mapping when the register is absent
+    or yields no tiers. An empty mapping is indistinguishable from "no package
+    is At-Risk", so a moved, renamed or reformatted register would silently
+    disarm ``rule_held_package`` and let an At-Risk package with unpatched CVEs
+    classify as a candidate. Failing the collection is the only outcome that
+    cannot be mistaken for a clean bill of health.
+    """
     if not register.exists():
-        return tiers
+        raise RuntimeError(
+            f"dependency risk register not found at {register}: the At-Risk "
+            "holds cannot be evaluated, and an empty tier map is "
+            "indistinguishable from a register in which nothing is held"
+        )
+    tiers: dict[str, str] = {}
     for line in register.read_text(encoding="utf-8").splitlines():
         if not line.startswith("|"):
             continue
@@ -144,6 +162,11 @@ def _risk_tiers(register: Path) -> dict[str, str]:
         tier = cells[2].strip("*").lower()
         if tier in {"at-risk", "replace-now", "watch", "healthy"}:
             tiers[name] = tier
+    if not tiers:
+        raise RuntimeError(
+            f"dependency risk register {register} parsed to zero package "
+            "tiers: its table shape changed, so no At-Risk hold can fire"
+        )
     return tiers
 
 
@@ -250,6 +273,18 @@ def build_snapshot(
         )
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        # The control inputs the classification was computed against, echoed
+        # into the snapshot so the report can show them. A wrong control input
+        # -- a risk register that moved, a title format that stopped parsing --
+        # otherwise produces a confident report with no sign anything is off.
+        "controls": {
+            "risk_register_path": str(
+                REGISTER_PATH.relative_to(REPO_ROOT)
+                if REGISTER_PATH.is_relative_to(REPO_ROOT)
+                else REGISTER_PATH
+            ),
+            "risk_register_tiers": dict(sorted(risk_tiers.items())),
+        },
         "pull_requests": out,
     }
 
@@ -313,11 +348,18 @@ def main(argv: list[str] | None = None) -> int:
             "--state",
             "open",
             "--limit",
-            "100",
+            str(PR_LIST_LIMIT),
             "--json",
             "number,title,author,files",
         ]
     )
+    if len(listing) >= PR_LIST_LIMIT:  # type: ignore[arg-type]
+        raise RuntimeError(
+            f"`gh pr list` returned {PR_LIST_LIMIT} pull requests, its own "
+            "--limit: the listing is truncated and an unknown number of open "
+            "PRs are missing from it. Raise PR_LIST_LIMIT rather than "
+            "publishing a security report that silently omits pull requests."
+        )
     prs = [
         {
             "number": item["number"],

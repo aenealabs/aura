@@ -217,6 +217,73 @@ def test_policy_path_matches_nested_pyproject():
     assert dt.rule_policy_path(_pr(files=("tools/pyproject.toml",))) is not None
 
 
+def test_workflow_uses_pin_is_held_for_policy_review():
+    """A workflow bump changes what runs with repository credentials.
+
+    This was harmless while every action PR sat in a permanent hold because
+    release_age_days returned None for github-actions unconditionally.
+    Resolving that age removes the accidental protection, so the hold has to
+    be stated rather than inherited."""
+    pr = _pr(
+        files=(".github/workflows/codeql.yml",),
+        ecosystem="github-actions",
+        package="github/codeql-action/init",
+    )
+    decision = dt.rule_policy_path(pr)
+    assert decision is not None
+    assert decision.code == dt.CODE_POLICY_REVIEW
+    assert "credentials" in decision.reason
+
+
+def test_workflow_policy_path_accepts_both_yaml_spellings():
+    for path in (".github/workflows/a.yml", ".github/workflows/b.yaml"):
+        assert dt.rule_policy_path(_pr(files=(path,))) is not None
+
+
+def test_workflow_policy_path_matches_segments_not_substrings():
+    """The substring defect this repo already fixed once, in the other rule.
+
+    A path that merely contains the word "workflows", or a non-workflow file
+    inside .github, is not a workflow `uses:` pin."""
+    for path in (
+        "docs/github/workflows/guide.yml",
+        "src/workflows/engine.yml",
+        ".github/dependabot.yml",
+        ".github/workflows/README.md",
+    ):
+        assert dt.rule_policy_path(_pr(files=(path,))) is None, path
+
+
+def test_no_github_actions_pr_in_the_capture_reaches_candidate():
+    """The consequence of resolving action ages, pinned deliberately.
+
+    Before, actions were held by accident -- the cooldown could not evaluate.
+    Now they resolve a real age, so the only thing standing between an action
+    bump and merge-safe is this hold."""
+    prs = dt.load_snapshot(FIXTURE)
+    actions = [p for p in prs if p.ecosystem == "github-actions"]
+    assert actions, "the capture holds no action PRs to prove anything with"
+    by_number = {d.number: d for d in dt.classify(prs)}
+    for pr in actions:
+        assert by_number[pr.number].code in (
+            dt.CODE_POLICY_REVIEW,
+            dt.CODE_COUPLED,
+        ), f"#{pr.number} is {by_number[pr.number].code}"
+
+
+def test_coupling_still_wins_over_the_workflow_policy_path():
+    """Every action family touches a workflow file by construction.
+
+    If the path rule ran first it would shadow every family in the repo, and
+    dep_triage_consolidate -- which reads the `coupled` code and its family
+    key -- would find nothing to consolidate."""
+    prs = dt.load_snapshot(FIXTURE)
+    by_number = {d.number: d for d in dt.classify(prs)}
+    for number in CODEQL_FAMILY:
+        assert by_number[number].code == dt.CODE_COUPLED
+        assert by_number[number].family == "github/codeql-action"
+
+
 def test_family_key_groups_codeql_action_subactions():
     a = _pr(
         number=474,
@@ -798,11 +865,11 @@ def test_unresolvable_release_age_is_held_under_its_own_code():
 def test_no_rule_can_bypass_the_cooldown_or_the_major_hold():
     """The removed security fast path stripped both guards on body text alone.
 
-    `release_age_days` is None for every ecosystem with no stdlib-reachable
-    release timestamp -- docker and github-actions always, pip and npm on any
-    lookup failure -- and that is only safe because rule_cooldown holds on
-    unknown. A bypass evaluated before that check turned a permanent hold into
-    a candidate, which is the one outcome the design forbids."""
+    `release_age_days` is None for docker and unknown ecosystems always, and
+    for pip, npm and github-actions on any lookup failure -- and that is only
+    safe because rule_cooldown holds on unknown. A bypass evaluated before
+    that check turned a permanent hold into a candidate, which is the one
+    outcome the design forbids."""
     assert not hasattr(dt.PRSnapshot, "security_advisory")
     assert dt.rule_cooldown(_pr(release_age_days=None)) is not None
     assert dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=0.5)) is not None
@@ -846,6 +913,7 @@ def test_classify_assigns_expected_codes_for_the_captured_batch():
     assert by_number[462].code == dt.CODE_POLICY_REVIEW  # touches pyproject.toml
     assert by_number[468].code == dt.CODE_RISK_TIER  # gremlinpython is At-Risk
     assert by_number[460].code == dt.CODE_CANDIDATE  # group, every member clear
+    assert by_number[458].code == dt.CODE_POLICY_REVIEW  # workflow `uses:` pin
     assert by_number[466].code == dt.CODE_CANDIDATE
     assert by_number[467].code == dt.CODE_CANDIDATE
 

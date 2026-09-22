@@ -280,6 +280,21 @@ POLICY_PATHS: dict[str, str] = {
     "pyproject.toml": "carries the 70% coverage threshold, which must not be lowered",
 }
 
+# Directory prefixes whose files require human policy review. Matched by whole
+# path segment, never by substring -- the same discipline POLICY_PATHS uses,
+# and for the same reason: a substring match once held
+# frontend/src/components/DockerfileViewer.jsx as a Dockerfile change. Keyed by
+# the segment tuple; the value is (accepted suffixes, the rule it protects).
+POLICY_DIRS: dict[tuple[str, ...], tuple[tuple[str, ...], str]] = {
+    (".github", "workflows"): (
+        (".yml", ".yaml"),
+        "a workflow's `uses:` pin decides which third-party code runs with "
+        "repository credentials, so moving it is a supply-chain decision "
+        "rather than a dependency bump; SHA pinning only helps if a human "
+        "confirms the new SHA is the one intended",
+    ),
+}
+
 # Packages deliberately capped for a documented reason.
 DELIBERATE_HOLDS: dict[str, str] = {
     "tree-sitter": (
@@ -295,11 +310,28 @@ HELD_TIERS: frozenset[str] = frozenset({"at-risk", "replace-now"})
 
 
 def rule_policy_path(pr: PRSnapshot) -> Decision | None:
-    """R3: changes to policy-sensitive paths need human review."""
+    """R3: changes to policy-sensitive paths need human review.
+
+    The workflow entry in POLICY_DIRS means every github-actions bump that is
+    not already coupled lands here, and none of them ever reaches candidate.
+    That is deliberate. Until action release ages resolved, actions were held
+    only by accident: the cooldown could never evaluate, so every one of them
+    sat in a permanent hold reasoned as an unknown release age. Resolving the
+    age removes that accident, and without this entry action bumps would flow
+    straight through to merge-safe on the most credential-adjacent surface in
+    the repository.
+    """
     for path in pr.files:
-        name = PurePosixPath(path).name
+        pure = PurePosixPath(path)
         for marker, why in POLICY_PATHS.items():
-            if name == marker or name.startswith(f"{marker}."):
+            if pure.name == marker or pure.name.startswith(f"{marker}."):
+                return Decision(
+                    number=pr.number,
+                    code=CODE_POLICY_REVIEW,
+                    reason=f"touches {path}: {why}",
+                )
+        for segments, (suffixes, why) in POLICY_DIRS.items():
+            if pure.parts[: len(segments)] == segments and pure.suffix in suffixes:
                 return Decision(
                     number=pr.number,
                     code=CODE_POLICY_REVIEW,
@@ -687,17 +719,24 @@ def classify(prs: list[PRSnapshot]) -> list[Decision]:
       ``rule_held_package`` for a single bump -- run next. They say a package
       must not move at all, which is stronger than any statement about the
       pull request carrying it.
-    * ``rule_policy_path`` and ``rule_coupled`` follow. Coupling runs ahead of
-      check evaluation because the failure mode it guards against is a
-      *green* sibling.
+    * ``rule_coupled`` follows, ahead of both check evaluation and
+      ``rule_policy_path``. Ahead of checks because the failure mode it guards
+      against is a *green* sibling. Ahead of the path rule because a coupled
+      verdict is the stronger statement -- no member is individually
+      mergeable at all -- and because it is the only classification that
+      carries the family key ``dep_triage_consolidate`` reads. Every
+      github-actions family touches a workflow file by construction, so
+      without this ordering the path rule would shadow every family in the
+      repository and consolidation would find nothing to group.
     * Everything surviving is a candidate, which only becomes merge-safe by
       passing the batch proof.
 
-    Known limitation of putting the package holds ahead of
-    ``rule_policy_path``: a held package in a PR that also touches a
-    policy-sensitive path reports the package hold rather than the path one.
-    Both hold the PR for a human, and the package hold is the more specific
-    statement, so the trade is deliberate.
+    Two ordering trades, both deliberate. A held package in a PR that also
+    touches a policy-sensitive path reports the package hold, which is the
+    more specific statement. A coupled family member touching a
+    policy-sensitive path reports the coupling; no family in this repository
+    can touch one today -- npm families move package.json and action families
+    move workflows -- and both outcomes hold the PR for a human regardless.
     """
     families = detect_families(prs)
     decisions: list[Decision] = []
@@ -707,8 +746,8 @@ def classify(prs: list[PRSnapshot]) -> list[Decision]:
             or rule_no_checks(pr)
             or rule_grouped(pr)
             or rule_held_package(pr)
-            or rule_policy_path(pr)
             or rule_coupled(pr, families)
+            or rule_policy_path(pr)
             or rule_failing(pr)
             or rule_missing_required(pr)
             or rule_required_not_passing(pr)

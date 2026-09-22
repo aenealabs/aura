@@ -281,7 +281,7 @@ def test_release_age_days_returns_none_on_malformed_timestamp():
     )
 
 
-@pytest.mark.parametrize("ecosystem", ["docker", "github-actions", "unknown"])
+@pytest.mark.parametrize("ecosystem", ["docker", "unknown"])
 def test_release_age_days_unresolvable_ecosystems_return_none(ecosystem):
     assert (
         dc.release_age_days(
@@ -289,6 +289,249 @@ def test_release_age_days_unresolvable_ecosystems_return_none(ecosystem):
         )
         is None
     )
+
+
+NOW = datetime(2026, 9, 22, tzinfo=timezone.utc)
+
+
+def _fake_api(routes):
+    """Build a gh_api stand-in; a path with no route 404s the way gh does."""
+
+    def api(path):
+        if path not in routes:
+            raise RuntimeError(f"command failed: gh api {path} (exit 1): Not Found")
+        return routes[path]
+
+    return api
+
+
+def test_action_age_comes_from_the_pinned_shas_commit_date():
+    """For a SHA-pinned action the commit date is the metric, not the tag's.
+
+    A tag is a mutable label that can be repointed after publication; the
+    commit is what actually executes with repository credentials."""
+    api = _fake_api(
+        {
+            "repos/github/codeql-action/commits/"
+            + "c" * 40: {"commit": {"committer": {"date": "2026-09-18T13:09:51Z"}}}
+        }
+    )
+    age = dc.release_age_days(
+        "github-actions",
+        "github/codeql-action/init",
+        "4.38.1",
+        NOW,
+        gh_api=api,
+        action_sha="c" * 40,
+    )
+    assert age == pytest.approx(3.45, abs=0.01)
+
+
+def test_action_sha_is_read_from_the_prs_added_uses_lines():
+    diff = (
+        "--- a/.github/workflows/codeql.yml\n"
+        "+++ b/.github/workflows/codeql.yml\n"
+        "-        uses: github/codeql-action/init@" + "0" * 40 + " # v4\n"
+        "+        uses: github/codeql-action/init@" + "f" * 40 + " # v4\n"
+    )
+    assert dc.action_sha_from_diff(diff, "github/codeql-action/init") == "f" * 40
+    # A removed line is the *old* pin and must never be read as the new one.
+    assert dc.action_sha_from_diff(diff, "actions/checkout") is None
+
+
+def test_action_age_falls_back_to_dereferencing_the_tag():
+    """The fallback for when the diff could not be read.
+
+    An annotated tag's ref points at a tag object, not a commit; treating that
+    SHA as a commit is a 404, so it has to be dereferenced."""
+    api = _fake_api(
+        {
+            "repos/github/codeql-action/git/ref/tags/v4.38.1": {
+                "object": {"sha": "a" * 40, "type": "tag"}
+            },
+            "repos/github/codeql-action/git/tags/"
+            + "a" * 40: {"object": {"sha": "b" * 40, "type": "commit"}},
+            "repos/github/codeql-action/commits/"
+            + "b" * 40: {"commit": {"committer": {"date": "2026-09-15T00:00:00Z"}}},
+        }
+    )
+    age = dc.release_age_days(
+        "github-actions", "github/codeql-action/analyze", "4.38.1", NOW, gh_api=api
+    )
+    assert age == pytest.approx(7.0, abs=0.01)
+
+
+def test_action_tag_lookup_tries_the_bare_version_too():
+    """Dependabot titles carry "4.38.1"; the tag is usually "v4.38.1".
+
+    Repos that tag without the prefix exist, so both are tried rather than
+    either being assumed."""
+    api = _fake_api(
+        {
+            "repos/owner/repo/git/ref/tags/4.38.1": {
+                "object": {"sha": "d" * 40, "type": "commit"}
+            },
+            "repos/owner/repo/commits/"
+            + "d" * 40: {"commit": {"committer": {"date": "2026-09-20T00:00:00Z"}}},
+        }
+    )
+    assert dc.release_age_days(
+        "github-actions", "owner/repo", "4.38.1", NOW, gh_api=api
+    ) == pytest.approx(2.0, abs=0.01)
+
+
+@pytest.mark.parametrize(
+    "routes",
+    [
+        {},  # every lookup 404s
+        {"repos/o/r/git/ref/tags/v1.0.0": {"object": {}}},  # ref without a sha
+        {
+            "repos/o/r/git/ref/tags/v1.0.0": {"object": {"sha": "e" * 40}},
+            "repos/o/r/commits/" + "e" * 40: {"commit": {}},  # commit without a date
+        },
+    ],
+)
+def test_action_age_returns_none_on_any_api_failure(routes):
+    """Never raises, for the same reason the registry lookups never do.
+
+    rule_cooldown holds on an unknown age, so a failure here is conservative.
+    A raised exception would abort the whole collection and leave the queue
+    with no snapshot at all."""
+    assert (
+        dc.release_age_days(
+            "github-actions", "o/r", "1.0.0", NOW, gh_api=_fake_api(routes)
+        )
+        is None
+    )
+
+
+def test_action_age_returns_none_for_a_package_with_no_repo_segment():
+    assert (
+        dc.release_age_days(
+            "github-actions", "checkout", "1.0.0", NOW, gh_api=_fake_api({})
+        )
+        is None
+    )
+
+
+def test_action_age_returns_none_without_a_version_or_a_sha():
+    """Nothing to resolve: no pinned SHA and no tag to fall back to."""
+    assert (
+        dc.release_age_days("github-actions", "o/r", "", NOW, gh_api=_fake_api({}))
+        is None
+    )
+
+
+def test_action_age_returns_none_for_a_commit_date_with_no_offset():
+    """An offset-free timestamp cannot be compared to an aware `now`.
+
+    Guessing UTC would invent precision the data does not carry."""
+    api = _fake_api(
+        {
+            "repos/o/r/commits/"
+            + "c" * 40: {"commit": {"committer": {"date": "2026-09-18T13:09:51"}}}
+        }
+    )
+    assert (
+        dc.release_age_days(
+            "github-actions", "o/r", "1.0.0", NOW, gh_api=api, action_sha="c" * 40
+        )
+        is None
+    )
+
+
+def test_gh_api_json_routes_through_the_gh_cli(monkeypatch):
+    seen = []
+    monkeypatch.setattr(dc, "_gh_json", lambda args: seen.append(args) or {"ok": 1})
+    assert dc._gh_api_json("repos/o/r/commits/abc") == {"ok": 1}
+    assert seen == [["api", "repos/o/r/commits/abc"]]
+
+
+def test_gh_text_returns_stdout_on_success(monkeypatch):
+    monkeypatch.setattr(
+        dc.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout="+ uses: x\n"),
+    )
+    assert dc._gh_text(["pr", "diff", "1"]) == "+ uses: x\n"
+
+
+def test_gh_text_returns_empty_string_rather_than_raising(monkeypatch):
+    """The diff read has a working fallback, so its failure must not abort."""
+
+    def boom(*a, **k):
+        raise subprocess.CalledProcessError(1, "gh", stderr="nope")
+
+    monkeypatch.setattr(dc.subprocess, "run", boom)
+    assert dc._gh_text(["pr", "diff", "1"]) == ""
+
+
+def test_main_reads_the_pinned_sha_from_an_action_prs_diff(tmp_path, monkeypatch):
+    """The end-to-end path: diff -> SHA -> commit date -> release age.
+
+    Before this, release_age_days returned None for github-actions
+    unconditionally, so ACTION_COOLDOWN_DAYS never evaluated and all five
+    action PRs in the capture were held forever."""
+    listing = [
+        {
+            "number": 11,
+            "title": "chore(deps): bump actions/checkout from 7.0.0 to 7.0.1",
+            "author": GH_DEPENDABOT,
+            "files": [{"path": ".github/workflows/code-quality.yml"}],
+            "headRefOid": "9" * 40,
+            "body": "Bumps actions/checkout from 7.0.0 to 7.0.1.",
+        }
+    ]
+    monkeypatch.setattr(
+        dc,
+        "_gh_json",
+        _fake_gh(listing, {11: [{"name": "T", "bucket": "pass", "state": "SUCCESS"}]}),
+    )
+    monkeypatch.setattr(
+        dc,
+        "_gh_text",
+        lambda args: "+      uses: actions/checkout@" + "7" * 40 + " # v7.0.1\n",
+    )
+    monkeypatch.setattr(
+        dc,
+        "_gh_api_json",
+        _fake_api(
+            {
+                "repos/actions/checkout/commits/"
+                + "7"
+                * 40: {
+                    "commit": {
+                        "committer": {
+                            "date": datetime.now(timezone.utc)
+                            .replace(microsecond=0)
+                            .isoformat()
+                            .replace("+00:00", "Z")
+                        }
+                    }
+                }
+            }
+        ),
+    )
+    out = tmp_path / "snap.json"
+    assert dc.main(["--output", str(out), "--repo", "org/repo"]) == 0
+    snapshot = json.loads(out.read_text(encoding="utf-8"))
+    age = snapshot["pull_requests"][0]["release_age_days"]
+    assert age is not None and age < 0.01
+
+
+def test_captured_action_prs_all_resolve_a_real_age():
+    """The regression this closes: all five sat at None, held forever.
+
+    ACTION_COOLDOWN_DAYS never evaluated, so the 7-day cooldown on SHA-pinned
+    actions -- the supply-chain control most worth having here -- was dead
+    code in production."""
+    snapshot = json.loads(SNAPSHOT_FIXTURE.read_text(encoding="utf-8"))
+    actions = [
+        p for p in snapshot["pull_requests"] if p["ecosystem"] == "github-actions"
+    ]
+    assert len(actions) == 5
+    for pr in actions:
+        assert pr["release_age_days"] is not None, pr["number"]
 
 
 def test_release_age_days_returns_none_for_empty_package_or_version():

@@ -250,12 +250,110 @@ def _fetch_json(url: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _gh_api_json(path: str) -> dict:
+    """Fetch one GitHub REST resource as JSON through the gh CLI."""
+    return _gh_json(["api", path])  # type: ignore[return-value]
+
+
+def _gh_text(args: list[str]) -> str:
+    """Run a gh command and return its stdout, or "" when it fails.
+
+    Unlike ``_gh_json`` this swallows the failure. Its only caller is the
+    optional diff read below, which has a working fallback, so aborting the
+    collection over it would trade a complete snapshot for nothing.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, check=True
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return ""
+    return result.stdout
+
+
+# An added `uses:` line pinning an action to a full commit SHA, which is this
+# repository's convention. Anchored to the '+' so a removed line -- the old
+# pin -- cannot be read as the new one.
+_USES_PIN = re.compile(
+    r"^\+.*\buses:\s*(?P<action>[\w.-]+/[\w./-]+)@(?P<sha>[0-9a-f]{40})\b",
+    re.MULTILINE,
+)
+
+
+def action_sha_from_diff(diff: str, package: str) -> str | None:
+    """Return the commit SHA a PR's diff pins ``package`` to, or None."""
+    for match in _USES_PIN.finditer(diff or ""):
+        if match.group("action") == package:
+            return match.group("sha")
+    return None
+
+
+def _action_commit_age_days(
+    package: str,
+    version: str,
+    now: datetime,
+    gh_api: Callable[[str], dict],
+    action_sha: str | None,
+) -> float | None:
+    """Age in days of the commit a GitHub Action bump pins, or None.
+
+    For a SHA-pinned action the commit date of the pinned SHA is the metric
+    that matters, not the tag's release date: the tag is a mutable label that
+    can be repointed after publication, and what actually executes with
+    repository credentials is the commit.
+
+    ``action_sha`` -- read from the PR's own diff -- is preferred for exactly
+    that reason. Resolving the tag is the fallback for when the diff could not
+    be read, and it dereferences an annotated tag object rather than treating
+    the tag's own SHA as a commit.
+    """
+    owner, _, rest = (package or "").partition("/")
+    repo = rest.split("/", 1)[0]
+    if not owner or not repo:
+        return None
+
+    sha = action_sha
+    if not sha:
+        tag = (version or "").strip()
+        if not tag:
+            return None
+        # Dependabot's titles carry the bare version ("4.38.1") while the tag
+        # is conventionally "v4.38.1". Try both rather than assuming either.
+        candidates = [tag] if tag[:1] in "vV" else [f"v{tag}", tag]
+        ref: dict | None = None
+        for candidate in candidates:
+            quoted = urllib.parse.quote(candidate, safe="")
+            try:
+                ref = gh_api(f"repos/{owner}/{repo}/git/ref/tags/{quoted}")
+            except Exception:
+                continue
+            break
+        obj = (ref or {}).get("object") or {}
+        sha = obj.get("sha")
+        if obj.get("type") == "tag" and sha:
+            annotated = gh_api(f"repos/{owner}/{repo}/git/tags/{sha}")
+            sha = ((annotated or {}).get("object") or {}).get("sha")
+    if not sha:
+        return None
+
+    commit = gh_api(f"repos/{owner}/{repo}/commits/{sha}")
+    stamp = (((commit or {}).get("commit") or {}).get("committer") or {}).get("date")
+    if not stamp:
+        return None
+    committed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    if committed.tzinfo is None:
+        return None
+    return (now - committed).total_seconds() / 86400.0
+
+
 def release_age_days(
     ecosystem: str,
     package: str,
     version: str,
     now: datetime,
     fetch: Callable[[str], dict] = _fetch_json,
+    gh_api: Callable[[str], dict] = _gh_api_json,
+    action_sha: str | None = None,
 ) -> float | None:
     """Return the age in days of a package version, or None if unavailable.
 
@@ -267,10 +365,19 @@ def release_age_days(
     is the conservative outcome. Letting an exception propagate instead would
     abort the entire collection run and leave the queue with no snapshot at
     all, which is strictly worse than holding one PR's cooldown decision.
+
+    That discipline covers the github-actions path too: every gh API call it
+    makes is inside this same broad handler, so a rate limit, a deleted tag or
+    an unreachable repository yields None -- which rule_cooldown holds on --
+    rather than aborting the run.
     """
     try:
+        if not package:
+            return None
+        if ecosystem == "github-actions":
+            return _action_commit_age_days(package, version, now, gh_api, action_sha)
         clean = _VERSION_CLEAN.sub("", _VERSION_PREFIX.sub("", version or ""))
-        if not clean or not package:
+        if not clean:
             return None
         # The package name comes from a Dependabot PR title. The capture excludes
         # whitespace and the host below is hardcoded, so this is not a header
@@ -294,9 +401,12 @@ def release_age_days(
                 return None
             released = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
         else:
-            # docker, github-actions, unknown: no stdlib-reachable registry
-            # exposes a release timestamp keyed by version. rule_cooldown
-            # holds these PRs, which is the intended conservative outcome.
+            # docker and unknown: no stdlib-reachable registry exposes a
+            # release timestamp keyed by version. rule_cooldown holds these
+            # PRs under held:no-release-metadata, which is the intended
+            # conservative outcome. github-actions used to be in this list,
+            # which meant ACTION_COOLDOWN_DAYS never evaluated and every
+            # action bump was held forever; it is resolved above instead.
             return None
         if released.tzinfo is None:
             # A timestamp with no offset cannot be compared against an aware
@@ -553,12 +663,36 @@ def main(argv: list[str] | None = None) -> int:
         ]
         for name, version in wanted:
             key = (ecosystem, name)
-            if name and key not in release_ages:
-                # Store even a None: build_snapshot reads this with .get(), so
-                # a cached None and an absent key behave identically, and
-                # caching the failure stops every later PR for the same
-                # (ecosystem, package) refetching it.
-                release_ages[key] = release_age_days(ecosystem, name, version, now)
+            if not name or key in release_ages:
+                continue
+            action_sha = None
+            if ecosystem == "github-actions" and name == package:
+                # The SHA this PR actually pins, read from its own diff. A tag
+                # is a mutable label; the commit is what will execute with
+                # repository credentials. Falls back to resolving the tag ref
+                # inside release_age_days when the diff cannot be read.
+                action_sha = action_sha_from_diff(
+                    _gh_text(["pr", "diff", str(pr["number"]), "--repo", args.repo]),
+                    name,
+                )
+            # Store even a None: build_snapshot reads this with .get(), so a
+            # cached None and an absent key behave identically, and caching
+            # the failure stops every later PR for the same (ecosystem,
+            # package) refetching it.
+            # `fetch` and `gh_api` are named explicitly rather than left to
+            # release_age_days' defaults: a default argument binds at
+            # definition time, so the collaborators would not be substitutable
+            # from here and the wiring above could only be tested by
+            # reimplementing it.
+            release_ages[key] = release_age_days(
+                ecosystem,
+                name,
+                version,
+                now,
+                fetch=_fetch_json,
+                gh_api=_gh_api_json,
+                action_sha=action_sha,
+            )
 
     snapshot = build_snapshot(
         prs=prs,

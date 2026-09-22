@@ -1,6 +1,7 @@
 """Tests for the Dependabot triage classifier."""
 
 import json
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
@@ -349,9 +350,8 @@ def test_single_segment_action_is_not_grouped():
 def test_codeql_version_mismatch_is_a_real_failure_in_the_capture():
     """#465 bumps one codeql-action ref, so the other refs' Analyze jobs fail.
 
-    `gh pr checks` carries no log text, so the excerpt is empty and the flake
-    signatures cannot match -- which is the conservative direction: an
-    unexplained failure is a real failure until a signature says otherwise."""
+    Every failure is a real failure: there is no flake exemption to fall
+    through to, which is the conservative direction."""
     prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
     d = dt.rule_failing(prs[465])
     assert d is not None
@@ -392,47 +392,35 @@ def test_missing_required_with_no_required_checks_returns_none():
     assert dt.rule_missing_required(_pr(required_checks=())) is None
 
 
-def test_mixed_genuine_and_flake_failures_report_the_genuine_one():
-    """A real failure must not be hidden behind a flake in the same PR."""
+def test_every_failed_check_is_named_in_the_reason():
+    """Both failures are reported; neither is filtered out as infrastructure."""
     pr = _pr(
         checks=(
-            dt.CheckRun(
-                "Python Quality & Tests",
-                "completed",
-                "failure",
-                "AssertionError: expected 3, got 4",
-            ),
-            dt.CheckRun(
-                "Security Scanning",
-                "completed",
-                "failure",
-                "##[error]Process completed with exit code 35.",
-            ),
+            dt.CheckRun("Python Quality & Tests", "completed", "failure"),
+            dt.CheckRun("Security Scanning", "completed", "failure"),
         )
     )
     decision = dt.rule_failing(pr)
     assert decision.code == dt.CODE_FAILING
     assert "Python Quality & Tests" in decision.reason
+    assert "Security Scanning" in decision.reason
 
 
-def test_all_failures_flaky_is_still_a_flake():
-    pr = _pr(
-        checks=(
-            dt.CheckRun(
-                "Security Scanning",
-                "completed",
-                "failure",
-                "##[error]Process completed with exit code 35.",
-            ),
-            dt.CheckRun(
-                "Container Build",
-                "completed",
-                "failure",
-                "Could not resolve host: registry.example",
-            ),
-        )
-    )
-    assert dt.rule_failing(pr).code == dt.CODE_SUSPECTED_FLAKE
+def test_no_failure_is_exempted_as_an_infrastructure_flake():
+    """The flake exemption is gone, and must not come back on program output.
+
+    The removed detector matched strings like "rate limit" against a log
+    excerpt. A compromised package can print that string from its own test
+    process, which would have let it relabel a genuine failure as "rerun once
+    before escalating" -- evidence tampering through a signal the adversary
+    controls. This pins the absence of every name that path went by.
+    """
+    assert not hasattr(dt, "FLAKE_SIGNATURES")
+    assert not hasattr(dt, "_is_flake")
+    assert not hasattr(dt, "CODE_SUSPECTED_FLAKE")
+    codes = {code for _, codes in dt._SECTIONS for code in codes}
+    assert not any("flake" in code for code in codes)
+    assert "failing_log_excerpt" not in {f.name for f in fields(dt.CheckRun)}
 
 
 # gh's complete bucket vocabulary. `state` is open-ended and GitHub keeps
@@ -547,18 +535,8 @@ def test_required_not_passing_names_the_check_and_its_state():
     assert "in_progress" in decision.reason
 
 
-def test_missing_path_alone_is_not_treated_as_a_flake():
-    """A broken path introduced by the change is a real failure."""
-    pr = _pr(
-        checks=(
-            dt.CheckRun(
-                "Python Quality & Tests",
-                "completed",
-                "failure",
-                "Path does not exist: src/module.py",
-            ),
-        )
-    )
+def test_a_single_failed_check_is_a_real_failure():
+    pr = _pr(checks=(dt.CheckRun("Python Quality & Tests", "completed", "failure"),))
     assert dt.rule_failing(pr).code == dt.CODE_FAILING
 
 

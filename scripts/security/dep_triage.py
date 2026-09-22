@@ -18,6 +18,25 @@ correct signal, if the capability is wanted later, is
 ``gh api repos/{owner}/{repo}/dependabot/alerts`` correlated to the PR by
 package name and ``fixed_in`` version, which is authoritative rather than
 inferred.
+
+A "suspected flake" detector was removed for the same reason. It matched
+infrastructure signatures ("rate limit", "Could not resolve host") against
+``CheckRun.failing_log_excerpt``, which the collector filled from
+``gh pr checks --json description``. That description is empty for every
+GitHub Actions check run, so no signature could ever match and the code path
+was unreachable in production while advertising coverage the tool did not
+have. Every failure now reads as genuine, which is conservative and honest
+about it.
+
+A sound reimplementation would read the failing check run's own failure
+annotation -- ``gh api repos/{owner}/{repo}/check-runs/{id}/annotations`` --
+which the runner writes about the step, not the step's own stdout. The easy
+version is the dangerous one: matching patterns like "rate limit" or
+"429 Too Many Requests" against arbitrary program output lets a compromised
+package print that string from its own test process and have the classifier
+relabel its genuine test failure as "rerun once before escalating". That is
+evidence tampering through a signal the adversary controls, and it is the
+reason the detector must not be rebuilt on program output.
 """
 
 from __future__ import annotations
@@ -44,7 +63,6 @@ CODE_PINNED_BY_POLICY = "held:pinned-by-policy"
 CODE_RISK_TIER = "held:risk-tier"
 CODE_COUPLED = "coupled"
 CODE_FAILING = "attention:failing"
-CODE_SUSPECTED_FLAKE = "attention:suspected-flake"
 CODE_MISSING_REQUIRED = "attention:missing-required"
 CODE_REQUIRED_NOT_PASSING = "attention:required-not-passing"
 CODE_CONFLICT = "attention:conflict"
@@ -61,12 +79,16 @@ _LEADING_INT = re.compile(r"\D*(\d+)")
 
 @dataclass(frozen=True)
 class CheckRun:
-    """One check run on a pull request head."""
+    """One check run on a pull request head.
+
+    Carries no log excerpt. The field that held one existed solely for the
+    removed flake detector and was empty in every real capture; see the module
+    docstring for why it is not coming back in that form.
+    """
 
     name: str
     status: str
     conclusion: str | None
-    failing_log_excerpt: str = ""
 
 
 @dataclass(frozen=True)
@@ -112,7 +134,6 @@ def load_snapshot(path: Path) -> list[PRSnapshot]:
                 name=c["name"],
                 status=c["status"],
                 conclusion=c.get("conclusion"),
-                failing_log_excerpt=c.get("failing_log_excerpt", ""),
             )
             for c in item["checks"]
         )
@@ -294,65 +315,25 @@ def detect_families(prs: list[PRSnapshot]) -> dict[int, str]:
     return families
 
 
-# Substrings in a failing step's log that indicate infrastructure trouble
-# rather than a defect in the change under test. Each entry must be specific
-# enough that a genuinely broken change cannot produce it.
-FLAKE_SIGNATURES: tuple[str, ...] = (
-    "exit code 35",
-    "Could not resolve host",
-    "connection reset",
-    "TLS handshake timeout",
-    "rate limit",
-    "429 Too Many Requests",
-    "ECONNRESET",
-)
-
 FAILED_CONCLUSIONS: frozenset[str] = frozenset({"failure", "timed_out"})
 
 
-def _is_flake(check: CheckRun) -> bool:
-    """True when a failed check's log carries an infrastructure signature."""
-    excerpt = check.failing_log_excerpt.lower()
-    return any(signature.lower() in excerpt for signature in FLAKE_SIGNATURES)
-
-
 def rule_failing(pr: PRSnapshot) -> Decision | None:
-    """R6: classify failing checks, separating infrastructure flakes.
+    """R6: a failed check is a real failure.
 
-    A flake is worth a rerun; a real failure is worth a human. Conflating them
-    means genuine failures get retried and flakes rot untouched.
-
-    Each failed check is judged on its own log. A PR is only called a flake
-    when every failed check is one: if a genuine failure and a flake land
-    together, the genuine failure decides, because a "rerun once" label on a
-    real defect hides it until someone reruns and watches it fail again.
+    There is no flake exemption. The detector that provided one is gone --
+    see the module docstring -- so every failure routes to a human. That is
+    the conservative direction: a "rerun once" label on a genuine defect hides
+    it until someone reruns and watches it fail again, whereas a human looking
+    at a real flake costs one glance.
     """
     failed = [c for c in pr.checks if (c.conclusion or "") in FAILED_CONCLUSIONS]
     if not failed:
         return None
-
-    flaky: list[CheckRun] = []
-    genuine: list[CheckRun] = []
-    for check in failed:
-        (flaky if _is_flake(check) else genuine).append(check)
-
-    if genuine:
-        reason = f"{', '.join(c.name for c in genuine)} failed"
-        if flaky:
-            reason += (
-                f" (also failing with an infrastructure signature: "
-                f"{', '.join(c.name for c in flaky)})"
-            )
-        return Decision(number=pr.number, code=CODE_FAILING, reason=reason)
-
     return Decision(
         number=pr.number,
-        code=CODE_SUSPECTED_FLAKE,
-        reason=(
-            f"{', '.join(c.name for c in flaky)} failed with an "
-            "infrastructure signature, not a defect in the change; rerun once "
-            "before escalating"
-        ),
+        code=CODE_FAILING,
+        reason=f"{', '.join(c.name for c in failed)} failed",
     )
 
 
@@ -598,7 +579,6 @@ _SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "Needs attention",
         (
             CODE_FAILING,
-            CODE_SUSPECTED_FLAKE,
             CODE_MISSING_REQUIRED,
             CODE_REQUIRED_NOT_PASSING,
             CODE_CONFLICT,

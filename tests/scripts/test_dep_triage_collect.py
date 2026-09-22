@@ -521,7 +521,6 @@ def test_main_maps_check_buckets_rather_than_states(tmp_path, monkeypatch):
         "name": "Tests",
         "status": "completed",
         "conclusion": "success",
-        "failing_log_excerpt": "",
     }
     assert by_name["Old"]["conclusion"] == "cancelled"
     assert by_name["Cond"]["conclusion"] == "skipped"
@@ -704,12 +703,7 @@ def _snapshot_from_raw(raw, committed):
                 run.get("bucket", ""), run.get("state", "")
             )
             mapped.append(
-                {
-                    "name": run["name"],
-                    "status": status,
-                    "conclusion": conclusion,
-                    "failing_log_excerpt": run.get("description", ""),
-                }
+                {"name": run["name"], "status": status, "conclusion": conclusion}
             )
         checks_by_pr[number] = mapped
         row = by_number[number]

@@ -340,7 +340,10 @@ def main(argv: list[str] | None = None) -> int:
                     "--repo",
                     args.repo,
                     "--json",
-                    "name,state,bucket,description",
+                    # `description` was fetched only to feed the removed flake
+                    # detector, and is empty for every GitHub Actions check run,
+                    # so it recorded nothing. See dep_triage's module docstring.
+                    "name,state,bucket",
                 ]
             )
         except RuntimeError as exc:
@@ -365,7 +368,6 @@ def main(argv: list[str] | None = None) -> int:
                     "name": run["name"],
                     "status": status,
                     "conclusion": conclusion,
-                    "failing_log_excerpt": run.get("description", ""),
                 }
             )
         checks_by_pr[pr["number"]] = mapped

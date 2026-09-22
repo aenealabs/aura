@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-22T18:47:01.122302+00:00",
+  "generated_at": "2026-09-22T18:52:55.520220+00:00",
   "controls": {
     "risk_register_path": "docs/security/DEPENDENCY_RISK_REGISTER.md",
     "risk_register_tiers": {
@@ -97,8 +97,9 @@
       "package": "google-genai",
       "from_version": ">=2.19.0",
       "to_version": ">=2.24.0",
-      "release_age_days": 5.8391264291319445,
-      "risk_tier": "unknown"
+      "release_age_days": 5.843234268113426,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 474,
@@ -183,7 +184,8 @@
       "from_version": "4.37.9",
       "to_version": "4.38.1",
       "release_age_days": null,
-      "risk_tier": "unknown"
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 473,
@@ -273,8 +275,9 @@
       "package": "pygithub",
       "from_version": ">=2.9.1",
       "to_version": ">=2.10.0",
-      "release_age_days": 33.36237111640046,
-      "risk_tier": "unknown"
+      "release_age_days": 33.36647895538194,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 472,
@@ -363,8 +366,9 @@
       "package": "openai",
       "from_version": ">=2.48.0",
       "to_version": ">=3.16.1",
-      "release_age_days": 3.9896499923726854,
-      "risk_tier": "unknown"
+      "release_age_days": 3.9937578313541664,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 471,
@@ -453,8 +457,9 @@
       "package": "cairosvg",
       "from_version": "<3.0,>=2.9.0",
       "to_version": ">=2.9.1,<3.0",
-      "release_age_days": 15.341526666655094,
-      "risk_tier": "unknown"
+      "release_age_days": 15.345634505636575,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 470,
@@ -543,8 +548,9 @@
       "package": "google-cloud-aiplatform",
       "from_version": ">=2.1.0",
       "to_version": ">=2.1.3",
-      "release_age_days": 6.678696887442129,
-      "risk_tier": "unknown"
+      "release_age_days": 6.68280472642361,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 469,
@@ -633,8 +639,9 @@
       "package": "scikit-learn",
       "from_version": ">=1.9.0",
       "to_version": ">=1.9.1",
-      "release_age_days": 12.010022738657407,
-      "risk_tier": "unknown"
+      "release_age_days": 12.01413057763889,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 468,
@@ -724,8 +731,9 @@
       "package": "gremlinpython",
       "from_version": ">=3.8.1",
       "to_version": ">=3.8.2",
-      "release_age_days": 13.873207135856482,
-      "risk_tier": "at-risk"
+      "release_age_days": 13.877314974837963,
+      "risk_tier": "at-risk",
+      "members": []
     },
     {
       "number": 467,
@@ -815,8 +823,9 @@
       "package": "cachetools",
       "from_version": ">=7.1.8",
       "to_version": ">=7.2.0",
-      "release_age_days": 5.91562825181713,
-      "risk_tier": "unknown"
+      "release_age_days": 5.919736090798611,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 466,
@@ -905,8 +914,9 @@
       "package": "hypothesis",
       "from_version": ">=6.165.10",
       "to_version": ">=6.168.0",
-      "release_age_days": 14.00039223443287,
-      "risk_tier": "unknown"
+      "release_age_days": 14.00450007341435,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 465,
@@ -991,7 +1001,8 @@
       "from_version": "4.37.9",
       "to_version": "4.38.1",
       "release_age_days": null,
-      "risk_tier": "unknown"
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 464,
@@ -1081,8 +1092,9 @@
       "package": "vitest",
       "from_version": "4.1.11",
       "to_version": "5.0.1",
-      "release_age_days": 7.4148151177199075,
-      "risk_tier": "unknown"
+      "release_age_days": 7.418922956701389,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 463,
@@ -1172,8 +1184,9 @@
       "package": "@vitest/coverage-v8",
       "from_version": "4.1.11",
       "to_version": "5.0.1",
-      "release_age_days": 7.414974353831019,
-      "risk_tier": "unknown"
+      "release_age_days": 7.4190821928125,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 462,
@@ -1262,8 +1275,17 @@
       "package": "ruff",
       "from_version": "0.16.6",
       "to_version": "0.16.8",
-      "release_age_days": 6.120118647268518,
-      "risk_tier": "unknown"
+      "release_age_days": 6.12422648625,
+      "risk_tier": "unknown",
+      "members": [
+        {
+          "package": "ruff",
+          "from_version": "0.16.6",
+          "to_version": "0.16.8",
+          "risk_tier": "unknown",
+          "release_age_days": 6.12422648625
+        }
+      ]
     },
     {
       "number": 461,
@@ -1353,8 +1375,9 @@
       "package": "mermaid",
       "from_version": "11.17.2",
       "to_version": "12.0.0",
-      "release_age_days": 12.461002154756946,
-      "risk_tier": "unknown"
+      "release_age_days": 12.465109993738427,
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 460,
@@ -1445,7 +1468,44 @@
       "from_version": "",
       "to_version": "",
       "release_age_days": null,
-      "risk_tier": "unknown"
+      "risk_tier": "unknown",
+      "members": [
+        {
+          "package": "react-router-dom",
+          "from_version": "7.18.3",
+          "to_version": "7.18.4",
+          "risk_tier": "unknown",
+          "release_age_days": 7.15757869744213
+        },
+        {
+          "package": "lucide-react",
+          "from_version": "1.45.0",
+          "to_version": "1.47.0",
+          "risk_tier": "unknown",
+          "release_age_days": 5.4748911048495374
+        },
+        {
+          "package": "@testing-library/dom",
+          "from_version": "10.4.1",
+          "to_version": "10.4.2",
+          "risk_tier": "unknown",
+          "release_age_days": 9.030725202071759
+        },
+        {
+          "package": "eslint",
+          "from_version": "10.10.0",
+          "to_version": "10.11.0",
+          "risk_tier": "unknown",
+          "release_age_days": 3.9425264867939815
+        },
+        {
+          "package": "jsdom",
+          "from_version": "30.0.1",
+          "to_version": "30.1.0",
+          "risk_tier": "unknown",
+          "release_age_days": 5.746835502997685
+        }
+      ]
     },
     {
       "number": 459,
@@ -1530,7 +1590,8 @@
       "from_version": "4.37.9",
       "to_version": "4.38.1",
       "release_age_days": null,
-      "risk_tier": "unknown"
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 458,
@@ -1615,7 +1676,8 @@
       "from_version": "6.2.4",
       "to_version": "6.3.0",
       "release_age_days": null,
-      "risk_tier": "unknown"
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 457,
@@ -1700,7 +1762,8 @@
       "from_version": "4.37.9",
       "to_version": "4.38.1",
       "release_age_days": null,
-      "risk_tier": "unknown"
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 456,
@@ -1776,7 +1839,8 @@
       "from_version": "",
       "to_version": "",
       "release_age_days": null,
-      "risk_tier": "unknown"
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 455,
@@ -1866,7 +1930,8 @@
       "from_version": "",
       "to_version": "",
       "release_age_days": null,
-      "risk_tier": "unknown"
+      "risk_tier": "unknown",
+      "members": []
     },
     {
       "number": 386,
@@ -1892,7 +1957,8 @@
       "from_version": "",
       "to_version": "",
       "release_age_days": null,
-      "risk_tier": "unknown"
+      "risk_tier": "unknown",
+      "members": []
     }
   ]
 }

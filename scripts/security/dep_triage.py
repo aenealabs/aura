@@ -67,7 +67,13 @@ CODE_MISSING_REQUIRED = "attention:missing-required"
 CODE_REQUIRED_NOT_PASSING = "attention:required-not-passing"
 CODE_CONFLICT = "attention:conflict"
 CODE_MAJOR = "held:major-review"
+# "this release is too new" and "I could not determine the age" are different
+# facts about a PR and lead to different operator actions. Conflating them
+# under one code is what made every github-actions PR read as a transient
+# lookup glitch.
 CODE_COOLDOWN = "held:cooldown"
+CODE_NO_RELEASE_METADATA = "held:no-release-metadata"
+CODE_GROUPED_UNPARSED = "held:grouped-unparsed"
 CODE_CANDIDATE = "candidate"
 CODE_MERGE_SAFE = "merge-safe"
 
@@ -75,6 +81,38 @@ PACKAGE_COOLDOWN_DAYS = 3
 ACTION_COOLDOWN_DAYS = 7
 
 _LEADING_INT = re.compile(r"\D*(\d+)")
+
+# A grouped Dependabot PR: ".github/dependabot.yml" configures a
+# `minor-and-patch` group for pip and for npm, so these are routine here.
+# "bump the <group> group" is the grouped form; "bump ruff ... in the
+# <group> group" is a single-package update that happens to belong to a
+# group and parses as an ordinary bump, which is why the pattern anchors on
+# "bump the" rather than on the word "group" alone.
+_GROUP_TITLE = re.compile(r"\bbump the\s+(?P<group>.+?)\s+group\b", re.IGNORECASE)
+_GROUP_COUNT = re.compile(r"\bwith\s+(?P<count>\d+)\s+updates?\b", re.IGNORECASE)
+
+
+def group_name(title: str) -> str | None:
+    """Return the update-group name a title belongs to, or None.
+
+    A grouped PR bumps several packages at once and names none of them in its
+    title, so ``parse_bump_title`` yields empty strings for it and every
+    per-package rule sees no package to test.
+    """
+    match = _GROUP_TITLE.search(title or "")
+    return match.group("group") if match else None
+
+
+def group_update_count(title: str) -> int | None:
+    """Return how many updates a grouped title claims to carry, or None.
+
+    This is the authority on whether a parsed member list is complete. No
+    single region of a Dependabot group body is: GitHub's body size cap
+    truncates the per-member lines while leaving the summary table, and the
+    table omits transitively-pulled members the per-member lines carry.
+    """
+    match = _GROUP_COUNT.search(title or "")
+    return int(match.group("count")) if match else None
 
 
 @dataclass(frozen=True)
@@ -89,6 +127,22 @@ class CheckRun:
     name: str
     status: str
     conclusion: str | None
+
+
+@dataclass(frozen=True)
+class GroupMember:
+    """One package inside a grouped Dependabot update.
+
+    A grouped PR names no package in its title, so without these the
+    per-package rules have nothing to test and every At-Risk or deliberately
+    held package inside a group passes unexamined.
+    """
+
+    package: str
+    from_version: str = ""
+    to_version: str = ""
+    risk_tier: str = "unknown"
+    release_age_days: float | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +172,9 @@ class PRSnapshot:
     # the operator can merge commit Y. Rendered in the report and re-checked
     # by the workflow before any PR is merged into the candidate branch.
     head_sha: str = ""
+    # The packages a grouped update carries, parsed from the PR body by the
+    # collector. Empty for an ordinary single-package bump.
+    members: tuple[GroupMember, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -160,6 +217,16 @@ def load_snapshot(path: Path) -> list[PRSnapshot]:
                 risk_tier=item.get("risk_tier", "unknown"),
                 author_is_bot=bool(item.get("author_is_bot", False)),
                 head_sha=item.get("head_sha", ""),
+                members=tuple(
+                    GroupMember(
+                        package=m["package"],
+                        from_version=m.get("from_version", ""),
+                        to_version=m.get("to_version", ""),
+                        risk_tier=m.get("risk_tier", "unknown"),
+                        release_age_days=m.get("release_age_days"),
+                    )
+                    for m in item.get("members", [])
+                ),
             )
         )
     return snapshots
@@ -258,6 +325,71 @@ def rule_held_package(pr: PRSnapshot) -> Decision | None:
                 "register, which specifies pinning precisely"
             ),
         )
+    return None
+
+
+def rule_grouped(pr: PRSnapshot) -> Decision | None:
+    """R4b: apply the per-package holds to every member of a grouped update.
+
+    Runs before ``rule_held_package`` because a grouped PR carries no package
+    of its own: ``parse_bump_title`` returns empty strings for it, so the
+    deliberate holds and the At-Risk tier check have nothing to match and
+    cannot fire for anything inside the group. Since .github/dependabot.yml
+    groups both pip and npm minor/patch updates, that is the most common PR
+    shape in this repository, not a corner case.
+
+    A PR is held if *any* member is held, and the reason names the member --
+    a group is merged as one commit, so one held package holds all of it.
+
+    A group whose members cannot be recovered from its body is held
+    explicitly rather than left to fall through. Falling through would land
+    it in the cooldown's "release age unknown" branch, whose reason reads as a
+    transient lookup glitch when the real fact is that the per-package holds
+    were never evaluated.
+    """
+    name = group_name(pr.title)
+    if name is None:
+        return None
+
+    expected = group_update_count(pr.title)
+    if not pr.members or (expected is not None and len(pr.members) < expected):
+        found = len(pr.members)
+        promised = "an unstated number" if expected is None else str(expected)
+        return Decision(
+            number=pr.number,
+            code=CODE_GROUPED_UNPARSED,
+            reason=(
+                f"grouped update {name!r} states {promised} member package(s) "
+                f"but only {found} could be parsed from the PR body, so the "
+                "deliberate holds and risk-register tiers could not be "
+                "evaluated for the members that are missing"
+            ),
+        )
+
+    # Two passes rather than one, so a deliberate hold is reported in
+    # preference to a tier hold -- the same precedence rule_held_package uses
+    # for a single-package PR.
+    for member in pr.members:
+        if member.package in DELIBERATE_HOLDS:
+            return Decision(
+                number=pr.number,
+                code=CODE_PINNED_BY_POLICY,
+                reason=(
+                    f"grouped update {name!r} carries {member.package}: "
+                    f"{DELIBERATE_HOLDS[member.package]}"
+                ),
+            )
+    for member in pr.members:
+        if member.risk_tier.lower() in HELD_TIERS:
+            return Decision(
+                number=pr.number,
+                code=CODE_RISK_TIER,
+                reason=(
+                    f"grouped update {name!r} carries {member.package}, tier "
+                    f"{member.risk_tier!r} in the dependency risk register, "
+                    "which specifies pinning precisely"
+                ),
+            )
     return None
 
 
@@ -453,6 +585,49 @@ def rule_major(pr: PRSnapshot) -> Decision | None:
     )
 
 
+def _group_cooldown(pr: PRSnapshot, limit: int) -> Decision | None:
+    """Evaluate the cooldown member by member for a grouped update.
+
+    A group has no single release age, so inventing one would be a lie in
+    either direction: a group is as young as its youngest member, and the
+    member that matters is whichever one is still inside the window.
+
+    Members too new are reported before members with no resolvable age. Both
+    hold, but "vite is 1d old" is a fact the operator can act on, where "no
+    timestamp for vite" only says the tool could not look.
+    """
+    too_new = [
+        m
+        for m in pr.members
+        if m.release_age_days is not None and m.release_age_days < limit
+    ]
+    if too_new:
+        detail = ", ".join(
+            f"{m.package} {m.to_version} ({m.release_age_days:.0f}d)"
+            for m in sorted(too_new, key=lambda m: m.release_age_days or 0.0)
+        )
+        return Decision(
+            number=pr.number,
+            code=CODE_COOLDOWN,
+            reason=(
+                f"grouped update carries {len(too_new)} member(s) under the "
+                f"{limit}d cooldown for {pr.ecosystem}: {detail}"
+            ),
+        )
+    unknown = [m for m in pr.members if m.release_age_days is None]
+    if unknown:
+        names = ", ".join(sorted(m.package for m in unknown))
+        return Decision(
+            number=pr.number,
+            code=CODE_NO_RELEASE_METADATA,
+            reason=(
+                f"no release timestamp could be resolved for {names}, so the "
+                f"{limit}d cooldown could not be evaluated for the whole group"
+            ),
+        )
+    return None
+
+
 def rule_cooldown(pr: PRSnapshot) -> Decision | None:
     """R9: hold releases younger than the cooldown window.
 
@@ -460,20 +635,34 @@ def rule_cooldown(pr: PRSnapshot) -> Decision | None:
     still undetected. Actions wait longer because they are SHA-pinned
     supply-chain surface executed with repository credentials.
 
-    No bypass exists, which is what makes an unknown release age safe to report:
-    this rule holds on unknown, so every ecosystem with no stdlib-reachable
-    release timestamp queues for a human rather than passing unexamined.
+    A grouped update is judged member by member. It never takes the single-age
+    branch below: a group has no single release age, and reporting one as
+    unknown states the wrong fact about it.
+
+    No bypass exists, which is what makes an unresolvable release age safe to
+    report: this rule holds on unknown. It holds under a *different* code,
+    though. ``held:cooldown`` means "this release is too new"; ``held:no-
+    release-metadata`` means "the age could not be determined". Conflating
+    them left an operator unable to tell a real hold from an abstention, which
+    mattered because every github-actions PR sat in the second case while
+    reading as the first.
     """
     limit = (
         ACTION_COOLDOWN_DAYS
         if pr.ecosystem == "github-actions"
         else PACKAGE_COOLDOWN_DAYS
     )
+    if group_name(pr.title) is not None:
+        return _group_cooldown(pr, limit)
     if pr.release_age_days is None:
         return Decision(
             number=pr.number,
-            code=CODE_COOLDOWN,
-            reason="release age unknown; cannot confirm the cooldown elapsed",
+            code=CODE_NO_RELEASE_METADATA,
+            reason=(
+                f"no release timestamp could be resolved for {pr.package} "
+                f"{pr.to_version}, so the {limit}d cooldown for "
+                f"{pr.ecosystem} could not be evaluated"
+            ),
         )
     if pr.release_age_days < limit:
         return Decision(
@@ -490,11 +679,25 @@ def rule_cooldown(pr: PRSnapshot) -> Decision | None:
 def classify(prs: list[PRSnapshot]) -> list[Decision]:
     """Classify every PR with the first matching rule.
 
-    Rule order is load-bearing. Author and check-presence exclusions run first
-    so non-Dependabot and unvalidated PRs never reach version logic. Coupling
-    runs before check evaluation because the failure mode it guards against is a
-    *green* sibling. Everything surviving is a candidate, which only becomes
-    merge-safe by passing the batch proof.
+    Rule order is load-bearing:
+
+    * Author and check-presence exclusions run first, so non-Dependabot and
+      unvalidated PRs never reach version logic.
+    * The per-package holds -- ``rule_grouped`` for a group's members, then
+      ``rule_held_package`` for a single bump -- run next. They say a package
+      must not move at all, which is stronger than any statement about the
+      pull request carrying it.
+    * ``rule_policy_path`` and ``rule_coupled`` follow. Coupling runs ahead of
+      check evaluation because the failure mode it guards against is a
+      *green* sibling.
+    * Everything surviving is a candidate, which only becomes merge-safe by
+      passing the batch proof.
+
+    Known limitation of putting the package holds ahead of
+    ``rule_policy_path``: a held package in a PR that also touches a
+    policy-sensitive path reports the package hold rather than the path one.
+    Both hold the PR for a human, and the package hold is the more specific
+    statement, so the trade is deliberate.
     """
     families = detect_families(prs)
     decisions: list[Decision] = []
@@ -502,8 +705,9 @@ def classify(prs: list[PRSnapshot]) -> list[Decision]:
         decision = (
             rule_non_dependabot(pr)
             or rule_no_checks(pr)
-            or rule_policy_path(pr)
+            or rule_grouped(pr)
             or rule_held_package(pr)
+            or rule_policy_path(pr)
             or rule_coupled(pr, families)
             or rule_failing(pr)
             or rule_missing_required(pr)
@@ -580,6 +784,8 @@ _SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
             CODE_RISK_TIER,
             CODE_MAJOR,
             CODE_COOLDOWN,
+            CODE_NO_RELEASE_METADATA,
+            CODE_GROUPED_UNPARSED,
         ),
     ),
     (
@@ -638,7 +844,7 @@ def _control_input_lines(prs: list[PRSnapshot], controls: dict | None) -> list[s
         )
 
     attempted = [p for p in prs if p.author in DEPENDABOT_AUTHORS]
-    unparsed = [p for p in attempted if not p.package]
+    unparsed = [p for p in attempted if not p.package and group_name(p.title) is None]
     parsed = len(attempted) - len(unparsed)
     line = f"- Bump titles: {parsed} of {len(attempted)} Dependabot title(s) parsed."
     if unparsed:

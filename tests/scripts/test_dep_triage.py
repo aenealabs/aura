@@ -602,10 +602,197 @@ def test_cooldown_boundary_exactly_at_limit_is_not_held():
     assert dt.rule_cooldown(pr) is None
 
 
-def test_unknown_release_age_is_held():
+GROUP_TITLE = (
+    "chore(deps): bump the minor-and-patch group across 1 directory with 2 updates"
+)
+
+
+def _member(package, **kw):
+    base = dict(
+        package=package,
+        from_version="1.0.0",
+        to_version="1.0.1",
+        risk_tier="unknown",
+        release_age_days=30.0,
+    )
+    base.update(kw)
+    return dt.GroupMember(**base)
+
+
+def test_group_title_is_recognised_and_a_single_bump_is_not():
+    """ "bump the X group" is a group; "bump ruff ... in the X group" is not.
+
+    #462 belongs to the same group but names its package in the title and so
+    must keep parsing as an ordinary bump."""
+    assert dt.group_name(GROUP_TITLE) == "minor-and-patch"
+    assert dt.group_update_count(GROUP_TITLE) == 2
+    single = (
+        "chore(deps-dev): bump ruff from 0.16.6 to 0.16.8 in the minor-and-patch group"
+    )
+    assert dt.group_name(single) is None
+
+
+def test_a_deliberately_held_package_inside_a_group_holds_the_whole_pr():
+    """The hold that could not fire before this rule existed.
+
+    A grouped title names no package, so tree-sitter's deliberate cap -- and
+    every other per-package hold -- was unreachable for the commonest PR shape
+    in the repo."""
+    pr = _pr(
+        number=99,
+        title=GROUP_TITLE,
+        package="",
+        members=(_member("six"), _member("tree-sitter")),
+    )
+    decision = dt.rule_grouped(pr)
+    assert decision is not None
+    assert decision.code == dt.CODE_PINNED_BY_POLICY
+    assert "tree-sitter" in decision.reason
+    assert "parser.timeout_micros" in decision.reason
+
+
+def test_an_at_risk_member_inside_a_group_holds_the_whole_pr():
+    pr = _pr(
+        number=99,
+        title=GROUP_TITLE,
+        package="",
+        members=(_member("six"), _member("gremlinpython", risk_tier="at-risk")),
+    )
+    decision = dt.rule_grouped(pr)
+    assert decision.code == dt.CODE_RISK_TIER
+    assert "gremlinpython" in decision.reason
+
+
+def test_a_deliberate_hold_outranks_a_tier_hold_inside_a_group():
+    """Same precedence rule_held_package uses for a single-package PR."""
+    pr = _pr(
+        number=99,
+        title=GROUP_TITLE,
+        package="",
+        members=(_member("gremlinpython", risk_tier="at-risk"), _member("tree-sitter")),
+    )
+    assert dt.rule_grouped(pr).code == dt.CODE_PINNED_BY_POLICY
+
+
+def test_a_group_with_no_held_members_passes_the_rule():
+    pr = _pr(
+        number=99, title=GROUP_TITLE, package="", members=(_member("six"), _member("x"))
+    )
+    assert dt.rule_grouped(pr) is None
+
+
+def test_an_unparsed_group_is_held_explicitly_not_left_to_the_cooldown():
+    """Falling through would report the wrong fact.
+
+    The cooldown's unknown-age branch says the release age could not be
+    resolved. For an unparsed group the real fact is that the per-package
+    holds were never evaluated at all, which is a different and more serious
+    thing for an operator to know."""
+    pr = _pr(number=99, title=GROUP_TITLE, package="", members=())
+    decision = dt.rule_grouped(pr)
+    assert decision.code == dt.CODE_GROUPED_UNPARSED
+    assert "could not be" in decision.reason
+    assert "cooldown" not in decision.reason
+
+
+def test_a_group_shorter_than_its_title_claims_is_held_as_unparsed():
+    """The title's count is the authority on completeness.
+
+    A body truncated past some members parses to a short list that looks
+    perfectly valid; without this check the missing members pass unexamined."""
+    pr = _pr(number=99, title=GROUP_TITLE, package="", members=(_member("six"),))
+    decision = dt.rule_grouped(pr)
+    assert decision.code == dt.CODE_GROUPED_UNPARSED
+    assert "2 member package(s) but only 1" in decision.reason
+
+
+def test_a_grouped_pr_never_takes_the_single_release_age_branch():
+    """A group has no single release age, so it must not claim one.
+
+    The old behaviour held every group with "release age unknown; cannot
+    confirm the cooldown elapsed" -- a true-sounding sentence about a quantity
+    that does not exist for a group."""
+    pr = _pr(
+        number=99,
+        title=GROUP_TITLE,
+        package="",
+        release_age_days=None,
+        members=(_member("six"), _member("x")),
+    )
+    assert dt.rule_cooldown(pr) is None
+
+
+def test_a_group_is_held_for_its_youngest_member_not_for_the_group():
+    pr = _pr(
+        number=99,
+        title=GROUP_TITLE,
+        ecosystem="npm",
+        package="",
+        release_age_days=None,
+        members=(_member("six"), _member("vite", release_age_days=1.0)),
+    )
+    decision = dt.rule_cooldown(pr)
+    assert decision.code == dt.CODE_COOLDOWN
+    assert "vite" in decision.reason
+    assert "six" not in decision.reason
+
+
+def test_a_group_member_with_no_resolvable_age_holds_the_group():
+    """The cooldown is not skipped for groups; it is evaluated per member.
+
+    Skipping it would let the commonest PR shape in the repo bypass the
+    control that exists for freshly published, possibly compromised
+    releases."""
+    pr = _pr(
+        number=99,
+        title=GROUP_TITLE,
+        package="",
+        release_age_days=None,
+        members=(_member("six"), _member("mystery", release_age_days=None)),
+    )
+    decision = dt.rule_cooldown(pr)
+    assert decision.code == dt.CODE_NO_RELEASE_METADATA
+    assert "mystery" in decision.reason
+
+
+def test_the_captured_group_pr_is_classified_as_a_group():
+    """#460 is real grouped output, not a synthetic body.
+
+    It used to land in held:cooldown reasoned "release age unknown", which is
+    both the wrong code and the wrong fact."""
+    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
+    pr = prs[460]
+    assert dt.group_name(pr.title) is not None
+    assert len(pr.members) == dt.group_update_count(pr.title)
+    assert dt.rule_grouped(pr) is None
+    assert dt.rule_cooldown(pr) is None
+    by_number = {d.number: d for d in dt.classify(list(prs.values()))}
+    assert by_number[460].code == dt.CODE_CANDIDATE
+
+
+def test_group_members_default_to_empty_for_older_snapshots(tmp_path):
+    """A snapshot written before the field existed must still load."""
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    for item in payload["pull_requests"]:
+        item.pop("members", None)
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert all(p.members == () for p in dt.load_snapshot(path))
+
+
+def test_unresolvable_release_age_is_held_under_its_own_code():
+    """ "Too new" and "I could not look" are different facts.
+
+    Both hold, but only one is transient. Reporting an abstention as a
+    cooldown taught the operator to read the tool's most common output as a
+    glitch that would clear itself."""
     d = dt.rule_cooldown(_pr(release_age_days=None))
     assert d is not None
-    assert d.code == dt.CODE_COOLDOWN
+    assert d.code == dt.CODE_NO_RELEASE_METADATA
+    assert "could not be evaluated" in d.reason
+    fresh = dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=0.5))
+    assert fresh.code == dt.CODE_COOLDOWN
+    assert "under the 3d cooldown" in fresh.reason
 
 
 def test_no_rule_can_bypass_the_cooldown_or_the_major_hold():
@@ -658,7 +845,7 @@ def test_classify_assigns_expected_codes_for_the_captured_batch():
     assert by_number[472].code == dt.CODE_MAJOR  # openai 2 -> 3
     assert by_number[462].code == dt.CODE_POLICY_REVIEW  # touches pyproject.toml
     assert by_number[468].code == dt.CODE_RISK_TIER  # gremlinpython is At-Risk
-    assert by_number[458].code == dt.CODE_COOLDOWN  # action, age unresolvable
+    assert by_number[460].code == dt.CODE_CANDIDATE  # group, every member clear
     assert by_number[466].code == dt.CODE_CANDIDATE
     assert by_number[467].code == dt.CODE_CANDIDATE
 

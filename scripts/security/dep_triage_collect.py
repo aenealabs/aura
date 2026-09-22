@@ -60,6 +60,80 @@ _VERSION_CLEAN = re.compile(r"[^\d.].*$")
 # name is never assumed to be the entire cell contents.
 _FIRST_BACKTICKED = re.compile(r"`([^`]+)`")
 
+# Grouped Dependabot PRs. .github/dependabot.yml configures a `minor-and-patch`
+# group for pip and for npm, so these are the routine shape here, not an edge
+# case. The title carries no package, so the member list has to come from the
+# body -- and no single place in the body is complete:
+#
+# * The summary table has every member, but a body long enough to be truncated
+#   by GitHub's size cap keeps the table (it is at the top) and loses the
+#   per-member lines. Observed on aenealabs/aura#451: 9 table rows, 4 `Updates`
+#   lines.
+# * The per-member `Updates` lines carry members the table omits -- a
+#   transitively-pulled package. Observed on #311: 6 table/preamble entries,
+#   7 `Updates` lines.
+# * A single-directory group with no table states its members as a prose list
+#   in the preamble instead. Observed on #393.
+#
+# So all three are parsed and unioned, and the count in the title is the
+# authority on whether the union is complete. Shapes verified against live
+# bodies; do not narrow any of these to one source.
+_GROUP_UPDATES_LINE = re.compile(
+    r"^Updates\s+`(?P<pkg>[^`]+)`\s+from\s+(?P<old>\S+)\s+to\s+(?P<new>\S+)",
+    re.MULTILINE,
+)
+_GROUP_TABLE_ROW = re.compile(
+    r"^\|\s*(?P<pkg>[^|]+?)\s*\|\s*`(?P<old>[^`|]+)`\s*\|\s*`(?P<new>[^`|]+)`\s*\|",
+    re.MULTILINE,
+)
+_GROUP_PREAMBLE = re.compile(
+    r"^Bumps the .+? group with \d+ updates?\b[^:\n]*:(?P<rest>.*)$",
+    re.MULTILINE,
+)
+_MARKDOWN_LINK = re.compile(r"\[(?P<text>[^\]]+)\]\([^)]*\)")
+
+
+def _unlink(cell: str) -> str:
+    """Reduce a markdown link to its text, leaving a bare name untouched."""
+    match = _MARKDOWN_LINK.fullmatch(cell.strip())
+    return match.group("text") if match else cell.strip()
+
+
+def parse_group_members(body: str) -> list[dict]:
+    """Extract a grouped PR's member packages from its body.
+
+    Returns one dict per member with ``package``, ``from_version`` and
+    ``to_version``; the versions are empty strings for a member only the
+    prose preamble names. Order is stable: per-member lines first, then table
+    rows, then preamble names, and the first source to name a package wins its
+    versions.
+
+    Never raises. A body shape this does not recognise yields fewer members
+    than the title promises, which ``dep_triage.rule_grouped`` turns into an
+    explicit ``held:grouped-unparsed`` rather than a silent pass.
+    """
+    members: dict[str, dict] = {}
+
+    def add(package: str, old: str, new: str) -> None:
+        name = package.strip().strip("`")
+        if name and name not in members:
+            members[name] = {
+                "package": name,
+                "from_version": old,
+                "to_version": new,
+            }
+
+    for match in _GROUP_UPDATES_LINE.finditer(body or ""):
+        add(match.group("pkg"), match.group("old"), match.group("new"))
+    for match in _GROUP_TABLE_ROW.finditer(body or ""):
+        # The header row ("| Package | From | To |") and the separator carry no
+        # backticks in the version cells, so neither reaches here.
+        add(_unlink(match.group("pkg")), match.group("old"), match.group("new"))
+    for match in _GROUP_PREAMBLE.finditer(body or ""):
+        for link in _MARKDOWN_LINK.finditer(match.group("rest")):
+            add(link.group("text"), "", "")
+    return list(members.values())
+
 
 def parse_bump_title(title: str) -> tuple[str, str, str]:
     """Extract (package, from_version, to_version) from a Dependabot title.
@@ -253,6 +327,18 @@ def build_snapshot(
         files = list(pr.get("files", []))
         package, old, new = parse_bump_title(pr.get("title", ""))
         ecosystem = infer_ecosystem(files)
+        # Members are emitted for every PR whose body names any, not only for
+        # ones whose title reads as a group. Deciding what counts as a grouped
+        # PR is the classifier's job, and it makes that call from the title;
+        # the collector's job is to supply whatever the body states.
+        members = [
+            {
+                **member,
+                "risk_tier": risk_tiers.get(member["package"], "unknown"),
+                "release_age_days": release_ages.get((ecosystem, member["package"])),
+            }
+            for member in parse_group_members(pr.get("body", ""))
+        ]
         out.append(
             {
                 "number": pr["number"],
@@ -270,6 +356,7 @@ def build_snapshot(
                 "to_version": new,
                 "release_age_days": release_ages.get((ecosystem, package)),
                 "risk_tier": risk_tiers.get(package, "unknown"),
+                "members": members,
             }
         )
     return {
@@ -355,7 +442,14 @@ def main(argv: list[str] | None = None) -> int:
             # computed against. Dependabot force-pushes its branches on rebase,
             # so "PR #N is merge-safe" is only true of one head, and the batch
             # proof re-checks this SHA before merging.
-            "number,title,author,files,headRefOid",
+            #
+            # `body` is fetched again, having been dropped when the advisory
+            # detector was removed. It is the only place a grouped PR states
+            # its member packages, and without them a grouped PR -- the most
+            # common shape in this repo -- carries no package name at all, so
+            # no deliberate hold and no At-Risk tier can fire for anything
+            # inside it. The bodies are large; that is the price of the holds.
+            "number,title,author,files,headRefOid,body",
         ]
     )
     if len(listing) >= PR_LIST_LIMIT:  # type: ignore[arg-type]
@@ -372,6 +466,7 @@ def main(argv: list[str] | None = None) -> int:
             "author": item["author"],
             "files": [f["path"] for f in item.get("files", [])],
             "head_sha": item.get("headRefOid", ""),
+            "body": item.get("body", ""),
         }
         for item in listing  # type: ignore[union-attr]
     ]
@@ -447,13 +542,23 @@ def main(argv: list[str] | None = None) -> int:
     for pr in prs:
         package, _, new = parse_bump_title(pr["title"])
         ecosystem = infer_ecosystem(pr["files"])
-        key = (ecosystem, package)
-        if package and key not in release_ages:
-            # Store even a None: build_snapshot reads this with .get(), so a
-            # cached None and an absent key behave identically, and caching the
-            # failure stops every later PR for the same (ecosystem, package)
-            # refetching it.
-            release_ages[key] = release_age_days(ecosystem, package, new, now)
+        wanted = [(package, new)]
+        # A grouped PR's cooldown is decided member by member. Without these
+        # lookups a group would carry no age at all, and the only honest thing
+        # to do with it would be to skip the cooldown -- which would let the
+        # most common PR shape in the repo bypass the control outright.
+        wanted += [
+            (member["package"], member["to_version"])
+            for member in parse_group_members(pr.get("body", ""))
+        ]
+        for name, version in wanted:
+            key = (ecosystem, name)
+            if name and key not in release_ages:
+                # Store even a None: build_snapshot reads this with .get(), so
+                # a cached None and an absent key behave identically, and
+                # caching the failure stops every later PR for the same
+                # (ecosystem, package) refetching it.
+                release_ages[key] = release_age_days(ecosystem, name, version, now)
 
     snapshot = build_snapshot(
         prs=prs,

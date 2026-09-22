@@ -696,11 +696,15 @@ def test_main_still_aborts_on_any_other_gh_failure(tmp_path, monkeypatch):
         dc.main(["--output", str(tmp_path / "snap.json"), "--repo", "org/repo"])
 
 
-def test_main_no_longer_requests_the_pr_body(tmp_path, monkeypatch):
-    """`body` was fetched solely for the removed advisory detector.
+def test_main_requests_the_pr_body_for_group_members(tmp_path, monkeypatch):
+    """`body` is fetched again, and this time it is read.
 
-    Dependabot bodies embed entire upstream changelogs, so this is a real cost
-    on a 20-PR listing, and the field is now unread."""
+    It was dropped when the advisory detector was removed, on the grounds that
+    Dependabot bodies embed whole upstream changelogs and nothing consumed
+    them. It is the only place a grouped PR names its member packages, and
+    without those a grouped PR -- the commonest shape in this repo -- carries
+    no package name, so no deliberate hold and no At-Risk tier can fire for
+    anything inside it."""
     seen = []
 
     def fake_gh_json(args):
@@ -710,7 +714,114 @@ def test_main_no_longer_requests_the_pr_body(tmp_path, monkeypatch):
     monkeypatch.setattr(dc, "_gh_json", fake_gh_json)
     assert dc.main(["--output", str(tmp_path / "s.json"), "--repo", "org/repo"]) == 0
     listing_args = next(a for a in seen if a[:2] == ["pr", "list"])
-    assert "body" not in listing_args[listing_args.index("--json") + 1]
+    assert "body" in listing_args[listing_args.index("--json") + 1]
+
+
+# A grouped body, reduced from aenealabs/aura#460 but keeping every structural
+# feature the parser depends on: the preamble, the summary table with linked
+# package cells and backticked versions, and the per-member `Updates` lines.
+GROUP_BODY = """Bumps the minor-and-patch group with 3 updates in the \
+/frontend directory:
+
+| Package | From | To |
+| --- | --- | --- |
+| [react-router-dom](https://github.com/remix-run/react-router) | `7.18.3` \
+| `7.18.4` |
+| [eslint](https://github.com/eslint/eslint) | `10.10.0` | `10.11.0` |
+| [jsdom](https://github.com/jsdom/jsdom) | `30.0.1` | `30.1.0` |
+
+
+Updates `react-router-dom` from 7.18.3 to 7.18.4
+<details>
+<summary>Changelog</summary>
+<p>irrelevant</p>
+</details>
+
+Updates `eslint` from 10.10.0 to 10.11.0
+
+Updates `jsdom` from 30.0.1 to 30.1.0
+"""
+
+
+def test_group_members_are_parsed_with_their_versions():
+    members = dc.parse_group_members(GROUP_BODY)
+    assert [m["package"] for m in members] == [
+        "react-router-dom",
+        "eslint",
+        "jsdom",
+    ]
+    assert members[1] == {
+        "package": "eslint",
+        "from_version": "10.10.0",
+        "to_version": "10.11.0",
+    }
+
+
+def test_group_members_survive_a_body_truncated_past_the_updates_lines():
+    """GitHub caps PR body length; Dependabot's group bodies exceed it.
+
+    Observed on aenealabs/aura#451: the summary table kept all 9 members and
+    only 4 `Updates` lines survived. Parsing the per-member lines alone would
+    have silently dropped 5 packages, every one of which would then have gone
+    unchecked against the deliberate holds and the risk register."""
+    truncated = GROUP_BODY.split("Updates `eslint`")[0]
+    assert "Updates `jsdom`" not in truncated
+    members = {m["package"]: m for m in dc.parse_group_members(truncated)}
+    assert set(members) == {"react-router-dom", "eslint", "jsdom"}
+    # The table is the only surviving source for these two, and it carries
+    # versions, so they are not degraded to name-only members.
+    assert members["jsdom"]["to_version"] == "30.1.0"
+
+
+def test_group_members_include_ones_the_summary_table_omits():
+    """A transitively-pulled member appears only in the per-member lines.
+
+    Observed on aenealabs/aura#311: the tables and preambles account for 6
+    packages and the title says 7; `vitest` is named only by an `Updates`
+    line."""
+    body = GROUP_BODY + "\nUpdates `vitest` from 4.1.9 to 4.1.10\n"
+    packages = {m["package"] for m in dc.parse_group_members(body)}
+    assert "vitest" in packages
+
+
+def test_group_members_come_from_the_prose_preamble_when_there_is_no_table():
+    """A single-directory group states its members as prose instead.
+
+    Observed on aenealabs/aura#393."""
+    body = (
+        "Bumps the minor-and-patch group with 3 updates: "
+        "[pytest-forked](https://github.com/pytest-dev/pytest-forked), "
+        "[ruff](https://github.com/astral-sh/ruff) and "
+        "[mypy](https://github.com/python/mypy).\n"
+    )
+    members = dc.parse_group_members(body)
+    assert [m["package"] for m in members] == ["pytest-forked", "ruff", "mypy"]
+
+
+def test_group_member_parsing_never_raises_on_an_unrecognised_body():
+    """A shape the parser does not know yields fewer members, not a crash.
+
+    rule_grouped turns a short member list into an explicit hold; an exception
+    here would abort the whole collection and leave the queue with no
+    snapshot."""
+    for body in ("", "not a dependabot body at all", "| | |\n", "Updates ` from"):
+        assert dc.parse_group_members(body) == []
+
+
+def test_captured_group_pr_carries_its_members_with_tiers_and_ages():
+    """#460 is the grouped PR the fixture exists to pin.
+
+    Its members must arrive with the register tier and the registry age the
+    per-member holds and the per-member cooldown are decided on."""
+    snapshot = json.loads(SNAPSHOT_FIXTURE.read_text(encoding="utf-8"))
+    pr = next(p for p in snapshot["pull_requests"] if p["number"] == 460)
+    assert "group" in pr["title"]
+    assert pr["package"] == "", "a grouped title names no single package"
+    assert len(pr["members"]) == 5
+    for member in pr["members"]:
+        assert member["package"]
+        assert member["risk_tier"]
+        assert member["release_age_days"] is not None, member["package"]
 
 
 def test_record_writes_the_raw_gh_payloads_verbatim(tmp_path, monkeypatch):
@@ -787,6 +898,7 @@ def _snapshot_from_raw(raw, committed):
                 "author": item["author"],
                 "files": [f["path"] for f in item.get("files", [])],
                 "head_sha": item.get("headRefOid", ""),
+                "body": item.get("body", ""),
             }
         )
         recorded = raw["pr_checks"][str(number)]
@@ -804,6 +916,14 @@ def _snapshot_from_raw(raw, committed):
         release_ages[(row["ecosystem"], row["package"])] = row["release_age_days"]
         if row["risk_tier"] != "unknown":
             risk_tiers[row["package"]] = row["risk_tier"]
+        # A grouped PR's members carry their own registry ages and register
+        # tiers, from the same two non-gh sources.
+        for member in row["members"]:
+            release_ages[(row["ecosystem"], member["package"])] = member[
+                "release_age_days"
+            ]
+            if member["risk_tier"] != "unknown":
+                risk_tiers[member["package"]] = member["risk_tier"]
     required = by_number[raw["pr_list"][0]["number"]]["required_checks"]
     return dc.build_snapshot(
         prs=prs,

@@ -7,6 +7,17 @@ the whole rule set is unit-testable against recorded fixtures.
 
 Nothing in this module merges or approves a pull request. See
 ``docs/superpowers/specs/2026-09-19-dependabot-triage-design.md``.
+
+An earlier revision carried a "security advisory" fast path that let a PR skip
+both the major-version hold and the cooldown when its body text mentioned a CVE
+or GHSA id; it was removed because body text is the wrong primitive for a
+control that strips two guards -- a real Dependabot security body cites the
+advisory inside a collapsible block rather than the preamble, so the heuristic
+fired on ordinary bumps and stayed silent on the updates it existed for. The
+correct signal, if the capability is wanted later, is
+``gh api repos/{owner}/{repo}/dependabot/alerts`` correlated to the PR by
+package name and ``fixed_in`` version, which is authoritative rather than
+inferred.
 """
 
 from __future__ import annotations
@@ -19,7 +30,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-DEPENDABOT_AUTHOR = "dependabot[bot]"
+# `gh` normalizes bot logins to `app/<slug>`; the GitHub API and webhooks use
+# `<slug>[bot]`. Both are accepted because the collector reads whichever form its
+# source returns, and a mismatch here silently excludes every Dependabot PR --
+# which is exactly the defect this set replaces.
+DEPENDABOT_AUTHORS: frozenset[str] = frozenset({"app/dependabot", "dependabot[bot]"})
 
 # Classification codes. Consumers match on these exact strings.
 CODE_NON_DEPENDABOT = "excluded:non-dependabot"
@@ -31,6 +46,7 @@ CODE_COUPLED = "coupled"
 CODE_FAILING = "attention:failing"
 CODE_SUSPECTED_FLAKE = "attention:suspected-flake"
 CODE_MISSING_REQUIRED = "attention:missing-required"
+CODE_REQUIRED_NOT_PASSING = "attention:required-not-passing"
 CODE_CONFLICT = "attention:conflict"
 CODE_MAJOR = "held:major-review"
 CODE_COOLDOWN = "held:cooldown"
@@ -70,7 +86,10 @@ class PRSnapshot:
     to_version: str
     release_age_days: float | None
     risk_tier: str
-    security_advisory: bool = False
+    # Trailing because it carries a default and every field above it does not.
+    # Recorded for the report's reason text; the author *login* remains the
+    # decision, because a non-Dependabot bot is also `is_bot: true`.
+    author_is_bot: bool = False
 
 
 @dataclass(frozen=True)
@@ -112,7 +131,7 @@ def load_snapshot(path: Path) -> list[PRSnapshot]:
                 to_version=item["to_version"],
                 release_age_days=item.get("release_age_days"),
                 risk_tier=item.get("risk_tier", "unknown"),
-                security_advisory=bool(item.get("security_advisory", False)),
+                author_is_bot=bool(item.get("author_is_bot", False)),
             )
         )
     return snapshots
@@ -122,13 +141,21 @@ def rule_non_dependabot(pr: PRSnapshot) -> Decision | None:
     """R1: only Dependabot PRs are in scope.
 
     Keyed on author identity rather than title text, so Release Please and
-    other bot PRs are excluded regardless of how they are titled.
+    other bot PRs are excluded regardless of how they are titled. Membership is
+    tested against every login form Dependabot is known to appear under, because
+    an equality test against a single form excludes the whole queue whenever the
+    collector's source reports the other one.
     """
-    if pr.author != DEPENDABOT_AUTHOR:
+    if pr.author not in DEPENDABOT_AUTHORS:
+        accepted = ", ".join(repr(name) for name in sorted(DEPENDABOT_AUTHORS))
+        bot_note = "a bot" if pr.author_is_bot else "not a bot"
         return Decision(
             number=pr.number,
             code=CODE_NON_DEPENDABOT,
-            reason=f"author is {pr.author!r}, not {DEPENDABOT_AUTHOR!r}",
+            reason=(
+                f"author is {pr.author!r} ({bot_note}), which is not one of the "
+                f"accepted Dependabot logins: {accepted}"
+            ),
         )
     return None
 
@@ -350,6 +377,44 @@ def rule_missing_required(pr: PRSnapshot) -> Decision | None:
     )
 
 
+# A required check has passed only on positive evidence. `success` is the
+# ordinary pass; `skipped` and `neutral` are GitHub's own "this check declined to
+# object" conclusions, which a branch-protection rule also accepts. Every other
+# conclusion -- including `None`, which is what an unfinished or unmapped run
+# reports -- is an absence of evidence, not evidence of success.
+PASSING_CONCLUSIONS: frozenset[str] = frozenset({"success", "skipped", "neutral"})
+
+
+def rule_required_not_passing(pr: PRSnapshot) -> Decision | None:
+    """R7b: a required check that is present but not conclusively passing.
+
+    R7 catches a required check that is absent. This catches one that is present
+    and has not passed -- still running, cancelled, timed out, errored. Without
+    it the classifier treats "no objection found" as evidence of success, and a
+    check that never concluded reads exactly like one that passed.
+    """
+    by_name: dict[str, CheckRun] = {c.name: c for c in pr.checks}
+    unproven = [
+        check
+        for name in pr.required_checks
+        if (check := by_name.get(name)) is not None
+        and (check.conclusion or "") not in PASSING_CONCLUSIONS
+    ]
+    if not unproven:
+        return None
+    detail = ", ".join(
+        f"{c.name} ({c.status}/{c.conclusion or 'no conclusion'})" for c in unproven
+    )
+    return Decision(
+        number=pr.number,
+        code=CODE_REQUIRED_NOT_PASSING,
+        reason=(
+            f"required check(s) present but not conclusively passing: {detail}; "
+            "absence of a failure is not evidence of a pass"
+        ),
+    )
+
+
 def rule_coupled(pr: PRSnapshot, families: dict[int, str]) -> Decision | None:
     """R5: no member of a multi-PR family is individually mergeable.
 
@@ -384,11 +449,9 @@ def major_of(version: str) -> int | None:
 def rule_major(pr: PRSnapshot) -> Decision | None:
     """R8: major bumps carry breaking changes CI may not exercise.
 
-    Security advisories bypass this hold entirely: a CVE fix must not be
-    delayed for a major-version review.
+    No bypass exists. An earlier revision let a body-text advisory match skip
+    this hold; see the module docstring for why that was removed.
     """
-    if pr.security_advisory:
-        return None
     before, after = major_of(pr.from_version), major_of(pr.to_version)
     if before is None or after is None or after <= before:
         return None
@@ -409,12 +472,10 @@ def rule_cooldown(pr: PRSnapshot) -> Decision | None:
     still undetected. Actions wait longer because they are SHA-pinned
     supply-chain surface executed with repository credentials.
 
-    Security advisories bypass this hold entirely: the cooldown defends against
-    compromised releases, and applying it to a CVE fix would delay the patch it
-    exists to protect.
+    No bypass exists, which is what makes an unknown release age safe to report:
+    this rule holds on unknown, so every ecosystem with no stdlib-reachable
+    release timestamp queues for a human rather than passing unexamined.
     """
-    if pr.security_advisory:
-        return None
     limit = (
         ACTION_COOLDOWN_DAYS
         if pr.ecosystem == "github-actions"
@@ -458,6 +519,7 @@ def classify(prs: list[PRSnapshot]) -> list[Decision]:
             or rule_coupled(pr, families)
             or rule_failing(pr)
             or rule_missing_required(pr)
+            or rule_required_not_passing(pr)
             or rule_major(pr)
             or rule_cooldown(pr)
             # R10: nothing objected.
@@ -538,6 +600,7 @@ _SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
             CODE_FAILING,
             CODE_SUSPECTED_FLAKE,
             CODE_MISSING_REQUIRED,
+            CODE_REQUIRED_NOT_PASSING,
             CODE_CONFLICT,
         ),
     ),

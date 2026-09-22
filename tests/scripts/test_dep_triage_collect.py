@@ -1206,3 +1206,17 @@ def test_raw_capture_holds_the_regression_cases_the_fixture_exists_for():
     titles = " ".join(item["title"] for item in raw["pr_list"])
     assert titles.count("github/codeql-action/") == 4
     assert "vitest" in titles
+    # At least one grouped PR, with a body that actually carries its member
+    # list. Every per-member hold and the per-member cooldown are vacuous
+    # without one, and a transcribed body would not exercise the truncation
+    # and table/line-divergence cases the parser exists for.
+    grouped = [
+        item for item in raw["pr_list"] if dt.group_name(item["title"]) is not None
+    ]
+    assert grouped, "the capture holds no grouped PR"
+    for item in grouped:
+        assert len(dc.parse_group_members(item["body"])) == dt.group_update_count(
+            item["title"]
+        )
+    # Every PR carries the head commit its verdict is a statement about.
+    assert all(len(item["headRefOid"]) == 40 for item in raw["pr_list"])

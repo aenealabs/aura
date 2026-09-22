@@ -1,6 +1,6 @@
 # Dependency Risk Audit Runbook
 
-**Last Updated:** 2026-05-13
+**Last Updated:** 2026-09-22
 **Workflow:** `.github/workflows/dependency-risk-audit.yml`
 **Script:** `scripts/security/dep_risk_audit.py`
 **Register:** `docs/security/DEPENDENCY_RISK_REGISTER.md`
@@ -20,6 +20,8 @@ The dependency risk audit runs every Monday at 14:00 UTC and produces a markdown
 The report is committed to `docs/security/audits/YYYY-WNN.md` via a weekly PR titled `audit(deps): weekly report YYYY-WNN`. The PR is auto-labelled `audit-green` (both tools clean) or `audit-findings` (high-severity issues present). Operator merges; no bot auto-merge. The report is also retained as a workflow artifact for 90 days for runtime access.
 
 The audit migrated from "post as a comment on tracking issue #138" to "commit as a file via PR" on 2026-05-13 -- see `docs/security/audits/README.md` for the rationale.
+
+**Companion job, same morning.** [`DEPENDABOT_TRIAGE_RUNBOOK.md`](DEPENDABOT_TRIAGE_RUNBOOK.md) runs two hours later at 16:00 UTC and classifies every open Dependabot PR with a stated reason. Read the two together: this audit tells you what is unsafe, the triage tells you which PRs you can merge and why not the rest. It merges nothing and approves nothing; the no-auto-merge / no-bot-self-approval policy recorded in this workflow is unchanged by it. The triage's cooldown rule deliberately adds up to 7 days of latency to dependency updates, and this audit is its compensating control -- see [`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`](../security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md).
 
 ## Triage Decision Tree
 
@@ -200,6 +202,8 @@ The lesson: drafts are cheap to start, expensive to fully unwind. Use the markdo
 
 - Register: `docs/security/DEPENDENCY_RISK_REGISTER.md`
 - Script: `scripts/security/dep_risk_audit.py`
+- Companion job (16:00 UTC, same morning): [`DEPENDABOT_TRIAGE_RUNBOOK.md`](DEPENDABOT_TRIAGE_RUNBOOK.md)
+- SI-2 risk acceptance this audit compensates for: [`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`](../security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md)
 - Workflow: `.github/workflows/dependency-risk-audit.yml`
 - Disclosure policy (inbound + advisory consumer guidance): [`SECURITY.md`](../../SECURITY.md)
 - Worked-example advisory (dry-run for `tj-actions/changed-files`): [`docs/security/SAMPLE_ADVISORY_TJ_ACTIONS.md`](../security/SAMPLE_ADVISORY_TJ_ACTIONS.md)

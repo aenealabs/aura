@@ -1,7 +1,16 @@
 # Dependabot Triage Automation -- Design
 
 **Date:** 2026-09-19
-**Status:** Approved design, pending implementation plan
+**Status:** Implemented, with documented deltas -- see [As-built deltas](#as-built-deltas)
+**Implementation:** `scripts/security/dep_triage*.py`, `.github/workflows/dependabot-triage.yml`
+**Operating procedure:** `docs/runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md`
+
+> **Read this first.** The sections below are the design as reviewed and
+> approved on 2026-09-19. They are preserved as written, because the reasoning
+> is worth keeping even where the conclusion changed. Several of them no longer
+> describe what was built. Every divergence is recorded in
+> [As-built deltas](#as-built-deltas) at the end of this document; where the two
+> disagree, the deltas section and the code are authoritative.
 
 ## Purpose
 
@@ -56,13 +65,33 @@ structural rather than accidental:
 1. **`strict_required_status_checks_policy: false`** in the `main-protection`
    ruleset. PRs may merge without being up to date with `main`, so sibling
    updates are never tested together before landing.
-2. **`code-quality.yml` is `pull_request`-only.** The workflow carries an
-   explicit comment forbidding a `paths:` filter, because a required check that
-   never runs reports as *missing* and deadlocks the PR. A consequence is that
-   the test suite never runs on `main` after a merge.
+2. **`code-quality.yml` does not run the test suite on `main`.** *(Corrected
+   2026-09-22 -- see "As-built deltas". The original text read "`code-quality.yml`
+   is `pull_request`-only", which is factually wrong, and drew a conclusion
+   broader than the evidence supports.)*
 
-Together these mean no automated check ever validates the merged result. The
-batch proof in Section 4 is the compensating control.
+   The `pull_request` trigger deliberately carries no `paths:` filter, because a
+   required check that never runs reports as *missing* and deadlocks the PR. The
+   workflow **also** has a `push` trigger on `main`. What that push trigger does
+   not do is run tests: `check-trigger` sets `run_full_tests=true` only for
+   `pull_request` and `workflow_dispatch`, so a push to `main` runs the lint,
+   type and security steps and skips the suite. The push trigger additionally
+   filters on `src/`, `tests/`, `deploy/`, `frontend/` and `scripts/`, which
+   excludes `requirements*.txt` -- the file a Python dependency merge actually
+   changes -- so a dependency-only merge triggers nothing at all on `main`.
+
+Restated conclusion, narrower and accurate: **the merged combination of two
+sibling dependency PRs is validated by no automated check.** Post-merge lint,
+Bandit and CodeQL do run for source changes, so "no automated check ever
+validates the merged result" was overstated.
+
+The case for the batch proof does not rest on this finding. It rests on Finding 1
+-- `strict_required_status_checks_policy: false` means siblings are never tested
+against each other before they land -- and on the observed #439 + #446 failure,
+where each PR was green against a `main` lacking the other. Finding 2 only
+removes the safety net that would have caught the result afterwards. The batch
+proof is **Section 2** of this document; the original text pointed at Section 4,
+which is Delivery.
 
 ## Architecture
 
@@ -253,3 +282,328 @@ by the `moto[all]` -> `cfn-lint` -> `aws-sam-translator` chain pinning
 `>=2.13.5` now on `main`. A clean resolve of all three succeeds. The comment is
 stale and will mislead the next reader; correcting it is out of scope for this
 design but should be tracked.
+
+---
+
+## As-built deltas
+
+Recorded 2026-09-22, after implementation and three specialist reviews. Each row
+below states what this spec said, what was built, and why it changed. Rulings and
+their stated cost-if-wrong come from the execution ledger at
+`.superpowers/sdd/2026-09-19-dependabot-triage/progress.md`.
+
+This section is additive. Nothing above it has been rewritten except Structural
+Finding 2, which was factually wrong and is corrected in place with a marker.
+
+### 1. Module paths
+
+**Spec:** `scripts/dependabot/collect.py`, `scripts/dependabot/triage.py`;
+tests at `tests/dependabot/test_triage.py`.
+
+**Built:** `scripts/security/dep_triage_collect.py`,
+`scripts/security/dep_triage.py`, `scripts/security/dep_triage_consolidate.py`;
+tests at `tests/scripts/test_dep_triage*.py`.
+
+**Why:** pattern compliance. The sibling `scripts/security/dep_risk_audit.py`
+already occupies exactly this role, and the repo's rule is to match an
+established pattern rather than introduce a second one.
+
+**Consequence, recorded deliberately:** the coverage gate in `pyproject.toml` is
+`--cov=src` with a 70% floor, so these modules are measured only when coverage is
+requested explicitly and nothing enforces it going forward. Measured at the time
+of writing: `dep_triage.py` 98.37%, `dep_triage_collect.py` 96.00%. The
+pre-existing `dep_risk_audit.py` sits in the same position, so this matches the
+convention rather than introducing a gap. A narrowly scoped run of these three
+test files with default `addopts` reports a coverage failure at ~0.12% because
+`--cov=src` measures a tree they do not exercise; use `--no-cov`.
+
+### 2. Delivery: rolling issue, not a committed weekly file
+
+**Spec (Section 4):** write `docs/security/dep-triage/YYYY-WNN.md`, mirroring
+`docs/security/audits/`, and open a PR with `gh pr create`.
+
+**Built:** one long-lived GitHub issue titled `Dependabot triage`, labelled
+`dependencies` + `automated`, rewritten in place every run. Located by listing
+open issues with the `automated` label and matching the title client-side -- not
+by `--search`, whose index is eventually consistent and would fork the rolling
+issue into duplicates on a stale hit.
+
+**Why:** a report PR needs review and merge every week (~52 per year) under the
+one-approval rule, for a document that only offers advice. An issue needs no
+approval to update.
+
+**Cost if wrong, as ruled:** loses the git-committed weekly artifact and parity
+with `dependency-risk-audit.yml`; the issue's comment history becomes the record.
+Partially mitigated by the `triage` workflow artifact (`snapshot.json`,
+`decisions.json`, `triage-report.md`) retained for 90 days -- an explicit value,
+not the admin-changeable default, because it is the only durable record of the
+state a `merge-safe` verdict was based on.
+
+**Operator consequence:** the report has no history, so its timestamp is the only
+freshness signal. The runbook's *Rules of Engagement* section covers this.
+
+### 3. Consolidation is an operator command, not a workflow job
+
+**Spec (Section 3, Section 5):** a `consolidation` job holding `contents: write`
+and `pull-requests: write`, isolated from the proof job.
+
+**Built:** `scripts/security/dep_triage_consolidate.py` is run locally by an
+operator. The workflow has no consolidation job and no job holds `contents:
+write`. Top-level `permissions: {}`.
+
+**Why:** three reasons, two of them found only by live probe.
+
+1. A pull request opened with `GITHUB_TOKEN` does not trigger workflow runs. A
+   consolidated PR created by Actions could therefore never satisfy the four
+   required contexts in `main-protection` and would sit blocked forever. A branch
+   pushed by a human does trigger them. This is the decisive reason: the coupled
+   family is the highest-risk class *and* is excluded from the batch proof by
+   construction, so it would have received neither the proof nor any PR CI.
+2. It would have been the only write-scoped job, running weekly for something
+   that occurs roughly monthly.
+3. Gating it on `workflow_dispatch` did not work either: the dispatch had no
+   inputs, so any manual dispatch fired consolidation -- conflating "refresh my
+   report" with "write to the repository".
+
+Two specialist reviewers reached this recommendation independently.
+
+**Known residual, parked rather than fixed:** the push uses `--force-with-lease`
+with no explicit expected value, which checks against the local
+`refs/remotes/origin/<branch>`. Operator commits pushed *before* the run's
+checkout are already in that ref, so the lease passes and the force push discards
+them. Only commits landing between checkout and push are protected. Closing this
+properly needs a SHA-pinned lease or an authorship check -- a design change.
+The runbook warns operators not to push onto a `dep-consolidate/*` branch.
+
+### 4. No bisect on a failed batch proof
+
+**Spec (Section 2, step 5):** red proof bisects by halves to isolate the
+offender, demotes it, re-proves the remainder, capped at 3 rounds.
+
+**Built:** absent. A red proof leaves every member at `candidate`; nothing is
+promoted to `merge-safe`, so a failed proof is fail-safe but silent about which
+PR caused it. The only automatic demotion is for merge conflicts, which become
+`attention:conflict` and drop out while the proof continues with the remainder.
+
+**Why:** CI cost and orchestration complexity against a procedure that is cheap
+and infrequent to run by hand, and whose first step -- reading which proof step
+failed -- usually identifies the offender with no narrowing at all.
+
+**Cost if wrong:** an operator narrows manually on a failed batch. The manual
+procedure is documented in the runbook's *When the batch proof fails* section,
+along with the local reproduction commands.
+
+### 5. R3 does not cover workflow `uses:` SHA changes
+
+**Spec (R3):** hold on Dockerfiles, **workflow `uses:` SHA changes**, and the
+`pyproject.toml` coverage threshold.
+
+**Built:** `POLICY_PATHS` covers `Dockerfile` and `pyproject.toml` only. Matching
+is on the path's basename -- exact match, or the basename prefixed with
+`<marker>.` -- after a review found that substring matching held unrelated files
+such as `frontend/.../DockerfileViewer.jsx`.
+
+**Why:** not deliberate. It is an unimplemented clause of the spec, and it is
+worth stating as an open gap rather than a decision.
+
+**Current mitigation:** Dependabot's `github-actions` PRs do change `uses:` SHAs
+and are held by the 7-day Actions cooldown, and when a bump splits across
+multiple refs they are held by R5 coupling. Neither is a policy hold on the path
+itself, so a single-ref action bump older than 7 days can reach `candidate`
+without a policy review.
+
+### 6. The security-advisory fast path: added, built, removed
+
+**Spec:** silent. The fast path was added mid-execution by ruling -- R9 would
+have delayed CVE fixes by 3 days, and slow-walking security fixes is the wrong
+default for a security platform. It was then built and removed.
+
+**Why removed:** it had zero true positives and its false positives landed
+exactly where the bypass was worth most.
+
+- Detection read the PR body for a GHSA/CVE id. Real Dependabot security bodies
+  are a one-line preamble followed by collapsible `<details>` blocks, and the id
+  is cited **inside** the block. Detection truncates at the first `<details>`-ish
+  tag -- a deliberate choice, because paired stripping cannot be made
+  nesting-aware with a regex and every failure mode of the clever version widened
+  scope. So the real cases were never matched.
+- False positives fired on ordinary bumps whose embedded upstream release notes
+  cite any historical CVE. Those cluster on `docker` and `github-actions` bumps,
+  where the bypass stripped a *permanent* policy hold rather than a 3-day wait.
+
+**Consequence:** there is no automated exemption from the cooldown today. That is
+a deliberate SI-2 risk acceptance with a stated ceiling, a compensating control
+and a manual override -- see
+`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`.
+
+**If the capability is wanted later**, the sound signal is
+`gh api repos/{owner}/{repo}/dependabot/alerts` correlated to the PR by package
+name and `fixed_in` version. That is authoritative rather than inferred.
+
+### 7. The flake detector: specified, built, removed
+
+**Spec (R6):** infrastructure-flake signatures (download failure, exit code 35,
+rate limiting) produce `attention:suspected-flake`, rerun once, then escalate.
+Covers #442.
+
+**Built, then removed.** `CODE_SUSPECTED_FLAKE` no longer exists; every failed
+check reads as genuine.
+
+**Why:** signatures were matched against `CheckRun.failing_log_excerpt`, which
+the collector filled from `gh pr checks --json description`. That field is empty
+for every GitHub Actions check run, so no signature could ever match. The code
+path was unreachable in production while advertising coverage the tool did not
+have.
+
+**Why it was not simply repointed at the log:** matching "rate limit" or
+"429 Too Many Requests" against arbitrary program output lets a compromised
+package print that string from its own test process and have the classifier
+relabel its genuine test failure as "rerun once before escalating". That is
+evidence tampering through a signal the adversary controls. A sound
+reimplementation reads the check run's own failure annotation
+(`gh api repos/{owner}/{repo}/check-runs/{id}/annotations`), which the runner
+writes about the step rather than the step writing about itself.
+
+### 8. The batch proof does not run the frontend test suite
+
+**Spec (Section 2, step 4):** `pip install --dry-run --report` across all
+requirements files, `npm ci` in each npm directory, then `pytest`, then the
+frontend test suite.
+
+**Built:** the resolver and `npm ci` legs are present; the test leg is
+`pytest -q --no-cov -p no:cacheprovider --maxfail=1` only. No frontend test run.
+
+**Why `--no-cov`:** bare `pytest` inherits `pyproject.toml`'s `--cov=src
+--cov-fail-under=70`, which would make the proof's verdict depend on `src/`
+coverage on the integration branch. A dependency bump that shifts which tests run
+would then fail the proof for a reason unrelated to any dependency. This proof
+answers one question: does the batch resolve and pass tests together. It is a
+compatibility check, not a supply-chain integrity check -- a malicious package
+makes its own tests pass too.
+
+**Why the frontend suite is absent:** not deliberate. Recorded as a gap.
+
+**Related weakening, recorded deliberately:** `npm ci` must use
+`--legacy-peer-deps` in `frontend/`, which is mandatory rather than a shortcut --
+the `eslint-plugin-react` peer cap on `eslint@^9.7` makes a plain `npm ci` fail
+outright (see `frontend/CLAUDE.md` and `code-quality.yml`). The flag globally
+silences peer conflicts, so the npm leg is weaker assurance than Section 2
+implies and would **not** on its own have caught #443. R5 coupled-family
+detection is the primary, deterministic control for that class, and it catches
+#443 before the proof ever runs.
+
+### 9. R1 accepts two author formats
+
+**Spec (R1):** "Author is not `dependabot[bot]`".
+
+**Built:** `DEPENDABOT_AUTHORS` accepts both `app/dependabot` and
+`dependabot[bot]`.
+
+**Why:** `gh` normalizes bot logins to `app/<slug>`; the GitHub API and webhooks
+use `<slug>[bot]`. An equality test against a single form excluded **every**
+Dependabot PR -- R1 is the first rule, so no other rule ever ran, no candidates
+existed, the batch proof was skipped and the workflow went green while the
+feature did nothing. Verified live against PR #454, whose `author.login` is
+`app/dependabot`.
+
+**Root cause, worth keeping:** the regression fixture was hand-authored. It
+carried the observed format for the one PR that had been inspected and the
+assumed format for the rest, and the test suite validated the assumption against
+itself. Fixtures are now built from a live `gh` capture (`dep_triage_collect
+--record`), which is what Section 6 of this spec always intended and did not get
+until after this defect was found. Three other identity/free-text detectors
+failed the same way and are covered in deltas 6, 7 and 10.
+
+### 10. R2 is reachable; the collector survives a zero-check PR
+
+**Spec (R2):** zero check runs -> `excluded:no-checks`, a second independent
+guard on #386.
+
+**Built and repaired.** `gh pr checks <n>` exits non-zero with "no checks
+reported" *before* the `--json` exporter runs, so the collector originally
+crashed on exactly the PR the rule exists to classify -- deterministically, every
+Monday, with no report. The collector now treats that one message as a legitimate
+empty result and still aborts on any other `gh` failure, because a partial
+snapshot is a silently incomplete security report.
+
+### 11. New rule: `attention:required-not-passing`
+
+**Spec:** not present.
+
+**Built:** R7b. A required check that is present but has not conclusively passed
+-- still running, cancelled, timed out, errored -- is reported rather than
+treated as a pass. Only `success`, `skipped` and `neutral` count as passing,
+matching what branch protection itself accepts.
+
+**Why:** the collector maps `gh`'s `bucket` field, and six non-passing states
+(`TIMED_OUT`, `CANCELLED`, `ACTION_REQUIRED`, `STARTUP_FAILURE`, `STALE`,
+`ERROR`) were indistinguishable from green. "All required checks still running"
+is the most ordinary input at 16:00 on a Monday, minutes after Dependabot opens
+its PRs, and it classified as `candidate` -- identical to genuinely green.
+
+### 12. Cooldown is two constants, and holds on unknown age
+
+**Spec (Cooldown defaults):** "Single adjustable constant."
+
+**Built:** `PACKAGE_COOLDOWN_DAYS = 3` and `ACTION_COOLDOWN_DAYS = 7`. The rule
+also holds when the release age is unknown, which is an abstention rather than a
+finding: without it, an ecosystem with no stdlib-reachable release timestamp
+would pass unexamined.
+
+**Known imprecision:** under a weekly schedule the two windows behave
+identically -- a release is either already older than 3 days at first triage or
+is held to the next Monday. Documented in
+`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`.
+
+### 13. Permissions differ from Section 5
+
+**Spec (Section 5):** four jobs; `consolidation` and `report` hold `contents:
+write` + `pull-requests: write`.
+
+**Built:** three jobs, top-level `permissions: {}`.
+
+| Job | Permissions |
+|-----|-------------|
+| `classify` | `contents: read`, `pull-requests: read`, `checks: read`, `statuses: read` |
+| `batch-proof` | `contents: read` only, plus `persist-credentials: false` on checkout |
+| `report` | `contents: read`, `issues: write` |
+
+`checks: read` + `statuses: read` were added because `gh pr checks` reads the
+status-check rollup those scopes gate. Without them every PR classifies as
+`excluded:no-checks` and the report is vacuous while the job goes green -- a
+plausible empty answer is worse than a crash. `persist-credentials: false` is on
+the proof job because it installs and runs the batch's own dependency code and
+merges untrusted PR branches; no credential should be sitting in `.git/config`
+for that code to find.
+
+### 14. Section 7 adjacent gap: delivered
+
+`.github/dependabot.yml`'s pip ecosystem now uses `directories:` and includes
+`/deploy/docker/memory-service`, which was previously watched by nothing. No
+delta; recorded so it is not re-opened.
+
+### 15. Open Question: still open
+
+`requirements.txt:40`'s justification for the `pydantic` cap still cites the
+`moto[all]` -> `cfn-lint` -> `aws-sam-translator` chain. As of 2026-09-22 the
+comment is unchanged and, per the analysis in the Open Question above, stale.
+Out of scope for this work; still worth tracking.
+
+### Not deltas, but worth knowing
+
+- **R5's npm grouping requires an unscoped namesake.** Grouping by bare npm scope
+  would mark `@types/react` + `@types/node` as coupled, which is an everyday
+  batch shape -- the report would be confidently wrong about routine weeks. The
+  real signal is a scoped package pinned to its unscoped namesake, as
+  `@vitest/coverage-v8` is to `vitest`. Accepted limitation: a scoped cluster
+  with no unscoped root in the batch is not detected, which costs nothing because
+  either member alone is a singleton no grouping rule would have caught.
+- **`verify_union` compares a flat set of added lines with file identity
+  discarded, and does not consider deletions.** Its docstring's "no more, no
+  less" is therefore stronger than what it checks: the same added text in a
+  different file, or member additions accompanied by unrelated deletions, both
+  pass. It does reliably catch a smuggled added line, including relocated and
+  `++`-prefixed shapes that defeated three earlier implementations. Treat it as a
+  guard against added content, not a full diff equivalence check.
+- **`attention:failing` has no flake exemption** (delta 7), so the operator makes
+  that call. The runbook says so at the point of use.

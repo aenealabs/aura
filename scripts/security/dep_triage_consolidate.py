@@ -1,9 +1,24 @@
 """Verification helpers for coupled-set consolidation.
 
-When several Dependabot PRs must land together, the consolidation branch has to
-contain exactly the union of their changes -- no more, no less. An extra added
-line in a consolidation branch is an unreviewed change riding along with an
-approved one, so the union check is a security control, not a convenience.
+When several Dependabot PRs must land together, the consolidation branch is
+built by merging each of them into a fresh branch off `origin/main`. The union
+check establishes that the resulting tree carries its members' changes and
+nothing else: a change no member introduced would be an unreviewed edit riding
+along inside an approved one, so this is a security control, not a convenience.
+
+Verification compares tree metadata -- per path, the status, file mode and blob
+hash `git diff --raw` reports -- and not the text of a diff. That covers
+deletions, creations, renames, mode changes and type changes, none of which
+appear among a diff's added lines at all, and it keeps the file a change landed
+in part of the comparison rather than discarding it.
+
+One case is deliberately not decided automatically. Where two or more members
+touch the same path, the branch's content there is git's three-way merge of
+their versions and equals no single member's blob, so no comparison of hashes
+can settle it. That path is reported as a `ContestedPath` and the consolidation
+is refused for human review. This is the ordinary shape for a family whose
+members all edit one workflow file, so those families are surfaced to an
+operator rather than opened automatically.
 """
 
 from __future__ import annotations
@@ -218,26 +233,83 @@ def added_lines(diff: str) -> set[str]:
     return out
 
 
-def verify_union(
-    member_diffs: list[str], combined_diff: str
-) -> tuple[bool, set[str], set[str]]:
-    """Check a consolidation diff equals the union of its members' additions.
+def verify_union(member_raws: list[str], combined_raw: str) -> tuple[bool, set, set]:
+    """Check a consolidation branch's tree against its members' trees.
 
-    Returns (ok, missing, extra). ``missing`` are member additions absent from
-    the consolidation; ``extra`` are additions present in the consolidation that
-    no member PR introduced.
+    Takes `git diff --raw -z` output -- not diff text -- for each member PR
+    and for the consolidation branch, both against `origin/main`. Returns
+    (ok, missing, extra). ``missing`` holds member entries the branch does
+    not carry; ``extra`` holds branch entries no member accounts for. Both
+    sets contain `TreeEntry` (and, for contested paths, `ContestedPath`)
+    objects whose `repr` names the file, because they are rendered into the
+    message an operator reads when a consolidation is refused.
 
-    Comparison is by set, so byte-identical duplicate additions collapse. That
-    weakens only the ``missing`` side -- re-adding already-approved text
-    introduces no new unreviewed content -- so the security-relevant ``extra``
-    side is unaffected.
+    What this verifies, precisely: for every path, that the branch's
+    post-change *status, file mode and blob hash* equal those of the one
+    member PR that touched it, and that every path a member touched appears.
+    Deletions, creations, renames, mode changes and type changes are covered
+    by construction, because each is a difference in the metadata git itself
+    computed. It cannot be armed by crafted file content: the content only
+    ever reaches this function as a hash git derived from it.
+
+    What it does not verify: a path touched by more than one member. The
+    merged blob is neither member's, so no comparison of hashes can decide
+    it. Such a path is reported as a `ContestedPath` for human review rather
+    than reconciled -- see that class, and the module docstring's note on
+    what this means for families whose members share a file.
+
+    **Why this is not a text comparison.** The previous implementation
+    diffed the set of added `+` lines parsed out of unified diff text. It
+    took four rounds of fixes to close three ways of making a payload vanish
+    instead of being reported: matching the `+++ b/path` header by content
+    prefix (so a line of content beginning `+++` was skipped as a header);
+    matching it by the previous line's content (so a *removed* line whose
+    text began with dashes armed the skip and swallowed the addition after
+    it); and a hunk-state reset that file content could clear. Each fix
+    closed one arming trick and left the parser reachable by the next. A
+    later review found six more bypasses that were structural rather than
+    parser bugs -- deletions, mode changes and renames are not `+` lines at
+    all, and discarding the path let an approved line satisfy the check from
+    the wrong file. Comparing metadata git computed removes the parser, and
+    with it the whole category: there is no state machine for content to
+    steer.
     """
-    expected: set[str] = set()
-    for diff in member_diffs:
-        expected |= added_lines(diff)
-    actual = added_lines(combined_diff)
-    missing = expected - actual
-    extra = actual - expected
+    combined = entries_by_path(combined_raw)
+    members = [entries_by_path(raw) for raw in member_raws]
+
+    owners: dict[str, list[int]] = {}
+    for index, member in enumerate(members):
+        for path in member:
+            owners.setdefault(path, []).append(index)
+
+    contested = {path for path, who in owners.items() if len(who) > 1}
+
+    missing: set = set()
+    extra: set = set()
+
+    # One clear signal per contested path, rather than the pile of unmatched
+    # member entries and one unexplained branch entry that would otherwise
+    # fall out -- those read as an attack, and this is not one.
+    for path in contested:
+        extra.add(ContestedPath(path, len(owners[path])))
+
+    for path, entry in combined.items():
+        if path in contested:
+            continue
+        who = owners.get(path)
+        if who is None:
+            # No member PR touched this path at all.
+            extra.add(entry)
+        elif members[who[0]][path] != entry:
+            # The right path, but not the change the member made to it.
+            extra.add(entry)
+            missing.add(members[who[0]][path])
+
+    for path, who in owners.items():
+        if path in contested or path in combined:
+            continue
+        missing.add(members[who[0]][path])
+
     return (not missing and not extra, missing, extra)
 
 
@@ -283,14 +355,40 @@ def consolidation_body(family: str, version: str, members: list[int]) -> str:
         "These cannot be merged individually. The refs must move together, so "
         "merging any one alone leaves the repository inconsistent -- and a "
         "member can pass every check while still being unsafe by itself.\n\n"
-        "The set of added lines in this branch was verified equal to the union "
-        "of the member pull requests' added lines before this PR was opened.\n\n"
+        "Before this PR was opened, every path this branch changes was "
+        "verified against the member pull requests: for each one, the file "
+        "mode and content hash match the member that changed it, and no path "
+        "is touched that no member touched.\n\n"
         "Member PRs are left open deliberately: Dependabot retires them once "
         "the version lands, and keeping them open means rejecting this "
         "consolidation does not discard the originals.\n\n"
         "Operator review and merge required. Nothing here was merged or "
         "approved automatically."
     )
+
+
+def _raw_diff_argv(revs: str) -> list[str]:
+    """Build the `git diff` argv whose output the union check consumes.
+
+    `--raw -z` yields the tree metadata compared; `--no-abbrev` yields full
+    40-character blob hashes, since git shortens them by a length that
+    depends on repository size and could differ between two invocations.
+
+    `--no-renames` is deliberate. Rename detection is a similarity heuristic
+    whose result depends on the other files in the diff and which git
+    abandons entirely once a diff exceeds `diff.renameLimit`. The same
+    change could therefore be reported as `R` in a small member diff and as
+    `D`+`A` in the larger combined one, failing the check for a reason that
+    has nothing to do with the change. Disabled, every rename is a
+    deterministic deletion plus creation on both sides -- and a file moved
+    out of a protected directory is still two entries no member explains.
+    """
+    return ["git", "diff", "--raw", "-z", "--no-abbrev", "--no-renames", revs]
+
+
+def _render(entries: set) -> str:
+    """Format a missing/extra set for the operator-facing failure message."""
+    return ", ".join(sorted(repr(entry) for entry in entries))
 
 
 class CommandFailed(RuntimeError):
@@ -318,9 +416,12 @@ def consolidate_family(
     Returns (ok, message). Never merges and never approves anything: the
     consolidated PR goes through the same operator review as any other change.
 
-    The union check is a security control. If the branch contains an added line
-    that no member PR introduced, an unreviewed change would be riding along
-    inside an approved one, so the function refuses to open the PR.
+    The union check is a security control. If the branch's tree differs from
+    the union of its members' trees -- an unexplained path, a changed mode, a
+    deletion, or a blob no member produced -- an unreviewed change would be
+    riding along inside an approved one, so the function refuses to open the
+    PR. It also refuses when two members touched the same path, which tree
+    metadata cannot decide either way.
 
     `git`/`gh` calls go through the injected `run` callable rather than calling
     `subprocess` directly, so this orchestration is unit-testable with a fake
@@ -337,11 +438,11 @@ def consolidate_family(
     try:
         run(["git", "switch", "-c", branch, "origin/main"])
 
-        member_diffs: list[str] = []
+        member_raws: list[str] = []
         for pr in members:
             run(["git", "fetch", "origin", f"pull/{pr}/head:pr-{pr}"])
-            member_diffs.append(
-                run(["git", "diff", f"origin/main...pr-{pr}"], capture=True)
+            member_raws.append(
+                run(_raw_diff_argv(f"origin/main...pr-{pr}"), capture=True)
             )
             try:
                 run(["git", "merge", "--no-edit", f"pr-{pr}"])
@@ -352,20 +453,24 @@ def consolidate_family(
                 run(["git", "merge", "--abort"])
                 return (False, f"family {family}: PR #{pr} conflicts; skipped")
 
-        if not any(added_lines(d) for d in member_diffs):
+        if not any(parse_raw(raw) for raw in member_raws):
             return (
                 False,
-                f"family {family}: no member contributed an added line; "
+                f"family {family}: no member contributed a change; "
                 "refusing to open an empty consolidation",
             )
 
-        combined = run(["git", "diff", "origin/main...HEAD"], capture=True)
-        ok, missing, extra = verify_union(member_diffs, combined)
+        combined = run(_raw_diff_argv("origin/main...HEAD"), capture=True)
+        ok, missing, extra = verify_union(member_raws, combined)
         if not ok:
+            # Sorted by `repr` rather than by the entries themselves: the two
+            # sets hold different types, so there is no ordering between a
+            # TreeEntry and a ContestedPath. The repr is what an operator
+            # reads anyway.
             return (
                 False,
                 f"family {family}: union mismatch; "
-                f"missing={sorted(missing)} extra={sorted(extra)}",
+                f"missing=[{_render(missing)}] extra=[{_render(extra)}]",
             )
 
         run(["git", "push", "-u", "origin", branch, "--force-with-lease"])
@@ -403,6 +508,10 @@ def consolidate_family(
         return (True, f"family {family}: opened {branch}")
     except CommandFailed as exc:
         return (False, f"family {family}: aborted after a command failure: {exc}")
+    except RawParseError as exc:
+        # Unparsable tree metadata means the union check cannot run, and a
+        # check that cannot run must not be treated as a check that passed.
+        return (False, f"family {family}: unreadable raw diff: {exc}")
     finally:
         # Return to main on every path, including the failure paths above. A
         # failure that left the repository on a consolidation branch would

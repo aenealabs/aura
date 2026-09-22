@@ -374,10 +374,21 @@ def main(argv: list[str] | None = None) -> int:
         args.record.parent.mkdir(parents=True, exist_ok=True)
         args.record.write_text(
             json.dumps(
-                {"repo": args.repo, "pr_list": listing, "pr_checks": raw_checks},
+                {
+                    # Envelope metadata, kept distinct from the two verbatim
+                    # gh payloads below so a reader can tell which fields this
+                    # tool authored and which came off the wire unaltered.
+                    "repo": args.repo,
+                    "captured_at": datetime.now(timezone.utc).isoformat(),
+                    "pr_list": listing,
+                    "pr_checks": raw_checks,
+                },
                 indent=2,
                 sort_keys=True,
-            ),
+            )
+            # Trailing newline so a regenerated capture is already clean under
+            # the repo's end-of-file-fixer hook rather than dirtying the tree.
+            + "\n",
             encoding="utf-8",
         )
 
@@ -402,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         risk_tiers=_risk_tiers(REGISTER_PATH),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+    args.output.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
     return 0
 
 

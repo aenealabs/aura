@@ -6,26 +6,75 @@ from pathlib import Path
 import pytest
 
 from scripts.security import dep_triage as dt
+from scripts.security import dep_triage_collect as dc
 
+# Derived from tests/fixtures/dep_triage/raw_2026_09_19.json, a verbatim capture
+# of `gh pr list` and `gh pr checks` against aenealabs/aura. Never hand-edit it:
+# test_snapshot_fixture_is_derived_from_the_raw_capture regenerates it through
+# build_snapshot and fails if the two drift. A transcribed fixture is what let an
+# author-login mismatch and an unreachable zero-checks path pass a green suite.
 FIXTURE = Path("tests/fixtures/dep_triage/batch_2026_09_19.json")
+
+# The captured batch. Numbers are pinned so a silently shrunken fixture -- the
+# failure mode where a regression "passes" because the PR that proved it is gone
+# -- fails loudly rather than quietly.
+CAPTURED_NUMBERS = {
+    386,
+    455,
+    456,
+    457,
+    458,
+    459,
+    460,
+    461,
+    462,
+    463,
+    464,
+    465,
+    466,
+    467,
+    468,
+    469,
+    470,
+    471,
+    472,
+    473,
+    474,
+    475,
+}
+CODEQL_FAMILY = (457, 459, 465, 474)
+VITEST_FAMILY = (463, 464)
 
 
 def test_load_snapshot_reads_all_prs():
     prs = dt.load_snapshot(FIXTURE)
-    assert len(prs) == 7
-    assert {p.number for p in prs} == {386, 439, 442, 443, 446, 450, 452}
+    assert len(prs) == len(CAPTURED_NUMBERS)
+    assert {p.number for p in prs} == CAPTURED_NUMBERS
 
 
 def test_load_snapshot_parses_checks_and_metadata():
     prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
-    pr = prs[443]
-    assert pr.author == "dependabot[bot]"
+    pr = prs[463]
+    assert pr.author == "app/dependabot"
+    assert pr.author_is_bot is True
     assert pr.ecosystem == "npm"
     assert pr.directory == "/frontend"
     assert pr.package == "@vitest/coverage-v8"
     assert pr.from_version == "4.1.11"
-    assert pr.to_version == "5.0.0"
-    assert all(c.conclusion == "success" for c in pr.checks)
+    assert pr.to_version == "5.0.1"
+    assert all(c.conclusion in ("success", "skipped") for c in pr.checks)
+
+
+def test_captured_authors_are_the_login_forms_gh_actually_emits():
+    """The whole classifier hinged on this string and it was wrong.
+
+    `gh` normalizes bot logins to `app/<slug>`; nothing in real output is ever
+    spelled `dependabot[bot]`. Pinning the captured set means a fixture edited
+    back to the API spelling fails here instead of silently excluding the queue.
+    """
+    authors = {p.author for p in dt.load_snapshot(FIXTURE)}
+    assert "app/dependabot" in authors
+    assert "dependabot[bot]" not in authors
 
 
 def test_snapshot_is_immutable():
@@ -39,7 +88,7 @@ def _pr(**kw):
     base = dict(
         number=1,
         title="t",
-        author=dt.DEPENDABOT_AUTHOR,
+        author="app/dependabot",
         files=(),
         checks=(dt.CheckRun("Python Quality & Tests", "completed", "success"),),
         required_checks=("Python Quality & Tests",),
@@ -50,7 +99,7 @@ def _pr(**kw):
         to_version="1.0.1",
         release_age_days=30.0,
         risk_tier="healthy",
-        security_advisory=False,
+        author_is_bot=True,
     )
     base.update(kw)
     return dt.PRSnapshot(**base)
@@ -64,8 +113,32 @@ def test_release_please_pr_excluded_by_author():
     assert "dependabot" in d.reason.lower()
 
 
-def test_dependabot_pr_not_excluded_by_author():
-    assert dt.rule_non_dependabot(_pr()) is None
+@pytest.mark.parametrize("login", sorted(dt.DEPENDABOT_AUTHORS))
+def test_every_accepted_dependabot_login_form_passes_the_author_rule(login):
+    """`gh` reports `app/dependabot`; the REST API and webhooks report
+    `dependabot[bot]`. The collector reads whichever form its source returns, so
+    an equality test against one form excludes the entire queue whenever the
+    other is in play -- which is precisely what happened."""
+    assert dt.rule_non_dependabot(_pr(author=login)) is None
+
+
+def test_a_different_bot_is_still_excluded_despite_author_is_bot():
+    """`is_bot` is recorded for the reason text, never used as the decision.
+
+    A human cannot be Dependabot, but another bot can be `is_bot: true`, so
+    trusting the flag would admit every app-authored PR in the repository."""
+    decision = dt.rule_non_dependabot(_pr(author="app/github-actions"))
+    assert decision is not None
+    assert decision.code == dt.CODE_NON_DEPENDABOT
+    assert "a bot" in decision.reason
+
+
+def test_author_exclusion_reason_names_the_accepted_logins():
+    """The reason is the operator's only clue when this rule misfires again."""
+    decision = dt.rule_non_dependabot(_pr(author="lavrut", author_is_bot=False))
+    assert decision is not None
+    assert "app/dependabot" in decision.reason
+    assert "not a bot" in decision.reason
 
 
 def test_zero_checks_excluded():
@@ -145,20 +218,20 @@ def test_policy_path_matches_nested_pyproject():
 
 def test_family_key_groups_codeql_action_subactions():
     a = _pr(
-        number=450,
+        number=474,
         ecosystem="github-actions",
         package="github/codeql-action/upload-sarif",
     )
     b = _pr(
-        number=452, ecosystem="github-actions", package="github/codeql-action/analyze"
+        number=465, ecosystem="github-actions", package="github/codeql-action/analyze"
     )
     assert dt.family_key(a) == dt.family_key(b) == "github/codeql-action"
 
 
 def test_family_key_groups_vitest_peer_cluster_per_directory():
-    a = _pr(number=442, ecosystem="npm", directory="/frontend", package="vitest")
+    a = _pr(number=464, ecosystem="npm", directory="/frontend", package="vitest")
     b = _pr(
-        number=443,
+        number=463,
         ecosystem="npm",
         directory="/frontend",
         package="@vitest/coverage-v8",
@@ -174,40 +247,59 @@ def test_family_key_separates_same_package_in_different_directories():
 
 def test_detect_families_ignores_singletons():
     prs = [
-        _pr(number=439, ecosystem="pip", package="pydantic"),
+        _pr(number=466, ecosystem="pip", package="hypothesis"),
         _pr(
-            number=450,
+            number=474,
             ecosystem="github-actions",
             package="github/codeql-action/upload-sarif",
         ),
         _pr(
-            number=452,
+            number=465,
             ecosystem="github-actions",
             package="github/codeql-action/analyze",
         ),
     ]
     families = dt.detect_families(prs)
-    assert 439 not in families
-    assert families[450] == families[452] == "github/codeql-action"
+    assert 466 not in families
+    assert families[474] == families[465] == "github/codeql-action"
 
 
 def test_green_pr_in_coupled_family_is_still_coupled():
-    """#450 was fully green and still unsafe to merge alone."""
+    """#474 is fully green in the capture and still unsafe to merge alone."""
     prs = dt.load_snapshot(FIXTURE)
     families = dt.detect_families(prs)
-    pr450 = next(p for p in prs if p.number == 450)
-    assert all(c.conclusion == "success" for c in pr450.checks)
-    d = dt.rule_coupled(pr450, families)
+    pr474 = next(p for p in prs if p.number == 474)
+    assert all(
+        c.conclusion in ("success", "skipped") for c in pr474.checks
+    ), "the point of this test is a green sibling; the capture no longer has one"
+    d = dt.rule_coupled(pr474, families)
     assert d is not None
     assert d.code == dt.CODE_COUPLED
     assert d.family == "github/codeql-action"
 
 
+def test_all_four_codeql_refs_form_one_family():
+    """The capture holds a real 4-member coupled family.
+
+    codeql-action's sub-actions must move in lockstep or CodeQL refuses to run,
+    and #465's own failing checks say so. A grouping rule that caught only two
+    of the four would leave two individually mergeable."""
+    families = dt.detect_families(dt.load_snapshot(FIXTURE))
+    keys = {families.get(n) for n in CODEQL_FAMILY}
+    assert keys == {"github/codeql-action"}
+
+
+def test_vitest_pair_is_a_peer_family_in_the_capture():
+    families = dt.detect_families(dt.load_snapshot(FIXTURE))
+    keys = {families.get(n) for n in VITEST_FAMILY}
+    assert keys == {"npm:/frontend:vitest"}
+
+
 def test_uncoupled_pr_returns_none():
     prs = dt.load_snapshot(FIXTURE)
     families = dt.detect_families(prs)
-    pr439 = next(p for p in prs if p.number == 439)
-    assert dt.rule_coupled(pr439, families) is None
+    pr466 = next(p for p in prs if p.number == 466)
+    assert dt.rule_coupled(pr466, families) is None
 
 
 def test_shared_npm_scope_alone_is_not_a_family():
@@ -234,16 +326,16 @@ def test_shared_babel_scope_alone_is_not_a_family():
 
 def test_scoped_package_couples_with_its_unscoped_namesake():
     prs = [
-        _pr(number=442, ecosystem="npm", directory="/frontend", package="vitest"),
+        _pr(number=464, ecosystem="npm", directory="/frontend", package="vitest"),
         _pr(
-            number=443,
+            number=463,
             ecosystem="npm",
             directory="/frontend",
             package="@vitest/coverage-v8",
         ),
     ]
     families = dt.detect_families(prs)
-    assert families[442] == families[443] == "npm:/frontend:vitest"
+    assert families[464] == families[463] == "npm:/frontend:vitest"
 
 
 def test_single_segment_action_is_not_grouped():
@@ -254,25 +346,22 @@ def test_single_segment_action_is_not_grouped():
     )
 
 
-def test_trivy_download_failure_is_suspected_flake():
-    """#442 failed because the trivy installer died, not because of a defect."""
-    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
-    d = dt.rule_failing(prs[442])
-    assert d is not None
-    assert d.code == dt.CODE_SUSPECTED_FLAKE
-    assert "Security Scanning" in d.reason
+def test_codeql_version_mismatch_is_a_real_failure_in_the_capture():
+    """#465 bumps one codeql-action ref, so the other refs' Analyze jobs fail.
 
-
-def test_codeql_version_mismatch_is_real_failure():
+    `gh pr checks` carries no log text, so the excerpt is empty and the flake
+    signatures cannot match -- which is the conservative direction: an
+    unexplained failure is a real failure until a signature says otherwise."""
     prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
-    d = dt.rule_failing(prs[452])
+    d = dt.rule_failing(prs[465])
     assert d is not None
     assert d.code == dt.CODE_FAILING
+    assert "Analyze" in d.reason
 
 
 def test_all_green_pr_has_no_failure_decision():
     prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
-    assert dt.rule_failing(prs[439]) is None
+    assert dt.rule_failing(prs[466]) is None
 
 
 def test_timed_out_counts_as_failure():
@@ -346,17 +435,116 @@ def test_all_failures_flaky_is_still_a_flake():
     assert dt.rule_failing(pr).code == dt.CODE_SUSPECTED_FLAKE
 
 
-def test_rule_failing_ignores_non_failed_conclusions():
-    """skipped, neutral, cancelled and None conclusions are not failures."""
+# gh's complete bucket vocabulary. `state` is open-ended and GitHub keeps
+# extending it; `bucket` is gh's own normalization over it, which is why the
+# collector maps from the latter.
+GH_BUCKETS = frozenset({"pass", "fail", "pending", "skipping", "cancel"})
+
+# Deliberately has no default. A bucket added to GH_BUCKETS without a ruling
+# here raises KeyError and fails the suite, which is the point: the defect this
+# replaces was six non-passing states quietly reading as green because the
+# mapping had a fall-through.
+EXPECTED_FOR_REQUIRED_BUCKET = {
+    "pass": dt.CODE_CANDIDATE,
+    "skipping": dt.CODE_CANDIDATE,
+    "fail": dt.CODE_FAILING,
+    "pending": dt.CODE_REQUIRED_NOT_PASSING,
+    "cancel": dt.CODE_REQUIRED_NOT_PASSING,
+}
+
+
+@pytest.mark.parametrize("bucket", sorted(GH_BUCKETS))
+def test_every_gh_bucket_reaches_a_deliberate_classification(bucket):
+    """Every state a required check can be in must be ruled on explicitly.
+
+    Before this, only SUCCESS/FAILURE/SKIPPED were mapped and everything else
+    fell to a null conclusion, so a required check that was CANCELLED,
+    TIMED_OUT, ACTION_REQUIRED, STARTUP_FAILURE, NEUTRAL, STALE, ERROR or still
+    running classified the PR identically to genuinely green. At 16:00 Monday,
+    right after Dependabot opens its PRs, still-running is the ordinary state.
+    """
+    required = "Python Quality & Tests"
+    status, conclusion = dc.check_state(bucket, "")
+    pr = _pr(
+        checks=(dt.CheckRun(required, status, conclusion),),
+        required_checks=(required,),
+    )
+    code = dt.classify([pr])[0].code
+    assert code == EXPECTED_FOR_REQUIRED_BUCKET[bucket]
+
+
+def test_an_unrecognized_bucket_is_never_read_as_green():
+    """GitHub extends the state vocabulary; gh may grow a bucket to match.
+
+    An unknown bucket maps to no conclusion, and a required check with no
+    conclusion is unproven -- so a future state surfaces for a human rather
+    than joining the merge-safe queue."""
+    required = "Python Quality & Tests"
+    status, conclusion = dc.check_state("a-bucket-gh-does-not-have-yet", "")
+    assert conclusion is None
+    pr = _pr(
+        checks=(dt.CheckRun(required, status, conclusion),),
+        required_checks=(required,),
+    )
+    assert dt.classify([pr])[0].code == dt.CODE_REQUIRED_NOT_PASSING
+
+
+def test_required_not_passing_ignores_non_required_checks():
+    """An optional check that never concluded is not a reason to hold."""
     pr = _pr(
         checks=(
-            dt.CheckRun("A", "completed", "skipped"),
-            dt.CheckRun("B", "completed", "neutral"),
-            dt.CheckRun("C", "completed", "cancelled"),
-            dt.CheckRun("D", "completed", None),
-        )
+            dt.CheckRun("Python Quality & Tests", "completed", "success"),
+            dt.CheckRun("Optional Benchmark", "in_progress", None),
+        ),
+        required_checks=("Python Quality & Tests",),
     )
-    assert dt.rule_failing(pr) is None
+    assert dt.rule_required_not_passing(pr) is None
+
+
+def test_required_not_passing_accepts_skipped_and_neutral():
+    """GitHub's own "declined to object" conclusions satisfy branch protection.
+
+    Treating them as unproven would hold every PR whose conditional jobs were
+    correctly skipped, which is the opposite failure and just as useless."""
+    pr = _pr(
+        checks=(
+            dt.CheckRun("Python Quality & Tests", "completed", "skipped"),
+            dt.CheckRun("Analyze (python)", "completed", "neutral"),
+        ),
+        required_checks=("Python Quality & Tests", "Analyze (python)"),
+    )
+    assert dt.rule_required_not_passing(pr) is None
+
+
+def test_required_check_absent_is_reported_separately_from_unproven():
+    """R7 and R7b are adjacent but distinct: absent is not the same as unfinished.
+
+    Collapsing them into one code would tell an operator to look for a check
+    that is in fact running."""
+    absent = _pr(
+        checks=(dt.CheckRun("Analyze (python)", "completed", "success"),),
+        required_checks=("Analyze (python)", "Python Quality & Tests"),
+    )
+    assert dt.classify([absent])[0].code == dt.CODE_MISSING_REQUIRED
+    unfinished = _pr(
+        checks=(
+            dt.CheckRun("Analyze (python)", "completed", "success"),
+            dt.CheckRun("Python Quality & Tests", "in_progress", None),
+        ),
+        required_checks=("Analyze (python)", "Python Quality & Tests"),
+    )
+    assert dt.classify([unfinished])[0].code == dt.CODE_REQUIRED_NOT_PASSING
+
+
+def test_required_not_passing_names_the_check_and_its_state():
+    pr = _pr(
+        checks=(dt.CheckRun("Python Quality & Tests", "in_progress", None),),
+        required_checks=("Python Quality & Tests",),
+    )
+    decision = dt.rule_required_not_passing(pr)
+    assert decision is not None
+    assert "Python Quality & Tests" in decision.reason
+    assert "in_progress" in decision.reason
 
 
 def test_missing_path_alone_is_not_treated_as_a_flake():
@@ -442,38 +630,28 @@ def test_unknown_release_age_is_held():
     assert d.code == dt.CODE_COOLDOWN
 
 
-def test_security_advisory_bypasses_cooldown():
-    pr = _pr(ecosystem="pip", release_age_days=0.5, security_advisory=True)
-    assert dt.rule_cooldown(pr) is None
+def test_no_rule_can_bypass_the_cooldown_or_the_major_hold():
+    """The removed security fast path stripped both guards on body text alone.
+
+    `release_age_days` is None for every ecosystem with no stdlib-reachable
+    release timestamp -- docker and github-actions always, pip and npm on any
+    lookup failure -- and that is only safe because rule_cooldown holds on
+    unknown. A bypass evaluated before that check turned a permanent hold into
+    a candidate, which is the one outcome the design forbids."""
+    assert not hasattr(dt.PRSnapshot, "security_advisory")
+    assert dt.rule_cooldown(_pr(release_age_days=None)) is not None
+    assert dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=0.5)) is not None
+    assert dt.rule_major(_pr(from_version="4.1.11", to_version="5.0.0")) is not None
 
 
-def test_security_advisory_bypasses_unknown_release_age():
-    pr = _pr(release_age_days=None, security_advisory=True)
-    assert dt.rule_cooldown(pr) is None
-
-
-def test_security_advisory_bypasses_major_hold():
-    pr = _pr(from_version="4.1.11", to_version="5.0.0", security_advisory=True)
-    assert dt.rule_major(pr) is None
-
-
-def test_non_security_major_is_still_held():
-    pr = _pr(from_version="4.1.11", to_version="5.0.0", security_advisory=False)
-    assert dt.rule_major(pr) is not None
-
-
-def test_security_advisory_does_not_bypass_policy_holds():
-    """A CVE fix is still not permission to rewrite a base image unreviewed."""
-    pr = _pr(files=("deploy/docker/api/Dockerfile",), security_advisory=True)
-    assert dt.rule_policy_path(pr) is not None
-    held = _pr(package="tree-sitter", security_advisory=True)
-    assert dt.rule_held_package(held) is not None
-
-
-def test_security_advisory_defaults_to_false():
-    """Snapshots written before this field existed still load."""
-    prs = dt.load_snapshot(FIXTURE)
-    assert all(p.security_advisory is False for p in prs)
+def test_author_is_bot_defaults_to_false_for_older_snapshots(tmp_path):
+    """A snapshot written before the field existed must still load."""
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    for item in payload["pull_requests"]:
+        item.pop("author_is_bot", None)
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert all(p.author_is_bot is False for p in dt.load_snapshot(path))
 
 
 def test_classify_covers_every_pr_exactly_once():
@@ -483,16 +661,68 @@ def test_classify_covers_every_pr_exactly_once():
     assert {d.number for d in decisions} == {p.number for p in prs}
 
 
-def test_classify_assigns_expected_codes_for_the_observed_batch():
-    """Regression lock on the real 2026-09-19 batch."""
+def test_classify_assigns_expected_codes_for_the_captured_batch():
+    """Regression lock on the captured batch.
+
+    Before the author fix every one of these was excluded:non-dependabot on the
+    first rule, so no other rule ever ran and the queue reported empty."""
     by_number = {d.number: d for d in dt.classify(dt.load_snapshot(FIXTURE))}
-    assert by_number[386].code == dt.CODE_NON_DEPENDABOT
-    assert by_number[450].code == dt.CODE_COUPLED  # green but coupled
-    assert by_number[452].code == dt.CODE_COUPLED  # coupling precedes failure
-    assert by_number[442].code == dt.CODE_COUPLED  # coupling precedes flake
-    assert by_number[443].code == dt.CODE_COUPLED  # green but peer-coupled
-    assert by_number[439].code == dt.CODE_CANDIDATE
-    assert by_number[446].code == dt.CODE_CANDIDATE
+    assert by_number[386].code == dt.CODE_NON_DEPENDABOT  # release PR, no checks
+    assert by_number[455].code == dt.CODE_NON_DEPENDABOT  # human
+    assert by_number[456].code == dt.CODE_NON_DEPENDABOT  # human
+    assert by_number[474].code == dt.CODE_COUPLED  # green but coupled
+    assert by_number[465].code == dt.CODE_COUPLED  # coupling precedes failure
+    assert by_number[457].code == dt.CODE_COUPLED
+    assert by_number[459].code == dt.CODE_COUPLED
+    assert by_number[464].code == dt.CODE_COUPLED  # peer-coupled
+    assert by_number[463].code == dt.CODE_COUPLED  # peer-coupled
+    assert by_number[461].code == dt.CODE_MAJOR  # mermaid 11 -> 12
+    assert by_number[472].code == dt.CODE_MAJOR  # openai 2 -> 3
+    assert by_number[462].code == dt.CODE_POLICY_REVIEW  # touches pyproject.toml
+    assert by_number[468].code == dt.CODE_RISK_TIER  # gremlinpython is At-Risk
+    assert by_number[458].code == dt.CODE_COOLDOWN  # action, age unresolvable
+    assert by_number[466].code == dt.CODE_CANDIDATE
+    assert by_number[467].code == dt.CODE_CANDIDATE
+
+
+def test_no_dependabot_pr_is_excluded_as_non_dependabot():
+    """The defect in one assertion: the queue classified as empty.
+
+    Every `app/dependabot` PR must reach a rule that actually examines it."""
+    prs = dt.load_snapshot(FIXTURE)
+    dependabot = {p.number for p in prs if p.author in dt.DEPENDABOT_AUTHORS}
+    assert dependabot, "the capture holds no Dependabot PRs to prove anything with"
+    excluded = {
+        d.number
+        for d in dt.classify(prs)
+        if d.code == dt.CODE_NON_DEPENDABOT and d.number in dependabot
+    }
+    assert excluded == set()
+
+
+def test_coupling_is_evaluated_before_check_results():
+    """#465's required checks fail and it is still reported as coupled.
+
+    The order is load-bearing in the other direction too: a *green* sibling is
+    the dangerous case, because it looks individually mergeable."""
+    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
+    assert dt.rule_failing(prs[465]) is not None
+    by_number = {d.number: d for d in dt.classify(list(prs.values()))}
+    assert by_number[465].code == dt.CODE_COUPLED
+
+
+def test_release_pr_with_zero_checks_is_excluded_on_both_counts():
+    """#386 is a release PR gh reports no checks for at all.
+
+    The author rule wins in classify(), but the check-presence rule must also
+    fire on its own -- that path only became reachable once the collector
+    stopped aborting on the non-zero exit gh returns for a PR with no checks."""
+    pr386 = next(p for p in dt.load_snapshot(FIXTURE) if p.number == 386)
+    assert pr386.checks == ()
+    assert dt.rule_non_dependabot(pr386) is not None
+    no_checks = dt.rule_no_checks(pr386)
+    assert no_checks is not None
+    assert no_checks.code == dt.CODE_NO_CHECKS
 
 
 def test_author_exclusion_precedes_all_other_rules():
@@ -510,49 +740,49 @@ def test_every_decision_carries_a_nonempty_reason():
 def test_promote_marks_proved_candidates_merge_safe():
     prs = dt.load_snapshot(FIXTURE)
     decisions = dt.classify(prs)
-    promoted = {d.number: d for d in dt.promote(decisions, proved=[439, 446])}
-    assert promoted[439].code == dt.CODE_MERGE_SAFE
-    assert promoted[446].code == dt.CODE_MERGE_SAFE
-    assert "batch proof" in promoted[439].reason.lower()
+    promoted = {d.number: d for d in dt.promote(decisions, proved=[466, 467])}
+    assert promoted[466].code == dt.CODE_MERGE_SAFE
+    assert promoted[467].code == dt.CODE_MERGE_SAFE
+    assert "batch proof" in promoted[466].reason.lower()
 
 
 def test_promote_marks_conflicted_candidates_attention():
     decisions = dt.classify(dt.load_snapshot(FIXTURE))
     promoted = {
-        d.number: d for d in dt.promote(decisions, proved=[446], conflicted=[439])
+        d.number: d for d in dt.promote(decisions, proved=[467], conflicted=[466])
     }
-    assert promoted[439].code == dt.CODE_CONFLICT
-    assert promoted[446].code == dt.CODE_MERGE_SAFE
+    assert promoted[466].code == dt.CODE_CONFLICT
+    assert promoted[467].code == dt.CODE_MERGE_SAFE
 
 
 def test_promote_never_upgrades_a_non_candidate():
     """A coupled or excluded PR must not become merge-safe by promotion."""
     decisions = dt.classify(dt.load_snapshot(FIXTURE))
-    promoted = {d.number: d for d in dt.promote(decisions, proved=[386, 450, 452])}
+    promoted = {d.number: d for d in dt.promote(decisions, proved=[386, 474, 468])}
     assert promoted[386].code == dt.CODE_NON_DEPENDABOT
-    assert promoted[450].code == dt.CODE_COUPLED
-    assert promoted[452].code == dt.CODE_COUPLED
+    assert promoted[474].code == dt.CODE_COUPLED
+    assert promoted[468].code == dt.CODE_RISK_TIER
 
 
 def test_promote_leaves_unproved_candidates_as_candidates():
     decisions = dt.classify(dt.load_snapshot(FIXTURE))
     promoted = {d.number: d for d in dt.promote(decisions, proved=[])}
-    assert promoted[439].code == dt.CODE_CANDIDATE
+    assert promoted[466].code == dt.CODE_CANDIDATE
 
 
 def test_conflict_wins_when_a_pr_is_both_proved_and_conflicted():
     """The worst possible wrong answer is reporting a conflict as merge-safe."""
     decisions = dt.classify(dt.load_snapshot(FIXTURE))
     promoted = {
-        d.number: d for d in dt.promote(decisions, proved=[439], conflicted=[439])
+        d.number: d for d in dt.promote(decisions, proved=[466], conflicted=[466])
     }
-    assert promoted[439].code == dt.CODE_CONFLICT
+    assert promoted[466].code == dt.CODE_CONFLICT
 
 
 def test_promote_does_not_mutate_its_input():
     decisions = dt.classify(dt.load_snapshot(FIXTURE))
     before = [(d.number, d.code) for d in decisions]
-    dt.promote(decisions, proved=[439, 446], conflicted=[])
+    dt.promote(decisions, proved=[466, 467], conflicted=[])
     after = [(d.number, d.code) for d in decisions]
     assert before == after
 
@@ -575,7 +805,22 @@ def test_render_report_lists_family_members_together():
     prs = dt.load_snapshot(FIXTURE)
     md = dt.render_report(dt.classify(prs), prs)
     assert "github/codeql-action" in md
-    assert "#450" in md and "#452" in md
+    for number in CODEQL_FAMILY:
+        assert f"#{number}" in md
+
+
+def test_render_report_lists_required_not_passing_under_needs_attention():
+    """A new code that no section names would vanish from the report entirely."""
+    required = "Python Quality & Tests"
+    pr = _pr(
+        number=99,
+        checks=(dt.CheckRun(required, "in_progress", None),),
+        required_checks=(required,),
+    )
+    md = dt.render_report(dt.classify([pr]), [pr])
+    attention = md.split("## Needs attention", 1)[1].split("## ", 1)[0]
+    assert dt.CODE_REQUIRED_NOT_PASSING in attention
+    assert "#99" in attention
 
 
 def test_render_report_states_a_reason_for_every_pr():
@@ -600,11 +845,11 @@ def test_main_writes_decisions_json_when_requested(tmp_path):
     )
     assert rc == 0
     payload = json.loads(dec.read_text(encoding="utf-8"))
-    assert {d["number"] for d in payload["decisions"]} >= {386, 439, 450}
+    assert {d["number"] for d in payload["decisions"]} >= {386, 466, 474}
     # families_from_decisions (dep_triage_consolidate.py) depends on the
     # "family" key surviving serialisation here -- a field rename on either
     # side would silently kill consolidation with no test catching it.
-    coupled = next(d for d in payload["decisions"] if d["number"] == 450)
+    coupled = next(d for d in payload["decisions"] if d["number"] == 474)
     assert coupled["code"] == "coupled"
     assert coupled["family"] == "github/codeql-action"
 

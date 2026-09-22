@@ -1,0 +1,2027 @@
+{
+  "captured_at": "2026-09-22T12:22:44.761271+00:00",
+  "pr_checks": {
+    "386": {
+      "error": "command failed: 'gh pr checks 386 --repo aenealabs/aura --json name,state,bucket,description' (exit 1): no checks reported on the 'release-please--branches--main' branch\n"
+    },
+    "455": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "456": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      }
+    ],
+    "457": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "CodeQL",
+        "state": "NEUTRAL"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "458": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "459": [
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "CodeQL",
+        "state": "NEUTRAL"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "460": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "461": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "462": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "ADR-090 Ingestion Benchmarks",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "463": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "464": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "465": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "CodeQL",
+        "state": "NEUTRAL"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "fail",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "FAILURE"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "466": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "467": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "468": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "469": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "470": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "471": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "472": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "473": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "474": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ],
+    "475": [
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Trivy",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Security Scanning",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Python Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (javascript-typescript)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (actions)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (python)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Check Trigger Type",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Frontend Quality & Tests",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "CodeQL",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Analyze (ruby)",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Dependency Risk Audit",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "pass",
+        "description": "",
+        "name": "Log GitHub Event",
+        "state": "SUCCESS"
+      },
+      {
+        "bucket": "skipping",
+        "description": "",
+        "name": "Notify Aura Platform",
+        "state": "SKIPPED"
+      }
+    ]
+  },
+  "pr_list": [
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements-api.txt"
+        }
+      ],
+      "number": 475,
+      "title": "chore(deps): update google-genai requirement from >=2.19.0 to >=2.24.0"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": ".github/workflows/code-quality.yml"
+        }
+      ],
+      "number": 474,
+      "title": "chore(deps): bump github/codeql-action/upload-sarif from 4.37.9 to 4.38.1"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements-api.txt"
+        },
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements.txt"
+        }
+      ],
+      "number": 473,
+      "title": "chore(deps): update pygithub requirement from >=2.9.1 to >=2.10.0"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements-api.txt"
+        }
+      ],
+      "number": 472,
+      "title": "chore(deps): update openai requirement from >=2.48.0 to >=3.16.1"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements-test-extras.txt"
+        }
+      ],
+      "number": 471,
+      "title": "chore(deps): update cairosvg requirement from <3.0,>=2.9.0 to >=2.9.1,<3.0"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements-api.txt"
+        }
+      ],
+      "number": 470,
+      "title": "chore(deps): update google-cloud-aiplatform requirement from >=2.1.0 to >=2.1.3"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements-api.txt"
+        }
+      ],
+      "number": 469,
+      "title": "chore(deps): update scikit-learn requirement from >=1.9.0 to >=1.9.1"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements-api.txt"
+        },
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements.txt"
+        }
+      ],
+      "number": 468,
+      "title": "chore(deps): update gremlinpython requirement from >=3.8.1 to >=3.8.2"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements-api.txt"
+        },
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements.txt"
+        }
+      ],
+      "number": 467,
+      "title": "chore(deps): update cachetools requirement from >=7.1.8 to >=7.2.0"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements.txt"
+        }
+      ],
+      "number": 466,
+      "title": "chore(deps): update hypothesis requirement from >=6.165.10 to >=6.168.0"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": ".github/workflows/codeql.yml"
+        }
+      ],
+      "number": 465,
+      "title": "chore(deps): bump github/codeql-action/analyze from 4.37.9 to 4.38.1"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 82,
+          "deletions": 110,
+          "path": "frontend/package-lock.json"
+        },
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "frontend/package.json"
+        }
+      ],
+      "number": 464,
+      "title": "chore(deps-dev): bump vitest from 4.1.11 to 5.0.1 in /frontend"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 57,
+          "deletions": 131,
+          "path": "frontend/package-lock.json"
+        },
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "frontend/package.json"
+        }
+      ],
+      "number": 463,
+      "title": "chore(deps-dev): bump @vitest/coverage-v8 from 4.1.11 to 5.0.1 in /frontend"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "pyproject.toml"
+        }
+      ],
+      "number": 462,
+      "title": "chore(deps-dev): bump ruff from 0.16.6 to 0.16.8 in the minor-and-patch group"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 70,
+          "deletions": 25,
+          "path": "frontend/package-lock.json"
+        },
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "frontend/package.json"
+        }
+      ],
+      "number": 461,
+      "title": "chore(deps): bump mermaid from 11.17.2 to 12.0.0 in /frontend"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 61,
+          "deletions": 69,
+          "path": "frontend/package-lock.json"
+        },
+        {
+          "additions": 5,
+          "deletions": 5,
+          "path": "frontend/package.json"
+        }
+      ],
+      "number": 460,
+      "title": "chore(deps): bump the minor-and-patch group across 1 directory with 5 updates"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": ".github/workflows/codeql.yml"
+        }
+      ],
+      "number": 459,
+      "title": "chore(deps): bump github/codeql-action/autobuild from 4.37.9 to 4.38.1"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": ".github/workflows/nightly-live-llm.yml"
+        }
+      ],
+      "number": 458,
+      "title": "chore(deps): bump aws-actions/configure-aws-credentials from 6.2.4 to 6.3.0"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/dependabot"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": ".github/workflows/codeql.yml"
+        }
+      ],
+      "number": 457,
+      "title": "chore(deps): bump github/codeql-action/init from 4.37.9 to 4.38.1"
+    },
+    {
+      "author": {
+        "id": "MDQ6VXNlcjMyNDM3NTMw",
+        "is_bot": false,
+        "login": "lavrut",
+        "name": "LaVon"
+      },
+      "files": [
+        {
+          "additions": 2304,
+          "deletions": 0,
+          "path": "docs/superpowers/plans/2026-09-19-dependabot-triage.md"
+        },
+        {
+          "additions": 255,
+          "deletions": 0,
+          "path": "docs/superpowers/specs/2026-09-19-dependabot-triage-design.md"
+        }
+      ],
+      "number": 456,
+      "title": "docs: add dependabot triage automation design"
+    },
+    {
+      "author": {
+        "id": "MDQ6VXNlcjMyNDM3NTMw",
+        "is_bot": false,
+        "login": "lavrut",
+        "name": "LaVon"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "requirements.txt"
+        }
+      ],
+      "number": 455,
+      "title": "docs: correct stale pydantic constraint comment in requirements.txt"
+    },
+    {
+      "author": {
+        "is_bot": true,
+        "login": "app/github-actions"
+      },
+      "files": [
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": ".release-please-manifest.json"
+        },
+        {
+          "additions": 30,
+          "deletions": 0,
+          "path": "CHANGELOG.md"
+        },
+        {
+          "additions": 1,
+          "deletions": 1,
+          "path": "pyproject.toml"
+        }
+      ],
+      "number": 386,
+      "title": "chore: release 1.8.0"
+    }
+  ],
+  "repo": "aenealabs/aura"
+}

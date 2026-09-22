@@ -1,13 +1,1998 @@
 {
-  "generated_at": "2026-09-19T00:00:00Z",
+  "generated_at": "2026-09-22T12:22:47.985567+00:00",
   "pull_requests": [
     {
-      "number": 386,
-      "title": "chore: release 1.8.0",
-      "author": "app/github-actions",
-      "files": ["CHANGELOG.md", "version.txt"],
-      "checks": [],
-      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
+      "number": 475,
+      "title": "chore(deps): update google-genai requirement from >=2.19.0 to >=2.24.0",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "requirements-api.txt"
+      ],
+      "checks": [
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "google-genai",
+      "from_version": ">=2.19.0",
+      "to_version": ">=2.24.0",
+      "release_age_days": 5.572331378865741,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 474,
+      "title": "chore(deps): bump github/codeql-action/upload-sarif from 4.37.9 to 4.38.1",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        ".github/workflows/code-quality.yml"
+      ],
+      "checks": [
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "github-actions",
+      "directory": "/",
+      "package": "github/codeql-action/upload-sarif",
+      "from_version": "4.37.9",
+      "to_version": "4.38.1",
+      "release_age_days": null,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 473,
+      "title": "chore(deps): update pygithub requirement from >=2.9.1 to >=2.10.0",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "requirements-api.txt",
+        "requirements.txt"
+      ],
+      "checks": [
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "pygithub",
+      "from_version": ">=2.9.1",
+      "to_version": ">=2.10.0",
+      "release_age_days": 33.09557606613426,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 472,
+      "title": "chore(deps): update openai requirement from >=2.48.0 to >=3.16.1",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "requirements-api.txt"
+      ],
+      "checks": [
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "openai",
+      "from_version": ">=2.48.0",
+      "to_version": ">=3.16.1",
+      "release_age_days": 3.7228549421064816,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 471,
+      "title": "chore(deps): update cairosvg requirement from <3.0,>=2.9.0 to >=2.9.1,<3.0",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "requirements-test-extras.txt"
+      ],
+      "checks": [
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "cairosvg",
+      "from_version": "<3.0,>=2.9.0",
+      "to_version": ">=2.9.1,<3.0",
+      "release_age_days": 15.07473161638889,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 470,
+      "title": "chore(deps): update google-cloud-aiplatform requirement from >=2.1.0 to >=2.1.3",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "requirements-api.txt"
+      ],
+      "checks": [
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "google-cloud-aiplatform",
+      "from_version": ">=2.1.0",
+      "to_version": ">=2.1.3",
+      "release_age_days": 6.411901837175925,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 469,
+      "title": "chore(deps): update scikit-learn requirement from >=1.9.0 to >=1.9.1",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "requirements-api.txt"
+      ],
+      "checks": [
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "scikit-learn",
+      "from_version": ">=1.9.0",
+      "to_version": ">=1.9.1",
+      "release_age_days": 11.743227688391203,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 468,
+      "title": "chore(deps): update gremlinpython requirement from >=3.8.1 to >=3.8.2",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "requirements-api.txt",
+        "requirements.txt"
+      ],
+      "checks": [
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "gremlinpython",
+      "from_version": ">=3.8.1",
+      "to_version": ">=3.8.2",
+      "release_age_days": 13.606412085590279,
+      "risk_tier": "at-risk"
+    },
+    {
+      "number": 467,
+      "title": "chore(deps): update cachetools requirement from >=7.1.8 to >=7.2.0",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "requirements-api.txt",
+        "requirements.txt"
+      ],
+      "checks": [
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "cachetools",
+      "from_version": ">=7.1.8",
+      "to_version": ">=7.2.0",
+      "release_age_days": 5.648833201550926,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 466,
+      "title": "chore(deps): update hypothesis requirement from >=6.165.10 to >=6.168.0",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "requirements.txt"
+      ],
+      "checks": [
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "hypothesis",
+      "from_version": ">=6.165.10",
+      "to_version": ">=6.168.0",
+      "release_age_days": 13.733597184166666,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 465,
+      "title": "chore(deps): bump github/codeql-action/analyze from 4.37.9 to 4.38.1",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        ".github/workflows/codeql.yml"
+      ],
+      "checks": [
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "github-actions",
+      "directory": "/",
+      "package": "github/codeql-action/analyze",
+      "from_version": "4.37.9",
+      "to_version": "4.38.1",
+      "release_age_days": null,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 464,
+      "title": "chore(deps-dev): bump vitest from 4.1.11 to 5.0.1 in /frontend",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "frontend/package-lock.json",
+        "frontend/package.json"
+      ],
+      "checks": [
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "npm",
+      "directory": "/frontend",
+      "package": "vitest",
+      "from_version": "4.1.11",
+      "to_version": "5.0.1",
+      "release_age_days": 7.148020067453704,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 463,
+      "title": "chore(deps-dev): bump @vitest/coverage-v8 from 4.1.11 to 5.0.1 in /frontend",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "frontend/package-lock.json",
+        "frontend/package.json"
+      ],
+      "checks": [
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "npm",
+      "directory": "/frontend",
+      "package": "@vitest/coverage-v8",
+      "from_version": "4.1.11",
+      "to_version": "5.0.1",
+      "release_age_days": 7.148179303564815,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 462,
+      "title": "chore(deps-dev): bump ruff from 0.16.6 to 0.16.8 in the minor-and-patch group",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "pyproject.toml"
+      ],
+      "checks": [
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "ADR-090 Ingestion Benchmarks",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "pip",
+      "directory": "/",
+      "package": "ruff",
+      "from_version": "0.16.6",
+      "to_version": "0.16.8",
+      "release_age_days": 5.853323597002315,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 461,
+      "title": "chore(deps): bump mermaid from 11.17.2 to 12.0.0 in /frontend",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "frontend/package-lock.json",
+        "frontend/package.json"
+      ],
+      "checks": [
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "npm",
+      "directory": "/frontend",
+      "package": "mermaid",
+      "from_version": "11.17.2",
+      "to_version": "12.0.0",
+      "release_age_days": 12.194207104490742,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 460,
+      "title": "chore(deps): bump the minor-and-patch group across 1 directory with 5 updates",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        "frontend/package-lock.json",
+        "frontend/package.json"
+      ],
+      "checks": [
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "npm",
+      "directory": "/frontend",
+      "package": "",
+      "from_version": "",
+      "to_version": "",
+      "release_age_days": null,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 459,
+      "title": "chore(deps): bump github/codeql-action/autobuild from 4.37.9 to 4.38.1",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        ".github/workflows/codeql.yml"
+      ],
+      "checks": [
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "github-actions",
+      "directory": "/",
+      "package": "github/codeql-action/autobuild",
+      "from_version": "4.37.9",
+      "to_version": "4.38.1",
+      "release_age_days": null,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 458,
+      "title": "chore(deps): bump aws-actions/configure-aws-credentials from 6.2.4 to 6.3.0",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        ".github/workflows/nightly-live-llm.yml"
+      ],
+      "checks": [
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "github-actions",
+      "directory": "/",
+      "package": "aws-actions/configure-aws-credentials",
+      "from_version": "6.2.4",
+      "to_version": "6.3.0",
+      "release_age_days": null,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 457,
+      "title": "chore(deps): bump github/codeql-action/init from 4.37.9 to 4.38.1",
+      "author": "app/dependabot",
+      "author_is_bot": true,
+      "files": [
+        ".github/workflows/codeql.yml"
+      ],
+      "checks": [
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
+      "ecosystem": "github-actions",
+      "directory": "/",
+      "package": "github/codeql-action/init",
+      "from_version": "4.37.9",
+      "to_version": "4.38.1",
+      "release_age_days": null,
+      "risk_tier": "unknown"
+    },
+    {
+      "number": 456,
+      "title": "docs: add dependabot triage automation design",
+      "author": "lavrut",
+      "author_is_bot": false,
+      "files": [
+        "docs/superpowers/plans/2026-09-19-dependabot-triage.md",
+        "docs/superpowers/specs/2026-09-19-dependabot-triage-design.md"
+      ],
+      "checks": [
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
       "ecosystem": "unknown",
       "directory": "/",
       "package": "",
@@ -17,113 +2002,131 @@
       "risk_tier": "unknown"
     },
     {
-      "number": 439,
-      "title": "chore(deps): update pydantic requirement from >=2.12.5 to >=2.13.5",
-      "author": "dependabot[bot]",
-      "files": ["requirements.txt", "requirements-api.txt"],
-      "checks": [
-        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
-        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""}
+      "number": 455,
+      "title": "docs: correct stale pydantic constraint comment in requirements.txt",
+      "author": "lavrut",
+      "author_is_bot": false,
+      "files": [
+        "requirements.txt"
       ],
-      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
+      "checks": [
+        {
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Trivy",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Security Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Python Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Check Trigger Type",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Dependency Risk Audit",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (ruby)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Log GitHub Event",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Frontend Quality & Tests",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Analyze (python)",
+          "status": "completed",
+          "conclusion": "success",
+          "failing_log_excerpt": ""
+        },
+        {
+          "name": "Notify Aura Platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "failing_log_excerpt": ""
+        }
+      ],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
+      ],
       "ecosystem": "pip",
       "directory": "/",
-      "package": "pydantic",
-      "from_version": "2.12.5",
-      "to_version": "2.13.5",
-      "release_age_days": 30.0,
-      "risk_tier": "healthy"
+      "package": "",
+      "from_version": "",
+      "to_version": "",
+      "release_age_days": null,
+      "risk_tier": "unknown"
     },
     {
-      "number": 442,
-      "title": "chore(deps-dev): bump vitest from 4.1.11 to 5.0.0 in /frontend",
-      "author": "dependabot[bot]",
-      "files": ["frontend/package.json", "frontend/package-lock.json"],
-      "checks": [
-        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
-        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
-        {"name": "Security Scanning", "status": "completed", "conclusion": "failure", "failing_log_excerpt": "##[error]Process completed with exit code 35.\n##[error]Path does not exist: trivy-results.sarif"}
+      "number": 386,
+      "title": "chore: release 1.8.0",
+      "author": "app/github-actions",
+      "author_is_bot": true,
+      "files": [
+        ".release-please-manifest.json",
+        "CHANGELOG.md",
+        "pyproject.toml"
       ],
-      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
-      "ecosystem": "npm",
-      "directory": "/frontend",
-      "package": "vitest",
-      "from_version": "4.1.11",
-      "to_version": "5.0.0",
-      "release_age_days": 20.0,
-      "risk_tier": "healthy"
-    },
-    {
-      "number": 443,
-      "title": "chore(deps-dev): bump @vitest/coverage-v8 from 4.1.11 to 5.0.0 in /frontend",
-      "author": "dependabot[bot]",
-      "files": ["frontend/package.json", "frontend/package-lock.json"],
-      "checks": [
-        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
-        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""}
+      "checks": [],
+      "required_checks": [
+        "Python Quality & Tests",
+        "Analyze (python)",
+        "Analyze (javascript-typescript)",
+        "Analyze (actions)"
       ],
-      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
-      "ecosystem": "npm",
-      "directory": "/frontend",
-      "package": "@vitest/coverage-v8",
-      "from_version": "4.1.11",
-      "to_version": "5.0.0",
-      "release_age_days": 20.0,
-      "risk_tier": "healthy"
-    },
-    {
-      "number": 446,
-      "title": "chore(deps): update cfn-lint requirement from >=1.53.2 to >=1.56.0",
-      "author": "dependabot[bot]",
-      "files": ["requirements.txt"],
-      "checks": [
-        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
-        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""}
-      ],
-      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
       "ecosystem": "pip",
       "directory": "/",
-      "package": "cfn-lint",
-      "from_version": "1.53.2",
-      "to_version": "1.56.0",
-      "release_age_days": 12.0,
-      "risk_tier": "healthy"
-    },
-    {
-      "number": 450,
-      "title": "chore(deps): bump github/codeql-action/upload-sarif from 4.37.9 to 4.38.0",
-      "author": "dependabot[bot]",
-      "files": [".github/workflows/code-quality.yml"],
-      "checks": [
-        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
-        {"name": "Analyze (python)", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""}
-      ],
-      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
-      "ecosystem": "github-actions",
-      "directory": "/",
-      "package": "github/codeql-action/upload-sarif",
-      "from_version": "4.37.9",
-      "to_version": "4.38.0",
-      "release_age_days": 9.0,
-      "risk_tier": "healthy"
-    },
-    {
-      "number": 452,
-      "title": "chore(deps): bump github/codeql-action/analyze from 4.37.9 to 4.38.0",
-      "author": "dependabot[bot]",
-      "files": [".github/workflows/codeql.yml"],
-      "checks": [
-        {"name": "Python Quality & Tests", "status": "completed", "conclusion": "success", "failing_log_excerpt": ""},
-        {"name": "Analyze (python)", "status": "completed", "conclusion": "failure", "failing_log_excerpt": "Not all workflow steps that use `github/codeql-action` actions use the same version."}
-      ],
-      "required_checks": ["Python Quality & Tests", "Analyze (python)"],
-      "ecosystem": "github-actions",
-      "directory": "/",
-      "package": "github/codeql-action/analyze",
-      "from_version": "4.37.9",
-      "to_version": "4.38.0",
-      "release_age_days": 9.0,
-      "risk_tier": "healthy"
+      "package": "",
+      "from_version": "",
+      "to_version": "",
+      "release_age_days": null,
+      "risk_tier": "unknown"
     }
   ]
 }

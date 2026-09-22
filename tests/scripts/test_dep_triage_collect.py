@@ -3,11 +3,20 @@
 import json
 import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
 from scripts.security import dep_triage as dt
 from scripts.security import dep_triage_collect as dc
+
+RAW_FIXTURE = Path("tests/fixtures/dep_triage/raw_2026_09_19.json")
+SNAPSHOT_FIXTURE = Path("tests/fixtures/dep_triage/batch_2026_09_19.json")
+
+# The login form `gh` actually emits. Every author literal in this file uses it,
+# because a test that invents `dependabot[bot]` is testing a string the tool
+# under test never sees.
+GH_DEPENDABOT = {"login": "app/dependabot", "is_bot": True}
 
 
 @pytest.mark.parametrize(
@@ -52,7 +61,7 @@ def test_build_snapshot_emits_schema_load_snapshot_accepts(tmp_path):
                 "number": 450,
                 "title": "chore(deps): bump github/codeql-action/upload-sarif "
                 "from 4.37.9 to 4.38.0",
-                "author": {"login": "dependabot[bot]"},
+                "author": GH_DEPENDABOT,
                 "files": [".github/workflows/code-quality.yml"],
             }
         ],
@@ -86,13 +95,13 @@ def test_build_snapshot_keys_release_age_by_ecosystem_and_package():
             {
                 "number": 1,
                 "title": "chore(deps): bump six from 1.0.0 to 1.1.0",
-                "author": {"login": "dependabot[bot]"},
+                "author": GH_DEPENDABOT,
                 "files": ["requirements.txt"],
             },
             {
                 "number": 2,
                 "title": "chore(deps-dev): bump six from 1.0.0 to 1.1.0 in /frontend",
-                "author": {"login": "dependabot[bot]"},
+                "author": GH_DEPENDABOT,
                 "files": ["frontend/package.json"],
             },
         ],
@@ -122,108 +131,69 @@ def test_infer_directory_from_files():
     assert dc.infer_directory(["requirements.txt"]) == "/"
 
 
-@pytest.mark.parametrize(
-    "body,expected",
-    [
-        ("Bumps cryptography from 49.0.0 to 50.0.1.", False),
-        ("", False),
-        (None, False),
-        ("Bumps urllib3. Fixes [GHSA-1234-abcd-5678](https://x).", True),
-        ("Patches CVE-2026-12345 in the transitive dependency.", True),
-        ("mentions ghsa-lower-case-id", True),
-    ],
-)
-def test_is_security_advisory(body, expected):
-    assert dc.is_security_advisory(body) is expected
+def test_the_security_advisory_fast_path_is_gone():
+    """Removed deliberately; see the dep_triage module docstring.
+
+    It searched only the text before the first collapsible block, but a real
+    Dependabot security body puts the CVE/GHSA id *inside* that block and leaves
+    only prose in the preamble -- so it returned False on the updates it existed
+    for. It returned True for bodies with no collapsible block at all, which is
+    the docker and github-actions shape, where release_age_days is
+    unconditionally None and rule_cooldown would otherwise hold the PR. Its only
+    observable effect was converting a permanent hold into a candidate while
+    stripping the major-version guard too.
+
+    The correct signal, if the capability is wanted later, is
+    `gh api repos/{owner}/{repo}/dependabot/alerts` correlated by package and
+    `fixed_in` version."""
+    assert not hasattr(dc, "is_security_advisory")
+    assert not hasattr(dc, "_ADVISORY")
+    assert not hasattr(dc, "_DETAILS_OPEN")
 
 
-def test_advisory_ignores_cve_mentions_inside_release_notes():
-    """Upstream changelogs cite old CVEs; that is not this PR being a fix."""
-    body = (
-        "Bumps [foo](https://github.com/foo/foo) from 1.0.0 to 2.0.0.\n"
-        "<details>\n<summary>Release notes</summary>\n"
-        "<p>2.0.0 also carried the fix for CVE-2024-11111 and GHSA-aaaa-bbbb-cccc.</p>\n"
-        "</details>\n"
-    )
-    assert dc.is_security_advisory(body) is False
-
-
-def test_advisory_detected_when_cited_in_the_preamble():
-    body = (
-        "Bumps [urllib3](https://github.com/urllib3/urllib3) from 2.0.0 to 2.0.7.\n"
-        "This update fixes GHSA-aaaa-bbbb-cccc.\n"
-        "<details>\n<summary>Release notes</summary>\n<p>unrelated</p>\n</details>\n"
-    )
-    assert dc.is_security_advisory(body) is True
-
-
-def test_advisory_ignores_tail_after_an_unclosed_details_block():
-    body = "Bumps foo from 1 to 2.\n<details>\n<summary>x</summary>\nCVE-2024-22222\n"
-    assert dc.is_security_advisory(body) is False
-
-
-def test_advisory_handles_multiple_details_blocks():
-    body = (
-        "Bumps foo from 1 to 2.\n"
-        "<details><summary>Release notes</summary>CVE-2024-33333</details>\n"
-        "<details><summary>Commits</summary>GHSA-dddd-eeee-ffff</details>\n"
-    )
-    assert dc.is_security_advisory(body) is False
-
-
-def test_advisory_ignores_cve_in_a_nested_details_tail():
-    """A non-greedy paired strip would leak the outer tail back into scope."""
-    body = (
-        "Bumps foo from 1.0.0 to 2.0.0.\n"
-        "<details><summary>Notes</summary>Intro\n"
-        "<details><summary>inner</summary>Inner text</details>\n"
-        "CVE-2024-99999 in outer tail</details>\n"
-    )
-    assert dc.is_security_advisory(body) is False
-
-
-def test_advisory_ignores_details_with_attributes():
-    body = (
-        "Bumps foo from 1.0.0 to 2.0.0.\n"
-        "<details open><summary>Notes</summary>CVE-2024-88888</details>\n"
-    )
-    assert dc.is_security_advisory(body) is False
-
-
-def test_advisory_ignores_uppercase_and_spaced_details_tags():
-    body = "Bumps foo from 1 to 2.\n< DETAILS >GHSA-aaaa-bbbb-cccc</DETAILS>\n"
-    assert dc.is_security_advisory(body) is False
-
-
-def test_build_snapshot_carries_the_security_flag(tmp_path):
+def test_build_snapshot_records_whether_the_author_is_a_bot(tmp_path):
+    """Carried for the report's reason text; the login stays the decision."""
     snapshot = dc.build_snapshot(
         prs=[
             {
                 "number": 1,
                 "title": "chore(deps): bump urllib3 from 2.0.0 to 2.0.1",
-                "author": {"login": "dependabot[bot]"},
+                "author": GH_DEPENDABOT,
                 "files": ["requirements.txt"],
-                "security_advisory": True,
-            }
+            },
+            {
+                "number": 2,
+                "title": "docs: fix a typo",
+                "author": {"login": "lavrut", "is_bot": False},
+                "files": ["README.md"],
+            },
         ],
-        checks_by_pr={
-            1: [
-                {
-                    "name": "Analyze (python)",
-                    "status": "completed",
-                    "conclusion": "success",
-                    "failing_log_excerpt": "",
-                },
-            ]
-        },
-        required_checks=["Analyze (python)"],
-        release_ages={("pip", "urllib3"): 0.2},
+        checks_by_pr={},
+        required_checks=[],
+        release_ages={},
         risk_tiers={},
     )
-    assert snapshot["pull_requests"][0]["security_advisory"] is True
+    by_number = {p["number"]: p for p in snapshot["pull_requests"]}
+    assert by_number[1]["author_is_bot"] is True
+    assert by_number[2]["author_is_bot"] is False
     path = tmp_path / "snap.json"
     path.write_text(json.dumps(snapshot), encoding="utf-8")
-    assert dt.load_snapshot(path)[0].security_advisory is True
+    loaded = {p.number: p for p in dt.load_snapshot(path)}
+    assert loaded[1].author_is_bot is True
+    assert loaded[2].author_is_bot is False
+
+
+def test_build_snapshot_tolerates_a_missing_author_block():
+    """`gh` has omitted `author` on PRs from deleted accounts."""
+    snapshot = dc.build_snapshot(
+        prs=[{"number": 1, "title": "x", "author": None, "files": []}],
+        checks_by_pr={},
+        required_checks=[],
+        release_ages={},
+        risk_tiers={},
+    )
+    assert snapshot["pull_requests"][0]["author"] == ""
+    assert snapshot["pull_requests"][0]["author_is_bot"] is False
 
 
 def test_release_age_days_computes_from_pip_upload_time():
@@ -459,35 +429,329 @@ def test_gh_json_returns_parsed_output_on_success(monkeypatch):
     assert dc._gh_json(["pr", "list"]) == {"ok": True}
 
 
-def test_main_maps_pending_and_in_progress_check_states(tmp_path, monkeypatch):
-    """main() must not hardcode every check's status to 'completed' -- a
-    pending or in-progress gh state maps to 'in_progress'."""
+@pytest.mark.parametrize(
+    "bucket,expected",
+    [
+        ("pass", ("completed", "success")),
+        ("fail", ("completed", "failure")),
+        ("skipping", ("completed", "skipped")),
+        ("cancel", ("completed", "cancelled")),
+        ("pending", ("in_progress", None)),
+    ],
+)
+def test_check_state_maps_every_gh_bucket(bucket, expected):
+    """gh maintains exactly these five buckets over an open `state` vocabulary."""
+    assert dc.check_state(bucket, "IRRELEVANT") == expected
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "CANCELLED",
+        "TIMED_OUT",
+        "ACTION_REQUIRED",
+        "STARTUP_FAILURE",
+        "NEUTRAL",
+        "STALE",
+        "ERROR",
+        "PENDING",
+        "IN_PROGRESS",
+        "A_STATE_GITHUB_HAS_NOT_INVENTED_YET",
+    ],
+)
+def test_check_state_never_reads_an_unmapped_bucket_as_success(state):
+    """The mapping keys on bucket precisely so `state` cannot decide anything.
+
+    Previously only SUCCESS/FAILURE/SKIPPED were handled and every other state
+    fell through to a null conclusion, which the classifier could not
+    distinguish from green."""
+    status, conclusion = dc.check_state("", state)
+    assert (status, conclusion) == ("completed", None)
+    assert conclusion != "success"
+
+
+def _fake_gh(prs, checks):
+    """Build a _gh_json stand-in over a canned listing and check map."""
 
     def fake_gh_json(args):
         if args[:2] == ["pr", "list"]:
-            return [
+            return prs
+        if args[:2] == ["pr", "checks"]:
+            result = checks[int(args[2])]
+            if isinstance(result, Exception):
+                raise result
+            return result
+        raise AssertionError(f"unexpected gh call: {args}")
+
+    return fake_gh_json
+
+
+def test_main_maps_check_buckets_rather_than_states(tmp_path, monkeypatch):
+    """main() must not hardcode every check's status to 'completed'."""
+    monkeypatch.setattr(
+        dc,
+        "_gh_json",
+        _fake_gh(
+            [
                 {
                     "number": 1,
                     "title": "chore: release 1.0.0",
-                    "author": {"login": "dependabot[bot]"},
+                    "author": GH_DEPENDABOT,
                     "files": [],
-                    "body": "",
                 }
-            ]
-        if args[:2] == ["pr", "checks"]:
-            return [
-                {"name": "Build", "state": "PENDING", "description": ""},
-                {"name": "Lint", "state": "IN_PROGRESS", "description": ""},
-                {"name": "Tests", "state": "SUCCESS", "description": ""},
-            ]
-        raise AssertionError(f"unexpected gh call: {args}")
-
-    monkeypatch.setattr(dc, "_gh_json", fake_gh_json)
+            ],
+            {
+                1: [
+                    {"name": "Build", "bucket": "pending", "state": "PENDING"},
+                    {"name": "Lint", "bucket": "pending", "state": "IN_PROGRESS"},
+                    {"name": "Tests", "bucket": "pass", "state": "SUCCESS"},
+                    {"name": "Old", "bucket": "cancel", "state": "CANCELLED"},
+                    {"name": "Cond", "bucket": "skipping", "state": "NEUTRAL"},
+                ]
+            },
+        ),
+    )
     out = tmp_path / "snap.json"
-    rc = dc.main(["--output", str(out), "--repo", "org/repo"])
-    assert rc == 0
+    assert dc.main(["--output", str(out), "--repo", "org/repo"]) == 0
     snapshot = json.loads(out.read_text(encoding="utf-8"))
     by_name = {c["name"]: c for c in snapshot["pull_requests"][0]["checks"]}
     assert by_name["Build"]["status"] == "in_progress"
     assert by_name["Lint"]["status"] == "in_progress"
-    assert by_name["Tests"]["status"] == "completed"
+    assert by_name["Tests"] == {
+        "name": "Tests",
+        "status": "completed",
+        "conclusion": "success",
+        "failing_log_excerpt": "",
+    }
+    assert by_name["Old"]["conclusion"] == "cancelled"
+    assert by_name["Cond"]["conclusion"] == "skipped"
+
+
+def test_main_treats_a_pr_with_no_checks_as_having_no_checks(tmp_path, monkeypatch):
+    """`gh pr checks` exits non-zero when a PR has no checks at all.
+
+    With --json, gh's exporter writes and returns *before* its pending/failure
+    exit-code logic, so a PR with FAILURE or pending checks exits 0. Only the
+    zero-checks case exits non-zero, because that error is raised before the
+    exporter runs. main() had no guard, so the first scheduled run died at
+    Collect snapshot -- deterministically, since an open release PR with no
+    checks is the ordinary state of this repository. rule_no_checks exists to
+    classify exactly this, and could never be reached in production."""
+    monkeypatch.setattr(
+        dc,
+        "_gh_json",
+        _fake_gh(
+            [
+                {
+                    "number": 386,
+                    "title": "chore: release 1.8.0",
+                    "author": {"login": "app/github-actions", "is_bot": True},
+                    "files": [{"path": "CHANGELOG.md"}],
+                },
+                {
+                    "number": 1,
+                    "title": "chore(deps): bump six from 1.0.0 to 1.1.0",
+                    "author": GH_DEPENDABOT,
+                    "files": [{"path": "requirements.txt"}],
+                },
+            ],
+            {
+                386: RuntimeError(
+                    "command failed: 'gh pr checks 386' (exit 1): no checks "
+                    "reported on the 'release-please--branches--main' branch"
+                ),
+                1: [{"name": "Tests", "bucket": "pass", "state": "SUCCESS"}],
+            },
+        ),
+    )
+    out = tmp_path / "snap.json"
+    assert dc.main(["--output", str(out), "--repo", "org/repo"]) == 0
+    by_number = {
+        p["number"]: p
+        for p in json.loads(out.read_text(encoding="utf-8"))["pull_requests"]
+    }
+    assert by_number[386]["checks"] == []
+    # The run must continue past the zero-check PR, not stop at it.
+    assert len(by_number[1]["checks"]) == 1
+
+
+def test_main_still_aborts_on_any_other_gh_failure(tmp_path, monkeypatch):
+    """A real gh outage must fail loudly, per this module's error policy.
+
+    A partial snapshot is a silently incomplete security report: the PRs gh
+    failed on would simply be absent from the triage, with nothing saying so."""
+    monkeypatch.setattr(
+        dc,
+        "_gh_json",
+        _fake_gh(
+            [
+                {
+                    "number": 1,
+                    "title": "chore(deps): bump six from 1.0.0 to 1.1.0",
+                    "author": GH_DEPENDABOT,
+                    "files": [{"path": "requirements.txt"}],
+                }
+            ],
+            {
+                1: RuntimeError(
+                    "command failed: 'gh pr checks 1' (exit 4): API rate "
+                    "limit exceeded"
+                )
+            },
+        ),
+    )
+    with pytest.raises(RuntimeError, match="rate limit"):
+        dc.main(["--output", str(tmp_path / "snap.json"), "--repo", "org/repo"])
+
+
+def test_main_no_longer_requests_the_pr_body(tmp_path, monkeypatch):
+    """`body` was fetched solely for the removed advisory detector.
+
+    Dependabot bodies embed entire upstream changelogs, so this is a real cost
+    on a 20-PR listing, and the field is now unread."""
+    seen = []
+
+    def fake_gh_json(args):
+        seen.append(args)
+        return [] if args[:2] == ["pr", "list"] else []
+
+    monkeypatch.setattr(dc, "_gh_json", fake_gh_json)
+    assert dc.main(["--output", str(tmp_path / "s.json"), "--repo", "org/repo"]) == 0
+    listing_args = next(a for a in seen if a[:2] == ["pr", "list"])
+    assert "body" not in listing_args[listing_args.index("--json") + 1]
+
+
+def test_record_writes_the_raw_gh_payloads_verbatim(tmp_path, monkeypatch):
+    """--record is the capture primitive the fixture is built from.
+
+    It must not transform anything: the value of a capture over a transcription
+    is precisely that it can contain shapes nobody thought to write down."""
+    listing = [
+        {
+            "number": 1,
+            "title": "chore(deps): bump six from 1.0.0 to 1.1.0",
+            "author": GH_DEPENDABOT,
+            "files": [{"path": "requirements.txt"}],
+        },
+        {
+            "number": 2,
+            "title": "chore: release 1.0.0",
+            "author": {"login": "app/github-actions", "is_bot": True},
+            "files": [{"path": "CHANGELOG.md"}],
+        },
+    ]
+    runs = [{"name": "Tests", "bucket": "pass", "state": "SUCCESS", "description": ""}]
+    monkeypatch.setattr(
+        dc,
+        "_gh_json",
+        _fake_gh(
+            listing,
+            {1: runs, 2: RuntimeError("exit 1: no checks reported on the branch")},
+        ),
+    )
+    record = tmp_path / "raw.json"
+    rc = dc.main(
+        [
+            "--output",
+            str(tmp_path / "snap.json"),
+            "--repo",
+            "org/repo",
+            "--record",
+            str(record),
+        ]
+    )
+    assert rc == 0
+    raw = json.loads(record.read_text(encoding="utf-8"))
+    assert raw["repo"] == "org/repo"
+    assert raw["pr_list"] == listing
+    assert raw["pr_checks"]["1"] == runs
+    # The zero-checks case is recorded as an error marker, not as an empty list:
+    # "gh refused" and "gh returned nothing" are different facts.
+    assert "no checks reported" in raw["pr_checks"]["2"]["error"]
+
+
+def _snapshot_from_raw(raw, committed):
+    """Rebuild the snapshot document from the raw capture.
+
+    ``release_ages`` and ``risk_tiers`` are read back out of the committed
+    snapshot rather than recomputed: they come from PyPI, the npm registry and
+    the risk register, none of which are gh output and none of which are
+    reachable from a captured file. Every field that *is* derivable from the
+    capture -- author, author_is_bot, checks, ecosystem, directory, package,
+    versions -- is rebuilt, and those are exactly the fields the defects lived
+    in.
+    """
+    by_number = {p["number"]: p for p in committed["pull_requests"]}
+    prs = []
+    checks_by_pr = {}
+    release_ages = {}
+    risk_tiers = {}
+    for item in raw["pr_list"]:
+        number = item["number"]
+        prs.append(
+            {
+                "number": number,
+                "title": item["title"],
+                "author": item["author"],
+                "files": [f["path"] for f in item.get("files", [])],
+            }
+        )
+        recorded = raw["pr_checks"][str(number)]
+        runs = [] if isinstance(recorded, dict) else recorded
+        mapped = []
+        for run in runs:
+            status, conclusion = dc.check_state(
+                run.get("bucket", ""), run.get("state", "")
+            )
+            mapped.append(
+                {
+                    "name": run["name"],
+                    "status": status,
+                    "conclusion": conclusion,
+                    "failing_log_excerpt": run.get("description", ""),
+                }
+            )
+        checks_by_pr[number] = mapped
+        row = by_number[number]
+        release_ages[(row["ecosystem"], row["package"])] = row["release_age_days"]
+        if row["risk_tier"] != "unknown":
+            risk_tiers[row["package"]] = row["risk_tier"]
+    required = by_number[raw["pr_list"][0]["number"]]["required_checks"]
+    return dc.build_snapshot(
+        prs=prs,
+        checks_by_pr=checks_by_pr,
+        required_checks=required,
+        release_ages=release_ages,
+        risk_tiers=risk_tiers,
+    )
+
+
+def test_snapshot_fixture_is_derived_from_the_raw_capture():
+    """The committed snapshot must be what build_snapshot makes of the capture.
+
+    The previous fixture was hand-authored, and encoded three things the real
+    tool never produces: the author login `dependabot[bot]`, a zero-checks PR
+    the collector could not reach, and a version that had since moved on. This
+    test is the reason those cannot recur -- edit either file alone and it
+    fails."""
+    raw = json.loads(RAW_FIXTURE.read_text(encoding="utf-8"))
+    committed = json.loads(SNAPSHOT_FIXTURE.read_text(encoding="utf-8"))
+    rebuilt = _snapshot_from_raw(raw, committed)
+    # generated_at is a wall clock reading, not derived from anything.
+    assert rebuilt["pull_requests"] == committed["pull_requests"]
+
+
+def test_raw_capture_holds_the_regression_cases_the_fixture_exists_for():
+    """A capture that lost these PRs would make several tests vacuously pass."""
+    raw = json.loads(RAW_FIXTURE.read_text(encoding="utf-8"))
+    authors = {item["author"]["login"] for item in raw["pr_list"]}
+    assert "app/dependabot" in authors
+    assert "app/github-actions" in authors
+    # A PR gh refuses to report checks for, recorded as an error marker.
+    assert any(
+        isinstance(v, dict) and "no checks reported" in v.get("error", "")
+        for v in raw["pr_checks"].values()
+    )
+    titles = " ".join(item["title"] for item in raw["pr_list"])
+    assert titles.count("github/codeql-action/") == 4
+    assert "vitest" in titles

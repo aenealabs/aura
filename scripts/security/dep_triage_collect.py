@@ -4,6 +4,13 @@ This is the only module in the triage pipeline that performs network access.
 It gathers pull request metadata, check runs, release ages and risk-register
 tiers into a single JSON document, so that ``dep_triage.py`` can stay pure and
 testable against recorded fixtures.
+
+``--record`` writes the raw ``gh`` responses to a file without transforming
+them. The snapshot fixture under ``tests/fixtures/dep_triage/`` is derived from
+such a capture by running ``build_snapshot`` over it, never hand-authored: a
+transcribed fixture can encode shapes the real tool never emits, which is how
+an author-login mismatch and an unreachable zero-checks path both survived a
+green suite.
 """
 
 from __future__ import annotations
@@ -40,17 +47,6 @@ _BUMP = re.compile(
 # unresolvable version rather than a tagged one.
 _VERSION_PREFIX = re.compile(r"^[\^~>=<\s]*[vV]?")
 _VERSION_CLEAN = re.compile(r"[^\d.].*$")
-
-# Dependabot states its own case in the preamble, before the first collapsible
-# block; everything from that tag onward is upstream release notes and commit
-# lists it merely embedded. Truncating at the first tag -- rather than trying to
-# strip matched pairs -- is deliberate: paired stripping is not nesting-aware,
-# so an outer block whose first close tag belongs to an inner block would leak
-# its tail back into scope. The tolerant pattern also catches `<details open>`
-# and `< DETAILS >`. Both choices shrink the search scope, which is the safe
-# direction here.
-_DETAILS_OPEN = re.compile(r"<\s*details\b", re.IGNORECASE)
-_ADVISORY = re.compile(r"(GHSA-[0-9a-z-]+|CVE-\d{4}-\d+)", re.IGNORECASE)
 
 # Matches the first backticked token in a risk-register table cell, e.g. the
 # `image-size` in "`image-size` (via `pptxgenjs`)". The register annotates
@@ -96,23 +92,34 @@ def infer_directory(files: list[str]) -> str:
     return "/"
 
 
-def is_security_advisory(body: str | None) -> bool:
-    """True when Dependabot itself cites a GHSA or CVE for this update.
+# `gh pr checks --json` reports both `state`, an open vocabulary GitHub keeps
+# extending (CANCELLED, TIMED_OUT, ACTION_REQUIRED, STARTUP_FAILURE, NEUTRAL,
+# STALE, ERROR, ...), and `bucket`, gh's own normalization of it into five
+# values. Mapping from the closed set means a state GitHub adds later cannot
+# silently read as green.
+_BUCKET_STATE: dict[str, tuple[str, str | None]] = {
+    "pass": ("completed", "success"),
+    "fail": ("completed", "failure"),
+    "skipping": ("completed", "skipped"),
+    "cancel": ("completed", "cancelled"),
+    "pending": ("in_progress", None),
+}
 
-    Dependabot security updates name the advisory they fix in their own
-    preamble. Ordinary version bumps embed upstream release notes in
-    collapsible blocks, and those routinely mention CVEs fixed in earlier
-    releases within the range -- text that says nothing about whether *this*
-    update is a security fix.
 
-    That matters because the flag bypasses both the cooldown and the
-    major-version hold. The two error directions are not symmetric: a missed
-    advisory only means the patch queues through the cooldown normally, while a
-    false positive strips both protections from an ordinary bump. Only the
-    preamble is searched, and detection errs toward not-security.
+def check_state(bucket: str, state: str) -> tuple[str, str | None]:
+    """Map a gh check bucket to (status, conclusion).
+
+    `bucket` is gh's own normalization over an open-ended `state` vocabulary, so
+    mapping from it means a state GitHub adds later cannot silently read as
+    green. `state` is retained only for the human-readable reason text.
+
+    An unrecognized bucket maps to ``("completed", None)`` -- no conclusion, not
+    success. The classifier's ``rule_required_not_passing`` treats a required
+    check with no conclusion as unproven, so an unknown bucket surfaces for a
+    human instead of passing as green.
     """
-    preamble = _DETAILS_OPEN.split(body or "", maxsplit=1)[0]
-    return bool(_ADVISORY.search(preamble))
+    del state  # kept in the signature to document what is deliberately unused
+    return _BUCKET_STATE.get(bucket, ("completed", None))
 
 
 def _risk_tiers(register: Path) -> dict[str, str]:
@@ -228,6 +235,7 @@ def build_snapshot(
                 "number": pr["number"],
                 "title": pr.get("title", ""),
                 "author": (pr.get("author") or {}).get("login", ""),
+                "author_is_bot": bool((pr.get("author") or {}).get("is_bot", False)),
                 "files": files,
                 "checks": checks_by_pr.get(pr["number"], []),
                 "required_checks": required_checks,
@@ -238,7 +246,6 @@ def build_snapshot(
                 "to_version": new,
                 "release_age_days": release_ages.get((ecosystem, package)),
                 "risk_tier": risk_tiers.get(package, "unknown"),
-                "security_advisory": bool(pr.get("security_advisory", False)),
             }
         )
     return {
@@ -286,6 +293,15 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="Name of a required status check; repeatable.",
     )
+    parser.add_argument(
+        "--record",
+        type=Path,
+        default=None,
+        help=(
+            "Path to write the raw, untransformed gh responses. Used to capture "
+            "a test fixture from live output instead of transcribing one."
+        ),
+    )
     args = parser.parse_args(argv)
 
     listing = _gh_json(
@@ -299,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
             "--limit",
             "100",
             "--json",
-            "number,title,author,files,body",
+            "number,title,author,files",
         ]
     )
     prs = [
@@ -308,45 +324,62 @@ def main(argv: list[str] | None = None) -> int:
             "title": item["title"],
             "author": item["author"],
             "files": [f["path"] for f in item.get("files", [])],
-            "security_advisory": is_security_advisory(item.get("body")),
         }
         for item in listing  # type: ignore[union-attr]
     ]
 
+    raw_checks: dict[str, object] = {}
     checks_by_pr: dict[int, list[dict]] = {}
     for pr in prs:
-        runs = _gh_json(
-            [
-                "pr",
-                "checks",
-                str(pr["number"]),
-                "--repo",
-                args.repo,
-                "--json",
-                "name,state,description",
-            ]
+        try:
+            runs = _gh_json(
+                [
+                    "pr",
+                    "checks",
+                    str(pr["number"]),
+                    "--repo",
+                    args.repo,
+                    "--json",
+                    "name,state,bucket,description",
+                ]
+            )
+        except RuntimeError as exc:
+            if "no checks reported" not in str(exc).lower():
+                raise
+            # A pull request with no checks at all makes `gh pr checks` exit
+            # non-zero before it can emit JSON. That is a legitimate state, not a
+            # failure: rule_no_checks exists precisely to classify it. Any other
+            # gh failure still aborts, because a partial snapshot is a silently
+            # incomplete security report.
+            runs = []
+            raw_checks[str(pr["number"])] = {"error": str(exc)}
+        else:
+            raw_checks[str(pr["number"])] = runs
+        mapped: list[dict] = []
+        for run in runs:  # type: ignore[union-attr]
+            status, conclusion = check_state(
+                run.get("bucket", ""), run.get("state", "")
+            )
+            mapped.append(
+                {
+                    "name": run["name"],
+                    "status": status,
+                    "conclusion": conclusion,
+                    "failing_log_excerpt": run.get("description", ""),
+                }
+            )
+        checks_by_pr[pr["number"]] = mapped
+
+    if args.record:
+        args.record.parent.mkdir(parents=True, exist_ok=True)
+        args.record.write_text(
+            json.dumps(
+                {"repo": args.repo, "pr_list": listing, "pr_checks": raw_checks},
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
         )
-        checks_by_pr[pr["number"]] = [
-            {
-                "name": r["name"],
-                "status": (
-                    "in_progress"
-                    if r["state"] in ("PENDING", "IN_PROGRESS")
-                    else "completed"
-                ),
-                "conclusion": (
-                    "success"
-                    if r["state"] == "SUCCESS"
-                    else (
-                        "failure"
-                        if r["state"] == "FAILURE"
-                        else "skipped" if r["state"] == "SKIPPED" else None
-                    )
-                ),
-                "failing_log_excerpt": r.get("description", ""),
-            }
-            for r in runs  # type: ignore[union-attr]
-        ]
 
     now = datetime.now(timezone.utc)
     release_ages: dict[tuple[str, str], float | None] = {}

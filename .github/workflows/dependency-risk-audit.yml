@@ -21,6 +21,21 @@ name: Dependency Risk Audit
 #
 # See docs/security/audits/README.md for the artifact layout, and
 # docs/runbooks/DEPENDENCY_RISK_AUDIT_RUNBOOK.md for triage.
+#
+# Two jobs, not one, and this split is security-load-bearing:
+#
+# `audit` runs `pip install -r requirements.txt` and `npm ci` against
+# whatever ref triggered the run -- on `pull_request` that's the PR head,
+# and both commands execute arbitrary upstream code (build backends, npm
+# lifecycle scripts). `actions/checkout` defaults to persist-credentials:
+# true, so a write-scoped GITHUB_TOKEN would otherwise sit in .git/config
+# for the whole job while untrusted code runs. Dependabot-triggered runs
+# are shielded by GitHub's automatic token downgrade, but a PR authored by
+# github-actions[bot] (or anyone else) is not. `audit` therefore holds
+# `contents: read` only and never sees a write token; it uploads its
+# report as an artifact instead of committing it. `publish` holds the
+# write scope, is gated off entirely on `pull_request`, and only reads the
+# artifact `audit` produced -- it never installs or executes project code.
 
 on:
   schedule:
@@ -38,9 +53,9 @@ on:
       - '.github/workflows/dependency-risk-audit.yml'
       - 'scripts/security/dep_risk_audit.py'
 
-permissions:
-  contents: write          # commit the audit-week branch
-  pull-requests: write     # open / update the audit PR
+# No workflow-level permissions: each job below declares exactly what it
+# needs. See the job-split rationale above.
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -51,12 +66,26 @@ jobs:
     name: Dependency Risk Audit
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      week: ${{ steps.paths.outputs.week }}
+      branch: ${{ steps.paths.outputs.branch }}
+      report: ${{ steps.paths.outputs.report }}
+      is_green: ${{ steps.greenness.outputs.is_green }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Need full history so branch creation works cleanly.
+          # Need full history so branch creation works cleanly downstream
+          # in `publish`; this job itself only reads.
           fetch-depth: 0
+          # This job installs and runs the audited ref's own dependency
+          # code (pip install, npm ci) -- including PR-head code on the
+          # pull_request trigger. Don't leave a credential sitting in
+          # .git/config for that code to find; this job holds `contents:
+          # read` only anyway and never pushes.
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -156,11 +185,46 @@ jobs:
           path: ${{ steps.paths.outputs.report }}
           retention-days: 90
 
+  publish:
+    name: Publish audit PR
+    needs: audit
+    # Never on pull_request: the workflow summary in `audit` already
+    # covers that trigger, and we don't commit audit files from a
+    # PR-triggered run because the run is reviewing someone else's
+    # changes, not the audit itself. This is also the control that keeps
+    # the write-scoped token off any PR-triggered run.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write          # commit the audit-week branch
+      pull-requests: write     # open / update the audit PR
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Need full history so branch creation works cleanly.
+          fetch-depth: 0
+
+      - name: Download audit report artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: dependency-risk-audit-${{ github.run_number }}
+          path: audit-artifact
+
+      - name: Place report at its tracked path
+        run: |
+          set -euo pipefail
+          REPORT="${{ needs.audit.outputs.report }}"
+          mkdir -p "$(dirname "$REPORT")"
+          FOUND="$(find audit-artifact -type f -name "$(basename "$REPORT")" | head -n1)"
+          if [ -z "$FOUND" ]; then
+            echo "::error::Could not find $(basename "$REPORT") in the downloaded artifact"
+            exit 1
+          fi
+          cp "$FOUND" "$REPORT"
+
       - name: Open or update audit PR
-        # Skip on pull_request (workflow summary covers it; we don't
-        # commit audit files from a PR-triggered run because the run
-        # is reviewing someone else's changes, not the audit itself).
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -168,10 +232,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          BRANCH="${{ steps.paths.outputs.branch }}"
-          REPORT="${{ steps.paths.outputs.report }}"
-          WEEK="${{ steps.paths.outputs.week }}"
-          IS_GREEN="${{ steps.greenness.outputs.is_green }}"
+          BRANCH="${{ needs.audit.outputs.branch }}"
+          REPORT="${{ needs.audit.outputs.report }}"
+          WEEK="${{ needs.audit.outputs.week }}"
+          IS_GREEN="${{ needs.audit.outputs.is_green }}"
 
           if [ "$IS_GREEN" = "true" ]; then
             LABEL="audit-green"

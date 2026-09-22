@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from scripts.security import dep_triage_consolidate as dcon
 
 MEMBER_A = """\
@@ -533,3 +535,166 @@ def test_main_execute_reports_error_and_nonzero_on_family_failure(
     out = capsys.readouterr().out
     assert "::error::" in out
     assert "::warning::" not in out
+
+
+# --------------------------------------------------------------------------
+# Structural raw-diff parsing
+# --------------------------------------------------------------------------
+
+BLOB_A = "1" * 40
+BLOB_B = "2" * 40
+BLOB_C = "3" * 40
+ZEROS = "0" * 40
+
+
+def raw(*records):
+    """Build `git diff --raw -z` output from (meta..., *paths) tuples.
+
+    Each record is ``(oldmode, newmode, oldsha, newsha, status, *paths)``.
+    The real command emits a trailing NUL after the final field, so this does
+    too -- a parser that only works on input without it would be parsing
+    something git never produces.
+    """
+    fields = []
+    for record in records:
+        fields.append(":%s %s %s %s %s" % tuple(record[:5]))
+        fields.extend(record[5:])
+    return "".join(f + "\0" for f in fields)
+
+
+def test_parse_raw_reads_a_simple_modification():
+    out = dcon.parse_raw(
+        raw(("100644", "100644", BLOB_A, BLOB_B, "M", ".github/workflows/codeql.yml"))
+    )
+    assert out == [
+        dcon.TreeEntry(".github/workflows/codeql.yml", "M", "100644", BLOB_B)
+    ]
+
+
+def test_parse_raw_reads_several_records_from_one_nul_stream():
+    out = dcon.parse_raw(
+        raw(
+            ("100644", "100644", BLOB_A, BLOB_B, "M", "a.yml"),
+            ("000000", "100644", ZEROS, BLOB_C, "A", "b.yml"),
+        )
+    )
+    assert [e.path for e in out] == ["a.yml", "b.yml"]
+    assert [e.status for e in out] == ["M", "A"]
+
+
+def test_parse_raw_handles_an_empty_diff():
+    assert dcon.parse_raw("") == []
+
+
+def test_parse_raw_expands_a_rename_into_a_source_deletion_and_a_destination():
+    """A rename must leave an entry at the path it vacated.
+
+    Keyed only on the destination, a file renamed *out* of a protected
+    directory would produce no entry at its original path at all -- the
+    disappearance would be invisible, which is the direction that hides an
+    attack rather than reporting it.
+    """
+    out = dcon.parse_raw(
+        raw(
+            (
+                "100644",
+                "100644",
+                BLOB_A,
+                BLOB_A,
+                "R100",
+                ".github/workflows/codeql.yml",
+                "docs/codeql.yml",
+            )
+        )
+    )
+    assert dcon.TreeEntry(".github/workflows/codeql.yml", "D", "000000", ZEROS) in out
+    assert dcon.TreeEntry("docs/codeql.yml", "R", "100644", BLOB_A) in out
+
+
+def test_parse_raw_does_not_desync_on_the_second_path_of_a_rename():
+    """The record after a two-path R must still parse as a record.
+
+    A parser that assumed one path per record would read the destination
+    path as the next record's metadata field and lose every entry after it.
+    """
+    out = dcon.parse_raw(
+        raw(
+            ("100644", "100644", BLOB_A, BLOB_A, "R100", "old.yml", "new.yml"),
+            ("100644", "100644", BLOB_B, BLOB_C, "M", "after.yml"),
+        )
+    )
+    assert dcon.TreeEntry("after.yml", "M", "100644", BLOB_C) in out
+
+
+def test_parse_raw_expands_a_copy_without_deleting_the_source():
+    out = dcon.parse_raw(
+        raw(("100644", "100644", BLOB_A, BLOB_A, "C75", "src.yml", "copy.yml"))
+    )
+    assert [e.path for e in out] == ["copy.yml"]
+
+
+def test_parse_raw_drops_the_similarity_score_from_the_status():
+    """The score reflects git's rename-detection budget, not the change."""
+    out = dcon.parse_raw(
+        raw(("100644", "100644", BLOB_A, BLOB_A, "R087", "old.yml", "new.yml"))
+    )
+    assert out[-1].status == "R"
+
+
+def test_parse_raw_keeps_a_path_containing_a_newline_intact():
+    """NUL separation is the reason the `-z` form is used.
+
+    A path with a newline in it would split a line-oriented parser's record
+    in half; here it is simply part of one field.
+    """
+    out = dcon.parse_raw(raw(("000000", "100644", ZEROS, BLOB_A, "A", "we\nird.yml")))
+    assert out == [dcon.TreeEntry("we\nird.yml", "A", "100644", BLOB_A)]
+
+
+def test_parse_raw_rejects_a_record_without_a_leading_colon():
+    with pytest.raises(dcon.RawParseError):
+        dcon.parse_raw("100644 100644 x y M\0a.yml\0")
+
+
+def test_parse_raw_rejects_a_combined_multi_parent_diff():
+    """`A...B` never emits one, so its appearance means a different command."""
+    with pytest.raises(dcon.RawParseError):
+        dcon.parse_raw("::100644 100644 100644 aaa bbb ccc MM\0a.yml\0")
+
+
+def test_parse_raw_rejects_a_metadata_field_with_the_wrong_arity():
+    with pytest.raises(dcon.RawParseError):
+        dcon.parse_raw(":100644 100644 M\0a.yml\0")
+
+
+def test_parse_raw_rejects_a_record_with_no_path_field():
+    with pytest.raises(dcon.RawParseError):
+        dcon.parse_raw(":100644 100644 %s %s M\0" % (BLOB_A, BLOB_B))
+
+
+def test_parse_raw_rejects_a_rename_with_no_destination_path():
+    with pytest.raises(dcon.RawParseError):
+        dcon.parse_raw(":100644 100644 %s %s R100\0old.yml\0" % (BLOB_A, BLOB_A))
+
+
+def test_parse_raw_rejects_an_empty_status():
+    with pytest.raises(dcon.RawParseError):
+        dcon.parse_raw(":100644 100644 %s %s \0a.yml\0" % (BLOB_A, BLOB_B))
+
+
+def test_entries_by_path_rejects_a_duplicated_path():
+    """Letting one entry overwrite another would discard a change."""
+    with pytest.raises(dcon.RawParseError):
+        dcon.entries_by_path(
+            raw(
+                ("100644", "100644", BLOB_A, BLOB_B, "M", "a.yml"),
+                ("100644", "100644", BLOB_B, BLOB_C, "M", "a.yml"),
+            )
+        )
+
+
+def test_tree_entry_repr_names_the_path_for_an_operator():
+    entry = dcon.TreeEntry(".github/workflows/codeql.yml", "D", "000000", ZEROS)
+    text = repr(entry)
+    assert ".github/workflows/codeql.yml" in text
+    assert text.startswith("<D ")

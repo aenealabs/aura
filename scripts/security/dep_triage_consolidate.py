@@ -12,10 +12,161 @@ import argparse
 import json
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 _SLUG = re.compile(r"[^a-z0-9.]+")
+
+
+_NULL_MODE = "000000"
+_NULL_SHA = "0" * 40
+
+
+class RawParseError(ValueError):
+    """`git diff --raw -z` output did not have the documented shape.
+
+    Raised rather than skipped. A record this parser cannot account for is a
+    record whose change it cannot verify, and silently ignoring it is the
+    failure mode this whole module exists to avoid.
+    """
+
+
+@dataclass(frozen=True, repr=False)
+class TreeEntry:
+    """One path's post-change tree metadata, as git itself computed it.
+
+    ``status`` is the single-letter code with any similarity score dropped
+    (``R100`` -> ``R``). The score is a heuristic that varies with what else
+    is in the diff, so comparing it would produce mismatches that reflect
+    git's rename-detection budget rather than any real difference.
+
+    ``newmode`` and ``newsha`` describe the file *after* the change, which is
+    what a consolidation branch must justify. Mode carries the executable bit
+    and the symlink type (``120000``), so a ``chmod +x`` or a file swapped for
+    a symlink is a different entry by construction -- neither is visible in a
+    diff's ``+`` lines at all.
+    """
+
+    path: str
+    status: str
+    newmode: str
+    newsha: str
+
+    def __repr__(self) -> str:
+        """Render for an operator-facing error message, not for eval().
+
+        These land in the `union mismatch` message a human reads when a
+        consolidation is refused, so the path comes first and the blob is
+        abbreviated -- the full 40 characters are compared but add nothing
+        to a human's reading of *which file* is unaccounted for.
+        """
+        return (
+            f"<{self.status} {self.path} mode={self.newmode} blob={self.newsha[:12]}>"
+        )
+
+
+@dataclass(frozen=True, repr=False)
+class ContestedPath:
+    """A path changed by more than one member PR.
+
+    The consolidation branch's content for such a path is git's three-way
+    merge of several members' versions, so its blob matches no single
+    member's blob. That is not evidence of tampering and it is not evidence
+    of safety either -- it is simply outside what tree metadata can decide.
+
+    It is reported instead of being reconciled. Reconciling it would mean
+    re-deriving the merged content textually, which is the approach this
+    module abandoned; asserting it is fine without checking would be a hole
+    in exactly the file the members all care about.
+    """
+
+    path: str
+    members: int
+
+    def __repr__(self) -> str:
+        return (
+            f"<CONTESTED {self.path}: changed by {self.members} member PRs; "
+            "the merged content is no single member's, so tree metadata "
+            "cannot verify it -- review this file by hand>"
+        )
+
+
+def parse_raw(raw: str) -> list[TreeEntry]:
+    """Parse `git diff --raw -z` output into per-path tree entries.
+
+    The record shape is
+    ``:<oldmode> <newmode> <oldsha> <newsha> <status>NUL<path>NUL``, with a
+    **second** path field for the ``R`` and ``C`` statuses. Walking fields
+    positionally (rather than splitting on newlines) is what makes the ``-z``
+    form safe: a path containing a newline, a tab or a quote cannot desync
+    the parse, because only NUL separates fields and NUL cannot occur in a
+    path.
+
+    A rename expands into two entries -- a deletion of the source path and a
+    creation of the destination -- so that the ``R`` form and the
+    ``--no-renames`` ``D``+``A`` form produce the same result. Without the
+    synthesised source deletion, a file renamed *out* of a protected
+    directory would leave no entry at its original path. A copy leaves its
+    source untouched, so it expands to the destination entry only.
+    """
+    fields = raw.split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
+
+    entries: list[TreeEntry] = []
+    index = 0
+    while index < len(fields):
+        meta = fields[index]
+        if meta.startswith("::"):
+            # A combined (multi-parent) raw diff. `A...B` never produces one,
+            # so its presence means the command was not the one this module
+            # asked for -- refuse rather than guess at the wider record shape.
+            raise RawParseError("combined multi-parent raw diffs are not supported")
+        if not meta.startswith(":"):
+            raise RawParseError(f"expected a ':' metadata field, got {meta!r}")
+        parts = meta[1:].split(" ")
+        if len(parts) != 5:
+            raise RawParseError(f"malformed raw record: {meta!r}")
+        _oldmode, newmode, _oldsha, newsha, status = parts
+        if not status:
+            raise RawParseError(f"raw record has an empty status: {meta!r}")
+        code = status[0]
+
+        index += 1
+        if index >= len(fields):
+            raise RawParseError(f"raw record has no path field: {meta!r}")
+        path = fields[index]
+        index += 1
+
+        if code in ("R", "C"):
+            if index >= len(fields):
+                raise RawParseError(
+                    f"{code} record for {path!r} has no destination path"
+                )
+            destination = fields[index]
+            index += 1
+            if code == "R":
+                entries.append(TreeEntry(path, "D", _NULL_MODE, _NULL_SHA))
+            entries.append(TreeEntry(destination, code, newmode, newsha))
+        else:
+            entries.append(TreeEntry(path, code, newmode, newsha))
+    return entries
+
+
+def entries_by_path(raw: str) -> dict[str, TreeEntry]:
+    """Index parsed raw entries by path, refusing duplicates.
+
+    `git diff --raw` emits at most one record per path. A repeated path means
+    the input is not what it claims to be, and letting one entry silently
+    overwrite another would discard a change -- the unsafe direction.
+    """
+    out: dict[str, TreeEntry] = {}
+    for entry in parse_raw(raw):
+        if entry.path in out:
+            raise RawParseError(f"path appears twice in one raw diff: {entry.path!r}")
+        out[entry.path] = entry
+    return out
 
 
 def added_lines(diff: str) -> set[str]:

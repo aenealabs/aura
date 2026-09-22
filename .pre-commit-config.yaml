@@ -305,6 +305,19 @@ repos:
       - id: markdownlint
         args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041']
 
+  # ==========================================================================
+  # GitHub Actions Workflow Linting
+  # ==========================================================================
+  # Nothing before this validated Actions semantics -- yaml.safe_load checks
+  # syntax only. actionlint catches issues yaml.safe_load cannot: unresolvable
+  # ${{ }} expressions, undefined job/step outputs, shellcheck findings inside
+  # `run:` blocks, and invalid `permissions:` keys.
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        files: ^\.github/workflows/
+
 # Default stages for hooks
 default_stages: [pre-commit, pre-push]
 

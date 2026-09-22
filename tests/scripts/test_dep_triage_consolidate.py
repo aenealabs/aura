@@ -11,6 +11,7 @@ could not see -- deletions, modes, renames, and file identity.
 """
 
 import json
+import sys
 
 import pytest
 
@@ -955,3 +956,43 @@ def test_tree_entry_repr_names_the_path_for_an_operator():
     text = repr(entry)
     assert ".github/workflows/codeql.yml" in text
     assert text.startswith("<D ")
+
+
+# --------------------------------------------------------------------------
+# _run
+#
+# The real subprocess seam, exercised against real commands. Every other
+# test in this file injects a fake `run`, so without these the function that
+# actually executes git and gh is never run at all.
+# --------------------------------------------------------------------------
+
+
+def test_run_returns_stdout_when_capturing():
+    assert "git version" in dcon._run(["git", "--version"], capture=True)
+
+
+def test_run_discards_stdout_when_not_capturing():
+    assert dcon._run(["git", "--version"]) == ""
+
+
+def test_run_raises_command_failed_on_a_non_zero_exit():
+    with pytest.raises(dcon.CommandFailed) as caught:
+        dcon._run(["git", "rev-parse", "--verify", "refs/heads/no-such-branch-here"])
+    assert "exited" in str(caught.value)
+
+
+def test_run_converts_a_hang_into_command_failed():
+    """A hung `git fetch` or `gh` must fail one family, not the whole job.
+
+    Without a timeout this call blocks until CI kills the runner, and every
+    family after it is skipped with no verdict -- the failure mode with the
+    worst blast radius in this module, because it produces no report at all.
+    """
+    with pytest.raises(dcon.CommandFailed) as caught:
+        dcon._run(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            timeout=0.25,
+        )
+    message = str(caught.value)
+    assert "did not finish" in message
+    assert "0.25s" in message

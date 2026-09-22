@@ -356,12 +356,37 @@ def _render(entries: set) -> str:
 
 
 class CommandFailed(RuntimeError):
-    """A subprocess command exited non-zero."""
+    """A subprocess command exited non-zero, timed out, or could not run."""
 
 
-def _run(args: list[str], capture: bool = False) -> str:
-    """Execute a command, raising CommandFailed on a non-zero exit."""
-    result = subprocess.run(args, capture_output=True, text=True)
+_TIMEOUT_SECONDS = 300
+
+
+def _run(
+    args: list[str], capture: bool = False, timeout: float = _TIMEOUT_SECONDS
+) -> str:
+    """Execute a command, raising CommandFailed on a non-zero exit or a hang.
+
+    The timeout is not a tuning knob, it is the difference between one failed
+    family and a dead job. `git fetch` and every `gh` call here talk to a
+    remote, and a remote that accepts the connection and then stops answering
+    leaves `subprocess.run` blocked forever -- with no output, until the CI
+    job's own cap kills the run. Every remaining family is then skipped with
+    no verdict at all, which is worse than any single failure this module can
+    report: an operator sees a timed-out job rather than "family X could not
+    be verified".
+
+    A timeout is therefore converted into the same `CommandFailed` every
+    other failure raises, so it travels the existing path -- caught by
+    `consolidate_family`, reported as a failed family, and the `finally`
+    still returns the checkout to `main`.
+    """
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise CommandFailed(
+            f"{' '.join(args)} did not finish within {timeout:g}s and was killed"
+        ) from None
     if result.returncode != 0:
         raise CommandFailed(
             f"{' '.join(args)} exited {result.returncode}: {result.stderr.strip()}"

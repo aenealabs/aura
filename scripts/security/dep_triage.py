@@ -112,6 +112,12 @@ class PRSnapshot:
     # Recorded for the report's reason text; the author *login* remains the
     # decision, because a non-Dependabot bot is also `is_bot: true`.
     author_is_bot: bool = False
+    # The commit the classification was computed against. Dependabot force-
+    # pushes its branches on rebase, so a verdict is only true of one head:
+    # the batch proof can prove commit X, the report can say merge-safe, and
+    # the operator can merge commit Y. Rendered in the report and re-checked
+    # by the workflow before any PR is merged into the candidate branch.
+    head_sha: str = ""
 
 
 @dataclass(frozen=True)
@@ -153,6 +159,7 @@ def load_snapshot(path: Path) -> list[PRSnapshot]:
                 release_age_days=item.get("release_age_days"),
                 risk_tier=item.get("risk_tier", "unknown"),
                 author_is_bot=bool(item.get("author_is_bot", False)),
+                head_sha=item.get("head_sha", ""),
             )
         )
     return snapshots
@@ -656,10 +663,17 @@ def render_report(
     """Build the markdown triage report."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     titles = {p.number: p.title for p in prs}
+    heads = {p.number: p.head_sha for p in prs}
     lines: list[str] = [f"# Dependabot Triage -- {now}", ""]
     lines.append(
         "Automated classification. Every merge is performed by an operator; "
         "nothing here merges or approves a pull request."
+    )
+    lines.append("")
+    lines.append(
+        "Every verdict below is a statement about the **Head** commit named "
+        "beside it, and nothing else. Dependabot force-pushes its branches on "
+        "rebase, so confirm the PR's head still matches before merging."
     )
     lines.append("")
     if proof_url:
@@ -681,7 +695,15 @@ def render_report(
                 by_family.setdefault(d.family or "unknown", []).append(d)
             for family, members in sorted(by_family.items()):
                 numbers = ", ".join(
-                    f"#{d.number}" for d in sorted(members, key=lambda m: m.number)
+                    # The head SHA belongs here too: a family is merged as a
+                    # unit, so every member's verdict is a statement about one
+                    # specific commit exactly as it is in the tables below.
+                    (
+                        f"#{d.number} (`{heads.get(d.number, '')[:10]}`)"
+                        if heads.get(d.number)
+                        else f"#{d.number} (unknown)"
+                    )
+                    for d in sorted(members, key=lambda m: m.number)
                 )
                 lines.append(f"### `{family}`")
                 lines.append("")
@@ -691,12 +713,14 @@ def render_report(
                 )
                 lines.append("")
             continue
-        lines.append("| PR | Code | Title | Reason |")
-        lines.append("|----|------|-------|--------|")
+        lines.append("| PR | Head | Code | Title | Reason |")
+        lines.append("|----|------|------|-------|--------|")
         for d in sorted(selected, key=lambda x: x.number):
             title = titles.get(d.number, "").replace("|", "\\|")
             reason = d.reason.replace("|", "\\|")
-            lines.append(f"| #{d.number} | `{d.code}` | {title} | {reason} |")
+            sha = heads.get(d.number, "")
+            head = f"`{sha[:10]}`" if sha else "(unknown)"
+            lines.append(f"| #{d.number} | {head} | `{d.code}` | {title} | {reason} |")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 

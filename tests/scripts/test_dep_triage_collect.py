@@ -445,6 +445,45 @@ def test_a_full_pr_listing_is_treated_as_truncated(tmp_path, monkeypatch):
         dc.main(["--output", str(tmp_path / "s.json"), "--repo", "org/repo"])
 
 
+def test_listing_requests_and_carries_the_head_commit(tmp_path, monkeypatch):
+    """headRefOid binds a verdict to a commit.
+
+    Without it "PR #N is merge-safe" is a claim about whatever the branch
+    points at when someone reads the report, which is not necessarily what
+    was classified."""
+    seen = []
+
+    def fake_gh_json(args):
+        seen.append(args)
+        if args[:2] == ["pr", "list"]:
+            return [
+                {
+                    "number": 7,
+                    "title": "chore(deps): bump six from 1.0.0 to 1.1.0",
+                    "author": GH_DEPENDABOT,
+                    "files": [{"path": "requirements.txt"}],
+                    "headRefOid": "a" * 40,
+                }
+            ]
+        return [{"name": "Tests", "bucket": "pass", "state": "SUCCESS"}]
+
+    monkeypatch.setattr(dc, "_gh_json", fake_gh_json)
+    monkeypatch.setattr(dc, "release_age_days", lambda *a, **k: 30.0)
+    out = tmp_path / "snap.json"
+    assert dc.main(["--output", str(out), "--repo", "org/repo"]) == 0
+    listing_args = next(a for a in seen if a[:2] == ["pr", "list"])
+    assert "headRefOid" in listing_args[listing_args.index("--json") + 1]
+    snapshot = json.loads(out.read_text(encoding="utf-8"))
+    assert snapshot["pull_requests"][0]["head_sha"] == "a" * 40
+
+
+def test_captured_prs_all_carry_a_head_commit():
+    """A capture with blank SHAs would make the binding vacuous."""
+    snapshot = json.loads(SNAPSHOT_FIXTURE.read_text(encoding="utf-8"))
+    for pr in snapshot["pull_requests"]:
+        assert len(pr["head_sha"]) == 40, pr["number"]
+
+
 def test_snapshot_records_the_control_inputs_it_classified_against():
     """The register tiers are echoed into the snapshot for the report header.
 
@@ -747,6 +786,7 @@ def _snapshot_from_raw(raw, committed):
                 "title": item["title"],
                 "author": item["author"],
                 "files": [f["path"] for f in item.get("files", [])],
+                "head_sha": item.get("headRefOid", ""),
             }
         )
         recorded = raw["pr_checks"][str(number)]

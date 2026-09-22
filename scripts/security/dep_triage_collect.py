@@ -257,6 +257,7 @@ def build_snapshot(
             {
                 "number": pr["number"],
                 "title": pr.get("title", ""),
+                "head_sha": pr.get("head_sha", ""),
                 "author": (pr.get("author") or {}).get("login", ""),
                 "author_is_bot": bool((pr.get("author") or {}).get("is_bot", False)),
                 "files": files,
@@ -350,7 +351,11 @@ def main(argv: list[str] | None = None) -> int:
             "--limit",
             str(PR_LIST_LIMIT),
             "--json",
-            "number,title,author,files",
+            # headRefOid binds every verdict to the exact commit it was
+            # computed against. Dependabot force-pushes its branches on rebase,
+            # so "PR #N is merge-safe" is only true of one head, and the batch
+            # proof re-checks this SHA before merging.
+            "number,title,author,files,headRefOid",
         ]
     )
     if len(listing) >= PR_LIST_LIMIT:  # type: ignore[arg-type]
@@ -366,6 +371,7 @@ def main(argv: list[str] | None = None) -> int:
             "title": item["title"],
             "author": item["author"],
             "files": [f["path"] for f in item.get("files", [])],
+            "head_sha": item.get("headRefOid", ""),
         }
         for item in listing  # type: ignore[union-attr]
     ]

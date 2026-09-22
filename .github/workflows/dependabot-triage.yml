@@ -127,6 +127,14 @@ jobs:
         with:
           python-version: '3.11'
 
+      # The snapshot records the head commit each verdict was computed
+      # against. Without it this job would prove whatever the branch happens
+      # to point at now, which is not necessarily what classify examined.
+      - name: Download triage artifacts
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: triage
+
       - name: Build candidate integration branch
         id: build
         env:
@@ -137,12 +145,32 @@ jobs:
           git config user.name "aura-ci"
           git config user.email "ci@aenealabs.com"
           git switch -c "dep-triage/candidate-${GITHUB_RUN_ID}"
+          # One lookup table of the head commit each verdict was computed
+          # against, read once rather than re-parsing the snapshot per PR.
+          python3 - <<'PY' > heads.txt
+          import json
+          snapshot = json.load(open("snapshot.json"))
+          for pr in snapshot["pull_requests"]:
+              print(pr["number"], pr.get("head_sha", ""))
+          PY
           conflicted=""
           for pr in $(echo "$CANDIDATES" | python3 -c \
               'import json,sys; print(" ".join(map(str, json.load(sys.stdin))))'); do
             if ! git fetch origin "pull/${pr}/head:pr-${pr}"; then
               echo "::warning::PR #${pr} could not be fetched (closed or force-rebased since classify); excluding it"
               conflicted="${conflicted:+${conflicted},}${pr}"
+              continue
+            fi
+            # Dependabot force-pushes on rebase. A head that moved since
+            # classify has not been classified, so proving it here would
+            # attach a merge-safe verdict to code no rule ever saw. Treat it
+            # exactly like a fetch failure: warn, exclude, continue.
+            expected="$(awk -v n="$pr" '$1 == n {print $2}' heads.txt)"
+            actual="$(git rev-parse "pr-${pr}")"
+            if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+              echo "::warning::PR #${pr} head moved since classify (snapshot ${expected:-none}, now ${actual}); excluding it"
+              conflicted="${conflicted:+${conflicted},}${pr}"
+              git branch -D "pr-${pr}"
               continue
             fi
             if ! git merge --no-edit "pr-${pr}"; then

@@ -779,6 +779,28 @@ def test_render_report_groups_by_classification():
         assert heading in md
 
 
+def test_every_verdict_is_rendered_beside_the_commit_it_was_computed_against():
+    """A verdict with no head SHA cannot be checked against what gets merged.
+
+    Dependabot force-pushes its branches on rebase, so the batch proof can
+    prove commit X, the report can say merge-safe, and the operator can merge
+    commit Y. Naming the head in the report is what closes that window on the
+    human side; the workflow's SHA re-check closes it on the machine side."""
+    prs = dt.load_snapshot(FIXTURE)
+    md = dt.render_report(dt.classify(prs), prs)
+    assert "| PR | Head | Code | Title | Reason |" in md
+    for pr in prs:
+        assert pr.head_sha, f"#{pr.number} carries no head SHA"
+        assert f"`{pr.head_sha[:10]}`" in md
+
+
+def test_a_snapshot_without_head_shas_renders_unknown_rather_than_blank():
+    """An older snapshot must read as unverifiable, not as verified."""
+    pr = _pr(number=99, head_sha="")
+    md = dt.render_report(dt.classify([pr]), [pr])
+    assert "(unknown)" in md
+
+
 def test_report_header_echoes_the_control_inputs_it_classified_against():
     """A wrong control input otherwise produces a confident, wrong report.
 
@@ -925,6 +947,6 @@ def test_render_report_escapes_pipes_in_titles_and_reasons():
     row = next(line for line in md.splitlines() if line.startswith("| #99 "))
     assert "1.0 \\| 2.0" in row
     assert "a \\| appeared" in row
-    # The row must have exactly the 4 declared columns plus the leading and
+    # The row must have exactly the 5 declared columns plus the leading and
     # trailing delimiters; an unescaped pipe would add cells.
-    assert row.count("|") - row.count("\\|") == 5
+    assert row.count("|") - row.count("\\|") == 6

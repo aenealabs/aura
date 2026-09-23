@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from scripts.security import dep_risk_register
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTER_PATH = REPO_ROOT / "docs/security/DEPENDENCY_RISK_REGISTER.md"
 
@@ -53,12 +55,6 @@ _BUMP = re.compile(
 # unresolvable version rather than a tagged one.
 _VERSION_PREFIX = re.compile(r"^[\^~>=<\s]*[vV]?")
 _VERSION_CLEAN = re.compile(r"[^\d.].*$")
-
-# Matches the first backticked token in a risk-register table cell, e.g. the
-# `image-size` in "`image-size` (via `pptxgenjs`)". The register annotates
-# some entries with their transitive source in the same cell, so the package
-# name is never assumed to be the entire cell contents.
-_FIRST_BACKTICKED = re.compile(r"`([^`]+)`")
 
 # Grouped Dependabot PRs. .github/dependabot.yml configures a `minor-and-patch`
 # group for pip and for npm, so these are the routine shape here, not an edge
@@ -203,45 +199,22 @@ def check_state(bucket: str, state: str) -> tuple[str, str | None]:
 
 
 def _risk_tiers(register: Path) -> dict[str, str]:
-    """Map package name to tier by reading the risk register's tables.
+    """Map normalized package name to tier by reading the risk register.
 
-    Raises rather than returning an empty mapping when the register is absent
-    or yields no tiers. An empty mapping is indistinguishable from "no package
-    is At-Risk", so a moved, renamed or reformatted register would silently
-    disarm ``rule_held_package`` and let an At-Risk package with unpatched CVEs
-    classify as a candidate. Failing the collection is the only outcome that
-    cannot be mistaken for a clean bill of health.
+    Thin wrapper over ``dep_risk_register.load_risk_tiers`` -- the one parser
+    both this module and ``dep_risk_audit.py`` import, so they cannot read
+    the register's Tier column two different ways again. See
+    ``dep_risk_register``'s module docstring for why a second parser is a
+    hazard in itself: a markdown-parsing bug in an earlier version of this
+    exact function dropped ``image-size`` -- At-Risk with two unpatched CVEs
+    -- and the hold never fired.
+
+    Kept as a module-level name (rather than inlining the import at every
+    call site) because the existing tests call ``dc._risk_tiers`` directly;
+    it raises the same ``RuntimeError`` (a ``RegisterFormatError``, which
+    subclasses it) on a missing or reshaped register that it always has.
     """
-    if not register.exists():
-        raise RuntimeError(
-            f"dependency risk register not found at {register}: the At-Risk "
-            "holds cannot be evaluated, and an empty tier map is "
-            "indistinguishable from a register in which nothing is held"
-        )
-    tiers: dict[str, str] = {}
-    for line in register.read_text(encoding="utf-8").splitlines():
-        if not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 3:
-            continue
-        # The name cell is usually just a bare backticked package name, but
-        # some rows annotate it further, e.g. "`image-size` (via
-        # `pptxgenjs`)". Stripping backticks off the whole cell in that case
-        # yields "image-size` (via `pptxgenjs" -- garbage that never matches
-        # a real package. Extract the first backticked token instead, falling
-        # back to the stripped cell when there is no backtick at all.
-        match = _FIRST_BACKTICKED.search(cells[0])
-        name = match.group(1) if match else cells[0].strip("`")
-        tier = cells[2].strip("*").lower()
-        if tier in {"at-risk", "replace-now", "watch", "healthy"}:
-            tiers[name] = tier
-    if not tiers:
-        raise RuntimeError(
-            f"dependency risk register {register} parsed to zero package "
-            "tiers: its table shape changed, so no At-Risk hold can fire"
-        )
-    return tiers
+    return dep_risk_register.load_risk_tiers(register)
 
 
 def _fetch_json(url: str) -> dict:
@@ -431,6 +404,15 @@ def build_snapshot(
     ``release_ages`` is keyed by ``(ecosystem, package)`` rather than bare
     package name, so a same-named pip and npm package in one batch cannot
     clobber each other's cached age.
+
+    ``risk_tiers`` is keyed by ``dep_risk_register.normalize_package``'s
+    output, not the bare register spelling, so every lookup below normalizes
+    the PR's own package name through the same function before matching --
+    otherwise a casing or separator difference (``Pillow`` vs ``pillow``,
+    ``nest_asyncio`` vs ``nest-asyncio``) would miss a real register entry.
+    Today's register rows happen to be lowercase-hyphenated already, so this
+    was latent rather than live, but a lookup keyed on exact string equality
+    is one register edit away from a silent miss.
     """
     out: list[dict] = []
     for pr in prs:
@@ -441,10 +423,18 @@ def build_snapshot(
         # ones whose title reads as a group. Deciding what counts as a grouped
         # PR is the classifier's job, and it makes that call from the title;
         # the collector's job is to supply whatever the body states.
+        #
+        # A grouped update's members share the PR's own ecosystem --
+        # .github/dependabot.yml groups pip with pip and npm with npm, never
+        # mixed -- so normalizing every member through the PR-level
+        # `ecosystem` is correct, not an approximation.
         members = [
             {
                 **member,
-                "risk_tier": risk_tiers.get(member["package"], "unknown"),
+                "risk_tier": risk_tiers.get(
+                    dep_risk_register.normalize_package(ecosystem, member["package"]),
+                    "unknown",
+                ),
                 "release_age_days": release_ages.get((ecosystem, member["package"])),
             }
             for member in parse_group_members(pr.get("body", ""))
@@ -465,7 +455,10 @@ def build_snapshot(
                 "from_version": old,
                 "to_version": new,
                 "release_age_days": release_ages.get((ecosystem, package)),
-                "risk_tier": risk_tiers.get(package, "unknown"),
+                "risk_tier": risk_tiers.get(
+                    dep_risk_register.normalize_package(ecosystem, package),
+                    "unknown",
+                ),
                 "members": members,
             }
         )

@@ -663,7 +663,7 @@ def test_register_that_parses_to_zero_tiers_raises(tmp_path):
     one: present on disk, contributing no holds, and silent about it."""
     register = tmp_path / "register.md"
     register.write_text("# Dependency Risk Register\n\nNo tables here.\n", "utf-8")
-    with pytest.raises(RuntimeError, match="zero package"):
+    with pytest.raises(RuntimeError, match="no table with both"):
         dc._risk_tiers(register)
 
 

@@ -37,11 +37,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+from scripts.security import dep_risk_register
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYTHON_REQUIREMENTS = sorted(REPO_ROOT.glob("requirements*.txt")) + sorted(
@@ -156,49 +157,34 @@ def npm_audit(frontend_dir: Path) -> dict:
 
 
 def _watch_tier_packages(register_path: Path) -> list[tuple[str, str]]:
-    """Parse the Watch / At-Risk / Replace-Now headline table from
-    the register and return ``(name, surface)`` tuples. ``surface`` is
-    the second column verbatim (e.g., ``"Frontend (devDep)"``,
-    ``"Python (API runtime)"``, ``"GitHub Action"``); callers dispatch
-    the correct staleness-check function from it. Falls back to an
-    empty list if the register is missing or unparseable; the audit
-    can still run pip-audit and npm audit.
+    """The Watch / At-Risk / Replace-Now headline table from the register,
+    as ``(name, surface)`` tuples. ``surface`` is the Surface column verbatim
+    (e.g., ``"Frontend (devDep)"``, ``"Python (API runtime)"``, ``"GitHub
+    Action"``); callers dispatch the correct staleness-check function from
+    it. Falls back to an empty list if the register is missing or
+    unparseable; this staleness check is best-effort, not the security
+    control that ``dep_triage_collect``'s At-Risk hold is, so the audit can
+    still run pip-audit and npm audit without it.
 
-    Register table header (source of truth):
-        | Package | Surface | Tier | Reason | Mitigation |
+    Thin wrapper over ``dep_risk_register.load_register`` -- the one parser
+    this and ``dep_triage_collect._risk_tiers`` both import now, rather than
+    two independent hand-rolled ones that happened to agree by luck. See
+    that module's docstring for why a second parser of this exact file is a
+    hazard in itself.
 
-    Closes #162. Prior version returned only the package name and the
-    caller dispatched via a brittle ``npm_known`` allowlist that
-    missed ``eslint-plugin-react`` (it fell through to ``pip show``,
-    surfacing as "not installed" under the Python section). Reading
-    the Surface column directly from the register matches the table's
-    own intent.
+    Closes #162 (prior-prior version returned only the package name and
+    dispatched via a brittle ``npm_known`` allowlist that missed
+    ``eslint-plugin-react``). This version locates the Surface and Tier
+    columns by header name rather than the anchor-heading-plus-position
+    scheme that replaced it, which is the more robust of the two: a table
+    that gains a column, or a heading that gets reworded, does not change
+    which columns "Surface" and "Tier" refer to.
     """
-    if not register_path.exists():
+    try:
+        rows = dep_risk_register.load_register(register_path)
+    except dep_risk_register.RegisterFormatError:
         return []
-    text = register_path.read_text()
-    # Pull the first markdown table after the "act on these" anchor.
-    anchor = "## At-Risk and Replace-Now Items"
-    if anchor not in text:
-        return []
-    section = text.split(anchor, 1)[1].split("\n## ", 1)[0]
-    rows: list[tuple[str, str]] = []
-    for line in section.splitlines():
-        if not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 2 or cells[0].startswith("---"):
-            continue
-        # First cell is something like `package-name` (in backticks).
-        # Header row "| Package | Surface | ..." has no backticks and
-        # falls through cleanly.
-        match = re.search(r"`([^`]+)`", cells[0])
-        if not match:
-            continue
-        name = match.group(1).split(" ", 1)[0]
-        surface = cells[1] if len(cells) >= 2 else ""
-        rows.append((name, surface))
-    return rows
+    return dep_risk_register.tracked_surface_rows(rows)
 
 
 def staleness_check_python(package: str) -> dict:

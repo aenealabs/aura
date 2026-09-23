@@ -899,6 +899,37 @@ def _control_input_lines(prs: list[PRSnapshot], controls: dict | None) -> list[s
     return lines
 
 
+def _inert_span(text: str) -> str:
+    """Wrap ``text`` in a Markdown code span it cannot escape out of.
+
+    A PR title is attacker-controlled: this repository is public, and any
+    non-Dependabot PR's title -- reported verbatim in the "Excluded" section
+    -- is chosen by whoever opened that PR. Without this, backticks, a
+    ``[link](...)`` or an inline ``<img>``/``<details>`` tag in a title pass
+    straight through into an issue body an operator reads and acts on.
+
+    Follows CommonMark's own rule for code spans: use a backtick fence one
+    character longer than the longest run of backticks already inside the
+    content (so the content's own backticks can never close the span early),
+    and pad with a single space on each side when the content starts or ends
+    with a backtick (otherwise that backtick would visually fuse with the
+    fence). There is no newline in a PR title, so a forged table *row* is not
+    possible here -- only a forged inline element within one cell -- and a
+    code span is sufficient defense against that.
+    """
+    longest_run = 0
+    current = 0
+    for char in text:
+        if char == "`":
+            current += 1
+            longest_run = max(longest_run, current)
+        else:
+            current = 0
+    fence = "`" * (longest_run + 1)
+    body = f" {text} " if text[:1] == "`" or text[-1:] == "`" else text
+    return f"{fence}{body}{fence}"
+
+
 def render_report(
     decisions: list[Decision],
     prs: list[PRSnapshot],
@@ -961,7 +992,19 @@ def render_report(
         lines.append("| PR | Head | Code | Title | Reason |")
         lines.append("|----|------|------|-------|--------|")
         for d in sorted(selected, key=lambda x: x.number):
-            title = titles.get(d.number, "").replace("|", "\\|")
+            # The title is untrusted for any PR a Dependabot-only classifier
+            # still has to display -- the "Excluded" section carries every
+            # non-Dependabot PR's title verbatim, and anyone can open one
+            # against this public repository. `_inert_span` neutralizes
+            # backticks, links, and raw HTML by rendering the whole title as
+            # a code span; the `|` escape still runs first because a code
+            # span protects inline markup, not a table cell's own column
+            # boundary. `d.reason` gets only the `|` escape and no code
+            # span: reasons are strings this codebase generates from its own
+            # rule set, never copied from a PR, so there is no markup in
+            # them to neutralize -- only the pipe, which any reason mentioning
+            # a package version range (e.g. "^4.1.11") could still contain.
+            title = _inert_span(titles.get(d.number, "").replace("|", "\\|"))
             reason = d.reason.replace("|", "\\|")
             sha = heads.get(d.number, "")
             head = f"`{sha[:10]}`" if sha else "(unknown)"

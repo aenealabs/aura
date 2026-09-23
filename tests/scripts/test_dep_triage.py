@@ -1205,3 +1205,46 @@ def test_render_report_escapes_pipes_in_titles_and_reasons():
     # The row must have exactly the 5 declared columns plus the leading and
     # trailing delimiters; an unescaped pipe would add cells.
     assert row.count("|") - row.count("\\|") == 6
+
+
+def test_inert_span_uses_a_fence_longer_than_the_longest_backtick_run():
+    """CommonMark's own rule: the fence must be one backtick longer than
+    the longest run already inside the content, or that run could close
+    the span early."""
+    assert dt._inert_span("plain") == "`plain`"
+    assert dt._inert_span("has `one` backtick run") == "``has `one` backtick run``"
+    assert dt._inert_span("has ``two`` in a row") == "```has ``two`` in a row```"
+
+
+def test_inert_span_pads_when_content_starts_or_ends_with_a_backtick():
+    """Without the pad, a leading/trailing backtick in the content would
+    visually -- and in some renderers, structurally -- fuse with the fence."""
+    assert dt._inert_span("`leading") == "`` `leading ``"
+    assert dt._inert_span("trailing`") == "`` trailing` ``"
+
+
+def test_render_report_neutralizes_a_hostile_non_dependabot_title():
+    """Non-Dependabot PR titles are attacker-controlled -- this repository is
+    public, and any PR's title lands in the Excluded section verbatim.
+    Backticks, a Markdown link, a raw HTML tag, and a pipe together must not
+    let the title escape its table cell or inject live Markdown into a
+    report an operator reads and acts on."""
+    hostile = (
+        "See `rm -rf` [click me](http://evil.example/x) "
+        "<img src=x onerror=alert(1)> | boom"
+    )
+    pr = _pr(number=666, author="not-dependabot", title=hostile)
+    md = dt.render_report(dt.classify([pr]), [pr])
+    row = next(line for line in md.splitlines() if line.startswith("| #666 "))
+
+    # The whole hostile title, pipe-escaped, is wrapped in one opaque code
+    # span whose fence is longer than any backtick run inside it -- the
+    # title's own single backticks cannot close the span early and let the
+    # link or HTML that follows become live Markdown.
+    expected_title_cell = dt._inert_span(hostile.replace("|", "\\|"))
+    assert expected_title_cell in row
+
+    # The escaped pipe still protects the table row's own column boundary --
+    # a code span does not do that job -- so the row keeps exactly its 5
+    # declared columns.
+    assert row.count("|") - row.count("\\|") == 6

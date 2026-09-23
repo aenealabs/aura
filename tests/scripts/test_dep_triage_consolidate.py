@@ -26,6 +26,14 @@ BLOB_PAYLOAD = "e" * 40
 BLOB_PAYLOADQ_NEWLANK = "f" * 40
 ZEROS = "0" * 40
 
+# Object ids for the expected-merge check. Real git ids, in the sense that
+# matters here: 40 lowercase hex characters, which is what the plumbing
+# wrappers require before they will compare anything.
+BASE_OID = "1" * 40
+EXPECTED_TREE = "2" * 40
+OTHER_TREE = "3" * 40
+CHAIN_COMMIT = "4" * 40
+
 CODEQL = ".github/workflows/codeql.yml"
 QUALITY = ".github/workflows/code-quality.yml"
 
@@ -339,11 +347,18 @@ def test_contested_path_is_reported_once_not_as_a_pile_of_mismatches():
     assert not missing
 
 
-def test_contested_path_repr_tells_the_operator_to_review_by_hand():
+def test_contested_path_repr_names_the_file_and_how_many_members_changed_it():
+    """The repr is rendered into the message an operator reads.
+
+    It no longer says "review by hand": a contested path is settled against
+    the expected merge, and this marker only appears in a failure message
+    when that check could not settle it either -- at which point what the
+    operator needs is the file name and the number of members involved.
+    """
     text = repr(dcon.ContestedPath(CODEQL, 3))
     assert CODEQL in text
     assert "3 member" in text
-    assert "by hand" in text
+    assert "expected merge" in text
 
 
 def test_contested_path_does_not_mask_an_unrelated_extra_entry():
@@ -544,11 +559,27 @@ def test_consolidation_body_describes_what_was_actually_verified():
 
 
 class FakeRun:
-    """Records commands; returns canned stdout per matched prefix."""
+    """Records commands; returns canned stdout per matched substring.
+
+    Two commands are answered by default because every consolidation runs
+    them and no test is about them: `git --version` (the `merge-tree`
+    version floor) and `git rev-parse HEAD` (the branch's base commit).
+    Either can still be overridden by passing the same needle.
+
+    Needles are matched longest-first, so a specific one
+    (`rev-parse HEAD^{tree}`) wins over a general one (`rev-parse HEAD`)
+    regardless of the order they were registered in.
+    """
+
+    DEFAULTS = {
+        "git --version": "git version 2.50.1 (Apple Git-155)\n",
+        "rev-parse HEAD": BASE_OID + "\n",
+    }
 
     def __init__(self, responses=None, fail_on=None):
         self.calls = []
-        self.responses = responses or {}
+        self.responses = dict(self.DEFAULTS)
+        self.responses.update(responses or {})
         self.fail_on = fail_on or ()
 
     def __call__(self, args, capture=False):
@@ -557,9 +588,9 @@ class FakeRun:
         for needle in self.fail_on:
             if needle in joined:
                 raise dcon.CommandFailed(joined)
-        for needle, out in self.responses.items():
+        for needle in sorted(self.responses, key=len, reverse=True):
             if needle in joined:
-                return out
+                return self.responses[needle]
         return ""
 
     def ran(self, needle):
@@ -648,13 +679,140 @@ def test_consolidate_family_refuses_when_the_branch_deletes_a_workflow():
     assert not run.ran("push")
 
 
-def test_consolidate_family_refuses_when_two_members_touch_one_path():
-    """Reported for human attention, not reconciled and not pushed."""
-    run = _happy_run(
+# --------------------------------------------------------------------------
+# The contested case: two members changing one file
+#
+# The blob for such a path is git's three-way merge of several members'
+# versions and equals no single member's, so no comparison of hashes can
+# settle it. It is settled instead by recomputing the tree the merge should
+# produce, with `git merge-tree --write-tree`, and requiring the branch to be
+# exactly that tree. This is the shape of the flagship codeql family -- every
+# member edits one workflow file -- so refusing it outright refused the case
+# the module exists for.
+# --------------------------------------------------------------------------
+
+
+def _contested_run(**overrides):
+    """A run where both members change CODEQL, so the path is contested."""
+    responses = {
+        "origin/main...pr-450": raw(
+            ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEW, "M", CODEQL)
+        ),
+        "origin/main...pr-452": raw(
+            ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOAD, "M", CODEQL)
+        ),
+        "origin/main...HEAD": raw(
+            ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOADQ_NEWLANK, "M", CODEQL)
+        ),
+        "merge-tree --write-tree": EXPECTED_TREE + "\n",
+        "commit-tree": CHAIN_COMMIT + "\n",
+        f"rev-parse {CHAIN_COMMIT}^": EXPECTED_TREE + "\n",
+        "rev-parse HEAD^{tree}": EXPECTED_TREE + "\n",
+    }
+    responses.update(overrides.pop("responses", {}))
+    return FakeRun(responses=responses, **overrides)
+
+
+def test_consolidate_family_verifies_a_contested_path_against_the_expected_merge():
+    """The flagship case: several members editing one workflow file.
+
+    Blob comparison cannot decide this path, so the branch is checked against
+    the tree `git merge-tree` says merging these members from this base
+    produces. Equal means the branch *is* that merge, which is a stronger
+    statement than the per-path check makes, so the PR is opened.
+    """
+    run = _contested_run()
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert ok, message
+    assert run.ran("merge-tree --write-tree")
+    assert run.ran("pr create")
+
+
+def test_consolidate_family_refuses_a_contested_branch_that_is_not_the_merge():
+    """One extra line in a contested file is still caught.
+
+    This is the hole the expected-merge check must not open: the path is
+    contested, so the blob comparison abstains, and the only thing standing
+    between a smuggled edit and an opened PR is the tree comparison.
+    """
+    run = _contested_run(
         responses={
-            "origin/main...pr-452": raw(
-                ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOAD, "M", CODEQL)
+            "rev-parse HEAD^{tree}": OTHER_TREE + "\n",
+            f"{EXPECTED_TREE} {OTHER_TREE}": raw(
+                ("100644", "100644", BLOB_PAYLOAD, BLOB_PAYLOADQ_NEW, "M", CODEQL)
             ),
+        }
+    )
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "not the members' expected merge" in message
+    assert CODEQL in message
+    assert not run.ran("pr create")
+    assert not run.ran("push")
+
+
+def test_consolidate_family_refuses_when_the_expected_merge_conflicts():
+    """A conflicted expected merge is a failure, not a skip.
+
+    `merge-tree` exits non-zero when the merge conflicts. The members then do
+    not compose cleanly, so there is no tree to compare the branch against --
+    and "we could not work out what this should look like" must never be
+    reported as "it looks right".
+    """
+    run = _contested_run(fail_on=("merge-tree",))
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "does not compose cleanly" in message
+    assert not run.ran("pr create")
+    assert not run.ran("push")
+
+
+def test_consolidate_family_refuses_when_merge_tree_output_is_not_an_object_id():
+    run = _contested_run(responses={"merge-tree --write-tree": "who knows\n"})
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "object id" in message
+    assert not run.ran("pr create")
+    assert not run.ran("push")
+
+
+def test_consolidate_family_refuses_a_contested_path_on_a_git_without_write_tree():
+    """`--write-tree` arrived in git 2.38. An older git must say so.
+
+    Without the floor the call fails with git's usage error, which reads as
+    a broken command rather than as an environment that cannot run this
+    check at all.
+    """
+    run = _contested_run(responses={"git --version": "git version 2.34.1\n"})
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "2.38" in message
+    assert "merge-tree" in message
+    assert not run.ran("merge-tree")
+    assert not run.ran("pr create")
+    assert not run.ran("push")
+
+
+def test_consolidate_family_still_refuses_a_smuggled_file_beside_a_contested_path():
+    """A contested path does not buy an unexplained one a pass.
+
+    The expected-merge check is only reached when *every* mismatch is a
+    contested path. A branch that also carries a file no member touched is
+    refused by the blob comparison first, so the wider check can never be
+    used to launder it.
+    """
+    run = _contested_run(
+        responses={
             "origin/main...HEAD": raw(
                 (
                     "100644",
@@ -663,18 +821,193 @@ def test_consolidate_family_refuses_when_two_members_touch_one_path():
                     BLOB_PAYLOADQ_NEWLANK,
                     "M",
                     CODEQL,
-                )
-            ),
+                ),
+                ("000000", "100644", ZEROS, BLOB_PAYLOAD, "A", "evil.sh"),
+            )
         }
     )
     ok, message = dcon.consolidate_family(
         "github/codeql-action", "4.38.0", [450, 452], run
     )
     assert not ok
-    assert "CONTESTED" in message
-    assert CODEQL in message
+    assert "union mismatch" in message
+    assert "evil.sh" in message
+    assert not run.ran("merge-tree")
     assert not run.ran("pr create")
     assert not run.ran("push")
+
+
+def test_consolidate_family_still_refuses_a_missing_member_change_beside_contested():
+    run = _contested_run(
+        responses={
+            "origin/main...pr-452": raw(
+                ("100644", "100644", BLOB_PAYLOADQ_OLD, BLOB_PAYLOAD, "M", CODEQL),
+                ("100644", "100644", BLOB_QUALITY_OLD, BLOB_QUALITY_NEW, "M", QUALITY),
+            )
+        }
+    )
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [450, 452], run
+    )
+    assert not ok
+    assert "union mismatch" in message
+    assert QUALITY in message
+    assert not run.ran("merge-tree")
+    assert not run.ran("push")
+
+
+def test_consolidate_family_merges_members_in_the_order_it_verifies_them():
+    """The expected merge must be computed in the order git merged them.
+
+    Merging is not commutative: a different order can produce a different
+    tree, so a chain built in another order would fail an honest branch and
+    -- worse -- could pass a dishonest one.
+    """
+    run = _contested_run()
+    dcon.consolidate_family("github/codeql-action", "4.38.0", [450, 452], run)
+    merged = [c[-1] for c in run.calls if c[:3] == ["git", "merge", "--no-edit"]]
+    expected = [
+        c[-1] for c in run.calls if c[:3] == ["git", "merge-tree", "--write-tree"]
+    ]
+    assert merged == ["pr-450", "pr-452"]
+    assert expected == ["pr-450", "pr-452"]
+
+
+def test_consolidate_family_chains_the_expected_merge_through_commit_objects():
+    """Each intermediate tree is wrapped in a commit, with both parents.
+
+    `merge-tree` takes two commits, so a third member has to be merged into
+    something. The wrapper records both parents exactly as `git merge` does,
+    because the next merge's base is derived from the graph -- with only the
+    left parent, a member built on another member's head would resolve
+    against the wrong base.
+    """
+    run = _contested_run()
+    dcon.consolidate_family("github/codeql-action", "4.38.0", [450, 452], run)
+    chained = [c for c in run.calls if c[:2] == ["git", "commit-tree"]]
+    assert len(chained) == 2
+    for call in chained:
+        assert call.count("-p") == 2
+    assert chained[0][3:6] == ["-p", BASE_OID, "-p"]
+    assert chained[0][6] == "pr-450"
+
+
+def test_consolidate_family_creates_no_ref_for_the_expected_merge():
+    """The chain leaves nothing behind an operator can trip over.
+
+    The intermediate commits are reachable from nothing, so git's own
+    garbage collection reclaims them. A ref, a tag or a branch would make
+    them permanent and make this check a repository mutation.
+    """
+    run = _contested_run()
+    dcon.consolidate_family("github/codeql-action", "4.38.0", [450, 452], run)
+    # Matched with the `git` prefix: the PR body itself contains the word
+    # "branch", and a bare needle would match the text rather than a command.
+    for forbidden in ("git update-ref", "git branch", "git tag", "git symbolic-ref"):
+        assert not run.ran(forbidden), forbidden
+
+
+def test_consolidate_family_bases_the_expected_merge_on_the_branch_base():
+    """Not on `origin/main` re-resolved later, and not on the branch head.
+
+    The left side of the first `merge-tree` is the commit the consolidation
+    branch was created at, read once, so the expected merge is computed from
+    the same base the branch was actually built on.
+    """
+    run = _contested_run()
+    dcon.consolidate_family("github/codeql-action", "4.38.0", [450, 452], run)
+    first = next(c for c in run.calls if c[:3] == ["git", "merge-tree", "--write-tree"])
+    assert first[3] == BASE_OID
+
+
+def test_expected_merge_tree_does_not_pin_the_merge_base():
+    """Each step derives its own base, as `git merge` does.
+
+    `--merge-base base` would assert that the base is an ancestor of every
+    member head. A Dependabot branch that has been rebased, or built on
+    another member, is not required to satisfy that, and asserting it would
+    make the expected tree diverge from the merge git actually performed.
+    """
+    run = FakeRun(
+        responses={
+            "merge-tree --write-tree": EXPECTED_TREE + "\n",
+            "commit-tree": CHAIN_COMMIT + "\n",
+            f"rev-parse {CHAIN_COMMIT}^": EXPECTED_TREE + "\n",
+        }
+    )
+    assert (
+        dcon.expected_merge_tree(BASE_OID, ["pr-450", "pr-452", "pr-453"], run)
+        == EXPECTED_TREE
+    )
+    for call in run.calls:
+        assert "--merge-base" not in call
+
+
+def test_expected_merge_tree_rejects_a_git_too_old_for_write_tree():
+    run = FakeRun(responses={"git --version": "git version 2.37.9\n"})
+    with pytest.raises(dcon.UnverifiableMerge) as caught:
+        dcon.expected_merge_tree(BASE_OID, ["pr-450"], run)
+    assert "2.38" in str(caught.value)
+    assert not run.ran("merge-tree")
+
+
+def test_expected_merge_tree_rejects_an_unreadable_git_version():
+    run = FakeRun(responses={"git --version": "some other program\n"})
+    with pytest.raises(dcon.UnverifiableMerge):
+        dcon.expected_merge_tree(BASE_OID, ["pr-450"], run)
+    assert not run.ran("merge-tree")
+
+
+def test_expected_merge_tree_reads_only_the_first_line_of_merge_tree_output():
+    """A conflicted `merge-tree` prints the tree and then more sections.
+
+    Those exits are non-zero and handled as conflicts, but the tree id is
+    still the first line, and taking anything wider would compare a string
+    that is not an object id.
+    """
+    run = FakeRun(
+        responses={
+            "merge-tree --write-tree": f"{EXPECTED_TREE}\nmore output here\n",
+            "commit-tree": CHAIN_COMMIT + "\n",
+            f"rev-parse {CHAIN_COMMIT}^": EXPECTED_TREE + "\n",
+        }
+    )
+    assert dcon.expected_merge_tree(BASE_OID, ["pr-450"], run) == EXPECTED_TREE
+
+
+def test_verify_expected_merge_names_the_paths_that_differ():
+    """ "The tree is wrong" is not something an operator can act on."""
+    run = FakeRun(
+        responses={
+            "merge-tree --write-tree": EXPECTED_TREE + "\n",
+            "commit-tree": CHAIN_COMMIT + "\n",
+            f"rev-parse {CHAIN_COMMIT}^": EXPECTED_TREE + "\n",
+            "rev-parse HEAD^{tree}": OTHER_TREE + "\n",
+            f"{EXPECTED_TREE} {OTHER_TREE}": raw(
+                ("100644", "100644", BLOB_PAYLOAD, BLOB_PAYLOADQ_NEW, "M", CODEQL),
+                ("000000", "100644", ZEROS, BLOB_PAYLOAD, "A", "evil.sh"),
+            ),
+        }
+    )
+    ok, differing = dcon.verify_expected_merge(BASE_OID, ["pr-450"], "HEAD", run)
+    assert not ok
+    assert differing == sorted([CODEQL, "evil.sh"])
+
+
+def test_verify_expected_merge_compares_trees_with_the_structural_flags():
+    """The tree-vs-tree diff is metadata too, not diff text."""
+    run = FakeRun(
+        responses={
+            "merge-tree --write-tree": EXPECTED_TREE + "\n",
+            "commit-tree": CHAIN_COMMIT + "\n",
+            f"rev-parse {CHAIN_COMMIT}^": EXPECTED_TREE + "\n",
+            "rev-parse HEAD^{tree}": OTHER_TREE + "\n",
+        }
+    )
+    dcon.verify_expected_merge(BASE_OID, ["pr-450"], "HEAD", run)
+    diff = next(c for c in run.calls if c[:2] == ["git", "diff"])
+    assert "--raw" in diff and "-z" in diff and "--no-abbrev" in diff
+    assert diff[-2:] == [EXPECTED_TREE, OTHER_TREE]
 
 
 def test_consolidate_family_returns_to_main_after_a_union_mismatch():

@@ -12,13 +12,22 @@ deletions, creations, renames, mode changes and type changes, none of which
 appear among a diff's added lines at all, and it keeps the file a change landed
 in part of the comparison rather than discarding it.
 
-One case is deliberately not decided automatically. Where two or more members
+One case cannot be settled by comparing hashes. Where two or more members
 touch the same path, the branch's content there is git's three-way merge of
-their versions and equals no single member's blob, so no comparison of hashes
-can settle it. That path is reported as a `ContestedPath` and the consolidation
-is refused for human review. This is the ordinary shape for a family whose
-members all edit one workflow file, so those families are surfaced to an
-operator rather than opened automatically.
+their versions and equals no single member's blob. Such a path is marked as a
+`ContestedPath`, and -- provided it is the *only* kind of discrepancy -- it is
+then resolved structurally rather than refused: `git merge-tree --write-tree`
+recomputes the tree that merging exactly these members from exactly this base
+should produce, and the branch is required to equal it. That comparison is
+whole-tree, so passing it is a stronger statement than the per-path check
+makes. This is the ordinary shape for a family whose members all edit one
+workflow file, which is the case this module exists for, so refusing it
+outright refused the flagship case.
+
+Nothing here is decided by absence of evidence. A `merge-tree` that conflicts,
+a git too old to have `--write-tree`, or plumbing output that is not an object
+id all mean the expected merge is unknown, and an unknown expected merge fails
+the check.
 """
 
 from __future__ import annotations
@@ -90,10 +99,13 @@ class ContestedPath:
     member's blob. That is not evidence of tampering and it is not evidence
     of safety either -- it is simply outside what tree metadata can decide.
 
-    It is reported instead of being reconciled. Reconciling it would mean
-    re-deriving the merged content textually, which is the approach this
-    module abandoned; asserting it is fine without checking would be a hole
-    in exactly the file the members all care about.
+    It is marked rather than reconciled *here*. `verify_union` is a pure
+    comparison of the metadata it was handed and has no way to ask git
+    anything, so it reports the path and leaves it; `verify_expected_merge`
+    is what settles it, by recomputing the merge with `merge-tree`. What is
+    never done is re-deriving the merged content textually, which is the
+    approach this module abandoned, or waving the path through unchecked,
+    which would be a hole in exactly the file every member cares about.
     """
 
     path: str
@@ -103,7 +115,8 @@ class ContestedPath:
         return (
             f"<CONTESTED {self.path}: changed by {self.members} member PRs; "
             "the merged content is no single member's, so tree metadata "
-            "cannot verify it -- review this file by hand>"
+            "cannot verify it on its own -- checked against the expected "
+            "merge instead>"
         )
 
 
@@ -205,9 +218,10 @@ def verify_union(member_raws: list[str], combined_raw: str) -> tuple[bool, set, 
 
     What it does not verify: a path touched by more than one member. The
     merged blob is neither member's, so no comparison of hashes can decide
-    it. Such a path is reported as a `ContestedPath` for human review rather
-    than reconciled -- see that class, and the module docstring's note on
-    what this means for families whose members share a file.
+    it. Such a path is reported as a `ContestedPath` rather than reconciled,
+    and the caller settles it with `verify_expected_merge`, which recomputes
+    the merge instead of comparing blobs. This function stays a pure
+    comparison of the metadata it was given and asks git nothing.
 
     **Why this is not a text comparison, and must not become one again.**
     This check was previously a set difference over the added `+` lines
@@ -383,7 +397,11 @@ def consolidation_body(family: str, version: str, members: list[int]) -> str:
         "Before this PR was opened, every path this branch changes was "
         "verified against the member pull requests: for each one, the file "
         "mode and content hash match the member that changed it, and no path "
-        "is touched that no member touched.\n\n"
+        "is touched that no member touched. Where several members changed one "
+        "file, its merged content is no single member's, so that case is "
+        "verified differently: git recomputes the tree merging exactly these "
+        "members should produce, and this branch was required to equal it "
+        "exactly.\n\n"
         "Member PRs are left open deliberately: Dependabot retires them once "
         "the version lands, and keeping them open means rejecting this "
         "consolidation does not discard the originals.\n\n"
@@ -392,8 +410,11 @@ def consolidation_body(family: str, version: str, members: list[int]) -> str:
     )
 
 
-def _raw_diff_argv(revs: str) -> list[str]:
+def _raw_diff_argv(*revs: str) -> list[str]:
     """Build the `git diff` argv whose output the union check consumes.
+
+    Takes one revision expression (``A...B``) for a member or branch diff, or
+    two tree ids when comparing the expected merge tree against the branch's.
 
     `--raw -z` yields the tree metadata compared; `--no-abbrev` yields full
     40-character blob hashes, since git shortens them by a length that
@@ -408,7 +429,144 @@ def _raw_diff_argv(revs: str) -> list[str]:
     deterministic deletion plus creation on both sides -- and a file moved
     out of a protected directory is still two entries no member explains.
     """
-    return ["git", "diff", "--raw", "-z", "--no-abbrev", "--no-renames", revs]
+    return ["git", "diff", "--raw", "-z", "--no-abbrev", "--no-renames", *revs]
+
+
+_MIN_MERGE_TREE_GIT = (2, 38)
+_GIT_VERSION = re.compile(r"\b(\d+)\.(\d+)")
+_OID = re.compile(r"\A[0-9a-f]{40}\Z")
+
+
+class UnverifiableMerge(RuntimeError):
+    """The expected merge could not be computed, so nothing was verified.
+
+    Raised for a git too old to have `merge-tree --write-tree`, for a
+    `merge-tree` invocation that reports a conflict, and for output that is
+    not the object id it must be. Every one of them means the check did not
+    run, and a check that did not run is reported as a failure -- never
+    skipped, which would read to the caller as a check that passed.
+    """
+
+
+def _git_version(run: Callable[..., str]) -> tuple[int, int]:
+    """Read the running git's (major, minor) from `git --version`."""
+    text = run(["git", "--version"], capture=True)
+    match = _GIT_VERSION.search(text)
+    if not match:
+        raise UnverifiableMerge(f"could not read a git version from {text.strip()!r}")
+    return (int(match.group(1)), int(match.group(2)))
+
+
+def expected_merge_tree(
+    base: str, member_refs: list[str], run: Callable[..., str]
+) -> str:
+    """Compute the tree merging every member into `base` should produce.
+
+    `git merge-tree --write-tree` performs a merge in the object database
+    and writes out the resulting tree without touching the index or the
+    working tree. That makes it a way to ask git what the consolidation
+    *ought* to contain, independently of what the branch actually contains
+    -- which is the one thing a comparison of per-path blob hashes cannot
+    supply when several members change the same file.
+
+    `merge-tree` takes two commits, so more than two members are handled by
+    chaining: each step's tree is wrapped in a commit object and that commit
+    is the left side of the next merge. The wrapper commit records **both**
+    parents, exactly as `git merge` does, because the next merge's base is
+    derived from the commit graph -- with only the left parent recorded, a
+    member built on top of another member's head would resolve against the
+    wrong base and the expected tree would stop matching what `git merge`
+    produced. The order of `member_refs` must be the order
+    `consolidate_family` merges them, since merging is not commutative.
+
+    No ref is created for the intermediate commits. They are reachable from
+    nothing, which is what makes them safe to leave behind: git's own
+    garbage collection reclaims unreferenced objects, so the repository is
+    not mutated in any way an operator can observe.
+
+    The merge base is deliberately *not* passed. Each `merge-tree` call
+    derives it from the two commits itself, which is what `git merge` does
+    too; pinning `--merge-base base` would assume `base` is an ancestor of
+    every member head, and a Dependabot branch that has been rebased or
+    built on another member is not required to satisfy that.
+
+    Raises `UnverifiableMerge` if git is too old, if any step conflicts, or
+    if a command returns something that is not an object id.
+    """
+    version = _git_version(run)
+    if version < _MIN_MERGE_TREE_GIT:
+        raise UnverifiableMerge(
+            f"git {version[0]}.{version[1]} has no `merge-tree --write-tree` "
+            f"(needs {_MIN_MERGE_TREE_GIT[0]}.{_MIN_MERGE_TREE_GIT[1]} or newer)"
+        )
+
+    head = base
+    for ref in member_refs:
+        try:
+            tree = _first_oid(
+                run(["git", "merge-tree", "--write-tree", head, ref], capture=True)
+            )
+        except CommandFailed as exc:
+            # `merge-tree` exits non-zero when the merge conflicts. A
+            # conflicted expected merge means the members do not compose
+            # cleanly, so there is no tree to compare the branch against and
+            # the check fails. It is not skipped: "we could not work out what
+            # this should look like" must never pass for "it looks right".
+            raise UnverifiableMerge(
+                f"merging {ref} into the expected tree does not compose "
+                f"cleanly: {exc}"
+            ) from None
+        head = _first_oid(
+            run(
+                ["git", "commit-tree", tree, "-p", head, "-p", ref, "-m", "expected"],
+                capture=True,
+            )
+        )
+    return _first_oid(run(["git", "rev-parse", f"{head}^{{tree}}"], capture=True))
+
+
+def _first_oid(output: str) -> str:
+    """Take the object id a plumbing command printed, or refuse the output.
+
+    `merge-tree` prints the tree id on its first line and, when it
+    conflicts, further sections after it. Reading only the first line and
+    requiring it to be a full 40-character id means a future change in that
+    output cannot be mistaken for a tree that happens to compare unequal --
+    which would be reported as tampering -- or, worse, for one that compares
+    equal to another malformed value.
+    """
+    first = output.strip().splitlines()[0].strip() if output.strip() else ""
+    if not _OID.match(first):
+        raise UnverifiableMerge(f"expected a 40-character object id, got {first!r}")
+    return first
+
+
+def verify_expected_merge(
+    base: str,
+    member_refs: list[str],
+    actual_rev: str,
+    run: Callable[..., str],
+) -> tuple[bool, list[str]]:
+    """Check a branch's tree against the merge of its members from `base`.
+
+    Returns (ok, differing paths). This is a whole-tree comparison, so it is
+    strictly stronger than the per-path check in `verify_union`: equality
+    means the branch's content *is* what merging exactly these members from
+    exactly this base produces, and therefore that nothing else rode along,
+    including in files several members changed together.
+
+    On inequality the differing paths are named, because "the tree is wrong"
+    is not something an operator can act on. They come from `git diff --raw`
+    between the two trees -- still metadata git computed, not diff text.
+    """
+    expected = expected_merge_tree(base, member_refs, run)
+    actual = _first_oid(
+        run(["git", "rev-parse", f"{actual_rev}^{{tree}}"], capture=True)
+    )
+    if expected == actual:
+        return (True, [])
+    raw = run(_raw_diff_argv(expected, actual), capture=True)
+    return (False, sorted({entry.path for entry in parse_raw(raw)}))
 
 
 def _render(entries: set) -> str:
@@ -470,8 +628,14 @@ def consolidate_family(
     the union of its members' trees -- an unexplained path, a changed mode, a
     deletion, or a blob no member produced -- an unreviewed change would be
     riding along inside an approved one, so the function refuses to open the
-    PR. It also refuses when two members touched the same path, which tree
-    metadata cannot decide either way.
+    PR.
+
+    Where the only discrepancies are paths several members changed, whose
+    merged blob is no single member's, the branch is instead compared against
+    the tree `git merge-tree` says that merge should produce. That path is
+    reached only when nothing else is unexplained, so it can widen what is
+    accepted but can never launder a branch the blob comparison already
+    rejected.
 
     `git`/`gh` calls go through the injected `run` callable rather than calling
     `subprocess` directly, so this orchestration is unit-testable with a fake
@@ -493,6 +657,11 @@ def consolidate_family(
 
     try:
         run(["git", "switch", "-c", branch, "origin/main"])
+        # Pinned here rather than re-resolved later: this is literally the
+        # commit the branch starts at, so the expected merge below is
+        # computed from the same base the branch was built on even if
+        # `origin/main` is updated while the run is in progress.
+        base = _first_oid(run(["git", "rev-parse", "HEAD"], capture=True))
 
         member_raws: list[str] = []
         for pr in members:
@@ -518,7 +687,15 @@ def consolidate_family(
 
         combined = run(_raw_diff_argv("origin/main...HEAD"), capture=True)
         ok, missing, extra = verify_union(member_raws, combined)
-        if not ok:
+        contested = {entry for entry in extra if isinstance(entry, ContestedPath)}
+        if not ok and (missing or extra != contested):
+            # A real mismatch: a path no member touched, a blob no member
+            # produced, or a member change the branch does not carry. Refused
+            # outright, and refused before the expected-merge check below --
+            # that check can only widen what is accepted, so it must not be
+            # reachable for a branch that has already failed for a reason
+            # blob comparison could decide.
+            #
             # Sorted by `repr` rather than by the entries themselves: the two
             # sets hold different types, so there is no ordering between a
             # TreeEntry and a ContestedPath. The repr is what an operator
@@ -528,6 +705,33 @@ def consolidate_family(
                 f"family {family}: union mismatch; "
                 f"missing=[{_render(missing)}] extra=[{_render(extra)}]",
             )
+        if not ok:
+            # Every mismatch is a contested path -- one several members
+            # changed, whose merged content is no single member's blob. That
+            # is the ordinary shape for a family whose members all edit one
+            # workflow file, and it is the case this module exists for, so it
+            # is resolved rather than refused: recompute the tree merging
+            # these members from this base should produce, and require the
+            # branch to be exactly that. The comparison is whole-tree, so a
+            # pass here subsumes the per-path check above.
+            names = ", ".join(sorted(entry.path for entry in contested))
+            try:
+                matched, differing = verify_expected_merge(
+                    base, [f"pr-{pr}" for pr in members], "HEAD", run
+                )
+            except UnverifiableMerge as exc:
+                return (
+                    False,
+                    f"family {family}: contested path(s) {names} could not be "
+                    f"verified against the members' expected merge: {exc}",
+                )
+            if not matched:
+                return (
+                    False,
+                    f"family {family}: the branch is not the members' expected "
+                    f"merge; it differs at [{', '.join(differing)}] "
+                    f"(contested: {names})",
+                )
 
         run(["git", "push", "-u", "origin", branch, "--force-with-lease"])
         run(
@@ -568,6 +772,11 @@ def consolidate_family(
         # Unparsable tree metadata means the union check cannot run, and a
         # check that cannot run must not be treated as a check that passed.
         return (False, f"family {family}: unreadable raw diff: {exc}")
+    except UnverifiableMerge as exc:
+        # Reached when a plumbing command that must return an object id
+        # returns something else -- resolving the branch's own base, for
+        # instance. Same rule: unverifiable is a failure, not a pass.
+        return (False, f"family {family}: cannot verify the branch: {exc}")
     finally:
         # Return to main on every path, including the failure paths above. A
         # failure that left the repository on a consolidation branch would

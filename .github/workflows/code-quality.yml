@@ -344,6 +344,39 @@ jobs:
           # Exit with original pytest status
           exit ${PYTEST_EXIT:-0}
 
+      # --- SCRIPTS/SECURITY COVERAGE GATE (independent of the src gate above) ---
+      # scripts/security/ holds the dependency-triage control (dep_triage.py,
+      # dep_triage_collect.py, dep_triage_consolidate.py, dep_risk_register.py)
+      # that decides whether a dependency PR is safe to merge. It was measured
+      # at ~99%/100%/~96%/100% coverage respectively, but nothing enforced that
+      # -- a future change could silently drop it. This is a SEPARATE gate, not
+      # an addition to `--cov=src` above: pooling scripts/ into that gate was
+      # measured at ~8% across ~5,670 statements (most of scripts/ has no
+      # tests), so one `fail_under` cannot span both trees without lowering the
+      # 70% src floor, which is forbidden. See .coveragerc-scripts for the full
+      # rationale, including why dep_risk_audit.py (same directory, much
+      # sparser tests) is deliberately excluded from this gate's scope.
+      #
+      # 90%, not 70%: the code sits near 99% already, so a 70 floor here would
+      # enforce nothing.
+      - name: Run scripts/security coverage gate
+        if: needs.check-trigger.outputs.run_full_tests == 'true' && steps.changes.outputs.python_changed == 'true'
+        run: |
+          pytest tests/scripts/test_dep_triage.py \
+                 tests/scripts/test_dep_triage_collect.py \
+                 tests/scripts/test_dep_triage_consolidate.py \
+                 tests/scripts/test_dep_risk_register.py \
+            -o addopts="" \
+            --cov=scripts.security.dep_triage \
+            --cov=scripts.security.dep_triage_collect \
+            --cov=scripts.security.dep_triage_consolidate \
+            --cov=scripts.security.dep_risk_register \
+            --cov-config=.coveragerc-scripts \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage-scripts.xml \
+            --cov-fail-under=90 \
+            -v
+
       # --- SEMANTIC GUARDRAILS E2E (Optional: Real AWS Mode) ---
       # By default, guardrails E2E tests use moto mocking (no AWS credentials needed).
       # To enable real AWS E2E testing against deployed infrastructure:
@@ -376,6 +409,8 @@ jobs:
             bandit-report.json
             htmlcov/
             coverage.xml
+            htmlcov-scripts/
+            coverage-scripts.xml
 
   # Security scan runs in parallel (PRs only)
   security-scan:

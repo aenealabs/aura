@@ -157,21 +157,36 @@ def test_dockerfile_change_is_annotated_not_held():
     """The per-entry rationale is the part worth keeping.
 
     That the diff touches a Dockerfile is visible to the reviewer; *why* that
-    matters here -- private ECR base images -- is not, so the note carries it."""
+    matters here -- private ECR base images -- is not, so the note carries it.
+    Contrast test_workflow_uses_pin_is_still_held_for_policy_review: there the
+    diff itself is illegible, which is why that one kept its hold."""
     pr = _pr(files=("deploy/docker/api/Dockerfile",), ecosystem="docker")
-    note = dt.note_policy_path(pr)
+    note = dt.note_policy_file(pr)
     assert note is not None
     assert "ECR" in note or "base image" in note
 
 
 def test_coverage_threshold_file_is_annotated():
-    note = dt.note_policy_path(_pr(files=("pyproject.toml",)))
+    note = dt.note_policy_file(_pr(files=("pyproject.toml",)))
     assert note is not None
     assert "70%" in note or "coverage" in note
 
 
 def test_requirements_change_gets_no_policy_note():
-    assert dt.note_policy_path(_pr(files=("requirements.txt",))) is None
+    assert dt.note_policy_file(_pr(files=("requirements.txt",))) is None
+
+
+def test_a_workflow_file_produces_a_hold_and_not_a_file_note():
+    """The two halves of the old policy rule are separate mechanisms now.
+
+    A workflow change must not double up as both a hold and a note, and a
+    Dockerfile change must not reach the hold."""
+    workflow = _pr(files=(".github/workflows/codeql.yml",))
+    assert dt.note_policy_file(workflow) is None
+    assert dt.rule_workflow_path(workflow) is not None
+    dockerfile = _pr(files=("deploy/docker/api/Dockerfile",))
+    assert dt.rule_workflow_path(dockerfile) is None
+    assert dt.note_policy_file(dockerfile) is not None
 
 
 def test_tree_sitter_is_pinned_by_policy():
@@ -209,41 +224,44 @@ def test_policy_path_does_not_match_substring_lookalikes():
     Still worth pinning as a note rather than a hold: a false note on every
     frontend PR is the same fatigue problem in miniature."""
     pr = _pr(files=("frontend/src/components/DockerfileViewer.jsx",))
-    assert dt.note_policy_path(pr) is None
+    assert dt.note_policy_file(pr) is None
 
 
 def test_policy_path_matches_dockerfile_variants():
     assert (
-        dt.note_policy_path(_pr(files=("deploy/docker/api/Dockerfile.prod",)))
+        dt.note_policy_file(_pr(files=("deploy/docker/api/Dockerfile.prod",)))
         is not None
     )
 
 
 def test_policy_path_matches_nested_pyproject():
-    assert dt.note_policy_path(_pr(files=("tools/pyproject.toml",))) is not None
+    assert dt.note_policy_file(_pr(files=("tools/pyproject.toml",))) is not None
 
 
-def test_workflow_uses_pin_is_annotated_with_the_credential_rationale():
-    """The demotion's sharpest edge, pinned so it cannot be lost silently.
+def test_workflow_uses_pin_is_still_held_for_policy_review():
+    """The one member of the old policy hold that survived the demotion.
 
-    This entry is the one a security review objected to: an uncoupled action
-    bump now reaches candidate, and the credential rationale is all that is
-    left of the hold. If the text stops saying why a `uses:` pin matters, the
-    demotion has cost the observation as well as the hold."""
+    It survived on a narrower argument than the file markers: a reviewer looking
+    at this diff sees one opaque 40-hex SHA replace another, which proves the
+    pin moved and says nothing about what it now points at. That is the "cannot
+    cheaply derive" test the Dockerfile and pyproject cases fail and this one
+    passes. The credential rationale is the justification for the hold, so the
+    text is asserted here rather than left to drift."""
     pr = _pr(
         files=(".github/workflows/codeql.yml",),
         ecosystem="github-actions",
         package="github/codeql-action/init",
     )
-    note = dt.note_policy_path(pr)
-    assert note is not None
-    assert "credentials" in note
-    assert "SHA pinning only helps if a human confirms" in note
+    decision = dt.rule_workflow_path(pr)
+    assert decision is not None
+    assert decision.code == dt.CODE_POLICY_REVIEW
+    assert "credentials" in decision.reason
+    assert "SHA pinning only helps if a human confirms" in decision.reason
 
 
 def test_workflow_policy_path_accepts_both_yaml_spellings():
     for path in (".github/workflows/a.yml", ".github/workflows/b.yaml"):
-        assert dt.note_policy_path(_pr(files=(path,))) is not None
+        assert dt.rule_workflow_path(_pr(files=(path,))) is not None
 
 
 def test_workflow_policy_path_matches_segments_not_substrings():
@@ -257,32 +275,33 @@ def test_workflow_policy_path_matches_segments_not_substrings():
         ".github/dependabot.yml",
         ".github/workflows/README.md",
     ):
-        assert dt.note_policy_path(_pr(files=(path,))) is None, path
+        assert dt.rule_workflow_path(_pr(files=(path,))) is None, path
 
 
-def test_every_workflow_touching_pr_carries_the_policy_note_whatever_its_code():
-    """The note is the whole remaining protection, so it must never be dropped.
+def test_no_github_actions_pr_in_the_capture_reaches_candidate():
+    """No action bump is individually promotable without a human looking.
 
-    An action PR can be coupled, held for its cooldown, or a candidate. In all
-    three cases the credential rationale has to ride along, because after the
-    demotion there is no classification that states it."""
+    Every action PR in the capture touches a workflow file, so each one is
+    either coupled or held for policy review. The cooldown is not what is doing
+    this work -- the actions in the capture resolve real release ages -- so
+    without the workflow hold they would flow to candidate."""
     prs = dt.load_snapshot(FIXTURE)
     actions = [p for p in prs if p.ecosystem == "github-actions"]
     assert actions, "the capture holds no action PRs to prove anything with"
     by_number = {d.number: d for d in dt.classify(prs)}
     for pr in actions:
-        notes = by_number[pr.number].notes
-        assert any("credentials" in n for n in notes), f"#{pr.number}: {notes}"
+        assert by_number[pr.number].code in (
+            dt.CODE_POLICY_REVIEW,
+            dt.CODE_COUPLED,
+        ), f"#{pr.number} is {by_number[pr.number].code}"
 
 
-def test_an_uncoupled_action_bump_can_now_reach_candidate():
-    """The demotion's cost, asserted rather than implied.
+def test_an_uncoupled_action_bump_is_held_not_annotated():
+    """The narrowing, asserted where a future reader will trip over it.
 
-    Before, every action PR was held for policy review; the hold was the only
-    automated friction on the surface that decides which third-party code runs
-    with repository credentials. This test exists so that the loss is visible
-    in the suite and not only in a docstring: if someone restores the hold,
-    this test is what tells them the behaviour they are changing back."""
+    An uncoupled action bump reaches rule_workflow_path and stops there. It
+    carries no note, because the hold states the credential rationale itself --
+    a note as well would say the same thing twice in one row."""
     pr = _pr(
         number=99,
         files=(".github/workflows/codeql.yml",),
@@ -291,16 +310,18 @@ def test_an_uncoupled_action_bump_can_now_reach_candidate():
         release_age_days=30.0,
     )
     (decision,) = dt.classify([pr])
-    assert decision.code == dt.CODE_CANDIDATE
-    assert any("credentials" in n for n in decision.notes)
+    assert decision.code == dt.CODE_POLICY_REVIEW
+    assert "credentials" in decision.reason
+    assert decision.notes == ()
 
 
-def test_coupling_still_precedes_check_evaluation_for_action_families():
+def test_coupling_still_wins_over_the_workflow_policy_path():
     """Every action family touches a workflow file by construction.
 
-    The coupled verdict is the only one carrying the family key
-    dep_triage_consolidate reads, and rule_coupled still runs ahead of the
-    check rules so a *green* sibling cannot look individually mergeable."""
+    If the workflow hold ran first it would shadow every family in the repo,
+    and dep_triage_consolidate -- which reads the `coupled` code and its family
+    key -- would find nothing to consolidate. This is the ordering constraint
+    that dictated where the restored rule had to go."""
     prs = dt.load_snapshot(FIXTURE)
     by_number = {d.number: d for d in dt.classify(prs)}
     for number in CODEQL_FAMILY:
@@ -970,7 +991,7 @@ def test_classify_assigns_expected_codes_for_the_captured_batch():
     assert by_number[460].code == dt.CODE_CANDIDATE  # group, every member clear
     assert by_number[466].code == dt.CODE_CANDIDATE
     assert by_number[467].code == dt.CODE_CANDIDATE
-    # The four PRs the demotion moved. Each is a candidate now and carries the
+    # The three PRs the demotion moved. Each is a candidate now and carries the
     # observation its hold used to make; asserting the note alongside the code
     # is what stops a future edit from dropping the annotation and leaving the
     # promotion behind.
@@ -980,25 +1001,35 @@ def test_classify_assigns_expected_codes_for_the_captured_batch():
     assert "major bump" in by_number[472].notes[0]
     assert by_number[462].code == dt.CODE_CANDIDATE  # touches pyproject.toml
     assert "pyproject.toml" in by_number[462].notes[0]
-    assert by_number[458].code == dt.CODE_CANDIDATE  # workflow `uses:` pin
-    assert "credentials" in by_number[458].notes[0]
+    # The one that did not move: a SHA diff does not reveal what the SHA points
+    # at, so this stays a hold and states its own rationale.
+    assert by_number[458].code == dt.CODE_POLICY_REVIEW  # workflow `uses:` pin
+    assert "credentials" in by_number[458].reason
+    assert by_number[458].notes == ()
 
 
-def test_the_held_pile_holds_only_what_a_reviewer_cannot_cheaply_derive():
-    """The point of the demotion, locked against regrowth.
+def test_the_held_pile_is_exactly_two_of_the_captured_batch():
+    """The point of the whole exercise, locked against regrowth.
 
-    A hold earns its cost only when it says something the operator could not
-    see for themselves on the PR. In the captured batch that leaves exactly one
-    -- gremlinpython's At-Risk register entry -- plus the coupled set, which is
-    its own section. Anything else appearing here means a rule started holding
-    on a fact the PR already shows, and the Held pile is back to being skimmed.
+    Two is deliberate, not incidental. A hold earns its cost only when it says
+    something the operator could not see for themselves on the PR, and in this
+    batch exactly two qualify: #458's workflow `uses:` pin, where the diff shows
+    one opaque SHA replacing another, and #468's At-Risk register entry, which
+    lives in a document rather than the PR. The coupled set is held too but has
+    its own section. A third entry appearing here means a rule started holding
+    on a fact the PR already shows -- which is the state this change existed to
+    get out of -- and the pile goes back to being skimmed.
     """
     held_codes = dict(dt._SECTIONS)["Held"]
-    assert dt.CODE_RISK_TIER in held_codes
-    assert dt.CODE_COOLDOWN in held_codes
-    assert dt.CODE_NO_RELEASE_METADATA in held_codes
+    for code in (
+        dt.CODE_POLICY_REVIEW,
+        dt.CODE_RISK_TIER,
+        dt.CODE_COOLDOWN,
+        dt.CODE_NO_RELEASE_METADATA,
+    ):
+        assert code in held_codes
     held = [d for d in dt.classify(dt.load_snapshot(FIXTURE)) if d.code in held_codes]
-    assert [d.number for d in held] == [468]
+    assert sorted(d.number for d in held) == [458, 468]
 
 
 def test_no_section_names_a_code_no_rule_can_emit():
@@ -1277,13 +1308,19 @@ def test_render_report_prints_notes_under_a_coupled_family():
 
     #463/#464 are a coupled vitest pair that is also a major bump. Both facts
     matter to the operator, and the coupled section renders no reason cell for
-    the note to ride in."""
+    the note to ride in.
+
+    The codeql family carries no note by contrast: rule_coupled precedes
+    rule_workflow_path, so its members are coupled and the workflow rationale is
+    not restated per member. That is the accepted cost of keeping the family key
+    -- a coupled PR is not individually mergeable at all, which is the stronger
+    thing to tell the operator."""
     prs = dt.load_snapshot(FIXTURE)
     md = dt.render_report(dt.classify(prs), prs)
     coupled = md.split("## Coupled sets", 1)[1].split("\n## ", 1)[0]
     assert "major bump 4.1.11 -> 5.0.1" in coupled
     assert "- #463 --" in coupled
-    assert "credentials" in coupled  # the codeql family's workflow note
+    assert "- #457 --" not in coupled
 
 
 def test_render_report_lists_required_not_passing_under_needs_attention():

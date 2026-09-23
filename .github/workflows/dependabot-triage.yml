@@ -29,8 +29,12 @@ name: Dependabot Triage
 
 on:
   schedule:
-    # 16:00 UTC Monday -- after Dependabot opens PRs and after the 14:00 audit.
-    - cron: '0 16 * * 1'
+    # Monthly, 16:00 UTC on the 1st. Deliberately not weekly: coupled families
+    # arrive at codeql-action's release cadence, roughly monthly, and Dependabot
+    # PRs accumulate harmlessly, so a larger batch triaged less often is strictly
+    # less work and loses nothing. Run `workflow_dispatch` any time a dependency
+    # sweep is actually planned.
+    - cron: '0 16 1 * *'
   workflow_dispatch:
 
 permissions: {}

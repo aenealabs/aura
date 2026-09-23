@@ -8,6 +8,40 @@ the whole rule set is unit-testable against recorded fixtures.
 Nothing in this module merges or approves a pull request. See
 ``docs/superpowers/specs/2026-09-19-dependabot-triage-design.md``.
 
+Two holds were demoted to annotations: ``held:major-review`` (a major semver
+bump) and ``held:policy-review`` (a diff touching a ``Dockerfile*``, a
+``pyproject.toml``, or a ``.github/workflows/*.y[a]ml`` file). Both now surface
+as ``Decision.notes`` on whatever verdict the remaining rules produce, and a
+PR that only tripped one of them reaches ``candidate``.
+
+Why. This report is advisory: it merges nothing, and the repository's
+``main-protection`` ruleset still requires one human approval plus four status
+checks before anything lands. A hold therefore does not block a merge -- it
+only tells the operator to look -- so it earns its cost only when it says
+something the operator could not cheaply see for themselves. Neither of these
+did. A major bump is written in the PR title; a Dockerfile, pyproject or
+workflow change is written in the diff. Both were about a third of the batch
+between them, and a Held pile that size trains the operator to skim it, which
+is how a hold that *does* carry non-obvious information -- a fully green PR
+that is unsafe to merge alone, an At-Risk register entry, a release younger
+than its cooldown -- gets missed. Those three stay holds for exactly that
+reason.
+
+Residual exposure, stated plainly because a security review raised it against
+this change specifically: an uncoupled ``github-actions`` bump can now reach
+``candidate`` with no policy review, on the surface that decides which
+third-party code runs with repository credentials. SHA pinning does not help
+by itself -- it only helps if a human confirms the new SHA is the one intended,
+and nothing in this module confirms that. The mitigations are that the note
+still appears in the report beside the verdict, that ``ACTION_COOLDOWN_DAYS``
+is now the one automated control left on that path, and that the ruleset's
+human approval is still required. Those are mitigations, not a refutation: the
+automated friction on the repository's most credential-adjacent surface is
+genuinely lower than it was, and this paragraph exists so that a future reader
+deciding whether to restore the hold does not have to rediscover the argument.
+Restoring it means putting ``note_policy_path`` back in ``classify``'s rule
+chain as a ``Decision``-returning rule, after ``rule_coupled``.
+
 An earlier revision carried a "security advisory" fast path that let a PR skip
 both the major-version hold and the cooldown when its body text mentioned a CVE
 or GHSA id; it was removed because body text is the wrong primitive for a
@@ -45,7 +79,7 @@ import argparse
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -58,7 +92,6 @@ DEPENDABOT_AUTHORS: frozenset[str] = frozenset({"app/dependabot", "dependabot[bo
 # Classification codes. Consumers match on these exact strings.
 CODE_NON_DEPENDABOT = "excluded:non-dependabot"
 CODE_NO_CHECKS = "excluded:no-checks"
-CODE_POLICY_REVIEW = "held:policy-review"
 CODE_PINNED_BY_POLICY = "held:pinned-by-policy"
 CODE_RISK_TIER = "held:risk-tier"
 CODE_COUPLED = "coupled"
@@ -66,7 +99,6 @@ CODE_FAILING = "attention:failing"
 CODE_MISSING_REQUIRED = "attention:missing-required"
 CODE_REQUIRED_NOT_PASSING = "attention:required-not-passing"
 CODE_CONFLICT = "attention:conflict"
-CODE_MAJOR = "held:major-review"
 # "this release is too new" and "I could not determine the age" are different
 # facts about a PR and lead to different operator actions. Conflating them
 # under one code is what made every github-actions PR read as a transient
@@ -89,16 +121,15 @@ CODE_MERGE_SAFE = "merge-safe"
 # is not.
 PACKAGE_COOLDOWN_DAYS = 3
 
-# Defence-in-depth, not a live control: every GitHub Actions PR reaches
-# `rule_coupled` or `rule_policy_path` before `rule_cooldown` ever runs
-# (`classify`'s rule order below), and `rule_policy_path` holds every one of
-# them as `held:policy-review` because `.github/workflows/` is in
-# `POLICY_DIRS` -- so this constant does not currently gate anything for the
-# github-actions ecosystem. It would become live again only if that policy
-# hold stopped matching workflow files: `POLICY_DIRS`'s `.github/workflows`
-# entry narrowed, removed, or a github-actions bump started landing outside
-# that directory. If that happens, the same effective-granularity caveat as
-# `PACKAGE_COOLDOWN_DAYS` above applies to this constant too.
+# A live control, and now the only automated one standing between an action
+# bump and `candidate`. It used to be defence-in-depth: every GitHub Actions
+# PR reached `rule_coupled` or `rule_policy_path` first, and the path rule held
+# all of them as `held:policy-review` because `.github/workflows/` is in
+# `POLICY_DIRS`. That hold is gone -- see the module docstring on the demotion
+# -- so an uncoupled action bump is now held here or nowhere. The same
+# effective-granularity caveat as `PACKAGE_COOLDOWN_DAYS` above applies: under
+# a weekly triage this reads as "held until a later run," not as a promise
+# that an action unlocks after exactly 7 days.
 ACTION_COOLDOWN_DAYS = 7
 
 _LEADING_INT = re.compile(r"\D*(\d+)")
@@ -338,34 +369,31 @@ DELIBERATE_HOLDS: dict[str, str] = {
 HELD_TIERS: frozenset[str] = frozenset({"at-risk", "replace-now"})
 
 
-def rule_policy_path(pr: PRSnapshot) -> Decision | None:
-    """R3: changes to policy-sensitive paths need human review.
+def note_policy_path(pr: PRSnapshot) -> str | None:
+    """Observe that a PR touches a policy-sensitive path, or return None.
 
-    The workflow entry in POLICY_DIRS means every github-actions bump that is
-    not already coupled lands here, and none of them ever reaches candidate.
-    That is deliberate. Until action release ages resolved, actions were held
-    only by accident: the cooldown could never evaluate, so every one of them
-    sat in a permanent hold reasoned as an unknown release age. Resolving the
-    age removes that accident, and without this entry action bumps would flow
-    straight through to merge-safe on the most credential-adjacent surface in
-    the repository.
+    This was a hold (``held:policy-review``) and is now an annotation. The
+    module docstring states the reasoning and the residual exposure; the short
+    version is that the fact this reports -- "the diff touches a Dockerfile, a
+    pyproject.toml, or a workflow `uses:` pin" -- is visible in the diff to the
+    human whose approval the branch ruleset requires anyway, whereas the
+    rationale attached to each entry below is not. So the rationale is what
+    survives, as text beside the verdict.
+
+    The workflow entry is the one that costs something. An uncoupled action
+    bump now reaches ``candidate`` with nothing but this note and the action
+    cooldown between it and a merge-safe report, on the surface that decides
+    which third-party code runs with repository credentials. That is a real
+    loss of automated friction, not a relabelling.
     """
     for path in pr.files:
         pure = PurePosixPath(path)
         for marker, why in POLICY_PATHS.items():
             if pure.name == marker or pure.name.startswith(f"{marker}."):
-                return Decision(
-                    number=pr.number,
-                    code=CODE_POLICY_REVIEW,
-                    reason=f"touches {path}: {why}",
-                )
+                return f"touches {path}: {why}"
         for segments, (suffixes, why) in POLICY_DIRS.items():
             if pure.parts[: len(segments)] == segments and pure.suffix in suffixes:
-                return Decision(
-                    number=pr.number,
-                    code=CODE_POLICY_REVIEW,
-                    reason=f"touches {path}: {why}",
-                )
+                return f"touches {path}: {why}"
     return None
 
 
@@ -627,22 +655,24 @@ def major_of(version: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def rule_major(pr: PRSnapshot) -> Decision | None:
-    """R8: major bumps carry breaking changes CI may not exercise.
+def note_major(pr: PRSnapshot) -> str | None:
+    """Observe that a PR is a major version bump, or return None.
 
-    No bypass exists. An earlier revision let a body-text advisory match skip
-    this hold; see the module docstring for why that was removed.
+    This was a hold (``held:major-review``) and is now an annotation, because
+    a major bump is stated in the PR title that the reviewer is already
+    looking at. See the module docstring for the full reasoning.
+
+    There is still no bypass to speak of, in the sense that nothing suppresses
+    this note: an earlier revision let a body-text advisory match skip the hold
+    this used to be, and that path is gone for good. What changed is the
+    consequence of the observation, not the reliability of making it.
     """
     before, after = major_of(pr.from_version), major_of(pr.to_version)
     if before is None or after is None or after <= before:
         return None
-    return Decision(
-        number=pr.number,
-        code=CODE_MAJOR,
-        reason=(
-            f"major bump {pr.from_version} -> {pr.to_version} "
-            f"({before} -> {after}); breaking changes may not be covered by CI"
-        ),
+    return (
+        f"major bump {pr.from_version} -> {pr.to_version} "
+        f"({before} -> {after}); breaking changes may not be covered by CI"
     )
 
 
@@ -752,24 +782,23 @@ def classify(prs: list[PRSnapshot]) -> list[Decision]:
       ``rule_held_package`` for a single bump -- run next. They say a package
       must not move at all, which is stronger than any statement about the
       pull request carrying it.
-    * ``rule_coupled`` follows, ahead of both check evaluation and
-      ``rule_policy_path``. Ahead of checks because the failure mode it guards
-      against is a *green* sibling. Ahead of the path rule because a coupled
-      verdict is the stronger statement -- no member is individually
-      mergeable at all -- and because it is the only classification that
-      carries the family key ``dep_triage_consolidate`` reads. Every
-      github-actions family touches a workflow file by construction, so
-      without this ordering the path rule would shadow every family in the
-      repository and consolidation would find nothing to group.
+    * ``rule_coupled`` follows, ahead of check evaluation, because the failure
+      mode it guards against is a *green* sibling. It is also the only
+      classification that carries the family key ``dep_triage_consolidate``
+      reads, so anything shadowing it leaves consolidation with nothing to
+      group -- which is what the policy-path rule did to every action family
+      while it still ran ahead of the checks.
     * Everything surviving is a candidate, which only becomes merge-safe by
       passing the batch proof.
 
-    Two ordering trades, both deliberate. A held package in a PR that also
-    touches a policy-sensitive path reports the package hold, which is the
-    more specific statement. A coupled family member touching a
-    policy-sensitive path reports the coupling; no family in this repository
-    can touch one today -- npm families move package.json and action families
-    move workflows -- and both outcomes hold the PR for a human regardless.
+    One ordering trade remains, deliberately: a held package in a PR that also
+    trips one of the note functions reports the package hold, and the note
+    rides along beside it rather than competing with it.
+
+    Notes are gathered for every PR and attached to whatever verdict the rules
+    produce -- candidate, held, coupled or excluded alike. A coupled PR that is
+    also a major bump is worth saying so, and a held PR's notes are the only
+    place the demoted observations survive at all.
     """
     families = detect_families(prs)
     decisions: list[Decision] = []
@@ -780,11 +809,9 @@ def classify(prs: list[PRSnapshot]) -> list[Decision]:
             or rule_grouped(pr)
             or rule_held_package(pr)
             or rule_coupled(pr, families)
-            or rule_policy_path(pr)
             or rule_failing(pr)
             or rule_missing_required(pr)
             or rule_required_not_passing(pr)
-            or rule_major(pr)
             or rule_cooldown(pr)
             # R10: nothing objected.
             or Decision(
@@ -796,7 +823,12 @@ def classify(prs: list[PRSnapshot]) -> list[Decision]:
                 ),
             )
         )
-        decisions.append(decision)
+        # Note order follows the order the two rules ran in when they were
+        # holds, so a row reads the same way it used to.
+        notes = tuple(
+            note for note in (note_policy_path(pr), note_major(pr)) if note is not None
+        )
+        decisions.append(replace(decision, notes=notes) if notes else decision)
     return decisions
 
 
@@ -855,10 +887,8 @@ _SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "Held",
         (
-            CODE_POLICY_REVIEW,
             CODE_PINNED_BY_POLICY,
             CODE_RISK_TIER,
-            CODE_MAJOR,
             CODE_COOLDOWN,
             CODE_NO_RELEASE_METADATA,
             CODE_GROUPED_UNPARSED,

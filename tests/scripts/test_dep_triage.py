@@ -153,22 +153,25 @@ def test_pr_with_checks_not_excluded_by_no_checks():
     assert dt.rule_no_checks(_pr()) is None
 
 
-def test_dockerfile_change_held_for_policy_review():
+def test_dockerfile_change_is_annotated_not_held():
+    """The per-entry rationale is the part worth keeping.
+
+    That the diff touches a Dockerfile is visible to the reviewer; *why* that
+    matters here -- private ECR base images -- is not, so the note carries it."""
     pr = _pr(files=("deploy/docker/api/Dockerfile",), ecosystem="docker")
-    d = dt.rule_policy_path(pr)
-    assert d is not None
-    assert d.code == dt.CODE_POLICY_REVIEW
-    assert "ECR" in d.reason or "base image" in d.reason
+    note = dt.note_policy_path(pr)
+    assert note is not None
+    assert "ECR" in note or "base image" in note
 
 
-def test_coverage_threshold_file_held_for_policy_review():
-    d = dt.rule_policy_path(_pr(files=("pyproject.toml",)))
-    assert d is not None
-    assert d.code == dt.CODE_POLICY_REVIEW
+def test_coverage_threshold_file_is_annotated():
+    note = dt.note_policy_path(_pr(files=("pyproject.toml",)))
+    assert note is not None
+    assert "70%" in note or "coverage" in note
 
 
-def test_requirements_change_not_policy_held():
-    assert dt.rule_policy_path(_pr(files=("requirements.txt",))) is None
+def test_requirements_change_gets_no_policy_note():
+    assert dt.note_policy_path(_pr(files=("requirements.txt",))) is None
 
 
 def test_tree_sitter_is_pinned_by_policy():
@@ -201,43 +204,46 @@ def test_deliberate_hold_takes_precedence_over_risk_tier():
 
 
 def test_policy_path_does_not_match_substring_lookalikes():
-    """A component named after Dockerfile is not a Dockerfile."""
+    """A component named after Dockerfile is not a Dockerfile.
+
+    Still worth pinning as a note rather than a hold: a false note on every
+    frontend PR is the same fatigue problem in miniature."""
     pr = _pr(files=("frontend/src/components/DockerfileViewer.jsx",))
-    assert dt.rule_policy_path(pr) is None
+    assert dt.note_policy_path(pr) is None
 
 
 def test_policy_path_matches_dockerfile_variants():
     assert (
-        dt.rule_policy_path(_pr(files=("deploy/docker/api/Dockerfile.prod",)))
+        dt.note_policy_path(_pr(files=("deploy/docker/api/Dockerfile.prod",)))
         is not None
     )
 
 
 def test_policy_path_matches_nested_pyproject():
-    assert dt.rule_policy_path(_pr(files=("tools/pyproject.toml",))) is not None
+    assert dt.note_policy_path(_pr(files=("tools/pyproject.toml",))) is not None
 
 
-def test_workflow_uses_pin_is_held_for_policy_review():
-    """A workflow bump changes what runs with repository credentials.
+def test_workflow_uses_pin_is_annotated_with_the_credential_rationale():
+    """The demotion's sharpest edge, pinned so it cannot be lost silently.
 
-    This was harmless while every action PR sat in a permanent hold because
-    release_age_days returned None for github-actions unconditionally.
-    Resolving that age removes the accidental protection, so the hold has to
-    be stated rather than inherited."""
+    This entry is the one a security review objected to: an uncoupled action
+    bump now reaches candidate, and the credential rationale is all that is
+    left of the hold. If the text stops saying why a `uses:` pin matters, the
+    demotion has cost the observation as well as the hold."""
     pr = _pr(
         files=(".github/workflows/codeql.yml",),
         ecosystem="github-actions",
         package="github/codeql-action/init",
     )
-    decision = dt.rule_policy_path(pr)
-    assert decision is not None
-    assert decision.code == dt.CODE_POLICY_REVIEW
-    assert "credentials" in decision.reason
+    note = dt.note_policy_path(pr)
+    assert note is not None
+    assert "credentials" in note
+    assert "SHA pinning only helps if a human confirms" in note
 
 
 def test_workflow_policy_path_accepts_both_yaml_spellings():
     for path in (".github/workflows/a.yml", ".github/workflows/b.yaml"):
-        assert dt.rule_policy_path(_pr(files=(path,))) is not None
+        assert dt.note_policy_path(_pr(files=(path,))) is not None
 
 
 def test_workflow_policy_path_matches_segments_not_substrings():
@@ -251,32 +257,50 @@ def test_workflow_policy_path_matches_segments_not_substrings():
         ".github/dependabot.yml",
         ".github/workflows/README.md",
     ):
-        assert dt.rule_policy_path(_pr(files=(path,))) is None, path
+        assert dt.note_policy_path(_pr(files=(path,))) is None, path
 
 
-def test_no_github_actions_pr_in_the_capture_reaches_candidate():
-    """The consequence of resolving action ages, pinned deliberately.
+def test_every_workflow_touching_pr_carries_the_policy_note_whatever_its_code():
+    """The note is the whole remaining protection, so it must never be dropped.
 
-    Before, actions were held by accident -- the cooldown could not evaluate.
-    Now they resolve a real age, so the only thing standing between an action
-    bump and merge-safe is this hold."""
+    An action PR can be coupled, held for its cooldown, or a candidate. In all
+    three cases the credential rationale has to ride along, because after the
+    demotion there is no classification that states it."""
     prs = dt.load_snapshot(FIXTURE)
     actions = [p for p in prs if p.ecosystem == "github-actions"]
     assert actions, "the capture holds no action PRs to prove anything with"
     by_number = {d.number: d for d in dt.classify(prs)}
     for pr in actions:
-        assert by_number[pr.number].code in (
-            dt.CODE_POLICY_REVIEW,
-            dt.CODE_COUPLED,
-        ), f"#{pr.number} is {by_number[pr.number].code}"
+        notes = by_number[pr.number].notes
+        assert any("credentials" in n for n in notes), f"#{pr.number}: {notes}"
 
 
-def test_coupling_still_wins_over_the_workflow_policy_path():
+def test_an_uncoupled_action_bump_can_now_reach_candidate():
+    """The demotion's cost, asserted rather than implied.
+
+    Before, every action PR was held for policy review; the hold was the only
+    automated friction on the surface that decides which third-party code runs
+    with repository credentials. This test exists so that the loss is visible
+    in the suite and not only in a docstring: if someone restores the hold,
+    this test is what tells them the behaviour they are changing back."""
+    pr = _pr(
+        number=99,
+        files=(".github/workflows/codeql.yml",),
+        ecosystem="github-actions",
+        package="actions/checkout",
+        release_age_days=30.0,
+    )
+    (decision,) = dt.classify([pr])
+    assert decision.code == dt.CODE_CANDIDATE
+    assert any("credentials" in n for n in decision.notes)
+
+
+def test_coupling_still_precedes_check_evaluation_for_action_families():
     """Every action family touches a workflow file by construction.
 
-    If the path rule ran first it would shadow every family in the repo, and
-    dep_triage_consolidate -- which reads the `coupled` code and its family
-    key -- would find nothing to consolidate."""
+    The coupled verdict is the only one carrying the family key
+    dep_triage_consolidate reads, and rule_coupled still runs ahead of the
+    check rules so a *green* sibling cannot look individually mergeable."""
     prs = dt.load_snapshot(FIXTURE)
     by_number = {d.number: d for d in dt.classify(prs)}
     for number in CODEQL_FAMILY:
@@ -623,18 +647,22 @@ def test_major_of_parses_leading_integer(raw, expected):
     assert dt.major_of(raw) == expected
 
 
-def test_major_bump_is_held():
-    d = dt.rule_major(_pr(package="vitest", from_version="4.1.11", to_version="5.0.0"))
-    assert d is not None
-    assert d.code == dt.CODE_MAJOR
+def test_major_bump_is_annotated_not_held():
+    """A major bump is written in the PR title the reviewer is already reading,
+    so the observation is kept and the hold is not."""
+    note = dt.note_major(
+        _pr(package="vitest", from_version="4.1.11", to_version="5.0.0")
+    )
+    assert note is not None
+    assert "4.1.11" in note and "5.0.0" in note
 
 
-def test_minor_bump_is_not_major():
-    assert dt.rule_major(_pr(from_version="2.12.5", to_version="2.13.5")) is None
+def test_minor_bump_gets_no_major_note():
+    assert dt.note_major(_pr(from_version="2.12.5", to_version="2.13.5")) is None
 
 
-def test_unparseable_version_is_not_major():
-    assert dt.rule_major(_pr(from_version="", to_version="")) is None
+def test_unparseable_version_gets_no_major_note():
+    assert dt.note_major(_pr(from_version="", to_version="")) is None
 
 
 def test_fresh_package_release_held_for_cooldown():
@@ -888,18 +916,22 @@ def test_grouped_cooldown_reason_defers_to_the_next_scheduled_run_too():
     assert "re-evaluated on the next scheduled triage run" in d.reason
 
 
-def test_no_rule_can_bypass_the_cooldown_or_the_major_hold():
+def test_no_rule_can_bypass_the_cooldown_or_suppress_the_major_note():
     """The removed security fast path stripped both guards on body text alone.
 
     `release_age_days` is None for docker and unknown ecosystems always, and
     for pip, npm and github-actions on any lookup failure -- and that is only
     safe because rule_cooldown holds on unknown. A bypass evaluated before
     that check turned a permanent hold into a candidate, which is the one
-    outcome the design forbids."""
+    outcome the design forbids.
+
+    The major check is an annotation now rather than a hold, but nothing
+    suppresses it either: the demotion changed what the observation costs, not
+    whether it is made."""
     assert not hasattr(dt.PRSnapshot, "security_advisory")
     assert dt.rule_cooldown(_pr(release_age_days=None)) is not None
     assert dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=0.5)) is not None
-    assert dt.rule_major(_pr(from_version="4.1.11", to_version="5.0.0")) is not None
+    assert dt.note_major(_pr(from_version="4.1.11", to_version="5.0.0")) is not None
 
 
 def test_author_is_bot_defaults_to_false_for_older_snapshots(tmp_path):
@@ -934,14 +966,52 @@ def test_classify_assigns_expected_codes_for_the_captured_batch():
     assert by_number[459].code == dt.CODE_COUPLED
     assert by_number[464].code == dt.CODE_COUPLED  # peer-coupled
     assert by_number[463].code == dt.CODE_COUPLED  # peer-coupled
-    assert by_number[461].code == dt.CODE_MAJOR  # mermaid 11 -> 12
-    assert by_number[472].code == dt.CODE_MAJOR  # openai 2 -> 3
-    assert by_number[462].code == dt.CODE_POLICY_REVIEW  # touches pyproject.toml
     assert by_number[468].code == dt.CODE_RISK_TIER  # gremlinpython is At-Risk
     assert by_number[460].code == dt.CODE_CANDIDATE  # group, every member clear
-    assert by_number[458].code == dt.CODE_POLICY_REVIEW  # workflow `uses:` pin
     assert by_number[466].code == dt.CODE_CANDIDATE
     assert by_number[467].code == dt.CODE_CANDIDATE
+    # The four PRs the demotion moved. Each is a candidate now and carries the
+    # observation its hold used to make; asserting the note alongside the code
+    # is what stops a future edit from dropping the annotation and leaving the
+    # promotion behind.
+    assert by_number[461].code == dt.CODE_CANDIDATE  # mermaid 11 -> 12
+    assert "major bump" in by_number[461].notes[0]
+    assert by_number[472].code == dt.CODE_CANDIDATE  # openai 2 -> 3
+    assert "major bump" in by_number[472].notes[0]
+    assert by_number[462].code == dt.CODE_CANDIDATE  # touches pyproject.toml
+    assert "pyproject.toml" in by_number[462].notes[0]
+    assert by_number[458].code == dt.CODE_CANDIDATE  # workflow `uses:` pin
+    assert "credentials" in by_number[458].notes[0]
+
+
+def test_the_held_pile_holds_only_what_a_reviewer_cannot_cheaply_derive():
+    """The point of the demotion, locked against regrowth.
+
+    A hold earns its cost only when it says something the operator could not
+    see for themselves on the PR. In the captured batch that leaves exactly one
+    -- gremlinpython's At-Risk register entry -- plus the coupled set, which is
+    its own section. Anything else appearing here means a rule started holding
+    on a fact the PR already shows, and the Held pile is back to being skimmed.
+    """
+    held_codes = dict(dt._SECTIONS)["Held"]
+    assert dt.CODE_RISK_TIER in held_codes
+    assert dt.CODE_COOLDOWN in held_codes
+    assert dt.CODE_NO_RELEASE_METADATA in held_codes
+    held = [d for d in dt.classify(dt.load_snapshot(FIXTURE)) if d.code in held_codes]
+    assert [d.number for d in held] == [468]
+
+
+def test_no_section_names_a_code_no_rule_can_emit():
+    """A demoted code left in the section map is a section that can only ever
+    render "(none)", which reads as "nothing tripped this" rather than "this
+    no longer exists"."""
+    named = {code for _, codes in dt._SECTIONS for code in codes}
+    defined = {
+        value
+        for name, value in vars(dt).items()
+        if name.startswith("CODE_") and isinstance(value, str)
+    }
+    assert named == defined
 
 
 def test_no_dependabot_pr_is_excluded_as_non_dependabot():
@@ -1200,6 +1270,20 @@ def test_render_report_lists_family_members_together():
     assert "github/codeql-action" in md
     for number in CODEQL_FAMILY:
         assert f"#{number}" in md
+
+
+def test_render_report_prints_notes_under_a_coupled_family():
+    """The coupled section is prose, so the note needs its own line there.
+
+    #463/#464 are a coupled vitest pair that is also a major bump. Both facts
+    matter to the operator, and the coupled section renders no reason cell for
+    the note to ride in."""
+    prs = dt.load_snapshot(FIXTURE)
+    md = dt.render_report(dt.classify(prs), prs)
+    coupled = md.split("## Coupled sets", 1)[1].split("\n## ", 1)[0]
+    assert "major bump 4.1.11 -> 5.0.1" in coupled
+    assert "- #463 --" in coupled
+    assert "credentials" in coupled  # the codeql family's workflow note
 
 
 def test_render_report_lists_required_not_passing_under_needs_attention():

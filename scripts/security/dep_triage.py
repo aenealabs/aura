@@ -77,7 +77,28 @@ CODE_GROUPED_UNPARSED = "held:grouped-unparsed"
 CODE_CANDIDATE = "candidate"
 CODE_MERGE_SAFE = "merge-safe"
 
+# The effective granularity either constant delivers is the triage
+# schedule's own interval (weekly, `.github/workflows/dependabot-triage.yml`
+# cron `0 16 * * 1`), not the number written here. Under a weekly run, a
+# release is either already older than 3 days at the first triage that sees
+# it, or it is held until the next Monday regardless -- so both constants
+# read, in practice, as "held until next week's run," and a smaller number
+# here does not buy a package an earlier merge. Do not read either constant
+# as a promise that a release unlocks after exactly that many days; that
+# promise is only true between two runs of a sub-weekly schedule, which this
+# is not.
 PACKAGE_COOLDOWN_DAYS = 3
+
+# Defence-in-depth, not a live control: every GitHub Actions PR reaches
+# `rule_coupled` or `rule_policy_path` before `rule_cooldown` ever runs
+# (`classify`'s rule order below), and `rule_policy_path` holds every one of
+# them as `held:policy-review` because `.github/workflows/` is in
+# `POLICY_DIRS` -- so this constant does not currently gate anything for the
+# github-actions ecosystem. It would become live again only if that policy
+# hold stopped matching workflow files: `POLICY_DIRS`'s `.github/workflows`
+# entry narrowed, removed, or a github-actions bump started landing outside
+# that directory. If that happens, the same effective-granularity caveat as
+# `PACKAGE_COOLDOWN_DAYS` above applies to this constant too.
 ACTION_COOLDOWN_DAYS = 7
 
 _LEADING_INT = re.compile(r"\D*(\d+)")
@@ -643,7 +664,9 @@ def _group_cooldown(pr: PRSnapshot, limit: int) -> Decision | None:
             code=CODE_COOLDOWN,
             reason=(
                 f"grouped update carries {len(too_new)} member(s) under the "
-                f"{limit}d cooldown for {pr.ecosystem}: {detail}"
+                f"{limit}d cooldown for {pr.ecosystem}: {detail}; will be "
+                "re-evaluated on the next scheduled triage run rather than "
+                "unlocking on a fixed day count"
             ),
         )
     unknown = [m for m in pr.members if m.release_age_days is None]
@@ -701,8 +724,10 @@ def rule_cooldown(pr: PRSnapshot) -> Decision | None:
             number=pr.number,
             code=CODE_COOLDOWN,
             reason=(
-                f"{pr.to_version} is {pr.release_age_days:.0f}d old, "
-                f"under the {limit}d cooldown for {pr.ecosystem}"
+                f"{pr.to_version} is {pr.release_age_days:.0f}d old, under "
+                f"the {limit}d cooldown for {pr.ecosystem}; will be "
+                "re-evaluated on the next scheduled triage run rather than "
+                "unlocking on a fixed day count"
             ),
         )
     return None

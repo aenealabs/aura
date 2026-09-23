@@ -860,6 +860,32 @@ def test_unresolvable_release_age_is_held_under_its_own_code():
     fresh = dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=0.5))
     assert fresh.code == dt.CODE_COOLDOWN
     assert "under the 3d cooldown" in fresh.reason
+    # The held reason states what happens next (another scheduled run), not
+    # a day count the weekly schedule cannot actually deliver -- a package
+    # held at 0.5d old and one held at 2.9d old are both cleared by the same
+    # next run, not by waiting out the difference between their ages.
+    assert "re-evaluated on the next scheduled triage run" in fresh.reason
+
+
+def test_grouped_cooldown_reason_defers_to_the_next_scheduled_run_too():
+    """The group path's held reason gets the same "next scheduled run"
+    framing as the single-package path, not a bare day count."""
+    pr = _pr(
+        title="chore(deps): bump the minor-and-patch group with 1 update",
+        members=(
+            dt.GroupMember(
+                package="vite",
+                from_version="1.0.0",
+                to_version="1.0.1",
+                risk_tier="healthy",
+                release_age_days=0.5,
+            ),
+        ),
+    )
+    d = dt.rule_cooldown(pr)
+    assert d is not None
+    assert d.code == dt.CODE_COOLDOWN
+    assert "re-evaluated on the next scheduled triage run" in d.reason
 
 
 def test_no_rule_can_bypass_the_cooldown_or_the_major_hold():

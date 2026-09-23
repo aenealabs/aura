@@ -295,3 +295,145 @@ jobs:
               --body-file triage-report.md \
               --label dependencies --label automated
           fi
+
+  # ============================================================================
+  # Collector smoke test -- workflow_dispatch only
+  # ============================================================================
+  # The collector's entire value is that its output matches what `gh` actually
+  # returns. Unit tests cannot catch a mismatch between a hand-authored fixture
+  # and live `gh` output by construction: it was recently discovered that a
+  # fixture encoded the author login as `dependabot[bot]` while real `gh`
+  # returns `app/dependabot`, which made rule_non_dependabot's classification a
+  # silent no-op while 158 unit tests still passed green. This job runs the
+  # real collector against the real repository and checks only structural
+  # properties of the result -- never specific PR numbers or counts, which
+  # would make the job flaky as the queue changes week to week.
+  #
+  # Colocated here rather than a separate workflow file: it reuses the same
+  # collector invocation, required-check list, and GH_TOKEN/permissions
+  # scoping the `classify` job above already documents, so a second workflow
+  # would only duplicate that boilerplate without adding isolation this job
+  # actually needs (it shares no state or artifacts with the scheduled jobs).
+  #
+  # workflow_dispatch only, deliberately not on the `schedule` trigger above,
+  # for two independent reasons:
+  #   1. This job depends on live `gh` API calls and the live state of the
+  #      open-PR queue. A GitHub outage, a rate limit, or a genuinely empty
+  #      queue is not a defect in this workflow's code and must not turn a
+  #      scheduled run red for a reason that has nothing to do with a bug.
+  #   2. It is a regression test for the collector/classifier's OWN
+  #      correctness, not a recurring operational signal. The class of defect
+  #      it exists to catch is introduced by a code change to
+  #      dep_triage_collect.py or dep_triage.py, not by the passage of time --
+  #      so the natural place to run it is on demand, right after such a
+  #      change, not on a weekly clock.
+  collector-smoke:
+    name: Collector smoke test (live gh)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      # Read-only, matching exactly what the collector itself needs (see the
+      # `classify` job above) plus nothing else. This job never writes to the
+      # repository: no issues, no comments, no branches.
+      contents: read
+      pull-requests: read
+      checks: read
+      statuses: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Collect live snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! python -m scripts.security.dep_triage_collect \
+              --repo "${{ github.repository }}" \
+              --output snapshot.json \
+              --required-check "Python Quality & Tests" \
+              --required-check "Analyze (python)" \
+              --required-check "Analyze (javascript-typescript)" \
+              --required-check "Analyze (actions)"; then
+            echo "::error::collector exited non-zero against the live repository"
+            exit 1
+          fi
+
+      - name: Classify live snapshot
+        run: |
+          set -euo pipefail
+          python -m scripts.security.dep_triage \
+            --snapshot snapshot.json \
+            --output triage-report.md \
+            --decisions decisions.json
+
+      - name: Assert structural properties
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import sys
+
+          snapshot = json.load(open("snapshot.json"))
+          prs = snapshot["pull_requests"]
+
+          # 1. Collector and classifier exit codes are already checked by the
+          #    two previous steps' own `set -euo pipefail` guards -- reaching
+          #    this step means both were 0.
+
+          # 2. Every PR in the snapshot carries a `checks` key. This is
+          #    exactly the kind of field a silent shape regression in the
+          #    collector could drop without any exception being raised.
+          missing_checks = [pr["number"] for pr in prs if "checks" not in pr]
+          if missing_checks:
+              sys.exit(f"PRs missing 'checks' key: {missing_checks}")
+
+          # 3. At least one PR has a non-empty author -- unless the live
+          #    queue is genuinely empty right now, in which case there is
+          #    nothing to assert and failing here would redden the run for a
+          #    quiet, healthy repository rather than a broken collector.
+          if prs and not any(pr.get("author") for pr in prs):
+              sys.exit("no PR in the snapshot has a non-empty 'author'")
+
+          # 4. The regression this job exists to catch. This check is
+          #    deliberately independent of dep_triage.DEPENDABOT_AUTHORS --
+          #    it does not import or reuse that set, because the original bug
+          #    was exactly a mismatch between what the collector emits and
+          #    what the classifier's set expects. Reusing the classifier's
+          #    own set here would make the assertion circular: if that set
+          #    were ever wrong again, checking membership in it would
+          #    "prove" no Dependabot PR exists rather than catching the
+          #    mismatch. The literal substring below is authored fresh,
+          #    against the live `gh` login string, not against the module.
+          dependabot_open = any(
+              "dependabot" in (pr.get("author") or "").lower() for pr in prs
+          )
+          if dependabot_open:
+              decisions = json.load(open("decisions.json"))["decisions"]
+              if not any(d["code"] != "excluded:non-dependabot" for d in decisions):
+                  sys.exit(
+                      "every decision is 'excluded:non-dependabot' despite an "
+                      "open PR whose author login contains 'dependabot' -- "
+                      "this is exactly the no-op regression this job exists "
+                      "to catch"
+                  )
+
+          print(f"OK: {len(prs)} open PR(s) in snapshot; structural checks passed.")
+          PY
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: collector-smoke
+          path: |
+            snapshot.json
+            decisions.json
+            triage-report.md
+          retention-days: 14

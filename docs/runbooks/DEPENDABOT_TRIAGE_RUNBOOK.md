@@ -1,7 +1,7 @@
 # Dependabot Triage Runbook
 
-**Last Updated:** 2026-09-22
-**Workflow:** `.github/workflows/dependabot-triage.yml` (Mondays 16:00 UTC + `workflow_dispatch`)
+**Last Updated:** 2026-09-23
+**Workflow:** `.github/workflows/dependabot-triage.yml` (monthly — 16:00 UTC on the 1st — plus `workflow_dispatch`)
 **Scripts:** `scripts/security/dep_triage.py` (classifier), `scripts/security/dep_triage_collect.py` (I/O), `scripts/security/dep_triage_consolidate.py` (operator command)
 **Spec:** `docs/superpowers/specs/2026-09-19-dependabot-triage-design.md`
 **Register:** `docs/security/DEPENDENCY_RISK_REGISTER.md`
@@ -20,10 +20,18 @@ advice; you perform every merge.
 
 ## Overview
 
-This job runs two hours after [`DEPENDENCY_RISK_AUDIT_RUNBOOK.md`](DEPENDENCY_RISK_AUDIT_RUNBOOK.md)
-(14:00 UTC) and is meant to be read in the same Monday sitting. The audit answers
-"is anything we depend on unsafe?"; the triage answers "which of this week's
-Dependabot PRs can I merge, and why not the rest?"
+**Cadence:** monthly, 16:00 UTC on the 1st, plus `workflow_dispatch`. It was
+weekly until September 2026. Coupled families arrive at codeql-action's release
+cadence — roughly monthly — and Dependabot PRs accumulate harmlessly, so a larger
+batch triaged less often is less work and loses nothing. Dispatch it by hand any
+time you are actually planning a dependency sweep.
+
+Its sibling [`DEPENDENCY_RISK_AUDIT_RUNBOOK.md`](DEPENDENCY_RISK_AUDIT_RUNBOOK.md)
+(Mondays 14:00 UTC) is still **weekly** and did not move. The audit answers "is
+anything we depend on unsafe?"; the triage answers "which of these Dependabot PRs
+can I merge, and why not the rest?" The two only land in the same sitting when the
+1st falls on a Monday. If the audit flags something urgent, do not wait for the
+1st — re-dispatch triage.
 
 Three stages:
 
@@ -52,23 +60,56 @@ PR that notices the gap.
 | `merge-safe` | Candidate that passed the batch proof as a unit | Merge, preferably the whole batch. One approval each, as normal. Merging a subset weakens the proof. |
 | `candidate` | No rule objected, but the proof did not promote it | Not proven. The proof was skipped, failed, or the PR was excluded from it. See *When the batch proof fails*. |
 | `coupled` | Member of a multi-PR update family (`github/codeql-action`, `npm:/frontend:vitest`) | **Never merge alone**, even fully green. Either merge the whole family in one sitting or run the consolidation command below. |
-| `held:policy-review` | Touches a `Dockerfile*` or `pyproject.toml` | Human review. Confirm the base image still resolves to private ECR, and that the 70% coverage floor was not touched. |
+| `held:policy-review` | Diff touches a file under `.github/workflows/` | **Confirm the new `uses:` SHA is the one that was intended.** The diff only proves the pin *moved*: it shows one 40-hex SHA replacing another and says nothing about what the new one points at. Open the action's repository and check the SHA is the tag it claims to be. That confirmation is the entire reason this hold was kept when the `Dockerfile` and `pyproject.toml` cases were demoted to notes. |
 | `held:pinned-by-policy` | Package is a documented deliberate cap (`tree-sitter < 0.26`) | Do not bump to clear the report. Close the PR. Lifting the cap is a change to `docs/DEFERRED_WORK_REGISTRY.md` and the code that depends on it. |
 | `held:risk-tier` | Package is **At-Risk** or **Replace-Now** in the register | **Route to a human — this does not mean "never bump".** See the note below. |
-| `held:major-review` | Major version bump | Read the upstream changelog yourself. There is no bypass; a body-text advisory match used to provide one and was removed. |
-| `held:cooldown` | Release younger than 3d (packages) / 7d (Actions), **or age unknown** | Wait, or override deliberately — see `SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`. The unknown-age case is an abstention; see the note below. |
-| `attention:failing` | At least one check concluded `failure` or `timed_out` | Read the failing job log. There is no flake exemption any more — see *Codes in flux* below. If the log shows infrastructure trouble (download failure, `Could not resolve host`, rate limit), re-run the job once yourself, then re-dispatch. |
+| `held:cooldown` | Release younger than 3d (packages) / 7d (Actions) | Wait for the next run, or override deliberately — see `SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`. Under a monthly schedule "wait" means up to a month unless you re-dispatch. |
+| `held:no-release-metadata` | No publish timestamp could be resolved, so the cooldown could not be evaluated | An abstention, not a finding about the package — see the note below. Judge the PR on its merits. |
+| `held:grouped-unparsed` | Grouped update whose member packages could not be parsed from the PR body | The per-package holds (deliberate caps, At-Risk tiers) never ran for the members that are missing. Read the PR body and check the members by hand before merging. |
+| `attention:failing` | At least one check concluded `failure` or `timed_out` | Read the failing job log. There is no flake exemption any more — see *Codes that recently changed* below. If the log shows infrastructure trouble (download failure, `Could not resolve host`, rate limit), re-run the job once yourself, then re-dispatch. |
 | `attention:missing-required` | A required check is absent from the run set | An unrun check is never a passing check. Find out why the workflow did not trigger before doing anything else. |
-| `attention:required-not-passing` | A required check is present but not conclusively passing (still running, cancelled, timed out, errored) | Most often just "still running at 16:00". Wait, then re-dispatch the workflow. |
+| `attention:required-not-passing` | A required check is present but not conclusively passing (still running, cancelled, timed out, errored) | Most often just "still running when the report was built". Wait, then re-dispatch the workflow. |
 | `attention:conflict` | Could not be merged onto the candidate integration branch, or could not be fetched | Ask Dependabot to rebase (`@dependabot rebase` on the PR), then re-dispatch. |
 | `excluded:non-dependabot` | Author is not a recognised Dependabot login | Out of scope for this system. Release Please and human PRs land here; review them normally. |
 | `excluded:no-checks` | Zero check runs on the PR | Nothing has been validated. Do not read "no failures" as "passing". |
 
-### Codes in flux
+### Notes are not classifications
+
+A **note** is an observation printed beside a verdict, never a verdict of its own.
+It appears in the report's Reason cell after `**Note:**`, and in the Coupled sets
+section as a bullet under the family.
+
+**A `candidate` carrying a note is still a candidate. A `merge-safe` carrying a
+note is still merge-safe.** A note changes nothing about what the classifier
+concluded, and no section of the report collects notes on their own. Do not read
+one as a hold.
+
+Two notes exist:
+
+| Note text begins | What it means | What you do |
+|------------------|---------------|-------------|
+| `major bump X -> Y (N -> M)` | The leading version integer increased; breaking changes may not be covered by CI | Read the upstream changelog before approving. That was always the reviewer's job; it is no longer echoed as a hold. |
+| `touches <path>: ...` | The diff touches a `Dockerfile*` or a `pyproject.toml` | Check the two things the note names: that the base image still resolves to private ECR (`aura-base-images`), and that the 70% coverage floor in `pyproject.toml` was not lowered. |
+
+Both were `held:` codes until September 2026. They were demoted because a hold
+only earns its place when it tells you something you could not cheaply see on the
+PR yourself — and an inflated Held pile trains you to skim it, at which point the
+holds that *do* carry non-obvious information get skimmed with it.
+
+### Codes that recently changed
 
 The rule set is still settling and codes are being added and removed. Check this
 table against `CODE_*` in `scripts/security/dep_triage.py` before trusting it.
 
+- **`held:major-review` was removed** in September 2026 and is now the major-bump
+  note above. A major bump can therefore reach `candidate` and `merge-safe`; the
+  version numbers in the PR title are the signal, and reading them is yours.
+- **`held:policy-review` was narrowed** at the same time, from "any
+  policy-sensitive path" to `.github/workflows/` only. `Dockerfile*` and
+  `pyproject.toml` became the path note above. The workflow case was kept on a
+  narrower argument — a `uses:` SHA swap is the one policy-sensitive diff a
+  reviewer genuinely cannot read — and a security review specifically objected to
+  demoting it, correctly.
 - **`attention:suspected-flake` was removed** while this runbook was being
   written. It matched infrastructure signatures against a log excerpt the
   collector filled from `gh pr checks --json description`, and that field is
@@ -76,6 +117,10 @@ table against `CODE_*` in `scripts/security/dep_triage.py` before trusting it.
   while advertising coverage the tool did not have. Every failure now reads as
   genuine, which is the conservative direction. You make the flake call yourself.
   If the code reappears, restore its row here.
+- **`held:no-release-metadata` and `held:grouped-unparsed` are separate codes**,
+  split out of `held:cooldown`. "This release is too new" and "I could not
+  determine the age" lead to different actions, and conflating them made every
+  github-actions PR read as a transient lookup glitch.
 - **`attention:required-not-passing` is new** and is not in the design spec. It
   catches a required check that is present but has not concluded green — still
   running, cancelled, timed out, errored. Before it existed, "no objection found"
@@ -95,10 +140,10 @@ classified `held:risk-tier` — and it is exactly the PR the team has been waiti
 a year for. Merging it clears the register row and removes the `--legacy-peer-deps`
 workaround. Read the register entry before you dismiss a hold.
 
-### A cooldown hold on unknown age is an abstention
+### `held:no-release-metadata` is an abstention
 
-`release age unknown; cannot confirm the cooldown elapsed` is not a finding about
-the package. It means the collector could not get a publish timestamp from PyPI
+`no release timestamp could be resolved for <package> <version>` is not a finding
+about the package. It means the collector could not get a publish timestamp from PyPI
 or npm — an ecosystem with no stdlib-reachable release date, a registry blip, a
 version string it could not clean. The rule fails toward holding, so the PR
 queues for a human instead of passing unexamined. Judge it on its merits; nothing
@@ -112,7 +157,7 @@ matching the exact title `Dependabot triage`.
 
 | Rule | Why |
 |------|-----|
-| **Never close the issue.** | The lookup finds nothing and opens a brand-new issue on the next run, every week, forever. |
+| **Never close the issue.** | The lookup finds nothing and opens a brand-new issue on the next run, and every run after that, forever. |
 | **Never remove the `automated` label.** | Same failure. The label is the lookup key, not decoration. |
 | **Never rename it.** | The title is matched exactly, client-side. |
 | **Do not edit the body.** | The next run overwrites it. Put your notes in a comment; comments survive. |
@@ -142,7 +187,7 @@ gh run watch "$(gh run list --workflow="Dependabot Triage" --limit 1 --json data
 
 ## When the Batch Proof Fails
 
-This is the most common weekly question. **There is no automatic bisect and no
+This is the most common question the report produces. **There is no automatic bisect and no
 dispatch input to exclude a PR.** A red proof leaves every member at `candidate`
 with nothing named as the offender. Narrow it by hand.
 
@@ -210,7 +255,7 @@ by Actions could never satisfy the four required contexts in `main-protection`
 (`Python Quality & Tests`, `Analyze (python)`, `Analyze (javascript-typescript)`,
 `Analyze (actions)`) — it would sit blocked forever. A branch pushed by a human
 does trigger them. Running it locally also keeps the repository's only
-write-scoped step under a person rather than on a weekly timer.
+write-scoped step under a person rather than on a timer.
 
 ### Preconditions
 
@@ -260,7 +305,7 @@ originals intact.
 ## Kill Switch
 
 ```bash
-gh workflow disable "Dependabot Triage"      # stop the Monday schedule
+gh workflow disable "Dependabot Triage"      # stop the monthly schedule
 gh workflow enable  "Dependabot Triage"      # resume
 gh workflow list --all | grep -i dependabot  # confirm state
 ```
@@ -320,7 +365,7 @@ classifier adds nothing here and should not be trusted to.
 
 ## References
 
-- Sibling job (14:00 UTC, same morning): [`DEPENDENCY_RISK_AUDIT_RUNBOOK.md`](DEPENDENCY_RISK_AUDIT_RUNBOOK.md)
+- Sibling job, still weekly (Mondays 14:00 UTC): [`DEPENDENCY_RISK_AUDIT_RUNBOOK.md`](DEPENDENCY_RISK_AUDIT_RUNBOOK.md)
 - Register: [`docs/security/DEPENDENCY_RISK_REGISTER.md`](../security/DEPENDENCY_RISK_REGISTER.md)
 - SI-2 risk acceptance for the cooldown: [`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`](../security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md)
 - Design + as-built deltas: [`docs/superpowers/specs/2026-09-19-dependabot-triage-design.md`](../superpowers/specs/2026-09-19-dependabot-triage-design.md)

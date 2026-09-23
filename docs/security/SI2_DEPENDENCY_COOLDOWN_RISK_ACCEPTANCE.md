@@ -1,10 +1,11 @@
 # Risk Acceptance: Dependency Update Cooldown (NIST 800-53 SI-2)
 
-**Last Updated:** 2026-09-22
+**Last Updated:** 2026-09-23
 **Control:** NIST 800-53 **SI-2 Flaw Remediation** (supporting: SI-2(2), SI-5, RA-5)
 **Status:** Accepted
 **Owner / Accepting authority:** Platform Engineering
 **Implemented in:** `scripts/security/dep_triage.py` (`PACKAGE_COOLDOWN_DAYS`, `ACTION_COOLDOWN_DAYS`, `rule_cooldown`)
+**Triage cadence:** Monthly — `0 16 1 * *`, 16:00 UTC on the 1st — plus `workflow_dispatch` on demand
 **Operating procedure:** [`docs/runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md`](../runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md)
 **Review cadence:** Quarterly, with `docs/DEFERRED_WORK_REGISTRY.md`
 
@@ -13,10 +14,10 @@
 ## Why this is a separate document
 
 This lives under `docs/security/` rather than inside the triage runbook because
-its audience is different. The runbook is read at 9am on a Monday by an operator
-with five minutes; this is read by an assessor, a customer security
+its audience is different. The runbook is read on the morning of a triage run by
+an operator with five minutes; this is read by an assessor, a customer security
 questionnaire, or whoever has to explain why a known-published fix sat unmerged
-for four days. It also outlives the runbook's procedures — the ceiling and the
+while the report said "held". It also outlives the runbook's procedures — the ceiling and the
 override path below remain the commitment even if the tooling is rewritten. The
 runbook links here from its `held:cooldown` row; this links back.
 
@@ -40,10 +41,12 @@ the advisory id inside a collapsible `<details>` block, which the detector did n
 read. Its false positives were worse than its absence — ordinary bumps whose
 embedded upstream release notes mentioned any historical CVE were treated as
 security updates, and those landed disproportionately on `docker` and
-`github-actions` bumps, where the bypass stripped a *permanent* policy hold rather
-than a three-day wait. A body-text heuristic is the wrong primitive for a control
-that removes two guards. The manual override in this document is the exemption
-path.
+`github-actions` bumps. At the time both carried a *permanent* policy hold, which
+the bypass stripped outright rather than shortening a three-day wait. The `docker`
+half of that hold has since been demoted to an advisory note and the
+`github-actions` half has not — see *Deployed control set* below. A body-text
+heuristic is the wrong primitive for a control that removes two guards. The manual
+override in this document is the exemption path.
 
 ## Rationale for the latency
 
@@ -73,27 +76,95 @@ The rule also holds when the release age is **unknown**. That is an abstention,
 not a finding: the collector could not obtain a publish timestamp, so the PR
 queues for a human rather than passing unexamined.
 
+## Deployed control set
+
+The classifier's holds are the inventory this document should be held to. As of
+2026-09-23:
+
+| Hold | Fires on | Status |
+|------|----------|--------|
+| `held:cooldown` | Release younger than 3d (packages) / 7d (Actions) | Deployed — the subject of this document |
+| `held:no-release-metadata` | No publish timestamp resolvable, so the cooldown could not be evaluated | Deployed — an abstention, not a finding |
+| `held:risk-tier` | Package is At-Risk or Replace-Now in `DEPENDENCY_RISK_REGISTER.md` | Deployed |
+| `held:pinned-by-policy` | Package carries a documented deliberate cap (`tree-sitter < 0.26`) | Deployed |
+| `held:grouped-unparsed` | Grouped update whose members could not be parsed, so the per-package holds never ran | Deployed |
+| `coupled` | Member of a multi-PR update family; no member is individually mergeable | Deployed |
+| `held:policy-review` | Diff touches a file under `.github/workflows/` | Deployed, **narrowed** — see below |
+| `held:major-review` | Major semver bump | **Removed.** No longer exists |
+
+Above all of them, and unaffected by any of this: the `main-protection` ruleset
+requires one human approval plus four passing status checks on every pull
+request. That is the only actual merge gate, and it is what every argument in
+this document ultimately rests on.
+
+### Two holds were reduced in September 2026
+
+This document previously cited both of them. It no longer claims either, and the
+reasoning below is stated rather than the line simply deleted.
+
+**`held:major-review` was removed outright.** A major semver bump is now an
+advisory *note* attached to whatever classification the PR otherwise earns, so a
+major bump can reach `candidate` and `merge-safe`. Nothing in the classifier
+reviews breaking changes any more. The observation was demoted because its entire
+content — the leading version integer went up — is written in the PR title the
+reviewer is already reading, not because breaking changes stopped mattering.
+
+**Effect on this risk acceptance, stated plainly:** the argument is weaker than it
+was. A major bump used to be routed to a human by two independent mechanisms; it
+is now routed by one, the `main-protection` approval. That remaining mechanism is
+the stronger of the two — it blocks the merge, where the hold only printed a
+sentence — but it depends on the reviewer reading the version numbers in the
+title. No automated control substitutes for that, and this document does not
+claim one.
+
+**`held:policy-review` was narrowed to `.github/workflows/` only.** Dockerfile and
+`pyproject.toml` changes became advisory notes on the same "the diff is legible"
+reasoning. The workflow case was kept because it is not legible: a `uses:` diff
+shows one opaque 40-hex SHA replacing another, which proves the pin moved and says
+nothing about what the new pin points at. SHA pinning only helps if a human
+confirms the new SHA is the one intended, and nothing in the classifier confirms
+that. This is the most credential-adjacent surface in the repository — the batch
+that motivated the work contained an `aws-actions/configure-aws-credentials` bump,
+the action that performs AWS credential assumption — so the hold is what puts the
+confirmation in front of someone.
+
+**A hold that persists past 7 days is not a cooldown hold.** It is one of the
+other classifications in the table above, or an `attention:*` code, each with its
+own procedure in the runbook and its own tracking. Cooldown expiry is automatic
+and requires no action.
+
 ## Remediation ceiling
 
 **No security-relevant dependency update is held by this cooldown for more than
-7 calendar days from the first triage run that holds it.**
+7 calendar days from the first triage run that holds it.** As of September 2026
+this is a *procedural* commitment discharged by the operator, not a property the
+schedule delivers by itself. Read the next two paragraphs before citing it.
 
 Why 7:
 
 - 7 days is the longest cooldown constant in the system, so no hold attributable
   to this rule can exceed it on its own terms.
-- The triage runs weekly (Mondays 16:00 UTC). A release held at one run is
-  re-evaluated at the next, 7 days later, at which point both the 3-day and the
-  7-day window have necessarily elapsed. 7 is therefore the true worst case for
-  both ecosystems, not just for Actions.
 - Anything longer would be a number we could not measure against, which is
   precisely what SI-2 requires us to be able to do.
 
-**A hold that persists past 7 days is not a cooldown hold.** It is a different
-classification — `held:major-review`, `held:policy-review`,
-`held:pinned-by-policy`, `held:risk-tier`, `attention:*` — each of which has its
-own procedure in the runbook and its own tracking. Cooldown expiry is automatic
-and requires no action.
+**What the schedule alone delivers is one calendar month, not 7 days.** Triage
+moved from weekly to monthly (`0 16 1 * *`) in September 2026. A release held at
+one scheduled run is not re-evaluated by the schedule until the 1st of the
+following month, so schedule-only worst-case latency on the *advice* is 28–31
+days, not 7.
+
+**How the 7-day ceiling is met anyway.** `workflow_dispatch` is retained and a
+re-dispatch is one command (`gh workflow run "Dependabot Triage"`, per the
+runbook). More importantly, the detection side did not change cadence: the
+Dependency Risk Audit still runs **weekly**, so an unremediated flaw still
+surfaces within 7 days, and the operator who reads it re-dispatches triage rather
+than waiting for the 1st. The ceiling therefore rests on an operator acting on the
+weekly audit. That is a weaker guarantee than the old weekly schedule produced
+automatically, and it is recorded here as such.
+
+**None of this gates a merge.** The cooldown is a sentence in an advisory report.
+An operator who has decided to merge needs no triage run at all, and the override
+procedure below is available at 0 days.
 
 **Ceiling for actively exploited flaws: 0 days.** A CVE with known in-the-wild
 exploitation, or any finding the weekly audit escalates as Critical/High without
@@ -103,8 +174,12 @@ premise it rests on is already false.
 
 ## Compensating control
 
-The weekly **Dependency Risk Audit** (`.github/workflows/dependency-risk-audit.yml`,
-Mondays 14:00 UTC, two hours before triage) runs `pip-audit` across every
+The **Dependency Risk Audit** (`.github/workflows/dependency-risk-audit.yml`,
+Mondays 14:00 UTC) still runs **weekly**. Triage moved to monthly; the audit did
+not, and the divergence is deliberate — detection stays weekly while merge
+*advice* batches up. The two now coincide only when the 1st of the month falls on
+a Monday, so the audit is no longer a two-hour curtain-raiser for triage; it is
+the standing weekly signal. It runs `pip-audit` across every
 `requirements*.txt` and `npm audit` against `frontend/`, and diffs maintainer
 staleness against `docs/security/DEPENDENCY_RISK_REGISTER.md`. Its output is
 committed to `docs/security/audits/YYYY-WNN.md` via PR.
@@ -112,8 +187,9 @@ committed to `docs/security/audits/YYYY-WNN.md` via PR.
 This is the measurement side of SI-2 and it is **not gated by the cooldown**. An
 unremediated flaw stays on the audit report every week until the fix merges, so a
 cooldown hold cannot hide a CVE — at worst it appears once more on the following
-Monday's report. The audit runs first by design: the operator reads known flaws
-before reading merge advice.
+Monday's report, which is the fact the 7-day ceiling above depends on. When the
+two jobs do land in the same morning the audit runs first by design, so the
+operator reads known flaws before reading merge advice.
 
 GitHub Dependabot security alerts are a second, continuous signal and are not
 gated by anything in this system.
@@ -153,18 +229,25 @@ performed by automation, and no automation can perform it.
 
 ## Known imprecision
 
-**The weekly schedule makes the 3-day and 7-day windows behave identically.** A
-release observed at a Monday 16:00 triage run is either already older than 3 days
-— in which case the package cooldown has no effect at all — or it is younger, in
-which case it is held to the next Monday, 7 days later. There is no run in between
-at which a 3-day window could expire. The distinction between the two constants is
-therefore currently theoretical; both behave as "held until next Monday."
+**The schedule makes the 3-day and 7-day windows behave identically.** This was
+true under the old weekly schedule and is more true under the monthly one. A
+release observed at a scheduled triage run is either already older than 7 days —
+in which case neither constant has any effect — or it is younger, in which case it
+is held to the next run a month later, by which time both windows have long since
+elapsed. There is no scheduled run at which the 3-day window could expire and the
+7-day one could not. The distinction between the two constants is therefore
+theoretical on the schedule alone; both read as "held until the next run."
 
-Recorded rather than fixed, because fixing it means either a more frequent
-schedule (more CI cost, more operator attention, for a system that produces
-advice) or a mid-week re-dispatch by the operator — which is already available on
-demand via `gh workflow run "Dependabot Triage"` when it matters. Revisit if the
-effective latency ever becomes the binding constraint on a real remediation.
+The constants become distinguishable only under `workflow_dispatch`, which is the
+same mechanism the remediation ceiling above relies on: an operator re-dispatching
+four days after a release sees the package window expired and the Actions window
+not.
+
+Recorded rather than fixed, because fixing it means a more frequent schedule —
+more CI cost and more operator attention, for a system that produces advice — and
+the on-demand re-dispatch already covers the case where latency actually matters.
+Revisit if effective latency ever becomes the binding constraint on a real
+remediation.
 
 ## References
 

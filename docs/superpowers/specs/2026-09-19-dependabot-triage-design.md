@@ -287,9 +287,10 @@ design but should be tracked.
 
 ## As-built deltas
 
-Recorded 2026-09-22, after implementation and three specialist reviews. Each row
-below states what this spec said, what was built, and why it changed. Rulings and
-their stated cost-if-wrong come from the execution ledger at
+Recorded 2026-09-22, after implementation and three specialist reviews; deltas
+16 and 17 added 2026-09-23. Each row below states what this spec said, what was
+built, and why it changed. Rulings and their stated cost-if-wrong come from the
+execution ledger at
 `.superpowers/sdd/2026-09-19-dependabot-triage/progress.md`.
 
 This section is additive. Nothing above it has been rewritten except Structural
@@ -394,6 +395,11 @@ procedure is documented in the runbook's *When the batch proof fails* section,
 along with the local reproduction commands.
 
 ### 5. R3 does not cover workflow `uses:` SHA changes
+
+> **Superseded 2026-09-23 by [delta 16](#16-r8-removed-r3-narrowed-then-partly-restored).**
+> The gap recorded below was closed: `rule_workflow_path` now holds on
+> `.github/workflows/`. The text is preserved because delta 16 is the answer to
+> it and reads better with the question in front of it.
 
 **Spec (R3):** hold on Dockerfiles, **workflow `uses:` SHA changes**, and the
 `pyproject.toml` coverage threshold.
@@ -550,10 +556,13 @@ also holds when the release age is unknown, which is an abstention rather than a
 finding: without it, an ecosystem with no stdlib-reachable release timestamp
 would pass unexamined.
 
-**Known imprecision:** under a weekly schedule the two windows behave
-identically -- a release is either already older than 3 days at first triage or
-is held to the next Monday. Documented in
-`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`.
+**Known imprecision:** the schedule makes the two windows behave identically --
+a release is either already older than both at first triage or is held to the
+next run. This was true of the weekly schedule and is more true of the monthly
+one it became (delta 17). Documented in
+`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`, which also restates
+the 7-day remediation ceiling that the weekly cadence used to deliver on its
+own.
 
 ### 13. Permissions differ from Section 5
 
@@ -588,6 +597,98 @@ delta; recorded so it is not re-opened.
 `moto[all]` -> `cfn-lint` -> `aws-sam-translator` chain. As of 2026-09-22 the
 comment is unchanged and, per the analysis in the Open Question above, stale.
 Out of scope for this work; still worth tracking.
+
+### 16. R8 removed, R3 narrowed, then partly restored
+
+**Spec (R3):** hold on Dockerfiles, workflow `uses:` SHA changes, and the
+`pyproject.toml` coverage threshold -> `held:policy-review`.
+**Spec (R8):** major semver bump -> `held:major-review`.
+
+**Built, as of 2026-09-23:** `held:major-review` does not exist.
+`held:policy-review` fires on `.github/workflows/` only. Both displaced
+observations survive as `Decision.notes` -- advisory text attached to whatever
+classification the PR otherwise earns, rendered into the report's reason cell
+after `**Note:**`.
+
+| Was | Is now | Mechanism |
+|-----|--------|-----------|
+| `held:major-review` | Note | `note_major` |
+| `held:policy-review` on `Dockerfile*` / `pyproject.toml` | Note | `note_policy_file`, keyed by `POLICY_PATHS` |
+| `held:policy-review` on `.github/workflows/` | Still a hold | `rule_workflow_path`, keyed by `POLICY_DIRS` |
+
+**Why, and the order it happened in.** The demotion came first and took all
+three. The premise is that this report is advisory: it merges nothing, and
+`main-protection` still requires one human approval plus four status checks, so a
+hold does not block anything -- it only tells the operator to look. It therefore
+earns its cost only when it states something the operator could not cheaply
+derive from the PR in front of them. A major bump fails that test outright (the
+integer is in the title). A `Dockerfile` or `pyproject.toml` change fails it too
+(a self-evident one-file diff the required reviewer is reading anyway). What
+those two diffs do *not* carry is the *rationale* -- private-ECR base images, the
+70% coverage floor -- so the rationale is what survives, as note text.
+
+**Then the workflow case was restored, and that is the part worth recording.** A
+security review objected to demoting it and was right on the facts. A workflow
+`uses:` diff is the one policy-sensitive diff that is genuinely illegible: the
+reviewer sees `owner/action@<40 hex>` replaced by `@<40 other hex>`, which proves
+the pin moved and reveals nothing about what the new pin points at -- the only
+load-bearing fact. SHA pinning only helps if a human confirms the new SHA is the
+one intended, and nothing in this module confirms it. It is also the most
+credential-adjacent surface in the repository; the motivating batch contained an
+`aws-actions/configure-aws-credentials` bump, the action that performs AWS
+credential assumption. So the line landed between "the diff is legible" and "the
+diff is a hex string", not between "policy-sensitive" and "not".
+
+**Rule position is load-bearing.** `rule_workflow_path` runs *after*
+`rule_coupled`. Every github-actions family touches a workflow file by
+construction, so running it first would flip all four codeql PRs out of `coupled`
+and delete the family key `dep_triage_consolidate` reads. A coupled member is
+held for a human either way, so the coupled verdict loses nothing by winning.
+
+**Measured effect on the captured 22-PR batch:** the Held pile went from 5 to 2 --
+`#458` (`held:policy-review`, the AWS credentials action) and `#468`
+(`held:risk-tier`, `gremlinpython` At-Risk in the register). That is the point of
+the change rather than a side effect: a Held pile that is mostly restatement
+trains the operator to skim it, and then the holds carrying genuinely non-obvious
+information get skimmed too.
+
+**Cost if wrong:** a major bump can now reach `candidate` and `merge-safe`, and
+nothing in the classifier reviews breaking changes. That review moved entirely to
+the human whose approval `main-protection` requires. Recorded honestly in
+`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`, which used to cite
+both holds and now cites one.
+
+**Reversing either direction is a small edit.** To re-demote the workflow hold,
+drop `rule_workflow_path` from `classify`'s chain and fold `POLICY_DIRS` into
+`note_policy_file`. To promote a note back to a hold, give it a `CODE_*`
+constant, a `_SECTIONS` entry, and a position in the chain after `rule_coupled`.
+
+### 17. Trigger is monthly, not weekly
+
+**Spec (Trigger):** `schedule` (Mondays 16:00 UTC, after Dependabot opens PRs and
+after the 14:00 risk audit) and `workflow_dispatch`.
+
+**Built:** `cron: '0 16 1 * *'` -- 16:00 UTC on the 1st of the month --
+with `workflow_dispatch` retained. Changed 2026-09-23.
+
+**Why:** coupled families arrive at codeql-action's release cadence, roughly
+monthly, and Dependabot PRs accumulate harmlessly. A larger batch triaged less
+often is less work for the same coverage. `workflow_dispatch` covers the case
+where a sweep is actually planned.
+
+**What this costs.** Two things, both recorded rather than mitigated:
+
+- The sibling Dependency Risk Audit (`0 14 * * 1`) did **not** move and is still
+  weekly. The two jobs coincide only when the 1st is a Monday, so the spec's
+  "read in the same sitting" framing no longer holds. Detection stays weekly;
+  only merge *advice* batches up, which is the reason the divergence is
+  acceptable.
+- The SI-2 document's 7-day remediation ceiling was justified by the weekly
+  cadence -- a release held at one run was necessarily re-evaluated 7 days later.
+  Under a monthly schedule the schedule alone delivers 28-31 days. The 7-day
+  ceiling is now a procedural commitment discharged by `workflow_dispatch`, with
+  the still-weekly audit as the trigger that surfaces the need. Restated in
+  `docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`.
 
 ### Not deltas, but worth knowing
 

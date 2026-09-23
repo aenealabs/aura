@@ -1,5 +1,30 @@
 # Dependabot Triage Automation Implementation Plan
 
+> **Status: completed and superseded. This is a historical record of what was
+> planned on 2026-09-19, not a description of what runs today.** It is preserved
+> unedited below the line, because a plan rewritten after the fact stops being
+> evidence of anything. Do not implement from it and do not cite its code as
+> current.
+>
+> Known divergences, all deliberate and all recorded elsewhere:
+>
+> - `CODE_MAJOR` / `rule_major` (`held:major-review`) **no longer exist.** A
+>   major bump is an advisory note now.
+> - `held:policy-review` was **narrowed to `.github/workflows/` only**; the
+>   `Dockerfile` and `pyproject.toml` cases are advisory notes.
+> - The `security_advisory` fast path and the `attention:suspected-flake`
+>   detector were both **built and then removed**.
+> - The schedule is **monthly** (`0 16 1 * *`), not the weekly `0 16 * * 1`
+>   written into the workflow snippet in Task 12.
+>
+> **Current state of the system, in order of authority:**
+> `scripts/security/dep_triage.py` (the code and its module docstring) ->
+> [`docs/superpowers/specs/2026-09-19-dependabot-triage-design.md`](../specs/2026-09-19-dependabot-triage-design.md)
+> (As-built deltas) -> [`docs/runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md`](../../runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md)
+> (operator procedure).
+
+---
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Classify every open Dependabot PR with a stated reason, prove the safe subset resolves and tests as a batch, consolidate PR sets that cannot merge individually, and publish a weekly report an operator acts on.

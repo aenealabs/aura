@@ -11,6 +11,7 @@ could not see -- deletions, modes, renames, and file identity.
 """
 
 import json
+import subprocess
 import sys
 
 import pytest
@@ -387,6 +388,104 @@ def test_branch_name_slugifies_an_npm_requirement_range_version():
     slug = branch.split("/", 1)[1]
     assert not slug.startswith("-")
     assert not slug.endswith("-")
+
+
+def git_accepts_ref(name):
+    """Ask git itself whether a branch name is legal.
+
+    The rules for a ref are not obvious enough to restate in a test -- that
+    is how the trailing-dot case got shipped in the first place -- so the
+    oracle here is `git check-ref-format --branch`, the same code that
+    rejects the name at `git switch -c`. It reads no repository, so this
+    stays hermetic.
+    """
+    return (
+        subprocess.run(
+            ["git", "check-ref-format", "--branch", name],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def test_git_accepts_ref_rejects_a_name_git_really_rejects():
+    """Positive control for the oracle above.
+
+    A helper that answered "fine" to everything would make every test below
+    pass while checking nothing, so pin both of its answers.
+    """
+    assert git_accepts_ref("dep-consolidate/github-codeql-action-4.38.0")
+    assert not git_accepts_ref("dep-consolidate/x-..")
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "4.38.0",
+        "..",
+        ".",
+        "...",
+        "1.0.",
+        ".1.0",
+        "1..0",
+        "lock",
+        "4.lock",
+        "1.0.0.lock",
+        "^5.0.0",
+        "~1.2.3",
+        "",
+        "@{upstream}",
+        "a b",
+        "-",
+    ],
+)
+def test_branch_name_never_returns_a_ref_git_would_reject(version):
+    """Every version either names a legal branch or is refused up front.
+
+    Failing at `git switch -c` is a worse diagnostic than refusing here:
+    git's message talks about a ref several calls away from the family and
+    version that produced it, and by then the function is inside the
+    try/finally that has to unwind a checkout.
+    """
+    try:
+        name = dcon.branch_name("github/codeql-action", version)
+    except dcon.InvalidBranchName:
+        return
+    assert git_accepts_ref(name), name
+
+
+@pytest.mark.parametrize(
+    "family,version",
+    [("github/codeql-action", ".."), ("github/codeql-action", "1.0.")],
+)
+def test_branch_name_sanitises_the_dot_cases_rather_than_failing(family, version):
+    """The two cases from the report are sanitised, not merely refused.
+
+    `..` and a trailing `.` are the shapes a real version string produces,
+    so losing the family to an exception would be a regression in behaviour
+    for input that has a perfectly good branch name available.
+    """
+    name = dcon.branch_name(family, version)
+    assert name.startswith("dep-consolidate/github-codeql-action")
+    assert git_accepts_ref(name)
+
+
+def test_branch_name_refuses_when_nothing_is_left_to_name():
+    """A family and version that slugify away entirely name nothing.
+
+    `dep-consolidate/-` is a legal ref, so git would accept it; it is still
+    a caller bug, and one branch per empty family would collide.
+    """
+    with pytest.raises(dcon.InvalidBranchName):
+        dcon.branch_name("", "")
+
+
+def test_consolidate_family_refuses_an_unnameable_family_without_touching_git():
+    run = _happy_run()
+    ok, message = dcon.consolidate_family("", "", [450, 452], run)
+    assert not ok
+    assert "cannot name a branch" in message
+    assert not run.calls, "nothing may run before the branch name is known"
 
 
 def test_families_from_decisions_groups_coupled_members():

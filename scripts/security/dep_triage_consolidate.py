@@ -277,6 +277,56 @@ def verify_union(member_raws: list[str], combined_raw: str) -> tuple[bool, set, 
     return (not missing and not extra, missing, extra)
 
 
+class InvalidBranchName(ValueError):
+    """A family and version did not yield a name git would accept as a ref."""
+
+
+def _slugify(text: str) -> str:
+    """Reduce arbitrary text to characters a git ref component may carry.
+
+    Everything outside ``[a-z0-9.]`` becomes ``-``; the dot survives because
+    versions are full of them. The dot is also the only surviving character
+    git restricts, so the remaining work is entirely about dots: a run of
+    two or more is collapsed (``..`` is rejected anywhere in a ref), and a
+    leading or trailing one is stripped (a component may not begin with a
+    dot, and a ref may not end with one).
+    """
+    slug = _SLUG.sub("-", text.lower())
+    slug = re.sub(r"\.{2,}", ".", slug)
+    return slug.strip("-.")
+
+
+def _reject_invalid_ref(name: str) -> None:
+    """Refuse a branch name `git check-ref-format` would refuse.
+
+    The slugifier above should already make each of these unreachable. This
+    is the assertion that it did: a name that reaches `git switch -c` and is
+    rejected there fails with git's own message about a ref, several calls
+    away from the family and version that produced it, which is a materially
+    worse diagnostic than naming the input up front.
+
+    The rules checked are `git check-ref-format`'s, verified against it:
+    ``.`` may not start a component, ``..`` may not appear at all, a
+    component may not end in ``.lock``, and the name may not end in ``.`` or
+    ``/`` or be empty. The name is also required to carry at least one
+    alphanumeric: ``dep-consolidate/-`` is a legal ref and a useless one, and
+    a family that slugifies to nothing is a caller bug worth surfacing.
+    """
+    if ".." in name:
+        raise InvalidBranchName(f"{name!r} contains '..'")
+    if name.endswith(".") or name.endswith("/"):
+        raise InvalidBranchName(f"{name!r} ends with {name[-1]!r}")
+    for component in name.split("/"):
+        if not component:
+            raise InvalidBranchName(f"{name!r} has an empty path component")
+        if component.startswith("."):
+            raise InvalidBranchName(f"{name!r} has a component starting with '.'")
+        if component.endswith(".lock"):
+            raise InvalidBranchName(f"{name!r} has a component ending in '.lock'")
+    if not any(character.isalnum() for character in name.split("/", 1)[1]):
+        raise InvalidBranchName(f"{name!r} names no family or version")
+
+
 def branch_name(family: str, version: str) -> str:
     """Build the consolidation branch name for a family and target version.
 
@@ -286,10 +336,21 @@ def branch_name(family: str, version: str) -> str:
     characters are not valid in a git ref, so leaving it unslugified breaks
     branch creation for exactly the coupled-npm case this module exists to
     consolidate.
+
+    Raises `InvalidBranchName` rather than returning something git will
+    refuse. The dot is the character that makes this necessary: it is kept
+    for versions, and git restricts where it may appear, so a version of
+    ``..`` or one ending in ``.`` used to produce a ref that only failed
+    later, at `git switch -c`.
     """
-    family_slug = _SLUG.sub("-", family.lower()).strip("-")
-    version_slug = _SLUG.sub("-", version.lower()).strip("-")
-    return f"dep-consolidate/{family_slug}-{version_slug}"
+    name = f"dep-consolidate/{_slugify(family)}-{_slugify(version)}"
+    if name.endswith(".lock"):
+        # Only reachable through the join, since each slug has already had
+        # its trailing dot stripped: family "a." + version "lock" -> "a-.lock"
+        # is not one component ending in ".lock" by accident of either input.
+        name = name[: -len(".lock")] + "-lock"
+    _reject_invalid_ref(name)
+    return name
 
 
 def families_from_decisions(decisions: list[dict]) -> dict[str, list[int]]:
@@ -423,7 +484,13 @@ def consolidate_family(
     silently skip every remaining family. The `finally` returns to `main` on all
     paths for the same reason.
     """
-    branch = branch_name(family, version)
+    try:
+        branch = branch_name(family, version)
+    except InvalidBranchName as exc:
+        # Refused before anything is touched, so nothing needs unwinding and
+        # the `finally` below is not entered at all.
+        return (False, f"family {family}: cannot name a branch for it: {exc}")
+
     try:
         run(["git", "switch", "-c", branch, "origin/main"])
 

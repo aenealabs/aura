@@ -1046,6 +1046,62 @@ def test_promote_does_not_mutate_its_input():
     assert before == after
 
 
+def test_a_decision_carries_no_notes_unless_something_observed_one():
+    """`notes` is advisory and optional; the default must be the empty tuple.
+
+    A mutable default here would let one decision's notes leak into the next,
+    which for an advisory field is worse than useless: it would attribute an
+    observation to a PR it was never made about."""
+    d = dt.Decision(number=1, code=dt.CODE_CANDIDATE, reason="r")
+    assert d.notes == ()
+    assert [f.name for f in fields(dt.Decision)][-1] == "notes"
+
+
+def test_promote_carries_notes_onto_the_promoted_verdict():
+    """A promotion changes the verdict, never the observations.
+
+    Notes are the only record left of the two demoted holds. Dropping them on
+    the way to merge-safe -- the one verdict an operator acts on fastest --
+    would delete the annotation exactly where it matters most."""
+    annotated = dt.Decision(
+        number=99, code=dt.CODE_CANDIDATE, reason="r", notes=("an observation",)
+    )
+    (promoted,) = dt.promote([annotated], proved=[99], conflicted=[])
+    assert promoted.code == dt.CODE_MERGE_SAFE
+    assert promoted.notes == ("an observation",)
+    (conflicted,) = dt.promote([annotated], proved=[], conflicted=[99])
+    assert conflicted.code == dt.CODE_CONFLICT
+    assert conflicted.notes == ("an observation",)
+
+
+def test_render_report_shows_notes_inside_the_reason_cell():
+    """The note has to land in the cell the operator already reads.
+
+    Appended to the reason rather than given a sixth column, so the row stays
+    five columns wide and no horizontal scroll can hide the annotation."""
+    pr = _pr(number=99)
+    decision = dt.Decision(
+        number=99, code=dt.CODE_CANDIDATE, reason="no rule objected", notes=("a note",)
+    )
+    md = dt.render_report([decision], [pr])
+    row = next(line for line in md.splitlines() if line.startswith("| #99 "))
+    assert "no rule objected" in row
+    assert "a note" in row
+    assert row.count("|") - row.count("\\|") == 6
+
+
+def test_render_report_escapes_pipes_inside_a_note():
+    """A note naming a version range can contain a pipe just as a reason can."""
+    pr = _pr(number=99)
+    decision = dt.Decision(
+        number=99, code=dt.CODE_CANDIDATE, reason="r", notes=("major 1.0 | 2.0",)
+    )
+    md = dt.render_report([decision], [pr])
+    row = next(line for line in md.splitlines() if line.startswith("| #99 "))
+    assert "1.0 \\| 2.0" in row
+    assert row.count("|") - row.count("\\|") == 6
+
+
 def test_render_report_groups_by_classification():
     prs = dt.load_snapshot(FIXTURE)
     md = dt.render_report(dt.classify(prs), prs)

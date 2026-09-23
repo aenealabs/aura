@@ -200,12 +200,20 @@ class PRSnapshot:
 
 @dataclass(frozen=True)
 class Decision:
-    """Classification outcome for one pull request."""
+    """Classification outcome for one pull request.
+
+    ``notes`` carries advisory observations that do *not* change the
+    classification: facts worth stating beside a verdict that are not
+    themselves grounds for holding the PR. See the module docstring for which
+    rules were demoted into notes and what that costs. Trailing because it
+    carries a default and the fields above it do not.
+    """
 
     number: int
     code: str
     reason: str
     family: str | None = None
+    notes: tuple[str, ...] = ()
 
 
 def load_snapshot(path: Path) -> list[PRSnapshot]:
@@ -816,6 +824,9 @@ def promote(
                     code=CODE_CONFLICT,
                     reason="conflicts with the candidate integration branch",
                     family=d.family,
+                    # A promotion changes the verdict, never the observations
+                    # the classifier made about the PR.
+                    notes=d.notes,
                 )
             )
         elif d.number in proved_set:
@@ -829,6 +840,7 @@ def promote(
                         "other candidate merged alongside it"
                     ),
                     family=d.family,
+                    notes=d.notes,
                 )
             )
         else:
@@ -1013,6 +1025,20 @@ def render_report(
                     "together; no member is individually mergeable."
                 )
                 lines.append("")
+                # The coupled section is prose, not a table, so notes cannot
+                # ride along in a reason cell here. They are still printed:
+                # a coupled member that is also a major bump or a workflow
+                # `uses:` change is exactly the case where an operator wants
+                # both facts, and dropping the note for this one section
+                # would silently exempt every action family from the
+                # observation the demoted policy rule used to make.
+                annotated = [
+                    d for d in sorted(members, key=lambda m: m.number) if d.notes
+                ]
+                for d in annotated:
+                    lines.append(f"- #{d.number} -- {'; '.join(d.notes)}")
+                if annotated:
+                    lines.append("")
             continue
         lines.append("| PR | Head | Code | Title | Reason |")
         lines.append("|----|------|------|-------|--------|")
@@ -1031,6 +1057,18 @@ def render_report(
             # a package version range (e.g. "^4.1.11") could still contain.
             title = _inert_span(titles.get(d.number, "").replace("|", "\\|"))
             reason = d.reason.replace("|", "\\|")
+            # Notes are appended to the reason cell rather than given a sixth
+            # column. A note is only worth demoting a hold for if the operator
+            # actually reads it, and the reason cell is the one cell they
+            # already read to decide what to do about the row -- a sixth column
+            # pushes the table past a readable width and puts the note where a
+            # horizontal scroll can hide it. `<br>` keeps it visually distinct
+            # from the verdict it sits beside. Notes get the same `|` escape
+            # and no code span, for the same reason `d.reason` does: they are
+            # generated from this module's own rule set, never copied from a PR.
+            if d.notes:
+                joined = "; ".join(n.replace("|", "\\|") for n in d.notes)
+                reason = f"{reason}<br>**Note:** {joined}"
             sha = heads.get(d.number, "")
             head = f"`{sha[:10]}`" if sha else "(unknown)"
             lines.append(f"| #{d.number} | {head} | `{d.code}` | {title} | {reason} |")

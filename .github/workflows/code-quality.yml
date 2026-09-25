@@ -129,7 +129,7 @@ jobs:
 
           PY=false
           CFN=false
-          if echo "$CHANGED" | grep -qE '^(src/|tests/|requirements.*\.txt$|pyproject\.toml$|setup\.(py|cfg)$|\.github/workflows/code-quality\.yml$)'; then
+          if echo "$CHANGED" | grep -qE '^(src/|tests/|scripts/|requirements.*\.txt$|pyproject\.toml$|setup\.(py|cfg)$|\.github/workflows/code-quality\.yml$)'; then
             PY=true
           fi
           if echo "$CHANGED" | grep -qE '^deploy/cloudformation/.*\.(yaml|yml)$'; then
@@ -376,6 +376,8 @@ jobs:
             bandit-report.json
             htmlcov/
             coverage.xml
+            htmlcov-scripts/
+            coverage-scripts.xml
 
   # Security scan runs in parallel (PRs only)
   security-scan:

@@ -305,6 +305,33 @@ repos:
       - id: markdownlint
         args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041']
 
+  # ==========================================================================
+  # GitHub Actions Workflow Linting
+  # ==========================================================================
+  # Nothing before this validated Actions semantics -- yaml.safe_load checks
+  # syntax only. actionlint catches issues yaml.safe_load cannot: unresolvable
+  # ${{ }} expressions, undefined job/step outputs, shellcheck findings inside
+  # `run:` blocks, and invalid `permissions:` keys.
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        files: ^\.github/workflows/
+        # Shellcheck integration disabled deliberately. actionlint lints the
+        # whole file whenever any part of it is touched, not just the diff, so
+        # a one-line change to a workflow surfaces every pre-existing
+        # shellcheck finding in that file -- including "info"-severity style
+        # suggestions (SC2086 unquoted-variable nits) with no security or
+        # correctness content. GitHub-hosted runners ship shellcheck and local
+        # machines mostly do not, so this also failed only in CI while passing
+        # locally, which is its own kind of surprise for a required check.
+        # actionlint's own semantic checks -- invalid `${{ }}` expressions,
+        # undefined outputs, an invalid event `types:` entry (which this hook
+        # already caught once in aura-webhook.yml) -- are unaffected and still
+        # run. Repo-wide shellcheck cleanup is separate, unscoped work; it
+        # should not gate a workflow's required status check.
+        args: ["-shellcheck="]
+
 # Default stages for hooks
 default_stages: [pre-commit, pre-push]
 

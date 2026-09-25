@@ -1,0 +1,115 @@
+name: Dependabot Triage
+
+# Monthly, read-only. Lists open Dependabot pull requests, detects coupled
+# update families, and publishes a rolling triage issue for operator review.
+#
+# This workflow NEVER merges, approves, or marks a pull request ready. Operator
+# review and merge remain required: the `main-protection` ruleset is the safety
+# net (one approval plus four required status checks, CodeQL on three languages
+# among them), and this job does the one thing that gate cannot -- notice that a
+# pull request is green and still unsafe to merge alone.
+#
+# The report is a single long-lived issue rewritten in place rather than a
+# recurring pull request: an issue needs no approval to update, so the team
+# carries no merge chore for a document that only offers advice.
+#
+# Trigger is schedule/workflow_dispatch only. `pull_request_target` is
+# deliberately NOT used: combined with a checkout of PR head it grants a
+# write-scoped token to untrusted code.
+#
+# One job, deliberately. This replaced three. A 45-minute `batch-proof` job
+# promoted candidates to a `merge-safe` verdict; that verdict is gone, so the
+# proof has nothing to promote. A `collector-smoke` job asserted structural
+# properties of a live collection; with three classifications and no verdict its
+# assertions no longer protect anything worth a separate job, and the committed
+# capture plus the fixture-derivation test cover the shape regression it existed
+# for. See scripts/security/dep_triage.py's module docstring.
+
+on:
+  schedule:
+    # Monthly, 16:00 UTC on the 1st. Deliberately not weekly: coupled families
+    # arrive at codeql-action's release cadence, roughly monthly, and Dependabot
+    # PRs accumulate harmlessly, so a larger batch triaged less often is
+    # strictly less work and loses nothing. Run `workflow_dispatch` any time a
+    # dependency sweep is actually planned.
+    - cron: '0 16 1 * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    name: Classify and publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # `issues: write` is the only write scope in this workflow, and it exists
+      # solely to rewrite the rolling triage issue. Nothing here installs or
+      # executes dependency code, so there is no untrusted-code surface for that
+      # token to sit beside.
+      contents: read
+      pull-requests: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Collect snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -m scripts.security.dep_triage_collect \
+            --repo "${{ github.repository }}" \
+            --output snapshot.json
+
+      - name: Classify
+        run: |
+          set -euo pipefail
+          python -m scripts.security.dep_triage \
+            --snapshot snapshot.json \
+            --output triage-report.md \
+            --decisions decisions.json
+
+      - name: Publish the rolling triage issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # No --search: the search index is eventually consistent, and a stale
+          # hit would fork the rolling issue into duplicates. List open issues
+          # carrying the `automated` label and filter client-side instead.
+          title="Dependabot triage"
+          number="$(gh issue list --state open --label automated \
+            --json number,title \
+            --jq "[.[] | select(.title == \"$title\")] | first | .number // empty")"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file triage-report.md
+            echo "updated issue #${number}"
+          else
+            gh issue create --title "$title" \
+              --body-file triage-report.md \
+              --label dependencies --label automated
+          fi
+
+      - name: Upload triage artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: triage
+          path: |
+            snapshot.json
+            decisions.json
+            triage-report.md
+          # Explicit, not the admin-changeable default: these are the only
+          # durable record of the batch each report was computed from.
+          retention-days: 90

@@ -21,7 +21,9 @@ private/
 
 # Python testing and coverage
 .coverage
+.coverage.*
 coverage.json
+htmlcov-scripts/
 .pytest_cache/
 htmlcov/
 *.cover

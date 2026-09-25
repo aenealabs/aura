@@ -129,15 +129,20 @@ CODE_CANDIDATE = "candidate"
 CODE_MERGE_SAFE = "merge-safe"
 
 # The effective granularity either constant delivers is the triage
-# schedule's own interval (weekly, `.github/workflows/dependabot-triage.yml`
-# cron `0 16 * * 1`), not the number written here. Under a weekly run, a
-# release is either already older than 3 days at the first triage that sees
-# it, or it is held until the next Monday regardless -- so both constants
-# read, in practice, as "held until next week's run," and a smaller number
-# here does not buy a package an earlier merge. Do not read either constant
-# as a promise that a release unlocks after exactly that many days; that
-# promise is only true between two runs of a sub-weekly schedule, which this
-# is not.
+# schedule's own interval (monthly, `.github/workflows/dependabot-triage.yml`
+# cron `0 16 1 * *`), not the number written here. A release is either
+# already older than the constant at the first triage that sees it, or it is
+# held to the next scheduled run regardless -- so both constants read, in
+# practice, as "held until the next run," and a smaller number here does not
+# buy a package an earlier merge. The monthly cadence widens that gap rather
+# than narrowing it: schedule-only worst case is now the interval, not a
+# week. Do not read either constant as a promise that a release unlocks
+# after exactly that many days.
+#
+# The 7-day commitment in docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_
+# ACCEPTANCE.md is therefore procedural, not automatic: it rests on the
+# weekly dependency-risk audit surfacing an urgent finding and an operator
+# re-dispatching triage, not on this schedule coming around.
 PACKAGE_COOLDOWN_DAYS = 3
 
 # Defence-in-depth, not a live control: every GitHub Actions PR reaches

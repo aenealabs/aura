@@ -21,7 +21,7 @@ The report is committed to `docs/security/audits/YYYY-WNN.md` via a weekly PR ti
 
 The audit migrated from "post as a comment on tracking issue #138" to "commit as a file via PR" on 2026-05-13 -- see `docs/security/audits/README.md` for the rationale.
 
-**Companion job, different cadence.** [`DEPENDABOT_TRIAGE_RUNBOOK.md`](DEPENDABOT_TRIAGE_RUNBOOK.md) classifies every open Dependabot PR with a stated reason. It moved to **monthly** (16:00 UTC on the 1st) in September 2026; this audit stayed **weekly**, so the two coincide only when the 1st is a Monday. Detection stays weekly; only merge advice batches up. This audit tells you what is unsafe, the triage tells you which PRs you can merge and why not the rest. It merges nothing and approves nothing; the no-auto-merge / no-bot-self-approval policy recorded in this workflow is unchanged by it. The triage's cooldown rule deliberately adds latency to dependency updates, and this audit is its compensating control -- if a finding here is urgent, re-dispatch triage (`gh workflow run "Dependabot Triage"`) rather than waiting for the 1st. See [`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`](../security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md).
+**Companion job, different cadence.** [`DEPENDABOT_TRIAGE_RUNBOOK.md`](DEPENDABOT_TRIAGE_RUNBOOK.md) reports which open Dependabot PRs belong to a coupled update family and so cannot be merged individually. It runs **monthly** (16:00 UTC on the 1st); this audit is **weekly**, so the two coincide only when the 1st is a Monday. This audit tells you what is unsafe; the triage tells you which PRs cannot be merged alone. The triage is read-only -- it merges nothing, approves nothing, and delays nothing, so it is not a source of remediation latency and this audit is not compensating for it. If a finding here is urgent, act on it directly; you can re-dispatch triage (`gh workflow run "Dependabot Triage"`) rather than waiting for the 1st, but nothing here is gated on it.
 
 ## Triage Decision Tree
 
@@ -203,7 +203,6 @@ The lesson: drafts are cheap to start, expensive to fully unwind. Use the markdo
 - Register: `docs/security/DEPENDENCY_RISK_REGISTER.md`
 - Script: `scripts/security/dep_risk_audit.py`
 - Companion job, monthly (16:00 UTC on the 1st): [`DEPENDABOT_TRIAGE_RUNBOOK.md`](DEPENDABOT_TRIAGE_RUNBOOK.md)
-- SI-2 risk acceptance this audit compensates for: [`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`](../security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md)
 - Workflow: `.github/workflows/dependency-risk-audit.yml`
 - Disclosure policy (inbound + advisory consumer guidance): [`SECURITY.md`](../../SECURITY.md)
 - Worked-example advisory (dry-run for `tj-actions/changed-files`): [`docs/security/SAMPLE_ADVISORY_TJ_ACTIONS.md`](../security/SAMPLE_ADVISORY_TJ_ACTIONS.md)

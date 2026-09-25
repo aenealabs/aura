@@ -1,373 +1,135 @@
 # Dependabot Triage Runbook
 
-**Last Updated:** 2026-09-23
-**Workflow:** `.github/workflows/dependabot-triage.yml` (monthly — 16:00 UTC on the 1st — plus `workflow_dispatch`)
-**Scripts:** `scripts/security/dep_triage.py` (classifier), `scripts/security/dep_triage_collect.py` (I/O), `scripts/security/dep_triage_consolidate.py` (operator command)
-**Spec:** `docs/superpowers/specs/2026-09-19-dependabot-triage-design.md`
-**Register:** `docs/security/DEPENDENCY_RISK_REGISTER.md`
-**Risk acceptance:** `docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`
+**Last Updated:** 2026-09-25
+**Workflow:** `.github/workflows/dependabot-triage.yml` (monthly -- 16:00 UTC on the 1st -- plus `workflow_dispatch`)
+**Scripts:** `scripts/security/dep_triage_collect.py` (network I/O), `scripts/security/dep_triage.py` (classifier; its module docstring is the authority on what exists)
 **Report:** rolling GitHub issue titled **Dependabot triage**, labelled `dependencies` + `automated`
 **Owner:** Platform Engineering
 
-**What this system never does:** it does not merge, does not approve, does not
-enable auto-merge, and does not put classification labels on Dependabot PRs. The
-`main-protection` ruleset still requires one human approval on every PR, and
-`dependency-risk-audit.yml` records a standing no-auto-merge / no-bot-self-approval
-policy that this system deliberately does not weaken. Every classification is
-advice; you perform every merge.
+## What It Does
 
----
+Lists open Dependabot pull requests, detects **coupled families** -- sets of PRs
+that cannot be merged individually -- and rewrites a rolling issue with the
+result. It is read-only: it merges nothing, approves nothing, holds nothing, and
+puts no labels on Dependabot PRs. The `main-protection` ruleset (one human
+approval plus four required status checks) remains what gates every merge. This
+job does the one thing that gate cannot: notice that a PR is **green and still
+unsafe to merge on its own**.
 
-## Overview
+Dispatch it by hand any time you are actually planning a dependency sweep;
+waiting for the 1st is never required. The sibling
+[`DEPENDENCY_RISK_AUDIT_RUNBOOK.md`](DEPENDENCY_RISK_AUDIT_RUNBOOK.md) (weekly,
+Mondays 14:00 UTC) is the flaw-detection control and is independent of this job.
 
-**Cadence:** monthly, 16:00 UTC on the 1st, plus `workflow_dispatch`. It was
-weekly until September 2026. Coupled families arrive at codeql-action's release
-cadence — roughly monthly — and Dependabot PRs accumulate harmlessly, so a larger
-batch triaged less often is less work and loses nothing. Dispatch it by hand any
-time you are actually planning a dependency sweep.
+## The Three Classifications
 
-Its sibling [`DEPENDENCY_RISK_AUDIT_RUNBOOK.md`](DEPENDENCY_RISK_AUDIT_RUNBOOK.md)
-(Mondays 14:00 UTC) is still **weekly** and did not move. The audit answers "is
-anything we depend on unsafe?"; the triage answers "which of these Dependabot PRs
-can I merge, and why not the rest?" The two only land in the same sitting when the
-1st falls on a Monday. If the audit flags something urgent, do not wait for the
-1st — re-dispatch triage.
+Every open PR gets exactly one code. Source of truth is `CODE_*` in
+`scripts/security/dep_triage.py`.
 
-Three stages:
+| Code | What it means | What you do |
+|------|---------------|-------------|
+| `candidate` | No objection found here. Not a safety verdict. | Review and merge normally. One approval and the four required checks still apply. |
+| `coupled` | Member of a multi-PR update family, named by key (`github/codeql-action`, `npm:/frontend:vitest`). | **Never merge alone, even fully green.** Consolidate the family -- see below. |
+| `excluded:non-dependabot` | Author is not a recognised Dependabot login. | Out of scope. Release Please and human PRs land here; review them normally. |
 
-1. **Classify.** Every open PR gets exactly one code and a stated reason. Rules
-   are ordered and first match wins, so a PR never carries two verdicts.
-2. **Batch proof.** Everything that reached `candidate` is merged onto one
-   throwaway branch from `main`, then resolved (`pip install --dry-run`,
-   `npm ci --legacy-peer-deps`) and tested (`pytest`). Green as a unit promotes
-   every member to `merge-safe`. The branch is a proof artifact; it is never
-   pushed and never merged.
-3. **Report.** The rolling issue is rewritten in place.
+## Consolidating a Coupled Family
 
-`merge-safe` means *proven together*. It is not a per-PR guarantee, and merging
-only part of a proven batch is weaker than the proof you are relying on.
+Manual procedure. When the report names a family, create **one** branch that
+moves every member's change together and open a **single** PR.
 
-## Code-to-Action Table
+Merging one member alone leaves the repository inconsistent. That is the entire
+reason this tool exists. A four-way `github/codeql-action` split is the worked
+example: CodeQL refuses to run when its sub-actions disagree on version, so three
+of the four PRs failed their own CI and the fourth passed only because it ran in a
+workflow with no paired `init`/`analyze` step. Read commit `ad67a34` -- its
+message states the failure mode, the member PRs, and the ref change applied to
+all four.
 
-**This table is generated by hand from the `CODE_*` constants in
-`scripts/security/dep_triage.py`.** That file is the source of truth. Codes are
-being added and removed as the rule set settles; if a code appears in the report
-that is not listed here, read its reason string and update this table in the same
-PR that notices the gap.
+```bash
+git fetch origin
+git switch -c "dep-consolidate/<family>-<version>" origin/main
+# apply every member's change in this one branch, then:
+gh pr create --title "chore(deps): bump <family> to <version> across all refs"
+```
 
-| Code | What the classifier saw | Your next move |
-|------|-------------------------|----------------|
-| `merge-safe` | Candidate that passed the batch proof as a unit | Merge, preferably the whole batch. One approval each, as normal. Merging a subset weakens the proof. |
-| `candidate` | No rule objected, but the proof did not promote it | Not proven. The proof was skipped, failed, or the PR was excluded from it. See *When the batch proof fails*. |
-| `coupled` | Member of a multi-PR update family (`github/codeql-action`, `npm:/frontend:vitest`) | **Never merge alone**, even fully green. Either merge the whole family in one sitting or run the consolidation command below. |
-| `held:policy-review` | Diff touches a file under `.github/workflows/` | **Confirm the new `uses:` SHA is the one that was intended.** The diff only proves the pin *moved*: it shows one 40-hex SHA replacing another and says nothing about what the new one points at. Open the action's repository and check the SHA is the tag it claims to be. That confirmation is the entire reason this hold was kept when the `Dockerfile` and `pyproject.toml` cases were demoted to notes. |
-| `held:pinned-by-policy` | Package is a documented deliberate cap (`tree-sitter < 0.26`) | Do not bump to clear the report. Close the PR. Lifting the cap is a change to `docs/DEFERRED_WORK_REGISTRY.md` and the code that depends on it. |
-| `held:risk-tier` | Package is **At-Risk** or **Replace-Now** in the register | **Route to a human — this does not mean "never bump".** See the note below. |
-| `held:cooldown` | Release younger than 3d (packages) / 7d (Actions) | Wait for the next run, or override deliberately — see `SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`. Under a monthly schedule "wait" means up to a month unless you re-dispatch. |
-| `held:no-release-metadata` | No publish timestamp could be resolved, so the cooldown could not be evaluated | An abstention, not a finding about the package — see the note below. Judge the PR on its merits. |
-| `held:grouped-unparsed` | Grouped update whose member packages could not be parsed from the PR body | The per-package holds (deliberate caps, At-Risk tiers) never ran for the members that are missing. Read the PR body and check the members by hand before merging. |
-| `attention:failing` | At least one check concluded `failure` or `timed_out` | Read the failing job log. There is no flake exemption any more — see *Codes that recently changed* below. If the log shows infrastructure trouble (download failure, `Could not resolve host`, rate limit), re-run the job once yourself, then re-dispatch. |
-| `attention:missing-required` | A required check is absent from the run set | An unrun check is never a passing check. Find out why the workflow did not trigger before doing anything else. |
-| `attention:required-not-passing` | A required check is present but not conclusively passing (still running, cancelled, timed out, errored) | Most often just "still running when the report was built". Wait, then re-dispatch the workflow. |
-| `attention:conflict` | Could not be merged onto the candidate integration branch, or could not be fetched | Ask Dependabot to rebase (`@dependabot rebase` on the PR), then re-dispatch. |
-| `excluded:non-dependabot` | Author is not a recognised Dependabot login | Out of scope for this system. Release Please and human PRs land here; review them normally. |
-| `excluded:no-checks` | Zero check runs on the PR | Nothing has been validated. Do not read "no failures" as "passing". |
+Push from your own account, not from CI: a PR opened with `GITHUB_TOKEN` does not
+trigger workflow runs, so it can never satisfy the required contexts in
+`main-protection`. Leave the member PRs open and comment on them -- Dependabot
+retires them once the version lands.
 
-### Notes are not classifications
+The report names the head commit each row was computed against. Dependabot
+force-pushes on rebase, so confirm the heads still match before you build the
+branch.
 
-A **note** is an observation printed beside a verdict, never a verdict of its own.
-It appears in the report's Reason cell after `**Note:**`, and in the Coupled sets
-section as a bullet under the family.
+## Reading the Rolling Issue
 
-**A `candidate` carrying a note is still a candidate. A `merge-safe` carrying a
-note is still merge-safe.** A note changes nothing about what the classifier
-concluded, and no section of the report collects notes on their own. Do not read
-one as a hold.
-
-Two notes exist:
-
-| Note text begins | What it means | What you do |
-|------------------|---------------|-------------|
-| `major bump X -> Y (N -> M)` | The leading version integer increased; breaking changes may not be covered by CI | Read the upstream changelog before approving. That was always the reviewer's job; it is no longer echoed as a hold. |
-| `touches <path>: ...` | The diff touches a `Dockerfile*` or a `pyproject.toml` | Check the two things the note names: that the base image still resolves to private ECR (`aura-base-images`), and that the 70% coverage floor in `pyproject.toml` was not lowered. |
-
-Both were `held:` codes until September 2026. They were demoted because a hold
-only earns its place when it tells you something you could not cheaply see on the
-PR yourself — and an inflated Held pile trains you to skim it, at which point the
-holds that *do* carry non-obvious information get skimmed with it.
-
-### Codes that recently changed
-
-The rule set is still settling and codes are being added and removed. Check this
-table against `CODE_*` in `scripts/security/dep_triage.py` before trusting it.
-
-- **`held:major-review` was removed** in September 2026 and is now the major-bump
-  note above. A major bump can therefore reach `candidate` and `merge-safe`; the
-  version numbers in the PR title are the signal, and reading them is yours.
-- **`held:policy-review` was narrowed** at the same time, from "any
-  policy-sensitive path" to `.github/workflows/` only. `Dockerfile*` and
-  `pyproject.toml` became the path note above. The workflow case was kept on a
-  narrower argument — a `uses:` SHA swap is the one policy-sensitive diff a
-  reviewer genuinely cannot read — and a security review specifically objected to
-  demoting it, correctly.
-- **`attention:suspected-flake` was removed** while this runbook was being
-  written. It matched infrastructure signatures against a log excerpt the
-  collector filled from `gh pr checks --json description`, and that field is
-  empty for every GitHub Actions check run — so the code path was unreachable
-  while advertising coverage the tool did not have. Every failure now reads as
-  genuine, which is the conservative direction. You make the flake call yourself.
-  If the code reappears, restore its row here.
-- **`held:no-release-metadata` and `held:grouped-unparsed` are separate codes**,
-  split out of `held:cooldown`. "This release is too new" and "I could not
-  determine the age" lead to different actions, and conflating them made every
-  github-actions PR read as a transient lookup glitch.
-- **`attention:required-not-passing` is new** and is not in the design spec. It
-  catches a required check that is present but has not concluded green — still
-  running, cancelled, timed out, errored. Before it existed, "no objection found"
-  read as evidence of a pass.
-
-### `held:risk-tier` means route to a human, not never bump
-
-The reason string says the register "specifies pinning precisely", which reads
-like a permanent refusal. It is not. The rule exists because At-Risk entries
-carry a written mitigation and a swap plan that automation cannot evaluate — so
-the PR goes to the person who wrote them.
-
-The case that matters: `eslint-plugin-react` is At-Risk because its peer range is
-capped at `eslint@^9.7`, which forces `--legacy-peer-deps` on every `npm ci` in
-`frontend/`. If upstream finally ships eslint@10 peer support, that PR arrives
-classified `held:risk-tier` — and it is exactly the PR the team has been waiting
-a year for. Merging it clears the register row and removes the `--legacy-peer-deps`
-workaround. Read the register entry before you dismiss a hold.
-
-### `held:no-release-metadata` is an abstention
-
-`no release timestamp could be resolved for <package> <version>` is not a finding
-about the package. It means the collector could not get a publish timestamp from PyPI
-or npm — an ecosystem with no stdlib-reachable release date, a registry blip, a
-version string it could not clean. The rule fails toward holding, so the PR
-queues for a human instead of passing unexamined. Judge it on its merits; nothing
-suspicious was observed.
-
-## Rules of Engagement for the Rolling Issue
-
-The report is a single long-lived issue, rewritten in place every run. The
-workflow finds it by listing **open** issues with the `automated` label and
-matching the exact title `Dependabot triage`.
+One long-lived issue, rewritten in place every run. The workflow finds it by
+listing **open** issues labelled `automated` and matching the exact title
+`Dependabot triage`.
 
 | Rule | Why |
 |------|-----|
-| **Never close the issue.** | The lookup finds nothing and opens a brand-new issue on the next run, and every run after that, forever. |
-| **Never remove the `automated` label.** | Same failure. The label is the lookup key, not decoration. |
-| **Never rename it.** | The title is matched exactly, client-side. |
-| **Do not edit the body.** | The next run overwrites it. Put your notes in a comment; comments survive. |
+| **Never close it.** | The lookup finds nothing and opens a new issue on every run thereafter. |
+| **Never remove the `automated` label.** | The label is the lookup key, not decoration. |
+| **Never rename it.** | The title is matched exactly. |
+| **Do not edit the body.** | The next run overwrites it. Put notes in a comment; comments survive. |
 
-**If duplicates appear:** close all but one and keep the one with the longest
-comment history. Closed issues drop out of the lookup, so closing is sufficient —
-you do not need to strip labels. Verify with:
+The timestamp in the first heading is the only freshness signal, and Dependabot
+supersedes PRs continuously. **Do not act on a stale report** -- re-dispatch and
+read the new one:
+
+```bash
+gh workflow run "Dependabot Triage"
+```
+
+Check the report's `Bump titles:` line. If it says a whole batch named no
+package, Dependabot's title format has moved, no family can be detected, and the
+job is reporting a clean batch while its one control is inert. Fix the parser
+before trusting the report.
+
+If duplicate issues appear, close all but the one with the longest comment
+history. Verify exactly one remains:
 
 ```bash
 gh issue list --state open --label automated --json number,title \
   --jq '[.[] | select(.title == "Dependabot triage")]'
 ```
 
-Exactly one entry should come back.
-
-**Freshness.** Because the body is rewritten rather than appended, the timestamp
-in the report's first heading (`# Dependabot Triage -- YYYY-MM-DD HH:MM UTC`) is
-the only freshness signal there is. Dependabot supersedes PRs continuously — it
-closes and reopens them as new upstream versions land — so a report more than a
-few days old may name PR numbers that no longer exist. **Do not act on a stale
-report. Re-dispatch and read the new one:**
-
-```bash
-gh workflow run "Dependabot Triage"
-gh run watch "$(gh run list --workflow="Dependabot Triage" --limit 1 --json databaseId --jq '.[0].databaseId')"
-```
-
-## When the Batch Proof Fails
-
-This is the most common question the report produces. **There is no automatic bisect and no
-dispatch input to exclude a PR.** A red proof leaves every member at `candidate`
-with nothing named as the offender. Narrow it by hand.
-
-### Step 1 — read which step failed, not just that it failed
-
-Open the `Prove candidate batch` job in the run log. The failing step tells you
-how much narrowing you actually need:
-
-| Failing step | What it usually means | Shortcut |
-|--------------|----------------------|----------|
-| `Prove dependency resolution` | Two pins that cannot co-exist | pip names both packages and both constraints in its error. Usually no narrowing needed. |
-| `Prove npm resolution` | A lockfile/`package.json` skew | npm names the package. Note that `--legacy-peer-deps` is mandatory here, so peer conflicts are silenced — this step is weaker assurance than it looks. |
-| `Run test suite` | A behavioural break | Real narrowing required. Go to step 2. |
-| `Build candidate integration branch` | A merge conflict | Already handled: conflicting PRs are reported `attention:conflict` and dropped from the batch, and the proof continues. Not a proof failure. |
-
-### Step 2 — reproduce locally
-
-Take the candidate list from the run's `classify` job output (or from
-`decisions.json` in the `triage` artifact).
-
-```bash
-gh run download --name triage    # snapshot.json, decisions.json, triage-report.md
-python -c 'import json;print([d["number"] for d in json.load(open("decisions.json"))["decisions"] if d["code"]=="candidate"])'
-
-git fetch origin main
-git switch -c "dep-triage/local-$(date +%s)" origin/main
-for pr in 441 447 449; do            # substitute the real candidate numbers
-  git fetch origin "pull/${pr}/head:pr-${pr}"
-  git merge --no-edit "pr-${pr}"
-done
-
-python -m pip install --dry-run --quiet --report /dev/null -r requirements.txt
-(cd frontend && npm ci --legacy-peer-deps)
-pytest -q --no-cov -p no:cacheprovider --maxfail=1
-```
-
-Use `--no-cov` exactly as the workflow does. Bare `pytest` inherits
-`pyproject.toml`'s `--cov=src --cov-fail-under=70`, which makes the proof's
-verdict depend on `src/` coverage and produces a failure unrelated to any
-dependency.
-
-### Step 3 — narrow by halves, manually
-
-Rebuild the branch with half the candidates. If it stays red, the offender is in
-that half; if it goes green, it is in the other. Three or four rounds resolves any
-realistic batch. Start from the half containing whatever the failure text
-mentions — that is usually round zero.
-
-### Step 4 — act
-
-1. Merge the innocent PRs individually. Each still gets its own approval and its
-   own PR checks, so this is safe; you are only giving up the batch guarantee.
-2. Leave the offender open with a comment naming what it broke.
-3. Once the offender is merged, closed, or superseded, **re-dispatch the workflow**
-   rather than re-proving by hand. The remainder re-proves automatically.
-
-## Consolidation (Operator Command)
-
-Consolidation opens **one** PR carrying the union of a coupled family's changes.
-It is deliberately **not** a workflow job.
-
-**It must be run from a developer machine, not from CI.** A pull request opened
-with `GITHUB_TOKEN` does not trigger workflow runs, so a consolidated PR created
-by Actions could never satisfy the four required contexts in `main-protection`
-(`Python Quality & Tests`, `Analyze (python)`, `Analyze (javascript-typescript)`,
-`Analyze (actions)`) — it would sit blocked forever. A branch pushed by a human
-does trigger them. Running it locally also keeps the repository's only
-write-scoped step under a person rather than on a timer.
-
-### Preconditions
-
-- Clean working tree, on `main`, `git fetch origin` done.
-- `gh auth status` shows **your** account, not a token.
-- No open consolidation PR already exists for this family.
-
-### Dry run first (`--execute` is off by default)
-
-```bash
-gh run download --name triage
-python -m scripts.security.dep_triage_consolidate \
-  --decisions decisions.json --snapshot snapshot.json
-```
-
-Prints `would consolidate <family> -> <version>: [members]` and changes nothing.
-Confirm the family and the member list are what you expect.
-
-### Execute
-
-```bash
-python -m scripts.security.dep_triage_consolidate \
-  --decisions decisions.json --snapshot snapshot.json --execute
-```
-
-For each family it branches `dep-consolidate/<family>-<version>` from
-`origin/main`, merges every member, **verifies that the added lines of the branch
-equal exactly the union of the members' added lines**, and only then pushes and
-opens the PR. A mismatch aborts that family and prints the offending lines — an
-extra added line is an unreviewed change riding along inside an approved one, so
-the abort is the point. Member PRs are commented on, never closed: Dependabot
-retires them once the version lands, and a rejected consolidation leaves the
-originals intact.
-
-### Two warnings
-
-- **Do not push commits onto a `dep-consolidate/*` branch.** The push uses
-  `--force-with-lease` with no explicit expected value, which only protects
-  commits that land *after* this run's checkout. Commits you pushed before it are
-  already in the local remote-tracking ref, the lease passes, and they are
-  discarded. If the consolidated PR needs a change, make it in a follow-up PR or
-  close the consolidation and redo it.
-- **Do not re-run for a family that already has an open consolidation PR.** The
-  second run targets the same branch name and will either fail loudly or
-  overwrite the first.
-
 ## Kill Switch
 
 ```bash
-gh workflow disable "Dependabot Triage"      # stop the monthly schedule
+gh workflow disable "Dependabot Triage"      # stops schedule and dispatch both
 gh workflow enable  "Dependabot Triage"      # resume
 gh workflow list --all | grep -i dependabot  # confirm state
 ```
 
-Disabling stops the schedule and `workflow_dispatch` both. Nothing degrades: the
-system produces advice, so its absence costs you a manual triage, not an outage.
-Leave a comment on the rolling issue saying who disabled it and why, so the next
-operator does not read a stale report as current.
+Nothing degrades. The job produces advice, so its absence costs a manual triage,
+not an outage. Comment on the rolling issue saying who disabled it and why, so
+nobody reads a frozen report as current.
 
 ## When You Disagree With the Report
 
-**Your judgment wins on the individual PR.** The report merges nothing, approves
-nothing, and blocks nothing. If it holds a PR you know is fine, merge it. If it
-calls a PR merge-safe and you do not believe it, do not merge it.
+**Your judgement wins on the individual PR.** The report is advisory: it merges
+nothing and blocks nothing. If it calls a PR coupled and you know it is fine,
+merge it.
 
 **But a disagreement is not resolved until the rule changes.** A one-off override
 that leaves no fixture behind is how a classifier decays into something nobody
-trusts and everybody re-checks by hand — at which point the team pays for the
-automation *and* the manual work. So:
+trusts and everybody re-checks by hand -- at which point the team pays for the
+automation *and* the manual work.
 
-1. **Act now** on your own judgment. Do not wait for a rule change.
-2. **Then open a PR** that adds a fixture built from the real observed case (the
-   `snapshot.json` in that run's `triage` artifact is the capture — use it, do
-   not hand-write one) and changes the rule so the fixture classifies the way you
-   decided.
+1. **Act now** on your own judgement. Do not wait for a rule change.
+2. **Then open a PR** adding a fixture built from the real observed case, and
+   change the rule so the fixture classifies the way you decided. The
+   `snapshot.json` in that run's `triage` artifact is the capture -- use it. Do
+   not hand-write a fixture; every detector here that was validated against an
+   invented one has been wrong in production at least once.
 3. **Record it** in a comment on the rolling issue, linking the PR.
-
-| Situation | Reviewers |
-|-----------|-----------|
-| Change **tightens** a rule (holds more) | Owner |
-| Change **loosens** a hold (holds less) | Owner **plus a second reviewer** — same convention as the audit runbook's Critical/High advisory gate |
-| New code, new fixture, no behaviour change to an existing rule | Owner |
 
 Arbiter is the owner named in the header block.
 
-Hand-written fixtures are the specific trap here. Every detector in this system
-that reads identity or free text from `gh` and was validated against an invented
-fixture has been wrong in production at least once. Capture, do not compose.
-
-## Known Limitation: the At-Risk Hold Only Protects Direct Dependencies
-
-`held:risk-tier` fires on the package named in the **PR title**, which is always a
-direct dependency — that is the only kind Dependabot opens PRs for.
-
-`image-size` is At-Risk in the register (CVE-2025-71329, CVE-2025-71330, no patch
-available), but it is reached transitively through `pptxgenjs@4.0.1`. Dependabot
-will never open a PR titled "bump image-size", so **the hold can never fire for the
-entry that motivated it.** The register's own mitigation text names the real check,
-and it is still the real check:
-
-```bash
-cd frontend && npm ls image-size
-```
-
-Run it when the audit flags the row, and whenever `pptxgenjs` moves. The triage
-classifier adds nothing here and should not be trusted to.
-
 ## References
 
-- Sibling job, still weekly (Mondays 14:00 UTC): [`DEPENDENCY_RISK_AUDIT_RUNBOOK.md`](DEPENDENCY_RISK_AUDIT_RUNBOOK.md)
-- Register: [`docs/security/DEPENDENCY_RISK_REGISTER.md`](../security/DEPENDENCY_RISK_REGISTER.md)
-- SI-2 risk acceptance for the cooldown: [`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`](../security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md)
-- Design + as-built deltas: [`docs/superpowers/specs/2026-09-19-dependabot-triage-design.md`](../superpowers/specs/2026-09-19-dependabot-triage-design.md)
+- Weekly flaw-detection sibling: [`DEPENDENCY_RISK_AUDIT_RUNBOOK.md`](DEPENDENCY_RISK_AUDIT_RUNBOOK.md)
+- Design record and as-built deltas: [`docs/superpowers/specs/2026-09-19-dependabot-triage-design.md`](../superpowers/specs/2026-09-19-dependabot-triage-design.md)
 - Workflow: `.github/workflows/dependabot-triage.yml`
-- Deliberate caps and their rationale: [`docs/DEFERRED_WORK_REGISTRY.md`](../DEFERRED_WORK_REGISTRY.md)

@@ -8,6 +8,14 @@
 >
 > Known divergences, all deliberate and all recorded elsewhere:
 >
+> - **The system was reduced to coupled-family detection only (2026-09-25).**
+>   Most of the tasks below describe code that was built and then removed: the
+>   batch proof and the `merge-safe` verdict, the consolidation runner
+>   (`dep_triage_consolidate.py`), all check evaluation, the release cooldown and
+>   its age lookups, and the risk-register holds. Three classifications remain --
+>   `excluded:non-dependabot`, `coupled`, `candidate` -- across 671 lines and 39
+>   tests. Two near-misses in one batch did not justify the surface. See delta 18
+>   in the design spec.
 > - `CODE_MAJOR` / `rule_major` (`held:major-review`) **no longer exist.** A
 >   major bump is an advisory note now.
 > - `held:policy-review` was **narrowed to `.github/workflows/` only**; the

@@ -1,7 +1,7 @@
 # Dependabot Triage Automation -- Design
 
 **Date:** 2026-09-19
-**Status:** Implemented, with documented deltas -- see [As-built deltas](#as-built-deltas)
+**Status:** Shipped reduced to coupling detection only -- see [Closeout](#closeout-what-actually-shipped) and [As-built deltas](#as-built-deltas)
 **Implementation:** `scripts/security/dep_triage*.py`, `.github/workflows/dependabot-triage.yml`
 **Operating procedure:** `docs/runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md`
 
@@ -11,6 +11,44 @@
 > describe what was built. Every divergence is recorded in
 > [As-built deltas](#as-built-deltas) at the end of this document; where the two
 > disagree, the deltas section and the code are authoritative.
+
+## Closeout: what actually shipped
+
+**The system shipped reduced to coupled-family detection and nothing else.** It
+is a monthly, read-only job that lists open Dependabot pull requests, names the
+families whose members cannot be merged individually, and rewrites a rolling
+issue. It merges nothing, approves nothing, and holds nothing.
+
+Three classifications exist, and they are the whole surface:
+
+| Code | Meaning |
+|------|---------|
+| `excluded:non-dependabot` | Author is not a recognised Dependabot login. |
+| `coupled` | Member of a multi-PR update family; carries the family key. |
+| `candidate` | No objection found. Not a safety verdict. |
+
+**The design below is largely not deployed.** The batch proof, the `merge-safe`
+verdict, the consolidation runner, all check evaluation, the cooldown and every
+release-age lookup, and the risk-register holds were all built and then removed.
+The sections are preserved unrewritten because the reasoning is the record of
+what was tried and why -- not because they describe the system. Read them as
+history.
+
+**Authority, in order:**
+
+1. `scripts/security/dep_triage.py` -- the code and its module docstring, which
+   carries the removal record. Authoritative on what exists.
+2. [`docs/runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md`](../../runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md)
+   -- authoritative on operating it.
+3. [As-built deltas](#as-built-deltas), below -- the per-decision divergence record.
+
+**One document was deleted, not superseded.** The NIST SI-2 risk acceptance for
+the cooldown (`docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`) existed
+solely to accept the flaw-remediation latency the cooldown introduced. There is
+no cooldown, so nothing delays a dependency update and there is no latency to
+accept. Mentions of that path in the sections below are historical; the weekly
+`dependency-risk-audit.yml` sweep is unchanged and remains the actual
+flaw-detection control.
 
 ## Purpose
 
@@ -288,7 +326,8 @@ design but should be tracked.
 ## As-built deltas
 
 Recorded 2026-09-22, after implementation and three specialist reviews; deltas
-16 and 17 added 2026-09-23. Each row below states what this spec said, what was
+16 and 17 added 2026-09-23; delta 18 -- the reduction that defines the shipped
+system -- added 2026-09-25. Each row below states what this spec said, what was
 built, and why it changed. Rulings and their stated cost-if-wrong come from the
 execution ledger at
 `.superpowers/sdd/2026-09-19-dependabot-triage/progress.md`.
@@ -441,6 +480,8 @@ exactly where the bypass was worth most.
 a deliberate SI-2 risk acceptance with a stated ceiling, a compensating control
 and a manual override -- see
 `docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`.
+**Superseded by delta 18:** there is no cooldown to be exempt from, and that
+risk-acceptance document has been deleted.
 
 **If the capability is wanted later**, the sound signal is
 `gh api repos/{owner}/{repo}/dependabot/alerts` correlated to the PR by package
@@ -563,6 +604,8 @@ one it became (delta 17). Documented in
 `docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`, which also restates
 the 7-day remediation ceiling that the weekly cadence used to deliver on its
 own.
+**Superseded by delta 18:** both cooldown constants and every release-age lookup
+were removed, and that document has been deleted.
 
 ### 13. Permissions differ from Section 5
 
@@ -657,6 +700,8 @@ nothing in the classifier reviews breaking changes. That review moved entirely t
 the human whose approval `main-protection` requires. Recorded honestly in
 `docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`, which used to cite
 both holds and now cites one.
+**Superseded by delta 18:** that document has been deleted, and the workflow hold
+this delta restored was itself removed -- no hold of either kind remains.
 
 **Reversing either direction is a small edit.** To re-demote the workflow hold,
 drop `rule_workflow_path` from `classify`'s chain and fold `POLICY_DIRS` into
@@ -685,10 +730,66 @@ where a sweep is actually planned.
   acceptable.
 - The SI-2 document's 7-day remediation ceiling was justified by the weekly
   cadence -- a release held at one run was necessarily re-evaluated 7 days later.
-  Under a monthly schedule the schedule alone delivers 28-31 days. The 7-day
-  ceiling is now a procedural commitment discharged by `workflow_dispatch`, with
-  the still-weekly audit as the trigger that surfaces the need. Restated in
-  `docs/security/SI2_DEPENDENCY_COOLDOWN_RISK_ACCEPTANCE.md`.
+  Under a monthly schedule the schedule alone delivers 28-31 days, which made the
+  ceiling a procedural commitment discharged by `workflow_dispatch`.
+  **Superseded by delta 18:** the cooldown was removed, so no release is held at
+  all and there is no remediation latency to bound. The SI-2 risk acceptance
+  document was deleted rather than revised.
+
+### 18. Reduced to coupling detection; most of this spec was removed
+
+**Spec:** classification on eight rules, a 45-minute batch proof promoting
+candidates to `merge-safe`, an operator consolidation runner, check evaluation,
+a per-ecosystem release cooldown, and risk-register holds.
+
+**Built, then removed 2026-09-25.** What remains is 671 lines and 39 tests across
+`dep_triage_collect.py` and `dep_triage.py`, with three classifications:
+`excluded:non-dependabot`, `coupled`, `candidate`. Removed in full:
+
+- **The consolidation runner** (`dep_triage_consolidate.py`, 849 lines and 88
+  tests, including `git merge-tree` verification of contested paths). Superseding
+  delta 3. Consolidation is now a documented manual procedure; commit `ad67a34`
+  is the worked example.
+- **The batch proof job**, `promote()` and the `merge-safe` verdict. Superseding
+  deltas 4 and 8. Emitting a safety verdict was a blocking defect twice, and the
+  proof's `npm ci --legacy-peer-deps` would not have caught the `vitest` skew
+  anyway. No safety verdict means no false safety verdict.
+- **All check evaluation** -- the failing, missing-required and
+  required-not-passing rules, `CheckRun`, `required_checks`, the `gh pr checks`
+  call. Superseding deltas 10 and 11. A reviewer sees red checks on the PR. This
+  took `excluded:no-checks` with it: that code existed only because "no failing
+  checks" read as safe, and with no verdict there is nothing left to be vacuous
+  about.
+- **The cooldown and every release-age lookup.** Superseding deltas 12 and 17,
+  and the Cooldown defaults section. It guarded no observed incident and created
+  the remediation latency that then required an SI-2 risk acceptance to accept.
+  That document was deleted with it. Do not reintroduce the cooldown without an
+  incident it would have caught.
+- **Risk-register holds** (`rule_held_package`, deliberate holds, At-Risk tiers)
+  and the shared register loader. Register state belongs to the weekly
+  `dep_risk_audit.py`, which reads the register with its own parser. That script
+  is reverted to pre-branch state and is byte-identical to `main`.
+- **Grouped-PR member parsing** (`rule_grouped`, `GroupMember`). It existed only
+  to apply register holds to a group's members; a grouped PR is now simply a
+  `candidate`.
+- **The major-version and policy-path observations** (`note_major`,
+  `note_policy_file`, `rule_workflow_path`, `Decision.notes`). Superseding delta
+  16 and its partial restoration. Each restated something the reviewer reads off
+  the diff they are already approving.
+
+**Why:** the entire evidence base was two near-misses in one batch -- a
+`github/codeql-action` ref that was fully green and unsafe to merge alone, and
+`@vitest/coverage-v8` bumped while its sibling `vitest` stayed behind. Coupled-family
+detection alone catches both. Nothing else that was built caught anything. 3,088
+lines and 282 tests was judged unjustifiable surface for a small team to own and
+maintain against a two-incident record.
+
+**Cost if wrong:** every judgement the removed rules encoded moves to the
+reviewer whose approval `main-protection` requires -- breaking changes on a major
+bump, `uses:` SHA confirmation on a workflow diff, red or missing checks, a
+deliberate version cap, an At-Risk register entry. All were things a reviewer can
+read off the PR; none is now stated for them. If a real incident shows one of
+them was load-bearing, the rule comes back with a fixture from that incident.
 
 ### Not deltas, but worth knowing
 

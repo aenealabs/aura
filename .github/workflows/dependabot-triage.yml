@@ -1,39 +1,37 @@
 name: Dependabot Triage
 
-# Classifies open Dependabot PRs, proves the safe subset resolves and tests as a
-# batch, and publishes a rolling triage issue for operator review.
+# Monthly, read-only. Lists open Dependabot pull requests, detects coupled
+# update families, and publishes a rolling triage issue for operator review.
 #
-# The report is a single long-lived issue rewritten in place rather than a weekly
-# pull request: an issue needs no approval to update, so the team carries no
-# recurring merge chore for a document that only offers advice.
+# This workflow NEVER merges, approves, or marks a pull request ready. Operator
+# review and merge remain required: the `main-protection` ruleset is the safety
+# net (one approval plus four required status checks, CodeQL on three languages
+# among them), and this job does the one thing that gate cannot -- notice that a
+# pull request is green and still unsafe to merge alone.
 #
-# This workflow NEVER merges or approves a pull request. Operator review and
-# merge remain required, consistent with dependency-risk-audit.yml and the
-# main-protection ruleset.
+# The report is a single long-lived issue rewritten in place rather than a
+# recurring pull request: an issue needs no approval to update, so the team
+# carries no merge chore for a document that only offers advice.
 #
 # Trigger is schedule/workflow_dispatch only. `pull_request_target` is
 # deliberately NOT used: combined with a checkout of PR head it grants a
 # write-scoped token to untrusted code.
 #
-# Consolidation is deliberately NOT a job here. It is run locally by an operator:
-#
-#   python -m scripts.security.dep_triage_consolidate \
-#     --decisions decisions.json --snapshot snapshot.json          # dry run
-#   python -m scripts.security.dep_triage_consolidate ... --execute # opens PRs
-#
-# Three reasons. A PR opened with GITHUB_TOKEN does not trigger workflow runs, so
-# a consolidated PR created here could never satisfy the four required contexts in
-# main-protection; a human-pushed branch can. It would be the only job holding
-# write scope, running weekly for something that occurs monthly. And gating it on
-# workflow_dispatch conflated refreshing the report with writing to the repository.
+# One job, deliberately. This replaced three. A 45-minute `batch-proof` job
+# promoted candidates to a `merge-safe` verdict; that verdict is gone, so the
+# proof has nothing to promote. A `collector-smoke` job asserted structural
+# properties of a live collection; with three classifications and no verdict its
+# assertions no longer protect anything worth a separate job, and the committed
+# capture plus the fixture-derivation test cover the shape regression it existed
+# for. See scripts/security/dep_triage.py's module docstring.
 
 on:
   schedule:
     # Monthly, 16:00 UTC on the 1st. Deliberately not weekly: coupled families
     # arrive at codeql-action's release cadence, roughly monthly, and Dependabot
-    # PRs accumulate harmlessly, so a larger batch triaged less often is strictly
-    # less work and loses nothing. Run `workflow_dispatch` any time a dependency
-    # sweep is actually planned.
+    # PRs accumulate harmlessly, so a larger batch triaged less often is
+    # strictly less work and loses nothing. Run `workflow_dispatch` any time a
+    # dependency sweep is actually planned.
     - cron: '0 16 1 * *'
   workflow_dispatch:
 
@@ -44,17 +42,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  classify:
-    name: Classify open Dependabot PRs
+  triage:
+    name: Classify and publish
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
+      # `issues: write` is the only write scope in this workflow, and it exists
+      # solely to rewrite the rolling triage issue. Nothing here installs or
+      # executes dependency code, so there is no untrusted-code surface for that
+      # token to sit beside.
       contents: read
       pull-requests: read
-      checks: read
-      statuses: read
-    outputs:
-      candidates: ${{ steps.classify.outputs.candidates }}
+      issues: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,222 +70,24 @@ jobs:
           set -euo pipefail
           python -m scripts.security.dep_triage_collect \
             --repo "${{ github.repository }}" \
-            --output snapshot.json \
-            --required-check "Python Quality & Tests" \
-            --required-check "Analyze (python)" \
-            --required-check "Analyze (javascript-typescript)" \
-            --required-check "Analyze (actions)"
+            --output snapshot.json
 
       - name: Classify
-        id: classify
         run: |
           set -euo pipefail
           python -m scripts.security.dep_triage \
             --snapshot snapshot.json \
             --output triage-report.md \
             --decisions decisions.json
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          data = json.load(open("decisions.json"))
-          nums = sorted(d["number"] for d in data["decisions"]
-                        if d["code"] == "candidate")
-          print("candidates=" + json.dumps(nums))
-          PY
-
-      - name: Upload triage artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: triage
-          path: |
-            snapshot.json
-            decisions.json
-            triage-report.md
-          # Explicit, not the admin-changeable default: this artifact is the
-          # only durable record of the snapshot/decisions state a merge-safe
-          # verdict was based on.
-          retention-days: 90
-
-  batch-proof:
-    name: Prove candidate batch
-    needs: classify
-    if: needs.classify.outputs.candidates != '[]'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    outputs:
-      conflicted: ${{ steps.build.outputs.conflicted }}
-    steps:
-      - name: Checkout main
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          # This job installs and runs the batch's own dependency code
-          # (pip install, npm ci) and merges untrusted PR branches. Don't
-          # leave a credential sitting in .git/config for that code to find.
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.11'
-
-      # The snapshot records the head commit each verdict was computed
-      # against. Without it this job would prove whatever the branch happens
-      # to point at now, which is not necessarily what classify examined.
-      - name: Download triage artifacts
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
-        with:
-          name: triage
-
-      - name: Build candidate integration branch
-        id: build
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CANDIDATES: ${{ needs.classify.outputs.candidates }}
-        run: |
-          set -euo pipefail
-          git config user.name "aura-ci"
-          git config user.email "ci@aenealabs.com"
-          git switch -c "dep-triage/candidate-${GITHUB_RUN_ID}"
-          # One lookup table of the head commit each verdict was computed
-          # against, read once rather than re-parsing the snapshot per PR.
-          python3 - <<'PY' > heads.txt
-          import json
-          snapshot = json.load(open("snapshot.json"))
-          for pr in snapshot["pull_requests"]:
-              print(pr["number"], pr.get("head_sha", ""))
-          PY
-          conflicted=""
-          for pr in $(echo "$CANDIDATES" | python3 -c \
-              'import json,sys; print(" ".join(map(str, json.load(sys.stdin))))'); do
-            if ! git fetch origin "pull/${pr}/head:pr-${pr}"; then
-              echo "::warning::PR #${pr} could not be fetched (closed or force-rebased since classify); excluding it"
-              conflicted="${conflicted:+${conflicted},}${pr}"
-              continue
-            fi
-            # Dependabot force-pushes on rebase. A head that moved since
-            # classify has not been classified, so proving it here would
-            # attach a merge-safe verdict to code no rule ever saw. Treat it
-            # exactly like a fetch failure: warn, exclude, continue.
-            expected="$(awk -v n="$pr" '$1 == n {print $2}' heads.txt)"
-            actual="$(git rev-parse "pr-${pr}")"
-            if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-              echo "::warning::PR #${pr} head moved since classify (snapshot ${expected:-none}, now ${actual}); excluding it"
-              conflicted="${conflicted:+${conflicted},}${pr}"
-              git branch -D "pr-${pr}"
-              continue
-            fi
-            if ! git merge --no-edit "pr-${pr}"; then
-              echo "::warning::PR #${pr} conflicts with the batch; excluding it"
-              git merge --abort
-              conflicted="${conflicted:+${conflicted},}${pr}"
-            fi
-          done
-          python3 -c "import json,sys; print('conflicted=' + json.dumps([int(x) for x in sys.argv[1].split(',') if x]))" "$conflicted" >> "$GITHUB_OUTPUT"
-
-      - name: Prove dependency resolution
-        run: |
-          set -euo pipefail
-          for req in requirements.txt requirements-api.txt \
-                     requirements-test-extras.txt requirements-agents.txt; do
-            [ -f "$req" ] || continue
-            echo "::group::resolve $req"
-            python -m pip install --dry-run --quiet --report /dev/null -r "$req"
-            echo "::endgroup::"
-          done
-
-      - name: Prove npm resolution
-        # `--legacy-peer-deps` is mandatory in frontend/, not a shortcut: the
-        # eslint-plugin-react peer cap on eslint@^9.7 makes a plain `npm ci`
-        # fail outright. See frontend/CLAUDE.md and code-quality.yml.
-        #
-        # Consequence, recorded deliberately: the flag silences peer-dependency
-        # conflicts globally, so this step is weaker assurance than it looks and
-        # would NOT on its own have caught PR #443's vitest/coverage-v8 skew.
-        # Coupled-family detection (R5) is the primary control for that class,
-        # and it catches #443 deterministically before the proof ever runs.
-        run: |
-          set -euo pipefail
-          for dir in frontend sdk/typescript; do
-            [ -f "$dir/package.json" ] || continue
-            echo "::group::npm ci $dir"
-            (cd "$dir" && npm ci --legacy-peer-deps)
-            echo "::endgroup::"
-          done
-
-      - name: Run test suite
-        # Mirrors code-quality.yml's install exactly: torch from the CPU wheel
-        # index with --no-cache-dir first, so this doesn't pull the CUDA/
-        # nvidia-* stack that requirements.txt's bare `torch>=2.14.0` resolves
-        # to from the default index.
-        #
-        # `--no-cov -p no:cacheprovider --maxfail=1`: coverage is CI's gate
-        # (code-quality.yml), not this proof's. Bare `pytest -q` inherits
-        # pyproject.toml's `addopts` (--cov=src, fail_under=70), which makes
-        # this proof's verdict depend on src/ coverage on the integration
-        # branch -- a dependency bump that shifts which tests run then fails
-        # for a reason unrelated to the dependency. This proof answers one
-        # question only: does the batch resolve and pass tests together. It
-        # is a compatibility check, not a supply-chain integrity check -- a
-        # malicious package makes its own tests pass too.
-        run: |
-          set -euo pipefail
-          python -m pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install --no-cache-dir -r requirements.txt
-          pytest -q --no-cov -p no:cacheprovider --maxfail=1
-
-  report:
-    name: Publish triage report
-    needs: [classify, batch-proof]
-    if: always() && needs.classify.result == 'success'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.11'
-
-      - name: Download triage artifacts
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
-        with:
-          name: triage
 
       - name: Publish the rolling triage issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PROOF: ${{ needs.batch-proof.result }}
-          CANDIDATES: ${{ needs.classify.outputs.candidates }}
-          CONFLICTED: ${{ needs.batch-proof.outputs.conflicted || '[]' }}
         run: |
           set -euo pipefail
-          # Only a green batch proof promotes candidates to merge-safe. Any
-          # other outcome leaves them as candidates, so a skipped or failed
-          # proof never reports anything as mergeable.
-          if [ "$PROOF" = "success" ]; then
-            python -m scripts.security.dep_triage \
-              --snapshot snapshot.json \
-              --output triage-report.md \
-              --proved "$CANDIDATES" \
-              --conflicted "$CONFLICTED" \
-              --proof-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          fi
-          printf '\n> Batch proof result: %s\n' "$PROOF" >> triage-report.md
-
-          # The report is a rolling issue rewritten in place, not a weekly PR.
-          # An issue needs no approval to update, so the team carries no
-          # recurring merge chore for a document that only offers advice.
-          # No --search: the search index is eventually consistent, and a
-          # stale hit would fork the rolling issue into duplicates. List open
-          # issues carrying the `automated` label and filter client-side
-          # instead.
+          # No --search: the search index is eventually consistent, and a stale
+          # hit would fork the rolling issue into duplicates. List open issues
+          # carrying the `automated` label and filter client-side instead.
           title="Dependabot triage"
           number="$(gh issue list --state open --label automated \
             --json number,title \
@@ -300,144 +101,15 @@ jobs:
               --label dependencies --label automated
           fi
 
-  # ============================================================================
-  # Collector smoke test -- workflow_dispatch only
-  # ============================================================================
-  # The collector's entire value is that its output matches what `gh` actually
-  # returns. Unit tests cannot catch a mismatch between a hand-authored fixture
-  # and live `gh` output by construction: it was recently discovered that a
-  # fixture encoded the author login as `dependabot[bot]` while real `gh`
-  # returns `app/dependabot`, which made rule_non_dependabot's classification a
-  # silent no-op while 158 unit tests still passed green. This job runs the
-  # real collector against the real repository and checks only structural
-  # properties of the result -- never specific PR numbers or counts, which
-  # would make the job flaky as the queue changes week to week.
-  #
-  # Colocated here rather than a separate workflow file: it reuses the same
-  # collector invocation, required-check list, and GH_TOKEN/permissions
-  # scoping the `classify` job above already documents, so a second workflow
-  # would only duplicate that boilerplate without adding isolation this job
-  # actually needs (it shares no state or artifacts with the scheduled jobs).
-  #
-  # workflow_dispatch only, deliberately not on the `schedule` trigger above,
-  # for two independent reasons:
-  #   1. This job depends on live `gh` API calls and the live state of the
-  #      open-PR queue. A GitHub outage, a rate limit, or a genuinely empty
-  #      queue is not a defect in this workflow's code and must not turn a
-  #      scheduled run red for a reason that has nothing to do with a bug.
-  #   2. It is a regression test for the collector/classifier's OWN
-  #      correctness, not a recurring operational signal. The class of defect
-  #      it exists to catch is introduced by a code change to
-  #      dep_triage_collect.py or dep_triage.py, not by the passage of time --
-  #      so the natural place to run it is on demand, right after such a
-  #      change, not on a weekly clock.
-  collector-smoke:
-    name: Collector smoke test (live gh)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    if: github.event_name == 'workflow_dispatch'
-    permissions:
-      # Read-only, matching exactly what the collector itself needs (see the
-      # `classify` job above) plus nothing else. This job never writes to the
-      # repository: no issues, no comments, no branches.
-      contents: read
-      pull-requests: read
-      checks: read
-      statuses: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.11'
-
-      - name: Collect live snapshot
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if ! python -m scripts.security.dep_triage_collect \
-              --repo "${{ github.repository }}" \
-              --output snapshot.json \
-              --required-check "Python Quality & Tests" \
-              --required-check "Analyze (python)" \
-              --required-check "Analyze (javascript-typescript)" \
-              --required-check "Analyze (actions)"; then
-            echo "::error::collector exited non-zero against the live repository"
-            exit 1
-          fi
-
-      - name: Classify live snapshot
-        run: |
-          set -euo pipefail
-          python -m scripts.security.dep_triage \
-            --snapshot snapshot.json \
-            --output triage-report.md \
-            --decisions decisions.json
-
-      - name: Assert structural properties
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import sys
-
-          snapshot = json.load(open("snapshot.json"))
-          prs = snapshot["pull_requests"]
-
-          # 1. Collector and classifier exit codes are already checked by the
-          #    two previous steps' own `set -euo pipefail` guards -- reaching
-          #    this step means both were 0.
-
-          # 2. Every PR in the snapshot carries a `checks` key. This is
-          #    exactly the kind of field a silent shape regression in the
-          #    collector could drop without any exception being raised.
-          missing_checks = [pr["number"] for pr in prs if "checks" not in pr]
-          if missing_checks:
-              sys.exit(f"PRs missing 'checks' key: {missing_checks}")
-
-          # 3. At least one PR has a non-empty author -- unless the live
-          #    queue is genuinely empty right now, in which case there is
-          #    nothing to assert and failing here would redden the run for a
-          #    quiet, healthy repository rather than a broken collector.
-          if prs and not any(pr.get("author") for pr in prs):
-              sys.exit("no PR in the snapshot has a non-empty 'author'")
-
-          # 4. The regression this job exists to catch. This check is
-          #    deliberately independent of dep_triage.DEPENDABOT_AUTHORS --
-          #    it does not import or reuse that set, because the original bug
-          #    was exactly a mismatch between what the collector emits and
-          #    what the classifier's set expects. Reusing the classifier's
-          #    own set here would make the assertion circular: if that set
-          #    were ever wrong again, checking membership in it would
-          #    "prove" no Dependabot PR exists rather than catching the
-          #    mismatch. The literal substring below is authored fresh,
-          #    against the live `gh` login string, not against the module.
-          dependabot_open = any(
-              "dependabot" in (pr.get("author") or "").lower() for pr in prs
-          )
-          if dependabot_open:
-              decisions = json.load(open("decisions.json"))["decisions"]
-              if not any(d["code"] != "excluded:non-dependabot" for d in decisions):
-                  sys.exit(
-                      "every decision is 'excluded:non-dependabot' despite an "
-                      "open PR whose author login contains 'dependabot' -- "
-                      "this is exactly the no-op regression this job exists "
-                      "to catch"
-                  )
-
-          print(f"OK: {len(prs)} open PR(s) in snapshot; structural checks passed.")
-          PY
-
-      - name: Upload smoke artifacts
+      - name: Upload triage artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: collector-smoke
+          name: triage
           path: |
             snapshot.json
             decisions.json
             triage-report.md
-          retention-days: 14
+          # Explicit, not the admin-changeable default: these are the only
+          # durable record of the batch each report was computed from.
+          retention-days: 90

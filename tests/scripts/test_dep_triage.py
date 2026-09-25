@@ -1,59 +1,58 @@
-"""Tests for the Dependabot triage classifier."""
+"""Tests for the Dependabot triage classifier.
+
+Scoped to what the tool still does: exclude non-Dependabot authors, detect
+coupled update families, and render a report. The suite that covered check
+evaluation, the cooldown, register holds, grouped-member holds and the
+``merge-safe`` promotion went with those controls; ``dep_triage``'s module
+docstring records why.
+"""
 
 import json
-from dataclasses import fields
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.security import dep_triage as dt
-from scripts.security import dep_triage_collect as dc
 
 # Derived from tests/fixtures/dep_triage/raw_2026_09_19.json, a verbatim capture
-# of `gh pr list` and `gh pr checks` against aenealabs/aura. Never hand-edit it:
-# test_snapshot_fixture_is_derived_from_the_raw_capture regenerates it through
-# build_snapshot and fails if the two drift. A transcribed fixture is what let an
-# author-login mismatch and an unreachable zero-checks path pass a green suite.
+# of `gh pr list` against aenealabs/aura. Never hand-edit it:
+# test_snapshot_fixture_is_derived_from_the_raw_capture (in the collector's
+# suite) regenerates it through build_snapshot and fails if the two drift. A
+# transcribed fixture is what let an author-login mismatch pass a green suite.
 FIXTURE = Path("tests/fixtures/dep_triage/batch_2026_09_19.json")
 
-# The captured batch. Numbers are pinned so a silently shrunken fixture -- the
-# failure mode where a regression "passes" because the PR that proved it is gone
-# -- fails loudly rather than quietly.
-CAPTURED_NUMBERS = {
-    386,
-    455,
-    456,
-    457,
-    458,
-    459,
-    460,
-    461,
-    462,
-    463,
-    464,
-    465,
-    466,
-    467,
-    468,
-    469,
-    470,
-    471,
-    472,
-    473,
-    474,
-    475,
-}
+# Numbers are pinned so a silently shrunken fixture -- the failure mode where a
+# regression "passes" because the PR that proved it is gone -- fails loudly.
+CAPTURED_NUMBERS = set(range(455, 476)) | {386}
 CODEQL_FAMILY = (457, 459, 465, 474)
 VITEST_FAMILY = (463, 464)
 
 
-def test_load_snapshot_reads_all_prs():
-    prs = dt.load_snapshot(FIXTURE)
-    assert len(prs) == len(CAPTURED_NUMBERS)
-    assert {p.number for p in prs} == CAPTURED_NUMBERS
+def _pr(**kw):
+    """Build a PRSnapshot with harmless defaults, overridden by kwargs."""
+    base = dict(
+        number=1,
+        title="t",
+        author="app/dependabot",
+        files=(),
+        ecosystem="pip",
+        directory="/",
+        package="x",
+        from_version="1.0.0",
+        to_version="1.0.1",
+        author_is_bot=True,
+    )
+    base.update(kw)
+    return dt.PRSnapshot(**base)
 
 
-def test_load_snapshot_parses_checks_and_metadata():
+# --------------------------------------------------------------------------
+# Snapshot loading
+# --------------------------------------------------------------------------
+
+
+def test_load_snapshot_parses_the_fields_coupling_is_keyed_on():
     prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
     pr = prs[463]
     assert pr.author == "app/dependabot"
@@ -63,7 +62,7 @@ def test_load_snapshot_parses_checks_and_metadata():
     assert pr.package == "@vitest/coverage-v8"
     assert pr.from_version == "4.1.11"
     assert pr.to_version == "5.0.1"
-    assert all(c.conclusion in ("success", "skipped") for c in pr.checks)
+    assert len(pr.head_sha) == 40
 
 
 def test_captured_authors_are_the_login_forms_gh_actually_emits():
@@ -78,1376 +77,278 @@ def test_captured_authors_are_the_login_forms_gh_actually_emits():
     assert "dependabot[bot]" not in authors
 
 
-def test_snapshot_is_immutable():
-    pr = dt.load_snapshot(FIXTURE)[0]
-    with pytest.raises(Exception):
-        pr.number = 1  # frozen dataclass
-
-
-def _pr(**kw):
-    """Build a PRSnapshot with harmless defaults, overridden by kwargs."""
-    base = dict(
-        number=1,
-        title="t",
-        author="app/dependabot",
-        files=(),
-        checks=(dt.CheckRun("Python Quality & Tests", "completed", "success"),),
-        required_checks=("Python Quality & Tests",),
-        ecosystem="pip",
-        directory="/",
-        package="x",
-        from_version="1.0.0",
-        to_version="1.0.1",
-        release_age_days=30.0,
-        risk_tier="healthy",
-        author_is_bot=True,
-    )
-    base.update(kw)
-    return dt.PRSnapshot(**base)
-
-
-def test_release_please_pr_excluded_by_author():
-    pr = _pr(number=386, author="app/github-actions")
-    d = dt.rule_non_dependabot(pr)
-    assert d is not None
-    assert d.code == dt.CODE_NON_DEPENDABOT
-    assert "dependabot" in d.reason.lower()
+# --------------------------------------------------------------------------
+# R1: author exclusion
+# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("login", sorted(dt.DEPENDABOT_AUTHORS))
 def test_every_accepted_dependabot_login_form_passes_the_author_rule(login):
-    """`gh` reports `app/dependabot`; the REST API and webhooks report
-    `dependabot[bot]`. The collector reads whichever form its source returns, so
-    an equality test against one form excludes the entire queue whenever the
-    other is in play -- which is precisely what happened."""
+    """`gh` returns `app/dependabot`, the REST API `dependabot[bot]`.
+
+    An equality test against one form made the entire system a silent no-op.
+    """
     assert dt.rule_non_dependabot(_pr(author=login)) is None
 
 
 def test_a_different_bot_is_still_excluded_despite_author_is_bot():
-    """`is_bot` is recorded for the reason text, never used as the decision.
-
-    A human cannot be Dependabot, but another bot can be `is_bot: true`, so
-    trusting the flag would admit every app-authored PR in the repository."""
-    decision = dt.rule_non_dependabot(_pr(author="app/github-actions"))
-    assert decision is not None
+    decision = dt.rule_non_dependabot(
+        _pr(author="app/renovate", author_is_bot=True),
+    )
     assert decision.code == dt.CODE_NON_DEPENDABOT
     assert "a bot" in decision.reason
+    for login in dt.DEPENDABOT_AUTHORS:
+        assert login in decision.reason
 
 
-def test_author_exclusion_reason_names_the_accepted_logins():
-    """The reason is the operator's only clue when this rule misfires again."""
-    decision = dt.rule_non_dependabot(_pr(author="lavrut", author_is_bot=False))
-    assert decision is not None
-    assert "app/dependabot" in decision.reason
-    assert "not a bot" in decision.reason
-
-
-def test_zero_checks_excluded():
-    pr = _pr(number=386, checks=())
-    d = dt.rule_no_checks(pr)
-    assert d is not None
-    assert d.code == dt.CODE_NO_CHECKS
-
-
-def test_pr_with_checks_not_excluded_by_no_checks():
-    assert dt.rule_no_checks(_pr()) is None
-
-
-def test_dockerfile_change_is_annotated_not_held():
-    """The per-entry rationale is the part worth keeping.
-
-    That the diff touches a Dockerfile is visible to the reviewer; *why* that
-    matters here -- private ECR base images -- is not, so the note carries it.
-    Contrast test_workflow_uses_pin_is_still_held_for_policy_review: there the
-    diff itself is illegible, which is why that one kept its hold."""
-    pr = _pr(files=("deploy/docker/api/Dockerfile",), ecosystem="docker")
-    note = dt.note_policy_file(pr)
-    assert note is not None
-    assert "ECR" in note or "base image" in note
-
-
-def test_coverage_threshold_file_is_annotated():
-    note = dt.note_policy_file(_pr(files=("pyproject.toml",)))
-    assert note is not None
-    assert "70%" in note or "coverage" in note
-
-
-def test_requirements_change_gets_no_policy_note():
-    assert dt.note_policy_file(_pr(files=("requirements.txt",))) is None
-
-
-def test_a_workflow_file_produces_a_hold_and_not_a_file_note():
-    """The two halves of the old policy rule are separate mechanisms now.
-
-    A workflow change must not double up as both a hold and a note, and a
-    Dockerfile change must not reach the hold."""
-    workflow = _pr(files=(".github/workflows/codeql.yml",))
-    assert dt.note_policy_file(workflow) is None
-    assert dt.rule_workflow_path(workflow) is not None
-    dockerfile = _pr(files=("deploy/docker/api/Dockerfile",))
-    assert dt.rule_workflow_path(dockerfile) is None
-    assert dt.note_policy_file(dockerfile) is not None
-
-
-def test_tree_sitter_is_pinned_by_policy():
-    pr = _pr(package="tree-sitter", from_version="0.25.2", to_version="0.26.0")
-    d = dt.rule_held_package(pr)
-    assert d is not None
-    assert d.code == dt.CODE_PINNED_BY_POLICY
-    assert "timeout_micros" in d.reason or "DoS" in d.reason
-
-
-def test_at_risk_tier_is_held():
-    d = dt.rule_held_package(_pr(package="gremlinpython", risk_tier="at-risk"))
-    assert d is not None
-    assert d.code == dt.CODE_RISK_TIER
-
-
-def test_healthy_tier_not_held():
-    assert dt.rule_held_package(_pr(package="pydantic")) is None
-
-
-def test_deliberate_hold_takes_precedence_over_risk_tier():
-    """tree-sitter is a deliberate hold; pin the more specific reason as the
-    winner over a same-package At-Risk register entry, matching current
-    first-match-wins behaviour in rule_held_package."""
-    pr = _pr(package="tree-sitter", risk_tier="at-risk")
-    d = dt.rule_held_package(pr)
-    assert d is not None
-    assert d.code == dt.CODE_PINNED_BY_POLICY
-    assert "timeout_micros" in d.reason or "DoS" in d.reason
-
-
-def test_policy_path_does_not_match_substring_lookalikes():
-    """A component named after Dockerfile is not a Dockerfile.
-
-    Still worth pinning as a note rather than a hold: a false note on every
-    frontend PR is the same fatigue problem in miniature."""
-    pr = _pr(files=("frontend/src/components/DockerfileViewer.jsx",))
-    assert dt.note_policy_file(pr) is None
-
-
-def test_policy_path_matches_dockerfile_variants():
-    assert (
-        dt.note_policy_file(_pr(files=("deploy/docker/api/Dockerfile.prod",)))
-        is not None
-    )
-
-
-def test_policy_path_matches_nested_pyproject():
-    assert dt.note_policy_file(_pr(files=("tools/pyproject.toml",))) is not None
-
-
-def test_workflow_uses_pin_is_still_held_for_policy_review():
-    """The one member of the old policy hold that survived the demotion.
-
-    It survived on a narrower argument than the file markers: a reviewer looking
-    at this diff sees one opaque 40-hex SHA replace another, which proves the
-    pin moved and says nothing about what it now points at. That is the "cannot
-    cheaply derive" test the Dockerfile and pyproject cases fail and this one
-    passes. The credential rationale is the justification for the hold, so the
-    text is asserted here rather than left to drift."""
-    pr = _pr(
-        files=(".github/workflows/codeql.yml",),
-        ecosystem="github-actions",
-        package="github/codeql-action/init",
-    )
-    decision = dt.rule_workflow_path(pr)
-    assert decision is not None
-    assert decision.code == dt.CODE_POLICY_REVIEW
-    assert "credentials" in decision.reason
-    assert "SHA pinning only helps if a human confirms" in decision.reason
-
-
-def test_workflow_policy_path_accepts_both_yaml_spellings():
-    for path in (".github/workflows/a.yml", ".github/workflows/b.yaml"):
-        assert dt.rule_workflow_path(_pr(files=(path,))) is not None
-
-
-def test_workflow_policy_path_matches_segments_not_substrings():
-    """The substring defect this repo already fixed once, in the other rule.
-
-    A path that merely contains the word "workflows", or a non-workflow file
-    inside .github, is not a workflow `uses:` pin."""
-    for path in (
-        "docs/github/workflows/guide.yml",
-        "src/workflows/engine.yml",
-        ".github/dependabot.yml",
-        ".github/workflows/README.md",
-    ):
-        assert dt.rule_workflow_path(_pr(files=(path,))) is None, path
-
-
-def test_no_github_actions_pr_in_the_capture_reaches_candidate():
-    """No action bump is individually promotable without a human looking.
-
-    Every action PR in the capture touches a workflow file, so each one is
-    either coupled or held for policy review. The cooldown is not what is doing
-    this work -- the actions in the capture resolve real release ages -- so
-    without the workflow hold they would flow to candidate."""
-    prs = dt.load_snapshot(FIXTURE)
-    actions = [p for p in prs if p.ecosystem == "github-actions"]
-    assert actions, "the capture holds no action PRs to prove anything with"
-    by_number = {d.number: d for d in dt.classify(prs)}
-    for pr in actions:
-        assert by_number[pr.number].code in (
-            dt.CODE_POLICY_REVIEW,
-            dt.CODE_COUPLED,
-        ), f"#{pr.number} is {by_number[pr.number].code}"
-
-
-def test_an_uncoupled_action_bump_is_held_not_annotated():
-    """The narrowing, asserted where a future reader will trip over it.
-
-    An uncoupled action bump reaches rule_workflow_path and stops there. It
-    carries no note, because the hold states the credential rationale itself --
-    a note as well would say the same thing twice in one row."""
-    pr = _pr(
-        number=99,
-        files=(".github/workflows/codeql.yml",),
-        ecosystem="github-actions",
-        package="actions/checkout",
-        release_age_days=30.0,
-    )
-    (decision,) = dt.classify([pr])
-    assert decision.code == dt.CODE_POLICY_REVIEW
-    assert "credentials" in decision.reason
-    assert decision.notes == ()
-
-
-def test_coupling_still_wins_over_the_workflow_policy_path():
-    """Every action family touches a workflow file by construction.
-
-    If the workflow hold ran first it would shadow every family in the repo,
-    and dep_triage_consolidate -- which reads the `coupled` code and its family
-    key -- would find nothing to consolidate. This is the ordering constraint
-    that dictated where the restored rule had to go."""
-    prs = dt.load_snapshot(FIXTURE)
-    by_number = {d.number: d for d in dt.classify(prs)}
-    for number in CODEQL_FAMILY:
-        assert by_number[number].code == dt.CODE_COUPLED
-        assert by_number[number].family == "github/codeql-action"
+# --------------------------------------------------------------------------
+# R5: coupled families
+# --------------------------------------------------------------------------
 
 
 def test_family_key_groups_codeql_action_subactions():
-    a = _pr(
-        number=474,
-        ecosystem="github-actions",
-        package="github/codeql-action/upload-sarif",
+    init = _pr(
+        number=1, ecosystem="github-actions", package="github/codeql-action/init"
     )
-    b = _pr(
-        number=465, ecosystem="github-actions", package="github/codeql-action/analyze"
+    analyze = _pr(
+        number=2, ecosystem="github-actions", package="github/codeql-action/analyze"
     )
-    assert dt.family_key(a) == dt.family_key(b) == "github/codeql-action"
+    assert dt.family_key(init) == dt.family_key(analyze) == "github/codeql-action"
 
 
-def test_family_key_groups_vitest_peer_cluster_per_directory():
-    a = _pr(number=464, ecosystem="npm", directory="/frontend", package="vitest")
-    b = _pr(
-        number=463,
-        ecosystem="npm",
-        directory="/frontend",
-        package="@vitest/coverage-v8",
-    )
-    assert dt.family_key(a) == dt.family_key(b) == "npm:/frontend:vitest"
+def test_single_segment_action_is_not_grouped():
+    pr = _pr(ecosystem="github-actions", package="actions/checkout")
+    assert dt.family_key(pr) is None
 
 
-def test_family_key_separates_same_package_in_different_directories():
-    a = _pr(ecosystem="npm", directory="/frontend", package="vitest")
-    b = _pr(ecosystem="npm", directory="/sdk/typescript", package="vitest")
-    assert dt.family_key(a) != dt.family_key(b)
+def test_family_key_separates_the_same_package_in_different_directories():
+    frontend = _pr(number=1, ecosystem="npm", package="vitest", directory="/frontend")
+    sdk = _pr(number=2, ecosystem="npm", package="vitest", directory="/sdk/typescript")
+    assert dt.family_key(frontend) != dt.family_key(sdk)
 
 
 def test_detect_families_ignores_singletons():
     prs = [
-        _pr(number=466, ecosystem="pip", package="hypothesis"),
-        _pr(
-            number=474,
-            ecosystem="github-actions",
-            package="github/codeql-action/upload-sarif",
-        ),
-        _pr(
-            number=465,
-            ecosystem="github-actions",
-            package="github/codeql-action/analyze",
-        ),
-    ]
-    families = dt.detect_families(prs)
-    assert 466 not in families
-    assert families[474] == families[465] == "github/codeql-action"
-
-
-def test_green_pr_in_coupled_family_is_still_coupled():
-    """#474 is fully green in the capture and still unsafe to merge alone."""
-    prs = dt.load_snapshot(FIXTURE)
-    families = dt.detect_families(prs)
-    pr474 = next(p for p in prs if p.number == 474)
-    assert all(
-        c.conclusion in ("success", "skipped") for c in pr474.checks
-    ), "the point of this test is a green sibling; the capture no longer has one"
-    d = dt.rule_coupled(pr474, families)
-    assert d is not None
-    assert d.code == dt.CODE_COUPLED
-    assert d.family == "github/codeql-action"
-
-
-def test_all_four_codeql_refs_form_one_family():
-    """The capture holds a real 4-member coupled family.
-
-    codeql-action's sub-actions must move in lockstep or CodeQL refuses to run,
-    and #465's own failing checks say so. A grouping rule that caught only two
-    of the four would leave two individually mergeable."""
-    families = dt.detect_families(dt.load_snapshot(FIXTURE))
-    keys = {families.get(n) for n in CODEQL_FAMILY}
-    assert keys == {"github/codeql-action"}
-
-
-def test_vitest_pair_is_a_peer_family_in_the_capture():
-    families = dt.detect_families(dt.load_snapshot(FIXTURE))
-    keys = {families.get(n) for n in VITEST_FAMILY}
-    assert keys == {"npm:/frontend:vitest"}
-
-
-def test_uncoupled_pr_returns_none():
-    prs = dt.load_snapshot(FIXTURE)
-    families = dt.detect_families(prs)
-    pr466 = next(p for p in prs if p.number == 466)
-    assert dt.rule_coupled(pr466, families) is None
-
-
-def test_shared_npm_scope_alone_is_not_a_family():
-    """@types/react and @types/node release independently."""
-    prs = [
-        _pr(number=1, ecosystem="npm", directory="/frontend", package="@types/react"),
-        _pr(number=2, ecosystem="npm", directory="/frontend", package="@types/node"),
+        _pr(number=1, ecosystem="github-actions", package="github/codeql-action/init"),
+        _pr(number=2, ecosystem="pip", package="ruff"),
     ]
     assert dt.detect_families(prs) == {}
 
 
-def test_shared_babel_scope_alone_is_not_a_family():
+def test_shared_npm_scope_alone_is_not_a_family():
+    """@types/react and @types/node release on independent cadences.
+
+    Keying on the bare scope grouped them, which is the defect
+    ``_has_unscoped_root`` exists for.
+    """
     prs = [
-        _pr(number=1, ecosystem="npm", directory="/frontend", package="@babel/core"),
-        _pr(
-            number=2,
-            ecosystem="npm",
-            directory="/frontend",
-            package="@babel/preset-env",
-        ),
+        _pr(number=1, ecosystem="npm", package="@types/react", directory="/frontend"),
+        _pr(number=2, ecosystem="npm", package="@types/node", directory="/frontend"),
     ]
     assert dt.detect_families(prs) == {}
 
 
 def test_scoped_package_couples_with_its_unscoped_namesake():
     prs = [
-        _pr(number=464, ecosystem="npm", directory="/frontend", package="vitest"),
         _pr(
-            number=463,
+            number=1,
             ecosystem="npm",
-            directory="/frontend",
             package="@vitest/coverage-v8",
+            directory="/frontend",
         ),
+        _pr(number=2, ecosystem="npm", package="vitest", directory="/frontend"),
     ]
-    families = dt.detect_families(prs)
-    assert families[464] == families[463] == "npm:/frontend:vitest"
-
-
-def test_single_segment_action_is_not_grouped():
-    """actions/checkout has no sub-action segment, so it has no family."""
-    assert (
-        dt.family_key(_pr(ecosystem="github-actions", package="actions/checkout"))
-        is None
-    )
-
-
-def test_codeql_version_mismatch_is_a_real_failure_in_the_capture():
-    """#465 bumps one codeql-action ref, so the other refs' Analyze jobs fail.
-
-    Every failure is a real failure: there is no flake exemption to fall
-    through to, which is the conservative direction."""
-    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
-    d = dt.rule_failing(prs[465])
-    assert d is not None
-    assert d.code == dt.CODE_FAILING
-    assert "Analyze" in d.reason
-
-
-def test_all_green_pr_has_no_failure_decision():
-    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
-    assert dt.rule_failing(prs[466]) is None
-
-
-def test_timed_out_counts_as_failure():
-    pr = _pr(checks=(dt.CheckRun("Python Quality & Tests", "completed", "timed_out"),))
-    d = dt.rule_failing(pr)
-    assert d is not None
-    assert d.code == dt.CODE_FAILING
-
-
-def test_missing_required_check_is_not_treated_as_pass():
-    """An unrun required check is missing, not passing."""
-    pr = _pr(
-        checks=(dt.CheckRun("Analyze (python)", "completed", "success"),),
-        required_checks=("Analyze (python)", "Python Quality & Tests"),
-    )
-    d = dt.rule_missing_required(pr)
-    assert d is not None
-    assert d.code == dt.CODE_MISSING_REQUIRED
-    assert "Python Quality & Tests" in d.reason
-
-
-def test_all_required_checks_present_returns_none():
-    assert dt.rule_missing_required(_pr()) is None
-
-
-def test_missing_required_with_no_required_checks_returns_none():
-    """An empty required-checks list has nothing to be missing."""
-    assert dt.rule_missing_required(_pr(required_checks=())) is None
-
-
-def test_every_failed_check_is_named_in_the_reason():
-    """Both failures are reported; neither is filtered out as infrastructure."""
-    pr = _pr(
-        checks=(
-            dt.CheckRun("Python Quality & Tests", "completed", "failure"),
-            dt.CheckRun("Security Scanning", "completed", "failure"),
-        )
-    )
-    decision = dt.rule_failing(pr)
-    assert decision.code == dt.CODE_FAILING
-    assert "Python Quality & Tests" in decision.reason
-    assert "Security Scanning" in decision.reason
-
-
-def test_no_failure_is_exempted_as_an_infrastructure_flake():
-    """The flake exemption is gone, and must not come back on program output.
-
-    The removed detector matched strings like "rate limit" against a log
-    excerpt. A compromised package can print that string from its own test
-    process, which would have let it relabel a genuine failure as "rerun once
-    before escalating" -- evidence tampering through a signal the adversary
-    controls. This pins the absence of every name that path went by.
-    """
-    assert not hasattr(dt, "FLAKE_SIGNATURES")
-    assert not hasattr(dt, "_is_flake")
-    assert not hasattr(dt, "CODE_SUSPECTED_FLAKE")
-    codes = {code for _, codes in dt._SECTIONS for code in codes}
-    assert not any("flake" in code for code in codes)
-    assert "failing_log_excerpt" not in {f.name for f in fields(dt.CheckRun)}
-
-
-# gh's complete bucket vocabulary. `state` is open-ended and GitHub keeps
-# extending it; `bucket` is gh's own normalization over it, which is why the
-# collector maps from the latter.
-GH_BUCKETS = frozenset({"pass", "fail", "pending", "skipping", "cancel"})
-
-# Deliberately has no default. A bucket added to GH_BUCKETS without a ruling
-# here raises KeyError and fails the suite, which is the point: the defect this
-# replaces was six non-passing states quietly reading as green because the
-# mapping had a fall-through.
-EXPECTED_FOR_REQUIRED_BUCKET = {
-    "pass": dt.CODE_CANDIDATE,
-    "skipping": dt.CODE_CANDIDATE,
-    "fail": dt.CODE_FAILING,
-    "pending": dt.CODE_REQUIRED_NOT_PASSING,
-    "cancel": dt.CODE_REQUIRED_NOT_PASSING,
-}
-
-
-@pytest.mark.parametrize("bucket", sorted(GH_BUCKETS))
-def test_every_gh_bucket_reaches_a_deliberate_classification(bucket):
-    """Every state a required check can be in must be ruled on explicitly.
-
-    Before this, only SUCCESS/FAILURE/SKIPPED were mapped and everything else
-    fell to a null conclusion, so a required check that was CANCELLED,
-    TIMED_OUT, ACTION_REQUIRED, STARTUP_FAILURE, NEUTRAL, STALE, ERROR or still
-    running classified the PR identically to genuinely green. At 16:00 Monday,
-    right after Dependabot opens its PRs, still-running is the ordinary state.
-    """
-    required = "Python Quality & Tests"
-    status, conclusion = dc.check_state(bucket, "")
-    pr = _pr(
-        checks=(dt.CheckRun(required, status, conclusion),),
-        required_checks=(required,),
-    )
-    code = dt.classify([pr])[0].code
-    assert code == EXPECTED_FOR_REQUIRED_BUCKET[bucket]
-
-
-def test_an_unrecognized_bucket_is_never_read_as_green():
-    """GitHub extends the state vocabulary; gh may grow a bucket to match.
-
-    An unknown bucket maps to no conclusion, and a required check with no
-    conclusion is unproven -- so a future state surfaces for a human rather
-    than joining the merge-safe queue."""
-    required = "Python Quality & Tests"
-    status, conclusion = dc.check_state("a-bucket-gh-does-not-have-yet", "")
-    assert conclusion is None
-    pr = _pr(
-        checks=(dt.CheckRun(required, status, conclusion),),
-        required_checks=(required,),
-    )
-    assert dt.classify([pr])[0].code == dt.CODE_REQUIRED_NOT_PASSING
-
-
-def test_required_not_passing_ignores_non_required_checks():
-    """An optional check that never concluded is not a reason to hold."""
-    pr = _pr(
-        checks=(
-            dt.CheckRun("Python Quality & Tests", "completed", "success"),
-            dt.CheckRun("Optional Benchmark", "in_progress", None),
-        ),
-        required_checks=("Python Quality & Tests",),
-    )
-    assert dt.rule_required_not_passing(pr) is None
-
-
-def test_required_not_passing_accepts_skipped_and_neutral():
-    """GitHub's own "declined to object" conclusions satisfy branch protection.
-
-    Treating them as unproven would hold every PR whose conditional jobs were
-    correctly skipped, which is the opposite failure and just as useless."""
-    pr = _pr(
-        checks=(
-            dt.CheckRun("Python Quality & Tests", "completed", "skipped"),
-            dt.CheckRun("Analyze (python)", "completed", "neutral"),
-        ),
-        required_checks=("Python Quality & Tests", "Analyze (python)"),
-    )
-    assert dt.rule_required_not_passing(pr) is None
-
-
-def test_required_check_absent_is_reported_separately_from_unproven():
-    """R7 and R7b are adjacent but distinct: absent is not the same as unfinished.
-
-    Collapsing them into one code would tell an operator to look for a check
-    that is in fact running."""
-    absent = _pr(
-        checks=(dt.CheckRun("Analyze (python)", "completed", "success"),),
-        required_checks=("Analyze (python)", "Python Quality & Tests"),
-    )
-    assert dt.classify([absent])[0].code == dt.CODE_MISSING_REQUIRED
-    unfinished = _pr(
-        checks=(
-            dt.CheckRun("Analyze (python)", "completed", "success"),
-            dt.CheckRun("Python Quality & Tests", "in_progress", None),
-        ),
-        required_checks=("Analyze (python)", "Python Quality & Tests"),
-    )
-    assert dt.classify([unfinished])[0].code == dt.CODE_REQUIRED_NOT_PASSING
-
-
-def test_required_not_passing_names_the_check_and_its_state():
-    pr = _pr(
-        checks=(dt.CheckRun("Python Quality & Tests", "in_progress", None),),
-        required_checks=("Python Quality & Tests",),
-    )
-    decision = dt.rule_required_not_passing(pr)
-    assert decision is not None
-    assert "Python Quality & Tests" in decision.reason
-    assert "in_progress" in decision.reason
-
-
-def test_a_single_failed_check_is_a_real_failure():
-    pr = _pr(checks=(dt.CheckRun("Python Quality & Tests", "completed", "failure"),))
-    assert dt.rule_failing(pr).code == dt.CODE_FAILING
-
-
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("5.0.0", 5),
-        ("^4.1.11", 4),
-        (">=2.13.5", 2),
-        ("v7.0.1", 7),
-        ("4.38.0", 4),
-        ("", None),
-        ("latest", None),
-    ],
-)
-def test_major_of_parses_leading_integer(raw, expected):
-    assert dt.major_of(raw) == expected
-
-
-def test_major_bump_is_annotated_not_held():
-    """A major bump is written in the PR title the reviewer is already reading,
-    so the observation is kept and the hold is not."""
-    note = dt.note_major(
-        _pr(package="vitest", from_version="4.1.11", to_version="5.0.0")
-    )
-    assert note is not None
-    assert "4.1.11" in note and "5.0.0" in note
-
-
-def test_minor_bump_gets_no_major_note():
-    assert dt.note_major(_pr(from_version="2.12.5", to_version="2.13.5")) is None
-
-
-def test_unparseable_version_gets_no_major_note():
-    assert dt.note_major(_pr(from_version="", to_version="")) is None
-
-
-def test_fresh_package_release_held_for_cooldown():
-    d = dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=1.0))
-    assert d is not None
-    assert d.code == dt.CODE_COOLDOWN
-
-
-def test_aged_package_release_passes_cooldown():
-    assert dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=5.0)) is None
-
-
-def test_action_uses_longer_cooldown():
-    """Actions are SHA-pinned supply-chain surface, so they wait longer."""
-    pr = _pr(ecosystem="github-actions", package="a/b/c", release_age_days=5.0)
-    d = dt.rule_cooldown(pr)
-    assert d is not None
-    assert d.code == dt.CODE_COOLDOWN
-    assert (
-        dt.rule_cooldown(
-            _pr(ecosystem="github-actions", package="a/b/c", release_age_days=9.0)
-        )
-        is None
-    )
-
-
-def test_cooldown_boundary_exactly_at_limit_is_not_held():
-    """The comparison is a strict less-than, so a release aged exactly the
-    cooldown limit has cleared it -- this pins the boundary deliberately
-    rather than leaving it to accident."""
-    pr = _pr(ecosystem="pip", release_age_days=float(dt.PACKAGE_COOLDOWN_DAYS))
-    assert dt.rule_cooldown(pr) is None
-
-
-GROUP_TITLE = (
-    "chore(deps): bump the minor-and-patch group across 1 directory with 2 updates"
-)
-
-
-def _member(package, **kw):
-    base = dict(
-        package=package,
-        from_version="1.0.0",
-        to_version="1.0.1",
-        risk_tier="unknown",
-        release_age_days=30.0,
-    )
-    base.update(kw)
-    return dt.GroupMember(**base)
-
-
-def test_group_title_is_recognised_and_a_single_bump_is_not():
-    """ "bump the X group" is a group; "bump ruff ... in the X group" is not.
-
-    #462 belongs to the same group but names its package in the title and so
-    must keep parsing as an ordinary bump."""
-    assert dt.group_name(GROUP_TITLE) == "minor-and-patch"
-    assert dt.group_update_count(GROUP_TITLE) == 2
-    single = (
-        "chore(deps-dev): bump ruff from 0.16.6 to 0.16.8 in the minor-and-patch group"
-    )
-    assert dt.group_name(single) is None
-
-
-def test_a_deliberately_held_package_inside_a_group_holds_the_whole_pr():
-    """The hold that could not fire before this rule existed.
-
-    A grouped title names no package, so tree-sitter's deliberate cap -- and
-    every other per-package hold -- was unreachable for the commonest PR shape
-    in the repo."""
-    pr = _pr(
-        number=99,
-        title=GROUP_TITLE,
-        package="",
-        members=(_member("six"), _member("tree-sitter")),
-    )
-    decision = dt.rule_grouped(pr)
-    assert decision is not None
-    assert decision.code == dt.CODE_PINNED_BY_POLICY
-    assert "tree-sitter" in decision.reason
-    assert "parser.timeout_micros" in decision.reason
-
-
-def test_an_at_risk_member_inside_a_group_holds_the_whole_pr():
-    pr = _pr(
-        number=99,
-        title=GROUP_TITLE,
-        package="",
-        members=(_member("six"), _member("gremlinpython", risk_tier="at-risk")),
-    )
-    decision = dt.rule_grouped(pr)
-    assert decision.code == dt.CODE_RISK_TIER
-    assert "gremlinpython" in decision.reason
-
-
-def test_a_deliberate_hold_outranks_a_tier_hold_inside_a_group():
-    """Same precedence rule_held_package uses for a single-package PR."""
-    pr = _pr(
-        number=99,
-        title=GROUP_TITLE,
-        package="",
-        members=(_member("gremlinpython", risk_tier="at-risk"), _member("tree-sitter")),
-    )
-    assert dt.rule_grouped(pr).code == dt.CODE_PINNED_BY_POLICY
-
-
-def test_a_group_with_no_held_members_passes_the_rule():
-    pr = _pr(
-        number=99, title=GROUP_TITLE, package="", members=(_member("six"), _member("x"))
-    )
-    assert dt.rule_grouped(pr) is None
-
-
-def test_an_unparsed_group_is_held_explicitly_not_left_to_the_cooldown():
-    """Falling through would report the wrong fact.
-
-    The cooldown's unknown-age branch says the release age could not be
-    resolved. For an unparsed group the real fact is that the per-package
-    holds were never evaluated at all, which is a different and more serious
-    thing for an operator to know."""
-    pr = _pr(number=99, title=GROUP_TITLE, package="", members=())
-    decision = dt.rule_grouped(pr)
-    assert decision.code == dt.CODE_GROUPED_UNPARSED
-    assert "could not be" in decision.reason
-    assert "cooldown" not in decision.reason
-
-
-def test_a_group_shorter_than_its_title_claims_is_held_as_unparsed():
-    """The title's count is the authority on completeness.
-
-    A body truncated past some members parses to a short list that looks
-    perfectly valid; without this check the missing members pass unexamined."""
-    pr = _pr(number=99, title=GROUP_TITLE, package="", members=(_member("six"),))
-    decision = dt.rule_grouped(pr)
-    assert decision.code == dt.CODE_GROUPED_UNPARSED
-    assert "2 member package(s) but only 1" in decision.reason
-
-
-def test_a_grouped_pr_never_takes_the_single_release_age_branch():
-    """A group has no single release age, so it must not claim one.
-
-    The old behaviour held every group with "release age unknown; cannot
-    confirm the cooldown elapsed" -- a true-sounding sentence about a quantity
-    that does not exist for a group."""
-    pr = _pr(
-        number=99,
-        title=GROUP_TITLE,
-        package="",
-        release_age_days=None,
-        members=(_member("six"), _member("x")),
-    )
-    assert dt.rule_cooldown(pr) is None
-
-
-def test_a_group_is_held_for_its_youngest_member_not_for_the_group():
-    pr = _pr(
-        number=99,
-        title=GROUP_TITLE,
-        ecosystem="npm",
-        package="",
-        release_age_days=None,
-        members=(_member("six"), _member("vite", release_age_days=1.0)),
-    )
-    decision = dt.rule_cooldown(pr)
-    assert decision.code == dt.CODE_COOLDOWN
-    assert "vite" in decision.reason
-    assert "six" not in decision.reason
-
-
-def test_a_group_member_with_no_resolvable_age_holds_the_group():
-    """The cooldown is not skipped for groups; it is evaluated per member.
-
-    Skipping it would let the commonest PR shape in the repo bypass the
-    control that exists for freshly published, possibly compromised
-    releases."""
-    pr = _pr(
-        number=99,
-        title=GROUP_TITLE,
-        package="",
-        release_age_days=None,
-        members=(_member("six"), _member("mystery", release_age_days=None)),
-    )
-    decision = dt.rule_cooldown(pr)
-    assert decision.code == dt.CODE_NO_RELEASE_METADATA
-    assert "mystery" in decision.reason
-
-
-def test_the_captured_group_pr_is_classified_as_a_group():
-    """#460 is real grouped output, not a synthetic body.
-
-    It used to land in held:cooldown reasoned "release age unknown", which is
-    both the wrong code and the wrong fact."""
-    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
-    pr = prs[460]
-    assert dt.group_name(pr.title) is not None
-    assert len(pr.members) == dt.group_update_count(pr.title)
-    assert dt.rule_grouped(pr) is None
-    assert dt.rule_cooldown(pr) is None
-    by_number = {d.number: d for d in dt.classify(list(prs.values()))}
-    assert by_number[460].code == dt.CODE_CANDIDATE
-
-
-def test_group_members_default_to_empty_for_older_snapshots(tmp_path):
-    """A snapshot written before the field existed must still load."""
-    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    for item in payload["pull_requests"]:
-        item.pop("members", None)
-    path = tmp_path / "legacy.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    assert all(p.members == () for p in dt.load_snapshot(path))
-
-
-def test_unresolvable_release_age_is_held_under_its_own_code():
-    """ "Too new" and "I could not look" are different facts.
-
-    Both hold, but only one is transient. Reporting an abstention as a
-    cooldown taught the operator to read the tool's most common output as a
-    glitch that would clear itself."""
-    d = dt.rule_cooldown(_pr(release_age_days=None))
-    assert d is not None
-    assert d.code == dt.CODE_NO_RELEASE_METADATA
-    assert "could not be evaluated" in d.reason
-    fresh = dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=0.5))
-    assert fresh.code == dt.CODE_COOLDOWN
-    assert "under the 3d cooldown" in fresh.reason
-    # The held reason states what happens next (another scheduled run), not
-    # a day count the weekly schedule cannot actually deliver -- a package
-    # held at 0.5d old and one held at 2.9d old are both cleared by the same
-    # next run, not by waiting out the difference between their ages.
-    assert "re-evaluated on the next scheduled triage run" in fresh.reason
-
-
-def test_grouped_cooldown_reason_defers_to_the_next_scheduled_run_too():
-    """The group path's held reason gets the same "next scheduled run"
-    framing as the single-package path, not a bare day count."""
-    pr = _pr(
-        title="chore(deps): bump the minor-and-patch group with 1 update",
-        members=(
-            dt.GroupMember(
-                package="vite",
-                from_version="1.0.0",
-                to_version="1.0.1",
-                risk_tier="healthy",
-                release_age_days=0.5,
-            ),
-        ),
-    )
-    d = dt.rule_cooldown(pr)
-    assert d is not None
-    assert d.code == dt.CODE_COOLDOWN
-    assert "re-evaluated on the next scheduled triage run" in d.reason
-
-
-def test_no_rule_can_bypass_the_cooldown_or_suppress_the_major_note():
-    """The removed security fast path stripped both guards on body text alone.
-
-    `release_age_days` is None for docker and unknown ecosystems always, and
-    for pip, npm and github-actions on any lookup failure -- and that is only
-    safe because rule_cooldown holds on unknown. A bypass evaluated before
-    that check turned a permanent hold into a candidate, which is the one
-    outcome the design forbids.
-
-    The major check is an annotation now rather than a hold, but nothing
-    suppresses it either: the demotion changed what the observation costs, not
-    whether it is made."""
-    assert not hasattr(dt.PRSnapshot, "security_advisory")
-    assert dt.rule_cooldown(_pr(release_age_days=None)) is not None
-    assert dt.rule_cooldown(_pr(ecosystem="pip", release_age_days=0.5)) is not None
-    assert dt.note_major(_pr(from_version="4.1.11", to_version="5.0.0")) is not None
-
-
-def test_author_is_bot_defaults_to_false_for_older_snapshots(tmp_path):
-    """A snapshot written before the field existed must still load."""
-    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    for item in payload["pull_requests"]:
-        item.pop("author_is_bot", None)
-    path = tmp_path / "legacy.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    assert all(p.author_is_bot is False for p in dt.load_snapshot(path))
-
-
-def test_classify_covers_every_pr_exactly_once():
-    prs = dt.load_snapshot(FIXTURE)
-    decisions = dt.classify(prs)
-    assert len(decisions) == len(prs)
-    assert {d.number for d in decisions} == {p.number for p in prs}
-
-
-def test_classify_assigns_expected_codes_for_the_captured_batch():
-    """Regression lock on the captured batch.
-
-    Before the author fix every one of these was excluded:non-dependabot on the
-    first rule, so no other rule ever ran and the queue reported empty."""
-    by_number = {d.number: d for d in dt.classify(dt.load_snapshot(FIXTURE))}
-    assert by_number[386].code == dt.CODE_NON_DEPENDABOT  # release PR, no checks
-    assert by_number[455].code == dt.CODE_NON_DEPENDABOT  # human
-    assert by_number[456].code == dt.CODE_NON_DEPENDABOT  # human
-    assert by_number[474].code == dt.CODE_COUPLED  # green but coupled
-    assert by_number[465].code == dt.CODE_COUPLED  # coupling precedes failure
-    assert by_number[457].code == dt.CODE_COUPLED
-    assert by_number[459].code == dt.CODE_COUPLED
-    assert by_number[464].code == dt.CODE_COUPLED  # peer-coupled
-    assert by_number[463].code == dt.CODE_COUPLED  # peer-coupled
-    assert by_number[468].code == dt.CODE_RISK_TIER  # gremlinpython is At-Risk
-    assert by_number[460].code == dt.CODE_CANDIDATE  # group, every member clear
-    assert by_number[466].code == dt.CODE_CANDIDATE
-    assert by_number[467].code == dt.CODE_CANDIDATE
-    # The three PRs the demotion moved. Each is a candidate now and carries the
-    # observation its hold used to make; asserting the note alongside the code
-    # is what stops a future edit from dropping the annotation and leaving the
-    # promotion behind.
-    assert by_number[461].code == dt.CODE_CANDIDATE  # mermaid 11 -> 12
-    assert "major bump" in by_number[461].notes[0]
-    assert by_number[472].code == dt.CODE_CANDIDATE  # openai 2 -> 3
-    assert "major bump" in by_number[472].notes[0]
-    assert by_number[462].code == dt.CODE_CANDIDATE  # touches pyproject.toml
-    assert "pyproject.toml" in by_number[462].notes[0]
-    # The one that did not move: a SHA diff does not reveal what the SHA points
-    # at, so this stays a hold and states its own rationale.
-    assert by_number[458].code == dt.CODE_POLICY_REVIEW  # workflow `uses:` pin
-    assert "credentials" in by_number[458].reason
-    assert by_number[458].notes == ()
-
-
-def test_the_held_pile_is_exactly_two_of_the_captured_batch():
-    """The point of the whole exercise, locked against regrowth.
-
-    Two is deliberate, not incidental. A hold earns its cost only when it says
-    something the operator could not see for themselves on the PR, and in this
-    batch exactly two qualify: #458's workflow `uses:` pin, where the diff shows
-    one opaque SHA replacing another, and #468's At-Risk register entry, which
-    lives in a document rather than the PR. The coupled set is held too but has
-    its own section. A third entry appearing here means a rule started holding
-    on a fact the PR already shows -- which is the state this change existed to
-    get out of -- and the pile goes back to being skimmed.
-    """
-    held_codes = dict(dt._SECTIONS)["Held"]
-    for code in (
-        dt.CODE_POLICY_REVIEW,
-        dt.CODE_RISK_TIER,
-        dt.CODE_COOLDOWN,
-        dt.CODE_NO_RELEASE_METADATA,
-    ):
-        assert code in held_codes
-    held = [d for d in dt.classify(dt.load_snapshot(FIXTURE)) if d.code in held_codes]
-    assert sorted(d.number for d in held) == [458, 468]
-
-
-def test_no_section_names_a_code_no_rule_can_emit():
-    """A demoted code left in the section map is a section that can only ever
-    render "(none)", which reads as "nothing tripped this" rather than "this
-    no longer exists"."""
-    named = {code for _, codes in dt._SECTIONS for code in codes}
-    defined = {
-        value
-        for name, value in vars(dt).items()
-        if name.startswith("CODE_") and isinstance(value, str)
+    assert dt.detect_families(prs) == {
+        1: "npm:/frontend:vitest",
+        2: "npm:/frontend:vitest",
     }
-    assert named == defined
+
+
+def test_all_four_codeql_refs_form_one_family_in_the_capture():
+    """PR #450's near-miss: four green refs, none individually mergeable."""
+    families = dt.detect_families(dt.load_snapshot(FIXTURE))
+    assert {n: families.get(n) for n in CODEQL_FAMILY} == {
+        n: "github/codeql-action" for n in CODEQL_FAMILY
+    }
+
+
+def test_vitest_pair_is_a_peer_family_in_the_capture():
+    """PR #443's near-miss: @vitest/coverage-v8 at 5.x, vitest at 4.x."""
+    families = dt.detect_families(dt.load_snapshot(FIXTURE))
+    assert {n: families.get(n) for n in VITEST_FAMILY} == {
+        n: "npm:/frontend:vitest" for n in VITEST_FAMILY
+    }
+
+
+def test_coupling_carries_the_family_key_and_ignores_everything_else():
+    """The dangerous case is a green sibling, so no other signal can clear it."""
+    decision = dt.rule_coupled(_pr(number=7), {7: "github/codeql-action"})
+    assert decision.code == dt.CODE_COUPLED
+    assert decision.family == "github/codeql-action"
+    assert dt.rule_coupled(_pr(number=7), {}) is None
+
+
+# --------------------------------------------------------------------------
+# classify
+# --------------------------------------------------------------------------
+
+
+def test_classify_emits_exactly_the_captured_codes():
+    decisions = dt.classify(dt.load_snapshot(FIXTURE))
+    by_number = {d.number: d for d in decisions}
+    assert len(decisions) == len(CAPTURED_NUMBERS)
+    assert set(by_number) == CAPTURED_NUMBERS
+    # Three codes only. A fourth appearing here means a control crept back in.
+    assert {d.code for d in decisions} == {
+        dt.CODE_CANDIDATE,
+        dt.CODE_COUPLED,
+        dt.CODE_NON_DEPENDABOT,
+    }
+    for number in CODEQL_FAMILY:
+        assert by_number[number].code == dt.CODE_COUPLED
+        assert by_number[number].family == "github/codeql-action"
+    for number in VITEST_FAMILY:
+        assert by_number[number].code == dt.CODE_COUPLED
+        assert by_number[number].family == "npm:/frontend:vitest"
+    # 386 is Release Please; 455 and 456 are a human's PRs.
+    assert {n for n, d in by_number.items() if d.code == dt.CODE_NON_DEPENDABOT} == {
+        386,
+        455,
+        456,
+    }
 
 
 def test_no_dependabot_pr_is_excluded_as_non_dependabot():
-    """The defect in one assertion: the queue classified as empty.
-
-    Every `app/dependabot` PR must reach a rule that actually examines it."""
+    """The no-op regression, asserted against the capture rather than a mock."""
     prs = dt.load_snapshot(FIXTURE)
+    excluded = {d.number for d in dt.classify(prs) if d.code == dt.CODE_NON_DEPENDABOT}
     dependabot = {p.number for p in prs if p.author in dt.DEPENDABOT_AUTHORS}
-    assert dependabot, "the capture holds no Dependabot PRs to prove anything with"
-    excluded = {
-        d.number
-        for d in dt.classify(prs)
-        if d.code == dt.CODE_NON_DEPENDABOT and d.number in dependabot
-    }
-    assert excluded == set()
+    assert dependabot
+    assert not (dependabot & excluded)
 
 
-def test_coupling_is_evaluated_before_check_results():
-    """#465's required checks fail and it is still reported as coupled.
-
-    The order is load-bearing in the other direction too: a *green* sibling is
-    the dangerous case, because it looks individually mergeable."""
-    prs = {p.number: p for p in dt.load_snapshot(FIXTURE)}
-    assert dt.rule_failing(prs[465]) is not None
-    by_number = {d.number: d for d in dt.classify(list(prs.values()))}
-    assert by_number[465].code == dt.CODE_COUPLED
-
-
-def test_release_pr_with_zero_checks_is_excluded_on_both_counts():
-    """#386 is a release PR gh reports no checks for at all.
-
-    The author rule wins in classify(), but the check-presence rule must also
-    fire on its own -- that path only became reachable once the collector
-    stopped aborting on the non-zero exit gh returns for a PR with no checks."""
-    pr386 = next(p for p in dt.load_snapshot(FIXTURE) if p.number == 386)
-    assert pr386.checks == ()
-    assert dt.rule_non_dependabot(pr386) is not None
-    no_checks = dt.rule_no_checks(pr386)
-    assert no_checks is not None
-    assert no_checks.code == dt.CODE_NO_CHECKS
-
-
-def test_author_exclusion_precedes_all_other_rules():
-    pr = _pr(
-        number=386, author="app/github-actions", checks=(), files=("pyproject.toml",)
-    )
-    assert dt.classify([pr])[0].code == dt.CODE_NON_DEPENDABOT
+def test_author_exclusion_precedes_coupling():
+    """A non-Dependabot PR must never reach family logic."""
+    prs = [
+        _pr(
+            number=1,
+            author="attacker",
+            ecosystem="github-actions",
+            package="github/codeql-action/init",
+        ),
+        _pr(
+            number=2,
+            ecosystem="github-actions",
+            package="github/codeql-action/analyze",
+        ),
+    ]
+    by_number = {d.number: d for d in dt.classify(prs)}
+    assert by_number[1].code == dt.CODE_NON_DEPENDABOT
+    assert by_number[1].family is None
 
 
 def test_every_decision_carries_a_nonempty_reason():
-    for d in dt.classify(dt.load_snapshot(FIXTURE)):
-        assert d.reason.strip(), f"PR #{d.number} has no reason"
+    for decision in dt.classify(dt.load_snapshot(FIXTURE)):
+        assert decision.reason.strip()
 
 
-def test_promote_marks_proved_candidates_merge_safe():
+def test_no_section_names_a_code_no_rule_can_emit():
+    rendered = {code for _, codes in dt._SECTIONS for code in codes}
+    assert rendered == {dt.CODE_CANDIDATE, dt.CODE_COUPLED, dt.CODE_NON_DEPENDABOT}
+
+
+def test_nothing_in_the_pipeline_merges_approves_or_marks_ready():
+    """The single property the whole reduction is meant to guarantee."""
+    workflow = Path(".github/workflows/dependabot-triage.yml")
+    targets = [
+        Path("scripts/security/dep_triage.py"),
+        Path("scripts/security/dep_triage_collect.py"),
+        workflow,
+    ]
+    for path in targets:
+        # Comments are stripped so a line explaining why something is *not*
+        # done cannot fail the scan. A `gh pr merge` hidden in a comment is
+        # still not a call, and the trigger check below reads parsed YAML.
+        text = "\n".join(
+            line.split("#", 1)[0]
+            for line in path.read_text(encoding="utf-8").split("\n")
+        )
+        for needle in ("gh pr merge", "gh pr review", "gh pr ready", "--admin"):
+            assert needle not in text, f"{path} contains {needle!r}"
+
+    # YAML 1.1 resolves a bare `on:` key to the boolean True, so read both.
+    parsed = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    triggers = parsed.get("on", parsed.get(True))
+    assert set(triggers) == {"schedule", "workflow_dispatch"}
+    assert set(parsed["jobs"]) == {"triage"}
+
+
+# --------------------------------------------------------------------------
+# Report rendering
+# --------------------------------------------------------------------------
+
+
+def test_render_report_groups_families_and_sections():
     prs = dt.load_snapshot(FIXTURE)
-    decisions = dt.classify(prs)
-    promoted = {d.number: d for d in dt.promote(decisions, proved=[466, 467])}
-    assert promoted[466].code == dt.CODE_MERGE_SAFE
-    assert promoted[467].code == dt.CODE_MERGE_SAFE
-    assert "batch proof" in promoted[466].reason.lower()
-
-
-def test_promote_marks_conflicted_candidates_attention():
-    decisions = dt.classify(dt.load_snapshot(FIXTURE))
-    promoted = {
-        d.number: d for d in dt.promote(decisions, proved=[467], conflicted=[466])
-    }
-    assert promoted[466].code == dt.CODE_CONFLICT
-    assert promoted[467].code == dt.CODE_MERGE_SAFE
-
-
-def test_promote_never_upgrades_a_non_candidate():
-    """A coupled or excluded PR must not become merge-safe by promotion."""
-    decisions = dt.classify(dt.load_snapshot(FIXTURE))
-    promoted = {d.number: d for d in dt.promote(decisions, proved=[386, 474, 468])}
-    assert promoted[386].code == dt.CODE_NON_DEPENDABOT
-    assert promoted[474].code == dt.CODE_COUPLED
-    assert promoted[468].code == dt.CODE_RISK_TIER
-
-
-def test_promote_leaves_unproved_candidates_as_candidates():
-    decisions = dt.classify(dt.load_snapshot(FIXTURE))
-    promoted = {d.number: d for d in dt.promote(decisions, proved=[])}
-    assert promoted[466].code == dt.CODE_CANDIDATE
-
-
-def test_conflict_wins_when_a_pr_is_both_proved_and_conflicted():
-    """The worst possible wrong answer is reporting a conflict as merge-safe."""
-    decisions = dt.classify(dt.load_snapshot(FIXTURE))
-    promoted = {
-        d.number: d for d in dt.promote(decisions, proved=[466], conflicted=[466])
-    }
-    assert promoted[466].code == dt.CODE_CONFLICT
-
-
-def test_promote_does_not_mutate_its_input():
-    decisions = dt.classify(dt.load_snapshot(FIXTURE))
-    before = [(d.number, d.code) for d in decisions]
-    dt.promote(decisions, proved=[466, 467], conflicted=[])
-    after = [(d.number, d.code) for d in decisions]
-    assert before == after
-
-
-def test_a_decision_carries_no_notes_unless_something_observed_one():
-    """`notes` is advisory and optional; the default must be the empty tuple.
-
-    A mutable default here would let one decision's notes leak into the next,
-    which for an advisory field is worse than useless: it would attribute an
-    observation to a PR it was never made about."""
-    d = dt.Decision(number=1, code=dt.CODE_CANDIDATE, reason="r")
-    assert d.notes == ()
-    assert [f.name for f in fields(dt.Decision)][-1] == "notes"
-
-
-def test_promote_carries_notes_onto_the_promoted_verdict():
-    """A promotion changes the verdict, never the observations.
-
-    Notes are the only record left of the two demoted holds. Dropping them on
-    the way to merge-safe -- the one verdict an operator acts on fastest --
-    would delete the annotation exactly where it matters most."""
-    annotated = dt.Decision(
-        number=99, code=dt.CODE_CANDIDATE, reason="r", notes=("an observation",)
-    )
-    (promoted,) = dt.promote([annotated], proved=[99], conflicted=[])
-    assert promoted.code == dt.CODE_MERGE_SAFE
-    assert promoted.notes == ("an observation",)
-    (conflicted,) = dt.promote([annotated], proved=[], conflicted=[99])
-    assert conflicted.code == dt.CODE_CONFLICT
-    assert conflicted.notes == ("an observation",)
-
-
-def test_render_report_shows_notes_inside_the_reason_cell():
-    """The note has to land in the cell the operator already reads.
-
-    Appended to the reason rather than given a sixth column, so the row stays
-    five columns wide and no horizontal scroll can hide the annotation."""
-    pr = _pr(number=99)
-    decision = dt.Decision(
-        number=99, code=dt.CODE_CANDIDATE, reason="no rule objected", notes=("a note",)
-    )
-    md = dt.render_report([decision], [pr])
-    row = next(line for line in md.splitlines() if line.startswith("| #99 "))
-    assert "no rule objected" in row
-    assert "a note" in row
-    assert row.count("|") - row.count("\\|") == 6
-
-
-def test_render_report_escapes_pipes_inside_a_note():
-    """A note naming a version range can contain a pipe just as a reason can."""
-    pr = _pr(number=99)
-    decision = dt.Decision(
-        number=99, code=dt.CODE_CANDIDATE, reason="r", notes=("major 1.0 | 2.0",)
-    )
-    md = dt.render_report([decision], [pr])
-    row = next(line for line in md.splitlines() if line.startswith("| #99 "))
-    assert "1.0 \\| 2.0" in row
-    assert row.count("|") - row.count("\\|") == 6
-
-
-def test_render_report_groups_by_classification():
-    prs = dt.load_snapshot(FIXTURE)
-    md = dt.render_report(dt.classify(prs), prs)
-    assert md.startswith("# Dependabot Triage --")
-    for heading in (
-        "## Merge-safe",
-        "## Coupled sets",
-        "## Held",
-        "## Needs attention",
-        "## Excluded",
-    ):
-        assert heading in md
-
-
-def test_every_verdict_is_rendered_beside_the_commit_it_was_computed_against():
-    """A verdict with no head SHA cannot be checked against what gets merged.
-
-    Dependabot force-pushes its branches on rebase, so the batch proof can
-    prove commit X, the report can say merge-safe, and the operator can merge
-    commit Y. Naming the head in the report is what closes that window on the
-    human side; the workflow's SHA re-check closes it on the machine side."""
-    prs = dt.load_snapshot(FIXTURE)
-    md = dt.render_report(dt.classify(prs), prs)
-    assert "| PR | Head | Code | Title | Reason |" in md
-    for pr in prs:
-        assert pr.head_sha, f"#{pr.number} carries no head SHA"
-        assert f"`{pr.head_sha[:10]}`" in md
-
-
-def test_a_snapshot_without_head_shas_renders_unknown_rather_than_blank():
-    """An older snapshot must read as unverifiable, not as verified."""
-    pr = _pr(number=99, head_sha="")
-    md = dt.render_report(dt.classify([pr]), [pr])
-    assert "(unknown)" in md
-
-
-def test_report_header_echoes_the_control_inputs_it_classified_against():
-    """A wrong control input otherwise produces a confident, wrong report.
-
-    Both inputs fail quietly: a moved register parses to no tiers and a
-    changed title format parses to no package, and in either case no hold
-    fires and every verdict still reads as authoritative."""
-    prs = dt.load_snapshot(FIXTURE)
-    controls = dt.load_controls(FIXTURE)
-    md = dt.render_report(dt.classify(prs), prs, controls=controls)
-    header = md.split("## Control inputs", 1)[1].split("## ", 1)[0]
-    assert "DEPENDENCY_RISK_REGISTER.md" in header
-    assert f"{len(controls['risk_register_tiers'])} package tier(s) parsed" in header
-    # The held tiers are named, not just counted: a count cannot tell an
-    # operator whether the package they care about is among them.
-    assert "`gremlinpython` (at-risk)" in header
-    attempted = sum(1 for p in prs if p.author in dt.DEPENDABOT_AUTHORS)
-    assert f"of {attempted} Dependabot title(s) parsed" in header
-
-
-def test_report_header_says_so_when_no_register_tiers_were_recorded():
-    """A snapshot with no controls block must not read as a clean register."""
-    pr = _pr(number=99)
-    md = dt.render_report(dt.classify([pr]), [pr], controls=None)
-    header = md.split("## Control inputs", 1)[1].split("## ", 1)[0]
-    assert "no tiers recorded" in header
-    assert "unverified against the register" in header
-
-
-def test_report_header_names_every_unparsed_dependabot_title():
-    """An unparsed title carries no package, so its holds cannot fire.
-
-    Counting them is not enough -- the operator needs the PR numbers to judge
-    whether the tool has stopped understanding a whole title shape."""
-    parsed = _pr(number=1, package="six")
-    unparsed = _pr(number=2, package="", title="chore(deps): bump something odd")
-    prs = [parsed, unparsed]
-    md = dt.render_report(dt.classify(prs), prs)
-    header = md.split("## Control inputs", 1)[1].split("## ", 1)[0]
-    assert "1 of 2 Dependabot title(s) parsed" in header
-    assert "#2" in header
-    assert "#1" not in header
-
-
-def test_load_controls_of_a_snapshot_without_the_block_is_empty(tmp_path):
-    """A snapshot predating the controls block must still load, as {}.
-
-    Returning {} routes to the "no tiers recorded" warning above rather than
-    raising, so an old artifact can still be re-reported."""
-    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    raw.pop("controls")
-    path = tmp_path / "old.json"
-    path.write_text(json.dumps(raw), encoding="utf-8")
-    assert dt.load_controls(path) == {}
-    assert dt.load_controls(FIXTURE)["risk_register_tiers"]
-
-
-def test_render_report_lists_family_members_together():
-    prs = dt.load_snapshot(FIXTURE)
-    md = dt.render_report(dt.classify(prs), prs)
-    assert "github/codeql-action" in md
+    report = dt.render_report(dt.classify(prs), prs)
+    assert "## Candidates" in report
+    assert "### `github/codeql-action`" in report
+    assert "### `npm:/frontend:vitest`" in report
+    assert "## Excluded" in report
     for number in CODEQL_FAMILY:
-        assert f"#{number}" in md
+        assert f"#{number}" in report
+    # Every row names the head commit it was computed against.
+    assert f"`{prs[0].head_sha[:10]}`" in report
 
 
-def test_render_report_prints_notes_under_a_coupled_family():
-    """The coupled section is prose, so the note needs its own line there.
-
-    #463/#464 are a coupled vitest pair that is also a major bump. Both facts
-    matter to the operator, and the coupled section renders no reason cell for
-    the note to ride in.
-
-    The codeql family carries no note by contrast: rule_coupled precedes
-    rule_workflow_path, so its members are coupled and the workflow rationale is
-    not restated per member. That is the accepted cost of keeping the family key
-    -- a coupled PR is not individually mergeable at all, which is the stronger
-    thing to tell the operator."""
-    prs = dt.load_snapshot(FIXTURE)
-    md = dt.render_report(dt.classify(prs), prs)
-    coupled = md.split("## Coupled sets", 1)[1].split("\n## ", 1)[0]
-    assert "major bump 4.1.11 -> 5.0.1" in coupled
-    assert "- #463 --" in coupled
-    assert "- #457 --" not in coupled
-
-
-def test_render_report_lists_required_not_passing_under_needs_attention():
-    """A new code that no section names would vanish from the report entirely."""
-    required = "Python Quality & Tests"
-    pr = _pr(
-        number=99,
-        checks=(dt.CheckRun(required, "in_progress", None),),
-        required_checks=(required,),
-    )
-    md = dt.render_report(dt.classify([pr]), [pr])
-    attention = md.split("## Needs attention", 1)[1].split("## ", 1)[0]
-    assert dt.CODE_REQUIRED_NOT_PASSING in attention
-    assert "#99" in attention
-
-
-def test_render_report_states_a_reason_for_every_pr():
-    prs = dt.load_snapshot(FIXTURE)
-    md = dt.render_report(dt.classify(prs), prs)
-    for pr in prs:
-        assert f"#{pr.number}" in md
-
-
-def test_main_writes_report_and_returns_zero(tmp_path):
-    out = tmp_path / "report.md"
-    rc = dt.main(["--snapshot", str(FIXTURE), "--output", str(out)])
-    assert rc == 0
-    assert out.read_text(encoding="utf-8").startswith("# Dependabot Triage --")
-
-
-def test_main_writes_decisions_json_when_requested(tmp_path):
-    out = tmp_path / "report.md"
-    dec = tmp_path / "decisions.json"
-    rc = dt.main(
-        ["--snapshot", str(FIXTURE), "--output", str(out), "--decisions", str(dec)]
-    )
-    assert rc == 0
-    payload = json.loads(dec.read_text(encoding="utf-8"))
-    assert {d["number"] for d in payload["decisions"]} >= {386, 466, 474}
-    # families_from_decisions (dep_triage_consolidate.py) depends on the
-    # "family" key surviving serialisation here -- a field rename on either
-    # side would silently kill consolidation with no test catching it.
-    coupled = next(d for d in payload["decisions"] if d["number"] == 474)
-    assert coupled["code"] == "coupled"
-    assert coupled["family"] == "github/codeql-action"
-
-
-def test_main_returns_nonzero_on_malformed_proved_json(tmp_path, capsys):
-    out = tmp_path / "report.md"
-    rc = dt.main(
-        ["--snapshot", str(FIXTURE), "--output", str(out), "--proved", "{not json"]
-    )
-    assert rc != 0
-    assert "--proved" in capsys.readouterr().err
-
-
-def test_main_returns_nonzero_on_malformed_conflicted_json(tmp_path, capsys):
-    out = tmp_path / "report.md"
-    rc = dt.main(
-        [
-            "--snapshot",
-            str(FIXTURE),
-            "--output",
-            str(out),
-            "--conflicted",
-            "{not json",
-        ]
-    )
-    assert rc != 0
-    assert "--conflicted" in capsys.readouterr().err
-
-
-def test_render_report_escapes_pipes_in_titles_and_reasons():
-    """An unescaped pipe would break the Markdown table row it sits in."""
-    pr = _pr(number=99, title="bump foo from 1.0 | 2.0 to 3.0")
-    decision = dt.Decision(
-        number=99,
-        code=dt.CODE_CANDIDATE,
-        reason="held because a | appeared in the reason",
-    )
-    md = dt.render_report([decision], [pr])
-    row = next(line for line in md.splitlines() if line.startswith("| #99 "))
-    assert "1.0 \\| 2.0" in row
-    assert "a \\| appeared" in row
-    # The row must have exactly the 5 declared columns plus the leading and
-    # trailing delimiters; an unescaped pipe would add cells.
-    assert row.count("|") - row.count("\\|") == 6
-
-
-def test_inert_span_uses_a_fence_longer_than_the_longest_backtick_run():
-    """CommonMark's own rule: the fence must be one backtick longer than
-    the longest run already inside the content, or that run could close
-    the span early."""
-    assert dt._inert_span("plain") == "`plain`"
-    assert dt._inert_span("has `one` backtick run") == "``has `one` backtick run``"
-    assert dt._inert_span("has ``two`` in a row") == "```has ``two`` in a row```"
-
-
-def test_inert_span_pads_when_content_starts_or_ends_with_a_backtick():
-    """Without the pad, a leading/trailing backtick in the content would
-    visually -- and in some renderers, structurally -- fuse with the fence."""
-    assert dt._inert_span("`leading") == "`` `leading ``"
-    assert dt._inert_span("trailing`") == "`` trailing` ``"
+def test_render_report_names_every_dependabot_title_without_a_package():
+    """A whole batch here means the title format moved and coupling is inert."""
+    prs = [_pr(number=9, package="", title="chore(deps): bump the npm group")]
+    assert "#9" in dt.title_parse_line(prs)
+    assert "0 of 1" in dt.title_parse_line(prs)
 
 
 def test_render_report_neutralizes_a_hostile_non_dependabot_title():
-    """Non-Dependabot PR titles are attacker-controlled -- this repository is
-    public, and any PR's title lands in the Excluded section verbatim.
-    Backticks, a Markdown link, a raw HTML tag, and a pipe together must not
-    let the title escape its table cell or inject live Markdown into a
-    report an operator reads and acts on."""
-    hostile = (
-        "See `rm -rf` [click me](http://evil.example/x) "
-        "<img src=x onerror=alert(1)> | boom"
+    """A public repo means any stranger chooses an Excluded row's title."""
+    hostile = "<img src=x onerror=alert(1)> [click](http://evil) `x` | injected"
+    prs = [_pr(number=99, author="attacker", title=hostile)]
+    report = dt.render_report(dt.classify(prs), prs)
+    row = next(line for line in report.splitlines() if line.startswith("| #99"))
+    # The whole title is inside a code span, and its pipe cannot break the cell.
+    assert (
+        "``<img src=x onerror=alert(1)> [click](http://evil) `x` \\| injected``" in row
     )
-    pr = _pr(number=666, author="not-dependabot", title=hostile)
-    md = dt.render_report(dt.classify([pr]), [pr])
-    row = next(line for line in md.splitlines() if line.startswith("| #666 "))
+    # Five cells, so six column delimiters. The title's own pipe is escaped and
+    # therefore not one of them.
+    assert row.replace("\\|", "").count("|") == 6
 
-    # The whole hostile title, pipe-escaped, is wrapped in one opaque code
-    # span whose fence is longer than any backtick run inside it -- the
-    # title's own single backticks cannot close the span early and let the
-    # link or HTML that follows become live Markdown.
-    expected_title_cell = dt._inert_span(hostile.replace("|", "\\|"))
-    assert expected_title_cell in row
 
-    # The escaped pipe still protects the table row's own column boundary --
-    # a code span does not do that job -- so the row keeps exactly its 5
-    # declared columns.
-    assert row.count("|") - row.count("\\|") == 6
+def test_inert_span_fences_longer_than_the_longest_backtick_run():
+    assert dt._inert_span("a``b") == "```a``b```"
+    assert dt._inert_span("`x`") == "`` `x` ``"
+
+
+def test_main_writes_the_report_and_the_decisions(tmp_path):
+    report = tmp_path / "out" / "triage.md"
+    decisions = tmp_path / "out" / "decisions.json"
+    assert (
+        dt.main(
+            [
+                "--snapshot",
+                str(FIXTURE),
+                "--output",
+                str(report),
+                "--decisions",
+                str(decisions),
+            ]
+        )
+        == 0
+    )
+    assert report.read_text(encoding="utf-8").startswith("# Dependabot Triage")
+    payload = json.loads(decisions.read_text(encoding="utf-8"))
+    assert len(payload["decisions"]) == len(CAPTURED_NUMBERS)
+    assert {d["code"] for d in payload["decisions"]} == {
+        dt.CODE_CANDIDATE,
+        dt.CODE_COUPLED,
+        dt.CODE_NON_DEPENDABOT,
+    }

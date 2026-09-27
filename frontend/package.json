@@ -20,7 +20,7 @@
     "amazon-cognito-identity-js": "^6.3.20",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
-    "lucide-react": "^1.47.0",
+    "lucide-react": "^1.48.0",
     "mermaid": "^12.0.0",
     "pptxgenjs": "^4.0.1",
     "react": "^19.3.0",
@@ -46,7 +46,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-unused-imports": "^4.4.1",
     "globals": "^17.12.0",
-    "jsdom": "^30.1.0",
+    "jsdom": "^30.1.1",
     "tailwindcss": "^4.1.0",
     "vite": "^8.3.0",
     "vitest": "^5.0.1"

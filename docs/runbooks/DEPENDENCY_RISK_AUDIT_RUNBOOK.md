@@ -1,6 +1,6 @@
 # Dependency Risk Audit Runbook
 
-**Last Updated:** 2026-05-13
+**Last Updated:** 2026-09-22
 **Workflow:** `.github/workflows/dependency-risk-audit.yml`
 **Script:** `scripts/security/dep_risk_audit.py`
 **Register:** `docs/security/DEPENDENCY_RISK_REGISTER.md`
@@ -20,6 +20,8 @@ The dependency risk audit runs every Monday at 14:00 UTC and produces a markdown
 The report is committed to `docs/security/audits/YYYY-WNN.md` via a weekly PR titled `audit(deps): weekly report YYYY-WNN`. The PR is auto-labelled `audit-green` (both tools clean) or `audit-findings` (high-severity issues present). Operator merges; no bot auto-merge. The report is also retained as a workflow artifact for 90 days for runtime access.
 
 The audit migrated from "post as a comment on tracking issue #138" to "commit as a file via PR" on 2026-05-13 -- see `docs/security/audits/README.md` for the rationale.
+
+**Companion job, different cadence.** [`DEPENDABOT_TRIAGE_RUNBOOK.md`](DEPENDABOT_TRIAGE_RUNBOOK.md) reports which open Dependabot PRs belong to a coupled update family and so cannot be merged individually. It runs **monthly** (16:00 UTC on the 1st); this audit is **weekly**, so the two coincide only when the 1st is a Monday. This audit tells you what is unsafe; the triage tells you which PRs cannot be merged alone. The triage is read-only -- it merges nothing, approves nothing, and delays nothing, so it is not a source of remediation latency and this audit is not compensating for it. If a finding here is urgent, act on it directly; you can re-dispatch triage (`gh workflow run "Dependabot Triage"`) rather than waiting for the 1st, but nothing here is gated on it.
 
 ## Triage Decision Tree
 
@@ -200,6 +202,7 @@ The lesson: drafts are cheap to start, expensive to fully unwind. Use the markdo
 
 - Register: `docs/security/DEPENDENCY_RISK_REGISTER.md`
 - Script: `scripts/security/dep_risk_audit.py`
+- Companion job, monthly (16:00 UTC on the 1st): [`DEPENDABOT_TRIAGE_RUNBOOK.md`](DEPENDABOT_TRIAGE_RUNBOOK.md)
 - Workflow: `.github/workflows/dependency-risk-audit.yml`
 - Disclosure policy (inbound + advisory consumer guidance): [`SECURITY.md`](../../SECURITY.md)
 - Worked-example advisory (dry-run for `tj-actions/changed-files`): [`docs/security/SAMPLE_ADVISORY_TJ_ACTIONS.md`](../security/SAMPLE_ADVISORY_TJ_ACTIONS.md)

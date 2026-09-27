@@ -1,6 +1,6 @@
 # Project Aura - Documentation Index
 
-**Last Updated:** May 12, 2026
+**Last Updated:** Sep 22, 2026
 **Purpose:** Master index for all project documentation with clear organization
 
 ---
@@ -360,6 +360,7 @@ Additive to the root `CLAUDE.md`; loaded automatically when working in the direc
 |------|---------|--------------|
 | [security/SECURITY_FIXES_QUICK_REFERENCE.md](security/SECURITY_FIXES_QUICK_REFERENCE.md) | Quick reference for security fixes (current) | Nov 22, 2025 |
 | [security/CONTROL_REGISTRY.md](security/CONTROL_REGISTRY.md) | `AURA-CTL-###` internal security control registry and framework mappings | Aug 29, 2026 |
+| [security/DEPENDENCY_RISK_REGISTER.md](security/DEPENDENCY_RISK_REGISTER.md) | Tracked dependency tiers (Healthy / Watch / At-Risk / Replace-Now) with per-entry mitigations | May 9, 2026 |
 | [ERROR_HANDLING_AUDIT.md](reference/ERROR_HANDLING_AUDIT.md) | Memory services error handling audit and fixes | Dec 6, 2025 |
 
 ---
@@ -415,6 +416,8 @@ Additive to the root `CLAUDE.md`; loaded automatically when working in the direc
 | [runbooks/MULTI_REGION_DR_OPERATIONS.md](runbooks/MULTI_REGION_DR_OPERATIONS.md) | DR-7 (#150): End-to-end multi-region failover orchestration -- prerequisites, 4-phase failover sequence (initiate / data-plane / traffic / rollback), drill cadence; composes the Neptune / OpenSearch / Cognito per-service runbooks |
 | [runbooks/DR_COMPLIANCE_CONTROLS_GUIDE.md](runbooks/DR_COMPLIANCE_CONTROLS_GUIDE.md) | DR-8 (#151): NIST 800-53 compliance controls (Sally's seven) -- two-person approval, evidence packages, drill-cadence enforcement, Signer profile, session recording |
 | [runbooks/API_DEBUG_ERROR_RESPONSES.md](runbooks/API_DEBUG_ERROR_RESPONSES.md) | `AURA-CTL-003` (#421): why `DEBUG=true` produces no extra output outside dev/test, how to pull exception detail from the server log by `request_id`, and the three `ENVIRONMENT` resolutions on the startup path |
+| [runbooks/DEPENDENCY_RISK_AUDIT_RUNBOOK.md](runbooks/DEPENDENCY_RISK_AUDIT_RUNBOOK.md) | Weekly dependency risk audit (Mondays 14:00 UTC): pip-audit / npm-audit triage decision tree, register maintenance, GHSA publication playbook |
+| [runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md](runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md) | Monthly Dependabot triage (16:00 UTC on the 1st): the three classifications and what an operator does about each, manual consolidation of a coupled family, rolling-issue rules, kill switch. Read-only -- merges nothing, approves nothing, holds nothing |
 
 ### Operations (docs/operations/)
 | File | Purpose |

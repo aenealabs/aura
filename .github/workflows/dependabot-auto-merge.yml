@@ -1,0 +1,136 @@
+name: Dependabot Auto-Merge
+
+# Scoped, automatic approval + merge for routine Dependabot pull requests.
+# Per ADR-094, this replaces the "no bot self-approval, no auto-merge" posture
+# documented in dependabot-triage.yml and dependency-risk-audit.yml for the
+# single, narrow case this workflow gates on. Every other PR to `main`
+# (human-authored, or any Dependabot PR that fails one of the checks below)
+# still needs a human review under the `main-protection` ruleset exactly as
+# before -- this workflow does not touch that ruleset and cannot bypass it.
+# It only ever supplies the one approving review the ruleset already asks
+# for, and only when all of the following hold:
+#
+#   1. The PR author is `dependabot[bot]` (job `if`, checked again below).
+#   2. `dependabot/fetch-metadata` reports the update as semver-patch or
+#      semver-minor -- never major. Grouped updates are already
+#      minor/patch-only per .github/dependabot.yml's `minor-and-patch` group,
+#      but ungrouped single-dependency PRs can be any bump size, so this
+#      workflow re-checks rather than trusting the config alone.
+#   3. `scripts/security/dep_triage.py` -- the same classifier
+#      dependabot-triage.yml publishes for human review -- classifies this
+#      PR `candidate`, not `coupled`. A coupled-family member is never
+#      auto-merged, full stop; see docs/runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md.
+#
+# The four required status checks in `main-protection` (CodeQL x3 + Python
+# Quality & Tests) still have to pass on their own before GitHub's native
+# auto-merge actually lands the PR -- this workflow only submits the
+# approval and flips auto-merge on; it never merges directly and never
+# inspects or overrides check results itself.
+#
+# `pull_request_target` is used deliberately (needed for a write-scoped
+# token against a fork-authored... in this case bot-authored... PR) but,
+# per the same reasoning in dependabot-triage.yml, this workflow never
+# checks out the PR head and never installs or executes anything the PR
+# introduced. `actions/checkout` below takes its default ref, which for
+# `pull_request_target` is the base branch (`main`) -- it exists solely to
+# read this repo's own trusted copy of the triage scripts.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    name: Approve and enable auto-merge
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read        # checkout this repo's own scripts at main, nothing from the PR
+      pull-requests: write  # approve, comment, enable auto-merge
+    steps:
+      - name: Checkout repository (base ref -- never the PR head)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Classify via dep_triage
+        id: triage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          python -m scripts.security.dep_triage_collect \
+            --repo "${{ github.repository }}" \
+            --output snapshot.json
+          python -m scripts.security.dep_triage \
+            --snapshot snapshot.json \
+            --output triage-report.md \
+            --decisions decisions.json
+          code="$(PR_NUMBER="$PR_NUMBER" python3 -c "
+          import json, os
+          with open('decisions.json') as f:
+              data = json.load(f)
+          n = int(os.environ['PR_NUMBER'])
+          match = next((d for d in data['decisions'] if d['number'] == n), None)
+          print(match['code'] if match else 'not-found')
+          ")"
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          echo "Classified PR #${PR_NUMBER} as: ${code}"
+
+      - name: Decide eligibility
+        id: eligible
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          CODE: ${{ steps.triage.outputs.code }}
+        run: |
+          set -euo pipefail
+          ok="false"
+          reason=""
+          if [ "$CODE" != "candidate" ]; then
+            reason="dep_triage classified this PR '${CODE}', not 'candidate' -- see docs/runbooks/DEPENDABOT_TRIAGE_RUNBOOK.md"
+          elif [ "$UPDATE_TYPE" != "version-update:semver-patch" ] && [ "$UPDATE_TYPE" != "version-update:semver-minor" ]; then
+            reason="update type '${UPDATE_TYPE}' is not semver-patch or semver-minor"
+          else
+            ok="true"
+          fi
+          echo "ok=${ok}" >> "$GITHUB_OUTPUT"
+          echo "reason=${reason}" >> "$GITHUB_OUTPUT"
+
+      - name: Approve and enable auto-merge
+        if: steps.eligible.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        run: |
+          set -euo pipefail
+          gh pr review "$PR_URL" --approve \
+            -b "Auto-approved: dependabot-authored, ${UPDATE_TYPE}, dep_triage classified 'candidate' (not coupled). The four required status checks in main-protection still gate the actual merge. See ADR-094."
+          gh pr merge "$PR_URL" --squash --auto
+
+      - name: Comment when skipped
+        if: steps.eligible.outputs.ok != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          SKIP_REASON: ${{ steps.eligible.outputs.reason }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_URL" --body "Not auto-merged: ${SKIP_REASON}. Needs a human review per the main-protection ruleset."

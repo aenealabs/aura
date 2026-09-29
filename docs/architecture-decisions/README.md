@@ -126,6 +126,7 @@ Related documents, issues, or discussions.
 | [ADR-057](ADR-057-public-documentation-portal.md) | Public Documentation Portal | Deployed | 2026-01-08 |
 | [ADR-058](ADR-058-eks-multi-node-group-architecture.md) | EKS Multi-Node Group Architecture | Deployed | 2026-01-10 |
 | [ADR-059](ADR-059-aws-organization-account-restructure.md) | AWS Organization Account Restructure | Accepted | 2026-01-10 |
+| [ADR-094](ADR-094-scoped-dependabot-auto-merge.md) | Scoped Auto-Merge for Routine Dependabot Pull Requests | Accepted | 2026-09-28 |
 
 ### Reference Documents (Not ADRs)
 

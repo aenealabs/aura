@@ -11,9 +11,11 @@ name: Dependency Risk Audit
 #   docs/security/audits/YYYY-WNN.md and opens (or updates) a PR
 #   with that file. The PR is labelled `audit-green` when both
 #   pip-audit and npm audit (high+) return clean, or `audit-findings`
-#   otherwise. Operator review + merge is required; no bot self-
-#   approval, no auto-merge -- consistent with the main-protection
-#   PR-review enforcement.
+#   otherwise. This workflow never self-approves or auto-merges its own
+#   PR -- an audit report always needs a human look, findings or not.
+#   (Dependabot's own version-bump PRs are a separate, narrower case:
+#   see dependabot-auto-merge.yml and ADR-094 for where auto-merge was
+#   deliberately introduced instead.)
 #
 # * pull_request -- generates the report into the workflow summary
 #   only (no file commit). Lets reviewers see the audit impact of

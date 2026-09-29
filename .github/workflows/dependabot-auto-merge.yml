@@ -52,7 +52,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: read        # checkout this repo's own scripts at main, nothing from the PR
+      contents: write        # checkout this repo's own scripts at main; also required for
+                              # `gh pr merge --auto` (enablePullRequestAutoMerge), which 403s as
+                              # "Resource not accessible by integration" with contents: read alone
+                              # -- discovered empirically in the first live batch, 2026-09-29.
       pull-requests: write  # approve, comment, enable auto-merge
     steps:
       - name: Checkout repository (base ref -- never the PR head)

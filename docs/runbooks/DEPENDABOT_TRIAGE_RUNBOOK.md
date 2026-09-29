@@ -1,6 +1,6 @@
 # Dependabot Triage Runbook
 
-**Last Updated:** 2026-09-25
+**Last Updated:** 2026-09-28
 **Workflow:** `.github/workflows/dependabot-triage.yml` (monthly -- 16:00 UTC on the 1st -- plus `workflow_dispatch`)
 **Scripts:** `scripts/security/dep_triage_collect.py` (network I/O), `scripts/security/dep_triage.py` (classifier; its module docstring is the authority on what exists)
 **Report:** rolling GitHub issue titled **Dependabot triage**, labelled `dependencies` + `automated`
@@ -10,10 +10,18 @@
 
 Lists open Dependabot pull requests, detects **coupled families** -- sets of PRs
 that cannot be merged individually -- and rewrites a rolling issue with the
-result. It is read-only: it merges nothing, approves nothing, holds nothing, and
-puts no labels on Dependabot PRs. The `main-protection` ruleset (one human
-approval plus four required status checks) remains what gates every merge. This
-job does the one thing that gate cannot: notice that a PR is **green and still
+result. This job itself is read-only: it merges nothing, approves nothing,
+holds nothing, and puts no labels on Dependabot PRs.
+
+Its classification is no longer purely advisory, though. Per ADR-094,
+`.github/workflows/dependabot-auto-merge.yml` runs this same classifier
+per-PR and auto-approves + enables auto-merge for anything it calls
+`candidate` (never `coupled`) that is also semver-patch-or-minor. A
+misclassification here now has a real consequence beyond a missed line in
+the report -- see ADR-094's Risks section. The `main-protection` ruleset (one
+approval plus four required status checks) still gates every merge,
+auto-approved or not; this job (and the auto-merge workflow that consumes
+it) do the one thing that gate cannot: notice that a PR is **green and still
 unsafe to merge on its own**.
 
 Dispatch it by hand any time you are actually planning a dependency sweep;

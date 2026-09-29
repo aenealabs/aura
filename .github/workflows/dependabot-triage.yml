@@ -3,11 +3,16 @@ name: Dependabot Triage
 # Monthly, read-only. Lists open Dependabot pull requests, detects coupled
 # update families, and publishes a rolling triage issue for operator review.
 #
-# This workflow NEVER merges, approves, or marks a pull request ready. Operator
-# review and merge remain required: the `main-protection` ruleset is the safety
-# net (one approval plus four required status checks, CodeQL on three languages
-# among them), and this job does the one thing that gate cannot -- notice that a
-# pull request is green and still unsafe to merge alone.
+# This workflow itself NEVER merges, approves, or marks a pull request ready --
+# it only reports. Its classification is now also consumed programmatically by
+# dependabot-auto-merge.yml (ADR-094), which approves and enables auto-merge
+# for PRs this job calls `candidate` (never `coupled`) and that are
+# semver-patch/minor. That workflow is the one exception to "operator review
+# required" in this repo, and it is scoped narrowly on purpose: the
+# `main-protection` ruleset (one approval plus four required status checks,
+# CodeQL on three languages among them) still gates every merge, coupled or
+# not, human-authored or bot-authored -- this job does the one thing that gate
+# cannot: notice that a pull request is green and still unsafe to merge alone.
 #
 # The report is a single long-lived issue rewritten in place rather than a
 # recurring pull request: an issue needs no approval to update, so the team

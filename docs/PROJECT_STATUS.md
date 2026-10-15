@@ -1,6 +1,6 @@
 # Project Aura: Development Status
 
-**Last Assessment:** October 15, 2026 (claim-vs-code audit; see the 2026-10-14 section -- pull request pending, not deployed)
+**Last Assessment:** October 15, 2026 (claim-vs-code audit; see the 2026-10-14 section -- merged in #526, not deployed)
 **Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues + 5 follow-ups closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward, orphan stacks wired). May 9, 2026 documentation + security pass closed an additional 4 doc-refresh follow-ups (#158, #159, #160, #161) and 2 CodeQL alerts (#271 critical code injection, #272 medium unpinned action). Issue #142 (eslint-plugin-react swap) reviewed and deferred per its own trigger conditions. **GTM-readiness audit (#163) CLOSED on May 12, 2026 after 14 waves of remediation (Waves 1-14).** Waves 6-14 followed Wave 5a and shipped: defense-in-depth guardrails (IMMUTABLE_GUARDRAILS, prod-tier signer assertion, log retention 7d→30d, workflow pinning), doc accuracy corrections (React 19 / JavaScript / Vite stack restatement, broken-link fixes), top-level dashboard widget live-wiring (5 metrics endpoints + system-health endpoint backing MTTR/AssetCriticality/ComplianceDrift/InsiderRisk widgets + HealthCheckModal -- closes the audit's "DO-NOT-SHIP" frontend-mock finding), customer-visible TODO/toast remediation (8 CommandPalette/CKGEConsole/KnowledgeGraph silent click-handlers replaced with toast feedback), buildspec inline create/update refactor (29 sites → canonical `aws cloudformation deploy --no-fail-on-empty-changeset`, -640 LOC across 3 buildspecs), frontend lint sweep (281→93 problems, 20→0 errors), and ADR-092 (CFN deploy-role wildcard scoping, **Accepted v2 with deploy phases Deferred (Cost Gate)** -- Phase 2 code complete + offline static action scanner substitute). **DEV/QA Deployment Capability Audit (May 14, 2026) CLOSED: 16 findings → 10 GitHub issues filed (#184-#193); all 10 now closed (9 fixed in-tree + 1 won't-fix).** Same-day fixes shipped Wave-10 idempotency completion (14 buildspec blocks converted across 5 files), environment-conditional DeletionPolicy pattern applied to 54 templates (`!If [IsProduction, Retain, Delete]`), CodeBuild project count drift reconciled (19 → 25), customer parameter overlay parity (EKSNode prefix unified across templates + new dev.json/qa.json overlays), three CI hygiene fixes (`code-quality.yml` `|| true` removed, `aura-security-review.yml` Dependabot skip removed, `nightly-iam-validation.yml` workflow-level failure alarm wired), kill-switch hardening (fcntl-backed concurrent-run lock + EKS scaling-completion polling on both cost schedulers + `wait_for_stack_complete` defense-in-depth + restore success message reworded to "Script Phase Complete" with explicit post-restore verification block), and the final two #185 sub-tracks (`nightly-live-llm.yml` schedule trigger commented out -- workflow had `startup_failure` on every run since inception May 9 because `id-token: write` forces OIDC handshake at workflow-start and the required secret + var were never configured; `benchmarks.yml` runner swapped from unavailable `ubuntu-24.04-large` to `ubuntu-latest` with documented variance trade-off). Remaining tracked work: #180 (out-of-band SNS/PagerDuty/Slack subscribers + GitHub secrets + 68 deaf alarms, OPEN, external-endpoint dependency), #181 (vulnerability_scanner/parsing real tree-sitter implementation, OPEN, multi-week pure-code effort), #182 (tech-debt tracker, substantially closed -- buildspec/lint/IAM code-merge complete; ADR-092 deploy phases Deferred (Cost Gate); "Coming Soon" panels won't-fix).
 
 ---
@@ -399,10 +399,10 @@ changed, and documented in `docs/deployment/GITHUB_ACTIONS_SETUP.md` and
 `deploy/buildspecs/CLAUDE.md`. If it is fixed, exclude `.md` explicitly rather than enumerating
 Python extensions, so a new Python file type cannot silently fall outside the gate.
 
-### Claim-vs-Code Audit and Remediation (2026-10-14 / 2026-10-15) -- pull request pending, not deployed
+### Claim-vs-Code Audit and Remediation (2026-10-14 / 2026-10-15) -- merged in #526, not deployed
 
 Audit of four subsystems (agent orchestration, guardrails, memory/context, HITL) comparing ADR and
-documentation claims against code, followed by remediation on branch `fix/claim-vs-code-audit` (pull request pending review).
+documentation claims against code, followed by remediation merged in #526 (`8cff42c`).
 Nothing below is deployed.
 
 | Area | Finding | Remediation |
@@ -436,7 +436,10 @@ regression in fork-marked tests. The 104 pre-existing macOS isolated-run failure
 `test_ticketing_connectors.py` (15), `test_database_connections.py` (8),
 `test_notification_service.py` (5), `test_migration_toolkit.py` (5),
 `security/test_guardrails_edge_cases.py` (4), and seven others with 1-2 each. They are not caused by
-this work and are not yet triaged.
+this work and are not yet triaged. None of them fail in CI on Linux (0 failures in that run).
+
+**CI (PR #526, Linux):** `Python Quality & Tests` -> 26,130 passed, 585 skipped, 0 failed, coverage
+81.48%; all other required checks green.
 
 ---
 

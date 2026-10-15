@@ -14,6 +14,17 @@ Detection scope (targeted, not broad):
     2. Returned/contained string literals inside any function whose
        name matches `_get_relationship_types*` or `*relationship_types*`
        (the read-side mapping pattern).
+    3. Gremlin traversal steps inside string literals / f-strings:
+       out/in/both/outE/inE/bothE('LABEL', ...) and
+       outE/inE/bothE/E().hasLabel('LABEL', ...). Strings are only
+       scanned when they look like Gremlin (contain g.V(, g.E(, .V(,
+       __. or .repeat(). Unlike checks 1-2, a canonical label is fine
+       here (the query is text, not a call site that can take the enum);
+       only labels outside EdgeLabel/LegacyAlias are flagged, because a
+       read-side query for a label no writer emits can never match.
+       Suppress a deliberate exception by putting
+       `# edge-label-lint: ignore` on the line of the string (or the
+       line where the string starts).
 
 Allowlist (these files may contain string-literal edge labels):
     - src/services/graph/edge_labels.py: the enum module itself.
@@ -43,6 +54,11 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+# Allow `python scripts/lint_edge_labels.py` (not just `python -m ...`).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.services.graph.edge_labels import is_known_label  # noqa: E402
+
 # Filenames matching these patterns are exempt from the lint.
 ALLOWLIST_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"src/services/graph/edge_labels\.py$"),
@@ -68,18 +84,70 @@ _LABEL_BEARING_PARAMS: frozenset[str] = frozenset({"relationship", "edge_label"}
 _LABEL_MAP_PATTERN = re.compile(r"(_get_relationship_types|relationship_types)")
 
 
+# A string is treated as a Gremlin traversal only if it matches this.
+_GREMLIN_HINT = re.compile(r"(?:\bg\.(?:V|E)\(|\.V\(|__\.|\.repeat\()")
+
+# Edge-traversal steps with quoted-string label arguments.
+_STEP_ARGS = r"((?:\s*['\"][^'\"]*['\"]\s*,?)+)\s*\)"
+_GREMLIN_EDGE_STEP = re.compile(r"(?<!\w)(?:outE|inE|bothE|out|in|both)\(" + _STEP_ARGS)
+# hasLabel is also used for vertex labels, so only count it directly
+# after an edge-producing step.
+_GREMLIN_EDGE_HASLABEL = re.compile(
+    r"(?:\.(?:outE|inE|bothE)\([^)]*\)|\bE\(\s*\))\s*\.hasLabel\(" + _STEP_ARGS
+)
+_QUOTED = re.compile(r"['\"]([^'\"]*)['\"]")
+
+SUPPRESSION_MARKER = "edge-label-lint: ignore"
+
+
+def find_unknown_gremlin_labels(text: str) -> list[str]:
+    """Return edge labels used in Gremlin steps of `text` that are unknown.
+
+    Returns [] when `text` does not look like a Gremlin traversal.
+    """
+    if not _GREMLIN_HINT.search(text):
+        return []
+    unknown: list[str] = []
+    for pattern in (_GREMLIN_EDGE_STEP, _GREMLIN_EDGE_HASLABEL):
+        for match in pattern.finditer(text):
+            for label in _QUOTED.findall(match.group(1)):
+                if (
+                    label
+                    and "{" not in label  # interpolated, not a literal label
+                    and not is_known_label(label)
+                    and label not in unknown
+                ):
+                    unknown.append(label)
+    return unknown
+
+
 class Violation:
     """A single lint violation."""
 
-    __slots__ = ("path", "line", "label", "context")
+    __slots__ = ("path", "line", "label", "context", "unknown_gremlin")
 
-    def __init__(self, path: Path, line: int, label: str, context: str):
+    def __init__(
+        self,
+        path: Path,
+        line: int,
+        label: str,
+        context: str,
+        unknown_gremlin: bool = False,
+    ):
         self.path = path
         self.line = line
         self.label = label
         self.context = context
+        self.unknown_gremlin = unknown_gremlin
 
     def __str__(self) -> str:
+        if self.unknown_gremlin:
+            return (
+                f"{self.path}:{self.line}: unknown edge label {self.label!r} "
+                f"in Gremlin query text ({self.context}). Use a label from "
+                f"EdgeLabel/LegacyAlias in src/services/graph/edge_labels.py, "
+                f"or add a writer and register the label first (ADR-090)."
+            )
         return (
             f"{self.path}:{self.line}: edge label string literal {self.label!r} "
             f"({self.context}). Use EdgeLabel.{self.label} from "
@@ -90,9 +158,12 @@ class Violation:
 class EdgeLabelVisitor(ast.NodeVisitor):
     """Walk a module AST collecting edge-label-string-literal violations."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, source_lines: list[str] | None = None):
         self.path = path
         self.violations: list[Violation] = []
+        self._source_lines = source_lines or []
+        # id()s of Constant nodes already scanned as part of an f-string.
+        self._scanned_fstring_parts: set[int] = set()
         # Stack of function definitions we're inside; lets us flag string
         # literals returned/contained within edge-label-mapping functions.
         self._enclosing_funcs: list[str] = []
@@ -152,7 +223,44 @@ class EdgeLabelVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
+    def _is_suppressed(self, node: ast.AST) -> bool:
+        start = getattr(node, "lineno", 0)
+        end = getattr(node, "end_lineno", start) or start
+        for lineno in range(start, end + 1):
+            if 0 < lineno <= len(self._source_lines):
+                if SUPPRESSION_MARKER in self._source_lines[lineno - 1]:
+                    return True
+        return False
+
+    def _scan_gremlin(self, node: ast.AST, text: str) -> None:
+        if self._is_suppressed(node):
+            return
+        for label in find_unknown_gremlin_labels(text):
+            self.violations.append(
+                Violation(
+                    self.path,
+                    getattr(node, "lineno", 0),
+                    label,
+                    "Gremlin traversal step",
+                    unknown_gremlin=True,
+                )
+            )
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> None:
+        # Scan the literal parts of an f-string together so a step split
+        # by an interpolation elsewhere in the query still has context.
+        # Interpolations become a placeholder so quoting stays balanced.
+        parts = [v for v in node.values if isinstance(v, ast.Constant)]
+        text = "".join(
+            str(v.value) if isinstance(v, ast.Constant) else "{}" for v in node.values
+        )
+        self._scan_gremlin(node, text)
+        self._scanned_fstring_parts.update(id(p) for p in parts)
+        self.generic_visit(node)
+
     def visit_Constant(self, node: ast.Constant) -> None:
+        if isinstance(node.value, str) and id(node) not in self._scanned_fstring_parts:
+            self._scan_gremlin(node, node.value)
         # If we are inside a function whose name suggests it builds a
         # read-side edge-label map, any UPPER_SNAKE_CASE string literal
         # is suspicious.
@@ -205,7 +313,7 @@ def lint_paths(paths: Iterable[Path]) -> list[Violation]:
             # Files that won't parse (syntax errors during refactor) are
             # not the lint's problem; black/flake8 catch those.
             continue
-        visitor = EdgeLabelVisitor(path)
+        visitor = EdgeLabelVisitor(path, source.splitlines())
         visitor.visit(tree)
         violations.extend(visitor.violations)
     return violations
@@ -230,7 +338,8 @@ def main(argv: list[str]) -> int:
         print(str(v), file=sys.stderr)
     print(
         "\nFix: import EdgeLabel from src.services.graph.edge_labels and "
-        "use EdgeLabel.<NAME> instead of the string literal.",
+        "use EdgeLabel.<NAME> instead of the string literal; for Gremlin "
+        "query text, use only labels in EdgeLabel/LegacyAlias.",
         file=sys.stderr,
     )
     return 1

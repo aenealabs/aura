@@ -444,7 +444,7 @@ class AuthorizationFlowAnalyzer:
                 # Query 2: Find auth checks in path to resource
                 auth_query = f"""
                 g.V().has('name', '{endpoint['name']}')
-                 .repeat(out('CALLS', 'USES'))
+                 .repeat(out('CALLS', 'CALLS_INFERRED'))
                  .until(has('type', 'auth_check').or().loops().is(5))
                  .path()
                 """

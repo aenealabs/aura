@@ -21,6 +21,9 @@ from unittest.mock import AsyncMock
 
 if TYPE_CHECKING:
     from src.services.bedrock_llm_service import BedrockLLMService
+    from src.services.context_provenance.retrieval_verifier import (
+        RetrievalProvenanceVerifier,
+    )
 
 from src.agents.filesystem_navigator_agent import FileMatch, FilesystemNavigatorAgent
 from src.services.graph.edge_labels import EdgeLabel, LegacyAlias
@@ -90,6 +93,7 @@ class ContextRetrievalService:
         llm_client,
         embedding_service,
         git_repo_path: str,
+        provenance_verifier: "RetrievalProvenanceVerifier | None" = None,
     ):
         """
         Initialize context retrieval service.
@@ -100,8 +104,15 @@ class ContextRetrievalService:
             llm_client: LLM client for query planning
             embedding_service: Embedding service (e.g., Titan)
             git_repo_path: Path to Git repository
+            provenance_verifier: Optional ADR-067 retrieval-time verifier.
+                When set, every search result is verified before synthesis;
+                items that fail integrity, are quarantined, are untrusted, or
+                cannot be verified (strict mode, the verifier default) are
+                excluded and recorded in ``ContextResponse.excluded_by_provenance``.
+                When None (default) retrieval behaves exactly as before.
         """
         self.neptune = neptune_client
+        self.provenance_verifier = provenance_verifier
         self.opensearch = opensearch_client
 
         # Initialize agentic search components with LLM client
@@ -152,6 +163,24 @@ class ContextRetrievalService:
             f"filesystem={len(filesystem_results)}, git={len(git_results)}"
         )
 
+        # Step 2b (ADR-067): verify provenance/integrity before ranking so
+        # excluded items never consume context budget.
+        trust_scores: dict[str, Any] = {}
+        excluded: list[str] = []
+        if self.provenance_verifier is not None:
+            (
+                (
+                    graph_results,
+                    vector_results,
+                    filesystem_results,
+                    git_results,
+                ),
+                trust_scores,
+                excluded,
+            ) = await self._apply_provenance(
+                [graph_results, vector_results, filesystem_results, git_results]
+            )
+
         # Step 3: Synthesize and rank results
         context_response = self.result_synthesizer.synthesize(
             graph_results,
@@ -162,6 +191,14 @@ class ContextRetrievalService:
             query=query,
         )
 
+        if self.provenance_verifier is not None:
+            context_response.trust_scores = {
+                f.file_path: trust_scores[f.file_path]
+                for f in context_response.files
+                if f.file_path in trust_scores
+            }
+            context_response.excluded_by_provenance = excluded
+
         # Step 4: Fetch actual code content for top files (on-demand, not pre-fetched)
 
         logger.info(
@@ -170,6 +207,38 @@ class ContextRetrievalService:
         )
 
         return context_response
+
+    async def _apply_provenance(
+        self, result_groups: list[list[FileMatch]]
+    ) -> tuple[list[list[FileMatch]], dict[str, Any], list[str]]:
+        """Filter search results through the provenance verifier (ADR-067).
+
+        Each distinct file path is verified once. Returns the filtered
+        groups (order preserved), a file_path -> TrustScore map for admitted
+        items, and the sorted list of excluded file paths.
+        """
+        verifier = self.provenance_verifier
+        assert verifier is not None  # caller guards
+        paths = sorted({m.file_path for group in result_groups for m in group})
+        decisions = await asyncio.gather(*(verifier.verify_item(p) for p in paths))
+        by_path = dict(zip(paths, decisions, strict=True))
+
+        excluded = [p for p, d in by_path.items() if not d.allowed]
+        if excluded:
+            logger.warning(
+                f"Provenance verification excluded {len(excluded)} of "
+                f"{len(paths)} retrieved items"
+            )
+        trust_scores = {
+            p: d.trust_score
+            for p, d in by_path.items()
+            if d.allowed and d.trust_score is not None
+        }
+        filtered = [
+            [m for m in group if by_path[m.file_path].allowed]
+            for group in result_groups
+        ]
+        return filtered, trust_scores, excluded
 
     async def _execute_parallel_searches(
         self, search_plan: list[SearchStrategy]
@@ -609,13 +678,17 @@ class ContextRetrievalService:
         # Base query - find vertices matching terms
         base_query = f"g.V().has('name', within({escaped_terms}))"
 
-        # Add traversal based on query type (use .value to avoid enum identity issues)
+        # Add traversal based on query type (use .value to avoid enum identity
+        # issues). Labels come from _get_relationship_types (ADR-090) so the
+        # read side can never drift from the EdgeLabel enum.
+        labels = self._get_relationship_types(query_type)
+        label_args = ", ".join(f"'{label}'" for label in labels) if labels else ""
         if query_type.value == "call_graph":
-            traversal = ".union(identity(), both('CALLS').dedup())"
+            traversal = f".union(identity(), both({label_args}).dedup())"
         elif query_type.value == "dependencies":
-            traversal = ".union(identity(), out('IMPORTS', 'DEPENDS_ON').dedup())"
+            traversal = f".union(identity(), out({label_args}).dedup())"
         elif query_type.value == "inheritance":
-            traversal = ".union(identity(), both('EXTENDS', 'IMPLEMENTS').dedup())"
+            traversal = f".union(identity(), both({label_args}).dedup())"
         else:
             # General traversal for REFERENCES and RELATED
             traversal = ".union(identity(), both().dedup())"
@@ -886,6 +959,8 @@ def create_context_retrieval_service(
     embedding_service=None,
     git_repo_path: str = ".",
     use_mock: bool = False,
+    provenance_verifier: "RetrievalProvenanceVerifier | None" = None,
+    provenance_evidence_store=None,
 ) -> ContextRetrievalService:
     """
     Factory function to create ContextRetrievalService with real Bedrock LLM.
@@ -899,6 +974,14 @@ def create_context_retrieval_service(
         embedding_service: Embedding service (optional, creates mock if None)
         git_repo_path: Path to Git repository
         use_mock: If True, use mock LLM instead of real Bedrock
+        provenance_verifier: Explicit ADR-067 verifier. When None, one is
+            built from environment (AURA_CONTEXT_PROVENANCE_ENABLED, see
+            ``context_provenance.factory``) reading evidence from
+            ``provenance_evidence_store``; when provenance is not enabled no
+            verifier is attached and retrieval is unchanged.
+        provenance_evidence_store: Store exposing ``find_by_file_path``
+            (the OpenSearchVectorService that ingestion writes to). Required
+            only when provenance is enabled via environment.
 
     Returns:
         Fully configured ContextRetrievalService with LLM-powered agents
@@ -933,12 +1016,29 @@ def create_context_retrieval_service(
         llm_client = create_llm_service()
         logger.info("Created ContextRetrievalService with REAL Bedrock LLM")
 
+    if provenance_verifier is None:
+        from src.services.context_provenance.factory import (
+            create_provenance_verifier_from_env,
+            provenance_enabled,
+        )
+
+        if provenance_enabled():
+            if provenance_evidence_store is None:
+                raise ValueError(
+                    "Context provenance is enabled but no provenance_evidence_store "
+                    "was supplied to read index-time evidence from."
+                )
+            provenance_verifier = create_provenance_verifier_from_env(
+                provenance_evidence_store
+            )
+
     return ContextRetrievalService(
         neptune_client=neptune,
         opensearch_client=opensearch,
         llm_client=llm_client,
         embedding_service=embeddings,
         git_repo_path=git_repo_path,
+        provenance_verifier=provenance_verifier,
     )
 
 

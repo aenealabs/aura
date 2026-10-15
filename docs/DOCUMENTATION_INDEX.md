@@ -891,6 +891,7 @@ Detailed technical specifications for complex architectural components.
 | File | Purpose |
 |------|---------|
 | [../research/RESEARCH_FINDINGS_CI_CD_DESIGN_WORKFLOWS.md](../research/RESEARCH_FINDINGS_CI_CD_DESIGN_WORKFLOWS.md) | Research on CI/CD automation patterns |
+| [research/semantic-guardrails-latency-benchmark.md](research/semantic-guardrails-latency-benchmark.md) | Measured latency of the deterministic Semantic Guardrails layers (L1, L2, L5, L6) against ADR-065 targets; L3/L4 unmeasured |
 
 ### Competitive Analysis
 | File | Purpose |

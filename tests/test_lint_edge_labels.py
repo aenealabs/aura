@@ -216,3 +216,93 @@ class TestVisitorDirectly:
         visitor.visit(tree)
         actual = [v.label for v in visitor.violations]
         assert actual == expected_labels
+
+
+class TestGremlinStringScanning:
+    """Scans Gremlin traversal steps inside string literals (ADR-090)."""
+
+    def test_flags_unknown_label_in_out_step(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "reader.py",
+            "Q = \"g.V().has('name', 'x').out('CALLS', 'USES')\"\n",
+        )
+        violations = lint_paths([path])
+        assert [v.label for v in violations] == ["USES"]
+        assert violations[0].unknown_gremlin is True
+        assert "Gremlin" in str(violations[0])
+
+    def test_flags_unknown_label_in_triple_quoted_query(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "reader.py",
+            "Q = \"\"\"\n    g.V().has('file_path', 'a')\n"
+            '     .inE(\'TESTS\').outV()\n"""\n',
+        )
+        assert [v.label for v in lint_paths([path])] == ["TESTS"]
+
+    def test_flags_unknown_label_in_fstring(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "reader.py",
+            "def f(n):\n"
+            "    return f\"g.V().has('name', '{n}').repeat(out('FOO_BAR'))\"\n",
+        )
+        assert [v.label for v in lint_paths([path])] == ["FOO_BAR"]
+
+    @pytest.mark.parametrize("step", ["in", "both", "outE", "inE", "bothE"])
+    def test_all_edge_steps_checked(self, tmp_path, step):
+        path = _write(tmp_path, "reader.py", f"Q = \"g.V().{step}('NOPE_LABEL')\"\n")
+        assert [v.label for v in lint_paths([path])] == ["NOPE_LABEL"]
+
+    def test_edge_haslabel_checked(self, tmp_path):
+        path = _write(
+            tmp_path, "reader.py", "Q = \"g.E().hasLabel('NOPE_LABEL', 'CALLS')\"\n"
+        )
+        assert [v.label for v in lint_paths([path])] == ["NOPE_LABEL"]
+
+    def test_vertex_haslabel_not_checked(self, tmp_path):
+        path = _write(tmp_path, "reader.py", "Q = \"g.V().hasLabel('File')\"\n")
+        assert lint_paths([path]) == []
+
+    def test_canonical_and_legacy_labels_pass(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "reader.py",
+            "Q = \"g.V().out('CALLS', 'CALLS_INFERRED').in('HAS_CLASS', 'DEPENDS_ON')\"\n",
+        )
+        assert lint_paths([path]) == []
+
+    def test_non_gremlin_string_ignored(self, tmp_path):
+        path = _write(tmp_path, "other.py", "S = \"stream.out('WHATEVER')\"\n")
+        assert lint_paths([path]) == []
+
+    def test_dynamic_label_not_flagged(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "reader.py",
+            "def f(lbl):\n    return f\"g.V().out('{lbl}')\"\n",
+        )
+        assert lint_paths([path]) == []
+
+    def test_inline_suppression(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "reader.py",
+            "Q = \"g.V().out('LEGACY_X')\"  # edge-label-lint: ignore\n",
+        )
+        assert lint_paths([path]) == []
+
+    def test_main_exits_nonzero_on_unknown_gremlin_label(self, tmp_path):
+        from scripts.lint_edge_labels import main
+
+        path = _write(tmp_path, "reader.py", "Q = \"g.V().out('NOPE_LABEL')\"\n")
+        assert main([str(path)]) == 1
+
+    def test_ssr_and_authz_queries_use_known_labels(self):
+        root = Path(__file__).resolve().parent.parent
+        files = [
+            root / "src/services/authorization_flow_analyzer.py",
+            root / "src/services/ssr/history_injector.py",
+        ]
+        assert lint_paths(files) == []

@@ -164,6 +164,20 @@ Deploy to small percentage of production, monitor, then expand.
 
 ## Approval Roles
 
+> **Status note (2026-10-14) -- approval path hardening.** The approval API
+> previously accepted approve/reject/cancel calls without authentication and
+> took the reviewer identity from the request body. All routes in
+> `src/api/approval_endpoints.py` now require an authenticated user; decisions
+> require the `security-engineer` or `admin` role, the recorded reviewer comes
+> from the token, a mismatched `reviewer_email` in the body is rejected, and a
+> route-guard test fails if any state-changing route lacks an auth dependency.
+> The HITL path in `src/agents/agent_orchestrator.py`
+> (`execute_request_with_hitl`) previously simulated the sandbox step from
+> static validation results; it now calls `ValidatorAgent.validate_in_sandbox`.
+> When no sandbox orchestrator is configured the approval request records the
+> sandbox as `SKIPPED` with no test counts, so an approver can see the patch
+> was not runtime-tested. A failed sandbox run blocks the approval request.
+
 | Role | IAM Role Name | Permissions |
 |------|---------------|-------------|
 | Senior Security Engineer | `AuraPatchApprover` | Approve/Reject/Request Changes |
@@ -183,6 +197,8 @@ Deploy to small percentage of production, monitor, then expand.
 ## References
 
 - `docs/design/HITL_SANDBOX_ARCHITECTURE.md` - Full architecture specification
-- `src/agents/sandbox_orchestrator.py` - Sandbox provisioning agent (future)
-- `src/services/hitl_approval_service.py` - Approval workflow service (future)
+- `src/services/sandbox_network_service.py` - Sandbox provisioning (`FargateSandboxOrchestrator`; the `src/agents/sandbox_orchestrator.py` path named in the original draft was never created)
+- `src/agents/validator_agent.py` - `validate_in_sandbox`, the sandbox validation step used by the HITL path
+- `src/services/hitl_approval_service.py` - Approval workflow service
+- `src/api/approval_endpoints.py` - Approval API (authenticated; approve/reject/cancel restricted to `security-engineer` and `admin`)
 - `agent-config/agents/security-code-reviewer.md` - Security review patterns

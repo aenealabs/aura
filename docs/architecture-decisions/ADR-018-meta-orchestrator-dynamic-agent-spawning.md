@@ -1,6 +1,6 @@
 # ADR-018: MetaOrchestrator with Dynamic Agent Spawning
 
-**Status:** Deployed
+**Status:** Deployed (Phases 1-3 implemented; Phase 4 migration/benchmarking/runbooks incomplete -- see status note under Implementation Plan)
 **Date:** 2025-12-03
 **Decision Makers:** Project Aura Team
 **Related:** ADR-005 (HITL Sandbox Architecture), ADR-010 (Autonomous ADR Generation Pipeline), ADR-015 (Tiered LLM Model Strategy), ADR-016 (HITL Auto-Escalation Strategy)
@@ -263,6 +263,16 @@ class TaskDecomposer:
 ### 3. Configurable Autonomy Levels
 
 #### Autonomy Policy
+
+> **Status note (2026-10-14) -- policy class consolidated.** The `AutonomyPolicy`
+> sketch below (with `always_require_hitl`) is the original design. The
+> implementation now uses the single `AutonomyPolicy` in
+> `src/services/autonomy_policy_service.py`, where this list is the `guardrails`
+> field and `IMMUTABLE_GUARDRAILS` (`credential_modification`,
+> `production_deployment`) is enforced in code regardless of preset, overrides,
+> or the `hitl_enabled` toggle. The orchestrator gates on
+> `policy.requires_hitl(...)`, and a failure to create an approval request
+> returns `hitl_request_failed` (blocked) instead of `awaiting_hitl`.
 
 ```python
 class AutonomyLevel(Enum):
@@ -828,23 +838,55 @@ always_require_hitl = [
 
 ## Implementation Plan
 
+> **Status note (2026-10-14) -- Phases 1-3 implemented; Phase 4 not complete.**
+> Phases 1-3 are implemented in `src/agents/meta_orchestrator.py`
+> (`AgentRegistry`, `AgentSpec`, `SpawnableAgent`, `TaskDecomposer`,
+> `MetaOrchestrator` with DAG execution and aggregation, HITL approval via
+> `hitl_service.create_approval_request`, and an in-memory audit log; `AutonomyPolicy` and its presets now live in
+> `src/services/autonomy_policy_service.py` and are re-exported from
+> `meta_orchestrator.py`) and are covered by `tests/test_meta_orchestrator.py` and
+> `tests/test_meta_orchestrator_integration.py`. Phase 4 items remain unchecked:
+> no performance benchmark or runbook was found, and migration of existing
+> workflows is partial (`src/lambda/orchestrator_dispatcher.py` dispatches
+> MetaOrchestrator Kubernetes Jobs and `src/services/patch_validation_workflow.py`
+> accepts an optional MetaOrchestrator, but this review did not verify that all
+> workflows were migrated off `System2Orchestrator`).
+>
+> **Spawn depth.** The ADR examples use `max_spawn_depth=3`. In code,
+> `MetaOrchestrator.__init__` and `create_meta_orchestrator` default to
+> `max_spawn_depth=3` and pass it into each top-level `AgentSpec`, so
+> orchestrator-spawned agents get depth 3. The `AgentSpec.max_depth` dataclass
+> default and the `SpawnableAgent` / generic agent factory default are `2`; these
+> apply only when an `AgentSpec` or agent is constructed directly without an
+> explicit depth. Depth is enforced by decrementing per child and raising
+> `SpawnNotAllowedError` at zero. `MaxDepthExceededError` is defined but never
+> raised.
+>
+> **Guardrails.** `meta_orchestrator.py` no longer defines its own autonomy
+> policy: it imports `AutonomyLevel` and `AutonomyPolicy` from
+> `src/services/autonomy_policy_service.py` (verified 2026-10-14), so
+> `IMMUTABLE_GUARDRAILS`, instance guardrails and the `hitl_enabled` master
+> toggle apply as described in ADR-032. The "Guardrails list (cannot be
+> overridden)" risk mitigation above therefore refers to that service; only
+> `IMMUTABLE_GUARDRAILS` is hard-coded.
+
 ### Phase 1: Core Infrastructure (Week 1-2)
-- [ ] Implement `AgentRegistry` and `AgentSpec`
-- [ ] Implement `SpawnableAgent` base class
-- [ ] Implement `TaskDecomposer` with LLM integration
-- [ ] Unit tests for spawning and decomposition
+- [x] Implement `AgentRegistry` and `AgentSpec`
+- [x] Implement `SpawnableAgent` base class
+- [x] Implement `TaskDecomposer` with LLM integration
+- [x] Unit tests for spawning and decomposition
 
 ### Phase 2: MetaOrchestrator (Week 2-3)
-- [ ] Implement `MetaOrchestrator` class
-- [ ] Implement DAG execution engine
-- [ ] Implement result aggregation
-- [ ] Integration tests with mock agents
+- [x] Implement `MetaOrchestrator` class
+- [x] Implement DAG execution engine
+- [x] Implement result aggregation
+- [x] Integration tests with mock agents
 
 ### Phase 3: Autonomy System (Week 3-4)
-- [ ] Implement `AutonomyPolicy` and presets
-- [ ] Integrate with existing HITL service
-- [ ] Add audit logging for autonomous operations
-- [ ] End-to-end tests for all autonomy levels
+- [x] Implement `AutonomyPolicy` and presets
+- [x] Integrate with existing HITL service
+- [x] Add audit logging for autonomous operations
+- [x] End-to-end tests for all autonomy levels
 
 ### Phase 4: Migration (Week 4-5)
 - [ ] Migrate existing workflows to MetaOrchestrator

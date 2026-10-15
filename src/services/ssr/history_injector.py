@@ -260,13 +260,11 @@ class HistoryAwareBugInjector:
          .by('name').by('file_path')
     """
 
-    TEST_COVERAGE_QUERY = """
-        g.V().has('repository_id', '{repo_id}')
-         .has('file_path', '{file_path}')
-         .inE('TESTS').outV()
-         .project('test_file', 'test_name')
-         .by('file_path').by('name')
-    """
+    # NOTE (ADR-090): there is no TEST_COVERAGE_QUERY. The previous query
+    # traversed a `TESTS` edge that no ingestion writer emits and that is
+    # not in EdgeLabel/LegacyAlias, so it could never return rows.
+    # `GraphRAGContext.test_coverage` stays empty until ingestion emits a
+    # test-to-code edge (add it to EdgeLabel with a writer first).
 
     COMPLEXITY_QUERY = """
         g.V().has('repository_id', '{repo_id}')
@@ -468,16 +466,6 @@ class HistoryAwareBugInjector:
         context = GraphRAGContext(file_path=file_path)
 
         try:
-            # Query for test coverage
-            test_query = self.TEST_COVERAGE_QUERY.format(
-                repo_id=repository_id,
-                file_path=file_path,
-            )
-            test_results = await self._execute_graphrag_query(test_query)
-            context.test_coverage = [
-                r.get("test_file", "") for r in test_results if r.get("test_file")
-            ]
-
             # Query for complexity
             complexity_query = self.COMPLEXITY_QUERY.format(
                 repo_id=repository_id,
@@ -517,7 +505,7 @@ class HistoryAwareBugInjector:
             total_connections = len(context.callers) + len(context.callees)
             context.centrality_score = min(total_connections / 10.0, 1.0)
 
-            self._graphrag_queries_total += 4  # Count queries made
+            self._graphrag_queries_total += 3  # Count queries made
 
             return context
 

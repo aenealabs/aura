@@ -4,6 +4,33 @@
 
 Deployed
 
+> **Status note (2026-10-14) -- retrieval and ingestion wiring.** Until this
+> date the `src/services/context_provenance/` package was built and tested but no
+> retrieval or ingestion path called it. It is now wired end to end, behind
+> configuration:
+>
+> - **Ingestion:** `src/services/git_ingestion_service.py` records provenance
+>   (repository, last commit SHA, author, timestamp) plus a SHA-256 hash and
+>   HMAC of the stored text into the OpenSearch document it already indexes
+>   (`provenance`, `integrity`, `status` fields). Neptune storage via
+>   `store_provenance_neptune` is not used; it builds Gremlin by string
+>   interpolation.
+> - **Retrieval:** `ContextRetrievalService` (`src/services/context_retrieval_service.py`)
+>   accepts a `RetrievalProvenanceVerifier`
+>   (`src/services/context_provenance/retrieval_verifier.py`) and an
+>   `OpenSearchEvidenceLoader` (`evidence_loader.py`). Each result is checked
+>   for quarantine, integrity, and trust before synthesis. Tampered, quarantined,
+>   or untrusted content is always excluded; missing evidence and verifier
+>   errors are excluded in strict mode (default).
+> - **Enablement:** `AURA_CONTEXT_PROVENANCE_ENABLED=true` with an HMAC key from
+>   SSM (`src/services/context_provenance/factory.py`). Off by default.
+>
+> Not yet done: the anomaly detector, quarantine manager, and audit logger are
+> injectable but not built by the environment factory; existing indexes must be
+> re-ingested before strict mode is enabled; the System2 orchestrator uses its
+> own lightweight retrieval class and does not pass through this verifier.
+
+
 ## Date
 
 2026-01-25 (Proposed) | 2026-01-26 (Deployed)

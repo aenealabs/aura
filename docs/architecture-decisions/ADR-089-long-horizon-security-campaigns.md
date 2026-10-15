@@ -1,6 +1,6 @@
 # ADR-089: Long-Horizon Security Campaigns
 
-**Status:** Proposed
+**Status:** Accepted -- Phases 1-4 and 6 implemented in-process; Phase 5 blocked-stub (#115); Step Functions substrate not yet used by code
 **Date:** 2026-05-07
 **Author:** Project Aura Team
 **Related ADRs:** ADR-024 (Titan Neural Memory), ADR-032 (Configurable HITL),
@@ -13,6 +13,22 @@ ADR-085 (Deterministic Verification Envelope),
 ADR-087 (Hyperscale Agent Orchestration)
 
 ---
+
+> **Status note (2026-10-14).** The decision is accepted and partially built.
+> Evidence in `src/services/campaign_manager/`: real workers exist for
+> Compliance Hardening, Vulnerability Remediation, Chain Analysis, Threat
+> Hunting and Self-Play Training under `phases/`; `phases/mythos_exploit_refinement.py`
+> is a blocked stub that fails every phase citing #115. Execution is
+> in-process through `orchestrator.py` (`run_next_phase`) with Protocol ports.
+> No Python code starts a Step Functions execution (the only references are the
+> `sfn_task_token` and `sfn_execution_arn` fields in `contracts.py`), and no
+> module outside `campaign_manager/` imports the package, so there is no API
+> route or production caller yet. CloudFormation templates for the substrate
+> exist (`deploy/cloudformation/campaign-manager-state-machine.yaml`,
+> `-api.yaml`, `-persistence.yaml`, `-admission-queue.yaml`); whether they are
+> deployed was not verified here. `PROJECT_STATUS.md` cites 71 tests;
+> `tests/services/campaign_manager/` currently collects 105, including the
+> issue-214 hardening tests.
 
 ## Context
 

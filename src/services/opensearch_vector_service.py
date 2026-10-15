@@ -44,6 +44,17 @@ class OpenSearchError(Exception):
     """General OpenSearch operation error."""
 
 
+# ADR-067 index-time evidence fields. Optional top-level document keys that
+# bulk_index_embeddings passes through unchanged when present; documents
+# indexed without them are stored exactly as before.
+EVIDENCE_FIELDS: tuple[str, ...] = ("provenance", "integrity", "status")
+
+
+def _evidence_fields(doc: dict[str, Any]) -> dict[str, Any]:
+    """Return the ADR-067 evidence fields present on a document."""
+    return {key: doc[key] for key in EVIDENCE_FIELDS if key in doc}
+
+
 class OpenSearchVectorService:
     """
     Production-ready OpenSearch vector store for semantic search.
@@ -259,6 +270,31 @@ class OpenSearchVectorService:
                         },
                         "metadata": {"type": "object", "enabled": True},
                         "timestamp": {"type": "date"},
+                        # ADR-067 provenance / integrity evidence
+                        "provenance": {
+                            "type": "object",
+                            "properties": {
+                                "repository_id": {"type": "keyword"},
+                                "commit_sha": {"type": "keyword"},
+                                "author_id": {"type": "keyword"},
+                                "author_email": {"type": "keyword"},
+                                "timestamp": {"type": "date"},
+                                "signature": {"type": "keyword"},
+                                "branch": {"type": "keyword"},
+                            },
+                        },
+                        "integrity": {
+                            "type": "object",
+                            "properties": {
+                                "content_hash": {"type": "keyword"},
+                                "content_hmac": {"type": "keyword"},
+                                "chunk_boundary_hash": {"type": "keyword"},
+                                "embedding_fingerprint": {"type": "keyword"},
+                                "indexed_at": {"type": "date"},
+                                "verified_at": {"type": "date"},
+                            },
+                        },
+                        "status": {"type": "keyword"},
                     }
                 },
             }
@@ -707,6 +743,87 @@ class OpenSearchVectorService:
             logger.error(f"Failed to delete file documents from OpenSearch: {e}")
             raise OpenSearchError(f"Failed to delete file documents: {e}") from e
 
+    def find_by_file_path(
+        self,
+        file_path: str,
+        repository: str | None = None,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """
+        Fetch indexed documents for a file, including ADR-067 evidence.
+
+        Unlike ``search_by_metadata`` this returns the stored ``text`` together
+        with any ``provenance`` / ``integrity`` / ``status`` fields so a
+        retrieval-time verifier can check the exact content that is served.
+        Results are never cached: verification must see the current document.
+
+        Args:
+            file_path: Repository-relative file path (``metadata.file_path``)
+            repository: Optional ``metadata.repository`` scope
+            limit: Maximum documents to return
+
+        Returns:
+            List of dicts with id, text, metadata and any evidence fields
+        """
+        if self.mode == OpenSearchMode.MOCK:
+            results = []
+            for doc_id, doc in self.mock_index.items():
+                metadata = doc.get("metadata", {})
+                if metadata.get("file_path") != file_path:
+                    continue
+                if repository is not None and metadata.get("repository") != repository:
+                    continue
+                results.append(
+                    {
+                        "id": doc_id,
+                        "text": doc.get("text", ""),
+                        "metadata": metadata,
+                        **_evidence_fields(doc),
+                    }
+                )
+            return results[:limit]
+
+        def _term_any(field: str, value: str) -> dict[str, Any]:
+            # Match whether the field was mapped as keyword or as dynamic
+            # text with a ``.keyword`` sub-field.
+            return {
+                "bool": {
+                    "should": [
+                        {"term": {field: value}},
+                        {"term": {f"{field}.keyword": value}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+
+        filters = [_term_any("metadata.file_path", file_path)]
+        if repository is not None:
+            filters.append(_term_any("metadata.repository", repository))
+
+        query_body = {
+            "size": limit,
+            "query": {"bool": {"filter": filters}},
+            "_source": ["text", "metadata", *EVIDENCE_FIELDS],
+        }
+        try:
+            response = self.client.search(index=self.index_name, body=query_body)
+        except Exception as e:
+            logger.error(f"File path lookup failed: {e}")
+            raise OpenSearchError(f"File path lookup failed: {e}") from e
+
+        results = []
+        for hit in response["hits"]["hits"]:
+            source = hit.get("_source", {})
+            results.append(
+                {
+                    "id": hit["_id"],
+                    "text": source.get("text", ""),
+                    "metadata": source.get("metadata", {}),
+                    **_evidence_fields(source),
+                }
+            )
+        return results
+
     def get_cluster_health(self) -> dict[str, Any]:
         """
         Get OpenSearch cluster health status.
@@ -749,6 +866,8 @@ class OpenSearchVectorService:
                 - text: str
                 - vector: list[float]
                 - metadata: dict (optional)
+                - provenance / integrity / status: ADR-067 evidence
+                  (optional; stored as top-level fields when present)
             refresh: Whether to refresh index after bulk operation
 
         Returns:
@@ -766,6 +885,7 @@ class OpenSearchVectorService:
                     "vector": doc["vector"],
                     "metadata": doc.get("metadata", {}),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
+                    **_evidence_fields(doc),
                 }
             logger.info(f"[MOCK] Bulk indexed {len(documents)} documents")
             return {"success_count": len(documents), "error_count": 0, "errors": []}
@@ -785,6 +905,7 @@ class OpenSearchVectorService:
                         "embedding": doc["vector"],
                         "metadata": doc.get("metadata", {}),
                         "timestamp": datetime.now(timezone.utc).isoformat(),
+                        **_evidence_fields(doc),
                     }
                 )
 

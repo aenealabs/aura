@@ -87,6 +87,7 @@ def sample_approval():
             "requested_by": "security-agent",
             "vulnerability_description": "SQL injection in user login",
             "affected_component": "auth",
+            "organization_id": "org-123",
         },
         sandbox_test_results={"passed": True, "tests_run": 5, "tests_passed": 5},
     )
@@ -112,6 +113,7 @@ def sample_approval_dict():
             "generated_by": "coder-agent",
             "sandbox_status": "passed",
             "requested_by": "security-agent",
+            "organization_id": "org-123",
         },
     }
 
@@ -135,6 +137,7 @@ def sample_approvals_list(sample_approval_dict):
                 "title": "Fix XSS in comment field",
                 "description": "XSS fix",
                 "affected_file": "src/comments.py",
+                "organization_id": "org-123",
             },
         },
         {
@@ -150,14 +153,29 @@ def sample_approvals_list(sample_approval_dict):
                 "title": "Fix path traversal",
                 "description": "Path traversal fix",
                 "affected_file": "src/files.py",
+                "organization_id": "org-123",
             },
         },
     ]
 
 
 @pytest.fixture
-def test_client(mock_hitl_service):
-    """Create a test client with mocked service.
+def reviewer_user():
+    """Authenticated user holding an approver role."""
+    from src.api.auth import User
+
+    return User(
+        sub="user-reviewer-001",
+        email="reviewer@example.com",
+        name="Reviewer",
+        groups=["security-engineer"],
+        organization_id="org-123",
+    )
+
+
+@pytest.fixture
+def test_client(mock_hitl_service, reviewer_user):
+    """Create a test client with mocked service and an authenticated approver.
 
     Uses lazy imports to ensure fresh module state in forked processes.
     Uses app.dependency_overrides for clean dependency injection.
@@ -166,6 +184,7 @@ def test_client(mock_hitl_service):
     from fastapi.testclient import TestClient
 
     from src.api.approval_endpoints import router
+    from src.api.auth import get_current_user
     from src.api.dependencies import get_hitl_service
     from src.services.api_rate_limiter import reset_rate_limiter
 
@@ -177,6 +196,7 @@ def test_client(mock_hitl_service):
 
     # Use FastAPI dependency injection override pattern
     app.dependency_overrides[get_hitl_service] = lambda: mock_hitl_service
+    app.dependency_overrides[get_current_user] = lambda: reviewer_user
 
     client = TestClient(app)
     yield client
@@ -300,6 +320,7 @@ class TestApproveRequest:
 
     def test_approve_success(self, test_client, mock_hitl_service, sample_approval):
         """Test approving a request successfully."""
+        mock_hitl_service.get_request.return_value = sample_approval
         mock_hitl_service.approve_request.return_value = {"success": True}
 
         response = test_client.post(
@@ -316,18 +337,52 @@ class TestApproveRequest:
         assert data["new_status"] == "approved"
         assert data["approval_id"] == "apr-123"
 
-    def test_approve_missing_reviewer(self, test_client):
-        """Test approving without reviewer email."""
+    def test_approve_without_reviewer_email_uses_token(
+        self, test_client, mock_hitl_service, sample_approval
+    ):
+        """reviewer_email is optional; identity comes from the token."""
+        mock_hitl_service.get_request.return_value = sample_approval
+
         response = test_client.post(
             "/api/v1/approvals/apr-123/approve",
             json={},
         )
 
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 200
+        assert response.json()["reviewed_by"] == "reviewer@example.com"
+        mock_hitl_service.approve_request.assert_called_once_with(
+            approval_id="apr-123",
+            reviewer_id="reviewer@example.com",
+            reason=None,
+        )
 
-    def test_approve_invalid_request(self, test_client, mock_hitl_service):
+    def test_approve_not_found(self, test_client, mock_hitl_service):
+        """Approving an unknown request returns 404 without deciding."""
+        mock_hitl_service.get_request.return_value = None
+
+        response = test_client.post("/api/v1/approvals/apr-missing/approve", json={})
+
+        assert response.status_code == 404
+        mock_hitl_service.approve_request.assert_not_called()
+
+    def test_approve_not_pending_returns_conflict(
+        self, test_client, mock_hitl_service, sample_approval
+    ):
+        """Service refusing the decision surfaces as 409, not success."""
+        mock_hitl_service.get_request.return_value = sample_approval
+        mock_hitl_service.approve_request.return_value = False
+
+        response = test_client.post("/api/v1/approvals/apr-123/approve", json={})
+
+        assert response.status_code == 409
+
+    def test_approve_invalid_request(
+        self, test_client, mock_hitl_service, sample_approval
+    ):
         """Test approving an already-processed request."""
         from src.services.hitl_approval_service import HITLApprovalError
+
+        mock_hitl_service.get_request.return_value = sample_approval
 
         mock_hitl_service.approve_request.side_effect = HITLApprovalError(
             "Request already approved"
@@ -351,8 +406,9 @@ class TestApproveRequest:
 class TestRejectRequest:
     """Tests for POST /api/v1/approvals/{approval_id}/reject endpoint."""
 
-    def test_reject_success(self, test_client, mock_hitl_service):
+    def test_reject_success(self, test_client, mock_hitl_service, sample_approval):
         """Test rejecting a request successfully."""
+        mock_hitl_service.get_request.return_value = sample_approval
         mock_hitl_service.reject_request.return_value = {"success": True}
 
         response = test_client.post(
@@ -377,9 +433,13 @@ class TestRejectRequest:
 
         assert response.status_code == 422  # Validation error
 
-    def test_reject_invalid_request(self, test_client, mock_hitl_service):
+    def test_reject_invalid_request(
+        self, test_client, mock_hitl_service, sample_approval
+    ):
         """Test rejecting an already-processed request."""
         from src.services.hitl_approval_service import HITLApprovalError
+
+        mock_hitl_service.get_request.return_value = sample_approval
 
         mock_hitl_service.reject_request.side_effect = HITLApprovalError(
             "Request already rejected"
@@ -404,8 +464,9 @@ class TestRejectRequest:
 class TestCancelRequest:
     """Tests for POST /api/v1/approvals/{approval_id}/cancel endpoint."""
 
-    def test_cancel_success(self, test_client, mock_hitl_service):
+    def test_cancel_success(self, test_client, mock_hitl_service, sample_approval):
         """Test cancelling a request successfully."""
+        mock_hitl_service.get_request.return_value = sample_approval
         mock_hitl_service.cancel_request.return_value = {"success": True}
 
         response = test_client.post("/api/v1/approvals/apr-123/cancel")
@@ -414,6 +475,24 @@ class TestCancelRequest:
         data = response.json()
         assert data["success"] is True
         assert data["new_status"] == "cancelled"
+
+    def test_cancel_not_found(self, test_client, mock_hitl_service):
+        """Cancelling an unknown approval returns 404 without calling the service."""
+        response = test_client.post("/api/v1/approvals/nonexistent/cancel")
+
+        assert response.status_code == 404
+        mock_hitl_service.cancel_request.assert_not_called()
+
+    def test_cancel_not_pending_returns_conflict(
+        self, test_client, mock_hitl_service, sample_approval
+    ):
+        """A cancel the service refuses is reported as 409."""
+        mock_hitl_service.get_request.return_value = sample_approval
+        mock_hitl_service.cancel_request.return_value = False
+
+        response = test_client.post("/api/v1/approvals/apr-123/cancel")
+
+        assert response.status_code == 409
 
 
 # ============================================================================

@@ -1,6 +1,6 @@
 # Project Aura: Development Status
 
-**Last Assessment:** August 29, 2026
+**Last Assessment:** October 15, 2026 (claim-vs-code audit; see the 2026-10-14 section -- pull request pending, not deployed)
 **Status:** All 9 deployment phases complete (Foundation, Data, Compute, Application, Observability, Serverless, Sandbox, Security, Scanning Engine). Disaster Recovery initiative (#143) **complete -- all 13 sub-issues closed**. Buildspec line-cap remediation (#131) **complete -- all 4 sub-issues + 5 follow-ups closed via Tara's runtime-budget approach** (cold-start `TimeoutInMinutes` raised to 480 on the four parent CodeBuild projects, 11 dead scaffold buildspecs deleted, parent → sub-layer CodeBuild nesting forbidden going forward, orphan stacks wired). May 9, 2026 documentation + security pass closed an additional 4 doc-refresh follow-ups (#158, #159, #160, #161) and 2 CodeQL alerts (#271 critical code injection, #272 medium unpinned action). Issue #142 (eslint-plugin-react swap) reviewed and deferred per its own trigger conditions. **GTM-readiness audit (#163) CLOSED on May 12, 2026 after 14 waves of remediation (Waves 1-14).** Waves 6-14 followed Wave 5a and shipped: defense-in-depth guardrails (IMMUTABLE_GUARDRAILS, prod-tier signer assertion, log retention 7d→30d, workflow pinning), doc accuracy corrections (React 19 / JavaScript / Vite stack restatement, broken-link fixes), top-level dashboard widget live-wiring (5 metrics endpoints + system-health endpoint backing MTTR/AssetCriticality/ComplianceDrift/InsiderRisk widgets + HealthCheckModal -- closes the audit's "DO-NOT-SHIP" frontend-mock finding), customer-visible TODO/toast remediation (8 CommandPalette/CKGEConsole/KnowledgeGraph silent click-handlers replaced with toast feedback), buildspec inline create/update refactor (29 sites → canonical `aws cloudformation deploy --no-fail-on-empty-changeset`, -640 LOC across 3 buildspecs), frontend lint sweep (281→93 problems, 20→0 errors), and ADR-092 (CFN deploy-role wildcard scoping, **Accepted v2 with deploy phases Deferred (Cost Gate)** -- Phase 2 code complete + offline static action scanner substitute). **DEV/QA Deployment Capability Audit (May 14, 2026) CLOSED: 16 findings → 10 GitHub issues filed (#184-#193); all 10 now closed (9 fixed in-tree + 1 won't-fix).** Same-day fixes shipped Wave-10 idempotency completion (14 buildspec blocks converted across 5 files), environment-conditional DeletionPolicy pattern applied to 54 templates (`!If [IsProduction, Retain, Delete]`), CodeBuild project count drift reconciled (19 → 25), customer parameter overlay parity (EKSNode prefix unified across templates + new dev.json/qa.json overlays), three CI hygiene fixes (`code-quality.yml` `|| true` removed, `aura-security-review.yml` Dependabot skip removed, `nightly-iam-validation.yml` workflow-level failure alarm wired), kill-switch hardening (fcntl-backed concurrent-run lock + EKS scaling-completion polling on both cost schedulers + `wait_for_stack_complete` defense-in-depth + restore success message reworded to "Script Phase Complete" with explicit post-restore verification block), and the final two #185 sub-tracks (`nightly-live-llm.yml` schedule trigger commented out -- workflow had `startup_failure` on every run since inception May 9 because `id-token: write` forces OIDC handshake at workflow-start and the required secret + var were never configured; `benchmarks.yml` runner swapped from unavailable `ubuntu-24.04-large` to `ubuntu-latest` with documented variance trade-off). Remaining tracked work: #180 (out-of-band SNS/PagerDuty/Slack subscribers + GitHub secrets + 68 deaf alarms, OPEN, external-endpoint dependency), #181 (vulnerability_scanner/parsing real tree-sitter implementation, OPEN, multi-week pure-code effort), #182 (tech-debt tracker, substantially closed -- buildspec/lint/IAM code-merge complete; ADR-092 deploy phases Deferred (Cost Gate); "Coming Soon" panels won't-fix).
 
 ---
@@ -398,6 +398,45 @@ job is a required check, so the current behaviour errs in the safe direction. Fl
 changed, and documented in `docs/deployment/GITHUB_ACTIONS_SETUP.md` and
 `deploy/buildspecs/CLAUDE.md`. If it is fixed, exclude `.md` explicitly rather than enumerating
 Python extensions, so a new Python file type cannot silently fall outside the gate.
+
+### Claim-vs-Code Audit and Remediation (2026-10-14 / 2026-10-15) -- pull request pending, not deployed
+
+Audit of four subsystems (agent orchestration, guardrails, memory/context, HITL) comparing ADR and
+documentation claims against code, followed by remediation on branch `fix/claim-vs-code-audit` (pull request pending review).
+Nothing below is deployed.
+
+| Area | Finding | Remediation |
+|------|---------|-------------|
+| Approvals API (security) | approve / reject / cancel had no authentication dependency; reviewer identity was taken from `reviewer_email` in the request body; no tenant scoping | All routes in `src/api/approval_endpoints.py` require `get_current_user`; decisions require `security-engineer` or `admin`; reviewer identity from the token, mismatched body email -> 403; self-approval refused; another organization's approval -> 404 (same body as missing); list and stats scoped per organization; org-less approvals visible only to `platform_admin`; unknown id -> 404 and non-pending -> 409 (previously 200). Route-guard test fails on any unprotected route. Both orchestrators now stamp `organization_id` on approval metadata. |
+| HITL sandbox step | `execute_request_with_hitl` simulated the sandbox from static validation with a `-mock` id | Calls `ValidatorAgent.validate_in_sandbox`; unconfigured -> `SKIPPED` with no test counts; failure blocks the approval request. `System2Orchestrator` and `create_system2_orchestrator` accept a `sandbox_orchestrator`; `create_sandbox_orchestrator()` builds the Fargate orchestrator only when `SANDBOX_ENABLED=true`. Fixed a status-vocabulary mismatch (validator expected `running`/`completed`, Fargate returns `PROVISIONING`/`ACTIVE`/`TERMINATED`) that would have failed every real sandbox run. |
+| MetaOrchestrator HITL | Approval requests sent `patch_diff=""` and `sandbox_results={}`; request-creation failure returned `awaiting_hitl` with no request id; sync HITL service was awaited with a string severity, so the real service always raised | Real evidence or explicit `not_run`; failure returns `hitl_request_failed` (blocked); sync/async handled and severity converted. `patch_validation_workflow.py` proceeds only on `completed` / `awaiting_hitl` and only deploys when the callback approval id matches. Blocked orchestrations escalate their anomaly. |
+| Autonomy policy | Two implementations; the MetaOrchestrator copy had no `IMMUTABLE_GUARDRAILS` | MetaOrchestrator uses `src/services/autonomy_policy_service.py` (names re-exported). |
+| System2 retry loop | Hard-coded remediation text and validation requirements from a SHA1 demo | Remediation built from reviewer findings; validation driven by the task target. |
+| Memory | Success episodes recorded before the human decision; no HITL outcome recorded | Under HITL, recording is deferred; approve -> SUCCESS episode, reject -> FAILURE with the reviewer reason. Non-blocking. |
+| Retrieval | Inheritance traversal used `EXTENDS`/`IMPLEMENTS` (never written); `USES` and `TESTS` likewise; vector adapter discarded scores and returned placeholder text when nothing matched | `INHERITS` via `EdgeLabel`; `USES` -> `CALLS_INFERRED`, dead `TESTS` query removed; `scripts/lint_edge_labels.py` now scans Gremlin query text. Scored k-NN results (cosinesimil `_score = (1 + cos) / 2` inverted to cosine); no placeholder context. |
+| Context provenance (ADR-067) | Package built and tested but called by no ingestion or retrieval path | Ingestion records provenance, SHA-256 and HMAC in the OpenSearch document; retrieval verifies and excludes tampered, quarantined, or untrusted content (strict by default). Off unless `AURA_CONTEXT_PROVENANCE_ENABLED=true`. Closed a 300-second integrity-cache window that could serve tampered content. |
+| Explainability (ADR-068) | Not carried into approval evidence | Optional `explainability` on `ApprovalRequest`, returned by the detail endpoint; agents do not populate it yet. |
+| Guardrail latency (ADR-065) | Targets never measured | Deterministic layers measured: `docs/research/semantic-guardrails-latency-benchmark.md`. L2 misses its 10 ms target on 20 KB input (p95 15.7684 ms); L3/L4 unmeasured. |
+| ADR status drift | Headers overstated or understated implementation | Dated status notes on ADR-005, 018, 032, 034, 065, 067, 068, 071, 080, 089. |
+
+**Deliberately not done:** ADR-087 distributed tiers (design only, cost-gated); wiring the ADR-034
+RRF fusion service into retrieval (no evaluation set to show it improves ranking); the ADR-067
+anomaly detector; agent-side population of explainability records.
+
+**Verification (2026-10-15, branch over `712bebf`):** `pytest tests -n auto -rs` -> 19,896 passed,
+6,819 skipped, 0 failed, coverage 72.94% (gate 70%). 26,756 collected. Of the 6,819 skips, 6,663
+are the macOS guard that skips `pytest.mark.forked` tests once torch is imported in the worker
+(they run on the Linux CI runners); the rest are opt-in AWS / Bedrock / E2E integration gates,
+optional dependencies, and ADR-093 phase placeholders. Because the new approval-auth tests are
+fork-marked, every fork-marked test file was also run in isolation on both this branch and `main`:
+141 files on the branch (140 on `main`; the extra file is the new approval-auth suite). Both
+produced the same 104 failing test ids, with none unique to either side, so the branch introduces no
+regression in fork-marked tests. The 104 pre-existing macOS isolated-run failures are in
+`test_model_router.py` (30), `api/test_documentation_endpoints.py` (30),
+`test_ticketing_connectors.py` (15), `test_database_connections.py` (8),
+`test_notification_service.py` (5), `test_migration_toolkit.py` (5),
+`security/test_guardrails_edge_cases.py` (4), and seven others with 1-2 each. They are not caused by
+this work and are not yet triaged.
 
 ---
 

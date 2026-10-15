@@ -139,6 +139,7 @@ class TestAutonomyPolicy:
     def test_default_autonomy_level(self):
         """Test that default autonomy level is applied."""
         policy = AutonomyPolicy(
+            policy_id="policy-test",
             organization_id="test",
             default_level=AutonomyLevel.AUDIT_ONLY,
         )
@@ -154,6 +155,7 @@ class TestAutonomyPolicy:
     def test_severity_override(self):
         """Test severity-specific override takes precedence."""
         policy = AutonomyPolicy(
+            policy_id="policy-test",
             organization_id="test",
             default_level=AutonomyLevel.FULL_AUTONOMOUS,
             severity_overrides={"CRITICAL": AutonomyLevel.FULL_HITL},
@@ -170,6 +172,7 @@ class TestAutonomyPolicy:
     def test_repository_override(self):
         """Test repository-specific override takes precedence over severity."""
         policy = AutonomyPolicy(
+            policy_id="policy-test",
             organization_id="test",
             default_level=AutonomyLevel.FULL_AUTONOMOUS,
             severity_overrides={"HIGH": AutonomyLevel.AUDIT_ONLY},
@@ -187,6 +190,7 @@ class TestAutonomyPolicy:
     def test_operation_override_highest_priority(self):
         """Test operation-specific override takes highest priority."""
         policy = AutonomyPolicy(
+            policy_id="policy-test",
             organization_id="test",
             default_level=AutonomyLevel.FULL_AUTONOMOUS,
             severity_overrides={"HIGH": AutonomyLevel.AUDIT_ONLY},
@@ -205,12 +209,13 @@ class TestAutonomyPolicy:
     def test_guardrails_cannot_be_overridden(self):
         """Test that guardrail operations always require HITL."""
         policy = AutonomyPolicy(
+            policy_id="policy-test",
             organization_id="test",
             default_level=AutonomyLevel.FULL_AUTONOMOUS,
         )
 
         # Test all guardrail operations
-        for operation in policy.always_require_hitl:
+        for operation in policy.guardrails:
             level = policy.get_autonomy_level(
                 severity="LOW",
                 repository="any-repo",
@@ -225,7 +230,8 @@ class TestAutonomyPolicy:
         policy = AutonomyPolicy.from_preset("defense_contractor")
 
         assert policy.default_level == AutonomyLevel.FULL_HITL
-        assert policy.organization_id == "defense"
+        assert policy.preset_name == "defense_contractor"
+        assert policy.organization_id == "default"
 
     def test_from_preset_fintech_startup(self):
         """Test fintech_startup preset balances speed and safety."""
@@ -661,7 +667,11 @@ class TestMetaOrchestrator:
     @pytest.fixture
     def mock_hitl_service(self):
         """Create a mock HITL approval service."""
-        return AsyncMock()
+        service = AsyncMock()
+        service.create_approval_request = AsyncMock(
+            return_value=Mock(approval_id="approval-test-123")
+        )
+        return service
 
     @pytest.fixture
     def autonomy_policy(self):

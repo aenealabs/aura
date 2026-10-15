@@ -873,10 +873,10 @@ export default function ApprovalDashboard() {
   const handleApprove = async (id) => {
     setActionLoading(true);
     try {
-      await approveApproval(id);
+      const result = await approveApproval(id);
       setApprovals((prev) =>
         prev.map((a) =>
-          a.id === id ? { ...a, status: 'approved', approvedBy: 'reviewer@aenealabs.com', approvedAt: new Date().toISOString() } : a
+          a.id === id ? { ...a, status: 'approved', approvedBy: result?.reviewed_by ?? 'reviewer@aenealabs.com', approvedAt: new Date().toISOString() } : a
         )
       );
       setSelectedApproval(null);
@@ -895,10 +895,10 @@ export default function ApprovalDashboard() {
     }
     setActionLoading(true);
     try {
-      await rejectApproval(id, comment);
+      const result = await rejectApproval(id, comment);
       setApprovals((prev) =>
         prev.map((a) =>
-          a.id === id ? { ...a, status: 'rejected', rejectedBy: 'reviewer@aenealabs.com', rejectionReason: comment } : a
+          a.id === id ? { ...a, status: 'rejected', rejectedBy: result?.reviewed_by ?? 'reviewer@aenealabs.com', rejectionReason: comment } : a
         )
       );
       setSelectedApproval(null);

@@ -85,6 +85,7 @@ from src.api.trust_center_endpoints import router as trust_center_router
 from src.api.usage_analytics_endpoints import router as usage_analytics_router
 from src.api.webhook_handler import GitHubWebhookHandler, WebhookEvent
 from src.services.anomaly_detection_service import AnomalyDetectionService
+from src.services.context_provenance.factory import create_provenance_service_from_env
 from src.services.database_connections import (
     get_database_services,
     get_embedding_service,
@@ -270,6 +271,9 @@ async def lifespan(app: FastAPI):
                 "AURA_CLONE_PATH", "/tmp/aura-repos"
             ),  # nosec B108
             persistence_service=persistence_service,
+            # ADR-067: records provenance + integrity evidence per indexed
+            # file when AURA_CONTEXT_PROVENANCE_ENABLED is set (else None).
+            provenance_service=create_provenance_service_from_env(),
         )
         logger.info("GitIngestionService initialized")
 

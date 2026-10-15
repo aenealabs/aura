@@ -10,6 +10,8 @@ Target: 85% coverage of src/services/service_adapters.py
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # Set environment before importing
 os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
 os.environ["AWS_ACCESS_KEY_ID"] = "testing"
@@ -390,8 +392,8 @@ class TestOpenSearchVectorAdapterRunKnnSearch:
 
             mock_opensearch.search_by_metadata.assert_called_once()
 
-    def test_run_knn_search_default_context(self):
-        """Test default context when no results found."""
+    def test_run_knn_search_no_results_returns_empty(self):
+        """No matches yields no context rather than placeholder text."""
         mock_opensearch = MagicMock()
         mock_opensearch.vector_dimension = 1024
         mock_opensearch.search_similar.return_value = []
@@ -402,8 +404,7 @@ class TestOpenSearchVectorAdapterRunKnnSearch:
         with patch.object(adapter, "_get_embedding", return_value=[0.1] * 1024):
             result = adapter.run_knn_search("random query")
 
-            assert len(result) == 1
-            assert "DataProcessor" in result[0]
+            assert result == []
 
     def test_run_knn_search_hash_query(self):
         """Test hash-related query triggers metadata search."""
@@ -645,3 +646,134 @@ class TestBedrockEmbeddings:
             # Should use the cached client
             mock_bedrock_client.invoke_model.assert_called_once()
             assert len(embedding) == 1024
+
+
+class TestRunKnnSearchScored:
+    """Scored search preserves OpenSearch scores without changing run_knn_search."""
+
+    @staticmethod
+    def _adapter(results, mode_aws=True):
+        from src.services.opensearch_vector_service import OpenSearchMode
+
+        mock_opensearch = MagicMock()
+        mock_opensearch.vector_dimension = 1024
+        mock_opensearch.mode = OpenSearchMode.AWS if mode_aws else OpenSearchMode.MOCK
+        mock_opensearch.search_similar.return_value = results
+        return OpenSearchVectorAdapter(mock_opensearch)
+
+    def test_scores_normalized_from_cosinesimil(self):
+        # cosinesimil: _score = (2 - d) / 2 = (1 + cos) / 2; cos=1 -> 1.0, cos=0 -> 0.5
+        adapter = self._adapter(
+            [
+                {"text": "a", "score": 1.0, "metadata": {"source": "a.py"}},
+                {"text": "b", "score": 0.5, "metadata": {"source": "b.py"}},
+                {"text": "c", "score": 0.8, "metadata": {"source": "c.py"}},
+            ]
+        )
+        with patch.object(adapter, "_get_embedding", return_value=[0.1] * 1024):
+            result = adapter.run_knn_search_scored("q")
+
+        assert [r["text"] for r in result] == [
+            "Code Context (a.py): a",
+            "Code Context (b.py): b",
+            "Code Context (c.py): c",
+        ]
+        assert result[0]["score"] == pytest.approx(1.0)
+        assert result[1]["score"] == pytest.approx(0.0)
+        assert result[2]["score"] == pytest.approx(0.6)  # cos = 2 * 0.8 - 1
+
+    def test_mock_mode_scores_only_clamped(self):
+        adapter = self._adapter(
+            [{"text": "a", "score": 0.7, "metadata": {}}], mode_aws=False
+        )
+        with patch.object(adapter, "_get_embedding", return_value=[0.1] * 1024):
+            result = adapter.run_knn_search_scored("q")
+        assert result[0]["score"] == pytest.approx(0.7)
+
+    def test_missing_score_is_none(self):
+        adapter = self._adapter([{"text": "a", "metadata": {}}])
+        with patch.object(adapter, "_get_embedding", return_value=[0.1] * 1024):
+            result = adapter.run_knn_search_scored("q")
+        assert result[0]["score"] is None
+
+    def test_no_results_returns_empty(self):
+        adapter = self._adapter([])
+        adapter.opensearch.search_by_metadata.return_value = []
+        with patch.object(adapter, "_get_embedding", return_value=[0.1] * 1024):
+            result = adapter.run_knn_search_scored("random")
+        assert result == []
+
+    def test_opposed_vectors_clamp_to_zero(self):
+        # _score below 0.5 means cos < 0; relevance is clamped to 0.
+        adapter = self._adapter([{"text": "a", "score": 0.2, "metadata": {}}])
+        with patch.object(adapter, "_get_embedding", return_value=[0.1] * 1024):
+            result = adapter.run_knn_search_scored("q")
+        assert result[0]["score"] == pytest.approx(0.0)
+
+    def test_metadata_fallback_results_are_unscored(self):
+        adapter = self._adapter([])
+        adapter.opensearch.search_by_metadata.return_value = [
+            {"text": "sha256", "score": 0.99, "metadata": {}}
+        ]
+        with patch.object(adapter, "_get_embedding", return_value=[0.1] * 1024):
+            result = adapter.run_knn_search_scored("checksum")
+        assert result[0]["score"] is None
+
+    def test_run_knn_search_still_returns_strings(self):
+        adapter = self._adapter([{"text": "a", "score": 0.9, "metadata": {}}])
+        with patch.object(adapter, "_get_embedding", return_value=[0.1] * 1024):
+            result = adapter.run_knn_search("q")
+        assert result == ["Code Context (unknown): a"]
+
+    def test_orchestrator_context_gets_backend_confidence(self):
+        from src.agents.agent_orchestrator import ContextRetrievalService
+
+        adapter = self._adapter(
+            [{"text": "a", "score": 0.8, "metadata": {"source": "a.py"}}]
+        )
+        graph = MagicMock()
+        graph.run_gremlin_query.return_value = []
+        service = ContextRetrievalService(graph, adapter)
+        with patch.object(adapter, "_get_embedding", return_value=[0.1] * 1024):
+            context = service.get_hybrid_context("A", "q")
+        assert context.items[0].confidence == pytest.approx(0.6)
+        assert context.items[0].metadata["confidence_source"] == "backend"
+
+
+class TestCreateSandboxOrchestrator:
+    """create_sandbox_orchestrator returns None unless explicitly enabled."""
+
+    def test_unconfigured_returns_none(self, monkeypatch):
+        from src.services.service_adapters import create_sandbox_orchestrator
+
+        monkeypatch.delenv("SANDBOX_ENABLED", raising=False)
+        assert create_sandbox_orchestrator() is None
+
+    def test_mock_services_forces_none(self, monkeypatch):
+        from src.services.service_adapters import create_sandbox_orchestrator
+
+        monkeypatch.setenv("SANDBOX_ENABLED", "true")
+        monkeypatch.setenv("USE_MOCK_SERVICES", "true")
+        assert create_sandbox_orchestrator() is None
+
+    def test_enabled_builds_fargate_orchestrator(self, monkeypatch):
+        from src.services.service_adapters import create_sandbox_orchestrator
+
+        monkeypatch.setenv("SANDBOX_ENABLED", "true")
+        monkeypatch.delenv("USE_MOCK_SERVICES", raising=False)
+        monkeypatch.setenv("AURA_ENVIRONMENT", "qa")
+        with patch(
+            "src.services.sandbox_network_service.FargateSandboxOrchestrator"
+        ) as cls:
+            result = create_sandbox_orchestrator()
+        cls.assert_called_once_with(environment="qa")
+        assert result is cls.return_value
+
+    def test_creation_failure_returns_none(self):
+        from src.services.service_adapters import create_sandbox_orchestrator
+
+        with patch(
+            "src.services.sandbox_network_service.FargateSandboxOrchestrator",
+            side_effect=RuntimeError("no aws"),
+        ):
+            assert create_sandbox_orchestrator(use_real=True) is None

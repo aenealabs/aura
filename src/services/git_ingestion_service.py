@@ -24,6 +24,8 @@ from typing import Any
 
 from git import GitCommandError, InvalidGitRepositoryError, Repo
 
+from src.services.context_provenance.evidence_loader import build_evidence_fields
+from src.services.context_provenance.provenance_service import ContentProvenanceService
 from src.services.github_app_auth import GitHubAppAuth, get_github_app_auth
 from src.services.graph.config_dependency_agent import (
     VERTEX_CONFIG_PARAMETER,
@@ -167,6 +169,7 @@ class GitIngestionService:
         max_content_size_bytes: int | None = None,
         bedrock_service=None,
         secrets_scanner=None,
+        provenance_service: ContentProvenanceService | None = None,
     ):
         """
         Initialize Git Ingestion Service.
@@ -188,6 +191,11 @@ class GitIngestionService:
             max_concurrent_index: Max concurrent embedding/indexing operations
             opensearch_bulk_size: Documents per OpenSearch bulk request (default: 200)
             max_content_size_bytes: Max content size for embeddings (default: 20KB)
+            provenance_service: Optional ADR-067 index-time signer. When set,
+                each indexed OpenSearch document also stores provenance
+                (repository, commit, author, timestamp) and an integrity
+                record (SHA-256 + HMAC of the stored text) for retrieval-time
+                verification. When None, documents are indexed as before.
         """
         self.neptune = neptune_service
         self.opensearch = opensearch_service
@@ -200,6 +208,7 @@ class GitIngestionService:
         # deterministic tiers still run.
         self.bedrock_service = bedrock_service
         self.secrets_scanner = secrets_scanner
+        self.provenance_service = provenance_service
 
         # Clone directory management
         self.clone_dir = (
@@ -1517,6 +1526,7 @@ class GitIngestionService:
         file_path: Path,
         repo_path: Path,
         repo_id: str,
+        repository_url: str | None = None,
     ) -> dict[str, Any] | None:
         """Prepare a file for batch indexing: read content and generate embedding.
 
@@ -1544,7 +1554,7 @@ class GitIngestionService:
                 embedding = await self._generate_embedding(scanned_content)
 
                 if embedding:
-                    return {
+                    document: dict[str, Any] = {
                         "id": doc_id,
                         "text": content[:5000],  # Truncate for storage
                         "vector": embedding,
@@ -1555,11 +1565,113 @@ class GitIngestionService:
                             "indexed_at": datetime.now().isoformat(),
                         },
                     }
+                    if self.provenance_service is not None:
+                        document.update(
+                            await asyncio.to_thread(
+                                self._build_provenance_fields,
+                                repo_path,
+                                relative_path,
+                                repository_url or str(repo_path),
+                                document["text"],
+                                embedding,
+                            )
+                        )
+                    return document
                 return None
 
             except Exception as e:
                 logger.warning(f"Failed to prepare {file_path} for indexing: {e}")
                 return None
+
+    def _build_provenance_fields(
+        self,
+        repo_path: Path,
+        relative_path: str,
+        repository_url: str,
+        stored_text: str,
+        embedding: list[float],
+    ) -> dict[str, Any]:
+        """Build ADR-067 evidence fields for a document (sync, thread pool).
+
+        Never raises: on failure the document is indexed without evidence,
+        which a strict retrieval-time verifier treats as unverifiable.
+        """
+        assert self.provenance_service is not None  # caller guards
+        try:
+            git_info = self._collect_git_info(repo_path, relative_path, repository_url)
+            return build_evidence_fields(
+                self.provenance_service,
+                relative_path,
+                stored_text,
+                git_info,
+                embedding=embedding,
+            )
+        except Exception as e:
+            logger.warning(f"Provenance recording failed for {relative_path}: {e}")
+            return {}
+
+    def _collect_git_info(
+        self, repo_path: Path, relative_path: str, repository_url: str
+    ) -> dict[str, Any]:
+        """Collect per-file git provenance (last commit touching the file).
+
+        Falls back to HEAD when the file has no reachable history (shallow
+        clones). GPG signatures are not recorded: they are not verified here,
+        and the trust engine credits mere presence of a signature.
+        """
+        git_info: dict[str, Any] = {
+            "repository_id": self._provenance_repository_id(None, repository_url)
+        }
+        try:
+            repo = Repo(repo_path)
+        except (InvalidGitRepositoryError, OSError) as e:
+            logger.warning(f"No git metadata for {relative_path}: {e}")
+            return git_info
+
+        git_info["repository_id"] = self._provenance_repository_id(repo, repository_url)
+        commit = next(repo.iter_commits(paths=relative_path, max_count=1), None)
+        if commit is None:
+            commit = repo.head.commit
+        author_email = commit.author.email or ""
+        git_info.update(
+            {
+                "commit_sha": commit.hexsha,
+                "author_id": author_email or (commit.author.name or ""),
+                "author_email": author_email,
+                "timestamp": commit.committed_datetime,
+            }
+        )
+        try:
+            git_info["branch"] = repo.active_branch.name
+        except (TypeError, ValueError):
+            pass  # detached HEAD
+        return git_info
+
+    @staticmethod
+    def _provenance_repository_id(repo: Repo | None, repository_url: str) -> str:
+        """Return an ``org/repo`` identifier for trust scoring.
+
+        Prefers the ``origin`` remote (incremental ingestion passes a local
+        path as ``repository_url``), then the URL itself; a local path with no
+        remote yields ``"unknown"`` (lowest non-flagged repository trust).
+        """
+        candidates = []
+        if repo is not None:
+            try:
+                candidates.append(repo.remotes.origin.url)
+            except (AttributeError, IndexError, ValueError):
+                pass
+        candidates.append(repository_url)
+        for url in candidates:
+            if "://" not in url and "@" not in url:
+                continue  # local filesystem path, not a remote identifier
+            path = url.rstrip("/").replace(":", "/")
+            if path.endswith(".git"):
+                path = path[: -len(".git")]
+            parts = [p for p in path.split("/") if p]
+            if len(parts) >= 2:
+                return f"{parts[-2]}/{parts[-1]}"
+        return "unknown"
 
     def _bulk_index_sync(self, documents: list[dict[str, Any]]) -> int:
         """Perform bulk indexing synchronously (for thread pool execution)."""
@@ -1622,7 +1734,9 @@ class GitIngestionService:
 
         # Step 1: Prepare all documents concurrently (read content + generate embeddings)
         prepare_tasks = [
-            self._prepare_file_for_indexing(file_path, repo_path, repo_id)
+            self._prepare_file_for_indexing(
+                file_path, repo_path, repo_id, repository_url
+            )
             for file_path in files
         ]
 

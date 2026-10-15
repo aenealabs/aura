@@ -39,6 +39,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Sandbox states reported by get_sandbox_status(), normalized to lower case.
+_SANDBOX_IN_PROGRESS_STATES = frozenset(
+    {"running", "pending", "provisioning", "active"}
+)
+_SANDBOX_FINISHED_STATES = frozenset({"completed", "terminated"})
+
 
 # Mirror of reviewer_agent.MAX_LLM_CODE_CHARS. Imported at use sites rather
 # than at module load to avoid a hard dependency.
@@ -702,18 +708,31 @@ Response (JSON only):"""
             logger.info(f"Waiting for sandbox {sandbox_id} to be ready...")
             status = await self.sandbox_orchestrator.get_sandbox_status(sandbox_id)
 
-            # Step 3: Poll for completion (with timeout)
+            # Step 3: Poll for completion (with timeout). Accepts both the
+            # generic vocabulary ("running"/"completed") and the
+            # FargateSandboxOrchestrator vocabulary, which maps ECS task
+            # states to PROVISIONING/ACTIVE (in progress) and TERMINATED
+            # (task stopped; pass/fail comes from the container exit code).
             poll_interval = 10  # seconds
             elapsed = 0
-            while status.get("status") == "running" and elapsed < timeout_seconds:
+            while (
+                self._sandbox_state(status) in _SANDBOX_IN_PROGRESS_STATES
+                and elapsed < timeout_seconds
+            ):
                 await __import__("asyncio").sleep(poll_interval)
                 elapsed += poll_interval
                 status = await self.sandbox_orchestrator.get_sandbox_status(sandbox_id)
 
             # Step 4: Collect results
-            if status.get("status") == "completed":
-                test_results = status.get("test_results", [])
-                sandbox_valid = status.get("all_tests_passed", False)
+            state = self._sandbox_state(status)
+            if state in _SANDBOX_FINISHED_STATES:
+                test_results = status.get("test_results", []) or []
+                if "all_tests_passed" in status:
+                    sandbox_valid = bool(status.get("all_tests_passed"))
+                else:
+                    # No explicit verdict: only a clean exit code counts
+                    # as a pass; a missing exit code fails closed.
+                    sandbox_valid = status.get("exit_code") == 0
                 logger.info(
                     f"Sandbox tests completed: {'PASSED' if sandbox_valid else 'FAILED'}"
                 )
@@ -754,6 +773,11 @@ Response (JSON only):"""
             "sandbox_status": "completed" if not errors else "failed",
             "errors": errors,
         }
+
+    @staticmethod
+    def _sandbox_state(status: dict[str, Any]) -> str:
+        """Normalize a sandbox status payload's state to lower case."""
+        return str(status.get("status") or "").lower()
 
     async def validate_with_sandbox(
         self,

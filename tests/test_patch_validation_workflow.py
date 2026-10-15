@@ -766,3 +766,197 @@ class TestErrorHandling:
 
         assert result.result == ValidationResult.TESTS_FAILED
         assert result.status == WorkflowStatus.TESTS_FAILED
+
+
+# =============================================================================
+# MetaOrchestrator Blocked Results Never Reach Deployment
+# =============================================================================
+
+
+def _orchestrator_result(status, outputs=None, error=None):
+    """Build a real MetaOrchestratorResult with the given status."""
+    from src.agents.meta_orchestrator import AggregatedResult, MetaOrchestratorResult
+
+    aggregated = AggregatedResult(
+        execution_id="exec-test",
+        task_count=1,
+        successful_tasks=1,
+        failed_tasks=0,
+        total_execution_time=0.1,
+        total_tokens_used=0,
+        outputs=outputs if outputs is not None else {},
+    )
+    return MetaOrchestratorResult(
+        execution_id="exec-test",
+        status=status,
+        result=aggregated,
+        hitl_required=status in ("awaiting_hitl", "hitl_request_failed"),
+        error=error,
+    )
+
+
+_PATCH_OUTPUT = {
+    "coder-1": {
+        "patch_diff": "--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-bad\n+good\n",
+        "patched_code": "good",
+        "confidence": 0.9,
+    }
+}
+
+
+class TestOrchestratorBlockedStatus:
+    """A blocked MetaOrchestrator result must stop the workflow before deploy."""
+
+    def _workflow(self, orchestrator_result, sandbox=None, approvals=None):
+        orchestrator = MagicMock()
+        orchestrator.execute = AsyncMock(return_value=orchestrator_result)
+        return PatchValidationWorkflow(
+            meta_orchestrator=orchestrator,
+            sandbox_runner=sandbox,
+            approval_service=approvals,
+            environment="test",
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "orchestrator_result",
+        [
+            _orchestrator_result(
+                "hitl_request_failed",
+                outputs=_PATCH_OUTPUT,
+                error="Failed to create HITL approval request: boom",
+            ),
+            _orchestrator_result("failed", outputs=_PATCH_OUTPUT, error="crashed"),
+            _orchestrator_result("something_new", outputs=_PATCH_OUTPUT),
+            {"status": "hitl_request_failed", "patch": "--- a/x\n+++ b/x\n"},
+        ],
+        ids=["hitl_request_failed", "failed", "unknown-status", "dict-blocked"],
+    )
+    async def test_blocked_status_fails_before_sandbox_and_approval(
+        self, sample_vulnerability, orchestrator_result
+    ):
+        sandbox = MagicMock()
+        sandbox.run_patch_test = AsyncMock()
+        approvals = MagicMock()
+        approvals.create_approval_request = AsyncMock()
+        workflow = self._workflow(orchestrator_result, sandbox, approvals)
+
+        result = await workflow.execute(
+            vulnerability=sample_vulnerability,
+            repository_url="https://github.com/test/repo",
+        )
+
+        assert result.result == ValidationResult.ERROR
+        assert result.status == WorkflowStatus.FAILED
+        assert "blocked" in result.error_message
+        assert result.approval_id is None
+        sandbox.run_patch_test.assert_not_called()
+        approvals.create_approval_request.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_blocked_workflow_cannot_be_approved_into_deployment(
+        self, sample_vulnerability
+    ):
+        workflow = self._workflow(
+            _orchestrator_result("hitl_request_failed", outputs=_PATCH_OUTPUT)
+        )
+        workflow._deploy_to_production = AsyncMock(return_value="deploy-1")
+        result = await workflow.execute(
+            vulnerability=sample_vulnerability,
+            repository_url="https://github.com/test/repo",
+        )
+
+        callback = await workflow.process_approval_callback(
+            workflow_id=result.workflow_id,
+            approval_id="approval-forged",
+            decision="APPROVED",
+            approver_email="engineer@company.com",
+            auto_deploy=True,
+        )
+
+        assert callback.result == ValidationResult.ERROR
+        assert callback.status == WorkflowStatus.FAILED
+        assert callback.deployment_id is None
+        workflow._deploy_to_production.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_completed_without_patch_is_blocked(self, sample_vulnerability):
+        workflow = self._workflow(_orchestrator_result("completed", outputs={}))
+
+        result = await workflow.execute(
+            vulnerability=sample_vulnerability,
+            repository_url="https://github.com/test/repo",
+        )
+
+        assert result.result == ValidationResult.ERROR
+        assert "contained no patch" in result.error_message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", ["completed", "awaiting_hitl"])
+    async def test_proceed_status_reaches_hitl_gate(self, sample_vulnerability, status):
+        workflow = self._workflow(_orchestrator_result(status, outputs=_PATCH_OUTPUT))
+
+        result = await workflow.execute(
+            vulnerability=sample_vulnerability,
+            repository_url="https://github.com/test/repo",
+        )
+
+        assert result.result == ValidationResult.SUCCESS
+        assert result.status == WorkflowStatus.AWAITING_APPROVAL
+        state = await workflow._load_workflow_state(result.workflow_id)
+        assert "+good" in state.patch.patch_content
+        assert state.patch.patched_code == "good"
+        assert state.patch.confidence_score == pytest.approx(0.9)
+
+
+class TestApprovalCallbackGuards:
+    """Callbacks only apply to the workflow's own pending approval."""
+
+    @pytest.mark.asyncio
+    async def test_mismatched_approval_id_rejected(
+        self, workflow_no_services, sample_vulnerability
+    ):
+        result = await workflow_no_services.execute(
+            vulnerability=sample_vulnerability,
+            repository_url="https://github.com/test/repo",
+        )
+
+        callback = await workflow_no_services.process_approval_callback(
+            workflow_id=result.workflow_id,
+            approval_id="approval-other",
+            decision="APPROVED",
+            approver_email="engineer@company.com",
+            auto_deploy=True,
+        )
+
+        assert callback.result == ValidationResult.ERROR
+        assert callback.deployment_id is None
+        status = await workflow_no_services.get_workflow_status(result.workflow_id)
+        assert status["status"] == "awaiting_approval"
+
+    @pytest.mark.asyncio
+    async def test_already_decided_workflow_not_redeployed(
+        self, workflow_no_services, sample_vulnerability
+    ):
+        result = await workflow_no_services.execute(
+            vulnerability=sample_vulnerability,
+            repository_url="https://github.com/test/repo",
+        )
+        await workflow_no_services.process_approval_callback(
+            workflow_id=result.workflow_id,
+            approval_id=result.approval_id,
+            decision="REJECTED",
+            approver_email="engineer@company.com",
+        )
+
+        callback = await workflow_no_services.process_approval_callback(
+            workflow_id=result.workflow_id,
+            approval_id=result.approval_id,
+            decision="APPROVED",
+            approver_email="engineer@company.com",
+            auto_deploy=True,
+        )
+
+        assert callback.result == ValidationResult.ERROR
+        assert callback.status == WorkflowStatus.REJECTED
+        assert callback.deployment_id is None

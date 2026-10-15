@@ -42,6 +42,19 @@ except ImportError:
     logger.warning("Boto3 not available - using mock mode")
 
 
+# MetaOrchestrator result statuses that allow the workflow to continue to
+# sandbox testing and its own HITL approval gate. Every other status -- notably
+# "hitl_request_failed" (HITL was required but no approval request could be
+# created) and "failed" -- is blocked and must never reach deployment.
+ORCHESTRATOR_PROCEED_STATUSES: frozenset[str] = frozenset(
+    {"completed", "awaiting_hitl"}
+)
+
+
+class PatchGenerationBlockedError(Exception):
+    """Raised when MetaOrchestrator output is blocked and must not be applied."""
+
+
 class WorkflowStatus(Enum):
     """Status of the patch validation workflow."""
 
@@ -437,10 +450,9 @@ class PatchValidationWorkflow:
                 },
             )
 
-            patch_content = result.get("patch", "")
-            patched_code = result.get("patched_code", "")
-            agent_id = result.get("agent_id", "meta-orchestrator")
-            confidence = result.get("confidence", 0.85)
+            patch_content, patched_code, agent_id, confidence = (
+                self._extract_orchestrator_patch(result)
+            )
         else:
             # Mock patch for testing
             patch_content = f"""--- a/{vulnerability.file_path}
@@ -462,6 +474,67 @@ class PatchValidationWorkflow:
             agent_id=agent_id,
             confidence_score=confidence,
         )
+
+    @staticmethod
+    def _extract_orchestrator_patch(result: Any) -> tuple[str, str, str, float]:
+        """
+        Extract patch fields from a MetaOrchestrator result, failing closed.
+
+        Accepts either a ``MetaOrchestratorResult`` (status + aggregated agent
+        outputs) or a legacy dict with ``patch`` / ``patched_code`` keys.
+
+        Returns:
+            Tuple of (patch_content, patched_code, agent_id, confidence)
+
+        Raises:
+            PatchGenerationBlockedError: If the orchestrator reported a status
+                outside ORCHESTRATOR_PROCEED_STATUSES (e.g.
+                ``hitl_request_failed``), or a structured result carried no
+                patch.
+        """
+        if isinstance(result, dict):
+            status = result.get("status")
+            if status is not None and status not in ORCHESTRATOR_PROCEED_STATUSES:
+                raise PatchGenerationBlockedError(
+                    f"MetaOrchestrator result blocked (status={status}): "
+                    f"{result.get('error') or 'no error detail'}"
+                )
+            return (
+                result.get("patch", ""),
+                result.get("patched_code", ""),
+                result.get("agent_id", "meta-orchestrator"),
+                result.get("confidence", 0.85),
+            )
+
+        status = getattr(result, "status", None)
+        if status not in ORCHESTRATOR_PROCEED_STATUSES:
+            raise PatchGenerationBlockedError(
+                f"MetaOrchestrator result blocked (status={status}): "
+                f"{getattr(result, 'error', None) or 'no error detail'}"
+            )
+
+        aggregated = getattr(result, "result", None)
+        outputs = getattr(aggregated, "outputs", None) or {}
+        diffs: list[str] = []
+        patched_code = ""
+        confidence = 0.85
+        for output in outputs.values():
+            if not isinstance(output, dict):
+                continue
+            diff = output.get("patch_diff") or output.get("diff") or output.get("patch")
+            if isinstance(diff, str) and diff:
+                diffs.append(diff)
+            code = output.get("patched_code")
+            if isinstance(code, str) and code and not patched_code:
+                patched_code = code
+            if isinstance(output.get("confidence"), (int, float)):
+                confidence = float(output["confidence"])
+
+        if not diffs and not patched_code:
+            raise PatchGenerationBlockedError(
+                f"MetaOrchestrator result (status={status}) contained no patch"
+            )
+        return "\n".join(diffs), patched_code, "meta-orchestrator", confidence
 
     async def _run_sandbox_tests(
         self,
@@ -563,6 +636,39 @@ class PatchValidationWorkflow:
             )
 
         logger.info(f"Processing approval callback: {workflow_id}, decision={decision}")
+
+        # Only a workflow that reached its own HITL gate can be decided, and
+        # only for the approval request it created. A workflow that failed
+        # or was blocked (e.g. MetaOrchestrator "hitl_request_failed") must
+        # never be approved into deployment.
+        if state.status != WorkflowStatus.AWAITING_APPROVAL:
+            logger.warning(
+                f"Approval callback ignored for {workflow_id}: "
+                f"status is {state.status.value}, not awaiting_approval"
+            )
+            return self._create_result(
+                state,
+                ValidationResult.ERROR,
+                start_time,
+                error_message=(
+                    f"Workflow {workflow_id} is not awaiting approval "
+                    f"(status={state.status.value})"
+                ),
+            )
+        if not state.approval_id or approval_id != state.approval_id:
+            logger.warning(
+                f"Approval callback ignored for {workflow_id}: approval_id "
+                "does not match the workflow's approval request"
+            )
+            return self._create_result(
+                state,
+                ValidationResult.ERROR,
+                start_time,
+                error_message=(
+                    f"Approval {approval_id} does not belong to workflow "
+                    f"{workflow_id}"
+                ),
+            )
 
         try:
             if decision.upper() == "APPROVED":

@@ -4,6 +4,16 @@
 
 Deployed
 
+> **Status note (2026-10-14) -- approver evidence.** Explainability records are
+> produced by `src/services/explainability/`, but until this date nothing carried
+> them into the approval flow. `ApprovalRequest` in
+> `src/services/hitl_approval_service.py` now has an optional `explainability`
+> field (record id, summary, confidence, reasoning chain), accepted by
+> `create_approval_request` and `create_or_auto_approve` and returned by the
+> approval detail endpoint. Agent-side callers do not populate it yet. The
+> Reviews table above remains unfilled.
+
+
 ## Date
 
 2026-01-25

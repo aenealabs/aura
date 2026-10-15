@@ -21,6 +21,8 @@ Usage:
 """
 
 import asyncio
+import difflib
+import inspect
 import logging
 import uuid
 from abc import ABC, abstractmethod
@@ -29,7 +31,19 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, cast
 
+# Autonomy policy has a single source of truth: the AutonomyPolicyService
+# module. AutonomyLevel and AutonomyPolicy are re-exported from this module so
+# existing ``from src.agents.meta_orchestrator import AutonomyLevel,
+# AutonomyPolicy`` imports keep working. Using the service implementation means
+# the MetaOrchestrator honors IMMUTABLE_GUARDRAILS, instance guardrails, and the
+# hitl_enabled master toggle exactly as the rest of the platform does.
+from src.services.autonomy_policy_service import AutonomyLevel, AutonomyPolicy
+
 logger = logging.getLogger(__name__)
+
+# Marker used when no agent produced a patch diff, so an approver can tell
+# "no diff available" apart from an intentionally empty change.
+NO_PATCH_DIFF_MARKER = "[no patch diff produced by agents in this execution]"
 
 
 # =============================================================================
@@ -62,15 +76,6 @@ class AgentCapability(Enum):
     COMPETITOR_WATCH = "competitor_watch"
     TREND_ANALYSIS = "trend_analysis"
     DOCUMENTATION_AGGREGATION = "documentation_aggregation"
-
-
-class AutonomyLevel(Enum):
-    """Defines how much human oversight is required."""
-
-    FULL_HITL = "full_hitl"  # All actions require approval
-    CRITICAL_HITL = "critical_hitl"  # Only CRITICAL/HIGH severity requires approval
-    AUDIT_ONLY = "audit_only"  # No approval needed, but all actions logged
-    FULL_AUTONOMOUS = "full_autonomous"  # No approval, minimal logging
 
 
 class TaskStatus(Enum):
@@ -163,6 +168,8 @@ class AggregatedResult:
     outputs: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     agent_tree: dict[str, Any] = field(default_factory=dict)
+    # task_id -> AgentCapability value, used to classify outputs as evidence
+    capabilities: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -170,7 +177,10 @@ class MetaOrchestratorResult:
     """Final result from MetaOrchestrator execution."""
 
     execution_id: str
-    status: str  # "completed", "awaiting_hitl", "failed"
+    # "completed", "awaiting_hitl", "hitl_request_failed", "failed".
+    # "hitl_request_failed" means HITL approval was required but no approval
+    # request could be created; the result is blocked and must not be applied.
+    status: str
     result: AggregatedResult | None = None
     hitl_required: bool = False
     hitl_request_id: str | None = None
@@ -179,114 +189,6 @@ class MetaOrchestratorResult:
     autonomy_level: AutonomyLevel | None = None
     execution_time_seconds: float = 0.0
     error: str | None = None
-
-
-@dataclass
-class AutonomyPolicy:
-    """Organization-specific autonomy configuration."""
-
-    organization_id: str
-    default_level: AutonomyLevel = AutonomyLevel.CRITICAL_HITL
-
-    # Override by severity
-    severity_overrides: dict[str, AutonomyLevel] = field(default_factory=dict)
-
-    # Override by repository
-    repository_overrides: dict[str, AutonomyLevel] = field(default_factory=dict)
-
-    # Override by operation type
-    operation_overrides: dict[str, AutonomyLevel] = field(default_factory=dict)
-
-    # Guardrails (cannot be overridden)
-    always_require_hitl: list[str] = field(
-        default_factory=lambda: [
-            "production_deployment",
-            "credential_modification",
-            "access_control_change",
-            "database_migration",
-            "infrastructure_change",
-        ]
-    )
-
-    def get_autonomy_level(
-        self,
-        severity: str,
-        repository: str,
-        operation: str,
-    ) -> AutonomyLevel:
-        """Determine autonomy level for a specific action."""
-        # Check guardrails first (cannot be bypassed)
-        if operation in self.always_require_hitl:
-            return AutonomyLevel.FULL_HITL
-
-        # Check operation-specific override
-        if operation in self.operation_overrides:
-            return self.operation_overrides[operation]
-
-        # Check repository-specific override
-        if repository in self.repository_overrides:
-            return self.repository_overrides[repository]
-
-        # Check severity-specific override
-        if severity.upper() in self.severity_overrides:
-            return self.severity_overrides[severity.upper()]
-
-        # Fall back to default
-        return self.default_level
-
-    @classmethod
-    def from_preset(cls, preset_name: str) -> "AutonomyPolicy":
-        """Create an AutonomyPolicy from a named preset."""
-        presets = {
-            "defense_contractor": cls(
-                organization_id="defense",
-                default_level=AutonomyLevel.FULL_HITL,
-                severity_overrides={"LOW": AutonomyLevel.CRITICAL_HITL},
-            ),
-            "financial_services": cls(
-                organization_id="financial",
-                default_level=AutonomyLevel.FULL_HITL,
-                severity_overrides={
-                    "LOW": AutonomyLevel.AUDIT_ONLY,
-                },
-            ),
-            "fintech_startup": cls(
-                organization_id="fintech",
-                default_level=AutonomyLevel.CRITICAL_HITL,
-                severity_overrides={
-                    "LOW": AutonomyLevel.AUDIT_ONLY,
-                    "MEDIUM": AutonomyLevel.AUDIT_ONLY,
-                },
-            ),
-            "enterprise_standard": cls(
-                organization_id="enterprise",
-                default_level=AutonomyLevel.CRITICAL_HITL,
-                severity_overrides={
-                    "LOW": AutonomyLevel.FULL_AUTONOMOUS,
-                    "MEDIUM": AutonomyLevel.AUDIT_ONLY,
-                },
-            ),
-            "internal_tools": cls(
-                organization_id="internal",
-                default_level=AutonomyLevel.FULL_AUTONOMOUS,
-                operation_overrides={
-                    "credential_modification": AutonomyLevel.FULL_HITL,
-                    "production_deployment": AutonomyLevel.CRITICAL_HITL,
-                },
-            ),
-            "fully_autonomous": cls(
-                organization_id="autonomous",
-                default_level=AutonomyLevel.FULL_AUTONOMOUS,
-                # Guardrails still apply
-            ),
-        }
-
-        if preset_name not in presets:
-            raise ValueError(
-                f"Unknown preset: {preset_name}. Available: {list(presets.keys())}"
-            )
-
-        return presets[preset_name]
 
 
 # =============================================================================
@@ -932,10 +834,20 @@ class MetaOrchestrator:
             operation = self._classify_operation(task)
             autonomy = self.autonomy_policy.get_autonomy_level(
                 severity=severity,
-                repository=repository,
                 operation=operation,
+                repository=repository,
             )
-            logger.info(f"[{execution_id}] Autonomy level: {autonomy.value}")
+            # requires_hitl() is the authoritative gate: it applies the
+            # immutable + instance guardrails and the hitl_enabled toggle.
+            hitl_required = self.autonomy_policy.requires_hitl(
+                severity=severity,
+                operation=operation,
+                repository=repository,
+            )
+            logger.info(
+                f"[{execution_id}] Autonomy level: {autonomy.value} "
+                f"(operation={operation}, hitl_required={hitl_required})"
+            )
 
             # Phase 4: Execute task DAG with dynamic agent spawning
             logger.info(f"[{execution_id}] Executing task DAG...")
@@ -951,6 +863,7 @@ class MetaOrchestrator:
                 severity,
                 repository,
                 execution_id,
+                hitl_required=hitl_required,
             )
 
             final_result.execution_time_seconds = (
@@ -1206,9 +1119,11 @@ class MetaOrchestrator:
 
         outputs = {}
         errors = []
+        capabilities = {}
 
         for task_id, result in results.items():
             outputs[task_id] = result.output
+            capabilities[task_id] = result.capability.value
             if result.error:
                 errors.append(f"{task_id}: {result.error}")
 
@@ -1239,6 +1154,7 @@ class MetaOrchestrator:
             outputs=outputs,
             errors=errors,
             agent_tree=agent_tree,
+            capabilities=capabilities,
         )
 
     async def _apply_autonomy(
@@ -1248,8 +1164,34 @@ class MetaOrchestrator:
         severity: str,
         repository: str,
         execution_id: str,
+        hitl_required: bool | None = None,
     ) -> MetaOrchestratorResult:
-        """Apply autonomy policy to determine if HITL is needed."""
+        """Apply autonomy policy to determine if HITL is needed.
+
+        Args:
+            result: Aggregated agent results.
+            autonomy: Autonomy level resolved by the policy.
+            severity: Severity of the task.
+            repository: Target repository.
+            execution_id: Execution identifier.
+            hitl_required: Authoritative HITL decision from
+                ``AutonomyPolicy.requires_hitl`` (guardrails + master toggle).
+                When None, it is derived from ``autonomy`` and ``severity``.
+        """
+        if hitl_required is None:
+            hitl_required = autonomy == AutonomyLevel.FULL_HITL or (
+                autonomy == AutonomyLevel.CRITICAL_HITL
+                and severity.upper() in ("HIGH", "CRITICAL")
+            )
+
+        if hitl_required:
+            logger.info(
+                f"[{execution_id}] HITL required "
+                f"(autonomy={autonomy.value}, severity={severity})"
+            )
+            return await self._request_hitl_approval(
+                result, severity, repository, execution_id
+            )
 
         if autonomy == AutonomyLevel.FULL_AUTONOMOUS:
             # Auto-approve, minimal logging
@@ -1263,50 +1205,163 @@ class MetaOrchestrator:
                 autonomy_level=autonomy,
             )
 
-        elif autonomy == AutonomyLevel.AUDIT_ONLY:
-            # Auto-approve, full audit logging
-            await self._log_audit_trail(result, repository, severity, execution_id)
-            logger.info(f"[{execution_id}] Auto-approved with audit (AUDIT_ONLY)")
-            return MetaOrchestratorResult(
-                execution_id=execution_id,
-                status="completed",
-                result=result,
-                hitl_required=False,
-                auto_approved=True,
-                audit_logged=True,
-                autonomy_level=autonomy,
-            )
+        # AUDIT_ONLY, CRITICAL_HITL below the severity threshold, or HITL
+        # disabled by the policy master toggle: auto-approve with full audit.
+        await self._log_audit_trail(result, repository, severity, execution_id)
+        logger.info(
+            f"[{execution_id}] Auto-approved with audit "
+            f"(autonomy={autonomy.value}, severity={severity})"
+        )
+        return MetaOrchestratorResult(
+            execution_id=execution_id,
+            status="completed",
+            result=result,
+            hitl_required=False,
+            auto_approved=True,
+            audit_logged=True,
+            autonomy_level=autonomy,
+        )
 
-        elif autonomy == AutonomyLevel.CRITICAL_HITL:
-            # Only require HITL for HIGH/CRITICAL
-            if severity.upper() in ("HIGH", "CRITICAL"):
-                logger.info(
-                    f"[{execution_id}] HITL required (CRITICAL_HITL, severity={severity})"
-                )
-                return await self._request_hitl_approval(
-                    result, severity, repository, execution_id
-                )
+    @staticmethod
+    def _to_patch_severity(severity: str) -> Any:
+        """Convert a severity string to the HITL service's PatchSeverity enum.
+
+        Falls back to the raw string when the value is not a known severity.
+        """
+        from src.services.hitl_approval_service import PatchSeverity
+
+        try:
+            return PatchSeverity(severity.upper())
+        except ValueError:
+            return severity
+
+    @staticmethod
+    async def _maybe_await(value: Any) -> Any:
+        """Await ``value`` if it is awaitable (supports sync and async services)."""
+        if inspect.isawaitable(value):
+            return await value
+        return value
+
+    @staticmethod
+    def _extract_approval_id(request: Any) -> str | None:
+        """Extract a usable approval id from an approval request object or dict."""
+        candidate: Any = None
+        if isinstance(request, dict):
+            candidate = request.get("approval_id") or request.get("request_id")
+        else:
+            candidate = getattr(request, "approval_id", None)
+        if isinstance(candidate, str) and candidate:
+            return candidate
+        return None
+
+    def _collect_hitl_evidence(
+        self, result: AggregatedResult, severity: str
+    ) -> dict[str, Any]:
+        """Collect approver-facing evidence from agent outputs.
+
+        Returns a dict with ``patch_diff``, ``original_code``,
+        ``sandbox_results`` and ``review_findings``. Missing evidence is marked
+        explicitly (e.g. ``{"status": "not_run", ...}``) so that an approver
+        can distinguish "not run" from "passed".
+        """
+        diffs: list[str] = []
+        original_code = ""
+        sandbox_runs: list[dict[str, Any]] = []
+        static_validations: list[dict[str, Any]] = []
+        review_findings: list[dict[str, Any]] = []
+
+        for task_id, output in result.outputs.items():
+            if not isinstance(output, dict):
+                continue
+            capability = result.capabilities.get(task_id, "unknown")
+
+            # Patch / diff evidence
+            explicit_diff = output.get("patch_diff") or output.get("diff")
+            if isinstance(explicit_diff, str) and explicit_diff:
+                diffs.append(explicit_diff)
             else:
-                await self._log_audit_trail(result, repository, severity, execution_id)
-                logger.info(
-                    f"[{execution_id}] Auto-approved (CRITICAL_HITL, severity={severity})"
-                )
-                return MetaOrchestratorResult(
-                    execution_id=execution_id,
-                    status="completed",
-                    result=result,
-                    hitl_required=False,
-                    auto_approved=True,
-                    audit_logged=True,
-                    autonomy_level=autonomy,
+                patched = output.get("patched_code")
+                original = output.get("original_code")
+                if isinstance(patched, str) and patched:
+                    if isinstance(original, str) and original:
+                        original_code = original_code or original
+                        diffs.append(
+                            "".join(
+                                difflib.unified_diff(
+                                    original.splitlines(keepends=True),
+                                    patched.splitlines(keepends=True),
+                                    fromfile=f"{task_id}/original",
+                                    tofile=f"{task_id}/patched",
+                                )
+                            )
+                        )
+                    else:
+                        diffs.append(
+                            f"# {task_id}: full patched code "
+                            "(original not available for diff)\n" + patched
+                        )
+
+            # Sandbox / validation evidence
+            sandbox = output.get("sandbox_validation")
+            if isinstance(sandbox, dict):
+                sandbox_runs.append({"task_id": task_id, **sandbox})
+            if "valid" in output and capability in (
+                AgentCapability.PATCH_VALIDATION.value,
+                "unknown",
+            ):
+                static_validations.append(
+                    {
+                        "task_id": task_id,
+                        "valid": output.get("valid"),
+                        "issues": output.get("issues", []),
+                    }
                 )
 
-        else:  # FULL_HITL
-            # Always require HITL approval
-            logger.info(f"[{execution_id}] HITL required (FULL_HITL)")
-            return await self._request_hitl_approval(
-                result, severity, repository, execution_id
+            # Review findings
+            finding_keys = (
+                "vulnerabilities",
+                "findings",
+                "finding",
+                "patch_valid",
+                "recommendations",
             )
+            if any(key in output for key in finding_keys):
+                review_findings.append(
+                    {
+                        "task_id": task_id,
+                        "capability": capability,
+                        **{k: output[k] for k in finding_keys if k in output},
+                        **({"status": output["status"]} if "status" in output else {}),
+                    }
+                )
+
+        if sandbox_runs:
+            sandbox_results: dict[str, Any] = {
+                "status": "completed",
+                "passed": all(run.get("sandbox_valid") is True for run in sandbox_runs),
+                "runs": sandbox_runs,
+            }
+        else:
+            sandbox_results = {
+                "status": "not_run",
+                "reason": (
+                    "No sandbox validation was performed by any agent in "
+                    "this execution"
+                ),
+            }
+        if static_validations:
+            sandbox_results["static_validation"] = static_validations
+
+        return {
+            "patch_diff": "\n".join(diffs) if diffs else NO_PATCH_DIFF_MARKER,
+            "patch_diff_available": bool(diffs),
+            "original_code": original_code,
+            "sandbox_results": sandbox_results,
+            "review_findings": review_findings,
+            "severity": severity,
+            "failed_tasks": result.failed_tasks,
+            "errors": list(result.errors),
+        }
 
     async def _request_hitl_approval(
         self,
@@ -1315,41 +1370,88 @@ class MetaOrchestrator:
         repository: str,
         execution_id: str,
     ) -> MetaOrchestratorResult:
-        """Request HITL approval for the execution result."""
-        hitl_request_id = None
+        """Request HITL approval for the execution result.
 
-        if self.hitl_service:
-            try:
-                # Create approval request
-                request = await self.hitl_service.create_approval_request(
+        Fails closed: if approval is required but no approval request can be
+        created (no HITL service, the service raises, or it returns no usable
+        approval id), the result is returned with status
+        ``"hitl_request_failed"`` and must not be applied.
+        """
+        evidence = self._collect_hitl_evidence(result, severity)
+
+        def _blocked(error: str) -> MetaOrchestratorResult:
+            logger.error(f"[{execution_id}] HITL request failed, blocking: {error}")
+            return MetaOrchestratorResult(
+                execution_id=execution_id,
+                status="hitl_request_failed",
+                result=result,
+                hitl_required=True,
+                hitl_request_id=None,
+                auto_approved=False,
+                autonomy_level=AutonomyLevel.FULL_HITL,
+                error=error,
+            )
+
+        if not self.hitl_service:
+            return _blocked("HITL approval required but no HITL service configured")
+
+        try:
+            request = await self._maybe_await(
+                self.hitl_service.create_approval_request(
                     patch_id=execution_id,
                     vulnerability_id=f"meta-{execution_id}",
-                    severity=severity,
+                    severity=self._to_patch_severity(severity),
+                    patch_diff=evidence["patch_diff"],
+                    original_code=evidence["original_code"],
+                    sandbox_results=evidence["sandbox_results"],
                     metadata={
+                        # Tenant scope for the approvals API; approvals with
+                        # no organization are visible only to platform admins.
+                        "organization_id": self.autonomy_policy.organization_id,
                         "repository": repository,
+                        "severity": severity,
                         "task_count": result.task_count,
                         "successful_tasks": result.successful_tasks,
+                        "failed_tasks": result.failed_tasks,
+                        "errors": evidence["errors"],
+                        "patch_diff_available": evidence["patch_diff_available"],
+                        "review_findings": evidence["review_findings"],
                         "outputs": result.outputs,
                     },
                 )
-                hitl_request_id = request.approval_id
+            )
+        except Exception as e:
+            return _blocked(f"Failed to create HITL approval request: {e}")
 
-                # Send notification if service available
-                if self.notification_service:
-                    await self.notification_service.send_approval_notification(
+        hitl_request_id = self._extract_approval_id(request)
+        if hitl_request_id is None:
+            return _blocked("HITL service returned no usable approval id")
+
+        # Notification failure does not invalidate an existing approval
+        # request: the request is still pending and can be approved.
+        if self.notification_service:
+            try:
+                await self._maybe_await(
+                    self.notification_service.send_approval_notification(
                         approval_id=hitl_request_id,
                         patch_id=execution_id,
                         vulnerability_id=f"meta-{execution_id}",
                         severity=severity,
-                        created_at=datetime.now().isoformat(),
-                        expires_at="",
-                        sandbox_results={},
-                        patch_diff="",
+                        created_at=str(
+                            getattr(request, "created_at", None)
+                            or datetime.now().isoformat()
+                        ),
+                        expires_at=str(getattr(request, "expires_at", None) or ""),
+                        sandbox_results=evidence["sandbox_results"],
+                        patch_diff=evidence["patch_diff"],
                         recipients=[],
                     )
-
+                )
             except Exception as e:
-                logger.error(f"Failed to create HITL request: {e}")
+                logger.error(
+                    f"[{execution_id}] Failed to send HITL notification for "
+                    f"{hitl_request_id}: {e}"
+                )
 
         return MetaOrchestratorResult(
             execution_id=execution_id,
@@ -1481,7 +1583,7 @@ if __name__ == "__main__":
 
         for severity, repo, operation in test_cases:
             level = orchestrator.autonomy_policy.get_autonomy_level(
-                severity, repo, operation
+                severity=severity, operation=operation, repository=repo
             )
             print(f"  {severity} / {operation}: {level.value}")
 

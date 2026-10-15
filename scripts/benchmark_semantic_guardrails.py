@@ -36,19 +36,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.services.semantic_guardrails.decision_engine import (
+from src.services.semantic_guardrails.decision_engine import (  # noqa: E402
     DecisionEngine,
-)  # noqa: E402
-from src.services.semantic_guardrails.engine import (
+)
+from src.services.semantic_guardrails.engine import (  # noqa: E402
     SemanticGuardrailsEngine,
-)  # noqa: E402
+)
 from src.services.semantic_guardrails.multi_turn_tracker import (  # noqa: E402
     MultiTurnTracker,
 )
 from src.services.semantic_guardrails.normalizer import TextNormalizer  # noqa: E402
-from src.services.semantic_guardrails.pattern_matcher import (
+from src.services.semantic_guardrails.pattern_matcher import (  # noqa: E402
     PatternMatcher,
-)  # noqa: E402
+)
 
 TARGETS_MS = {
     "L1 normalize": 5.0,

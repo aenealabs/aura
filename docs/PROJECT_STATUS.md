@@ -436,7 +436,7 @@ regression in fork-marked tests. The 104 pre-existing macOS isolated-run failure
 `test_ticketing_connectors.py` (15), `test_database_connections.py` (8),
 `test_notification_service.py` (5), `test_migration_toolkit.py` (5),
 `security/test_guardrails_edge_cases.py` (4), and seven others with 1-2 each. They are not caused by
-this work and are not yet triaged. All 104 pass in CI on Linux.
+this work and are not yet triaged. None of them fail in CI on Linux (0 failures in that run).
 
 **CI (PR #526, Linux):** `Python Quality & Tests` -> 26,130 passed, 585 skipped, 0 failed, coverage
 81.48%; all other required checks green.

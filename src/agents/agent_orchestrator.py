@@ -8,11 +8,12 @@ for better modularity and testability.
 Includes checkpoint/resume support for long-running workflows.
 """
 
-import ast
 import asyncio
 import json
 import logging
+import math
 import os
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -108,12 +109,26 @@ if TYPE_CHECKING:
     from src.services.mcp_gateway_client import MCPGatewayClient
     from src.services.mcp_tool_server import MCPToolServer
     from src.services.notification_service import NotificationService
+    from src.services.sandbox_network_service import FargateSandboxOrchestrator
     from src.services.titan_cognitive_integration import TitanCognitiveService
 
 logger = logging.getLogger(__name__)
 
 # Constants
 SIMILARITY_THRESHOLD = 50  # Minimum similarity score threshold
+
+# Fallback confidences for hybrid context items. These are used ONLY when the
+# graph / vector backend returns a result without a relevance score (the
+# in-file mock stores and the current service adapters return plain strings).
+# When a backend supplies a score (e.g. OpenSearch ``_score``), the normalized
+# score is used instead; see ContextRetrievalService._resolve_confidence.
+DEFAULT_GRAPH_CONFIDENCE = 0.95
+DEFAULT_VECTOR_CONFIDENCE = 0.90
+
+# Confidence recorded with a memory episode when no measured signal (e.g. the
+# reviewer's self-reflection confidence) is available. This is a fixed prior,
+# not a measurement; episodes record which source was used.
+DEFAULT_DECISION_CONFIDENCE = 0.8
 
 """--- Configuration & Utility Setup ---
 Simulate reading environment variables (Secure practice for CMMC/SOX)
@@ -339,25 +354,87 @@ class ContextRetrievalService:
         # Add structural context from graph
         structural_results = self.graph.run_gremlin_query(target_entity)
         for result in structural_results:
+            content, score = self._split_scored_result(result)
+            if not content:
+                continue
+            confidence, scored = self._resolve_confidence(
+                score, DEFAULT_GRAPH_CONFIDENCE
+            )
             context.add_item(
-                content=result,
+                content=content,
                 source=ContextSource.GRAPH_STRUCTURAL,
-                confidence=0.95,
+                confidence=confidence,
                 entity_id=target_entity,
+                metadata={"confidence_source": "backend" if scored else "default"},
             )
 
         # Add semantic context from vector store
-        semantic_results = self.vectors.run_knn_search(user_query)
+        # Adapters that retain backend relevance scores expose
+        # run_knn_search_scored (service_adapters.OpenSearchVectorAdapter);
+        # others return plain strings and get the default confidence.
+        scored_search = getattr(self.vectors, "run_knn_search_scored", None)
+        if callable(scored_search):
+            semantic_results = scored_search(user_query)
+        else:
+            semantic_results = self.vectors.run_knn_search(user_query)
         for result in semantic_results:
+            content, score = self._split_scored_result(result)
+            if not content:
+                continue
             # Determine if this is a security policy based on content
             source = (
                 ContextSource.SECURITY_POLICY
-                if "Security Policy" in result
+                if "Security Policy" in content
                 else ContextSource.VECTOR_SEMANTIC
             )
-            context.add_item(content=result, source=source, confidence=0.90)
+            confidence, scored = self._resolve_confidence(
+                score, DEFAULT_VECTOR_CONFIDENCE
+            )
+            context.add_item(
+                content=content,
+                source=source,
+                confidence=confidence,
+                metadata={"confidence_source": "backend" if scored else "default"},
+            )
 
         return context
+
+    @staticmethod
+    def _split_scored_result(result: Any) -> tuple[str, Any]:
+        """Split a backend result into (content, raw_score).
+
+        Backends may return plain strings (no score), dicts shaped like
+        OpenSearch hits (``text``/``content`` plus ``score``/``_score``/
+        ``similarity``/``confidence``), or ``(content, score)`` tuples.
+        """
+        if isinstance(result, str):
+            return result, None
+        if isinstance(result, dict):
+            content = result.get("text") or result.get("content") or ""
+            for key in ("score", "_score", "similarity", "confidence"):
+                if result.get(key) is not None:
+                    return str(content), result[key]
+            return str(content), None
+        if isinstance(result, (tuple, list)) and len(result) == 2:
+            return str(result[0]), result[1]
+        return str(result), None
+
+    @staticmethod
+    def _resolve_confidence(raw_score: Any, default: float) -> tuple[float, bool]:
+        """Normalize a backend relevance score to 0-1.
+
+        Returns ``(confidence, True)`` when the backend supplied a usable
+        numeric score, otherwise ``(default, False)``. Scores are clamped to
+        [0, 1]: OpenSearch k-NN ``_score`` is already in (0, 1] for the
+        cosinesimil and l2 spaces, while inner-product spaces can exceed 1
+        and are capped rather than rescaled.
+        """
+        if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
+            return default, False
+        score = float(raw_score)
+        if math.isnan(score) or math.isinf(score):
+            return default, False
+        return min(1.0, max(0.0, score)), True
 
 
 # FIX: Corrected indentation for the class and its methods.
@@ -391,6 +468,7 @@ class System2Orchestrator:
         queue_service: "AgentQueueService | None" = None,
         use_async_messaging: bool = False,
         checkpoint_service: "CheckpointPersistenceService | None" = None,
+        sandbox_orchestrator: "FargateSandboxOrchestrator | None" = None,
     ):
         """Initialize the System2Orchestrator.
 
@@ -406,6 +484,9 @@ class System2Orchestrator:
             queue_service: Optional agent queue service for async messaging (Issue #19).
             use_async_messaging: Enable async dispatch via SQS queues (Issue #19).
             checkpoint_service: Optional checkpoint persistence service for DynamoDB storage.
+            sandbox_orchestrator: Optional sandbox orchestrator passed to ValidatorAgent
+                for runtime patch testing. If None, the HITL sandbox step is
+                reported as SKIPPED.
         """
         self.llm = llm_client
         self.checkpoint_service = checkpoint_service
@@ -433,7 +514,9 @@ class System2Orchestrator:
             enable_reflection=enable_reflection,
         )
         self.validator_agent = ValidatorAgent(
-            llm_client=llm_client, monitor=self.monitor
+            llm_client=llm_client,
+            monitor=self.monitor,
+            sandbox_orchestrator=sandbox_orchestrator,
         )
 
         # HITL services (optional - enables approval workflow)
@@ -854,9 +937,7 @@ class System2Orchestrator:
                 )
 
                 # Add remediation context
-                remediation_text = (
-                    "Security Remediation Required: FIX: Use SHA256 instead of SHA1."
-                )
+                remediation_text = self._build_remediation_text(review_result)
                 hybrid_context.add_remediation(remediation_text, confidence=1.0)
                 phase = WorkflowPhase.REMEDIATION
 
@@ -869,7 +950,7 @@ class System2Orchestrator:
         # Phase 5: VALIDATE
         validation_result = await self.validator_agent.validate_code(
             self.final_code,
-            expected_elements=["import hashlib", "calculate_checksum"],
+            expected_elements=self._expected_elements_for_task(tasks),
         )
         is_valid = validation_result["valid"]
 
@@ -1009,9 +1090,7 @@ class System2Orchestrator:
                 "Remediated",
             )
 
-            remediation_text = (
-                "Security Remediation Required: FIX: Use SHA256 instead of SHA1."
-            )
+            remediation_text = self._build_remediation_text(review_result)
             hybrid_context.add_remediation(remediation_text, confidence=1.0)
 
             if attempt == max_attempts:
@@ -1023,7 +1102,7 @@ class System2Orchestrator:
         # Phase 5: VALIDATE
         validation_result = await self.validator_agent.validate_code(
             self.final_code,
-            expected_elements=["import hashlib", "calculate_checksum"],
+            expected_elements=self._expected_elements_for_task(tasks),
         )
         is_valid = validation_result["valid"]
 
@@ -1264,28 +1343,113 @@ Response (JSON only):"""
 
         return {"status": "PASS", "finding": "Code is secure and compliant (SHA256)."}
 
-    def _validator_agent(self, code: str) -> bool:
-        """
-        Runs basic structural and syntax validation tests.
+    def _validator_agent(
+        self, code: str, expected_elements: list[str] | None = None
+    ) -> bool:
+        """Synchronous static validation backed by the ValidatorAgent checks.
 
-        FIX: Actually validate Python syntax using ast.parse() instead of just string matching.
+        Runs the ValidatorAgent's syntax, structure, and security checks.
+        Structural requirements come from the caller (normally derived from
+        the planned task via ``_expected_elements_for_task``) rather than
+        from hardcoded strings.
+
+        Args:
+            code: Source code to validate.
+            expected_elements: Elements the code must contain for the task.
+
+        Returns:
+            True if syntax, structure, and security checks all pass.
         """
         print(f"\n[{AgentRole.VALIDATOR.value}] Running structural and unit tests...")
         self.monitor.record_agent_activity(tokens_used=500)
 
-        # FIX: First check syntax validity using AST parsing
-        try:
-            ast.parse(code)
-        except SyntaxError:
+        validator = self.validator_agent
+        if not validator._validate_syntax(code)["valid"]:
             print(
                 f"[{AgentRole.VALIDATOR.value}] Syntax error detected in generated code."
             )
             return False
 
-        # Then check for required structural elements
-        return bool("import hashlib" in code and "calculate_checksum" in code)
+        structure = validator._validate_structure(code, expected_elements or [])
+        security = validator._validate_security(code)
+        return bool(structure["valid"] and security["valid"])
 
-    async def execute_request(self, user_prompt: str) -> dict[str, Any]:
+    @staticmethod
+    def _expected_elements_for_task(tasks: dict[str, Any] | None) -> list[str]:
+        """Derive structural validation requirements from the planned task.
+
+        The planner's ``target_entity`` names the symbol being remediated
+        (e.g. ``"DataProcessor.calculate_checksum"``); the generated code must
+        still define that symbol. Returns an empty list when the target is
+        missing or is not a plain identifier, so validation then relies on
+        syntax and security checks only.
+        """
+        target = str((tasks or {}).get("target_entity") or "").strip()
+        if not target:
+            return []
+        leaf = re.split(r"\.|::", target)[-1].strip()
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", leaf):
+            return [leaf]
+        return []
+
+    @staticmethod
+    def _build_remediation_text(review_result: dict[str, Any]) -> str:
+        """Build remediation guidance from the reviewer's actual output.
+
+        Uses the reviewer's finding, specific vulnerabilities, and
+        recommendations so the coder is told what was actually wrong rather
+        than a fixed hint.
+        """
+        lines = ["Security Remediation Required:"]
+        finding = review_result.get("finding")
+        severity = review_result.get("severity")
+        if finding:
+            prefix = f"[{severity}] " if severity else ""
+            lines.append(f"- Finding: {prefix}{finding}")
+
+        for vuln in review_result.get("vulnerabilities") or []:
+            if isinstance(vuln, dict):
+                desc = vuln.get("description") or vuln.get("type")
+                if not desc:
+                    continue
+                line_no = vuln.get("line")
+                location = f" (line {line_no})" if line_no else ""
+                lines.append(f"- Vulnerability{location}: {desc}")
+            elif vuln:
+                lines.append(f"- Vulnerability: {vuln}")
+
+        for rec in review_result.get("recommendations") or []:
+            if rec:
+                lines.append(f"- Fix: {rec}")
+
+        if len(lines) == 1:
+            status = review_result.get("status", "UNKNOWN")
+            lines.append(
+                f"- Reviewer returned status {status} without details; "
+                "re-check the code against the security policies in context."
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _decision_confidence(
+        review_result: dict[str, Any] | None,
+    ) -> tuple[float, str]:
+        """Return the confidence to record with a memory episode and its source.
+
+        Uses the reviewer's self-reflection confidence when available (the
+        only measured confidence the review loop produces). Otherwise falls
+        back to DEFAULT_DECISION_CONFIDENCE, which is a fixed prior.
+        """
+        reflection = (review_result or {}).get("reflection_confidence")
+        if isinstance(reflection, (int, float)) and not isinstance(reflection, bool):
+            value = float(reflection)
+            if not (math.isnan(value) or math.isinf(value)):
+                return min(1.0, max(0.0, value)), "reviewer_reflection"
+        return DEFAULT_DECISION_CONFIDENCE, "default_prior"
+
+    async def execute_request(
+        self, user_prompt: str, record_memory: bool = True
+    ) -> dict[str, Any]:
         """The main, autonomous System 2 execution loop.
 
         Orchestrates the following workflow:
@@ -1301,6 +1465,10 @@ Response (JSON only):"""
 
         Args:
             user_prompt: High-level user request for code changes.
+            record_memory: If True, record the autonomous outcome in Titan
+                memory (step 8). The HITL workflow passes False so that the
+                episode is recorded from the human decision instead
+                (see process_approval_decision).
 
         Returns:
             Dict containing status, final_code, metrics, and handover report.
@@ -1412,9 +1580,7 @@ Response (JSON only):"""
             )
 
             # Add remediation context for next iteration
-            remediation_text = (
-                "Security Remediation Required: FIX: Use SHA256 instead of SHA1."
-            )
+            remediation_text = self._build_remediation_text(review_result)
             hybrid_context.add_remediation(remediation_text, confidence=1.0)
 
             if attempt == max_attempts:
@@ -1425,7 +1591,7 @@ Response (JSON only):"""
         # Phase 5: VALIDATE - Comprehensive validation using ValidatorAgent
         validation_result = await self.validator_agent.validate_code(
             self.final_code,
-            expected_elements=["import hashlib", "calculate_checksum"],
+            expected_elements=self._expected_elements_for_task(tasks),
         )
         is_valid = validation_result["valid"]
 
@@ -1437,7 +1603,9 @@ Response (JSON only):"""
         )
 
         # Phase 8: LEARN - Store successful experience in Titan Memory (ADR-029 Phase 2.1)
-        if is_success and self.titan_memory:
+        # Skipped when a human decision will follow (HITL); the human outcome
+        # is recorded in process_approval_decision instead.
+        if is_success and record_memory and self.titan_memory:
             try:
                 await self._store_experience_in_memory(
                     task=user_prompt,
@@ -1460,6 +1628,7 @@ Response (JSON only):"""
             "validation": validation_result,
             "review": review_result,
             "neural_confidence": neural_confidence if memory_context else None,
+            "target_entity": tasks.get("target_entity"),
         }
 
     def generate_handover_report(self, metrics: dict[str, Any]) -> str:
@@ -1798,6 +1967,7 @@ Response (JSON only):"""
         user_prompt: str,
         vulnerability_id: str,
         reviewer_emails: list[str] | None = None,
+        organization_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute request with full HITL approval workflow.
 
@@ -1813,12 +1983,17 @@ Response (JSON only):"""
             user_prompt: High-level user request for code changes.
             vulnerability_id: Identifier of the vulnerability being patched.
             reviewer_emails: List of reviewer email addresses for notifications.
+            organization_id: Tenant that owns the approval request. Without it
+                the request is visible only to platform admins.
 
         Returns:
             Dict containing status, approval_id (if pending), and result details.
         """
-        # Phase 1-5: Execute standard workflow
-        result = await self.execute_request(user_prompt)
+        # Phase 1-5: Execute standard workflow. When HITL is configured the
+        # memory episode is recorded from the human decision, not here.
+        result = await self.execute_request(
+            user_prompt, record_memory=self.hitl_approval_service is None
+        )
 
         # If standard workflow failed, return early
         if result["status"] != "SUCCESS":
@@ -1838,17 +2013,30 @@ Response (JSON only):"""
                 "hitl_reason": "HITL approval service not configured",
             }
 
-        # Phase 6: Sandbox Testing (simulated - uses validation results)
-        # In production, this would call ValidatorAgent.validate_in_sandbox()
-        sandbox_results = {
-            "tests_passed": result["validation"].get("tests_passed", 0),
-            "tests_failed": result["validation"].get("tests_failed", 0),
-            "coverage": result["validation"].get("coverage", 0),
-            "sandbox_id": f"sandbox-{int(time.time())}-mock",
-            "status": "PASSED" if result["validation"]["valid"] else "FAILED",
-        }
+        # Phase 6: Sandbox Testing via ValidatorAgent.validate_in_sandbox.
+        # When no sandbox orchestrator is configured the validator reports
+        # status "skipped" with sandbox_valid=None; that is carried through to
+        # the approval request unchanged so approvers can see the patch was NOT
+        # runtime-tested. Results are never fabricated from static validation.
+        patch_id = f"patch-{vulnerability_id}-{int(time.time())}"
+        try:
+            sandbox_run = await self.validator_agent.validate_in_sandbox(
+                code=result["final_code"],
+                patch_id=patch_id,
+            )
+        except Exception as e:
+            logger.error(f"Sandbox validation raised unexpectedly: {e}")
+            sandbox_run = {
+                "sandbox_valid": False,
+                "sandbox_id": None,
+                "test_results": [],
+                "execution_time": 0,
+                "sandbox_status": "failed",
+                "errors": [str(e)],
+            }
+        sandbox_results = self._build_sandbox_results(sandbox_run)
 
-        if sandbox_results["status"] != "PASSED":
+        if sandbox_results["status"] == "FAILED":
             logger.warning("Sandbox testing failed, skipping approval request")
             return {
                 **result,
@@ -1856,8 +2044,16 @@ Response (JSON only):"""
                 "sandbox_results": sandbox_results,
                 "hitl_reason": "Sandbox testing failed - cannot proceed to approval",
             }
+        if sandbox_results["status"] == "SKIPPED":
+            logger.warning(
+                "Sandbox testing skipped (no sandbox orchestrator configured); "
+                "approval request will be marked as not runtime-tested"
+            )
 
         # Phase 7: Create HITL Approval Request
+        decision_confidence, confidence_source = self._decision_confidence(
+            result.get("review")
+        )
         try:
             # Map review severity to patch severity
             from src.services.hitl_approval_service import PatchSeverity
@@ -1872,7 +2068,7 @@ Response (JSON only):"""
             patch_severity = severity_map.get(review_severity, PatchSeverity.MEDIUM)
 
             approval_request = self.hitl_approval_service.create_approval_request(
-                patch_id=f"patch-{vulnerability_id}-{int(time.time())}",
+                patch_id=patch_id,
                 vulnerability_id=vulnerability_id,
                 severity=patch_severity,
                 patch_diff=self._generate_patch_diff(result["final_code"]),
@@ -1880,8 +2076,18 @@ Response (JSON only):"""
                 sandbox_results=sandbox_results,
                 reviewer_email=reviewer_emails[0] if reviewer_emails else None,
                 metadata={
+                    # Tenant scope for the approvals API; approvals with no
+                    # organization are visible only to platform admins.
+                    "organization_id": organization_id,
                     "user_prompt": user_prompt,
                     "metrics": result["metrics"],
+                    # Context used to record the human outcome in memory
+                    # (see process_approval_decision).
+                    "target_entity": result.get("target_entity"),
+                    "review_finding": result.get("review", {}).get("finding"),
+                    "decision_confidence": decision_confidence,
+                    "decision_confidence_source": confidence_source,
+                    "sandbox_status": sandbox_results["status"],
                 },
             )
 
@@ -1927,6 +2133,61 @@ Response (JSON only):"""
             "notifications_sent": len(notification_results),
             "reviewer_emails": reviewer_emails,
         }
+
+    @staticmethod
+    def _build_sandbox_results(sandbox_run: dict[str, Any]) -> dict[str, Any]:
+        """Translate ValidatorAgent sandbox output into approval-request results.
+
+        Status is one of:
+            - "PASSED": the sandbox ran and all tests passed
+            - "FAILED": the sandbox ran (or tried to) and did not pass
+            - "SKIPPED": no sandbox ran (``sandbox_valid`` is None)
+
+        Test counts are only included when the sandbox actually reported
+        test results; downstream notifications render missing counts as
+        "N/A" rather than a misleading 0.
+        """
+        sandbox_valid = sandbox_run.get("sandbox_valid")
+        if sandbox_valid is None:
+            status = "SKIPPED"
+        elif sandbox_valid:
+            status = "PASSED"
+        else:
+            status = "FAILED"
+
+        results: dict[str, Any] = {
+            "status": status,
+            "sandbox_valid": sandbox_valid,
+            "sandbox_status": sandbox_run.get("sandbox_status"),
+            "sandbox_id": sandbox_run.get("sandbox_id"),
+            "runtime_tested": status != "SKIPPED",
+            "execution_time": sandbox_run.get("execution_time", 0),
+            "errors": list(sandbox_run.get("errors") or []),
+        }
+        if status == "SKIPPED":
+            results["skip_reason"] = (
+                "; ".join(results["errors"]) or "Sandbox validation did not run"
+            )
+
+        test_results = sandbox_run.get("test_results") or []
+        if test_results:
+            results["test_results"] = test_results
+            passed = failed = 0
+            for test in test_results:
+                if not isinstance(test, dict):
+                    continue
+                outcome = str(test.get("status", test.get("outcome", ""))).lower()
+                if test.get("passed") is True or outcome in ("passed", "pass"):
+                    passed += 1
+                elif test.get("passed") is False or outcome in (
+                    "failed",
+                    "fail",
+                    "error",
+                ):
+                    failed += 1
+            results["tests_passed"] = passed
+            results["tests_failed"] = failed
+        return results
 
     async def _store_experience_in_memory(
         self,
@@ -1982,6 +2243,9 @@ Response (JSON only):"""
             "; ".join(reasoning_parts) if reasoning_parts else "Standard workflow"
         )
 
+        confidence, confidence_source = self._decision_confidence(result.get("review"))
+        reasoning = f"{reasoning}; confidence source: {confidence_source}"
+
         # Record the episode with neural memory consolidation
         await self.titan_memory.record_episode(
             task_description=task,
@@ -1990,7 +2254,7 @@ Response (JSON only):"""
             reasoning=reasoning,
             outcome=outcome,
             outcome_details=outcome_details,
-            confidence_at_decision=0.8,  # Could be enhanced with actual confidence tracking
+            confidence_at_decision=confidence,
         )
 
         logger.debug(f"Stored experience in Titan memory: {outcome.value}")
@@ -2015,6 +2279,110 @@ Response (JSON only):"""
                 diff_lines.append(f"- {line}")
 
         return "\n".join(diff_lines) if diff_lines else "(no changes)"
+
+    async def _record_human_decision(
+        self,
+        approval_id: str,
+        decision: str,
+        reviewer_id: str,
+        reason: str | None,
+    ) -> bool:
+        """Record a human approval decision as a Titan memory episode.
+
+        Approved patches become SUCCESS episodes; rejected patches become
+        FAILURE episodes carrying the reviewer's reason (failure episodes are
+        retained twice as long by the cognitive memory service). This is
+        enrichment only: any error is logged and swallowed so the approval
+        flow is never blocked by memory.
+
+        Returns:
+            True if an episode was recorded, False otherwise.
+        """
+        if not self.titan_memory:
+            return False
+
+        try:
+            from src.services.cognitive_memory_service import OutcomeStatus
+
+            metadata: dict[str, Any] = {}
+            vulnerability_id = None
+            sandbox_status = None
+            if self.hitl_approval_service is not None:
+                try:
+                    request = self.hitl_approval_service.get_request(approval_id)
+                except Exception as e:
+                    logger.warning(
+                        f"Could not load approval request {approval_id} for memory: {e}"
+                    )
+                    request = None
+                if request is not None:
+                    raw_metadata = getattr(request, "metadata", None)
+                    metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+                    vulnerability_id = getattr(request, "vulnerability_id", None)
+                    sandbox_results = getattr(request, "sandbox_test_results", None)
+                    if isinstance(sandbox_results, dict):
+                        sandbox_status = sandbox_results.get("status")
+            sandbox_status = sandbox_status or metadata.get("sandbox_status")
+
+            task = metadata.get("user_prompt") or (
+                f"Security patch for {vulnerability_id}"
+                if vulnerability_id
+                else f"Security patch (approval {approval_id})"
+            )
+            target = metadata.get("target_entity") or "unknown target"
+            finding = metadata.get("review_finding")
+            raw_confidence = metadata.get("decision_confidence")
+            if isinstance(raw_confidence, (int, float)) and not isinstance(
+                raw_confidence, bool
+            ):
+                confidence = min(1.0, max(0.0, float(raw_confidence)))
+                confidence_source = metadata.get(
+                    "decision_confidence_source", "unknown"
+                )
+            else:
+                confidence = DEFAULT_DECISION_CONFIDENCE
+                confidence_source = "default_prior"
+
+            reasoning_parts = [f"Human review by {reviewer_id}"]
+            if finding:
+                reasoning_parts.append(f"automated review: {finding}")
+            if sandbox_status:
+                reasoning_parts.append(f"sandbox: {sandbox_status}")
+            reasoning_parts.append(f"confidence source: {confidence_source}")
+            reasoning = "; ".join(reasoning_parts)
+
+            if decision == "APPROVE":
+                outcome = OutcomeStatus.SUCCESS
+                outcome_details = "Patch approved by human reviewer" + (
+                    f": {reason}" if reason else ""
+                )
+                error_message = None
+            else:
+                outcome = OutcomeStatus.FAILURE
+                outcome_details = f"Patch rejected by human reviewer: {reason}"
+                error_message = f"Human rejection: {reason}"
+
+            await self.titan_memory.record_episode(
+                task_description=task,
+                domain="security_remediation",
+                decision=f"Submitted patch for {target} for human approval",
+                reasoning=reasoning,
+                outcome=outcome,
+                outcome_details=outcome_details,
+                confidence_at_decision=confidence,
+                error_message=error_message,
+            )
+            logger.info(
+                f"Recorded human {decision.lower()} decision for {approval_id} "
+                f"in Titan memory ({outcome.value})"
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                f"Failed to record human decision for {approval_id} in memory "
+                f"(non-blocking): {e}"
+            )
+            return False
 
     async def process_approval_decision(
         self,
@@ -2048,6 +2416,9 @@ Response (JSON only):"""
                     reason=reason,
                 )
                 if success:
+                    await self._record_human_decision(
+                        approval_id, "APPROVE", reviewer_id, reason
+                    )
                     return {
                         "status": "APPROVED",
                         "approval_id": approval_id,
@@ -2067,6 +2438,9 @@ Response (JSON only):"""
                     reason=reason,
                 )
                 if success:
+                    await self._record_human_decision(
+                        approval_id, "REJECT", reviewer_id, reason
+                    )
                     return {
                         "status": "REJECTED",
                         "approval_id": approval_id,
@@ -2101,6 +2475,7 @@ def create_system2_orchestrator(
     enable_reflection: bool = True,
     enable_a2as: bool = True,
     enable_async_messaging: bool = False,
+    sandbox_orchestrator: "FargateSandboxOrchestrator | None" = None,
 ) -> "System2Orchestrator":
     """Factory function to create a System2Orchestrator.
 
@@ -2112,6 +2487,9 @@ def create_system2_orchestrator(
         enable_reflection: If True, enable self-reflection for ReviewerAgent (ADR-029 Phase 2.2).
         enable_a2as: If True, enable A2AS input security (ADR-029 Phase 2.3).
         enable_async_messaging: If True, enable SQS-based async messaging (Issue #19).
+        sandbox_orchestrator: Optional sandbox orchestrator. If None, one is built
+            from the environment via create_sandbox_orchestrator (requires
+            SANDBOX_ENABLED=true); otherwise the sandbox step reports SKIPPED.
 
     Returns:
         System2Orchestrator: Configured orchestrator instance.
@@ -2121,6 +2499,13 @@ def create_system2_orchestrator(
     titan_memory = None
     a2as_service = None
     queue_service = None
+
+    # Sandbox orchestrator: explicit argument wins, else env-driven factory
+    # (None when unconfigured -> honest SKIPPED in the HITL path).
+    if sandbox_orchestrator is None:
+        from src.services.service_adapters import create_sandbox_orchestrator
+
+        sandbox_orchestrator = create_sandbox_orchestrator()
 
     # Initialize MCP tool server if enabled (ADR-029 Phase 1.4)
     if enable_mcp:
@@ -2220,6 +2605,7 @@ def create_system2_orchestrator(
             a2as_service=a2as_service,
             queue_service=queue_service,
             use_async_messaging=enable_async_messaging,
+            sandbox_orchestrator=sandbox_orchestrator,
         )
     else:
         from src.services.bedrock_llm_service import create_llm_service
@@ -2237,6 +2623,7 @@ def create_system2_orchestrator(
             a2as_service=a2as_service,
             queue_service=queue_service,
             use_async_messaging=enable_async_messaging,
+            sandbox_orchestrator=sandbox_orchestrator,
         )
 
 

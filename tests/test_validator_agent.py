@@ -553,3 +553,93 @@ def query(user_input):
         result = agent._validate_security(code)
         # This pattern is typically flagged
         assert isinstance(result, dict)
+
+
+# ==================== Sandbox Validation Tests ====================
+
+
+class TestValidateInSandbox:
+    """Tests for ValidatorAgent.validate_in_sandbox status handling."""
+
+    @staticmethod
+    def _agent_with_statuses(statuses):
+        from src.agents.validator_agent import ValidatorAgent
+
+        sandbox = MagicMock()
+        sandbox.create_sandbox = AsyncMock(return_value={})
+        sandbox.get_sandbox_status = AsyncMock(side_effect=list(statuses))
+        sandbox.destroy_sandbox = AsyncMock(return_value=None)
+        return ValidatorAgent(sandbox_orchestrator=sandbox), sandbox
+
+    @pytest.mark.asyncio
+    async def test_no_orchestrator_reports_skipped(self):
+        from src.agents.validator_agent import ValidatorAgent
+
+        result = await ValidatorAgent().validate_in_sandbox("x = 1", "p1")
+
+        assert result["sandbox_valid"] is None
+        assert result["sandbox_status"] == "skipped"
+        assert result["sandbox_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_generic_completed_vocabulary(self, monkeypatch):
+        monkeypatch.setattr("asyncio.sleep", AsyncMock())
+        agent, sandbox = self._agent_with_statuses(
+            [
+                {"status": "running"},
+                {
+                    "status": "completed",
+                    "all_tests_passed": True,
+                    "test_results": [{"name": "t", "status": "passed"}],
+                },
+            ]
+        )
+
+        result = await agent.validate_in_sandbox("x = 1", "p1")
+
+        assert result["sandbox_valid"] is True
+        assert result["test_results"] == [{"name": "t", "status": "passed"}]
+        assert "mock" not in result["sandbox_id"]
+        sandbox.destroy_sandbox.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_fargate_vocabulary_clean_exit_passes(self, monkeypatch):
+        """FargateSandboxOrchestrator reports PROVISIONING/ACTIVE/TERMINATED."""
+        monkeypatch.setattr("asyncio.sleep", AsyncMock())
+        agent, sandbox = self._agent_with_statuses(
+            [
+                {"status": "PROVISIONING"},
+                {"status": "ACTIVE"},
+                {"status": "TERMINATED", "exit_code": 0},
+            ]
+        )
+
+        result = await agent.validate_in_sandbox("x = 1", "p1")
+
+        assert result["sandbox_valid"] is True
+        assert result["sandbox_status"] == "completed"
+        assert sandbox.get_sandbox_status.await_count == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exit_code", [1, None])
+    async def test_fargate_nonzero_or_missing_exit_fails_closed(
+        self, monkeypatch, exit_code
+    ):
+        monkeypatch.setattr("asyncio.sleep", AsyncMock())
+        agent, _ = self._agent_with_statuses(
+            [{"status": "TERMINATED", "exit_code": exit_code}]
+        )
+
+        result = await agent.validate_in_sandbox("x = 1", "p1")
+
+        assert result["sandbox_valid"] is False
+
+    @pytest.mark.asyncio
+    async def test_unknown_terminal_status_fails(self):
+        agent, _ = self._agent_with_statuses([{"status": "NOT_FOUND"}])
+
+        result = await agent.validate_in_sandbox("x = 1", "p1")
+
+        assert result["sandbox_valid"] is False
+        assert result["sandbox_status"] == "failed"
+        assert "NOT_FOUND" in result["errors"][0]

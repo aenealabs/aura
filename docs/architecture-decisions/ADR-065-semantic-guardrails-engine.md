@@ -4,6 +4,35 @@
 
 Deployed
 
+> **Status note (2026-10-14) -- Layers 3 and 4 run in parallel, not
+> conditionally.** The pipeline diagram and the pseudocode below show Layer 4
+> (LLM-as-judge) running only when the Layer 3 embedding score is MEDIUM. The
+> implementation in `src/services/semantic_guardrails/engine.py` differs. After
+> Layer 1 (normalization) and Layer 2 (pattern match, with fast exit on a
+> critical pattern), `assess_threat` submits Layers 3 and 4 to a thread pool and
+> waits for both, and `assess_threat_async` runs them with `asyncio.gather`.
+> Layer 4 is skipped only when the caller passes `skip_intent=True` (or
+> `skip_embedding`, `skip_session` for the others) or when Layer 2 triggers a
+> fast exit. There is no embedding-score gate on Layer 4.
+>
+> Implications: (1) every input that survives Layer 2 pays the Layer 4 cost, so
+> LLM-judge invocations scale with total traffic instead of with MEDIUM-scored
+> traffic; the "Tiered processing" cost mitigation in this ADR does not apply to
+> the default path. (2) Wall-clock latency for Layers 3+4 is bounded by the
+> slower of the two (the engine's target is 150ms for the pair) rather than the
+> sum, so the ~240ms full-pipeline figure is not reached by adding L3 and L4
+> serially. (3) Callers wanting the cheaper path can use `assess_fast_path`
+> (Layers 1-2 only) or the `skip_*` flags. Moving to a gated design would
+> reduce LLM cost but add L3 latency in front of L4 for medium-scored inputs.
+>
+> The latency figures in this ADR (5/10/50/150/20/5ms per layer, ~240ms total,
+> P95 < 300ms) are design targets, not measurements. A local benchmark of the
+> deterministic layers is recorded in
+> `docs/research/semantic-guardrails-latency-benchmark.md`. Layers 3 and 4 fall
+> back to in-process mock implementations when no embedding/vector service or
+> LLM service is injected (`embedding_detector.py`, `intent_classifier.py`), so
+> a benchmark without those services does not measure real L3/L4 latency.
+
 ## Date
 
 2026-01-25

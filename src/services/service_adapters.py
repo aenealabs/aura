@@ -302,15 +302,41 @@ class OpenSearchVectorAdapter:
             # Return mock vector matching expected dimension
             return [0.1] * self.opensearch.vector_dimension
 
-    def run_knn_search(self, query: str) -> list[str]:
-        """
-        Search for semantically similar content.
+    def _normalize_score(self, raw_score: Any) -> float | None:
+        """Normalize an OpenSearch k-NN ``_score`` to a 0-1 relevance value.
 
-        Args:
-            query: Search query text
+        The index (see ``OpenSearchVectorService``) uses HNSW with the nmslib
+        engine and ``space_type=cosinesimil``. For that space OpenSearch
+        reports ``_score = (2 - d) / 2`` with ``d = 1 - cos``, i.e.
+        ``(1 + cos) / 2`` in [0, 1], which is NOT the cosine similarity. It is
+        inverted back to ``cos = 2 * _score - 1`` and clamped to [0, 1], so
+        orthogonal or opposed vectors rate 0 and identical vectors rate 1
+        (the adapter's ``min_score=0.5`` therefore corresponds to cos = 0).
+        Reference: OpenSearch k-NN spaces documentation, cosinesimil row.
+
+        Mock-mode scores (dot product / dimension) are not OpenSearch scores
+        and are only clamped to [0, 1].
 
         Returns:
-            List of relevant context strings
+            Relevance in [0, 1], or None when no usable numeric score exists.
+        """
+        if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
+            return None
+        score = float(raw_score)
+        if score != score or score in (float("inf"), float("-inf")):
+            return None
+        from src.services.opensearch_vector_service import OpenSearchMode
+
+        if getattr(self.opensearch, "mode", None) == OpenSearchMode.AWS:
+            score = 2.0 * score - 1.0
+        return min(1.0, max(0.0, score))
+
+    def _search_hits(self, query: str) -> list[tuple[str, float | None]]:
+        """Run the k-NN search and return ``(context_string, relevance)`` pairs.
+
+        Relevance is None for entries without a backend score (metadata
+        fallback), so callers fall back to defaults
+        rather than inventing a confidence.
         """
         # Generate query embedding
         query_vector = self._get_embedding(query)
@@ -319,6 +345,7 @@ class OpenSearchVectorAdapter:
         results = self.opensearch.search_similar(
             query_vector=query_vector, k=5, min_score=0.5
         )
+        scored = bool(results)
 
         if not results:
             # Fallback: try metadata search
@@ -328,7 +355,7 @@ class OpenSearchVectorAdapter:
                 )
 
         # Convert to expected string format
-        context_strings = []
+        hits: list[tuple[str, float | None]] = []
         for result in results:
             text = result.get("text", "")
             metadata = result.get("metadata", {})
@@ -338,18 +365,49 @@ class OpenSearchVectorAdapter:
                 kw in text.lower()
                 for kw in ["security", "policy", "prohibited", "must"]
             ):
-                context_strings.append(f"Security Policy: {text}")
+                content = f"Security Policy: {text}"
             else:
                 source = metadata.get("source", metadata.get("file_path", "unknown"))
-                context_strings.append(f"Code Context ({source}): {text}")
+                content = f"Code Context ({source}): {text}"
+            relevance = self._normalize_score(result.get("score")) if scored else None
+            hits.append((content, relevance))
 
-        if not context_strings:
-            # Return default context if nothing found
-            return [
-                "DataProcessor class handles data pre-processing and checksum generation."
-            ]
+        # No matches yields no context. Returning placeholder text here would
+        # be presented to the coder agent as if it were retrieved code.
+        return hits
 
-        return context_strings
+    def run_knn_search(self, query: str) -> list[str]:
+        """
+        Search for semantically similar content.
+
+        Returns plain strings (scores discarded) for backward compatibility.
+        Use :meth:`run_knn_search_scored` to retain relevance scores.
+
+        Args:
+            query: Search query text
+
+        Returns:
+            List of relevant context strings
+        """
+        return [content for content, _ in self._search_hits(query)]
+
+    def run_knn_search_scored(self, query: str) -> list[dict[str, Any]]:
+        """
+        Search for semantically similar content, preserving relevance scores.
+
+        Args:
+            query: Search query text
+
+        Returns:
+            List of ``{"text": str, "score": float | None}`` dicts, the shape
+            accepted by the orchestrator's ContextRetrievalService. ``score``
+            is normalized to 0-1 (see :meth:`_normalize_score`) and None when
+            the backend supplied no score.
+        """
+        return [
+            {"text": content, "score": relevance}
+            for content, relevance in self._search_hits(query)
+        ]
 
 
 def create_graph_agent(use_real: bool | None = None) -> GraphAgentProtocol:
@@ -448,3 +506,48 @@ def create_vector_store(use_real: bool | None = None) -> VectorStoreProtocol:
 
     logger.info("Created mock OpenSearchVectorStore")
     return OpenSearchVectorStore()
+
+
+def create_sandbox_orchestrator(use_real: bool | None = None) -> Any | None:
+    """
+    Factory function to create the sandbox orchestrator used for runtime patch testing.
+
+    Unlike the graph/vector factories there is no usable in-memory mock: a fake
+    sandbox would report test results that never ran. The "mock" outcome is
+    therefore None, which makes ValidatorAgent report the sandbox step as
+    SKIPPED rather than fabricating a pass.
+
+    Auto-detection (``use_real=None``) requires an explicit opt-in because the
+    real orchestrator needs the deployed sandbox ECS cluster and DynamoDB table:
+        - SANDBOX_ENABLED=true: opt in to the real FargateSandboxOrchestrator
+        - AURA_ENVIRONMENT: environment name (default "dev")
+        - USE_MOCK_SERVICES=true: forces None even if SANDBOX_ENABLED is set
+
+    Args:
+        use_real: Force real or unconfigured mode. If None, auto-detect from environment.
+
+    Returns:
+        FargateSandboxOrchestrator, or None when not configured or creation fails.
+    """
+    if use_real is None:
+        use_real = (
+            os.getenv("SANDBOX_ENABLED", "").lower() == "true"
+            and os.getenv("USE_MOCK_SERVICES", "").lower() != "true"
+        )
+
+    if not use_real:
+        logger.info("Sandbox orchestrator not configured (sandbox step will skip)")
+        return None
+
+    try:
+        from src.services.sandbox_network_service import FargateSandboxOrchestrator
+
+        environment = os.getenv("AURA_ENVIRONMENT", "dev")
+        orchestrator = FargateSandboxOrchestrator(environment=environment)
+        logger.info(f"Created FargateSandboxOrchestrator (environment: {environment})")
+        return orchestrator
+    except Exception as e:
+        logger.warning(
+            f"Failed to create sandbox orchestrator, sandbox step will skip: {e}"
+        )
+        return None

@@ -2,7 +2,7 @@
 
 ## Status
 
-Deployed (ALL PHASES COMPLETE - 336 tests)
+Implemented (all six phases built and unit-tested; 339 tests collected on 2026-10-14; not yet wired into production request paths)
 
 ## Date
 
@@ -816,22 +816,34 @@ class MetricsPublisher:
 |------|-------------|-----|--------|
 | `src/services/memory_evolution/evolution_benchmark.py` | MemoryEvolutionBenchmark, DriftDetector, AdaptiveSampler, TaskGenerator | 1386 | ✅ |
 
-### Phase 5: Advanced Operations (~600 LOC, 45 tests)
+### Phase 5: Advanced Operations ✅ COMPLETE (1,202 LOC, 56 tests)
+
+> **Status note (2026-10-14).** The three planned `src/services/memory/*.py`
+> files were implemented as a single module,
+> `src/services/memory_evolution/advanced_operations.py` (1,202 LOC;
+> `MemoryLinkService`, `CorrectOperationService`, rollback), tested by
+> `tests/services/memory_evolution/test_advanced_operations.py` (56 test
+> functions). Dependencies (Neptune, LLM, snapshot store, memory store) are
+> injected through `typing.Protocol` interfaces.
 
 | File | Description | LOC |
 |------|-------------|-----|
-| `src/services/memory/neptune_links.py` | LINK operation via Neptune | 250 |
-| `src/services/memory/correct_operation.py` | CORRECT with LLM verification | 200 |
-| `src/services/memory/rollback_operation.py` | ROLLBACK from DynamoDB Streams | 150 |
+| `src/services/memory_evolution/advanced_operations.py` | LINK via Neptune, CORRECT with LLM verification, ROLLBACK from snapshots | 1,202 |
 
-### Phase 6: Multi-Agent Sharing (~400 LOC, 30 tests)
+### Phase 6: Multi-Agent Sharing ✅ COMPLETE (1,000 LOC, 42 tests)
+
+> **Status note (2026-10-14).** Implemented as one module,
+> `src/services/memory_evolution/multi_agent_sharing.py` (1,000 LOC;
+> `StrategyPromotionService` for the approval workflow and `CrossAgentPropagator`
+> for broadcast), tested by
+> `tests/services/memory_evolution/test_multi_agent_sharing.py` (42 test
+> functions).
 
 | File | Description | LOC |
 |------|-------------|-----|
-| `src/services/memory/cross_agent_propagation.py` | Strategy broadcast between agents | 250 |
-| `src/services/memory/strategy_promotion.py` | Approval workflow for shared strategies | 150 |
+| `src/services/memory_evolution/multi_agent_sharing.py` | Strategy promotion (approval workflow) and cross-agent propagation | 1,000 |
 
-**Total: ~3,800 LOC, 280 tests**
+**Planned total: ~3,800 LOC, 280 tests. Actual (2026-10-14): 339 tests collected in `tests/services/memory_evolution/`. No module outside `src/services/memory_evolution/` imports the package, so the operations are library code that is not yet invoked from an agent or API path.**
 
 ## Infrastructure
 

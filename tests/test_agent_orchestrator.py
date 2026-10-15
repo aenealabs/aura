@@ -7,7 +7,7 @@ Comprehensive tests for the System 2 autonomous orchestration workflow.
 # ruff: noqa: PLR2004
 
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -662,27 +662,147 @@ def calculate_checksum(data):
 
         assert result is False
 
-    def test_validator_fails_missing_hashlib(self):
-        """Test validator fails code without hashlib import."""
+    def test_validator_does_not_require_hardcoded_demo_strings(self):
+        """Code unrelated to the checksum demo passes when the task asks for it."""
         orchestrator = System2Orchestrator()
-        code = """def calculate_checksum(data):
-    return hash(data)
+        code = """def sanitize_username(name: str) -> str:
+    return name.strip().lower()
 """
-        result = orchestrator._validator_agent(code)
+        result = orchestrator._validator_agent(
+            code, expected_elements=["sanitize_username"]
+        )
 
-        assert result is False
+        assert result is True
 
-    def test_validator_fails_missing_checksum(self):
-        """Test validator fails code without calculate_checksum."""
+    def test_validator_fails_missing_task_element(self):
+        """Test validator fails when the task's target symbol is missing."""
         orchestrator = System2Orchestrator()
         code = """import hashlib
 
 def hash_data(data):
     return hashlib.sha256(data).hexdigest()
 """
-        result = orchestrator._validator_agent(code)
+        result = orchestrator._validator_agent(
+            code, expected_elements=["calculate_checksum"]
+        )
 
         assert result is False
+
+    def test_validator_fails_dangerous_pattern(self):
+        """Test validator applies the ValidatorAgent security checks."""
+        orchestrator = System2Orchestrator()
+        code = "def run(expr):\n    return eval(expr)\n"
+
+        assert orchestrator._validator_agent(code, expected_elements=["run"]) is False
+
+
+class TestTaskDerivedRequirements:
+    """Tests for deriving validation requirements from the planned task."""
+
+    def test_expected_elements_uses_target_leaf(self):
+        tasks = {"target_entity": "billing.InvoiceService.compute_total"}
+
+        assert System2Orchestrator._expected_elements_for_task(tasks) == [
+            "compute_total"
+        ]
+
+    def test_expected_elements_handles_double_colon(self):
+        tasks = {"target_entity": "Auth::verify_token"}
+
+        assert System2Orchestrator._expected_elements_for_task(tasks) == [
+            "verify_token"
+        ]
+
+    @pytest.mark.parametrize(
+        "tasks",
+        [None, {}, {"target_entity": ""}, {"target_entity": "foo; drop table"}],
+    )
+    def test_expected_elements_empty_for_missing_or_invalid_target(self, tasks):
+        assert System2Orchestrator._expected_elements_for_task(tasks) == []
+
+    @pytest.mark.asyncio
+    async def test_execute_request_passes_task_derived_elements(self):
+        """validate_code receives the planner's target, not hardcoded strings."""
+        orchestrator = System2Orchestrator()
+        orchestrator._planner_agent = AsyncMock(
+            return_value={
+                "target_entity": "UserRepo.find_by_email",
+                "task_description": "Parameterize the SQL query",
+            }
+        )
+        orchestrator.coder_agent = AsyncMock()
+        orchestrator.coder_agent.generate_code.return_value = {"code": "x = 1"}
+        orchestrator.reviewer_agent = AsyncMock()
+        orchestrator.reviewer_agent.review_code.return_value = {"status": "PASS"}
+        orchestrator.validator_agent = AsyncMock()
+        orchestrator.validator_agent.validate_code.return_value = {"valid": True}
+
+        await orchestrator.execute_request("Fix SQL injection")
+
+        kwargs = orchestrator.validator_agent.validate_code.call_args.kwargs
+        assert kwargs["expected_elements"] == ["find_by_email"]
+
+
+class TestRemediationFromReviewerFindings:
+    """Remediation guidance must come from the reviewer's actual output."""
+
+    def test_remediation_text_includes_reviewer_details(self):
+        review = {
+            "status": "FAIL_SECURITY",
+            "finding": "SQL built by string concatenation",
+            "severity": "Critical",
+            "vulnerabilities": [
+                {"type": "SQL_INJECTION", "line": 12, "description": "f-string SQL"}
+            ],
+            "recommendations": ["Use parameterized queries"],
+        }
+
+        text = System2Orchestrator._build_remediation_text(review)
+
+        assert "[Critical] SQL built by string concatenation" in text
+        assert "(line 12): f-string SQL" in text
+        assert "Fix: Use parameterized queries" in text
+        assert "SHA256" not in text
+
+    def test_remediation_text_without_details_is_explicit(self):
+        text = System2Orchestrator._build_remediation_text(
+            {"status": "FAIL_LLM_UNAVAILABLE"}
+        )
+
+        assert "FAIL_LLM_UNAVAILABLE" in text
+        assert "without details" in text
+
+    @pytest.mark.asyncio
+    async def test_execute_request_feeds_reviewer_finding_to_coder(self):
+        """The second coding attempt sees the reviewer's real finding."""
+        orchestrator = System2Orchestrator()
+        orchestrator.coder_agent = AsyncMock()
+        orchestrator.coder_agent.generate_code.return_value = {
+            "code": "def calculate_checksum(d):\n    return d\n"
+        }
+        orchestrator.reviewer_agent = AsyncMock()
+        orchestrator.reviewer_agent.review_code.side_effect = [
+            {
+                "status": "FAIL_SECURITY",
+                "finding": "Hardcoded API token",
+                "severity": "Critical",
+                "recommendations": ["Load the token from Secrets Manager"],
+            },
+            {"status": "PASS", "finding": "ok"},
+        ]
+        orchestrator.validator_agent = AsyncMock()
+        orchestrator.validator_agent.validate_code.return_value = {"valid": True}
+
+        await orchestrator.execute_request("Fix security")
+
+        second_context = orchestrator.coder_agent.generate_code.call_args_list[1].args[
+            0
+        ]
+        remediation = second_context.get_items_by_source(ContextSource.REMEDIATION)
+        assert len(remediation) == 1
+        assert "Hardcoded API token" in remediation[0].content
+        assert "Secrets Manager" in remediation[0].content
+        assert "SHA256" not in remediation[0].content
 
 
 class TestSystem2OrchestratorPatchDiff:
@@ -938,3 +1058,534 @@ class TestSystem2OrchestratorSelfCorrection:
         assert result["status"] == "FAILURE"
         # Should have tried max attempts (2)
         assert orchestrator.coder_agent.generate_code.call_count == 2
+
+
+class _StubGraph:
+    """Graph backend stub returning preconfigured results."""
+
+    def __init__(self, results):
+        self._results = results
+
+    def run_gremlin_query(self, source_entity):
+        return list(self._results)
+
+
+class _StubVectors:
+    """Vector backend stub returning preconfigured results."""
+
+    def __init__(self, results):
+        self._results = results
+
+    def run_knn_search(self, query):
+        return list(self._results)
+
+
+class TestContextConfidenceFromBackendScores:
+    """Context confidences use backend scores when available."""
+
+    def test_unscored_results_fall_back_to_defaults(self):
+        from src.agents.agent_orchestrator import (
+            DEFAULT_GRAPH_CONFIDENCE,
+            DEFAULT_VECTOR_CONFIDENCE,
+        )
+
+        service = ContextRetrievalService(
+            _StubGraph(["Structural: A calls B"]),
+            _StubVectors(["Code doc for A"]),
+        )
+
+        context = service.get_hybrid_context("A", "q")
+
+        graph_item = context.get_items_by_source(ContextSource.GRAPH_STRUCTURAL)[0]
+        vector_item = context.get_items_by_source(ContextSource.VECTOR_SEMANTIC)[0]
+        assert graph_item.confidence == DEFAULT_GRAPH_CONFIDENCE
+        assert vector_item.confidence == DEFAULT_VECTOR_CONFIDENCE
+        assert graph_item.metadata["confidence_source"] == "default"
+        assert vector_item.metadata["confidence_source"] == "default"
+
+    def test_opensearch_style_scores_are_used(self):
+        service = ContextRetrievalService(
+            _StubGraph([("Structural: A calls B", 0.42)]),
+            _StubVectors(
+                [
+                    {"text": "Security Policy: no MD5", "_score": 0.73},
+                    {"text": "Doc for A", "score": 0.61},
+                    {"content": "Doc for C", "similarity": 0.55},
+                ]
+            ),
+        )
+
+        context = service.get_hybrid_context("A", "q")
+
+        graph_item = context.get_items_by_source(ContextSource.GRAPH_STRUCTURAL)[0]
+        policy = context.get_items_by_source(ContextSource.SECURITY_POLICY)[0]
+        vectors = context.get_items_by_source(ContextSource.VECTOR_SEMANTIC)
+        assert graph_item.confidence == pytest.approx(0.42)
+        assert graph_item.content == "Structural: A calls B"
+        assert policy.confidence == pytest.approx(0.73)
+        assert policy.content == "Security Policy: no MD5"
+        assert sorted(v.confidence for v in vectors) == pytest.approx([0.55, 0.61])
+        assert all(i.metadata["confidence_source"] == "backend" for i in context.items)
+
+    def test_out_of_range_scores_are_clamped(self):
+        service = ContextRetrievalService(
+            _StubGraph([]),
+            _StubVectors(
+                [{"text": "inner product hit", "score": 7.5}, ("negative", -0.2)]
+            ),
+        )
+
+        context = service.get_hybrid_context("A", "q")
+
+        by_content = {i.content: i.confidence for i in context.items}
+        assert by_content == {"inner product hit": 1.0, "negative": 0.0}
+
+    @pytest.mark.parametrize("bad_score", [None, "high", float("nan"), True])
+    def test_unusable_scores_fall_back(self, bad_score):
+        from src.agents.agent_orchestrator import DEFAULT_VECTOR_CONFIDENCE
+
+        service = ContextRetrievalService(
+            _StubGraph([]),
+            _StubVectors([{"text": "doc", "score": bad_score}]),
+        )
+
+        context = service.get_hybrid_context("A", "q")
+
+        assert context.items[0].confidence == DEFAULT_VECTOR_CONFIDENCE
+        assert context.items[0].metadata["confidence_source"] == "default"
+
+
+def _hitl_ready_orchestrator(
+    hitl_service, titan_memory=None, sandbox_orchestrator=None
+):
+    """Build an orchestrator whose standard workflow succeeds."""
+    orchestrator = System2Orchestrator(
+        hitl_approval_service=hitl_service,
+        titan_memory=titan_memory,
+        sandbox_orchestrator=sandbox_orchestrator,
+    )
+    orchestrator.coder_agent = AsyncMock()
+    orchestrator.coder_agent.generate_code.return_value = {
+        "code": "import hashlib\n\ndef calculate_checksum(d):\n"
+        "    return hashlib.sha256(d).hexdigest()\n"
+    }
+    orchestrator.reviewer_agent = AsyncMock()
+    orchestrator.reviewer_agent.review_code.return_value = {
+        "status": "PASS",
+        "finding": "No issues",
+        "reflection_confidence": 0.87,
+    }
+    # Real ValidatorAgent, built by System2Orchestrator.__init__ with the
+    # injected sandbox_orchestrator (None -> sandbox step skips honestly).
+    return orchestrator
+
+
+class _FakeSandboxOrchestrator:
+    """Sandbox orchestrator double reporting a finished task."""
+
+    def __init__(self, all_tests_passed):
+        self.all_tests_passed = all_tests_passed
+        self.created = []
+        self.destroyed = []
+
+    async def create_sandbox(self, sandbox_id, patch_id, test_suite, **kwargs):
+        self.created.append((sandbox_id, patch_id, test_suite))
+
+    async def get_sandbox_status(self, sandbox_id):
+        return {
+            "status": "completed",
+            "all_tests_passed": self.all_tests_passed,
+            "test_results": [
+                {"name": "t1", "status": "passed"},
+                {
+                    "name": "t2",
+                    "status": "passed" if self.all_tests_passed else "failed",
+                },
+            ],
+        }
+
+    async def destroy_sandbox(self, sandbox_id):
+        self.destroyed.append(sandbox_id)
+
+
+class TestSandboxOrchestratorInjection:
+    """System2Orchestrator wires an injected sandbox orchestrator to the validator."""
+
+    def test_constructor_passes_sandbox_to_validator(self):
+        fake = _FakeSandboxOrchestrator(True)
+        orchestrator = System2Orchestrator(sandbox_orchestrator=fake)
+        assert orchestrator.validator_agent.sandbox_orchestrator is fake
+
+    def test_default_has_no_sandbox(self):
+        assert System2Orchestrator().validator_agent.sandbox_orchestrator is None
+
+    def test_factory_passes_explicit_sandbox(self):
+        from src.agents.agent_orchestrator import create_system2_orchestrator
+
+        fake = _FakeSandboxOrchestrator(True)
+        orchestrator = create_system2_orchestrator(
+            use_mock=True,
+            enable_a2as=False,
+            sandbox_orchestrator=fake,
+        )
+        assert orchestrator.validator_agent.sandbox_orchestrator is fake
+
+    def test_factory_unconfigured_env_yields_none(self, monkeypatch):
+        from src.agents.agent_orchestrator import create_system2_orchestrator
+
+        monkeypatch.delenv("SANDBOX_ENABLED", raising=False)
+        orchestrator = create_system2_orchestrator(use_mock=True, enable_a2as=False)
+        assert orchestrator.validator_agent.sandbox_orchestrator is None
+
+    def test_factory_builds_from_env(self, monkeypatch):
+        from src.agents.agent_orchestrator import create_system2_orchestrator
+
+        fake = _FakeSandboxOrchestrator(True)
+        monkeypatch.setenv("SANDBOX_ENABLED", "true")
+        monkeypatch.delenv("USE_MOCK_SERVICES", raising=False)
+        with patch(
+            "src.services.sandbox_network_service.FargateSandboxOrchestrator",
+            return_value=fake,
+        ):
+            orchestrator = create_system2_orchestrator(use_mock=True, enable_a2as=False)
+        assert orchestrator.validator_agent.sandbox_orchestrator is fake
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "tests_pass,expected_status", [(True, "PASSED"), (False, "FAILED")]
+    )
+    async def test_hitl_runs_injected_sandbox(self, tests_pass, expected_status):
+        from unittest.mock import MagicMock
+
+        hitl = MagicMock()
+        hitl.create_approval_request.return_value = MagicMock(approval_id="a")
+        fake = _FakeSandboxOrchestrator(tests_pass)
+        orchestrator = _hitl_ready_orchestrator(hitl, sandbox_orchestrator=fake)
+
+        result = await orchestrator.execute_request_with_hitl(
+            user_prompt="Fix checksum", vulnerability_id="VULN-9"
+        )
+
+        assert len(fake.created) == 1
+        assert fake.destroyed == [fake.created[0][0]]
+        assert result["sandbox_results"]["status"] == expected_status
+        assert result["sandbox_results"]["runtime_tested"] is True
+
+
+class TestHITLSandboxIntegration:
+    """Sandbox phase of execute_request_with_hitl uses the real validator path."""
+
+    @pytest.mark.asyncio
+    async def test_no_sandbox_configured_records_honest_skip(self):
+        from unittest.mock import MagicMock
+
+        hitl = MagicMock()
+        hitl.create_approval_request.return_value = MagicMock(
+            approval_id="appr-1",
+            patch_id="patch-1",
+            created_at="t0",
+            expires_at="t1",
+            patch_diff="diff",
+        )
+        orchestrator = _hitl_ready_orchestrator(hitl)
+
+        result = await orchestrator.execute_request_with_hitl(
+            user_prompt="Fix checksum", vulnerability_id="VULN-9"
+        )
+
+        sandbox = hitl.create_approval_request.call_args.kwargs["sandbox_results"]
+        assert sandbox["status"] == "SKIPPED"
+        assert sandbox["sandbox_valid"] is None
+        assert sandbox["runtime_tested"] is False
+        assert sandbox["sandbox_id"] is None
+        assert "not configured" in sandbox["skip_reason"]
+        # No fabricated test counts that would read as "0 failed"
+        assert "tests_passed" not in sandbox
+        assert "tests_failed" not in sandbox
+        assert result["status"] == "AWAITING_APPROVAL"
+        assert result["sandbox_results"] is sandbox
+        metadata = hitl.create_approval_request.call_args.kwargs["metadata"]
+        assert metadata["sandbox_status"] == "SKIPPED"
+
+    @pytest.mark.asyncio
+    async def test_sandbox_pass_passes_real_results(self):
+        from unittest.mock import MagicMock
+
+        hitl = MagicMock()
+        hitl.create_approval_request.return_value = MagicMock(approval_id="a")
+        orchestrator = _hitl_ready_orchestrator(hitl)
+        orchestrator.validator_agent.validate_in_sandbox = AsyncMock(
+            return_value={
+                "sandbox_valid": True,
+                "sandbox_id": "sandbox-patch-x-abc123",
+                "test_results": [
+                    {"name": "t1", "status": "passed"},
+                    {"name": "t2", "status": "passed"},
+                    {"name": "t3", "passed": True},
+                ],
+                "execution_time": 12.5,
+                "sandbox_status": "completed",
+                "errors": [],
+            }
+        )
+
+        await orchestrator.execute_request_with_hitl(
+            user_prompt="Fix checksum", vulnerability_id="VULN-9"
+        )
+
+        call = orchestrator.validator_agent.validate_in_sandbox.call_args.kwargs
+        assert call["code"] == orchestrator.final_code
+        sandbox = hitl.create_approval_request.call_args.kwargs["sandbox_results"]
+        assert sandbox["status"] == "PASSED"
+        assert sandbox["sandbox_id"] == "sandbox-patch-x-abc123"
+        assert sandbox["tests_passed"] == 3
+        assert sandbox["tests_failed"] == 0
+        assert sandbox["runtime_tested"] is True
+        # patch_id is shared between the sandbox run and the approval request
+        assert (
+            call["patch_id"]
+            == hitl.create_approval_request.call_args.kwargs["patch_id"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_sandbox_failure_blocks_approval(self):
+        from unittest.mock import MagicMock
+
+        hitl = MagicMock()
+        orchestrator = _hitl_ready_orchestrator(hitl)
+        orchestrator.validator_agent.validate_in_sandbox = AsyncMock(
+            return_value={
+                "sandbox_valid": False,
+                "sandbox_id": "sandbox-p-1",
+                "test_results": [
+                    {"name": "t1", "status": "passed"},
+                    {"name": "t2", "status": "failed"},
+                ],
+                "execution_time": 3,
+                "sandbox_status": "completed",
+                "errors": [],
+            }
+        )
+
+        result = await orchestrator.execute_request_with_hitl(
+            user_prompt="Fix checksum", vulnerability_id="VULN-9"
+        )
+
+        assert result["hitl_status"] == "SANDBOX_FAILED"
+        assert result["sandbox_results"]["tests_failed"] == 1
+        hitl.create_approval_request.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sandbox_exception_fails_closed(self):
+        from unittest.mock import MagicMock
+
+        hitl = MagicMock()
+        orchestrator = _hitl_ready_orchestrator(hitl)
+        orchestrator.validator_agent.validate_in_sandbox = AsyncMock(
+            side_effect=RuntimeError("ECS unavailable")
+        )
+
+        result = await orchestrator.execute_request_with_hitl(
+            user_prompt="Fix checksum", vulnerability_id="VULN-9"
+        )
+
+        assert result["hitl_status"] == "SANDBOX_FAILED"
+        assert "ECS unavailable" in result["sandbox_results"]["errors"][0]
+        hitl.create_approval_request.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_mock_sandbox_ids_in_source_path(self):
+        """The HITL path never invents '-mock' sandbox identifiers."""
+        from unittest.mock import MagicMock
+
+        hitl = MagicMock()
+        hitl.create_approval_request.return_value = MagicMock(approval_id="a")
+        orchestrator = _hitl_ready_orchestrator(hitl)
+
+        result = await orchestrator.execute_request_with_hitl(
+            user_prompt="Fix checksum", vulnerability_id="VULN-9"
+        )
+
+        sandbox_id = result["sandbox_results"]["sandbox_id"]
+        assert sandbox_id is None or "mock" not in sandbox_id
+
+    @pytest.mark.asyncio
+    async def test_hitl_defers_memory_until_human_decision(self):
+        from unittest.mock import MagicMock
+
+        titan = AsyncMock()
+        titan.load_cognitive_context.return_value = {}
+        hitl = MagicMock()
+        hitl.create_approval_request.return_value = MagicMock(approval_id="a")
+        orchestrator = _hitl_ready_orchestrator(hitl, titan_memory=titan)
+
+        await orchestrator.execute_request_with_hitl(
+            user_prompt="Fix checksum", vulnerability_id="VULN-9"
+        )
+
+        titan.record_episode.assert_not_called()
+        metadata = hitl.create_approval_request.call_args.kwargs["metadata"]
+        assert metadata["decision_confidence"] == pytest.approx(0.87)
+        assert metadata["decision_confidence_source"] == "reviewer_reflection"
+        assert metadata["review_finding"] == "No issues"
+
+
+class TestHumanDecisionMemory:
+    """process_approval_decision records the human outcome in memory."""
+
+    @staticmethod
+    def _hitl_with_request(metadata=None):
+        from unittest.mock import MagicMock
+
+        hitl = MagicMock()
+        hitl.approve_request.return_value = True
+        hitl.reject_request.return_value = True
+        hitl.get_request.return_value = MagicMock(
+            vulnerability_id="VULN-7",
+            metadata=(
+                metadata
+                if metadata is not None
+                else {
+                    "user_prompt": "Fix weak hash in checksum",
+                    "target_entity": "DataProcessor.calculate_checksum",
+                    "review_finding": "Code is secure",
+                    "decision_confidence": 0.91,
+                    "decision_confidence_source": "reviewer_reflection",
+                }
+            ),
+            sandbox_test_results={"status": "SKIPPED"},
+        )
+        return hitl
+
+    @pytest.mark.asyncio
+    async def test_approval_records_success_episode(self):
+        from src.services.cognitive_memory_service import OutcomeStatus
+
+        titan = AsyncMock()
+        orchestrator = System2Orchestrator(
+            hitl_approval_service=self._hitl_with_request(), titan_memory=titan
+        )
+
+        result = await orchestrator.process_approval_decision(
+            approval_id="appr-1", decision="APPROVE", reviewer_id="alice"
+        )
+
+        assert result["status"] == "APPROVED"
+        kwargs = titan.record_episode.call_args.kwargs
+        assert kwargs["outcome"] == OutcomeStatus.SUCCESS
+        assert kwargs["task_description"] == "Fix weak hash in checksum"
+        assert kwargs["confidence_at_decision"] == pytest.approx(0.91)
+        assert "alice" in kwargs["reasoning"]
+        assert "sandbox: SKIPPED" in kwargs["reasoning"]
+        assert kwargs["error_message"] is None
+
+    @pytest.mark.asyncio
+    async def test_rejection_records_failure_episode_with_reason(self):
+        from src.services.cognitive_memory_service import OutcomeStatus
+
+        titan = AsyncMock()
+        orchestrator = System2Orchestrator(
+            hitl_approval_service=self._hitl_with_request(), titan_memory=titan
+        )
+
+        result = await orchestrator.process_approval_decision(
+            approval_id="appr-1",
+            decision="REJECT",
+            reviewer_id="bob",
+            reason="Breaks backward compatibility of stored checksums",
+        )
+
+        assert result["status"] == "REJECTED"
+        kwargs = titan.record_episode.call_args.kwargs
+        assert kwargs["outcome"] == OutcomeStatus.FAILURE
+        assert "Breaks backward compatibility" in kwargs["outcome_details"]
+        assert "Breaks backward compatibility" in kwargs["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_missing_confidence_uses_documented_default(self):
+        from src.agents.agent_orchestrator import DEFAULT_DECISION_CONFIDENCE
+
+        titan = AsyncMock()
+        orchestrator = System2Orchestrator(
+            hitl_approval_service=self._hitl_with_request(metadata={}),
+            titan_memory=titan,
+        )
+
+        await orchestrator.process_approval_decision(
+            approval_id="appr-2", decision="APPROVE", reviewer_id="alice"
+        )
+
+        kwargs = titan.record_episode.call_args.kwargs
+        assert kwargs["confidence_at_decision"] == DEFAULT_DECISION_CONFIDENCE
+        assert "default_prior" in kwargs["reasoning"]
+        assert kwargs["task_description"] == "Security patch for VULN-7"
+
+    @pytest.mark.asyncio
+    async def test_memory_failure_does_not_break_approval(self, caplog):
+        import logging
+
+        titan = AsyncMock()
+        titan.record_episode.side_effect = RuntimeError("DynamoDB throttled")
+        orchestrator = System2Orchestrator(
+            hitl_approval_service=self._hitl_with_request(), titan_memory=titan
+        )
+
+        with caplog.at_level(logging.WARNING):
+            result = await orchestrator.process_approval_decision(
+                approval_id="appr-3",
+                decision="REJECT",
+                reviewer_id="bob",
+                reason="Wrong fix",
+            )
+
+        assert result["status"] == "REJECTED"
+        titan.record_episode.assert_called_once()
+        assert "non-blocking" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_failed_decision_records_nothing(self):
+        titan = AsyncMock()
+        hitl = self._hitl_with_request()
+        hitl.approve_request.return_value = False
+        orchestrator = System2Orchestrator(
+            hitl_approval_service=hitl, titan_memory=titan
+        )
+
+        result = await orchestrator.process_approval_decision(
+            approval_id="appr-4", decision="APPROVE", reviewer_id="alice"
+        )
+
+        assert result["status"] == "ERROR"
+        titan.record_episode.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_autonomous_learn_uses_reflection_confidence(self):
+        titan = AsyncMock()
+        titan.load_cognitive_context.return_value = {}
+        orchestrator = _hitl_ready_orchestrator(None, titan_memory=titan)
+
+        result = await orchestrator.execute_request("Fix checksum")
+
+        assert result["status"] == "SUCCESS"
+        kwargs = titan.record_episode.call_args.kwargs
+        assert kwargs["confidence_at_decision"] == pytest.approx(0.87)
+        assert "reviewer_reflection" in kwargs["reasoning"]
+
+
+class TestScoredVectorSearchPreference:
+    """ContextRetrievalService prefers run_knn_search_scored when available."""
+
+    def test_scored_method_used_for_confidence(self):
+        class _ScoredVectors:
+            def run_knn_search(self, query):
+                return ["plain"]
+
+            def run_knn_search_scored(self, query):
+                return [{"text": "Code Context (a.py): x", "score": 0.83}]
+
+        service = ContextRetrievalService(_StubGraph([]), _ScoredVectors())
+        context = service.get_hybrid_context("A", "q")
+
+        assert len(context.items) == 1
+        assert context.items[0].confidence == pytest.approx(0.83)
+        assert context.items[0].metadata["confidence_source"] == "backend"

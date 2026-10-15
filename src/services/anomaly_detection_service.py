@@ -725,8 +725,13 @@ class AnomalyDetectionService:
             # Track the task ID
             anomaly.orchestrator_task_id = getattr(result, "task_id", None)
 
+            # A blocked or failed orchestration must not read as in-progress
+            # or resolved: escalate so a human looks at it.
+            status = getattr(result, "status", None)
+            if status in ("hitl_request_failed", "failed"):
+                anomaly.status = AnomalyStatus.ESCALATED
             # Check if HITL is required
-            if getattr(result, "hitl_required", False):
+            elif getattr(result, "hitl_required", False):
                 anomaly.status = AnomalyStatus.INVESTIGATING
                 anomaly.hitl_approval_id = getattr(result, "hitl_request_id", None)
             elif getattr(result, "success", False):

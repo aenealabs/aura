@@ -21,6 +21,26 @@ export class ApprovalApiError extends Error {
 }
 
 /**
+ * Get authentication headers from stored tokens.
+ * The approvals API requires a bearer token on every route; reviewer
+ * identity is derived server-side from this token.
+ */
+function getAuthHeaders() {
+  try {
+    const stored = localStorage.getItem('aura_auth_tokens');
+    if (stored) {
+      const tokens = JSON.parse(stored);
+      if (tokens.access_token) {
+        return { Authorization: `Bearer ${tokens.access_token}` };
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to parse auth tokens:', e);
+  }
+  return {};
+}
+
+/**
  * Generic fetch wrapper with error handling
  * Returns null on network errors to allow graceful degradation
  */
@@ -29,6 +49,7 @@ async function fetchApi(endpoint, options = {}) {
 
   const defaultHeaders = {
     'Content-Type': 'application/json',
+    ...getAuthHeaders(),
   };
 
   try {
@@ -94,15 +115,15 @@ export async function getApprovalDetail(approvalId) {
 }
 
 /**
- * Approve a pending approval request
+ * Approve a pending approval request.
+ * The reviewer is the authenticated user; identity comes from the token.
  *
  * @param {string} approvalId - The approval ID
- * @param {string} reviewerEmail - Email of the reviewer approving
  * @param {string} [comment] - Optional approval comment
- * @returns {Promise<Object>} Approval action result
+ * @returns {Promise<Object>} Approval action result (includes reviewed_by)
  */
-export async function approveRequest(approvalId, reviewerEmail, comment = null) {
-  const body = { reviewer_email: reviewerEmail };
+export async function approveRequest(approvalId, comment = null) {
+  const body = {};
   if (comment) body.comment = comment;
 
   return fetchApi(`/approvals/${approvalId}/approve`, {
@@ -112,20 +133,17 @@ export async function approveRequest(approvalId, reviewerEmail, comment = null) 
 }
 
 /**
- * Reject a pending approval request
+ * Reject a pending approval request.
+ * The reviewer is the authenticated user; identity comes from the token.
  *
  * @param {string} approvalId - The approval ID
- * @param {string} reviewerEmail - Email of the reviewer rejecting
  * @param {string} reason - Reason for rejection (required)
- * @returns {Promise<Object>} Rejection action result
+ * @returns {Promise<Object>} Rejection action result (includes reviewed_by)
  */
-export async function rejectRequest(approvalId, reviewerEmail, reason) {
+export async function rejectRequest(approvalId, reason) {
   return fetchApi(`/approvals/${approvalId}/reject`, {
     method: 'POST',
-    body: JSON.stringify({
-      reviewer_email: reviewerEmail,
-      reason: reason,
-    }),
+    body: JSON.stringify({ reason }),
   });
 }
 

@@ -15,8 +15,9 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,11 @@ except ImportError:
     BOTO3_AVAILABLE = False
     ClientError = Exception  # Fallback for type hints when boto3 not available
     logger.warning("Boto3 not available - using mock mode")
+
+# Organization that owns seeded demo approvals in MOCK mode. Matches the
+# organization of the dev auth-bypass user in src/api/auth.py so local dev
+# can see and act on demo data under tenant-scoped approval endpoints.
+DEMO_ORGANIZATION_ID = "dev-org-001"
 
 
 class ApprovalStatus(Enum):
@@ -115,6 +121,104 @@ class HITLDecision:
     policy_id: str | None = None
 
 
+def _floats_to_decimal(value: Any) -> Any:
+    """Recursively convert floats to Decimal (boto3 DynamoDB rejects floats)."""
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {k: _floats_to_decimal(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_floats_to_decimal(v) for v in value]
+    return value
+
+
+def _decimals_to_float(value: Any) -> Any:
+    """Recursively convert Decimal values read from DynamoDB back to float."""
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {k: _decimals_to_float(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_decimals_to_float(v) for v in value]
+    return value
+
+
+@dataclass
+class ApprovalExplainability:
+    """
+    Explainability evidence attached to an approval request (ADR-068).
+
+    Gives the human approver the agent's rationale alongside the patch diff
+    and sandbox results. All fields are optional so callers can attach as
+    much or as little as they have.
+
+    Attributes:
+        record_id: ID of the full ExplainabilityRecord, if one was persisted
+        summary: Human-readable explanation of why the patch was proposed
+        confidence: Overall decision confidence in the range [0.0, 1.0]
+        reasoning_chain: Ordered reasoning steps (ReasoningStep.to_dict() shape)
+    """
+
+    record_id: str | None = None
+    summary: str | None = None
+    confidence: float | None = None
+    reasoning_chain: list[dict[str, Any]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate field values."""
+        if self.confidence is not None:
+            confidence = float(self.confidence)
+            if not 0.0 <= confidence <= 1.0:
+                raise ValueError(
+                    f"confidence must be between 0.0 and 1.0, got {confidence}"
+                )
+            self.confidence = confidence
+        if not isinstance(self.reasoning_chain, list):
+            raise ValueError("reasoning_chain must be a list of step dicts")
+
+    def is_empty(self) -> bool:
+        """Return True when no explainability evidence is present."""
+        return (
+            self.record_id is None
+            and self.summary is None
+            and self.confidence is None
+            and not self.reasoning_chain
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to an API-friendly dictionary."""
+        return {
+            "record_id": self.record_id,
+            "summary": self.summary,
+            "confidence": self.confidence,
+            "reasoning_chain": list(self.reasoning_chain),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ApprovalExplainability:
+        """Create from a dictionary (API or storage shape)."""
+        data = _decimals_to_float(data)
+        return cls(
+            record_id=data.get("record_id"),
+            summary=data.get("summary"),
+            confidence=data.get("confidence"),
+            reasoning_chain=data.get("reasoning_chain") or [],
+        )
+
+    @classmethod
+    def coerce(
+        cls, value: ApprovalExplainability | dict[str, Any] | None
+    ) -> ApprovalExplainability | None:
+        """Normalize caller input into an ApprovalExplainability or None."""
+        if value is None:
+            return None
+        if isinstance(value, ApprovalExplainability):
+            result = value
+        else:
+            result = cls.from_dict(value)
+        return None if result.is_empty() else result
+
+
 @dataclass
 class ApprovalRequest:
     """
@@ -139,6 +243,7 @@ class ApprovalRequest:
         escalation_count: Number of times this request has been escalated
         last_escalated_at: Timestamp of last escalation
         warning_sent_at: Timestamp when expiration warning was sent
+        explainability: Optional explainability evidence for the approver
     """
 
     approval_id: str
@@ -159,6 +264,7 @@ class ApprovalRequest:
     escalation_count: int = 0
     last_escalated_at: str | None = None
     warning_sent_at: str | None = None
+    explainability: ApprovalExplainability | None = None
 
 
 class HITLApprovalService:
@@ -492,6 +598,10 @@ class HITLApprovalService:
                 "sandbox_status": d["sandbox_status"],
                 "test_results": d["test_results"],
                 "requested_by": d["requested_by"],
+                # Tenant the approval belongs to. The approvals API scopes
+                # every read/decision to the caller's organization, so demo
+                # data is owned by the dev auth-bypass user's organization.
+                "organization_id": DEMO_ORGANIZATION_ID,
             }
 
             item: dict[str, Any] = {
@@ -626,6 +736,7 @@ class HITLApprovalService:
         sandbox_results: dict[str, Any] | None = None,
         reviewer_email: str | None = None,
         metadata: dict[str, Any] | None = None,
+        explainability: ApprovalExplainability | dict[str, Any] | None = None,
     ) -> ApprovalRequest:
         """
         Create a new approval request for a security patch.
@@ -639,6 +750,9 @@ class HITLApprovalService:
             sandbox_results: Results from sandbox testing
             reviewer_email: Optional assigned reviewer
             metadata: Additional context
+            explainability: Optional explainability evidence (ADR-068) shown
+                to the approver; accepts an ApprovalExplainability or a dict
+                with record_id / summary / confidence / reasoning_chain
 
         Returns:
             Created ApprovalRequest instance
@@ -660,6 +774,7 @@ class HITLApprovalService:
                 patch_diff=patch_diff,
                 original_code=original_code,
                 metadata=metadata or {},
+                explainability=ApprovalExplainability.coerce(explainability),
             )
 
             # Save to database
@@ -690,6 +805,7 @@ class HITLApprovalService:
         sandbox_results: dict[str, Any] | None = None,
         reviewer_email: str | None = None,
         metadata: dict[str, Any] | None = None,
+        explainability: ApprovalExplainability | dict[str, Any] | None = None,
     ) -> HITLDecision:
         """
         Check autonomy policy and create approval request if needed.
@@ -713,6 +829,8 @@ class HITLApprovalService:
             sandbox_results: Results from sandbox testing
             reviewer_email: Optional assigned reviewer
             metadata: Additional context
+            explainability: Optional explainability evidence (ADR-068) that is
+                persisted with the approval request when HITL is required
 
         Returns:
             HITLDecision indicating whether HITL is required and the result
@@ -761,6 +879,7 @@ class HITLApprovalService:
                     organization_id=organization_id,
                     policy_id=policy_id,
                     reason="Autonomy service unavailable - defaulting to HITL",
+                    explainability=explainability,
                 )
 
         # Get the organization's policy
@@ -783,6 +902,7 @@ class HITLApprovalService:
                 organization_id=organization_id,
                 policy_id=policy_id,
                 reason="No autonomy policy configured - defaulting to HITL",
+                explainability=explainability,
             )
 
         # Check if HITL is required based on policy
@@ -818,6 +938,7 @@ class HITLApprovalService:
                     "operation": operation,
                     "repository": repository,
                 },
+                explainability=explainability,
             )
 
             reason = self._build_hitl_reason(
@@ -884,6 +1005,7 @@ class HITLApprovalService:
         organization_id: str,
         policy_id: str | None,
         reason: str,
+        explainability: ApprovalExplainability | dict[str, Any] | None = None,
     ) -> HITLDecision:
         """Create approval request when falling back to HITL mode."""
         request = self.create_approval_request(
@@ -899,6 +1021,7 @@ class HITLApprovalService:
                 "organization_id": organization_id,
                 "fallback_reason": reason,
             },
+            explainability=explainability,
         )
 
         return HITLDecision(
@@ -959,6 +1082,12 @@ class HITLApprovalService:
             "escalationCount": request.escalation_count,
             "lastEscalatedAt": request.last_escalated_at,
             "warningSentAt": request.warning_sent_at,
+            # Explainability evidence (ADR-068); floats stored as Decimal
+            "explainability": (
+                _floats_to_decimal(request.explainability.to_dict())
+                if request.explainability
+                else None
+            ),
             # DynamoDB metadata
             "createdAtTimestamp": int(
                 datetime.fromisoformat(request.created_at).timestamp()
@@ -1021,7 +1150,19 @@ class HITLApprovalService:
             escalation_count=item.get("escalationCount", 0),
             last_escalated_at=item.get("lastEscalatedAt"),
             warning_sent_at=item.get("warningSentAt"),
+            explainability=self._parse_explainability(item.get("explainability")),
         )
+
+    @staticmethod
+    def _parse_explainability(raw: Any) -> ApprovalExplainability | None:
+        """Parse stored explainability evidence, tolerating malformed data."""
+        if not isinstance(raw, dict):
+            return None
+        try:
+            return ApprovalExplainability.coerce(raw)
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Ignoring malformed explainability data: {e}")
+            return None
 
     def _request_to_dict(self, request: ApprovalRequest) -> dict[str, Any]:
         """Convert ApprovalRequest to dict for API responses."""
@@ -1044,6 +1185,9 @@ class HITLApprovalService:
             "escalation_count": request.escalation_count,
             "last_escalated_at": request.last_escalated_at,
             "warning_sent_at": request.warning_sent_at,
+            "explainability": (
+                request.explainability.to_dict() if request.explainability else None
+            ),
         }
 
     def get_all_requests(
@@ -1953,9 +2097,18 @@ class HITLApprovalService:
         self.audit_entries.append(entry)
         logger.debug(f"Audit: {event_type} - {approval_id or 'system'}")
 
-    def get_statistics(self) -> dict[str, Any]:
+    def get_statistics(
+        self,
+        metadata_filter: Callable[[dict[str, Any]], bool] | None = None,
+    ) -> dict[str, Any]:
         """
         Get approval request statistics.
+
+        Args:
+            metadata_filter: Optional predicate applied to each request's
+                metadata dict; only requests for which it returns True are
+                counted. Used by the API layer to scope statistics to the
+                caller's organization.
 
         Returns:
             Dictionary with approval statistics
@@ -1967,6 +2120,13 @@ class HITLApprovalService:
                 # Full table scan (expensive - use with caution)
                 response = self.table.scan()
                 items = response.get("Items", [])
+
+            if metadata_filter is not None:
+                items = [
+                    item
+                    for item in items
+                    if metadata_filter(item.get("metadata") or {})
+                ]
 
             # Use typed counters to avoid mypy issues with mixed-type dict
             pending_count = 0

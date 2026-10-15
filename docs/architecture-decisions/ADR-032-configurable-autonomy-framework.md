@@ -88,6 +88,29 @@ Policy resolution follows this priority:
 4. **Severity Overrides** - Per-severity configurations
 5. **Default Level** (lowest) - Policy default
 
+> **Status note (2026-10-14) -- the order above does not match the code.**
+> `AutonomyPolicy.get_autonomy_level` in `src/services/autonomy_policy_service.py`
+> resolves in this order: (1) `IMMUTABLE_GUARDRAILS`, (2) instance `guardrails`,
+> (3) `operation_overrides`, (4) `repository_overrides`, (5) `severity_overrides`,
+> (6) `default_level`. Operation overrides are checked before repository
+> overrides, the reverse of the table above, and the guardrail tier is split in
+> two. The code is authoritative.
+>
+> **What is actually unbypassable.** Only `IMMUTABLE_GUARDRAILS`, a class-level
+> `frozenset` containing `credential_modification` and `production_deployment`,
+> is hard-coded and cannot be changed by preset, custom configuration, the
+> `hitl_enabled` master toggle or an `operation_overrides` entry. The five
+> operations listed under "Guardrails" above are the default value of the
+> per-policy `guardrails` field. That field is stored policy data, so a policy
+> can be created or edited with a different list. The statement that guardrails
+> are "enforced in code, not configurable" holds for the two immutable
+> operations only. With `hitl_enabled=False`, `requires_hitl` still returns true
+> for both immutable and instance guardrails.
+>
+> `src/agents/meta_orchestrator.py` no longer carries a separate autonomy
+> policy: it imports `AutonomyLevel` and `AutonomyPolicy` from the service
+> module (verified in code on 2026-10-14).
+
 ### Implementation Architecture
 
 ```

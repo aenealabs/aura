@@ -11,7 +11,7 @@ Version: 1.0.0
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
@@ -44,6 +44,12 @@ class ContextResponse:
     total_tokens: int
     strategies_used: list[str]
     query: str = ""
+    # ADR-067: populated by ContextRetrievalService when a provenance
+    # verifier is configured. Maps file_path -> TrustScore; empty otherwise.
+    trust_scores: dict[str, Any] = field(default_factory=dict)
+    # File paths dropped by provenance verification (integrity failure,
+    # quarantine, low trust, or unverifiable in strict mode).
+    excluded_by_provenance: list[str] = field(default_factory=list)
 
 
 class ResultSynthesisAgent:

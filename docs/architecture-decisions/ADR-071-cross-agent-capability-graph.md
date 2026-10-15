@@ -2,7 +2,21 @@
 
 ## Status
 
-Deployed
+Implemented (in-memory/mock-graph mode; Neptune persistence not implemented)
+
+> **Status note (2026-10-14).** The services, analyzer and REST router exist
+> and are tested, but "Deployed" overstated them. `PolicyGraphSynchronizer`
+> (`src/services/capability_governance/graph_sync.py`) defaults to
+> `mock_mode=True` and `CapabilityGraphAnalyzer` (`graph_analyzer.py`) defaults to
+> `mock_mode=True`; both singleton getters construct them with no Neptune
+> client. Even with a `neptune_service` supplied, `_upsert_vertex` only logs
+> "Would upsert vertex" and issues no Gremlin, so no code path writes to
+> Neptune. Analysis therefore runs over an in-memory graph. The router in
+> `src/api/capability_graph_endpoints.py` is not included by `app.include_router`
+> in `src/api/main.py` (a repo-wide search for `capability_graph_endpoints`
+> finds only the module itself); `src/api/dev_mocks_endpoints.py` defines
+> same-path `/api/v1/capability-graph` routes with mock data. Neptune-backed
+> sync and mounting the router remain open work.
 
 ## Date
 

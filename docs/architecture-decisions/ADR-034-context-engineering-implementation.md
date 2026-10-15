@@ -1,6 +1,6 @@
 # ADR-034: Context Engineering Implementation Plan
 
-**Status:** Deployed
+**Status:** Implemented as library services; not wired into production request paths (see status note under Current State Assessment)
 **Date:** 2025-12-14
 **Decision Makers:** Platform Architecture Team
 **Related:** ADR-021 (Guardrails Cognitive Architecture), ADR-024 (Titan Neural Memory), ADR-029 (Agent Optimization Roadmap)
@@ -32,18 +32,46 @@ Project Aura's context engineering capabilities as of December 2025 (planning ph
 
 | Capability | Dec 2025 (Planned) | Jan 2026 (Deployed) | Research Validation |
 |------------|-------------------|---------------------|---------------------|
-| **Hybrid Retrieval** | Neptune + OpenSearch (2-way) | ✅ 3-way RRF fusion (`three_way_retrieval_service.py`) | +22-25% MRR achieved |
+| **Hybrid Retrieval** | Neptune + OpenSearch (2-way) | ✅ 3-way RRF fusion built (`three_way_retrieval_service.py`); not imported outside tests | +22-25% MRR is a research projection (no in-repo measurement) |
 | **Neural Memory** | ADR-024 Titan Memory | ✅ Complete (ADR-024) | Validated: 2M+ token contexts |
-| **Context Stack** | Implicit in prompts | ✅ Explicit 6-layer (`context_retrieval_service.py`) | Research recommendation met |
-| **Tool Presentation** | Full tool list | ✅ Hierarchical registry (`hierarchical_tool_registry.py`) | ~20 atomic tools pattern |
-| **Context Scoring** | Not implemented | ✅ Deployed (`context_scoring_service.py`) | Effective window < 256K enforced |
-| **Multi-hop Queries** | Basic traversal | ✅ HopRAG deployed (`hoprag_service.py`) | +65.07% F1 achieved |
-| **Community Summaries** | Not implemented | ✅ Deployed (`community_summarization_service.py`) | Leiden clustering + LLM summaries |
+| **Context Stack** | Implicit in prompts | ✅ Explicit 6-layer built (`context_stack_manager.py`, `ContextLayer`); only imported by `mcp_context_manager.py`, itself not imported outside tests | Research recommendation met in code; not used in a production path |
+| **Tool Presentation** | Full tool list | ✅ Hierarchical registry built (`hierarchical_tool_registry.py`); imported only by `context_stack_manager.py` | ~20 atomic tools pattern |
+| **Context Scoring** | Not implemented | ✅ Built (`context_scoring_service.py`); not imported outside tests | Effective window < 256K enforced |
+| **Multi-hop Queries** | Basic traversal | ✅ HopRAG built (`hoprag_service.py`); not imported outside tests | +65.07% F1 is a published-research figure, not measured on Aura |
+| **Community Summaries** | Not implemented | ✅ Built (`community_summarization_service.py`); not imported outside tests | Leiden clustering + LLM summaries |
 
 **Implementation Summary (January 2026):**
 - **7 services deployed**: context_retrieval, context_scoring, three_way_retrieval, hoprag, community_summarization, hierarchical_tool_registry, mcp_context_manager
 - **Test coverage**: 400+ tests across all context engineering services
 - **All research recommendations implemented** as outlined in Phases 1-3 below
+
+> **Status note (2026-10-14) -- built and tested, not wired into production
+> paths.** The "Deployed" labels above mean the modules exist in `src/services/`
+> with unit tests; they do not mean they serve production requests. Import
+> search across `src/`, `deploy/` and non-test Python/YAML/JS (positive control:
+> `context_retrieval_service` is imported by `src/agents/meta_orchestrator.py`,
+> `src/agents/adaptive_intelligence_agent.py`, `src/agents/ssr/bug_solving_agent.py`
+> and `src/services/ssr/self_play_orchestrator.py`, so the search method finds
+> real imports) found:
+>
+> | Module | Importers outside `tests/` |
+> |--------|----------------------------|
+> | `three_way_retrieval_service.py` (RRF) | none |
+> | `hoprag_service.py` | none |
+> | `community_summarization_service.py` | none |
+> | `context_scoring_service.py` | none |
+> | `hierarchical_tool_registry.py` | `context_stack_manager.py` only |
+> | `context_stack_manager.py` | `mcp_context_manager.py` only |
+> | `mcp_context_manager.py` | none |
+>
+> Only `context_retrieval_service.py` is on agent code paths, and it contains no
+> reference to the scoring, three-way, HopRAG, community or six-layer code. The
+> six-layer stack (`ContextLayer`) lives in `context_stack_manager.py`, not in
+> `context_retrieval_service.py` as the table originally stated. The +22-25% MRR
+> and +65% F1 figures come from the cited research
+> (`docs/research/context-engineering-advances-2025.md`); no Aura-side
+> evaluation was found, so treat them as projections or targets. The
+> "400+ tests" count was not re-verified in this review.
 
 ### Research Findings Summary
 

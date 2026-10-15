@@ -312,7 +312,8 @@ class TestHistoryAwareBugInjector:
         assert "{repo_id}" in injector.CALL_GRAPH_QUERY
         assert "{file_path}" in injector.CALL_GRAPH_QUERY
         assert "{repo_id}" in injector.CALLERS_QUERY
-        assert "{repo_id}" in injector.TEST_COVERAGE_QUERY
+        # ADR-090: no writer emits a test-to-code edge, so no test query.
+        assert not hasattr(injector, "TEST_COVERAGE_QUERY")
         assert "{repo_id}" in injector.COMPLEXITY_QUERY
 
 

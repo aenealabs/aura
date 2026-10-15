@@ -318,9 +318,14 @@ class AutonomyPolicy:
         )
 
     @classmethod
-    def from_preset(cls, preset_name: str, organization_id: str) -> "AutonomyPolicy":
+    def from_preset(
+        cls, preset_name: str, organization_id: str = "default"
+    ) -> "AutonomyPolicy":
         """
         Create an AutonomyPolicy from a named preset.
+
+        ``organization_id`` defaults to ``"default"`` so callers that only
+        select a preset (e.g. the MetaOrchestrator factories) can use it.
 
         Available presets:
         - defense_contractor: FULL_HITL default (GovCloud, CMMC compliance)

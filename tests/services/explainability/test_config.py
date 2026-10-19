@@ -2,6 +2,7 @@
 Tests for explainability configuration.
 """
 
+from src.config.claude_models import claude_model
 from src.services.explainability.config import (
     AlternativesConfig,
     ConfidenceConfig,
@@ -13,7 +14,6 @@ from src.services.explainability.config import (
     get_explainability_config,
     reset_explainability_config,
 )
-from src.config.claude_models import claude_model
 
 
 class TestExplainabilityConfig:

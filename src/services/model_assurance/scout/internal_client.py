@@ -18,9 +18,9 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from src.config.claude_models import claude_model
 from src.services.model_assurance.adapter_registry import ModelProvider
 from src.services.model_assurance.scout.bedrock_client import BedrockModelSummary
-from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 

@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+
 from src.config.bedrock_config import get_model_pricing, has_pricing
 
 logger = logging.getLogger(__name__)

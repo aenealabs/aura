@@ -45,25 +45,24 @@ except ImportError:
 # first. See issue #183 cluster C.
 from src.config.bedrock_config import (
     DEFAULT_PROMPT_CACHE_MODELS,
-    MODEL_PRICING,
     calculate_cost,
     get_config,
     has_pricing,
     register_model_pricing,
 )
 from src.config.claude_models import CURRENT_CLAUDE_MODELS
-from src.services.bedrock_model_discovery import (
-    _DISCOVERY_CACHE,
-    AUTO,
-    discover_tier_models,
-    parse_claude_model,
-)
 from src.config.guardrails_config import (
     GuardrailMode,
     GuardrailResult,
     format_guardrail_trace,
     get_guardrail_config,
     load_guardrail_ids_from_ssm,
+)
+from src.services.bedrock_model_discovery import (
+    _DISCOVERY_CACHE,
+    AUTO,
+    discover_tier_models,
+    parse_claude_model,
 )
 
 # Import prompt sanitizer for input security (OWASP LLM01 prevention)

@@ -13,11 +13,12 @@ from typing import Any, Optional
 import boto3
 from botocore.exceptions import ClientError
 
+from src.config.claude_models import claude_model
+
 from .incident_detector import Incident, IncidentDetector, IncidentType
 from .runbook_generator import RunbookGenerator
 from .runbook_repository import RunbookMetadata, RunbookRepository
 from .runbook_updater import RunbookUpdater
-from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 

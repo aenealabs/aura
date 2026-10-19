@@ -16,8 +16,9 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
-from .incident_detector import Incident
 from src.config.claude_models import claude_model
+
+from .incident_detector import Incident
 
 logger = logging.getLogger(__name__)
 

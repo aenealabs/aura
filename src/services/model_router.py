@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
 from src.config.bedrock_config import get_model_pricing
 from src.config.claude_models import claude_model
 

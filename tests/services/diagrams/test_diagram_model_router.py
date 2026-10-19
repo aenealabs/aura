@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.config.claude_models import claude_model
-
 from src.services.diagrams.diagram_model_router import (
     DIAGRAM_TASK_ROUTING,
     GOVCLOUD_BEDROCK_MODELS,

@@ -11,6 +11,8 @@ Implements ADR-072 for ML-based anomaly detection.
 import logging
 from typing import Any
 
+from src.config.claude_models import claude_model
+
 from .anomaly_contracts import (
     AgentContext,
     AlertSeverity,
@@ -18,7 +20,6 @@ from .anomaly_contracts import (
     AnomalyType,
     CapabilityInvocation,
 )
-from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 

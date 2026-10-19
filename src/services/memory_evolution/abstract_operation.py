@@ -30,6 +30,8 @@ from typing import Any, Optional, Protocol
 
 import numpy as np
 
+from src.config.claude_models import claude_model
+
 from .config import MemoryEvolutionConfig, get_memory_evolution_config
 from .contracts import (
     AbstractedStrategy,
@@ -38,7 +40,6 @@ from .contracts import (
     RefineOperation,
     RefineResult,
 )
-from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 

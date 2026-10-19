@@ -19,10 +19,10 @@ from src.abstractions.llm_service import (
     ModelFamily,
     UsageSummary,
 )
+from src.config.bedrock_config import get_model_pricing, has_pricing
+from src.config.claude_models import claude_model
 from src.services.bedrock_llm_service import BedrockLLMService, BedrockMode
 from src.services.titan_embedding_service import EmbeddingMode, TitanEmbeddingService
-from src.config.claude_models import claude_model
-from src.config.bedrock_config import get_model_pricing, has_pricing
 
 logger = logging.getLogger(__name__)
 

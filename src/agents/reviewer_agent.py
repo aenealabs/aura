@@ -36,6 +36,51 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+try:
+    from src.services.bedrock_llm_service import StructuredOutputError
+except ImportError:  # pragma: no cover - minimal installs without the LLM service
+
+    class StructuredOutputError(Exception):  # type: ignore[no-redef]
+        """Stand-in when the LLM service is unavailable."""
+
+
+# The review as structured output: the model reports through this tool, so there is no
+# JSON to parse out of free text and a missing status cannot default to PASS.
+REVIEW_TOOL = "report_security_review"
+REVIEW_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["status", "finding"],
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["PASS", "FAIL_SECURITY"],
+            "description": "PASS if the code is secure, FAIL_SECURITY otherwise",
+        },
+        "finding": {
+            "type": "string",
+            "description": "Summary of the issue, or that the code is secure",
+        },
+        "severity": {
+            "type": "string",
+            "enum": ["Critical", "High", "Medium", "Low"],
+            "description": "Required when status is FAIL_SECURITY",
+        },
+        "vulnerabilities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["description"],
+                "properties": {
+                    "type": {"type": "string"},
+                    "line": {"type": "integer"},
+                    "description": {"type": "string"},
+                },
+            },
+        },
+        "recommendations": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
 
 # Maximum length of source code passed into a single LLM review call. Anything
 # longer is head/tail truncated with a clear marker. Without this cap a 1MB
@@ -347,9 +392,15 @@ Respond with a JSON object containing:
 
 Response (JSON only):"""
 
-        response = await self.llm.generate(prompt, agent="Reviewer")
+        result = await self._structured_review(prompt)
+        if result is None:
+            response = await self.llm.generate(prompt, agent="Reviewer")
+            try:
+                result = json.loads(response)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse reviewer LLM response, using fallback")
+                return self._review_code_fallback(code)
         try:
-            result = json.loads(response)
             status = result.get("status", "PASS")
             finding = result.get("finding", "Code review completed")
             vulnerabilities = result.get("vulnerabilities", [])
@@ -374,9 +425,29 @@ Response (JSON only):"""
                 "vulnerabilities": [],
                 "recommendations": recommendations,
             }
-        except json.JSONDecodeError:
-            logger.warning("Failed to parse reviewer LLM response, using fallback")
+        except AttributeError:
+            logger.warning("Reviewer LLM response was not an object, using fallback")
             return self._review_code_fallback(code)
+
+    async def _structured_review(self, prompt: str) -> dict[str, Any] | None:
+        """Ask for the review as a tool call (structured output) when the LLM supports it.
+
+        Returns None to use the text path: the client has no tool use, or the model did
+        not return a review matching REVIEW_SCHEMA.
+        """
+        if getattr(self.llm, "supports_tool_use", False) is not True:
+            return None
+        try:
+            return await self.llm.generate_structured(
+                prompt,
+                REVIEW_TOOL,
+                REVIEW_SCHEMA,
+                "Report the outcome of the security review.",
+                agent="Reviewer",
+            )
+        except StructuredOutputError as e:
+            logger.warning("Structured review failed (%s); using the text path", e)
+            return None
 
     def _review_code_fallback(self, code: str) -> dict[str, Any]:
         """Fallback pattern-based security review when LLM is unavailable.

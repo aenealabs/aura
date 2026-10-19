@@ -214,6 +214,47 @@ def get_model_for_operation(
     return tier, (model_ids or MODEL_IDS)[tier]
 
 
+_JSON_TYPES: dict[str, tuple[type, ...]] = {
+    "string": (str,),
+    "integer": (int,),
+    "number": (int, float),
+    "boolean": (bool,),
+    "array": (list,),
+    "object": (dict,),
+}
+
+
+def schema_problems(data: Any, schema: dict[str, Any], path: str = "") -> list[str]:
+    """
+    Check data against the subset of JSON Schema used for structured output: type,
+    required, properties, items, and enum. Returns the problems found (empty if valid).
+    """
+    problems: list[str] = []
+    where = path or "output"
+    expected = schema.get("type")
+    if expected in _JSON_TYPES:
+        ok = isinstance(data, _JSON_TYPES[expected]) and not (
+            expected in ("integer", "number") and isinstance(data, bool)
+        )
+        if not ok:
+            return [f"{where} should be {expected}"]
+    if "enum" in schema and data not in schema["enum"]:
+        problems.append(f"{where} should be one of {schema['enum']}")
+    if isinstance(data, dict):
+        for key in schema.get("required", []):
+            if key not in data:
+                problems.append(f"{where} is missing {key}")
+        for key, sub in (schema.get("properties") or {}).items():
+            if key in data:
+                problems += schema_problems(
+                    data[key], sub, f"{path}.{key}" if path else key
+                )
+    if isinstance(data, list) and "items" in schema:
+        for i, item in enumerate(data):
+            problems += schema_problems(item, schema["items"], f"{where}[{i}]")
+    return problems
+
+
 def resolve_model_tiers(
     config: dict[str, Any],
     overrides: dict[str, Any] | None = None,
@@ -264,6 +305,10 @@ class GuardrailViolationError(Exception):
     ) -> None:
         super().__init__(message)
         self.violations = violations or []
+
+
+class StructuredOutputError(Exception):
+    """Raised when the model does not return the requested structured output."""
 
 
 class PromptInjectionError(Exception):
@@ -469,6 +514,10 @@ class BedrockLLMService:
             logger.warning("Falling back to MOCK mode")
             self.mode = BedrockMode.MOCK
             self._init_mock_mode()
+
+    # Agents check this (``getattr(llm, "supports_tool_use", False) is True``) before using
+    # tool use or structured output, so test doubles and older clients keep the text path.
+    supports_tool_use = True
 
     def _tier_models(self) -> dict[ModelTier, str]:
         """The resolved tier-to-model map (defaults if the service was built without init)."""
@@ -970,7 +1019,36 @@ class BedrockLLMService:
         if system_prompt:
             request_body["system"] = system_prompt
 
-        # Prepare invoke parameters
+        response_body, guardrail_result = self._invoke_bedrock_messages(
+            model_id, request_body, apply_guardrails
+        )
+
+        # Parse response (Claude Messages API format)
+        text_response = "".join(
+            block.get("text", "")
+            for block in response_body["content"]
+            if block.get("type", "text") == "text"
+        )
+        return {
+            "text": text_response,
+            "input_tokens": response_body["usage"]["input_tokens"],
+            "output_tokens": response_body["usage"]["output_tokens"],
+            "guardrail_result": guardrail_result,
+        }
+
+    def _invoke_bedrock_messages(
+        self,
+        model_id: str,
+        request_body: dict[str, Any],
+        apply_guardrails: bool = True,
+    ) -> tuple[dict[str, Any], "GuardrailResult | None"]:
+        """
+        Send a Claude Messages API request body to Bedrock, with guardrails (ADR-029)
+        and throttling retries. Shared by text and tool-use calls.
+
+        Returns:
+            (parsed response body, guardrail result or None)
+        """
         invoke_params: dict[str, Any] = {
             "modelId": model_id,
             "body": json.dumps(request_body),
@@ -998,11 +1076,6 @@ class BedrockLLMService:
         response = self._invoke_with_retry(invoke_params, model_id)
 
         response_body = json.loads(response["body"].read())
-
-        # Parse response (Claude Messages API format)
-        text_response = response_body["content"][0]["text"]
-        input_tokens = response_body["usage"]["input_tokens"]
-        output_tokens = response_body["usage"]["output_tokens"]
 
         # Parse guardrail trace if present (ADR-029)
         if "amazon-bedrock-trace" in response_body:
@@ -1047,12 +1120,7 @@ class BedrockLLMService:
                     violations=violations,
                 )
 
-        return {
-            "text": text_response,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "guardrail_result": guardrail_result,
-        }
+        return response_body, guardrail_result
 
     def _invoke_with_retry(
         self, invoke_params: dict[str, Any], model_id: str
@@ -1442,6 +1510,227 @@ class BedrockLLMService:
             "total_requests": len(self.request_history),
         }
 
+    # ------------------------------------------------------------------
+    # Tool use and structured output (Claude Messages API ``tools``)
+    # ------------------------------------------------------------------
+
+    def _select_model(
+        self, operation: str | None, override_tier: ModelTier | None
+    ) -> tuple[ModelTier, str]:
+        if override_tier is not None:
+            return override_tier, self._tier_models()[override_tier]
+        if operation is not None:
+            return get_model_for_operation(operation, self._tier_models())
+        return ModelTier.ACCURATE, self.model_id_primary
+
+    def _sanitize_text(self, text: str, agent: str, operation: str | None) -> str:
+        """Prompt-injection screening (OWASP LLM01) for text the agent sends."""
+        if not (self.sanitize_prompts and self.prompt_sanitizer):
+            return text
+        result = self.prompt_sanitizer.sanitize(
+            text, context={"agent": agent, "operation": operation}
+        )
+        if result.action == SanitizationAction.BLOCKED:
+            raise PromptInjectionError(
+                f"Prompt blocked: {result.warnings}",
+                threat_level=result.threat_level,
+                patterns_detected=result.patterns_detected,
+            )
+        return result.sanitized_prompt if result.was_modified else text
+
+    def invoke_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        agent: str = "unknown",
+        system_prompt: str | None = None,
+        tool_choice: dict[str, Any] | None = None,
+        operation: str | None = None,
+        override_tier: ModelTier | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        apply_guardrails: bool = True,
+    ) -> dict[str, Any]:
+        """
+        One Messages API turn with tools: the same budget, rate-limit, guardrail and
+        cost controls as ``invoke_model``, without response caching (tool turns depend on
+        the whole conversation).
+
+        Text the agent writes (string message content and text blocks in user turns) is
+        screened for prompt injection. Tool results are passed through unchanged: they
+        are data the agent's own tools returned.
+
+        Returns:
+            {"content": [blocks], "stop_reason": str, "input_tokens", "output_tokens",
+             "cost_usd", "model", "tier", "request_id", "guardrail_result"}
+        """
+        request_id = str(uuid.uuid4())
+        max_tokens = max_tokens or self.config["max_tokens_default"]
+        temperature = (
+            temperature
+            if temperature is not None
+            else self.config["temperature_default"]
+        )
+
+        screened: list[dict[str, Any]] = []
+        for message in messages:
+            content = message.get("content")
+            if message.get("role") == "user" and isinstance(content, str):
+                content = self._sanitize_text(content, agent, operation)
+            elif message.get("role") == "user" and isinstance(content, list):
+                content = [
+                    (
+                        {**b, "text": self._sanitize_text(b["text"], agent, operation)}
+                        if isinstance(b, dict) and b.get("type") == "text"
+                        else b
+                    )
+                    for b in content
+                ]
+            screened.append({**message, "content": content})
+        if system_prompt and self.sanitize_prompts and self.prompt_sanitizer:
+            sys_result = self.prompt_sanitizer.sanitize_system_prompt(system_prompt)
+            if sys_result.action == SanitizationAction.BLOCKED:
+                raise PromptInjectionError(
+                    f"System prompt blocked: {sys_result.warnings}",
+                    threat_level=sys_result.threat_level,
+                    patterns_detected=sys_result.patterns_detected,
+                )
+            if sys_result.was_modified:
+                system_prompt = sys_result.sanitized_prompt
+
+        tier, model_id = self._select_model(operation, override_tier)
+
+        if not self._check_budget():
+            raise BudgetExceededError(
+                f"Budget exceeded. Daily: ${self.daily_spend:.2f}/"
+                f"${self.config['daily_budget_usd']:.2f}, "
+                f"Monthly: ${self.monthly_spend:.2f}/"
+                f"${self.config['monthly_budget_usd']:.2f}"
+            )
+        if not self._check_rate_limit():
+            raise RateLimitExceededError(
+                "Rate limit exceeded. Please retry later or increase limits in config."
+            )
+        self._record_request()
+
+        guardrail_result = None
+        if self.mode == BedrockMode.AWS:
+            request_body: dict[str, Any] = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": screened,
+                "tools": tools,
+            }
+            if system_prompt:
+                request_body["system"] = system_prompt
+            if tool_choice:
+                request_body["tool_choice"] = tool_choice
+            body, guardrail_result = self._invoke_bedrock_messages(
+                model_id, request_body, apply_guardrails
+            )
+            content = body.get("content", [])
+            stop_reason = body.get("stop_reason", "end_turn")
+            input_tokens = body["usage"]["input_tokens"]
+            output_tokens = body["usage"]["output_tokens"]
+        else:
+            content, stop_reason = self._mock_tool_turn(tools, tool_choice, agent)
+            input_tokens = len(json.dumps(screened)) // 4
+            output_tokens = len(json.dumps(content)) // 4
+
+        cost = calculate_cost(input_tokens, output_tokens, model_id)
+        self._record_cost(
+            request_id,
+            agent,
+            model_id,
+            input_tokens,
+            output_tokens,
+            cost,
+            tier=tier,
+            operation=operation,
+        )
+        return {
+            "content": content,
+            "stop_reason": stop_reason,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cost_usd": cost,
+            "model": model_id,
+            "tier": tier.value,
+            "request_id": request_id,
+            "guardrail_result": guardrail_result,
+        }
+
+    @staticmethod
+    def _mock_tool_turn(
+        tools: list[dict[str, Any]], tool_choice: dict[str, Any] | None, agent: str
+    ) -> tuple[list[dict[str, Any]], str]:
+        """Mock mode: call the forced tool with empty input, otherwise answer in text."""
+        if tool_choice and tool_choice.get("type") == "tool":
+            block = {
+                "type": "tool_use",
+                "id": f"toolu_mock_{uuid.uuid4().hex[:12]}",
+                "name": tool_choice["name"],
+                "input": {},
+            }
+            return [block], "tool_use"
+        return [{"type": "text", "text": f"Mock response for {agent}"}], "end_turn"
+
+    async def generate_with_tools(self, messages, tools, **kwargs) -> dict[str, Any]:
+        """Async ``invoke_with_tools`` (runs the blocking Bedrock call in a thread)."""
+        return await asyncio.to_thread(
+            self.invoke_with_tools, messages, tools, **kwargs
+        )
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        tool_name: str,
+        input_schema: dict[str, Any],
+        description: str,
+        agent: str = "unknown",
+        system_prompt: str | None = None,
+        operation: str | None = None,
+        max_tokens: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Ask for output in a fixed shape by forcing one tool call, and return its input.
+
+        Replaces "reply in JSON" prompts: the response is the tool's arguments, so there
+        is no text to parse. The input is checked against the schema's required fields,
+        types, and enums.
+
+        Raises:
+            StructuredOutputError: the model did not call the tool, or the input does
+                not match the schema.
+        """
+        result = await self.generate_with_tools(
+            [{"role": "user", "content": prompt}],
+            [
+                {
+                    "name": tool_name,
+                    "description": description,
+                    "input_schema": input_schema,
+                }
+            ],
+            agent=agent,
+            system_prompt=system_prompt,
+            tool_choice={"type": "tool", "name": tool_name},
+            operation=operation,
+            max_tokens=max_tokens,
+        )
+        for block in result["content"]:
+            if block.get("type") == "tool_use" and block.get("name") == tool_name:
+                data = block.get("input") or {}
+                problems = schema_problems(data, input_schema)
+                if problems:
+                    raise StructuredOutputError(
+                        f"{tool_name} output does not match its schema: "
+                        + "; ".join(problems)
+                    )
+                return data
+        raise StructuredOutputError(f"The model did not call {tool_name}")
+
     async def generate(
         self,
         prompt: str,
@@ -1513,7 +1802,7 @@ class BedrockLLMService:
                     system_prompt = sys_result.sanitized_prompt
 
         # Get model ID for semantic cache context
-        _, model_id = get_model_for_operation(operation)
+        _, model_id = get_model_for_operation(operation, self._tier_models())
 
         # Check semantic cache first (ADR-029 Phase 1.3)
         if use_semantic_cache and self.semantic_cache:

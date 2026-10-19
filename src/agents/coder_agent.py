@@ -35,6 +35,36 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+try:
+    from src.services.bedrock_llm_service import StructuredOutputError
+except ImportError:  # pragma: no cover - minimal installs without the LLM service
+
+    class StructuredOutputError(Exception):  # type: ignore[no-redef]
+        """Stand-in when the LLM service is unavailable."""
+
+
+# The code as structured output: no markdown fences to strip from free text.
+CODE_TOOL = "submit_code"
+CODE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["code"],
+    "properties": {
+        "code": {
+            "type": "string",
+            "description": "The complete Python code, without markdown fences",
+        },
+        "summary": {
+            "type": "string",
+            "description": "One or two sentences on what changed and why",
+        },
+        "security_notes": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Security decisions made in the code",
+        },
+    },
+}
+
 
 class CoderAgent:
     """Secure code generation agent with LLM integration.
@@ -193,6 +223,10 @@ Requirements:
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
+        submitted = await self._structured_code(prompt)
+        if submitted is not None:
+            return submitted
+
         response = await self.llm.generate(prompt, agent="Coder")
 
         # Extract code from response (handle markdown code blocks)
@@ -204,6 +238,30 @@ Generate ONLY the Python code, no explanations or markdown:"""
         if code.endswith("```"):
             code = code[:-3]
         return code.strip()
+
+    async def _structured_code(self, prompt: str) -> str | None:
+        """Ask for the code through the submit_code tool (structured output).
+
+        Returns None to use the text path: the client has no tool use, or the model did
+        not submit code matching CODE_SCHEMA.
+        """
+        if getattr(self.llm, "supports_tool_use", False) is not True:
+            return None
+        try:
+            result = await self.llm.generate_structured(
+                prompt,
+                CODE_TOOL,
+                CODE_SCHEMA,
+                "Submit the complete code for the task.",
+                agent="Coder",
+            )
+        except StructuredOutputError as e:
+            logger.warning("Structured code output failed (%s); using the text path", e)
+            return None
+        if result.get("summary"):
+            logger.info("Coder summary: %s", result["summary"])
+        code = str(result.get("code", "")).strip()
+        return code or None
 
     def _generate_code_fallback(self, context: HybridContext) -> str:
         """Fallback code generation when LLM is unavailable.

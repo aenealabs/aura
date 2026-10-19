@@ -1056,8 +1056,11 @@ class TestSystem2OrchestratorSelfCorrection:
         result = await orchestrator.execute_request("Fix security")
 
         assert result["status"] == "FAILURE"
-        # Should have tried max attempts (2)
-        assert orchestrator.coder_agent.generate_code.call_count == 2
+        # Should have tried the configured number of attempts
+        assert (
+            orchestrator.coder_agent.generate_code.call_count
+            == orchestrator.max_remediation_attempts
+        )
 
 
 class _StubGraph:
@@ -1261,6 +1264,9 @@ class TestSandboxOrchestratorInjection:
         hitl.create_approval_request.return_value = MagicMock(approval_id="a")
         fake = _FakeSandboxOrchestrator(tests_pass)
         orchestrator = _hitl_ready_orchestrator(hitl, sandbox_orchestrator=fake)
+        orchestrator.max_sandbox_repairs = (
+            0  # one sandbox run; repairs are tested apart
+        )
 
         result = await orchestrator.execute_request_with_hitl(
             user_prompt="Fix checksum", vulnerability_id="VULN-9"

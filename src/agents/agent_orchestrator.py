@@ -469,6 +469,8 @@ class System2Orchestrator:
         use_async_messaging: bool = False,
         checkpoint_service: "CheckpointPersistenceService | None" = None,
         sandbox_orchestrator: "FargateSandboxOrchestrator | None" = None,
+        max_remediation_attempts: int = 3,
+        max_sandbox_repairs: int = 1,
     ):
         """Initialize the System2Orchestrator.
 
@@ -487,6 +489,10 @@ class System2Orchestrator:
             sandbox_orchestrator: Optional sandbox orchestrator passed to ValidatorAgent
                 for runtime patch testing. If None, the HITL sandbox step is
                 reported as SKIPPED.
+            max_remediation_attempts: Coding attempts per run. A patch must pass both the
+                security review and validation; each failure is fed back to the coder.
+            max_sandbox_repairs: Extra runs, in the HITL workflow, after a patch fails its
+                sandbox tests. Each repair run sees the failing tests and errors.
         """
         self.llm = llm_client
         self.checkpoint_service = checkpoint_service
@@ -538,6 +544,9 @@ class System2Orchestrator:
         self.context_service = ContextRetrievalService(  # type: ignore[call-arg]
             self.graph_agent, self.vector_store  # type: ignore[arg-type]
         )
+
+        self.max_remediation_attempts = max(1, max_remediation_attempts)
+        self.max_sandbox_repairs = max(0, max_sandbox_repairs)
 
         self.initial_code = ""
         self.final_code = ""
@@ -776,6 +785,7 @@ class System2Orchestrator:
             review_result=review_result or {},
             validation_result=validation_result or {},
             attempt_number=attempt_number,
+            max_attempts=self.max_remediation_attempts,
             metadata=metadata or {},
         )
 
@@ -880,6 +890,7 @@ class System2Orchestrator:
 
         # Phases 3-5: CODE -> REVIEW -> VALIDATE loop
         max_attempts = checkpoint.max_attempts
+        validation_result: dict[str, Any] | None = None
         for attempt in range(attempt_number, max_attempts + 1):
             print(f"\n--- Development Cycle {attempt} ---")
 
@@ -923,8 +934,14 @@ class System2Orchestrator:
                     self.save_checkpoint(cp)
 
                 if review_result["status"] == "PASS":
-                    phase = WorkflowPhase.VALIDATION
-                    break
+                    validation_result = await self._validate_or_remediate(
+                        hybrid_context, tasks
+                    )
+                    if validation_result["valid"]:
+                        phase = WorkflowPhase.VALIDATION
+                        break
+                    phase = WorkflowPhase.REMEDIATION
+                    continue
 
                 # Remediate if vulnerabilities found
                 print(
@@ -949,11 +966,12 @@ class System2Orchestrator:
                         "Correction failed after max attempts. Handoff to human."
                     )
 
-        # Phase 5: VALIDATE
-        validation_result = await self.validator_agent.validate_code(
-            self.final_code,
-            expected_elements=self._expected_elements_for_task(tasks),
-        )
+        # Phase 5: VALIDATE (the loop already validated a reviewed patch)
+        if validation_result is None:
+            validation_result = await self.validator_agent.validate_code(
+                self.final_code,
+                expected_elements=self._expected_elements_for_task(tasks),
+            )
         is_valid = validation_result["valid"]
 
         if save_checkpoints:
@@ -1040,7 +1058,8 @@ class System2Orchestrator:
 
         # Phases 3-5: CODE -> REVIEW -> VALIDATE loop
         review_result = None
-        max_attempts = 2
+        validation_result: dict[str, Any] | None = None
+        max_attempts = self.max_remediation_attempts
 
         for attempt in range(1, max_attempts + 1):
             print(f"\n--- Development Cycle {attempt} ---")
@@ -1080,7 +1099,12 @@ class System2Orchestrator:
             self.save_checkpoint(review_checkpoint)
 
             if review_result["status"] == "PASS":
-                break
+                validation_result = await self._validate_or_remediate(
+                    hybrid_context, tasks
+                )
+                if validation_result["valid"]:
+                    break
+                continue
 
             # Remediate
             print(
@@ -1103,11 +1127,12 @@ class System2Orchestrator:
                     "Correction failed after max attempts."
                 )
 
-        # Phase 5: VALIDATE
-        validation_result = await self.validator_agent.validate_code(
-            self.final_code,
-            expected_elements=self._expected_elements_for_task(tasks),
-        )
+        # Phase 5: VALIDATE (the loop already validated a reviewed patch)
+        if validation_result is None:
+            validation_result = await self.validator_agent.validate_code(
+                self.final_code,
+                expected_elements=self._expected_elements_for_task(tasks),
+            )
         is_valid = validation_result["valid"]
 
         # Final checkpoint
@@ -1396,6 +1421,69 @@ Response (JSON only):"""
             return [leaf]
         return []
 
+    async def _validate_or_remediate(
+        self, hybrid_context: HybridContext, tasks: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Validate a reviewed patch; on failure, give the coder the issues to fix."""
+        validation_result = await self.validator_agent.validate_code(
+            self.final_code,
+            expected_elements=self._expected_elements_for_task(tasks),
+        )
+        if not validation_result.get("valid"):
+            print(
+                f"[{AgentRole.ORCHESTRATOR.value}] VALIDATION FAILED. "
+                "Sending the issues back to the Coder Agent..."
+            )
+            hybrid_context.add_remediation(
+                self._build_validation_feedback(validation_result), confidence=1.0
+            )
+        return validation_result
+
+    @staticmethod
+    def _build_validation_feedback(validation_result: dict[str, Any]) -> str:
+        """Remediation guidance from a failed validation: what failed and why."""
+        lines = ["Validation Failed - fix these before the patch can proceed:"]
+        checks = {
+            "syntax_valid": "The code is not valid Python",
+            "structure_valid": "Expected functions or classes are missing",
+            "security_valid": "Static security checks failed",
+        }
+        for key, message in checks.items():
+            if validation_result.get(key) is False:
+                lines.append(f"- {message}")
+        for issue in validation_result.get("issues") or []:
+            if isinstance(issue, dict):
+                text = (
+                    issue.get("message")
+                    or issue.get("description")
+                    or issue.get("type")
+                )
+                line_no = issue.get("line")
+            else:
+                text, line_no = issue, None
+            if text:
+                location = f" (line {line_no})" if line_no else ""
+                lines.append(f"- Issue{location}: {text}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _build_sandbox_feedback(sandbox_results: dict[str, Any]) -> str:
+        """Remediation guidance from a failed sandbox run: failing tests and errors."""
+        lines = ["Sandbox Tests Failed - the patch must pass its tests:"]
+        for test in sandbox_results.get("test_results") or []:
+            if not isinstance(test, dict):
+                continue
+            outcome = str(test.get("status", test.get("outcome", ""))).lower()
+            if test.get("passed") is False or outcome in ("failed", "fail", "error"):
+                name = test.get("name") or test.get("test") or "unnamed test"
+                detail = test.get("message") or test.get("error") or test.get("output")
+                lines.append(f"- Failed: {name}" + (f": {detail}" if detail else ""))
+        for error in sandbox_results.get("errors") or []:
+            lines.append(f"- Error: {error}")
+        if len(lines) == 1:
+            lines.append("- The sandbox reported a failure without test details.")
+        return "\n".join(lines)
+
     @staticmethod
     def _build_remediation_text(review_result: dict[str, Any]) -> str:
         """Build remediation guidance from the reviewer's actual output.
@@ -1452,7 +1540,10 @@ Response (JSON only):"""
         return DEFAULT_DECISION_CONFIDENCE, "default_prior"
 
     async def execute_request(
-        self, user_prompt: str, record_memory: bool = True
+        self,
+        user_prompt: str,
+        record_memory: bool = True,
+        prior_feedback: str | None = None,
     ) -> dict[str, Any]:
         """The main, autonomous System 2 execution loop.
 
@@ -1473,6 +1564,8 @@ Response (JSON only):"""
                 memory (step 8). The HITL workflow passes False so that the
                 episode is recorded from the human decision instead
                 (see process_approval_decision).
+            prior_feedback: Optional feedback from an earlier run's patch (such as its
+                failing sandbox tests), given to the coder as remediation from the start.
 
         Returns:
             Dict containing status, final_code, metrics, and handover report.
@@ -1553,9 +1646,14 @@ Response (JSON only):"""
         if memory_context:
             hybrid_context.add_memory_context(memory_context, neural_confidence)
 
+        # Feedback on an earlier patch (e.g. failing sandbox tests) guides the first attempt
+        if prior_feedback:
+            hybrid_context.add_remediation(prior_feedback, confidence=1.0)
+
         # Phase 3-5: CODE → REVIEW → VALIDATE loop with remediation
         review_result = None
-        max_attempts = 2
+        validation_result: dict[str, Any] | None = None
+        max_attempts = self.max_remediation_attempts
 
         for attempt in range(1, max_attempts + 1):
             print(f"\n--- Development Cycle {attempt} ---")
@@ -1572,7 +1670,12 @@ Response (JSON only):"""
             )
 
             if review_result["status"] == "PASS":
-                break
+                validation_result = await self._validate_or_remediate(
+                    hybrid_context, tasks
+                )
+                if validation_result["valid"]:
+                    break
+                continue
 
             # Remediate if vulnerabilities found
             print(
@@ -1594,11 +1697,12 @@ Response (JSON only):"""
                     f"[{AgentRole.ORCHESTRATOR.value}] Correction failed after max attempts. Handoff to human."
                 )
 
-        # Phase 5: VALIDATE - Comprehensive validation using ValidatorAgent
-        validation_result = await self.validator_agent.validate_code(
-            self.final_code,
-            expected_elements=self._expected_elements_for_task(tasks),
-        )
+        # Phase 5: VALIDATE (the loop already validated a reviewed patch)
+        if validation_result is None:
+            validation_result = await self.validator_agent.validate_code(
+                self.final_code,
+                expected_elements=self._expected_elements_for_task(tasks),
+            )
         is_valid = validation_result["valid"]
 
         metrics = self.monitor.finalize_report()
@@ -2024,23 +2128,54 @@ Response (JSON only):"""
         # status "skipped" with sandbox_valid=None; that is carried through to
         # the approval request unchanged so approvers can see the patch was NOT
         # runtime-tested. Results are never fabricated from static validation.
-        patch_id = f"patch-{vulnerability_id}-{int(time.time())}"
-        try:
-            sandbox_run = await self.validator_agent.validate_in_sandbox(
-                code=result["final_code"],
-                patch_id=patch_id,
+        # A failed sandbox run sends the failing tests back to the coder for a repair run,
+        # up to max_sandbox_repairs times, before the patch is given up on.
+        for repair in range(self.max_sandbox_repairs + 1):
+            patch_id = f"patch-{vulnerability_id}-{int(time.time())}"
+            if repair:
+                patch_id += f"-r{repair}"
+            try:
+                sandbox_run = await self.validator_agent.validate_in_sandbox(
+                    code=result["final_code"],
+                    patch_id=patch_id,
+                )
+            except Exception as e:
+                logger.error(f"Sandbox validation raised unexpectedly: {e}")
+                sandbox_run = {
+                    "sandbox_valid": False,
+                    "sandbox_id": None,
+                    "test_results": [],
+                    "execution_time": 0,
+                    "sandbox_status": "failed",
+                    "errors": [str(e)],
+                }
+            sandbox_results = self._build_sandbox_results(sandbox_run)
+            if (
+                sandbox_results["status"] != "FAILED"
+                or repair == self.max_sandbox_repairs
+            ):
+                break
+
+            logger.warning(
+                "Sandbox tests failed; repair run %d of %d",
+                repair + 1,
+                self.max_sandbox_repairs,
             )
-        except Exception as e:
-            logger.error(f"Sandbox validation raised unexpectedly: {e}")
-            sandbox_run = {
-                "sandbox_valid": False,
-                "sandbox_id": None,
-                "test_results": [],
-                "execution_time": 0,
-                "sandbox_status": "failed",
-                "errors": [str(e)],
-            }
-        sandbox_results = self._build_sandbox_results(sandbox_run)
+            result = await self.execute_request(
+                user_prompt,
+                record_memory=False,
+                prior_feedback=self._build_sandbox_feedback(sandbox_results),
+            )
+            if result["status"] != "SUCCESS":
+                return {
+                    **result,
+                    "hitl_status": "SANDBOX_FAILED",
+                    "sandbox_results": sandbox_results,
+                    "hitl_reason": (
+                        "Sandbox testing failed and the repair run did not produce "
+                        "a patch that passes review and validation"
+                    ),
+                }
 
         if sandbox_results["status"] == "FAILED":
             logger.warning("Sandbox testing failed, skipping approval request")

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { createPortal } from 'react-dom';
 import {
   // Core Navigation & Actions
   PlayIcon,
@@ -1176,11 +1175,11 @@ function ActionModificationModal({ action, isOpen, onClose, onSave }) {
   const ActionIcon = actionType.icon;
   const colors = getActionColorClasses(actionType.color);
 
-  return createPortal(
+  return (
     <Modal
       open
       onClose={onClose}
-      overlayClassName="absolute bg-black/50 backdrop-blur-sm"
+      overlayClassName="bg-black/50 backdrop-blur-sm"
       panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-xl !max-w-2xl !max-h-[90vh] !overflow-hidden"
     >
       {/* Header */}
@@ -1374,8 +1373,7 @@ function ActionModificationModal({ action, isOpen, onClose, onSave }) {
           </button>
         </div>
       </div>
-    </Modal>,
-    document.body
+    </Modal>
   );
 }
 

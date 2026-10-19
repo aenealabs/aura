@@ -5,45 +5,14 @@
  * Used to display getting-started videos.
  */
 
-import { useCallback, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback } from 'react';
 import { XMarkIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
 import VideoPlayer from './VideoPlayer';
 import { useVideoProgress } from '../../context/OnboardingContext';
-import { useFocusTrap } from '../../hooks/useFocusTrap';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 const VideoModal = ({ videoId, isOpen, onClose }) => {
   const { video, progress, updateProgress } = useVideoProgress(videoId);
-
-  // WCAG 2.1 AA: Focus trap for modal
-  const { containerRef } = useFocusTrap(isOpen, {
-    autoFocus: true,
-    restoreFocus: true,
-    escapeDeactivates: true,
-    onEscape: onClose,
-  });
-
-  // Prevent body scroll when modal is open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
-
-  const handleBackdropClick = useCallback(
-    (e) => {
-      if (e.target === e.currentTarget) {
-        onClose();
-      }
-    },
-    [onClose]
-  );
 
   const handleProgress = useCallback(
     (percent, completed) => {
@@ -60,27 +29,23 @@ const VideoModal = ({ videoId, isOpen, onClose }) => {
     return null;
   }
 
-  const modal = (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80"
-      onClick={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="video-modal-title"
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="xl"
+      overlayClassName="!z-[100] bg-black/80"
+      panelClassName="!z-[100] bg-surface-900 rounded-xl shadow-2xl !overflow-hidden"
     >
-      {/* Modal container */}
-      <div ref={containerRef} className="relative w-full max-w-4xl bg-surface-900 rounded-xl shadow-2xl overflow-hidden">
+      <div className="relative">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-surface-800 border-b border-surface-700">
           <div className="flex items-center gap-3">
             <PlayCircleIcon className="w-6 h-6 text-aura-400" />
             <div>
-              <h2
-                id="video-modal-title"
-                className="text-sm font-semibold text-white"
-              >
+              <ModalTitle className="text-sm font-semibold text-white">
                 {video.title}
-              </h2>
+              </ModalTitle>
               <p className="text-xs text-surface-400">{video.description}</p>
             </div>
           </div>
@@ -125,10 +90,8 @@ const VideoModal = ({ videoId, isOpen, onClose }) => {
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
-
-  return createPortal(modal, document.body);
 };
 
 // Video Card component for listing videos

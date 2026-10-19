@@ -14,10 +14,9 @@
  * - WCAG 2.1 AA accessible
  */
 
-import { useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useRef } from 'react';
 import { useOnboarding } from '../../context/OnboardingContext';
-import { useFocusTrap } from '../../hooks/useFocusTrap';
+import Modal, { ModalTitle } from '../shared/Modal';
 import {
   ShieldCheckIcon,
   CodeBracketSquareIcon,
@@ -30,23 +29,8 @@ import {
 const WelcomeModal = () => {
   const { showWelcome, dismissWelcomeModal, startTour, user } = useOnboarding();
 
-  // WCAG 2.1 AA: Focus trap for modal
-  const { containerRef, firstFocusableRef } = useFocusTrap(showWelcome, {
-    autoFocus: true,
-    restoreFocus: true,
-    escapeDeactivates: true,
-    onEscape: dismissWelcomeModal,
-  });
-
-  // Prevent body scroll when modal is open
-  useEffect(() => {
-    if (showWelcome) {
-      document.body.style.overflow = 'hidden';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [showWelcome]);
+  // Focus the skip button first, so Enter does not start the tour by accident
+  const firstFocusableRef = useRef(null);
 
   // Handle start tour
   const handleStartTour = useCallback(() => {
@@ -57,16 +41,6 @@ const WelcomeModal = () => {
   const handleSkip = useCallback(() => {
     dismissWelcomeModal();
   }, [dismissWelcomeModal]);
-
-  // Handle backdrop click
-  const handleBackdropClick = useCallback(
-    (e) => {
-      if (e.target === e.currentTarget) {
-        dismissWelcomeModal();
-      }
-    },
-    [dismissWelcomeModal]
-  );
 
   if (!showWelcome) {
     return null;
@@ -98,22 +72,16 @@ const WelcomeModal = () => {
     },
   ];
 
-  const modal = (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      onClick={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="welcome-modal-title"
+  return (
+    <Modal
+      open
+      onClose={dismissWelcomeModal}
+      size="sm"
+      initialFocusRef={firstFocusableRef}
+      overlayClassName="!z-[100] bg-black/60 backdrop-blur-sm"
+      panelClassName="!z-[100] bg-white/95 dark:bg-surface-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 dark:border-surface-700/50"
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-      {/* Modal */}
-      <div
-        ref={containerRef}
-        className="relative w-full max-w-md bg-white/95 dark:bg-surface-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 dark:border-surface-700/50 transform transition-all"
-      >
+      <div className="relative">
         {/* Close button */}
         <button
           onClick={handleSkip}
@@ -135,12 +103,9 @@ const WelcomeModal = () => {
               />
             </div>
 
-            <h2
-              id="welcome-modal-title"
-              className="text-2xl font-bold text-surface-900 dark:text-surface-100"
-            >
+            <ModalTitle className="text-2xl font-bold text-surface-900 dark:text-surface-100">
               Welcome, {userName}!
-            </h2>
+            </ModalTitle>
             <p className="mt-2 text-surface-600 dark:text-surface-400">
               Let&apos;s get you set up with Project Aura
             </p>
@@ -194,11 +159,8 @@ const WelcomeModal = () => {
           </p>
         </div>
       </div>
-    </div>
+    </Modal>
   );
-
-  // Render in portal to ensure it's above everything
-  return createPortal(modal, document.body);
 };
 
 export default WelcomeModal;

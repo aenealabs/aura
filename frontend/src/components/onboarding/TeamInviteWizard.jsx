@@ -17,7 +17,6 @@
  */
 
 import { useState, useCallback, useEffect, Fragment } from 'react';
-import { createPortal } from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 import EmailEntryStep from './steps/EmailEntryStep';
@@ -25,6 +24,7 @@ import RoleAssignmentStep from './steps/RoleAssignmentStep';
 import InviteReviewStep from './steps/InviteReviewStep';
 import InviteCompletionStep from './steps/InviteCompletionStep';
 import { useOnboarding } from '../../context/OnboardingContext';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 const STEPS = [
   { id: 'emails', title: 'Add Emails' },
@@ -55,20 +55,6 @@ const TeamInviteWizard = ({ isOpen, onClose }) => {
       setInviteLink('');
     }
   }, [isOpen]);
-
-  // Handle escape key
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && currentStep !== 3) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, currentStep, onClose]);
 
   // Navigate to roles step
   const handleEmailsComplete = useCallback(() => {
@@ -123,15 +109,10 @@ const TeamInviteWizard = ({ isOpen, onClose }) => {
     setCurrentStep((prev) => Math.max(0, prev - 1));
   }, []);
 
-  // Handle backdrop click
-  const handleBackdropClick = useCallback(
-    (e) => {
-      if (e.target === e.currentTarget && currentStep !== 3) {
-        onClose();
-      }
-    },
-    [currentStep, onClose]
-  );
+  // Escape or a backdrop click closes the wizard, except on the final step
+  const handleDismiss = useCallback(() => {
+    if (currentStep !== 3) onClose();
+  }, [currentStep, onClose]);
 
   if (!isOpen) {
     return null;
@@ -181,110 +162,100 @@ const TeamInviteWizard = ({ isOpen, onClose }) => {
     }
   };
 
-  const modal = (
-    <div
-      className="fixed inset-0 z-50 overflow-y-auto"
-      onClick={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="team-invite-title"
+  return (
+    <Modal
+      open
+      onClose={handleDismiss}
+      overlayClassName="bg-black/50 transition-opacity"
+      panelClassName="!max-w-lg bg-white dark:bg-surface-900 rounded-xl shadow-xl transition-all"
     >
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 transition-opacity" />
-
-      {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative w-full max-w-lg bg-white dark:bg-surface-900 rounded-xl shadow-xl transform transition-all">
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
-            <h1
-              id="team-invite-title"
-              className="text-lg font-semibold text-surface-900 dark:text-surface-100"
-            >
-              Invite Team Members
-            </h1>
-            {currentStep !== 3 && (
-              <button
-                onClick={onClose}
-                className="p-1 rounded-lg text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800"
-                aria-label="Close"
-              >
-                <XMarkIcon className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-
-          {/* Progress indicator */}
-          {currentStep < 3 && (
-            <div className="px-6 py-3 border-b border-surface-200 dark:border-surface-700">
-              <nav className="flex items-center justify-center">
-                {STEPS.slice(0, 3).map((step, index) => {
-                  const isActive = currentStep === index;
-                  const isCompleted = currentStep > index;
-                  const isLast = index === 2;
-
-                  return (
-                    <Fragment key={step.id}>
-                      <div className="flex items-center">
-                        <div
-                          className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium transition-colors ${
-                            isActive
-                              ? 'bg-aura-600 text-white'
-                              : isCompleted
-                              ? 'bg-olive-500 text-white'
-                              : 'bg-surface-200 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
-                          }`}
-                        >
-                          {isCompleted ? (
-                            <svg
-                              className="w-3.5 h-3.5"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                          ) : (
-                            index + 1
-                          )}
-                        </div>
-                        <span
-                          className={`ml-2 text-xs hidden sm:inline ${
-                            isActive
-                              ? 'text-surface-900 dark:text-surface-100 font-medium'
-                              : 'text-surface-500 dark:text-surface-400'
-                          }`}
-                        >
-                          {step.title}
-                        </span>
-                      </div>
-                      {!isLast && (
-                        <div
-                          className={`w-8 sm:w-12 h-0.5 mx-2 ${
-                            isCompleted
-                              ? 'bg-olive-500'
-                              : 'bg-surface-200 dark:bg-surface-700'
-                          }`}
-                        />
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </nav>
-            </div>
-          )}
-
-          {/* Content */}
-          <div className="px-6 py-6">{renderStep()}</div>
-        </div>
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+        <ModalTitle asChild>
+          <h1
+            className="text-lg font-semibold text-surface-900 dark:text-surface-100"
+          >
+            Invite Team Members
+          </h1>
+        </ModalTitle>
+        {currentStep !== 3 && (
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800"
+            aria-label="Close"
+          >
+            <XMarkIcon className="w-5 h-5" />
+          </button>
+        )}
       </div>
-    </div>
-  );
 
-  return createPortal(modal, document.body);
+      {/* Progress indicator */}
+      {currentStep < 3 && (
+        <div className="px-6 py-3 border-b border-surface-200 dark:border-surface-700">
+          <nav className="flex items-center justify-center">
+            {STEPS.slice(0, 3).map((step, index) => {
+              const isActive = currentStep === index;
+              const isCompleted = currentStep > index;
+              const isLast = index === 2;
+
+              return (
+                <Fragment key={step.id}>
+                  <div className="flex items-center">
+                    <div
+                      className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium transition-colors ${
+                        isActive
+                          ? 'bg-aura-600 text-white'
+                          : isCompleted
+                          ? 'bg-olive-500 text-white'
+                          : 'bg-surface-200 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
+                      }`}
+                    >
+                      {isCompleted ? (
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      ) : (
+                        index + 1
+                      )}
+                    </div>
+                    <span
+                      className={`ml-2 text-xs hidden sm:inline ${
+                        isActive
+                          ? 'text-surface-900 dark:text-surface-100 font-medium'
+                          : 'text-surface-500 dark:text-surface-400'
+                      }`}
+                    >
+                      {step.title}
+                    </span>
+                  </div>
+                  {!isLast && (
+                    <div
+                      className={`w-8 sm:w-12 h-0.5 mx-2 ${
+                        isCompleted
+                          ? 'bg-olive-500'
+                          : 'bg-surface-200 dark:bg-surface-700'
+                      }`}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
+          </nav>
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="px-6 py-6">{renderStep()}</div>
+    </Modal>
+  );
 };
 
 export default TeamInviteWizard;

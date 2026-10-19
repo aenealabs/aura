@@ -399,7 +399,7 @@ const RepositoriesList = () => {
         <Modal
           open
           onClose={() => !isSavingEdit && setEditingRepository(null)}
-          overlayClassName="absolute glass-backdrop"
+          overlayClassName="glass-backdrop"
           panelClassName="!max-w-lg p-6 bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl border border-white/50 dark:border-surface-700/50 shadow-[var(--shadow-glass-hover)] animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
         >
           <div className="flex items-center justify-between mb-6">

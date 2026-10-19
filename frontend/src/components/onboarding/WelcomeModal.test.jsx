@@ -211,9 +211,8 @@ describe('WelcomeModal', () => {
 
     render(<WelcomeModal />);
 
-    // Click on the dialog backdrop (the outer container)
-    const dialog = screen.getByRole('dialog');
-    await user.click(dialog);
+    // Click the backdrop (the shared Modal's overlay)
+    await user.click(document.querySelector('[data-modal-overlay]'));
     expect(dismissWelcomeModal).toHaveBeenCalledTimes(1);
   });
 
@@ -240,7 +239,7 @@ describe('WelcomeModal', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveAttribute('aria-modal', 'true');
-    expect(dialog).toHaveAttribute('aria-labelledby', 'welcome-modal-title');
+    expect(dialog).toHaveAccessibleName('Welcome, John!');
   });
 
   test('has accessible title with correct id', () => {
@@ -249,7 +248,7 @@ describe('WelcomeModal', () => {
     render(<WelcomeModal />);
 
     const title = screen.getByText('Welcome, John!');
-    expect(title).toHaveAttribute('id', 'welcome-modal-title');
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-labelledby', title.id);
   });
 
   test('displays keyboard hint in footer', () => {
@@ -398,7 +397,8 @@ describe('WelcomeModal', () => {
       render(<WelcomeModal />);
 
       const dialog = screen.getByRole('dialog');
-      expect(dialog).toHaveClass('z-[100]');
+      expect(dialog).toHaveClass('!z-[100]');
+      expect(document.querySelector('[data-modal-overlay]')).toHaveClass('!z-[100]');
     });
 
     test('displays Aura logo image', () => {

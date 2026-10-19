@@ -66,6 +66,7 @@ import PalantirIntegrationSettings from '../settings/PalantirIntegrationSettings
 import { useToast } from '../ui/Toast';
 import { useConfirm } from '../ui/ConfirmDialog';
 import { getProviderLogo } from './ProviderLogos';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // ============================================================================
 // Constants and Configuration
@@ -834,135 +835,141 @@ function AddIntegrationModal({ connectedProviderIds, onSelect, onClose }) {
   const categoryOrder = ['threat_intelligence', 'ticketing', 'monitoring', 'security', 'identity', 'grc', 'cicd', 'communication', 'data_platforms', 'developer_tools'];
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-surface-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-aura-100 dark:bg-aura-900/30">
-                <PlusIcon className="h-6 w-6 text-aura-600 dark:text-aura-400" />
-              </div>
-              <div>
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50 backdrop-blur-sm"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-2xl !max-w-3xl !max-h-[85vh] !overflow-hidden flex flex-col"
+    >
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-aura-100 dark:bg-aura-900/30">
+              <PlusIcon className="h-6 w-6 text-aura-600 dark:text-aura-400" />
+            </div>
+            <div>
+              <ModalTitle asChild>
                 <h2 className="text-xl font-bold text-surface-900 dark:text-surface-100">
                   Add Integration
                 </h2>
-                <p className="text-sm text-surface-500 dark:text-surface-400">
-                  Choose a service to connect
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-            >
-              <XMarkIcon className="h-5 w-5 text-surface-500 dark:text-surface-400" />
-            </button>
-          </div>
-
-          {/* Search and Filter */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-surface-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search integrations..."
-                className="w-full pl-10 pr-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
-              />
-            </div>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500"
-            >
-              <option value="all">All Categories</option>
-              {Object.entries(CATEGORY_CONFIG).map(([id, config]) => (
-                <option key={id} value={id}>
-                  {config.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-6">
-          {filteredProviders.length === 0 ? (
-            <div className="text-center py-12">
-              <PuzzlePieceIcon className="h-12 w-12 text-surface-300 dark:text-surface-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-surface-900 dark:text-surface-100 mb-2">
-                No integrations found
-              </h3>
-              <p className="text-surface-500 dark:text-surface-400">
-                {connectedProviderIds.length === Object.keys(INTEGRATION_PROVIDERS).length
-                  ? 'All available integrations are already connected.'
-                  : 'Try adjusting your search or filter.'}
+              </ModalTitle>
+              <p className="text-sm text-surface-500 dark:text-surface-400">
+                Choose a service to connect
               </p>
             </div>
-          ) : (
-            <div className="space-y-6">
-              {categoryOrder.map((categoryId) => {
-                const providers = groupedProviders[categoryId];
-                if (!providers || providers.length === 0) return null;
-
-                const categoryConfig = CATEGORY_CONFIG[categoryId];
-                const CategoryIcon = categoryConfig.icon;
-
-                return (
-                  <div key={categoryId}>
-                    <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 mb-3 flex items-center gap-2">
-                      <CategoryIcon className={`h-4 w-4 ${categoryConfig.textColor}`} />
-                      {categoryConfig.label}
-                      <span className={`ml-1 px-1.5 py-0.5 text-xs font-medium ${categoryConfig.badgeBg} ${categoryConfig.textColor} rounded-full`}>
-                        {providers.length}
-                      </span>
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {providers.map((provider) => {
-                        const ProviderLogo = getProviderLogo(provider.id);
-                        return (
-                          <button
-                            key={provider.id}
-                            onClick={() => onSelect(provider.id)}
-                            className="flex items-center gap-3 p-3 bg-surface-50 dark:bg-surface-700/50 hover:bg-surface-100 dark:hover:bg-surface-700 border border-surface-200 dark:border-surface-600 hover:border-aura-300 dark:hover:border-aura-600 rounded-xl transition-all text-left group"
-                          >
-                            <ProviderLogo className="h-10 w-10 rounded-lg flex-shrink-0 group-hover:scale-105 transition-transform" />
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-medium text-surface-900 dark:text-surface-100 truncate">
-                                {provider.name}
-                              </h4>
-                              <p className="text-xs text-surface-500 dark:text-surface-400 truncate">
-                                {provider.description}
-                              </p>
-                            </div>
-                            <PlusIcon className="h-5 w-5 text-surface-400 group-hover:text-aura-500 transition-colors flex-shrink-0" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 flex items-center justify-between">
-          <p className="text-sm text-surface-500 dark:text-surface-400">
-            {availableProviders.length} integration{availableProviders.length !== 1 ? 's' : ''} available
-          </p>
+          </div>
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
           >
-            Cancel
+            <XMarkIcon className="h-5 w-5 text-surface-500 dark:text-surface-400" />
           </button>
         </div>
+
+        {/* Search and Filter */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-surface-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search integrations..."
+              className="w-full pl-10 pr-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
+            />
+          </div>
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500"
+          >
+            <option value="all">All Categories</option>
+            {Object.entries(CATEGORY_CONFIG).map(([id, config]) => (
+              <option key={id} value={id}>
+                {config.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-    </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-6">
+        {filteredProviders.length === 0 ? (
+          <div className="text-center py-12">
+            <PuzzlePieceIcon className="h-12 w-12 text-surface-300 dark:text-surface-600 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-surface-900 dark:text-surface-100 mb-2">
+              No integrations found
+            </h3>
+            <p className="text-surface-500 dark:text-surface-400">
+              {connectedProviderIds.length === Object.keys(INTEGRATION_PROVIDERS).length
+                ? 'All available integrations are already connected.'
+                : 'Try adjusting your search or filter.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {categoryOrder.map((categoryId) => {
+              const providers = groupedProviders[categoryId];
+              if (!providers || providers.length === 0) return null;
+
+              const categoryConfig = CATEGORY_CONFIG[categoryId];
+              const CategoryIcon = categoryConfig.icon;
+
+              return (
+                <div key={categoryId}>
+                  <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 mb-3 flex items-center gap-2">
+                    <CategoryIcon className={`h-4 w-4 ${categoryConfig.textColor}`} />
+                    {categoryConfig.label}
+                    <span className={`ml-1 px-1.5 py-0.5 text-xs font-medium ${categoryConfig.badgeBg} ${categoryConfig.textColor} rounded-full`}>
+                      {providers.length}
+                    </span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {providers.map((provider) => {
+                      const ProviderLogo = getProviderLogo(provider.id);
+                      return (
+                        <button
+                          key={provider.id}
+                          onClick={() => onSelect(provider.id)}
+                          className="flex items-center gap-3 p-3 bg-surface-50 dark:bg-surface-700/50 hover:bg-surface-100 dark:hover:bg-surface-700 border border-surface-200 dark:border-surface-600 hover:border-aura-300 dark:hover:border-aura-600 rounded-xl transition-all text-left group"
+                        >
+                          <ProviderLogo className="h-10 w-10 rounded-lg flex-shrink-0 group-hover:scale-105 transition-transform" />
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-surface-900 dark:text-surface-100 truncate">
+                              {provider.name}
+                            </h4>
+                            <p className="text-xs text-surface-500 dark:text-surface-400 truncate">
+                              {provider.description}
+                            </p>
+                          </div>
+                          <PlusIcon className="h-5 w-5 text-surface-400 group-hover:text-aura-500 transition-colors flex-shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 flex items-center justify-between">
+        <p className="text-sm text-surface-500 dark:text-surface-400">
+          {availableProviders.length} integration{availableProviders.length !== 1 ? 's' : ''} available
+        </p>
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -1013,155 +1020,161 @@ function GenericConfigModal({ provider, isOpen, onClose, onSave, existingConfig 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-surface-800 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <ProviderLogo className="h-10 w-10 rounded-lg" />
-            <div>
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50 backdrop-blur-sm"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-2xl !max-w-lg !max-h-[90vh] !overflow-hidden flex flex-col"
+    >
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <ProviderLogo className="h-10 w-10 rounded-lg" />
+          <div>
+            <ModalTitle asChild>
               <h2 className="text-xl font-bold text-surface-900 dark:text-surface-100">
                 Configure {providerDef.name}
               </h2>
-              <p className="text-sm text-surface-500 dark:text-surface-400">
-                {providerDef.description}
-              </p>
-            </div>
+            </ModalTitle>
+            <p className="text-sm text-surface-500 dark:text-surface-400">
+              {providerDef.description}
+            </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-          >
-            <XMarkIcon className="h-5 w-5 text-surface-500 dark:text-surface-400" />
-          </button>
         </div>
+        <button
+          onClick={onClose}
+          className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+        >
+          <XMarkIcon className="h-5 w-5 text-surface-500 dark:text-surface-400" />
+        </button>
+      </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-6 space-y-4">
-          {providerDef.configFields.map((field) => (
-            <div key={field.name}>
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                {field.label}
-                {field.required && <span className="text-critical-500 ml-1">*</span>}
-              </label>
-              {field.type === 'password' ? (
-                <div className="relative">
-                  <input
-                    type={showSecrets[field.name] ? 'text' : 'password'}
-                    value={config[field.name] || ''}
-                    onChange={(e) => handleFieldChange(field.name, e.target.value)}
-                    placeholder={field.placeholder}
-                    className="w-full px-3 py-2 pr-10 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSecrets((prev) => ({ ...prev, [field.name]: !prev[field.name] }))}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400"
-                  >
-                    {showSecrets[field.name] ? (
-                      <EyeIcon className="h-5 w-5" />
-                    ) : (
-                      <EyeIcon className="h-5 w-5" />
-                    )}
-                  </button>
-                </div>
-              ) : field.type === 'select' ? (
-                <select
-                  value={config[field.name] || ''}
-                  onChange={(e) => handleFieldChange(field.name, e.target.value)}
-                  className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500"
-                >
-                  <option value="">Select...</option>
-                  {field.options?.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              ) : (
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-6 space-y-4">
+        {providerDef.configFields.map((field) => (
+          <div key={field.name}>
+            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+              {field.label}
+              {field.required && <span className="text-critical-500 ml-1">*</span>}
+            </label>
+            {field.type === 'password' ? (
+              <div className="relative">
                 <input
-                  type={field.type}
+                  type={showSecrets[field.name] ? 'text' : 'password'}
                   value={config[field.name] || ''}
                   onChange={(e) => handleFieldChange(field.name, e.target.value)}
                   placeholder={field.placeholder}
-                  className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500"
+                  className="w-full px-3 py-2 pr-10 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500"
                 />
-              )}
-              {field.helpText && (
-                <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">
-                  {field.helpText}
-                </p>
-              )}
-            </div>
-          ))}
-
-          {/* Test Connection */}
-          <div className="pt-4">
-            <button
-              onClick={handleTest}
-              disabled={testing}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-300 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 disabled:opacity-50 transition-colors"
-            >
-              {testing ? (
-                <>
-                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                  Testing...
-                </>
-              ) : (
-                <>
-                  <LinkIcon className="h-4 w-4" />
-                  Test Connection
-                </>
-              )}
-            </button>
-
-            {testResult && (
-              <div
-                className={`mt-3 flex items-center gap-3 p-3 rounded-lg ${
-                  testResult.success
-                    ? 'bg-olive-50 dark:bg-olive-900/20 text-olive-700 dark:text-olive-300'
-                    : 'bg-critical-50 dark:bg-critical-900/20 text-critical-700 dark:text-critical-300'
-                }`}
-              >
-                {testResult.success ? (
-                  <CheckCircleIcon className="h-5 w-5" />
-                ) : (
-                  <ExclamationCircleIcon className="h-5 w-5" />
-                )}
-                <span className="font-medium">{testResult.message}</span>
+                <button
+                  type="button"
+                  onClick={() => setShowSecrets((prev) => ({ ...prev, [field.name]: !prev[field.name] }))}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-400"
+                >
+                  {showSecrets[field.name] ? (
+                    <EyeIcon className="h-5 w-5" />
+                  ) : (
+                    <EyeIcon className="h-5 w-5" />
+                  )}
+                </button>
               </div>
+            ) : field.type === 'select' ? (
+              <select
+                value={config[field.name] || ''}
+                onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500"
+              >
+                <option value="">Select...</option>
+                {field.options?.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type={field.type}
+                value={config[field.name] || ''}
+                onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                placeholder={field.placeholder}
+                className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500"
+              />
+            )}
+            {field.helpText && (
+              <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">
+                {field.helpText}
+              </p>
             )}
           </div>
-        </div>
+        ))}
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 flex items-center justify-end gap-3 bg-surface-50 dark:bg-surface-800">
+        {/* Test Connection */}
+        <div className="pt-4">
           <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+            onClick={handleTest}
+            disabled={testing}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-300 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 disabled:opacity-50 transition-colors"
           >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !testResult?.success}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:bg-surface-400 dark:disabled:bg-surface-600 disabled:cursor-not-allowed transition-colors"
-          >
-            {saving ? (
+            {testing ? (
               <>
                 <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                Saving...
+                Testing...
               </>
             ) : (
               <>
-                <CheckCircleIcon className="h-4 w-4" />
-                Save
+                <LinkIcon className="h-4 w-4" />
+                Test Connection
               </>
             )}
           </button>
+
+          {testResult && (
+            <div
+              className={`mt-3 flex items-center gap-3 p-3 rounded-lg ${
+                testResult.success
+                  ? 'bg-olive-50 dark:bg-olive-900/20 text-olive-700 dark:text-olive-300'
+                  : 'bg-critical-50 dark:bg-critical-900/20 text-critical-700 dark:text-critical-300'
+              }`}
+            >
+              {testResult.success ? (
+                <CheckCircleIcon className="h-5 w-5" />
+              ) : (
+                <ExclamationCircleIcon className="h-5 w-5" />
+              )}
+              <span className="font-medium">{testResult.message}</span>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 flex items-center justify-end gap-3 bg-surface-50 dark:bg-surface-800">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving || !testResult?.success}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:bg-surface-400 dark:disabled:bg-surface-600 disabled:cursor-not-allowed transition-colors"
+        >
+          {saving ? (
+            <>
+              <ArrowPathIcon className="h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <CheckCircleIcon className="h-4 w-4" />
+              Save
+            </>
+          )}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -1197,62 +1210,68 @@ function IntegrationLogsModal({ provider, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-surface-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <DocumentTextIcon className="h-6 w-6 text-aura-600 dark:text-aura-400" />
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50 backdrop-blur-sm"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-2xl !max-w-2xl !max-h-[80vh] !overflow-hidden flex flex-col"
+    >
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <DocumentTextIcon className="h-6 w-6 text-aura-600 dark:text-aura-400" />
+          <ModalTitle asChild>
             <h2 className="text-xl font-bold text-surface-900 dark:text-surface-100">
               Sync Logs: {provider}
             </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-          >
-            <XMarkIcon className="h-5 w-5 text-surface-500 dark:text-surface-400" />
-          </button>
+          </ModalTitle>
         </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <ArrowPathIcon className="h-8 w-8 text-aura-500 animate-spin" />
-            </div>
-          ) : logs.length === 0 ? (
-            <div className="text-center py-12 text-surface-500 dark:text-surface-400">
-              No logs available
-            </div>
-          ) : (
-            <div className="space-y-2 font-mono text-sm">
-              {logs.map((log) => (
-                <div
-                  key={log.id}
-                  className={`px-3 py-2 rounded ${getLevelStyles(log.level)}`}
-                >
-                  <span className="text-surface-400 mr-3">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>
-                  <span className="uppercase font-medium mr-3">[{log.level}]</span>
-                  <span>{log.message}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-300 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
-          >
-            Close
-          </button>
-        </div>
+        <button
+          onClick={onClose}
+          className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+        >
+          <XMarkIcon className="h-5 w-5 text-surface-500 dark:text-surface-400" />
+        </button>
       </div>
-    </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <ArrowPathIcon className="h-8 w-8 text-aura-500 animate-spin" />
+          </div>
+        ) : logs.length === 0 ? (
+          <div className="text-center py-12 text-surface-500 dark:text-surface-400">
+            No logs available
+          </div>
+        ) : (
+          <div className="space-y-2 font-mono text-sm">
+            {logs.map((log) => (
+              <div
+                key={log.id}
+                className={`px-3 py-2 rounded ${getLevelStyles(log.level)}`}
+              >
+                <span className="text-surface-400 mr-3">
+                  {new Date(log.timestamp).toLocaleTimeString()}
+                </span>
+                <span className="uppercase font-medium mr-3">[{log.level}]</span>
+                <span>{log.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 flex justify-end">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-300 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </Modal>
   );
 }

@@ -662,7 +662,7 @@ function NewCampaignModal({ isOpen, onClose, onCreate }) {
     <Modal
       open
       onClose={onClose}
-      overlayClassName="absolute bg-surface-900/50 dark:bg-black/70 backdrop-blur-sm"
+      overlayClassName="bg-surface-900/50 dark:bg-black/70 backdrop-blur-sm"
       panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-modal !max-w-lg !max-h-[90vh] !overflow-hidden animate-scale-in"
     >
       {/* Header */}

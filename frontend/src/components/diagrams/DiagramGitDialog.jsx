@@ -22,6 +22,7 @@ import {
   CloudArrowUpIcon,
   DocumentPlusIcon,
 } from '@heroicons/react/24/outline';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // ============================================================================
 // Constants
@@ -575,143 +576,128 @@ export default function DiagramGitDialog({
     commitStatus !== COMMIT_STATUS.committing;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="git-dialog-title"
+    <Modal
+      open
+      onClose={handleClose}
+      overlayClassName="bg-black/50 backdrop-blur-sm"
+      panelClassName="!max-w-lg !max-h-[90vh] !overflow-hidden bg-white dark:bg-surface-800 rounded-2xl shadow-2xl flex flex-col"
     >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
-      />
-
-      {/* Dialog */}
-      <div
-        className="
-          relative w-full max-w-lg max-h-[90vh] overflow-hidden
-          bg-white dark:bg-surface-800
-          rounded-2xl shadow-2xl
-          flex flex-col
-        "
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+        <ModalTitle asChild>
           <h2
-            id="git-dialog-title"
             className="text-lg font-semibold text-surface-900 dark:text-white flex items-center gap-2"
           >
             <CloudArrowUpIcon className="w-5 h-5 text-aura-500" />
             Commit to Repository
           </h2>
+        </ModalTitle>
+        <button
+          onClick={handleClose}
+          className="p-1 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+          aria-label="Close dialog"
+        >
+          <XMarkIcon className="w-5 h-5 text-surface-500" />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+        {/* Result Banner */}
+        {commitResult && <CommitResult result={commitResult} onClose={() => setCommitResult(null)} />}
+
+        {/* Repository Selection */}
+        {!commitResult?.success && (
+          <>
+            <RepositorySelector
+              connections={connections}
+              selectedConnection={selectedConnection}
+              onSelectConnection={setSelectedConnection}
+              repositories={repositories}
+              selectedRepository={selectedRepository}
+              onSelectRepository={setSelectedRepository}
+              isLoading={isLoadingRepos}
+              onRefresh={() => {
+                setSelectedConnection((c) => ({ ...c }));
+              }}
+            />
+
+            {/* Commit Form */}
+            {selectedRepository && (
+              <CommitForm
+                filePath={filePath}
+                onFilePathChange={setFilePath}
+                commitMessage={commitMessage}
+                onCommitMessageChange={setCommitMessage}
+                branch={branch}
+                onBranchChange={setBranch}
+                createPr={createPr}
+                onCreatePrChange={setCreatePr}
+                prTitle={prTitle}
+                onPrTitleChange={setPrTitle}
+                prDescription={prDescription}
+                onPrDescriptionChange={setPrDescription}
+              />
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700">
+        {commitResult?.success ? (
           <button
             onClick={handleClose}
-            className="p-1 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-            aria-label="Close dialog"
+            className="
+              px-4 py-2 rounded-lg
+              bg-aura-500 text-white
+              hover:bg-aura-600
+              transition-colors duration-200
+            "
           >
-            <XMarkIcon className="w-5 h-5 text-surface-500" />
+            Done
           </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-          {/* Result Banner */}
-          {commitResult && <CommitResult result={commitResult} onClose={() => setCommitResult(null)} />}
-
-          {/* Repository Selection */}
-          {!commitResult?.success && (
-            <>
-              <RepositorySelector
-                connections={connections}
-                selectedConnection={selectedConnection}
-                onSelectConnection={setSelectedConnection}
-                repositories={repositories}
-                selectedRepository={selectedRepository}
-                onSelectRepository={setSelectedRepository}
-                isLoading={isLoadingRepos}
-                onRefresh={() => {
-                  setSelectedConnection((c) => ({ ...c }));
-                }}
-              />
-
-              {/* Commit Form */}
-              {selectedRepository && (
-                <CommitForm
-                  filePath={filePath}
-                  onFilePathChange={setFilePath}
-                  commitMessage={commitMessage}
-                  onCommitMessageChange={setCommitMessage}
-                  branch={branch}
-                  onBranchChange={setBranch}
-                  createPr={createPr}
-                  onCreatePrChange={setCreatePr}
-                  prTitle={prTitle}
-                  onPrTitleChange={setPrTitle}
-                  prDescription={prDescription}
-                  onPrDescriptionChange={setPrDescription}
-                />
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700">
-          {commitResult?.success ? (
+        ) : (
+          <>
             <button
               onClick={handleClose}
               className="
                 px-4 py-2 rounded-lg
-                bg-aura-500 text-white
-                hover:bg-aura-600
+                text-surface-600 dark:text-surface-400
+                hover:bg-surface-100 dark:hover:bg-surface-700
                 transition-colors duration-200
               "
             >
-              Done
+              Cancel
             </button>
-          ) : (
-            <>
-              <button
-                onClick={handleClose}
-                className="
-                  px-4 py-2 rounded-lg
-                  text-surface-600 dark:text-surface-400
-                  hover:bg-surface-100 dark:hover:bg-surface-700
-                  transition-colors duration-200
-                "
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCommit}
-                disabled={!canCommit}
-                className="
-                  px-4 py-2 rounded-lg
-                  bg-aura-500 text-white
-                  hover:bg-aura-600
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                  transition-colors duration-200
-                  flex items-center gap-2
-                "
-              >
-                {commitStatus === COMMIT_STATUS.committing ? (
-                  <>
-                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                    Committing...
-                  </>
-                ) : (
-                  <>
-                    <CloudArrowUpIcon className="w-4 h-4" />
-                    Commit
-                  </>
-                )}
-              </button>
-            </>
-          )}
-        </div>
+            <button
+              onClick={handleCommit}
+              disabled={!canCommit}
+              className="
+                px-4 py-2 rounded-lg
+                bg-aura-500 text-white
+                hover:bg-aura-600
+                disabled:opacity-50 disabled:cursor-not-allowed
+                transition-colors duration-200
+                flex items-center gap-2
+              "
+            >
+              {commitStatus === COMMIT_STATUS.committing ? (
+                <>
+                  <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                  Committing...
+                </>
+              ) : (
+                <>
+                  <CloudArrowUpIcon className="w-4 h-4" />
+                  Commit
+                </>
+              )}
+            </button>
+          </>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }
 

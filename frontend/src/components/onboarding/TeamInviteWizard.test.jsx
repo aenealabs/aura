@@ -14,6 +14,7 @@
 
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import TeamInviteWizard from './TeamInviteWizard';
 
 // Mock the OnboardingContext
@@ -341,7 +342,7 @@ describe('TeamInviteWizard', () => {
 
       render(<TeamInviteWizard isOpen={true} onClose={onClose} />);
 
-      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
 
       expect(onClose).toHaveBeenCalledTimes(1);
     });
@@ -357,7 +358,7 @@ describe('TeamInviteWizard', () => {
       onClose.mockClear();
 
       // Press Escape on completion step
-      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
 
       expect(onClose).not.toHaveBeenCalled();
     });
@@ -367,20 +368,22 @@ describe('TeamInviteWizard', () => {
 
       render(<TeamInviteWizard isOpen={true} onClose={onClose} />);
 
-      fireEvent.keyDown(window, { key: 'Enter' });
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Enter' });
 
       expect(onClose).not.toHaveBeenCalled();
     });
   });
 
   describe('Backdrop Click', () => {
-    test('calls onClose when backdrop is clicked on non-completion step', () => {
+    test('calls onClose when backdrop is clicked on non-completion step', async () => {
+      vi.useRealTimers();
+      const user = userEvent.setup();
       const onClose = vi.fn();
 
       render(<TeamInviteWizard isOpen={true} onClose={onClose} />);
 
-      const dialog = screen.getByRole('dialog');
-      fireEvent.click(dialog);
+      // Click the backdrop (the shared Modal's overlay)
+      await user.click(document.querySelector('[data-modal-overlay]'));
 
       expect(onClose).toHaveBeenCalledTimes(1);
     });
@@ -438,10 +441,9 @@ describe('TeamInviteWizard', () => {
       render(<TeamInviteWizard isOpen={true} onClose={vi.fn()} />);
 
       const dialog = screen.getByRole('dialog');
-      expect(dialog).toHaveAttribute('aria-labelledby', 'team-invite-title');
-
       const title = screen.getByText('Invite Team Members');
-      expect(title).toHaveAttribute('id', 'team-invite-title');
+      expect(dialog).toHaveAttribute('aria-labelledby', title.id);
+      expect(dialog).toHaveAccessibleName('Invite Team Members');
     });
 
     test('close button has accessible label', () => {
@@ -525,7 +527,7 @@ describe('TeamInviteWizard', () => {
 
       unmount();
 
-      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.keyDown(document, { key: 'Escape' });
 
       expect(onClose).not.toHaveBeenCalled();
     });
@@ -535,7 +537,7 @@ describe('TeamInviteWizard', () => {
 
       render(<TeamInviteWizard isOpen={false} onClose={onClose} />);
 
-      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.keyDown(document, { key: 'Escape' });
 
       expect(onClose).not.toHaveBeenCalled();
     });

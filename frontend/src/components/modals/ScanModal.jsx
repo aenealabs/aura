@@ -9,7 +9,6 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import {
   XMarkIcon,
   PlayIcon,
@@ -26,6 +25,7 @@ import {
   InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { listRepositories } from '../../services/repositoryApi';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Scan type configurations
 const SCAN_TYPES = [
@@ -260,7 +260,6 @@ export default function ScanModal({ isOpen, onClose, onScanStart }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  const modalRef = useRef(null);
 
   // Load repositories on mount
   useEffect(() => {
@@ -268,25 +267,6 @@ export default function ScanModal({ isOpen, onClose, onScanStart }) {
       loadRepositories();
     }
   }, [isOpen]);
-
-  // Handle escape key and focus trap
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && !submitting) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen, submitting, onClose]);
 
   const loadRepositories = async () => {
     setLoading(true);
@@ -351,173 +331,163 @@ export default function ScanModal({ isOpen, onClose, onScanStart }) {
 
   const selectedScanType = SCAN_TYPES.find((t) => t.id === scanType);
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="scan-modal-title"
+  return (
+    <Modal
+      open
+      onClose={() => {
+        if (!submitting) onClose();
+      }}
+      overlayClassName="bg-black/40 backdrop-blur-md transition-opacity duration-200"
+      panelClassName="bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl shadow-[var(--shadow-glass-hover)] !max-w-2xl !max-h-[90vh] !overflow-hidden animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
     >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-md transition-opacity duration-200"
-        onClick={submitting ? undefined : onClose}
-      />
-
-      {/* Modal */}
-      <div
-        ref={modalRef}
-        className="relative bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl shadow-[var(--shadow-glass-hover)] max-w-2xl w-full max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
-      >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-aura-100 dark:bg-aura-900/30">
-                <PlayIcon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
-              </div>
-              <div>
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-aura-100 dark:bg-aura-900/30">
+              <PlayIcon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
+            </div>
+            <div>
+              <ModalTitle asChild>
                 <h2
-                  id="scan-modal-title"
                   className="text-lg font-semibold text-surface-900 dark:text-surface-100"
                 >
                   Start Security Scan
                 </h2>
-                <p className="text-sm text-surface-500 dark:text-surface-400">
-                  Configure and initiate a security analysis
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              disabled={submitting}
-              className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)] disabled:opacity-50"
-              aria-label="Close modal"
-            >
-              <XMarkIcon className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-          {/* Error Banner */}
-          {error && (
-            <div className="mb-6 p-4 rounded-xl bg-critical-50/90 dark:bg-critical-900/20 backdrop-blur-sm border border-critical-200/50 dark:border-critical-800/50 flex items-start gap-3 shadow-[var(--shadow-glass)]">
-              <ExclamationTriangleIcon className="w-5 h-5 text-critical-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-critical-800 dark:text-critical-300">{error}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Scan Type Selection */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-surface-700 dark:text-surface-300 mb-3">
-              Scan Type
-            </h3>
-            <div className="space-y-3">
-              {SCAN_TYPES.map((type) => (
-                <ScanTypeCard
-                  key={type.id}
-                  scanType={type}
-                  isSelected={scanType === type.id}
-                  onSelect={setScanType}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Repository Selection */}
-          <div className="mb-6">
-            <RepositorySelector
-              repositories={repositories}
-              selectedRepo={selectedRepo}
-              onSelect={setSelectedRepo}
-              loading={loading}
-            />
-            {loading && (
-              <div className="flex items-center gap-2 mt-2 text-sm text-surface-500 dark:text-surface-400">
-                <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                Loading repositories...
-              </div>
-            )}
-          </div>
-
-          {/* Target Path (for targeted scans) */}
-          {scanType === 'targeted' && (
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-                Target Path
-              </label>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400">
-                  <CodeBracketIcon className="w-5 h-5" />
-                </div>
-                <input
-                  type="text"
-                  value={targetPath}
-                  onChange={(e) => setTargetPath(e.target.value)}
-                  placeholder="e.g., src/auth/, controllers/UserController.java"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-surface-200/50 dark:border-surface-600/50 bg-white dark:bg-surface-800 backdrop-blur-sm text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-aura-500 transition-all duration-200 ease-[var(--ease-tahoe)]"
-                />
-              </div>
-              <p className="mt-2 text-xs text-surface-500 dark:text-surface-400">
-                Specify files or directories to scan. Supports glob patterns.
+              </ModalTitle>
+              <p className="text-sm text-surface-500 dark:text-surface-400">
+                Configure and initiate a security analysis
               </p>
             </div>
-          )}
-
-          {/* Scan Summary */}
-          {selectedRepo && selectedScanType && (
-            <div className="p-4 rounded-xl bg-surface-50 dark:bg-surface-800 backdrop-blur-sm border border-surface-200/30 dark:border-surface-600/20">
-              <div className="flex items-start gap-3">
-                <InformationCircleIcon className="w-5 h-5 text-aura-500 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium text-surface-900 dark:text-surface-100">Scan Summary</p>
-                  <ul className="mt-2 space-y-1 text-surface-600 dark:text-surface-400">
-                    <li>Type: {selectedScanType.name}</li>
-                    <li>Repository: {repositories.find((r) => r.id === selectedRepo)?.name}</li>
-                    <li>Estimated time: {selectedScanType.estimatedTime}</li>
-                    {scanType === 'targeted' && targetPath && (
-                      <li>Target: {targetPath}</li>
-                    )}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-surface-100/50 dark:border-surface-700/30 bg-white/60 dark:bg-surface-800/50 backdrop-blur-sm flex justify-end gap-3">
+          </div>
           <button
             onClick={onClose}
             disabled={submitting}
-            className="px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)] disabled:opacity-50"
+            className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)] disabled:opacity-50"
+            aria-label="Close modal"
           >
-            Cancel
-          </button>
-          <button
-            onClick={handleStartScan}
-            disabled={submitting || !selectedRepo || loading}
-            className="px-6 py-2.5 text-sm font-medium bg-aura-600 text-white rounded-xl hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-[var(--ease-tahoe)] flex items-center gap-2 shadow-sm hover:shadow-md"
-          >
-            {submitting ? (
-              <>
-                <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <PlayIcon className="w-4 h-4" />
-                Start Scan
-              </>
-            )}
+            <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
       </div>
-    </div>,
-    document.body
+
+      {/* Content */}
+      <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
+        {/* Error Banner */}
+        {error && (
+          <div className="mb-6 p-4 rounded-xl bg-critical-50/90 dark:bg-critical-900/20 backdrop-blur-sm border border-critical-200/50 dark:border-critical-800/50 flex items-start gap-3 shadow-[var(--shadow-glass)]">
+            <ExclamationTriangleIcon className="w-5 h-5 text-critical-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-critical-800 dark:text-critical-300">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Scan Type Selection */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-surface-700 dark:text-surface-300 mb-3">
+            Scan Type
+          </h3>
+          <div className="space-y-3">
+            {SCAN_TYPES.map((type) => (
+              <ScanTypeCard
+                key={type.id}
+                scanType={type}
+                isSelected={scanType === type.id}
+                onSelect={setScanType}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Repository Selection */}
+        <div className="mb-6">
+          <RepositorySelector
+            repositories={repositories}
+            selectedRepo={selectedRepo}
+            onSelect={setSelectedRepo}
+            loading={loading}
+          />
+          {loading && (
+            <div className="flex items-center gap-2 mt-2 text-sm text-surface-500 dark:text-surface-400">
+              <ArrowPathIcon className="w-4 h-4 animate-spin" />
+              Loading repositories...
+            </div>
+          )}
+        </div>
+
+        {/* Target Path (for targeted scans) */}
+        {scanType === 'targeted' && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+              Target Path
+            </label>
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400">
+                <CodeBracketIcon className="w-5 h-5" />
+              </div>
+              <input
+                type="text"
+                value={targetPath}
+                onChange={(e) => setTargetPath(e.target.value)}
+                placeholder="e.g., src/auth/, controllers/UserController.java"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-surface-200/50 dark:border-surface-600/50 bg-white dark:bg-surface-800 backdrop-blur-sm text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-aura-500 transition-all duration-200 ease-[var(--ease-tahoe)]"
+              />
+            </div>
+            <p className="mt-2 text-xs text-surface-500 dark:text-surface-400">
+              Specify files or directories to scan. Supports glob patterns.
+            </p>
+          </div>
+        )}
+
+        {/* Scan Summary */}
+        {selectedRepo && selectedScanType && (
+          <div className="p-4 rounded-xl bg-surface-50 dark:bg-surface-800 backdrop-blur-sm border border-surface-200/30 dark:border-surface-600/20">
+            <div className="flex items-start gap-3">
+              <InformationCircleIcon className="w-5 h-5 text-aura-500 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-medium text-surface-900 dark:text-surface-100">Scan Summary</p>
+                <ul className="mt-2 space-y-1 text-surface-600 dark:text-surface-400">
+                  <li>Type: {selectedScanType.name}</li>
+                  <li>Repository: {repositories.find((r) => r.id === selectedRepo)?.name}</li>
+                  <li>Estimated time: {selectedScanType.estimatedTime}</li>
+                  {scanType === 'targeted' && targetPath && (
+                    <li>Target: {targetPath}</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-surface-100/50 dark:border-surface-700/30 bg-white/60 dark:bg-surface-800/50 backdrop-blur-sm flex justify-end gap-3">
+        <button
+          onClick={onClose}
+          disabled={submitting}
+          className="px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)] disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleStartScan}
+          disabled={submitting || !selectedRepo || loading}
+          className="px-6 py-2.5 text-sm font-medium bg-aura-600 text-white rounded-xl hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-[var(--ease-tahoe)] flex items-center gap-2 shadow-sm hover:shadow-md"
+        >
+          {submitting ? (
+            <>
+              <ArrowPathIcon className="w-4 h-4 animate-spin" />
+              Starting...
+            </>
+          ) : (
+            <>
+              <PlayIcon className="w-4 h-4" />
+              Start Scan
+            </>
+          )}
+        </button>
+      </div>
+    </Modal>
   );
 }

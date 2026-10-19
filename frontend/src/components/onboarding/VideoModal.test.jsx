@@ -258,8 +258,8 @@ describe('VideoModal', () => {
         <VideoModal videoId="getting_started" isOpen={true} onClose={onClose} />
       );
 
-      const dialog = screen.getByRole('dialog');
-      await user.click(dialog);
+      // Click the backdrop (the shared Modal's overlay)
+      await user.click(document.querySelector('[data-modal-overlay]'));
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
@@ -282,7 +282,7 @@ describe('VideoModal', () => {
         <VideoModal videoId="getting_started" isOpen={true} onClose={vi.fn()} />
       );
 
-      expect(document.body.style.overflow).toBe('hidden');
+      expect(document.body).toHaveAttribute('data-scroll-locked');
     });
 
     test('restores body scroll when modal closes', () => {
@@ -290,13 +290,13 @@ describe('VideoModal', () => {
         <VideoModal videoId="getting_started" isOpen={true} onClose={vi.fn()} />
       );
 
-      expect(document.body.style.overflow).toBe('hidden');
+      expect(document.body).toHaveAttribute('data-scroll-locked');
 
       rerender(
         <VideoModal videoId="getting_started" isOpen={false} onClose={vi.fn()} />
       );
 
-      expect(document.body.style.overflow).toBe('');
+      expect(document.body).not.toHaveAttribute('data-scroll-locked');
     });
 
     test('does not set overflow when modal is closed', () => {
@@ -304,7 +304,7 @@ describe('VideoModal', () => {
         <VideoModal videoId="getting_started" isOpen={false} onClose={vi.fn()} />
       );
 
-      expect(document.body.style.overflow).toBe('');
+      expect(document.body).not.toHaveAttribute('data-scroll-locked');
     });
 
     test('cleans up body scroll on unmount', () => {
@@ -312,11 +312,11 @@ describe('VideoModal', () => {
         <VideoModal videoId="getting_started" isOpen={true} onClose={vi.fn()} />
       );
 
-      expect(document.body.style.overflow).toBe('hidden');
+      expect(document.body).toHaveAttribute('data-scroll-locked');
 
       unmount();
 
-      expect(document.body.style.overflow).toBe('');
+      expect(document.body).not.toHaveAttribute('data-scroll-locked');
     });
   });
 
@@ -377,10 +377,9 @@ describe('VideoModal', () => {
       );
 
       const dialog = screen.getByRole('dialog');
-      expect(dialog).toHaveAttribute('aria-labelledby', 'video-modal-title');
-
       const title = screen.getByText('Getting Started with Project Aura');
-      expect(title).toHaveAttribute('id', 'video-modal-title');
+      expect(dialog).toHaveAttribute('aria-labelledby', title.id);
+      expect(dialog).toHaveAccessibleName('Getting Started with Project Aura');
     });
 
     test('close button has accessible label', () => {

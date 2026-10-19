@@ -627,7 +627,7 @@ function NewIncidentModal({ isOpen, onClose, onSubmit }) {
     <Modal
       open
       onClose={onClose}
-      overlayClassName="absolute bg-black/50 backdrop-blur-sm"
+      overlayClassName="bg-black/50 backdrop-blur-sm"
       panelClassName="!max-w-lg bg-white dark:bg-surface-800 rounded-2xl shadow-xl border border-surface-200 dark:border-surface-700 !overflow-hidden"
     >
       {/* Header */}
@@ -788,7 +788,7 @@ function CreateTicketModal({ isOpen, onClose, incident, onSubmit }) {
     <Modal
       open
       onClose={onClose}
-      overlayClassName="absolute bg-black/50 backdrop-blur-sm"
+      overlayClassName="bg-black/50 backdrop-blur-sm"
       panelClassName="!max-w-lg bg-white dark:bg-surface-800 rounded-2xl shadow-xl border border-surface-200 dark:border-surface-700 !overflow-hidden"
     >
       {/* Header */}

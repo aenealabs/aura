@@ -14,8 +14,6 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { useFocusTrap } from '../../hooks/useFocusTrap';
 import {
   useReducedMotion,
   useAnnouncer,
@@ -31,6 +29,7 @@ import {
   ArrowPathIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline';
+import Modal, { ModalTitle, ModalDescription } from '../shared/Modal';
 
 // ============================================================================
 // Constants
@@ -392,11 +391,6 @@ export default function AIGenerationDialog({
   const announce = useAnnouncer();
   const reducedMotion = useReducedMotion();
 
-  // Focus trap
-  const { containerRef, firstFocusableRef } = useFocusTrap(isOpen, {
-    onEscape: onClose,
-  });
-
   // Sync initial prompt
   useEffect(() => {
     if (isOpen) {
@@ -411,10 +405,6 @@ export default function AIGenerationDialog({
   useEffect(() => {
     if (isOpen) {
       announce('AI diagram generation dialog opened');
-      // Focus input after a brief delay
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
     }
   }, [isOpen, announce]);
 
@@ -455,212 +445,180 @@ export default function AIGenerationDialog({
   // Don't render if not open
   if (!isOpen) return null;
 
-  // Render in portal
-  return createPortal(
-    <div
-      className="
-        fixed inset-0 z-50
-        flex items-center justify-center
-        p-4
-      "
-      role="presentation"
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      initialFocusRef={inputRef}
+      aria-describedby="ai-dialog-description"
+      overlayClassName={`bg-black/50 backdrop-blur-sm ${reducedMotion ? '' : 'animate-fade-in'}`}
+      panelClassName={`!max-w-xl bg-white dark:bg-surface-800 border border-surface-200
+        dark:border-surface-700 rounded-2xl shadow-2xl ${reducedMotion ? '' : 'animate-slide-up'}`}
     >
-      {/* Backdrop */}
-      <div
-        className={`
-          absolute inset-0
-          bg-black/50 backdrop-blur-sm
-          ${reducedMotion ? '' : 'animate-fade-in'}
-        `}
-        aria-hidden="true"
-        onClick={onClose}
-      />
-
-      {/* Dialog */}
-      <div
-        ref={containerRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="ai-dialog-title"
-        aria-describedby="ai-dialog-description"
-        className={`
-          relative w-full max-w-xl
-          bg-white dark:bg-surface-800
-          border border-surface-200 dark:border-surface-700
-          rounded-2xl shadow-2xl
-          ${reducedMotion ? '' : 'animate-slide-up'}
-        `}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-aura-100 dark:bg-aura-900/30 rounded-lg">
-              <SparklesIcon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
-            </div>
-            <div>
-              <h2
-                id="ai-dialog-title"
-                className="text-lg font-semibold text-surface-900 dark:text-surface-100"
-              >
-                Generate Diagram with AI
-              </h2>
-              <p
-                id="ai-dialog-description"
-                className="text-sm text-surface-500 dark:text-surface-400"
-              >
-                Describe your architecture in natural language
-              </p>
-            </div>
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-aura-100 dark:bg-aura-900/30 rounded-lg">
+            <SparklesIcon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
           </div>
-
-          <button
-            ref={firstFocusableRef}
-            onClick={onClose}
-            disabled={isGenerating}
-            className="
-              p-2 rounded-lg
-              hover:bg-surface-100 dark:hover:bg-surface-700
-              focus:outline-none focus:ring-2 focus:ring-aura-500
-              transition-colors duration-150
-              disabled:opacity-50
-            "
-            aria-label="Close dialog"
-          >
-            <XMarkIcon className="w-5 h-5 text-surface-500" />
-          </button>
+          <div>
+            <ModalTitle className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+              Generate Diagram with AI
+            </ModalTitle>
+            <ModalDescription
+              id="ai-dialog-description"
+              className="text-sm text-surface-500 dark:text-surface-400"
+            >
+              Describe your architecture in natural language
+            </ModalDescription>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="px-6 py-4 space-y-4">
-          {/* Prompt Input */}
-          <div>
-            <label
-              htmlFor="ai-prompt"
-              className="block text-sm font-medium text-surface-700 dark:text-surface-200 mb-2"
-            >
-              Description
-              <span className="sr-only"> (required)</span>
-            </label>
-            <textarea
-              id="ai-prompt"
-              ref={inputRef}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe your architecture diagram..."
-              disabled={isGenerating}
-              rows={3}
-              className="
-                w-full px-4 py-3
-                bg-surface-50 dark:bg-surface-900
-                border border-surface-200 dark:border-surface-700
-                rounded-lg
-                text-sm text-surface-900 dark:text-surface-100
-                placeholder:text-surface-400
-                focus:outline-none focus:ring-2 focus:ring-aura-500 focus:border-transparent
-                disabled:opacity-50 disabled:cursor-not-allowed
-                resize-none
-              "
-              aria-required="true"
-              aria-invalid={error ? 'true' : 'false'}
-              aria-describedby={error ? 'ai-error' : undefined}
+        <button
+          onClick={onClose}
+          disabled={isGenerating}
+          className="
+            p-2 rounded-lg
+            hover:bg-surface-100 dark:hover:bg-surface-700
+            focus:outline-none focus:ring-2 focus:ring-aura-500
+            transition-colors duration-150
+            disabled:opacity-50
+          "
+          aria-label="Close dialog"
+        >
+          <XMarkIcon className="w-5 h-5 text-surface-500" />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="px-6 py-4 space-y-4">
+        {/* Prompt Input */}
+        <div>
+          <label
+            htmlFor="ai-prompt"
+            className="block text-sm font-medium text-surface-700 dark:text-surface-200 mb-2"
+          >
+            Description
+            <span className="sr-only"> (required)</span>
+          </label>
+          <textarea
+            id="ai-prompt"
+            ref={inputRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Describe your architecture diagram..."
+            disabled={isGenerating}
+            rows={3}
+            className="
+              w-full px-4 py-3
+              bg-surface-50 dark:bg-surface-900
+              border border-surface-200 dark:border-surface-700
+              rounded-lg
+              text-sm text-surface-900 dark:text-surface-100
+              placeholder:text-surface-400
+              focus:outline-none focus:ring-2 focus:ring-aura-500 focus:border-transparent
+              disabled:opacity-50 disabled:cursor-not-allowed
+              resize-none
+            "
+            aria-required="true"
+            aria-invalid={error ? 'true' : 'false'}
+            aria-describedby={error ? 'ai-error' : undefined}
+          />
+        </div>
+
+        {/* Example Prompts */}
+        <ExamplePrompts onSelect={handleExampleSelect} disabled={isGenerating} />
+
+        {/* Classification Selector */}
+        <ClassificationSelector
+          value={classification}
+          onChange={setClassification}
+          disabled={isGenerating}
+        />
+
+        {/* Progress Indicator */}
+        {isGenerating && (
+          <div className="pt-2">
+            <ProgressIndicator
+              currentStep={currentStep}
+              isComplete={false}
+              error={error}
+              reducedMotion={reducedMotion}
             />
           </div>
+        )}
 
-          {/* Example Prompts */}
-          <ExamplePrompts onSelect={handleExampleSelect} disabled={isGenerating} />
-
-          {/* Classification Selector */}
-          <ClassificationSelector
-            value={classification}
-            onChange={setClassification}
-            disabled={isGenerating}
-          />
-
-          {/* Progress Indicator */}
-          {isGenerating && (
-            <div className="pt-2">
-              <ProgressIndicator
-                currentStep={currentStep}
-                isComplete={false}
-                error={error}
-                reducedMotion={reducedMotion}
-              />
-            </div>
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div
-              id="ai-error"
-              role="alert"
-              className="
-                flex items-start gap-2 p-3
-                bg-critical-50 dark:bg-critical-900/20
-                border border-critical-200 dark:border-critical-800
-                rounded-lg
-              "
-            >
-              <ExclamationTriangleIcon className="w-5 h-5 text-critical-600 flex-shrink-0" />
-              <p className="text-sm text-critical-700 dark:text-critical-300">{error}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isGenerating}
+        {/* Error Message */}
+        {error && (
+          <div
+            id="ai-error"
+            role="alert"
             className="
-              px-4 py-2
-              text-sm font-medium text-surface-700 dark:text-surface-300
-              hover:bg-surface-100 dark:hover:bg-surface-700
+              flex items-start gap-2 p-3
+              bg-critical-50 dark:bg-critical-900/20
+              border border-critical-200 dark:border-critical-800
               rounded-lg
-              focus:outline-none focus:ring-2 focus:ring-aura-500
-              transition-colors duration-150
-              disabled:opacity-50
             "
           >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={!prompt.trim() || isGenerating}
-            className="
-              flex items-center gap-2 px-4 py-2
-              bg-aura-500 hover:bg-aura-600
-              text-white font-medium text-sm
-              rounded-lg
-              focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2
-              transition-colors duration-150
-              disabled:bg-surface-300 dark:disabled:bg-surface-600
-              disabled:cursor-not-allowed
-            "
-          >
-            {isGenerating ? (
-              <>
-                <ArrowPathIcon
-                  className={`w-4 h-4 ${reducedMotion ? '' : 'animate-spin'}`}
-                />
-                <span>Generating...</span>
-              </>
-            ) : (
-              <>
-                <SparklesIcon className="w-4 h-4" />
-                <span>Generate Diagram</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Live region for status announcements */}
-        <LiveRegion message={isGenerating ? `${currentStep}...` : ''} />
+            <ExclamationTriangleIcon className="w-5 h-5 text-critical-600 flex-shrink-0" />
+            <p className="text-sm text-critical-700 dark:text-critical-300">{error}</p>
+          </div>
+        )}
       </div>
-    </div>,
-    document.body
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={isGenerating}
+          className="
+            px-4 py-2
+            text-sm font-medium text-surface-700 dark:text-surface-300
+            hover:bg-surface-100 dark:hover:bg-surface-700
+            rounded-lg
+            focus:outline-none focus:ring-2 focus:ring-aura-500
+            transition-colors duration-150
+            disabled:opacity-50
+          "
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={!prompt.trim() || isGenerating}
+          className="
+            flex items-center gap-2 px-4 py-2
+            bg-aura-500 hover:bg-aura-600
+            text-white font-medium text-sm
+            rounded-lg
+            focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2
+            transition-colors duration-150
+            disabled:bg-surface-300 dark:disabled:bg-surface-600
+            disabled:cursor-not-allowed
+          "
+        >
+          {isGenerating ? (
+            <>
+              <ArrowPathIcon
+                className={`w-4 h-4 ${reducedMotion ? '' : 'animate-spin'}`}
+              />
+              <span>Generating...</span>
+            </>
+          ) : (
+            <>
+              <SparklesIcon className="w-4 h-4" />
+              <span>Generate Diagram</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Live region for status announcements */}
+      <LiveRegion message={isGenerating ? `${currentStep}...` : ''} />
+    </Modal>
   );
 }
 

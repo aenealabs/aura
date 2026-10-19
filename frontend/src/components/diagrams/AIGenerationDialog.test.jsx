@@ -9,13 +9,6 @@ import userEvent from '@testing-library/user-event';
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // Mock accessibility hooks
-vi.mock('../../hooks/useFocusTrap', () => ({
-  useFocusTrap: () => ({
-    containerRef: { current: null },
-    firstFocusableRef: { current: null },
-  }),
-}));
-
 vi.mock('../../hooks/useAccessibility', () => ({
   useReducedMotion: () => false,
   useAnnouncer: () => vi.fn(),
@@ -54,8 +47,10 @@ describe('AIGenerationDialog', () => {
     test('has accessible title and description', () => {
       render(<AIGenerationDialog {...defaultProps} />);
 
-      expect(screen.getByRole('dialog')).toHaveAttribute('aria-labelledby', 'ai-dialog-title');
-      expect(screen.getByRole('dialog')).toHaveAttribute('aria-describedby', 'ai-dialog-description');
+      expect(screen.getByRole('dialog')).toHaveAccessibleName('Generate Diagram with AI');
+      expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+        'Describe your architecture in natural language'
+      );
       expect(screen.getByText('Generate Diagram with AI')).toBeInTheDocument();
     });
 

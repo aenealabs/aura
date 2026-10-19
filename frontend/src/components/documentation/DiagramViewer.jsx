@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import {
   MagnifyingGlassPlusIcon,
   MagnifyingGlassMinusIcon,
@@ -13,6 +12,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { Skeleton } from '../ui/LoadingSkeleton';
 import { ConfidenceBadge } from './ConfidenceGauge';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Export format configuration
 const EXPORT_FORMATS = [
@@ -360,20 +360,6 @@ export function DiagramViewer({
   const handleFullscreenMouseUp = useCallback(() => {
     setIsFullscreenDragging(false);
   }, []);
-
-  // Close fullscreen on Escape key
-  useEffect(() => {
-    if (!isFullscreen) return;
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        handleCloseFullscreen();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen, handleCloseFullscreen]);
 
   // Mouse wheel zoom
   const handleWheel = useCallback(
@@ -1079,200 +1065,191 @@ export function DiagramViewer({
       )}
 
       {/* Fullscreen Modal */}
-      {isFullscreen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center"
-            onClick={handleCloseFullscreen}
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${formatType(type)} diagram fullscreen view`}
-          >
-            {/* Modal Content */}
-            <div
-              className="relative w-[90vw] h-[90vh] bg-white dark:bg-surface-800 rounded-xl shadow-2xl overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
+      <Modal
+        open={isFullscreen}
+        onClose={handleCloseFullscreen}
+        overlayClassName="!z-[100] bg-black/80 backdrop-blur-sm"
+        panelClassName="!z-[100] !w-[90vw] !max-w-none h-[90vh] !max-h-[90vh] !overflow-hidden bg-white dark:bg-surface-800 rounded-xl shadow-2xl"
+      >
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900">
+          <div className="flex items-center gap-3">
+            <ModalTitle asChild>
+              <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+                {title || `${formatType(type)} Diagram`}
+              </h3>
+            </ModalTitle>
+            {showConfidence && confidence !== null && (
+              <ConfidenceBadge score={confidence} size="sm" />
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Zoom Controls */}
+            <button
+              onClick={handleFullscreenZoomOut}
+              className="p-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors"
+              title="Zoom out"
+              aria-label="Zoom out"
             >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
-                    {title || `${formatType(type)} Diagram`}
-                  </h3>
-                  {showConfidence && confidence !== null && (
-                    <ConfidenceBadge score={confidence} size="sm" />
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {/* Zoom Controls */}
-                  <button
-                    onClick={handleFullscreenZoomOut}
-                    className="p-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors"
-                    title="Zoom out"
-                    aria-label="Zoom out"
-                  >
-                    <MagnifyingGlassMinusIcon className="w-5 h-5" />
-                  </button>
-                  <span className="px-2 text-sm text-surface-600 dark:text-surface-400 min-w-[3.5rem] text-center font-medium">
-                    {Math.round(fullscreenZoom * 100)}%
-                  </span>
-                  <button
-                    onClick={handleFullscreenZoomIn}
-                    className="p-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors"
-                    title="Zoom in"
-                    aria-label="Zoom in"
-                  >
-                    <MagnifyingGlassPlusIcon className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={handleFullscreenZoomReset}
-                    className="p-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors"
-                    title="Reset view"
-                    aria-label="Reset view"
-                  >
-                    <ArrowsPointingInIcon className="w-5 h-5" />
-                  </button>
-                  <div className="w-px h-6 bg-surface-300 dark:bg-surface-600 mx-1" />
-                  <button
-                    onClick={handleCopy}
-                    className={`p-2 rounded-lg transition-colors ${
-                      copied
-                        ? 'text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-900/30'
-                        : 'text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700'
-                    }`}
-                    title={copied ? 'Copied!' : 'Copy code'}
-                    aria-label={copied ? 'Copied!' : 'Copy code'}
-                  >
-                    <ClipboardDocumentIcon className="w-5 h-5" />
-                  </button>
-                  {/* Export Dropdown in Fullscreen */}
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowExportMenu(!showExportMenu)}
-                      disabled={!renderedSvg || isExporting}
-                      className="flex items-center gap-1 px-3 py-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors disabled:opacity-50"
-                      title="Export diagram"
-                      aria-label="Export diagram"
-                      aria-haspopup="true"
-                      aria-expanded={showExportMenu}
-                    >
-                      {isExporting ? (
-                        <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                      ) : (
-                        <ArrowDownTrayIcon className="w-5 h-5" />
-                      )}
-                      <ChevronDownIcon className="w-3 h-3" />
-                    </button>
-                    {showExportMenu && (
-                      <div className="absolute right-0 mt-1 w-52 bg-white dark:bg-surface-800 rounded-lg shadow-xl border border-surface-200 dark:border-surface-700 py-1 z-[110]">
-                        {EXPORT_FORMATS.map((format) => (
-                          <button
-                            key={format.id}
-                            onClick={() => handleExport(format.id)}
-                            className="w-full px-4 py-2.5 text-left hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-                          >
-                            <div className="text-sm font-medium text-surface-900 dark:text-surface-100">
-                              {format.label}
-                            </div>
-                            <div className="text-xs text-surface-500 dark:text-surface-400">
-                              {format.description}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleCloseFullscreen}
-                    className="p-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors"
-                    title="Close (Esc)"
-                    aria-label="Close fullscreen"
-                  >
-                    <XMarkIcon className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Modal Body - Interactive Diagram with grid background */}
-              <div
-                className={`h-[calc(90vh-4rem)] overflow-hidden ${isFullscreenDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-                style={{
-                  backgroundColor: '#0a0a0f',
-                  backgroundImage: `
-                    linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px)
-                  `,
-                  backgroundSize: '24px 24px',
-                  boxShadow: 'inset 0 0 200px rgba(59, 130, 246, 0.04)',
-                }}
-                onWheel={handleFullscreenWheel}
-                onMouseDown={handleFullscreenMouseDown}
-                onMouseMove={handleFullscreenMouseMove}
-                onMouseUp={handleFullscreenMouseUp}
-                onMouseLeave={handleFullscreenMouseUp}
+              <MagnifyingGlassMinusIcon className="w-5 h-5" />
+            </button>
+            <span className="px-2 text-sm text-surface-600 dark:text-surface-400 min-w-[3.5rem] text-center font-medium">
+              {Math.round(fullscreenZoom * 100)}%
+            </span>
+            <button
+              onClick={handleFullscreenZoomIn}
+              className="p-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors"
+              title="Zoom in"
+              aria-label="Zoom in"
+            >
+              <MagnifyingGlassPlusIcon className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleFullscreenZoomReset}
+              className="p-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors"
+              title="Reset view"
+              aria-label="Reset view"
+            >
+              <ArrowsPointingInIcon className="w-5 h-5" />
+            </button>
+            <div className="w-px h-6 bg-surface-300 dark:bg-surface-600 mx-1" />
+            <button
+              onClick={handleCopy}
+              className={`p-2 rounded-lg transition-colors ${
+                copied
+                  ? 'text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-900/30'
+                  : 'text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700'
+              }`}
+              title={copied ? 'Copied!' : 'Copy code'}
+              aria-label={copied ? 'Copied!' : 'Copy code'}
+            >
+              <ClipboardDocumentIcon className="w-5 h-5" />
+            </button>
+            {/* Export Dropdown in Fullscreen */}
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                disabled={!renderedSvg || isExporting}
+                className="flex items-center gap-1 px-3 py-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors disabled:opacity-50"
+                title="Export diagram"
+                aria-label="Export diagram"
+                aria-haspopup="true"
+                aria-expanded={showExportMenu}
               >
-                {renderError ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                    <ExclamationTriangleIcon className="w-16 h-16 text-amber-500 mb-4" />
-                    <p className="text-surface-700 dark:text-surface-300 font-medium text-lg">
-                      Failed to render diagram
-                    </p>
-                    <p className="text-surface-500 dark:text-surface-400 mt-2">
-                      {renderError.message || 'Invalid Mermaid syntax'}
-                    </p>
-                  </div>
-                ) : renderedSvg ? (
-                  <div
-                    className="diagram-svg-container w-full h-full flex items-center justify-center"
-                    style={{
-                      transform: `translate(${fullscreenPosition.x}px, ${fullscreenPosition.y}px) scale(${fullscreenZoom})`,
-                      transformOrigin: 'center center',
-                      transition: isFullscreenDragging ? 'none' : 'transform 0.1s ease-out',
-                    }}
-                  >
-                    <style>{`
-                      .diagram-svg-container svg {
-                        overflow: visible;
-                        max-width: none;
-                      }
-                      .diagram-svg-container svg text {
-                        font-family: Inter, system-ui, -apple-system, sans-serif;
-                      }
-                      .diagram-svg-container svg .node rect,
-                      .diagram-svg-container svg .node circle,
-                      .diagram-svg-container svg .node ellipse,
-                      .diagram-svg-container svg .node polygon,
-                      .diagram-svg-container svg .node path {
-                        vector-effect: non-scaling-stroke;
-                      }
-                      .diagram-svg-container svg[aria-roledescription="sequence"] circle {
-                        fill: #f97316 !important;
-                      }
-                      .diagram-svg-container svg[aria-roledescription="sequence"] text.sequenceNumber {
-                        fill: #000000 !important;
-                        font-weight: 700 !important;
-                      }
-                    `}</style>
-                    <div dangerouslySetInnerHTML={{ __html: renderedSvg }} />
-                  </div>
+                {isExporting ? (
+                  <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
                 ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="animate-pulse text-surface-400 text-lg">Loading diagram...</div>
-                  </div>
+                  <ArrowDownTrayIcon className="w-5 h-5" />
                 )}
-              </div>
-
-              {/* Modal Footer - Keyboard Hint */}
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm text-surface-400 dark:text-surface-500 bg-surface-100/80 dark:bg-surface-800/80 px-3 py-1.5 rounded-full backdrop-blur-sm">
-                Scroll to zoom • Drag to pan • <kbd className="px-1.5 py-0.5 bg-surface-200 dark:bg-surface-700 rounded text-xs font-mono">Esc</kbd> to close
-              </div>
+                <ChevronDownIcon className="w-3 h-3" />
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 mt-1 w-52 bg-white dark:bg-surface-800 rounded-lg shadow-xl border border-surface-200 dark:border-surface-700 py-1 z-[110]">
+                  {EXPORT_FORMATS.map((format) => (
+                    <button
+                      key={format.id}
+                      onClick={() => handleExport(format.id)}
+                      className="w-full px-4 py-2.5 text-left hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+                    >
+                      <div className="text-sm font-medium text-surface-900 dark:text-surface-100">
+                        {format.label}
+                      </div>
+                      <div className="text-xs text-surface-500 dark:text-surface-400">
+                        {format.description}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>,
-          document.body
-        )}
+            <button
+              onClick={handleCloseFullscreen}
+              className="p-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors"
+              title="Close (Esc)"
+              aria-label="Close fullscreen"
+            >
+              <XMarkIcon className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body - Interactive Diagram with grid background */}
+        <div
+          className={`h-[calc(90vh-4rem)] overflow-hidden ${isFullscreenDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          style={{
+            backgroundColor: '#0a0a0f',
+            backgroundImage: `
+              linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px)
+            `,
+            backgroundSize: '24px 24px',
+            boxShadow: 'inset 0 0 200px rgba(59, 130, 246, 0.04)',
+          }}
+          onWheel={handleFullscreenWheel}
+          onMouseDown={handleFullscreenMouseDown}
+          onMouseMove={handleFullscreenMouseMove}
+          onMouseUp={handleFullscreenMouseUp}
+          onMouseLeave={handleFullscreenMouseUp}
+        >
+          {renderError ? (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <ExclamationTriangleIcon className="w-16 h-16 text-amber-500 mb-4" />
+              <p className="text-surface-700 dark:text-surface-300 font-medium text-lg">
+                Failed to render diagram
+              </p>
+              <p className="text-surface-500 dark:text-surface-400 mt-2">
+                {renderError.message || 'Invalid Mermaid syntax'}
+              </p>
+            </div>
+          ) : renderedSvg ? (
+            <div
+              className="diagram-svg-container w-full h-full flex items-center justify-center"
+              style={{
+                transform: `translate(${fullscreenPosition.x}px, ${fullscreenPosition.y}px) scale(${fullscreenZoom})`,
+                transformOrigin: 'center center',
+                transition: isFullscreenDragging ? 'none' : 'transform 0.1s ease-out',
+              }}
+            >
+              <style>{`
+                .diagram-svg-container svg {
+                  overflow: visible;
+                  max-width: none;
+                }
+                .diagram-svg-container svg text {
+                  font-family: Inter, system-ui, -apple-system, sans-serif;
+                }
+                .diagram-svg-container svg .node rect,
+                .diagram-svg-container svg .node circle,
+                .diagram-svg-container svg .node ellipse,
+                .diagram-svg-container svg .node polygon,
+                .diagram-svg-container svg .node path {
+                  vector-effect: non-scaling-stroke;
+                }
+                .diagram-svg-container svg[aria-roledescription="sequence"] circle {
+                  fill: #f97316 !important;
+                }
+                .diagram-svg-container svg[aria-roledescription="sequence"] text.sequenceNumber {
+                  fill: #000000 !important;
+                  font-weight: 700 !important;
+                }
+              `}</style>
+              <div dangerouslySetInnerHTML={{ __html: renderedSvg }} />
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <div className="animate-pulse text-surface-400 text-lg">Loading diagram...</div>
+            </div>
+          )}
+        </div>
+
+        {/* Modal Footer - Keyboard Hint */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm text-surface-400 dark:text-surface-500 bg-surface-100/80 dark:bg-surface-800/80 px-3 py-1.5 rounded-full backdrop-blur-sm">
+          Scroll to zoom • Drag to pan • <kbd className="px-1.5 py-0.5 bg-surface-200 dark:bg-surface-700 rounded text-xs font-mono">Esc</kbd> to close
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
   ExclamationTriangleIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 /**
  * ChangeIndicator - Shows percentage change with direction
@@ -187,151 +188,127 @@ function ImpactPreviewModal({
 }) {
   if (!isOpen) return null;
 
-  const handleBackdropClick = (e) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4
-                 bg-black/50 backdrop-blur-sm"
-      onClick={handleBackdropClick}
-      onKeyDown={handleKeyDown}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="impact-preview-title"
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50 backdrop-blur-sm"
+      panelClassName={`!max-w-2xl !max-h-[90vh] !overflow-hidden bg-white dark:bg-surface-800 rounded-2xl shadow-2xl flex flex-col ${className}`}
     >
-      <div
-        className={`
-          w-full max-w-2xl max-h-[90vh] overflow-hidden
-          bg-white dark:bg-surface-800
-          rounded-2xl shadow-2xl
-          flex flex-col
-          ${className}
-        `}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+        <ModalTitle asChild>
           <h2
-            id="impact-preview-title"
             className="text-xl font-semibold text-surface-900 dark:text-surface-100"
           >
             Review Changes
           </h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg text-surface-500 hover:text-surface-700
-                       dark:hover:text-surface-300 hover:bg-surface-100
-                       dark:hover:bg-surface-700 transition-colors"
-            aria-label="Close modal"
-          >
-            <XMarkIcon className="w-5 h-5" />
-          </button>
+        </ModalTitle>
+        <button
+          onClick={onClose}
+          className="p-2 rounded-lg text-surface-500 hover:text-surface-700
+                     dark:hover:text-surface-300 hover:bg-surface-100
+                     dark:hover:bg-surface-700 transition-colors"
+          aria-label="Close modal"
+        >
+          <XMarkIcon className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+        {/* Changes summary */}
+        <div>
+          <h3 className="text-sm font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-2">
+            You&apos;re changing
+          </h3>
+          <p className="text-surface-900 dark:text-surface-100">
+            {changesSummary.description}
+          </p>
+          {changesSummary.details && (
+            <p className="text-sm text-surface-600 dark:text-surface-400 mt-1">
+              {changesSummary.details}
+            </p>
+          )}
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-          {/* Changes summary */}
-          <div>
-            <h3 className="text-sm font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-2">
-              You&apos;re changing
-            </h3>
-            <p className="text-surface-900 dark:text-surface-100">
-              {changesSummary.description}
-            </p>
-            {changesSummary.details && (
-              <p className="text-sm text-surface-600 dark:text-surface-400 mt-1">
-                {changesSummary.details}
-              </p>
-            )}
-          </div>
+        {/* Projected impact table */}
+        <div className="bg-surface-50 dark:bg-surface-900 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-surface-700 dark:text-surface-300 mb-3">
+            Projected Impact{' '}
+            <span className="font-normal text-surface-500">(based on last 30 days)</span>
+          </h3>
 
-          {/* Projected impact table */}
-          <div className="bg-surface-50 dark:bg-surface-900 rounded-xl p-4">
-            <h3 className="text-sm font-medium text-surface-700 dark:text-surface-300 mb-3">
-              Projected Impact{' '}
-              <span className="font-normal text-surface-500">(based on last 30 days)</span>
-            </h3>
-
-            {isLoading ? (
-              <div className="animate-pulse space-y-3">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="h-10 bg-surface-200 dark:bg-surface-700 rounded" />
-                ))}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="text-xs font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide">
-                      <th className="text-left pb-2">Metric</th>
-                      <th className="text-right pb-2 px-4">Before</th>
-                      <th className="text-right pb-2 px-4">After</th>
-                      <th className="text-right pb-2 pl-4">Change</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {projectedMetrics.map((metric, index) => (
-                      <MetricComparisonRow key={index} metric={metric} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Warnings */}
-          {warnings.length > 0 && (
-            <div className="space-y-3">
-              {warnings.map((warning, index) => (
-                <WarningBanner
-                  key={index}
-                  severity={warning.severity}
-                  title={warning.title}
-                  message={warning.message}
-                />
+          {isLoading ? (
+            <div className="animate-pulse space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-10 bg-surface-200 dark:bg-surface-700 rounded" />
               ))}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-xs font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide">
+                    <th className="text-left pb-2">Metric</th>
+                    <th className="text-right pb-2 px-4">Before</th>
+                    <th className="text-right pb-2 px-4">After</th>
+                    <th className="text-right pb-2 pl-4">Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectedMetrics.map((metric, index) => (
+                    <MetricComparisonRow key={index} metric={metric} />
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div
-          className="flex items-center justify-end gap-3 px-6 py-4
-                        border-t border-surface-200 dark:border-surface-700
-                        bg-surface-50 dark:bg-surface-900/50"
-        >
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium
-                       text-surface-700 dark:text-surface-300
-                       hover:bg-surface-200 dark:hover:bg-surface-700
-                       rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={isLoading}
-            className="px-4 py-2 text-sm font-medium
-                       bg-aura-600 text-white
-                       hover:bg-aura-700
-                       disabled:opacity-50 disabled:cursor-not-allowed
-                       rounded-lg transition-colors"
-          >
-            Apply Changes
-          </button>
-        </div>
+        {/* Warnings */}
+        {warnings.length > 0 && (
+          <div className="space-y-3">
+            {warnings.map((warning, index) => (
+              <WarningBanner
+                key={index}
+                severity={warning.severity}
+                title={warning.title}
+                message={warning.message}
+              />
+            ))}
+          </div>
+        )}
       </div>
-    </div>
+
+      {/* Footer */}
+      <div
+        className="flex items-center justify-end gap-3 px-6 py-4
+                      border-t border-surface-200 dark:border-surface-700
+                      bg-surface-50 dark:bg-surface-900/50"
+      >
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-medium
+                     text-surface-700 dark:text-surface-300
+                     hover:bg-surface-200 dark:hover:bg-surface-700
+                     rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          disabled={isLoading}
+          className="px-4 py-2 text-sm font-medium
+                     bg-aura-600 text-white
+                     hover:bg-aura-700
+                     disabled:opacity-50 disabled:cursor-not-allowed
+                     rounded-lg transition-colors"
+        >
+          Apply Changes
+        </button>
+      </div>
+    </Modal>
   );
 }
 

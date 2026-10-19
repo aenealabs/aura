@@ -126,7 +126,10 @@ Modal.propTypes = {
 
 /** The modal's visible title; also its accessible name. */
 export const ModalTitle = Dialog.Title;
-/** Optional visible description, linked for screen readers. */
+/**
+ * Optional visible description. Give it an id and pass the same id as the Modal's
+ * `aria-describedby` so screen readers link it (or use the Modal's `description` prop).
+ */
 export const ModalDescription = Dialog.Description;
 /** Wrap a button with `asChild` to make it close the modal. */
 export const ModalClose = Dialog.Close;

@@ -13,7 +13,6 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { getSystemHealth } from '../../services/systemHealthApi';
 import {
   XMarkIcon,
@@ -30,6 +29,7 @@ import {
   ClockIcon,
   SignalIcon,
 } from '@heroicons/react/24/outline';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Health status configurations
 const HEALTH_STATUS = {
@@ -308,7 +308,6 @@ export default function HealthCheckModal({ isOpen, onClose }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const modalRef = useRef(null);
   const refreshIntervalRef = useRef(null);
 
   // Fetch health data
@@ -355,156 +354,125 @@ export default function HealthCheckModal({ isOpen, onClose }) {
     };
   }, [isOpen, autoRefresh, fetchHealthData]);
 
-  // Handle escape key
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="health-modal-title"
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/40 backdrop-blur-md transition-opacity duration-200"
+      panelClassName="bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl shadow-[var(--shadow-glass-hover)] !max-w-4xl !max-h-[90vh] !overflow-hidden animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
     >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-md transition-opacity duration-200"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div
-        ref={modalRef}
-        className="relative bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl shadow-[var(--shadow-glass-hover)] max-w-4xl w-full max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
-      >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-olive-100 dark:bg-olive-900/30">
-                <HeartIcon className="w-5 h-5 text-olive-600 dark:text-olive-400" />
-              </div>
-              <div>
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-olive-100 dark:bg-olive-900/30">
+              <HeartIcon className="w-5 h-5 text-olive-600 dark:text-olive-400" />
+            </div>
+            <div>
+              <ModalTitle asChild>
                 <h2
-                  id="health-modal-title"
                   className="text-lg font-semibold text-surface-900 dark:text-surface-100"
                 >
                   System Health Check
                 </h2>
-                <p className="text-sm text-surface-500 dark:text-surface-400">
-                  Real-time status of all Aura services
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {/* Auto-refresh toggle */}
-              <label className="flex items-center gap-2 text-sm text-surface-600 dark:text-surface-400 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={autoRefresh}
-                  onChange={(e) => setAutoRefresh(e.target.checked)}
-                  className="w-4 h-4 rounded border-surface-300 dark:border-surface-600 text-aura-600 focus:ring-aura-500"
-                />
-                Auto-refresh
-              </label>
-
-              {/* Manual refresh button */}
-              <button
-                onClick={() => fetchHealthData(true)}
-                disabled={refreshing}
-                className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)] disabled:opacity-50"
-                aria-label="Refresh health data"
-              >
-                <ArrowPathIcon className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
-              </button>
-
-              {/* Close button */}
-              <button
-                onClick={onClose}
-                className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
-                aria-label="Close modal"
-              >
-                <XMarkIcon className="w-5 h-5" />
-              </button>
+              </ModalTitle>
+              <p className="text-sm text-surface-500 dark:text-surface-400">
+                Real-time status of all Aura services
+              </p>
             </div>
           </div>
-        </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-          {/* Overall Health Summary */}
-          <HealthSummary healthData={healthData} loading={loading} />
+          <div className="flex items-center gap-3">
+            {/* Auto-refresh toggle */}
+            <label className="flex items-center gap-2 text-sm text-surface-600 dark:text-surface-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+                className="w-4 h-4 rounded border-surface-300 dark:border-surface-600 text-aura-600 focus:ring-aura-500"
+              />
+              Auto-refresh
+            </label>
 
-          {/* Service Categories */}
-          {!loading && healthData?.categories && (
-            <>
-              <CategorySection
-                title="Agents"
-                icon={CATEGORY_ICONS.agents}
-                services={healthData.categories.agents.services}
-                overallStatus={healthData.categories.agents.status}
-              />
-              <CategorySection
-                title="Databases"
-                icon={CATEGORY_ICONS.databases}
-                services={healthData.categories.databases.services}
-                overallStatus={healthData.categories.databases.status}
-              />
-              <CategorySection
-                title="API Services"
-                icon={CATEGORY_ICONS.api}
-                services={healthData.categories.api.services}
-                overallStatus={healthData.categories.api.status}
-              />
-              <CategorySection
-                title="LLM Services"
-                icon={CATEGORY_ICONS.llm}
-                services={healthData.categories.llm.services}
-                overallStatus={healthData.categories.llm.status}
-              />
-              <CategorySection
-                title="Infrastructure"
-                icon={CATEGORY_ICONS.infrastructure}
-                services={healthData.categories.infrastructure.services}
-                overallStatus={healthData.categories.infrastructure.status}
-              />
-            </>
-          )}
-        </div>
+            {/* Manual refresh button */}
+            <button
+              onClick={() => fetchHealthData(true)}
+              disabled={refreshing}
+              className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)] disabled:opacity-50"
+              aria-label="Refresh health data"
+            >
+              <ArrowPathIcon className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-surface-100/50 dark:border-surface-700/30 bg-white/60 dark:bg-surface-800/50 backdrop-blur-sm flex items-center justify-between">
-          <p className="text-xs text-surface-500 dark:text-surface-400 flex items-center gap-1">
-            <BoltIcon className="w-3.5 h-3.5" />
-            Health checks run every 30 seconds when auto-refresh is enabled
-          </p>
-          <button
-            onClick={onClose}
-            className="px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
-          >
-            Close
-          </button>
+            {/* Close button */}
+            <button
+              onClick={onClose}
+              className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+              aria-label="Close modal"
+            >
+              <XMarkIcon className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
-    </div>,
-    document.body
+
+      {/* Content */}
+      <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+        {/* Overall Health Summary */}
+        <HealthSummary healthData={healthData} loading={loading} />
+
+        {/* Service Categories */}
+        {!loading && healthData?.categories && (
+          <>
+            <CategorySection
+              title="Agents"
+              icon={CATEGORY_ICONS.agents}
+              services={healthData.categories.agents.services}
+              overallStatus={healthData.categories.agents.status}
+            />
+            <CategorySection
+              title="Databases"
+              icon={CATEGORY_ICONS.databases}
+              services={healthData.categories.databases.services}
+              overallStatus={healthData.categories.databases.status}
+            />
+            <CategorySection
+              title="API Services"
+              icon={CATEGORY_ICONS.api}
+              services={healthData.categories.api.services}
+              overallStatus={healthData.categories.api.status}
+            />
+            <CategorySection
+              title="LLM Services"
+              icon={CATEGORY_ICONS.llm}
+              services={healthData.categories.llm.services}
+              overallStatus={healthData.categories.llm.status}
+            />
+            <CategorySection
+              title="Infrastructure"
+              icon={CATEGORY_ICONS.infrastructure}
+              services={healthData.categories.infrastructure.services}
+              overallStatus={healthData.categories.infrastructure.status}
+            />
+          </>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-surface-100/50 dark:border-surface-700/30 bg-white/60 dark:bg-surface-800/50 backdrop-blur-sm flex items-center justify-between">
+        <p className="text-xs text-surface-500 dark:text-surface-400 flex items-center gap-1">
+          <BoltIcon className="w-3.5 h-3.5" />
+          Health checks run every 30 seconds when auto-refresh is enabled
+        </p>
+        <button
+          onClick={onClose}
+          className="px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+        >
+          Close
+        </button>
+      </div>
+    </Modal>
   );
 }

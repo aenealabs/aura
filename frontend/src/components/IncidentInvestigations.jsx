@@ -23,6 +23,7 @@ import { PageSkeleton } from './ui/LoadingSkeleton';
 import { ProgressChart } from './ui/Charts';
 import { useToast } from './ui/Toast';
 import MetricCard from './ui/MetricCard';
+import Modal, { ModalTitle } from './shared/Modal';
 
 // Severity/Status styles
 const SEVERITY_STYLES = {
@@ -623,121 +624,125 @@ function NewIncidentModal({ isOpen, onClose, onSubmit }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white dark:bg-surface-800 rounded-2xl shadow-xl border border-surface-200 dark:border-surface-700 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-surface-200 dark:border-surface-700">
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="absolute bg-black/50 backdrop-blur-sm"
+      panelClassName="!max-w-lg bg-white dark:bg-surface-800 rounded-2xl shadow-xl border border-surface-200 dark:border-surface-700 !overflow-hidden"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between p-6 border-b border-surface-200 dark:border-surface-700">
+        <ModalTitle asChild>
           <h2 className="text-xl font-bold text-surface-900 dark:text-surface-100">
             New Incident
           </h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-          >
-            <XMarkIcon className="w-5 h-5 text-surface-500" />
-          </button>
+        </ModalTitle>
+        <button
+          onClick={onClose}
+          className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+        >
+          <XMarkIcon className="w-5 h-5 text-surface-500" />
+        </button>
+      </div>
+
+      {/* Form */}
+      <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Title *
+          </label>
+          <input
+            type="text"
+            required
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            placeholder="Brief description of the incident"
+            className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
+          />
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Description
+          </label>
+          <textarea
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            placeholder="Detailed description of what's happening..."
+            rows={3}
+            className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-              Title *
+              Severity *
+            </label>
+            <select
+              required
+              value={formData.severity}
+              onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
+              className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
+            >
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+              Affected Service *
             </label>
             <input
               type="text"
               required
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              placeholder="Brief description of the incident"
+              value={formData.affectedService}
+              onChange={(e) => setFormData({ ...formData, affectedService: e.target.value })}
+              placeholder="e.g., auth-service"
               className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
             />
           </div>
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-              Description
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Detailed description of what's happening..."
-              rows={3}
-              className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Source
+          </label>
+          <select
+            value={formData.source}
+            onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+            className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
+          >
+            <option value="Manual Entry">Manual Entry</option>
+            <option value="User Report">User Report</option>
+            <option value="CloudWatch Alarm">CloudWatch Alarm</option>
+            <option value="Prometheus Alert">Prometheus Alert</option>
+            <option value="Security Scanner">Security Scanner</option>
+          </select>
+        </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                Severity *
-              </label>
-              <select
-                required
-                value={formData.severity}
-                onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
-                className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
-              >
-                <option value="critical">Critical</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                Affected Service *
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.affectedService}
-                onChange={(e) => setFormData({ ...formData, affectedService: e.target.value })}
-                placeholder="e.g., auth-service"
-                className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-              Source
-            </label>
-            <select
-              value={formData.source}
-              onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-              className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
-            >
-              <option value="Manual Entry">Manual Entry</option>
-              <option value="User Report">User Report</option>
-              <option value="CloudWatch Alarm">CloudWatch Alarm</option>
-              <option value="Prometheus Alert">Prometheus Alert</option>
-              <option value="Security Scanner">Security Scanner</option>
-            </select>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 rounded-lg font-medium hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 px-4 py-2.5 bg-aura-500 hover:bg-aura-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
-            >
-              {isSubmitting ? 'Creating...' : 'Create Incident'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {/* Actions */}
+        <div className="flex gap-3 pt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 px-4 py-2.5 border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 rounded-lg font-medium hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex-1 px-4 py-2.5 bg-aura-500 hover:bg-aura-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+          >
+            {isSubmitting ? 'Creating...' : 'Create Incident'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -780,137 +785,141 @@ function CreateTicketModal({ isOpen, onClose, incident, onSubmit }) {
   if (!isOpen || !incident) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white dark:bg-surface-800 rounded-2xl shadow-xl border border-surface-200 dark:border-surface-700 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-surface-200 dark:border-surface-700">
-          <div>
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="absolute bg-black/50 backdrop-blur-sm"
+      panelClassName="!max-w-lg bg-white dark:bg-surface-800 rounded-2xl shadow-xl border border-surface-200 dark:border-surface-700 !overflow-hidden"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between p-6 border-b border-surface-200 dark:border-surface-700">
+        <div>
+          <ModalTitle asChild>
             <h2 className="text-xl font-bold text-surface-900 dark:text-surface-100">
               Create External Ticket
             </h2>
-            <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">
-              Export {incident.id} to external ticketing system
+          </ModalTitle>
+          <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">
+            Export {incident.id} to external ticketing system
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+        >
+          <XMarkIcon className="w-5 h-5 text-surface-500" />
+        </button>
+      </div>
+
+      {/* Incident Summary */}
+      <div className="px-6 py-4 bg-surface-50 dark:bg-surface-700/50 border-b border-surface-200 dark:border-surface-700">
+        <div className="flex items-start gap-3">
+          <div className={`p-2 rounded-lg ${SEVERITY_STYLES[incident.severity].bg}`}>
+            <ExclamationCircleIcon className={`w-5 h-5 ${incident.severity === 'critical' ? 'text-critical-600 dark:text-critical-400' : incident.severity === 'high' ? 'text-warning-600 dark:text-warning-400' : 'text-olive-600 dark:text-olive-400'}`} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-surface-900 dark:text-surface-100">
+              {incident.title}
+            </h3>
+            <p className="text-sm text-surface-500 dark:text-surface-400 line-clamp-2">
+              {incident.description}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-          >
-            <XMarkIcon className="w-5 h-5 text-surface-500" />
-          </button>
         </div>
+      </div>
 
-        {/* Incident Summary */}
-        <div className="px-6 py-4 bg-surface-50 dark:bg-surface-700/50 border-b border-surface-200 dark:border-surface-700">
-          <div className="flex items-start gap-3">
-            <div className={`p-2 rounded-lg ${SEVERITY_STYLES[incident.severity].bg}`}>
-              <ExclamationCircleIcon className={`w-5 h-5 ${incident.severity === 'critical' ? 'text-critical-600 dark:text-critical-400' : incident.severity === 'high' ? 'text-warning-600 dark:text-warning-400' : 'text-olive-600 dark:text-olive-400'}`} />
-            </div>
-            <div>
-              <h3 className="font-semibold text-surface-900 dark:text-surface-100">
-                {incident.title}
-              </h3>
-              <p className="text-sm text-surface-500 dark:text-surface-400 line-clamp-2">
-                {incident.description}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-              Ticketing System
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {ticketingSystems.map((system) => (
-                <button
-                  key={system.id}
-                  type="button"
-                  onClick={() => setFormData({ ...formData, ticketingSystem: system.id })}
-                  className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${
-                    formData.ticketingSystem === system.id
-                      ? 'border-aura-500 bg-aura-50 dark:bg-aura-900/20 text-aura-700 dark:text-aura-300'
-                      : 'border-surface-200 dark:border-surface-600 hover:border-surface-300 dark:hover:border-surface-500'
-                  }`}
-                >
-                  <span className="text-lg">{system.icon}</span>
-                  <span className="font-medium text-surface-900 dark:text-surface-100">{system.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                Priority
-              </label>
-              <select
-                value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
+      {/* Form */}
+      <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+            Ticketing System
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {ticketingSystems.map((system) => (
+              <button
+                key={system.id}
+                type="button"
+                onClick={() => setFormData({ ...formData, ticketingSystem: system.id })}
+                className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${
+                  formData.ticketingSystem === system.id
+                    ? 'border-aura-500 bg-aura-50 dark:bg-aura-900/20 text-aura-700 dark:text-aura-300'
+                    : 'border-surface-200 dark:border-surface-600 hover:border-surface-300 dark:hover:border-surface-500'
+                }`}
               >
-                <option value="urgent">Urgent</option>
-                <option value="high">High</option>
-                <option value="normal">Normal</option>
-                <option value="low">Low</option>
-              </select>
-              <p className="text-xs text-surface-500 mt-1">
-                Auto-mapped from {incident.severity} severity
-              </p>
-            </div>
+                <span className="text-lg">{system.icon}</span>
+                <span className="font-medium text-surface-900 dark:text-surface-100">{system.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                Assignee (Optional)
-              </label>
-              <input
-                type="text"
-                value={formData.assignee}
-                onChange={(e) => setFormData({ ...formData, assignee: e.target.value })}
-                placeholder="email@company.com"
-                className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
-              />
-            </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+              Priority
+            </label>
+            <select
+              value={formData.priority}
+              onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+              className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
+            >
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+              <option value="normal">Normal</option>
+              <option value="low">Low</option>
+            </select>
+            <p className="text-xs text-surface-500 mt-1">
+              Auto-mapped from {incident.severity} severity
+            </p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-              Additional Notes
+              Assignee (Optional)
             </label>
-            <textarea
-              value={formData.additionalNotes}
-              onChange={(e) => setFormData({ ...formData, additionalNotes: e.target.value })}
-              placeholder="Any additional context for the external team..."
-              rows={2}
-              className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
+            <input
+              type="text"
+              value={formData.assignee}
+              onChange={(e) => setFormData({ ...formData, assignee: e.target.value })}
+              placeholder="email@company.com"
+              className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
             />
           </div>
+        </div>
 
-          {/* Actions */}
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 rounded-lg font-medium hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-aura-500 hover:bg-aura-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
-            >
-              <ArrowTopRightOnSquareIcon className="w-4 h-4" />
-              {isSubmitting ? 'Creating...' : 'Create Ticket'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Additional Notes
+          </label>
+          <textarea
+            value={formData.additionalNotes}
+            onChange={(e) => setFormData({ ...formData, additionalNotes: e.target.value })}
+            placeholder="Any additional context for the external team..."
+            rows={2}
+            className="w-full px-4 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 pt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 px-4 py-2.5 border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 rounded-lg font-medium hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-aura-500 hover:bg-aura-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+          >
+            <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+            {isSubmitting ? 'Creating...' : 'Create Ticket'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

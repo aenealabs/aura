@@ -14,6 +14,7 @@ import {
   ExclamationTriangleIcon,
   CheckIcon,
 } from '@heroicons/react/24/outline';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 /**
  * Tool classification tiers with colors and descriptions
@@ -277,21 +278,20 @@ function EditPermissionsModal({ isOpen, onClose, agent, onSave }) {
   const criticalGranted = AVAILABLE_TOOLS.critical.filter(t => grantedTools.includes(t.id)).length;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 dark:bg-black/70 z-50"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="fixed inset-x-4 top-[10%] mx-auto max-w-lg bg-white dark:bg-surface-900 rounded-xl shadow-2xl z-50 flex flex-col max-h-[80vh]">
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50 dark:bg-black/70"
+      panelClassName="!top-[10%] !translate-y-0 bg-white dark:bg-surface-900 rounded-xl shadow-2xl flex flex-col !max-h-[80vh]"
+    >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-surface-200 dark:border-surface-700">
           <div>
+            <ModalTitle asChild>
             <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
-              Edit Permissions
-            </h2>
+                Edit Permissions
+              </h2>
+            </ModalTitle>
             <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
               {agent?.label || agent?.name || 'Agent'}
             </p>
@@ -363,8 +363,7 @@ function EditPermissionsModal({ isOpen, onClose, agent, onSave }) {
             )}
           </button>
         </div>
-      </div>
-    </>
+    </Modal>
   );
 }
 

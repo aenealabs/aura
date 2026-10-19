@@ -27,6 +27,7 @@ import {
 import { PageSkeleton } from './ui/LoadingSkeleton';
 import { useToast } from './ui/Toast';
 import MetricCard from './ui/MetricCard';
+import Modal, { ModalTitle } from './shared/Modal';
 
 // Severity styles
 const SEVERITY_STYLES = {
@@ -658,106 +659,109 @@ function NewCampaignModal({ isOpen, onClose, onCreate }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-surface-900/50 dark:bg-black/70 backdrop-blur-sm" onClick={onClose} />
-
-      <div className="relative bg-white dark:bg-surface-800 rounded-2xl shadow-modal w-full max-w-lg max-h-[90vh] overflow-hidden animate-scale-in">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="absolute bg-surface-900/50 dark:bg-black/70 backdrop-blur-sm"
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-modal !max-w-lg !max-h-[90vh] !overflow-hidden animate-scale-in"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+        <ModalTitle asChild>
           <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
             New Attack Campaign
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg">
-            <XMarkIcon className="w-5 h-5 text-surface-500" />
-          </button>
+        </ModalTitle>
+        <button onClick={onClose} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg">
+          <XMarkIcon className="w-5 h-5 text-surface-500" />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+            Campaign Name *
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., API Security Assessment"
+            className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
+          />
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-              Campaign Name *
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., API Security Assessment"
-              className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the campaign objectives..."
-              rows={2}
-              className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-              Target System *
-            </label>
-            <input
-              type="text"
-              value={targetSystem}
-              onChange={(e) => setTargetSystem(e.target.value)}
-              placeholder="e.g., core-api-service"
-              className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-              Attack Templates *
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {Object.entries(ATTACK_TEMPLATES).map(([key, config]) => (
-                <button
-                  key={key}
-                  onClick={() => toggleTemplate(key)}
-                  className={`
-                    flex items-center gap-2 p-3 rounded-lg border-2 text-left transition-all
-                    ${selectedTemplates.includes(key)
-                      ? 'border-aura-500 bg-aura-50 dark:bg-aura-900/20'
-                      : 'border-surface-200 dark:border-surface-700 hover:border-surface-300 dark:hover:border-surface-600'
-                    }
-                  `}
-                >
-                  <config.icon className={`w-5 h-5 ${config.color}`} />
-                  <span className="text-sm font-medium text-surface-700 dark:text-surface-300">
-                    {config.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+            Description
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Describe the campaign objectives..."
+            rows={2}
+            className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
+          />
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg font-medium transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleCreate}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-          >
-            <PlayIcon className="w-4 h-4" />
-            Launch Campaign
-          </button>
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+            Target System *
+          </label>
+          <input
+            type="text"
+            value={targetSystem}
+            onChange={(e) => setTargetSystem(e.target.value)}
+            placeholder="e.g., core-api-service"
+            className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+            Attack Templates *
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(ATTACK_TEMPLATES).map(([key, config]) => (
+              <button
+                key={key}
+                onClick={() => toggleTemplate(key)}
+                className={`
+                  flex items-center gap-2 p-3 rounded-lg border-2 text-left transition-all
+                  ${selectedTemplates.includes(key)
+                    ? 'border-aura-500 bg-aura-50 dark:bg-aura-900/20'
+                    : 'border-surface-200 dark:border-surface-700 hover:border-surface-300 dark:hover:border-surface-600'
+                  }
+                `}
+              >
+                <config.icon className={`w-5 h-5 ${config.color}`} />
+                <span className="text-sm font-medium text-surface-700 dark:text-surface-300">
+                  {config.label}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg font-medium transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleCreate}
+          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+        >
+          <PlayIcon className="w-4 h-4" />
+          Launch Campaign
+        </button>
+      </div>
+    </Modal>
   );
 }
 

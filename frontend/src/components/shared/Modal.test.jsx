@@ -68,4 +68,30 @@ describe('Modal', () => {
     await user.click(screen.getByRole('button', { name: 'Done' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  test('a dialog opened from inside another stacks: Escape closes only the inner one', async () => {
+    const user = userEvent.setup();
+    function Nested() {
+      const [inner, setInner] = useState(false);
+      return (
+        <Modal open onClose={() => {}}>
+          <ModalTitle>Capability details</ModalTitle>
+          <button onClick={() => setInner(true)}>Edit permissions</button>
+          <Modal open={inner} onClose={() => setInner(false)}>
+            <ModalTitle>Edit permissions</ModalTitle>
+            <input aria-label="Permission" />
+          </Modal>
+        </Modal>
+      );
+    }
+    render(<Nested />);
+    await user.click(screen.getByRole('button', { name: 'Edit permissions' }));
+    const innerDialog = screen.getByRole('dialog', { name: 'Edit permissions' });
+    await user.click(screen.getByRole('textbox', { name: 'Permission' }));
+    expect(innerDialog).toBeInTheDocument(); // clicking inside the inner dialog keeps it open
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Edit permissions' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Capability details' })).toBeInTheDocument();
+  });
 });
+

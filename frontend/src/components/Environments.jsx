@@ -30,6 +30,7 @@ import {
   getUserQuota,
   EnvironmentsApiError,
 } from '../services/environmentsApi';
+import Modal, { ModalTitle } from './shared/Modal';
 
 // Status styles following design system
 const STATUS_STYLES = {
@@ -566,467 +567,456 @@ function CreateEnvironmentModal({ isOpen, onClose, templates, quota, onCreate })
   const canSubmit = selectedTemplate && displayName.trim().length >= 3;
 
   return (
-    <div
-      className="fixed inset-0 z-50 overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="create-env-title"
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/40 backdrop-blur-sm transition-opacity"
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-2xl !max-w-3xl !max-h-[90vh] !overflow-hidden transition-all"
     >
-      <div className="flex min-h-screen items-center justify-center p-4">
-        {/* Backdrop with blur */}
-        <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-          onClick={onClose}
-          aria-hidden="true"
-        />
 
-        {/* Modal container */}
-        <div className="relative bg-white dark:bg-surface-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden transform transition-all">
+      {/* Header with step indicator */}
+      <div className="px-8 pt-6 pb-4 border-b border-surface-100 dark:border-surface-700/50">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <ModalTitle asChild>
+              <h2
+                className="text-xl font-semibold text-surface-900 dark:text-surface-100"
+              >
+                Create Sandbox
+              </h2>
+            </ModalTitle>
+            <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">
+              {step === 1 ? 'Choose a template and spin up in under 5 minutes' : 'Configure your sandbox settings'}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full text-surface-400 hover:text-surface-600 hover:bg-surface-100 dark:hover:text-surface-300 dark:hover:bg-surface-700 transition-colors"
+            aria-label="Close modal"
+          >
+            <XCircleIcon className="w-6 h-6" />
+          </button>
+        </div>
 
-          {/* Header with step indicator */}
-          <div className="px-8 pt-6 pb-4 border-b border-surface-100 dark:border-surface-700/50">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2
-                  id="create-env-title"
-                  className="text-xl font-semibold text-surface-900 dark:text-surface-100"
+        {/* Step indicator */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className={`
+              w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
+              ${step >= 1
+                ? 'bg-aura-500 text-white'
+                : 'bg-surface-200 dark:bg-surface-600 text-surface-500 dark:text-surface-400'}
+            `}>
+              1
+            </div>
+            <span className={`text-sm font-medium ${step >= 1 ? 'text-surface-900 dark:text-surface-100' : 'text-surface-400'}`}>
+              Template
+            </span>
+          </div>
+          <div className={`flex-1 h-0.5 ${step >= 2 ? 'bg-aura-500' : 'bg-surface-200 dark:bg-surface-600'}`} />
+          <div className="flex items-center gap-2">
+            <div className={`
+              w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
+              ${step >= 2
+                ? 'bg-aura-500 text-white'
+                : 'bg-surface-200 dark:bg-surface-600 text-surface-500 dark:text-surface-400'}
+            `}>
+              2
+            </div>
+            <span className={`text-sm font-medium ${step >= 2 ? 'text-surface-900 dark:text-surface-100' : 'text-surface-400'}`}>
+              Configure
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Quota warning */}
+      {!canCreate && (
+        <div className="mx-8 mt-6 p-4 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl">
+          <div className="flex items-start gap-3">
+            <ExclamationTriangleIcon className="w-5 h-5 text-warning-600 dark:text-warning-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-warning-800 dark:text-warning-300">Quota Exceeded</p>
+              <p className="text-sm text-warning-700 dark:text-warning-400 mt-0.5">
+                You have reached your concurrent sandbox limit ({quota.concurrent_limit}). Terminate an existing sandbox to create a new one.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content area with smooth transitions */}
+      <div className="p-8 overflow-y-auto max-h-[calc(90vh-280px)]">
+
+        {/* Step 1: Template Selection */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <p className="text-sm text-surface-600 dark:text-surface-400 mb-6">
+              Select the environment template that best fits your testing needs.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {templates.map((template) => {
+                const metadata = getTemplateMetadata(template);
+                const TemplateIcon = metadata.icon || BeakerIcon;
+                const isSelected = selectedTemplate?.template_id === template.template_id;
+
+                return (
+                  <button
+                    key={template.template_id}
+                    type="button"
+                    onClick={() => handleTemplateSelect(template)}
+                    disabled={!canCreate}
+                    className={`
+                      relative p-5 rounded-xl border-2 text-left transition-all duration-200
+                      focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-surface-800
+                      ${isSelected
+                        ? `${metadata.borderSelected} bg-white dark:bg-surface-800 backdrop-blur-xl ring-4`
+                        : 'border-surface-200/50 dark:border-surface-700/30 bg-white dark:bg-surface-800 backdrop-blur-xl shadow-[var(--shadow-glass)] hover:shadow-[var(--shadow-glass-hover)]'
+                      }
+                      ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                    `}
+                    aria-pressed={isSelected}
+                    aria-label={`Select ${template.name} template`}
+                  >
+                    {/* Selection checkmark */}
+                    {isSelected && (
+                      <div className="absolute top-3 right-3">
+                        <CheckCircleIcon className="w-6 h-6 text-aura-500" />
+                      </div>
+                    )}
+
+                    {/* Icon and title */}
+                    <div className="flex items-start gap-4">
+                      <div className={`p-3 rounded-xl ${metadata.iconBg}`}>
+                        <TemplateIcon className={`w-6 h-6 ${metadata.iconColor}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-surface-900 dark:text-surface-100">
+                            {template.name}
+                          </h3>
+                          {template.requires_approval && (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-400 rounded-full">
+                              HITL
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-surface-500 dark:text-surface-400 mb-3 line-clamp-2">
+                          {template.description}
+                        </p>
+
+                        {/* Template metadata */}
+                        <div className="flex flex-wrap items-center gap-3 text-xs">
+                          <span className="flex items-center gap-1 text-surface-500 dark:text-surface-400">
+                            <ClockIcon className="w-3.5 h-3.5" />
+                            {metadata.spinUpTime || `~${Math.ceil(template.default_ttl_hours / 4)} min`}
+                          </span>
+                          <span className="flex items-center gap-1 text-surface-500 dark:text-surface-400">
+                            <CurrencyDollarIcon className="w-3.5 h-3.5" />
+                            ${template.cost_per_day?.toFixed(2) || '0.00'}/day
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full font-medium ${TYPE_STYLES[template.environment_type]?.badge || 'bg-surface-100 text-surface-600'}`}>
+                            {TYPE_STYLES[template.environment_type]?.label || template.environment_type}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Resources preview */}
+                    {template.resources && template.resources.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-surface-200 dark:border-surface-600/50">
+                        <div className="flex flex-wrap gap-1.5">
+                          {template.resources.slice(0, 4).map((resource, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400 rounded text-xs"
+                            >
+                              {resource}
+                            </span>
+                          ))}
+                          {template.resources.length > 4 && (
+                            <span className="px-2 py-0.5 text-surface-400 text-xs">
+                              +{template.resources.length - 4} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Empty state if no templates */}
+            {templates.length === 0 && (
+              <div className="text-center py-12">
+                <BeakerIcon className="w-12 h-12 mx-auto text-surface-300 dark:text-surface-600 mb-4" />
+                <h3 className="text-lg font-medium text-surface-900 dark:text-surface-100 mb-2">
+                  No templates available
+                </h3>
+                <p className="text-sm text-surface-500 dark:text-surface-400">
+                  Contact your administrator to configure environment templates.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 2: Configuration */}
+        {step === 2 && selectedTemplate && (
+          <div className="space-y-8">
+            {/* Selected template summary */}
+            <div className="flex items-center gap-4 p-4 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
+              {(() => {
+                const metadata = getTemplateMetadata(selectedTemplate);
+                const TemplateIcon = metadata.icon || BeakerIcon;
+                return (
+                  <>
+                    <div className={`p-3 rounded-xl ${metadata.iconBg}`}>
+                      <TemplateIcon className={`w-5 h-5 ${metadata.iconColor}`} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-surface-900 dark:text-surface-100">
+                        {selectedTemplate.name}
+                      </p>
+                      <p className="text-sm text-surface-500 dark:text-surface-400">
+                        {TYPE_STYLES[selectedTemplate.environment_type]?.description || selectedTemplate.environment_type}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setStep(1)}
+                      className="text-sm font-medium text-aura-600 dark:text-aura-400 hover:text-aura-700 dark:hover:text-aura-300"
+                    >
+                      Change
+                    </button>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Environment Name */}
+            <div>
+              <label
+                htmlFor="env-name"
+                className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2"
+              >
+                Environment Name <span className="text-critical-500">*</span>
+              </label>
+              <input
+                id="env-name"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="e.g., API Integration Tests"
+                className="w-full px-4 py-3 rounded-xl border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 dark:placeholder-surface-500 focus:ring-2 focus:ring-aura-500 focus:border-transparent transition-colors"
+                maxLength={100}
+                aria-required="true"
+                aria-describedby="env-name-hint"
+              />
+              <p id="env-name-hint" className="mt-1.5 text-xs text-surface-500 dark:text-surface-400">
+                A descriptive name to identify this environment (minimum 3 characters)
+              </p>
+            </div>
+
+            {/* Duration Selection */}
+            <div>
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-3">
+                Duration / TTL
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                {DURATION_OPTIONS.filter(d => d.value <= (selectedTemplate.max_ttl_hours || 168)).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setSelectedDuration(option.value)}
+                    className={`
+                      p-3 rounded-xl border-2 text-center transition-all duration-150
+                      focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2
+                      ${selectedDuration === option.value
+                        ? 'border-aura-500 bg-aura-50 dark:bg-aura-900/30'
+                        : 'border-surface-200 dark:border-surface-600 hover:border-surface-300 dark:hover:border-surface-500'
+                      }
+                    `}
+                    aria-pressed={selectedDuration === option.value}
+                  >
+                    <span className={`block text-sm font-semibold ${selectedDuration === option.value ? 'text-aura-700 dark:text-aura-300' : 'text-surface-900 dark:text-surface-100'}`}>
+                      {option.label}
+                    </span>
+                    <span className="block text-xs text-surface-500 dark:text-surface-400 mt-0.5">
+                      {option.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Resource Tier */}
+            <div>
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-3">
+                Resource Tier
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {RESOURCE_TIERS.map((tier) => (
+                  <button
+                    key={tier.id}
+                    type="button"
+                    onClick={() => setSelectedTier(tier.id)}
+                    className={`
+                      p-4 rounded-xl border-2 text-center transition-all duration-150
+                      focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2
+                      ${selectedTier === tier.id
+                        ? 'border-aura-500 bg-aura-50 dark:bg-aura-900/30'
+                        : 'border-surface-200 dark:border-surface-600 hover:border-surface-300 dark:hover:border-surface-500'
+                      }
+                    `}
+                    aria-pressed={selectedTier === tier.id}
+                  >
+                    <span className={`
+                      inline-flex items-center justify-center w-10 h-10 rounded-full mb-2 text-lg font-bold
+                      ${selectedTier === tier.id
+                        ? 'bg-aura-500 text-white'
+                        : 'bg-surface-100 dark:bg-surface-600 text-surface-600 dark:text-surface-300'}
+                    `}>
+                      {tier.icon}
+                    </span>
+                    <span className={`block text-sm font-semibold ${selectedTier === tier.id ? 'text-aura-700 dark:text-aura-300' : 'text-surface-900 dark:text-surface-100'}`}>
+                      {tier.name}
+                    </span>
+                    <span className="block text-xs text-surface-500 dark:text-surface-400 mt-0.5">
+                      {tier.description}
+                    </span>
+                    {tier.costMultiplier > 1 && (
+                      <span className="block text-xs text-aura-600 dark:text-aura-400 mt-1 font-medium">
+                        {tier.costMultiplier}x cost
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Auto-shutdown toggle */}
+            <div className="flex items-center justify-between p-4 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
+              <div className="flex-1">
+                <label
+                  htmlFor="auto-shutdown"
+                  className="block text-sm font-medium text-surface-900 dark:text-surface-100"
                 >
-                  Create Sandbox
-                </h2>
-                <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">
-                  {step === 1 ? 'Choose a template and spin up in under 5 minutes' : 'Configure your sandbox settings'}
+                  Auto-shutdown on inactivity
+                </label>
+                <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
+                  Automatically terminate after 4 hours of inactivity to save costs
                 </p>
               </div>
               <button
-                onClick={onClose}
-                className="p-2 rounded-full text-surface-400 hover:text-surface-600 hover:bg-surface-100 dark:hover:text-surface-300 dark:hover:bg-surface-700 transition-colors"
-                aria-label="Close modal"
+                id="auto-shutdown"
+                type="button"
+                role="switch"
+                aria-checked={autoShutdown}
+                onClick={() => setAutoShutdown(!autoShutdown)}
+                className={`
+                  relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200
+                  focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2
+                  ${autoShutdown ? 'bg-aura-500' : 'bg-surface-300 dark:bg-surface-600'}
+                `}
               >
-                <XCircleIcon className="w-6 h-6" />
+                <span
+                  className={`
+                    inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform duration-200
+                    ${autoShutdown ? 'translate-x-6' : 'translate-x-1'}
+                  `}
+                />
               </button>
             </div>
-
-            {/* Step indicator */}
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <div className={`
-                  w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
-                  ${step >= 1
-                    ? 'bg-aura-500 text-white'
-                    : 'bg-surface-200 dark:bg-surface-600 text-surface-500 dark:text-surface-400'}
-                `}>
-                  1
-                </div>
-                <span className={`text-sm font-medium ${step >= 1 ? 'text-surface-900 dark:text-surface-100' : 'text-surface-400'}`}>
-                  Template
-                </span>
-              </div>
-              <div className={`flex-1 h-0.5 ${step >= 2 ? 'bg-aura-500' : 'bg-surface-200 dark:bg-surface-600'}`} />
-              <div className="flex items-center gap-2">
-                <div className={`
-                  w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
-                  ${step >= 2
-                    ? 'bg-aura-500 text-white'
-                    : 'bg-surface-200 dark:bg-surface-600 text-surface-500 dark:text-surface-400'}
-                `}>
-                  2
-                </div>
-                <span className={`text-sm font-medium ${step >= 2 ? 'text-surface-900 dark:text-surface-100' : 'text-surface-400'}`}>
-                  Configure
-                </span>
-              </div>
-            </div>
           </div>
+        )}
+      </div>
 
-          {/* Quota warning */}
-          {!canCreate && (
-            <div className="mx-8 mt-6 p-4 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl">
-              <div className="flex items-start gap-3">
-                <ExclamationTriangleIcon className="w-5 h-5 text-warning-600 dark:text-warning-400 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-medium text-warning-800 dark:text-warning-300">Quota Exceeded</p>
-                  <p className="text-sm text-warning-700 dark:text-warning-400 mt-0.5">
-                    You have reached your concurrent sandbox limit ({quota.concurrent_limit}). Terminate an existing sandbox to create a new one.
-                  </p>
-                </div>
+      {/* Footer with cost preview and actions */}
+      <div className="px-8 py-5 border-t border-surface-100 dark:border-surface-700/50 bg-surface-50 dark:bg-surface-800/50">
+        <div className="flex items-center justify-between">
+          {/* Cost preview */}
+          {step === 2 && selectedTemplate && (
+            <div className="flex items-center gap-6">
+              <div>
+                <p className="text-xs text-surface-500 dark:text-surface-400 uppercase tracking-wide">Estimated Cost</p>
+                <p className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+                  ${totalCost.toFixed(2)}
+                  <span className="text-sm font-normal text-surface-500 dark:text-surface-400 ml-1">
+                    for {duration}h
+                  </span>
+                </p>
+              </div>
+              <div className="h-8 w-px bg-surface-200 dark:bg-surface-600" />
+              <div>
+                <p className="text-xs text-surface-500 dark:text-surface-400 uppercase tracking-wide">Daily Rate</p>
+                <p className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+                  ${dailyCost.toFixed(2)}
+                  <span className="text-sm font-normal text-surface-500 dark:text-surface-400 ml-1">/day</span>
+                </p>
               </div>
             </div>
           )}
 
-          {/* Content area with smooth transitions */}
-          <div className="p-8 overflow-y-auto max-h-[calc(90vh-280px)]">
-
-            {/* Step 1: Template Selection */}
-            {step === 1 && (
-              <div className="space-y-4">
-                <p className="text-sm text-surface-600 dark:text-surface-400 mb-6">
-                  Select the environment template that best fits your testing needs.
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {templates.map((template) => {
-                    const metadata = getTemplateMetadata(template);
-                    const TemplateIcon = metadata.icon || BeakerIcon;
-                    const isSelected = selectedTemplate?.template_id === template.template_id;
-
-                    return (
-                      <button
-                        key={template.template_id}
-                        type="button"
-                        onClick={() => handleTemplateSelect(template)}
-                        disabled={!canCreate}
-                        className={`
-                          relative p-5 rounded-xl border-2 text-left transition-all duration-200
-                          focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-surface-800
-                          ${isSelected
-                            ? `${metadata.borderSelected} bg-white dark:bg-surface-800 backdrop-blur-xl ring-4`
-                            : 'border-surface-200/50 dark:border-surface-700/30 bg-white dark:bg-surface-800 backdrop-blur-xl shadow-[var(--shadow-glass)] hover:shadow-[var(--shadow-glass-hover)]'
-                          }
-                          ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-                        `}
-                        aria-pressed={isSelected}
-                        aria-label={`Select ${template.name} template`}
-                      >
-                        {/* Selection checkmark */}
-                        {isSelected && (
-                          <div className="absolute top-3 right-3">
-                            <CheckCircleIcon className="w-6 h-6 text-aura-500" />
-                          </div>
-                        )}
-
-                        {/* Icon and title */}
-                        <div className="flex items-start gap-4">
-                          <div className={`p-3 rounded-xl ${metadata.iconBg}`}>
-                            <TemplateIcon className={`w-6 h-6 ${metadata.iconColor}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-semibold text-surface-900 dark:text-surface-100">
-                                {template.name}
-                              </h3>
-                              {template.requires_approval && (
-                                <span className="px-2 py-0.5 text-xs font-medium bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-400 rounded-full">
-                                  HITL
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-surface-500 dark:text-surface-400 mb-3 line-clamp-2">
-                              {template.description}
-                            </p>
-
-                            {/* Template metadata */}
-                            <div className="flex flex-wrap items-center gap-3 text-xs">
-                              <span className="flex items-center gap-1 text-surface-500 dark:text-surface-400">
-                                <ClockIcon className="w-3.5 h-3.5" />
-                                {metadata.spinUpTime || `~${Math.ceil(template.default_ttl_hours / 4)} min`}
-                              </span>
-                              <span className="flex items-center gap-1 text-surface-500 dark:text-surface-400">
-                                <CurrencyDollarIcon className="w-3.5 h-3.5" />
-                                ${template.cost_per_day?.toFixed(2) || '0.00'}/day
-                              </span>
-                              <span className={`px-2 py-0.5 rounded-full font-medium ${TYPE_STYLES[template.environment_type]?.badge || 'bg-surface-100 text-surface-600'}`}>
-                                {TYPE_STYLES[template.environment_type]?.label || template.environment_type}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Resources preview */}
-                        {template.resources && template.resources.length > 0 && (
-                          <div className="mt-4 pt-4 border-t border-surface-200 dark:border-surface-600/50">
-                            <div className="flex flex-wrap gap-1.5">
-                              {template.resources.slice(0, 4).map((resource, idx) => (
-                                <span
-                                  key={idx}
-                                  className="px-2 py-0.5 bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400 rounded text-xs"
-                                >
-                                  {resource}
-                                </span>
-                              ))}
-                              {template.resources.length > 4 && (
-                                <span className="px-2 py-0.5 text-surface-400 text-xs">
-                                  +{template.resources.length - 4} more
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Empty state if no templates */}
-                {templates.length === 0 && (
-                  <div className="text-center py-12">
-                    <BeakerIcon className="w-12 h-12 mx-auto text-surface-300 dark:text-surface-600 mb-4" />
-                    <h3 className="text-lg font-medium text-surface-900 dark:text-surface-100 mb-2">
-                      No templates available
-                    </h3>
-                    <p className="text-sm text-surface-500 dark:text-surface-400">
-                      Contact your administrator to configure environment templates.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Step 2: Configuration */}
-            {step === 2 && selectedTemplate && (
-              <div className="space-y-8">
-                {/* Selected template summary */}
-                <div className="flex items-center gap-4 p-4 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
-                  {(() => {
-                    const metadata = getTemplateMetadata(selectedTemplate);
-                    const TemplateIcon = metadata.icon || BeakerIcon;
-                    return (
-                      <>
-                        <div className={`p-3 rounded-xl ${metadata.iconBg}`}>
-                          <TemplateIcon className={`w-5 h-5 ${metadata.iconColor}`} />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-surface-900 dark:text-surface-100">
-                            {selectedTemplate.name}
-                          </p>
-                          <p className="text-sm text-surface-500 dark:text-surface-400">
-                            {TYPE_STYLES[selectedTemplate.environment_type]?.description || selectedTemplate.environment_type}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => setStep(1)}
-                          className="text-sm font-medium text-aura-600 dark:text-aura-400 hover:text-aura-700 dark:hover:text-aura-300"
-                        >
-                          Change
-                        </button>
-                      </>
-                    );
-                  })()}
-                </div>
-
-                {/* Environment Name */}
-                <div>
-                  <label
-                    htmlFor="env-name"
-                    className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2"
-                  >
-                    Environment Name <span className="text-critical-500">*</span>
-                  </label>
-                  <input
-                    id="env-name"
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="e.g., API Integration Tests"
-                    className="w-full px-4 py-3 rounded-xl border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 placeholder-surface-400 dark:placeholder-surface-500 focus:ring-2 focus:ring-aura-500 focus:border-transparent transition-colors"
-                    maxLength={100}
-                    aria-required="true"
-                    aria-describedby="env-name-hint"
-                  />
-                  <p id="env-name-hint" className="mt-1.5 text-xs text-surface-500 dark:text-surface-400">
-                    A descriptive name to identify this environment (minimum 3 characters)
-                  </p>
-                </div>
-
-                {/* Duration Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-3">
-                    Duration / TTL
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-                    {DURATION_OPTIONS.filter(d => d.value <= (selectedTemplate.max_ttl_hours || 168)).map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setSelectedDuration(option.value)}
-                        className={`
-                          p-3 rounded-xl border-2 text-center transition-all duration-150
-                          focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2
-                          ${selectedDuration === option.value
-                            ? 'border-aura-500 bg-aura-50 dark:bg-aura-900/30'
-                            : 'border-surface-200 dark:border-surface-600 hover:border-surface-300 dark:hover:border-surface-500'
-                          }
-                        `}
-                        aria-pressed={selectedDuration === option.value}
-                      >
-                        <span className={`block text-sm font-semibold ${selectedDuration === option.value ? 'text-aura-700 dark:text-aura-300' : 'text-surface-900 dark:text-surface-100'}`}>
-                          {option.label}
-                        </span>
-                        <span className="block text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-                          {option.description}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Resource Tier */}
-                <div>
-                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-3">
-                    Resource Tier
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {RESOURCE_TIERS.map((tier) => (
-                      <button
-                        key={tier.id}
-                        type="button"
-                        onClick={() => setSelectedTier(tier.id)}
-                        className={`
-                          p-4 rounded-xl border-2 text-center transition-all duration-150
-                          focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2
-                          ${selectedTier === tier.id
-                            ? 'border-aura-500 bg-aura-50 dark:bg-aura-900/30'
-                            : 'border-surface-200 dark:border-surface-600 hover:border-surface-300 dark:hover:border-surface-500'
-                          }
-                        `}
-                        aria-pressed={selectedTier === tier.id}
-                      >
-                        <span className={`
-                          inline-flex items-center justify-center w-10 h-10 rounded-full mb-2 text-lg font-bold
-                          ${selectedTier === tier.id
-                            ? 'bg-aura-500 text-white'
-                            : 'bg-surface-100 dark:bg-surface-600 text-surface-600 dark:text-surface-300'}
-                        `}>
-                          {tier.icon}
-                        </span>
-                        <span className={`block text-sm font-semibold ${selectedTier === tier.id ? 'text-aura-700 dark:text-aura-300' : 'text-surface-900 dark:text-surface-100'}`}>
-                          {tier.name}
-                        </span>
-                        <span className="block text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-                          {tier.description}
-                        </span>
-                        {tier.costMultiplier > 1 && (
-                          <span className="block text-xs text-aura-600 dark:text-aura-400 mt-1 font-medium">
-                            {tier.costMultiplier}x cost
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Auto-shutdown toggle */}
-                <div className="flex items-center justify-between p-4 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
-                  <div className="flex-1">
-                    <label
-                      htmlFor="auto-shutdown"
-                      className="block text-sm font-medium text-surface-900 dark:text-surface-100"
-                    >
-                      Auto-shutdown on inactivity
-                    </label>
-                    <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-                      Automatically terminate after 4 hours of inactivity to save costs
-                    </p>
-                  </div>
-                  <button
-                    id="auto-shutdown"
-                    type="button"
-                    role="switch"
-                    aria-checked={autoShutdown}
-                    onClick={() => setAutoShutdown(!autoShutdown)}
-                    className={`
-                      relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200
-                      focus:outline-none focus:ring-2 focus:ring-aura-500 focus:ring-offset-2
-                      ${autoShutdown ? 'bg-aura-500' : 'bg-surface-300 dark:bg-surface-600'}
-                    `}
-                  >
-                    <span
-                      className={`
-                        inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform duration-200
-                        ${autoShutdown ? 'translate-x-6' : 'translate-x-1'}
-                      `}
-                    />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Footer with cost preview and actions */}
-          <div className="px-8 py-5 border-t border-surface-100 dark:border-surface-700/50 bg-surface-50 dark:bg-surface-800/50">
-            <div className="flex items-center justify-between">
-              {/* Cost preview */}
-              {step === 2 && selectedTemplate && (
-                <div className="flex items-center gap-6">
-                  <div>
-                    <p className="text-xs text-surface-500 dark:text-surface-400 uppercase tracking-wide">Estimated Cost</p>
-                    <p className="text-lg font-semibold text-surface-900 dark:text-surface-100">
-                      ${totalCost.toFixed(2)}
-                      <span className="text-sm font-normal text-surface-500 dark:text-surface-400 ml-1">
-                        for {duration}h
-                      </span>
-                    </p>
-                  </div>
-                  <div className="h-8 w-px bg-surface-200 dark:bg-surface-600" />
-                  <div>
-                    <p className="text-xs text-surface-500 dark:text-surface-400 uppercase tracking-wide">Daily Rate</p>
-                    <p className="text-lg font-semibold text-surface-900 dark:text-surface-100">
-                      ${dailyCost.toFixed(2)}
-                      <span className="text-sm font-normal text-surface-500 dark:text-surface-400 ml-1">/day</span>
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {step === 1 && (
-                <div className="flex items-center gap-2 text-sm text-surface-500 dark:text-surface-400">
-                  <CheckCircleIcon className="w-4 h-4" />
-                  <span>
-                    {quota.available} of {quota.concurrent_limit} slots available
-                  </span>
-                </div>
-              )}
-
-              {/* Action buttons */}
-              <div className="flex items-center gap-3">
-                {step === 2 && (
-                  <button
-                    onClick={() => setStep(1)}
-                    className="px-5 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl transition-colors"
-                  >
-                    Back
-                  </button>
-                )}
-                <button
-                  onClick={onClose}
-                  className="px-5 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl transition-colors"
-                >
-                  Cancel
-                </button>
-
-                {step === 1 ? (
-                  <button
-                    onClick={() => setStep(2)}
-                    disabled={!canProceedToStep2 || !canCreate}
-                    className="px-5 py-2.5 text-sm font-medium bg-aura-500 text-white rounded-xl hover:bg-aura-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                  >
-                    Continue
-                    <ChevronRightIcon className="w-4 h-4" />
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleCreate}
-                    disabled={!canSubmit || isCreating || !canCreate}
-                    className="px-5 py-2.5 text-sm font-medium bg-aura-500 text-white rounded-xl hover:bg-aura-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                  >
-                    {isCreating ? (
-                      <>
-                        <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <PlusIcon className="w-4 h-4" />
-                        Create Sandbox
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
+          {step === 1 && (
+            <div className="flex items-center gap-2 text-sm text-surface-500 dark:text-surface-400">
+              <CheckCircleIcon className="w-4 h-4" />
+              <span>
+                {quota.available} of {quota.concurrent_limit} slots available
+              </span>
             </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-3">
+            {step === 2 && (
+              <button
+                onClick={() => setStep(1)}
+                className="px-5 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl transition-colors"
+              >
+                Back
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl transition-colors"
+            >
+              Cancel
+            </button>
+
+            {step === 1 ? (
+              <button
+                onClick={() => setStep(2)}
+                disabled={!canProceedToStep2 || !canCreate}
+                className="px-5 py-2.5 text-sm font-medium bg-aura-500 text-white rounded-xl hover:bg-aura-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                Continue
+                <ChevronRightIcon className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={handleCreate}
+                disabled={!canSubmit || isCreating || !canCreate}
+                className="px-5 py-2.5 text-sm font-medium bg-aura-500 text-white rounded-xl hover:bg-aura-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                {isCreating ? (
+                  <>
+                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <PlusIcon className="w-4 h-4" />
+                    Create Sandbox
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1384,88 +1374,89 @@ function ExtendTTLModal({ isOpen, onClose, environment, onExtend }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <div className="fixed inset-0 bg-black/50 transition-opacity" onClick={onClose} />
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50 transition-opacity"
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-xl !max-w-md"
+    >
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+        <ModalTitle asChild>
+          <h2 className="text-xl font-semibold text-surface-900 dark:text-surface-100">
+            Extend Environment TTL
+          </h2>
+        </ModalTitle>
+        <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">
+          Extend the lifetime of "{environment.display_name}"
+        </p>
+      </div>
 
-        <div className="relative bg-white dark:bg-surface-800 rounded-2xl shadow-xl max-w-md w-full">
-          {/* Header */}
-          <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700">
-            <h2 className="text-xl font-semibold text-surface-900 dark:text-surface-100">
-              Extend Environment TTL
-            </h2>
-            <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">
-              Extend the lifetime of "{environment.display_name}"
-            </p>
+      {/* Content */}
+      <div className="p-6 space-y-4">
+        {error && (
+          <div className="p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
+            <p className="text-sm text-critical-700 dark:text-critical-400">{error}</p>
           </div>
+        )}
 
-          {/* Content */}
-          <div className="p-6 space-y-4">
-            {error && (
-              <div className="p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
-                <p className="text-sm text-critical-700 dark:text-critical-400">{error}</p>
-              </div>
-            )}
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Additional Hours
+          </label>
+          <input
+            type="number"
+            value={hours}
+            onChange={(e) => setHours(Math.max(1, Math.min(168, parseInt(e.target.value) || 1)))}
+            min={1}
+            max={168}
+            className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
+          />
+          <p className="text-xs text-surface-500 mt-1">Max 168 hours (7 days)</p>
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                Additional Hours
-              </label>
-              <input
-                type="number"
-                value={hours}
-                onChange={(e) => setHours(Math.max(1, Math.min(168, parseInt(e.target.value) || 1)))}
-                min={1}
-                max={168}
-                className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent"
-              />
-              <p className="text-xs text-surface-500 mt-1">Max 168 hours (7 days)</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                Reason (Optional)
-              </label>
-              <textarea
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Why do you need more time?"
-                rows={3}
-                maxLength={500}
-                className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
-              />
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 flex justify-end gap-3">
-            <button
-              onClick={onClose}
-              disabled={isExtending}
-              className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={isExtending}
-              className="px-4 py-2 text-sm font-medium bg-aura-500 text-white rounded-lg hover:bg-aura-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            >
-              {isExtending ? (
-                <>
-                  <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                  Extending...
-                </>
-              ) : (
-                <>
-                  <ClockIcon className="w-4 h-4" />
-                  Extend by {hours}h
-                </>
-              )}
-            </button>
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Reason (Optional)
+          </label>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Why do you need more time?"
+            rows={3}
+            maxLength={500}
+            className="w-full px-4 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
+          />
         </div>
       </div>
-    </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 flex justify-end gap-3">
+        <button
+          onClick={onClose}
+          disabled={isExtending}
+          className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={isExtending}
+          className="px-4 py-2 text-sm font-medium bg-aura-500 text-white rounded-lg hover:bg-aura-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+        >
+          {isExtending ? (
+            <>
+              <ArrowPathIcon className="w-4 h-4 animate-spin" />
+              Extending...
+            </>
+          ) : (
+            <>
+              <ClockIcon className="w-4 h-4" />
+              Extend by {hours}h
+            </>
+          )}
+        </button>
+      </div>
+    </Modal>
   );
 }

@@ -22,6 +22,7 @@ import {
   cancelScheduledJob,
   rescheduleJob,
 } from '../../services/schedulingApi';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 function StatusBadge({ status }) {
   const color = getStatusColor(status);
@@ -83,74 +84,80 @@ function RescheduleModal({ job, isOpen, onClose, onReschedule }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white dark:bg-surface-800 rounded-xl shadow-xl max-w-md w-full p-6">
-        <div className="flex items-center justify-between mb-4">
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white dark:bg-surface-800 rounded-xl shadow-xl !max-w-md p-6"
+    >
+      <div className="flex items-center justify-between mb-4">
+        <ModalTitle asChild>
           <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
             Reschedule Job
           </h3>
-          <button onClick={onClose} className="text-surface-400 hover:text-surface-600">
-            <XMarkIcon className="w-5 h-5" />
-          </button>
+        </ModalTitle>
+        <button onClick={onClose} className="text-surface-400 hover:text-surface-600">
+          <XMarkIcon className="w-5 h-5" />
+        </button>
+      </div>
+
+      <p className="text-sm text-surface-500 dark:text-surface-400 mb-4">
+        Reschedule "{job.description || job.job_type}" to a new time.
+      </p>
+
+      {error && (
+        <div className="mb-4 p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
+          <p className="text-sm text-critical-700 dark:text-critical-300">{error}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Date
+          </label>
+          <input
+            type="date"
+            value={newDate}
+            onChange={(e) => setNewDate(e.target.value)}
+            required
+            min={new Date().toISOString().split('T')[0]}
+            className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
+          />
         </div>
 
-        <p className="text-sm text-surface-500 dark:text-surface-400 mb-4">
-          Reschedule "{job.description || job.job_type}" to a new time.
-        </p>
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Time
+          </label>
+          <input
+            type="time"
+            value={newTime}
+            onChange={(e) => setNewTime(e.target.value)}
+            required
+            className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
+          />
+        </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
-            <p className="text-sm text-critical-700 dark:text-critical-300">{error}</p>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-              Date
-            </label>
-            <input
-              type="date"
-              value={newDate}
-              onChange={(e) => setNewDate(e.target.value)}
-              required
-              min={new Date().toISOString().split('T')[0]}
-              className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-              Time
-            </label>
-            <input
-              type="time"
-              value={newTime}
-              onChange={(e) => setNewTime(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
-            />
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 bg-surface-100 dark:bg-surface-700 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-aura-600 rounded-lg hover:bg-aura-700 disabled:opacity-50"
-            >
-              {loading ? 'Saving...' : 'Reschedule'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 bg-surface-100 dark:bg-surface-700 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-aura-600 rounded-lg hover:bg-aura-700 disabled:opacity-50"
+          >
+            {loading ? 'Saving...' : 'Reschedule'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

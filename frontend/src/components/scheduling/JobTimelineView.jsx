@@ -21,6 +21,7 @@ import {
 } from '@heroicons/react/24/solid';
 import { getTimeline, formatDuration, rescheduleJob } from '../../services/schedulingApi';
 import { useToast } from '../ui/Toast';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // View modes
 const VIEW_MODES = [
@@ -669,122 +670,128 @@ function EntryDetailModal({ entry, onClose }) {
   const StatusIcon = STATUS_ICONS[entry.status] || ClockIcon;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-surface-800 rounded-xl shadow-xl max-w-md w-full p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <StatusIcon
-              className={`w-6 h-6 ${
-                entry.status === 'SUCCEEDED'
-                  ? 'text-olive-500'
-                  : entry.status === 'FAILED'
-                  ? 'text-critical-500'
-                  : entry.status === 'RUNNING'
-                  ? 'text-info-500'
-                  : 'text-warning-500'
-              }`}
-            />
-            <div>
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white dark:bg-surface-800 rounded-xl shadow-xl !max-w-md p-6"
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <StatusIcon
+            className={`w-6 h-6 ${
+              entry.status === 'SUCCEEDED'
+                ? 'text-olive-500'
+                : entry.status === 'FAILED'
+                ? 'text-critical-500'
+                : entry.status === 'RUNNING'
+                ? 'text-info-500'
+                : 'text-warning-500'
+            }`}
+          />
+          <div>
+            <ModalTitle asChild>
               <h3 className="font-semibold text-surface-900 dark:text-surface-100">
                 {entry.title || entry.job_type.replace(/_/g, ' ')}
               </h3>
-              <p className="text-sm text-surface-500">{entry.status}</p>
-            </div>
+            </ModalTitle>
+            <p className="text-sm text-surface-500">{entry.status}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-300"
-          >
-            <XCircleIcon className="w-6 h-6" />
-          </button>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-300"
+        >
+          <XCircleIcon className="w-6 h-6" />
+        </button>
+      </div>
+
+      <dl className="space-y-3">
+        <div>
+          <dt className="text-xs font-medium text-surface-500 uppercase">
+            Job Type
+          </dt>
+          <dd className="text-sm text-surface-900 dark:text-surface-100">
+            {entry.job_type.replace(/_/g, ' ')}
+          </dd>
         </div>
 
-        <dl className="space-y-3">
+        {entry.repository_name && (
           <div>
             <dt className="text-xs font-medium text-surface-500 uppercase">
-              Job Type
+              Repository
             </dt>
             <dd className="text-sm text-surface-900 dark:text-surface-100">
-              {entry.job_type.replace(/_/g, ' ')}
+              {entry.repository_name}
             </dd>
           </div>
+        )}
 
-          {entry.repository_name && (
-            <div>
-              <dt className="text-xs font-medium text-surface-500 uppercase">
-                Repository
-              </dt>
-              <dd className="text-sm text-surface-900 dark:text-surface-100">
-                {entry.repository_name}
-              </dd>
-            </div>
-          )}
+        {entry.scheduled_at && (
+          <div>
+            <dt className="text-xs font-medium text-surface-500 uppercase">
+              Scheduled At
+            </dt>
+            <dd className="text-sm text-surface-900 dark:text-surface-100">
+              {new Date(entry.scheduled_at).toLocaleString()}
+            </dd>
+          </div>
+        )}
 
-          {entry.scheduled_at && (
-            <div>
-              <dt className="text-xs font-medium text-surface-500 uppercase">
-                Scheduled At
-              </dt>
-              <dd className="text-sm text-surface-900 dark:text-surface-100">
-                {new Date(entry.scheduled_at).toLocaleString()}
-              </dd>
-            </div>
-          )}
+        {entry.started_at && (
+          <div>
+            <dt className="text-xs font-medium text-surface-500 uppercase">
+              Started At
+            </dt>
+            <dd className="text-sm text-surface-900 dark:text-surface-100">
+              {new Date(entry.started_at).toLocaleString()}
+            </dd>
+          </div>
+        )}
 
-          {entry.started_at && (
-            <div>
-              <dt className="text-xs font-medium text-surface-500 uppercase">
-                Started At
-              </dt>
-              <dd className="text-sm text-surface-900 dark:text-surface-100">
-                {new Date(entry.started_at).toLocaleString()}
-              </dd>
-            </div>
-          )}
+        {entry.completed_at && (
+          <div>
+            <dt className="text-xs font-medium text-surface-500 uppercase">
+              Completed At
+            </dt>
+            <dd className="text-sm text-surface-900 dark:text-surface-100">
+              {new Date(entry.completed_at).toLocaleString()}
+            </dd>
+          </div>
+        )}
 
-          {entry.completed_at && (
-            <div>
-              <dt className="text-xs font-medium text-surface-500 uppercase">
-                Completed At
-              </dt>
-              <dd className="text-sm text-surface-900 dark:text-surface-100">
-                {new Date(entry.completed_at).toLocaleString()}
-              </dd>
-            </div>
-          )}
+        {entry.duration_seconds && (
+          <div>
+            <dt className="text-xs font-medium text-surface-500 uppercase">
+              Duration
+            </dt>
+            <dd className="text-sm text-surface-900 dark:text-surface-100">
+              {formatDuration(entry.duration_seconds)}
+            </dd>
+          </div>
+        )}
 
-          {entry.duration_seconds && (
-            <div>
-              <dt className="text-xs font-medium text-surface-500 uppercase">
-                Duration
-              </dt>
-              <dd className="text-sm text-surface-900 dark:text-surface-100">
-                {formatDuration(entry.duration_seconds)}
-              </dd>
-            </div>
-          )}
+        {entry.created_by && (
+          <div>
+            <dt className="text-xs font-medium text-surface-500 uppercase">
+              Created By
+            </dt>
+            <dd className="text-sm text-surface-900 dark:text-surface-100">
+              {entry.created_by}
+            </dd>
+          </div>
+        )}
+      </dl>
 
-          {entry.created_by && (
-            <div>
-              <dt className="text-xs font-medium text-surface-500 uppercase">
-                Created By
-              </dt>
-              <dd className="text-sm text-surface-900 dark:text-surface-100">
-                {entry.created_by}
-              </dd>
-            </div>
-          )}
-        </dl>
-
-        <div className="mt-6 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 bg-surface-100 dark:bg-surface-700 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
-          >
-            Close
-          </button>
-        </div>
+      <div className="mt-6 flex justify-end">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 bg-surface-100 dark:bg-surface-700 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
+        >
+          Close
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }

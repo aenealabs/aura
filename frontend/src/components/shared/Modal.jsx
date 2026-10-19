@@ -24,6 +24,7 @@ const PLACEMENTS = {
     max-h-[calc(100vh-2rem)]`,
   bottom: () => 'inset-x-0 bottom-0 max-h-[80vh]',
   right: (size) => `inset-y-0 right-0 h-full w-full ${size}`,
+  full: () => 'inset-0',
 };
 
 const SIZES = {
@@ -38,7 +39,8 @@ const SIZES = {
  * @param {boolean} props.open - Whether the modal is shown
  * @param {function} props.onClose - Called when the user dismisses it (Escape, backdrop, close)
  * @param {'sm'|'md'|'lg'|'xl'} [props.size='md'] - Maximum width
- * @param {'center'|'bottom'|'right'} [props.placement='center'] - Dialog, bottom sheet, or drawer
+ * @param {'center'|'bottom'|'right'|'full'} [props.placement='center'] - Dialog, bottom sheet,
+ *   right-hand drawer, or full screen
  * @param {string} [props.panelClassName] - Replaces the panel's default look (background,
  *   radius, shadow), so an existing modal keeps its exact styling; position and size stay
  * @param {string} [props.className] - Extra classes for the panel
@@ -111,7 +113,7 @@ Modal.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   size: PropTypes.oneOf(['sm', 'md', 'lg', 'xl']),
-  placement: PropTypes.oneOf(['center', 'bottom', 'right']),
+  placement: PropTypes.oneOf(['center', 'bottom', 'right', 'full']),
   panelClassName: PropTypes.string,
   className: PropTypes.string,
   overlayClassName: PropTypes.string,

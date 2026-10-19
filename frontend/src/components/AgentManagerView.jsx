@@ -52,6 +52,7 @@ import {
 import { PageSkeleton } from './ui/LoadingSkeleton';
 import { RealTimeExecutionPanel } from './execution';
 import { useToast } from './ui/Toast';
+import Modal, { ModalTitle } from './shared/Modal';
 
 // =============================================================================
 // DESIGN DOCUMENTATION
@@ -1176,212 +1177,204 @@ function ActionModificationModal({ action, isOpen, onClose, onSave }) {
   const colors = getActionColorClasses(actionType.color);
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modify-action-title"
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="absolute bg-black/50 backdrop-blur-sm"
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-xl !max-w-2xl !max-h-[90vh] !overflow-hidden"
     >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="relative bg-white dark:bg-surface-800 rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${colors.bg}`}>
-                <ActionIcon className={`w-5 h-5 ${colors.icon}`} />
-              </div>
-              <div>
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${colors.bg}`}>
+              <ActionIcon className={`w-5 h-5 ${colors.icon}`} />
+            </div>
+            <div>
+              <ModalTitle asChild>
                 <h2
-                  id="modify-action-title"
                   className="text-lg font-semibold text-surface-900 dark:text-surface-100"
                 >
                   Modify Action
                 </h2>
-                <p className="text-sm text-surface-500 dark:text-surface-400">
-                  {actionType.label} - Customize before execution
-                </p>
-              </div>
+              </ModalTitle>
+              <p className="text-sm text-surface-500 dark:text-surface-400">
+                {actionType.label} - Customize before execution
+              </p>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700"
-            >
-              <XMarkIcon className="w-5 h-5" />
-            </button>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700"
+          >
+            <XMarkIcon className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-6 overflow-y-auto max-h-[60vh] space-y-5">
+        {/* Target Path / Command */}
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">
+            {action.type === 'command' ? 'Command' : 'Target Path'}
+          </label>
+          <input
+            type="text"
+            value={formData.target}
+            onChange={(e) => handleChange('target', e.target.value)}
+            placeholder={action.type === 'command' ? 'npm test --coverage' : 'src/controllers/UserController.java'}
+            className={`
+              w-full px-3 py-2.5 border rounded-lg bg-white dark:bg-surface-700
+              text-surface-900 dark:text-surface-100 placeholder-surface-400
+              font-mono text-sm
+              focus:ring-2 focus:ring-aura-500 focus:border-transparent
+              ${errors.target ? 'border-critical-500' : 'border-surface-300 dark:border-surface-600'}
+            `}
+          />
+          {errors.target && (
+            <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.target}</p>
+          )}
+        </div>
+
+        {/* Description */}
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">
+            Description
+          </label>
+          <textarea
+            value={formData.description}
+            onChange={(e) => handleChange('description', e.target.value)}
+            placeholder="Describe what this action will do..."
+            rows={3}
+            className={`
+              w-full px-3 py-2.5 border rounded-lg bg-white dark:bg-surface-700
+              text-surface-900 dark:text-surface-100 placeholder-surface-400 text-sm
+              focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none
+              ${errors.description ? 'border-critical-500' : 'border-surface-300 dark:border-surface-600'}
+            `}
+          />
+          {errors.description && (
+            <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.description}</p>
+          )}
+        </div>
+
+        {/* Risk Level */}
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">
+            Risk Level
+          </label>
+          <div className="flex gap-3">
+            {['low', 'medium', 'high'].map((level) => {
+              const riskConfig = RISK_LEVELS[level];
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => handleChange('risk', level)}
+                  className={`
+                    flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all
+                    border-2
+                    ${formData.risk === level
+                      ? `${riskConfig.bg} ${riskConfig.border}`
+                      : 'border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 hover:bg-surface-100 dark:hover:bg-surface-600'
+                    }
+                  `}
+                >
+                  <span className={formData.risk === level ? riskConfig.icon : 'text-surface-600 dark:text-surface-400'}>
+                    {riskConfig.label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[60vh] space-y-5">
-          {/* Target Path / Command */}
+        {/* Risk Justification (if changed) */}
+        {action && formData.risk !== action.risk && (
           <div>
             <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">
-              {action.type === 'command' ? 'Command' : 'Target Path'}
-            </label>
-            <input
-              type="text"
-              value={formData.target}
-              onChange={(e) => handleChange('target', e.target.value)}
-              placeholder={action.type === 'command' ? 'npm test --coverage' : 'src/controllers/UserController.java'}
-              className={`
-                w-full px-3 py-2.5 border rounded-lg bg-white dark:bg-surface-700
-                text-surface-900 dark:text-surface-100 placeholder-surface-400
-                font-mono text-sm
-                focus:ring-2 focus:ring-aura-500 focus:border-transparent
-                ${errors.target ? 'border-critical-500' : 'border-surface-300 dark:border-surface-600'}
-              `}
-            />
-            {errors.target && (
-              <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.target}</p>
-            )}
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">
-              Description
+              Justification for Risk Change
             </label>
             <textarea
-              value={formData.description}
-              onChange={(e) => handleChange('description', e.target.value)}
-              placeholder="Describe what this action will do..."
-              rows={3}
+              value={formData.riskJustification}
+              onChange={(e) => handleChange('riskJustification', e.target.value)}
+              placeholder="Explain why you're changing the risk level..."
+              rows={2}
               className={`
                 w-full px-3 py-2.5 border rounded-lg bg-white dark:bg-surface-700
                 text-surface-900 dark:text-surface-100 placeholder-surface-400 text-sm
                 focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none
-                ${errors.description ? 'border-critical-500' : 'border-surface-300 dark:border-surface-600'}
+                ${errors.riskJustification ? 'border-critical-500' : 'border-surface-300 dark:border-surface-600'}
               `}
             />
-            {errors.description && (
-              <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.description}</p>
+            {errors.riskJustification && (
+              <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.riskJustification}</p>
             )}
           </div>
+        )}
 
-          {/* Risk Level */}
+        {/* Custom Diff (for file operations) */}
+        {action.diff && (
           <div>
             <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">
-              Risk Level
+              Code Changes (Diff Preview)
             </label>
-            <div className="flex gap-3">
-              {['low', 'medium', 'high'].map((level) => {
-                const riskConfig = RISK_LEVELS[level];
-                return (
-                  <button
-                    key={level}
-                    type="button"
-                    onClick={() => handleChange('risk', level)}
-                    className={`
-                      flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all
-                      border-2
-                      ${formData.risk === level
-                        ? `${riskConfig.bg} ${riskConfig.border}`
-                        : 'border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 hover:bg-surface-100 dark:hover:bg-surface-600'
-                      }
-                    `}
-                  >
-                    <span className={formData.risk === level ? riskConfig.icon : 'text-surface-600 dark:text-surface-400'}>
-                      {riskConfig.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <textarea
+              value={formData.customDiff}
+              onChange={(e) => handleChange('customDiff', e.target.value)}
+              placeholder="Modify the diff preview..."
+              rows={8}
+              className="w-full px-3 py-2.5 border border-surface-300 dark:border-surface-600 rounded-lg
+                bg-surface-900 dark:bg-surface-950 text-surface-100 font-mono text-xs
+                focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
+            />
+            <p className="mt-1 text-xs text-surface-500 dark:text-surface-400">
+              Modify the code changes that will be applied
+            </p>
           </div>
+        )}
 
-          {/* Risk Justification (if changed) */}
-          {action && formData.risk !== action.risk && (
-            <div>
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">
-                Justification for Risk Change
-              </label>
-              <textarea
-                value={formData.riskJustification}
-                onChange={(e) => handleChange('riskJustification', e.target.value)}
-                placeholder="Explain why you're changing the risk level..."
-                rows={2}
-                className={`
-                  w-full px-3 py-2.5 border rounded-lg bg-white dark:bg-surface-700
-                  text-surface-900 dark:text-surface-100 placeholder-surface-400 text-sm
-                  focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none
-                  ${errors.riskJustification ? 'border-critical-500' : 'border-surface-300 dark:border-surface-600'}
-                `}
-              />
-              {errors.riskJustification && (
-                <p className="mt-1 text-xs text-critical-600 dark:text-critical-400">{errors.riskJustification}</p>
-              )}
-            </div>
-          )}
+        {/* Submit Error */}
+        {errors.submit && (
+          <div className="p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
+            <p className="text-sm text-critical-700 dark:text-critical-400">{errors.submit}</p>
+          </div>
+        )}
+      </div>
 
-          {/* Custom Diff (for file operations) */}
-          {action.diff && (
-            <div>
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1.5">
-                Code Changes (Diff Preview)
-              </label>
-              <textarea
-                value={formData.customDiff}
-                onChange={(e) => handleChange('customDiff', e.target.value)}
-                placeholder="Modify the diff preview..."
-                rows={8}
-                className="w-full px-3 py-2.5 border border-surface-300 dark:border-surface-600 rounded-lg
-                  bg-surface-900 dark:bg-surface-950 text-surface-100 font-mono text-xs
-                  focus:ring-2 focus:ring-aura-500 focus:border-transparent resize-none"
-              />
-              <p className="mt-1 text-xs text-surface-500 dark:text-surface-400">
-                Modify the code changes that will be applied
-              </p>
-            </div>
-          )}
-
-          {/* Submit Error */}
-          {errors.submit && (
-            <div className="p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
-              <p className="text-sm text-critical-700 dark:text-critical-400">{errors.submit}</p>
-            </div>
-          )}
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 flex justify-between items-center">
+        <div className="text-xs text-surface-500 dark:text-surface-400">
+          Original: <span className="font-mono">{action.target}</span>
         </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 flex justify-between items-center">
-          <div className="text-xs text-surface-500 dark:text-surface-400">
-            Original: <span className="font-mono">{action.target}</span>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={saving}
-              className="px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            >
-              {saving ? (
-                <>
-                  <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <CheckIcon className="w-4 h-4" />
-                  Save Changes
-                </>
-              )}
-            </button>
-          </div>
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          >
+            {saving ? (
+              <>
+                <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <CheckIcon className="w-4 h-4" />
+                Save Changes
+              </>
+            )}
+          </button>
         </div>
       </div>
-    </div>,
+    </Modal>,
     document.body
   );
 }

@@ -5,8 +5,7 @@
  * ADR-061: GPU Workload Scheduler - Phase 3 Frontend Integration
  */
 
-import { useState, useEffect, useCallback, memo, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useEffect, useCallback, memo } from 'react';
 import {
   XMarkIcon,
   CpuChipIcon,
@@ -23,6 +22,7 @@ import {
   GPU_JOB_PRIORITIES,
   formatCost,
 } from '../../services/gpuSchedulerApi';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 /**
  * Job type selector component
@@ -251,7 +251,6 @@ function ScheduleGPUJobModal({ isOpen, onClose }) {
     resources,
   } = useGPUWorkloads();
 
-  const modalRef = useRef(null);
 
   // Form state
   const [jobType, setJobType] = useState('embedding_generation');
@@ -311,25 +310,6 @@ function ScheduleGPUJobModal({ isOpen, onClose }) {
 
     fetchEstimate();
   }, [isOpen, priority, jobType, getEstimatedPosition]);
-
-  // Handle escape key and body scroll
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && !submitting) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen, submitting, onClose]);
 
   // Reset form when modal opens
   useEffect(() => {
@@ -418,238 +398,227 @@ function ScheduleGPUJobModal({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="schedule-gpu-job-title"
+  return (
+    <Modal
+      open
+      onClose={() => { if (!submitting) onClose(); }}
+      overlayClassName="bg-black/40 backdrop-blur-sm transition-opacity"
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-[var(--shadow-modal)] !max-w-2xl !max-h-[90vh] !overflow-hidden flex flex-col"
     >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-        onClick={submitting ? undefined : onClose}
-      />
-
-      {/* Modal */}
-      <div
-        ref={modalRef}
-        className="relative bg-white dark:bg-surface-800 rounded-2xl shadow-[var(--shadow-modal)] max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-aura-100 dark:bg-aura-900/30 rounded-lg">
-              <CpuChipIcon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
-            </div>
-            <div>
-              <h2 id="schedule-gpu-job-title" className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-aura-100 dark:bg-aura-900/30 rounded-lg">
+            <CpuChipIcon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
+          </div>
+          <div>
+            <ModalTitle asChild>
+              <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
                 Schedule GPU Job
               </h2>
-              <p className="text-sm text-surface-500 dark:text-surface-400">
-                Configure and queue a GPU workload
-              </p>
-            </div>
+            </ModalTitle>
+            <p className="text-sm text-surface-500 dark:text-surface-400">
+              Configure and queue a GPU workload
+            </p>
           </div>
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 transition-colors rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-50"
-            aria-label="Close modal"
-          >
-            <XMarkIcon className="w-5 h-5" />
-          </button>
+        </div>
+        <button
+          onClick={onClose}
+          disabled={submitting}
+          className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 transition-colors rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-50"
+          aria-label="Close modal"
+        >
+          <XMarkIcon className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-6">
+        {error && (
+          <div className="mb-4 p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
+            <p className="text-sm text-critical-700 dark:text-critical-300">{error}</p>
+          </div>
+        )}
+
+        {/* Budget warning */}
+        <div className="mb-4">
+          <BudgetWarning used={budget.used} total={budget.total} />
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {error && (
-            <div className="mb-4 p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
-              <p className="text-sm text-critical-700 dark:text-critical-300">{error}</p>
-            </div>
-          )}
-
-          {/* Budget warning */}
-          <div className="mb-4">
-            <BudgetWarning used={budget.used} total={budget.total} />
+        <form id="schedule-gpu-job-form" onSubmit={handleSubmit} className="space-y-5">
+          {/* Job Type */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+              <CpuChipIcon className="w-4 h-4" />
+              Job Type
+            </label>
+            <JobTypeSelector value={jobType} onChange={setJobType} />
           </div>
 
-          <form id="schedule-gpu-job-form" onSubmit={handleSubmit} className="space-y-5">
-            {/* Job Type */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-                <CpuChipIcon className="w-4 h-4" />
-                Job Type
-              </label>
-              <JobTypeSelector value={jobType} onChange={setJobType} />
-            </div>
-
-            {/* Configuration - Varies by job type */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-                <FolderIcon className="w-4 h-4" />
-                Configuration
-              </label>
-              <div className="space-y-3 p-4 bg-surface-50 dark:bg-surface-700/50 rounded-lg">
-                {jobType === 'embedding_generation' && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-surface-500 dark:text-surface-400 mb-1">
-                        Repository
-                      </label>
-                      <input
-                        type="text"
-                        value={repositoryId}
-                        onChange={(e) => setRepositoryId(e.target.value)}
-                        placeholder="e.g., backend-services"
-                        className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs text-surface-500 dark:text-surface-400 mb-1">
-                          Branch
-                        </label>
-                        <input
-                          type="text"
-                          value={branch}
-                          onChange={(e) => setBranch(e.target.value)}
-                          placeholder="main"
-                          className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-surface-500 dark:text-surface-400 mb-1">
-                          Model
-                        </label>
-                        <select
-                          value={model}
-                          onChange={(e) => setModel(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
-                        >
-                          <option value="codebert-base">CodeBERT-base (recommended)</option>
-                          <option value="codebert-large">CodeBERT-large</option>
-                          <option value="starencoder">StarEncoder</option>
-                        </select>
-                      </div>
-                    </div>
-                  </>
-                )}
-                {jobType !== 'embedding_generation' && (
+          {/* Configuration - Varies by job type */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+              <FolderIcon className="w-4 h-4" />
+              Configuration
+            </label>
+            <div className="space-y-3 p-4 bg-surface-50 dark:bg-surface-700/50 rounded-lg">
+              {jobType === 'embedding_generation' && (
+                <>
                   <div>
                     <label className="block text-xs text-surface-500 dark:text-surface-400 mb-1">
-                      {jobType === 'vulnerability_training' ? 'Dataset ID' :
-                        jobType === 'swe_rl_training' ? 'Batch ID' : 'Session ID'}
+                      Repository
                     </label>
                     <input
                       type="text"
                       value={repositoryId}
                       onChange={(e) => setRepositoryId(e.target.value)}
-                      placeholder="Leave empty for auto-generated ID"
+                      placeholder="e.g., backend-services"
                       className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
                     />
                   </div>
-                )}
-              </div>
-            </div>
-
-            {/* Resources */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-                <ClockIcon className="w-4 h-4" />
-                Resources
-              </label>
-              <div className="space-y-4 p-4 bg-surface-50 dark:bg-surface-700/50 rounded-lg">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-surface-500 dark:text-surface-400 mb-1">
+                        Branch
+                      </label>
+                      <input
+                        type="text"
+                        value={branch}
+                        onChange={(e) => setBranch(e.target.value)}
+                        placeholder="main"
+                        className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-surface-500 dark:text-surface-400 mb-1">
+                        Model
+                      </label>
+                      <select
+                        value={model}
+                        onChange={(e) => setModel(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
+                      >
+                        <option value="codebert-base">CodeBERT-base (recommended)</option>
+                        <option value="codebert-large">CodeBERT-large</option>
+                        <option value="starencoder">StarEncoder</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
+              {jobType !== 'embedding_generation' && (
                 <div>
-                  <label className="block text-xs text-surface-500 dark:text-surface-400 mb-2">
-                    GPU Memory
+                  <label className="block text-xs text-surface-500 dark:text-surface-400 mb-1">
+                    {jobType === 'vulnerability_training' ? 'Dataset ID' :
+                      jobType === 'swe_rl_training' ? 'Batch ID' : 'Session ID'}
                   </label>
-                  <GPUMemorySelector
-                    value={gpuMemory}
-                    onChange={setGpuMemory}
-                    recommended={getRecommendedMemory(jobType)}
+                  <input
+                    type="text"
+                    value={repositoryId}
+                    onChange={(e) => setRepositoryId(e.target.value)}
+                    placeholder="Leave empty for auto-generated ID"
+                    className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs text-surface-500 dark:text-surface-400 mb-2">
-                    Priority
-                  </label>
-                  <PrioritySelector value={priority} onChange={setPriority} />
-                </div>
-              </div>
-            </div>
-
-            {/* Advanced Options (Collapsed by default) */}
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex items-center gap-2 text-sm text-surface-600 dark:text-surface-400 hover:text-surface-900 dark:hover:text-surface-100 transition-colors"
-              >
-                {showAdvanced ? (
-                  <ChevronUpIcon className="w-4 h-4" />
-                ) : (
-                  <ChevronDownIcon className="w-4 h-4" />
-                )}
-                Advanced Options
-              </button>
-              {showAdvanced && (
-                <div className="mt-3 space-y-3 p-4 bg-surface-50 dark:bg-surface-700/50 rounded-lg">
-                  <div>
-                    <label className="block text-xs text-surface-500 dark:text-surface-400 mb-2">
-                      Max Runtime
-                    </label>
-                    <MaxRuntimeSelector value={maxRuntime} onChange={setMaxRuntime} />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="checkpoint-enabled"
-                      checked={checkpointEnabled}
-                      onChange={(e) => setCheckpointEnabled(e.target.checked)}
-                      className="w-4 h-4 rounded border-surface-300 dark:border-surface-600 text-aura-500 focus:ring-aura-500"
-                    />
-                    <label htmlFor="checkpoint-enabled" className="text-sm text-surface-700 dark:text-surface-300">
-                      Enable checkpointing (recommended for long-running jobs)
-                    </label>
-                  </div>
                 </div>
               )}
             </div>
+          </div>
 
-            {/* Estimate */}
-            <EstimateDisplay estimate={estimate} loading={estimateLoading} />
-          </form>
-        </div>
+          {/* Resources */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+              <ClockIcon className="w-4 h-4" />
+              Resources
+            </label>
+            <div className="space-y-4 p-4 bg-surface-50 dark:bg-surface-700/50 rounded-lg">
+              <div>
+                <label className="block text-xs text-surface-500 dark:text-surface-400 mb-2">
+                  GPU Memory
+                </label>
+                <GPUMemorySelector
+                  value={gpuMemory}
+                  onChange={setGpuMemory}
+                  recommended={getRecommendedMemory(jobType)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-surface-500 dark:text-surface-400 mb-2">
+                  Priority
+                </label>
+                <PrioritySelector value={priority} onChange={setPriority} />
+              </div>
+            </div>
+          </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="schedule-gpu-job-form"
-            disabled={submitting}
-            className="px-4 py-2 text-sm font-medium text-white bg-aura-500 hover:bg-aura-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {submitting && (
-              <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
+          {/* Advanced Options (Collapsed by default) */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-2 text-sm text-surface-600 dark:text-surface-400 hover:text-surface-900 dark:hover:text-surface-100 transition-colors"
+            >
+              {showAdvanced ? (
+                <ChevronUpIcon className="w-4 h-4" />
+              ) : (
+                <ChevronDownIcon className="w-4 h-4" />
+              )}
+              Advanced Options
+            </button>
+            {showAdvanced && (
+              <div className="mt-3 space-y-3 p-4 bg-surface-50 dark:bg-surface-700/50 rounded-lg">
+                <div>
+                  <label className="block text-xs text-surface-500 dark:text-surface-400 mb-2">
+                    Max Runtime
+                  </label>
+                  <MaxRuntimeSelector value={maxRuntime} onChange={setMaxRuntime} />
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="checkpoint-enabled"
+                    checked={checkpointEnabled}
+                    onChange={(e) => setCheckpointEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-surface-300 dark:border-surface-600 text-aura-500 focus:ring-aura-500"
+                  />
+                  <label htmlFor="checkpoint-enabled" className="text-sm text-surface-700 dark:text-surface-300">
+                    Enable checkpointing (recommended for long-running jobs)
+                  </label>
+                </div>
+              </div>
             )}
-            Schedule Job
-          </button>
-        </div>
+          </div>
+
+          {/* Estimate */}
+          <EstimateDisplay estimate={estimate} loading={estimateLoading} />
+        </form>
       </div>
-    </div>,
-    document.body
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form="schedule-gpu-job-form"
+          disabled={submitting}
+          className="px-4 py-2 text-sm font-medium text-white bg-aura-500 hover:bg-aura-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {submitting && (
+            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          )}
+          Schedule Job
+        </button>
+      </div>
+    </Modal>
   );
 }
 

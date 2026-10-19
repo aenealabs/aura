@@ -22,6 +22,7 @@ import {
   UserCircleIcon,
 } from '@heroicons/react/24/outline';
 import EditPermissionsModal from './EditPermissionsModal';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 /**
  * Classification configuration
@@ -277,24 +278,13 @@ function CapabilityDetailDrawer({
   const isAgent = nodeData.type === 'agent';
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/20 dark:bg-black/40 z-40"
-        onClick={onClose}
-      />
-
-      {/* Drawer - compact height to avoid chat assistant overlap */}
-      <div
-        className={`
-          fixed top-0 right-0 w-[360px] max-w-full
-          bg-white dark:bg-surface-900
-          border-l border-surface-200 dark:border-surface-700
-          shadow-xl z-50 overflow-hidden flex flex-col
-          max-h-[400px]
-          ${className}
-        `}
-      >
+    <Modal
+      open
+      onClose={onClose}
+      placement="right"
+      overlayClassName="bg-black/20 dark:bg-black/40"
+      panelClassName={`!w-[360px] !max-w-full !h-auto !bottom-auto !max-h-[400px] bg-white dark:bg-surface-900 border-l border-surface-200 dark:border-surface-700 shadow-xl !overflow-hidden flex flex-col ${className}`}
+    >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-surface-200 dark:border-surface-700">
           <div className="flex items-center gap-3">
@@ -312,9 +302,11 @@ function CapabilityDetailDrawer({
               </div>
             )}
             <div>
+              <ModalTitle asChild>
               <h2 className="font-semibold text-surface-900 dark:text-surface-100">
-                {nodeData.label || nodeData.name || nodeData.id}
-              </h2>
+                  {nodeData.label || nodeData.name || nodeData.id}
+                </h2>
+              </ModalTitle>
               <p className="text-xs text-surface-500 dark:text-surface-400">
                 {isAgent ? nodeData.agent_type || 'Agent' : nodeData.classification?.toUpperCase() || 'Tool'}
               </p>
@@ -468,9 +460,8 @@ function CapabilityDetailDrawer({
             </button>
           </div>
         )}
-      </div>
 
-      {/* Edit Permissions Modal */}
+      {/* Rendered inside the drawer so the two dialogs stack correctly */}
       <EditPermissionsModal
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
@@ -484,7 +475,7 @@ function CapabilityDetailDrawer({
           }
         }}
       />
-    </>
+    </Modal>
   );
 }
 

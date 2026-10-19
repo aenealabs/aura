@@ -27,6 +27,7 @@ import {
   deleteRecurringTask,
   toggleRecurringTask,
 } from '../../services/schedulingApi';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Job type display configuration
 const JOB_TYPE_CONFIG = {
@@ -391,145 +392,157 @@ function TaskFormModal({ task, onSave, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-surface-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-4 border-b border-surface-200 dark:border-surface-700">
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white dark:bg-surface-800 rounded-xl shadow-xl !max-w-lg !max-h-[90vh] !overflow-y-auto"
+    >
+      <div className="flex items-center justify-between p-4 border-b border-surface-200 dark:border-surface-700">
+        <ModalTitle asChild>
           <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
             {task ? 'Edit Recurring Task' : 'Create Recurring Task'}
           </h3>
-          <button
-            onClick={onClose}
-            className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-300"
-          >
-            <XMarkIcon className="w-6 h-6" />
-          </button>
+        </ModalTitle>
+        <button
+          onClick={onClose}
+          className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-300"
+        >
+          <XMarkIcon className="w-6 h-6" />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        {error && (
+          <div className="p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
+            <p className="text-sm text-critical-700 dark:text-critical-300">{error}</p>
+          </div>
+        )}
+
+        {/* Task Name */}
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Task Name
+          </label>
+          <input
+            type="text"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="e.g., Weekly Security Scan"
+            className="w-full px-3 py-2 text-sm border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          {error && (
-            <div className="p-3 bg-critical-50 dark:bg-critical-900/20 border border-critical-200 dark:border-critical-800 rounded-lg">
-              <p className="text-sm text-critical-700 dark:text-critical-300">{error}</p>
-            </div>
-          )}
+        {/* Job Type */}
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+            Job Type
+          </label>
+          <select
+            value={formData.job_type}
+            onChange={(e) => setFormData({ ...formData, job_type: e.target.value })}
+            className="w-full px-3 py-2 text-sm border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
+          >
+            {Object.entries(JOB_TYPE_CONFIG).map(([value, config]) => (
+              <option key={value} value={value}>
+                {config.icon} {config.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          {/* Task Name */}
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-              Task Name
-            </label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="e.g., Weekly Security Scan"
-              className="w-full px-3 py-2 text-sm border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
-            />
-          </div>
+        {/* Schedule */}
+        <div>
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+            Schedule
+          </label>
+          <CronExpressionBuilder
+            value={formData.cron_expression}
+            onChange={(cron) => setFormData({ ...formData, cron_expression: cron })}
+          />
+        </div>
 
-          {/* Job Type */}
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-              Job Type
-            </label>
-            <select
-              value={formData.job_type}
-              onChange={(e) => setFormData({ ...formData, job_type: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:ring-2 focus:ring-aura-500 focus:border-aura-500"
-            >
-              {Object.entries(JOB_TYPE_CONFIG).map(([value, config]) => (
-                <option key={value} value={value}>
-                  {config.icon} {config.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Schedule */}
-          <div>
-            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-              Schedule
-            </label>
-            <CronExpressionBuilder
-              value={formData.cron_expression}
-              onChange={(cron) => setFormData({ ...formData, cron_expression: cron })}
-            />
-          </div>
-
-          {/* Enabled Toggle */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, enabled: !formData.enabled })}
-              className={`relative w-11 h-6 rounded-full transition-colors ${
-                formData.enabled ? 'bg-aura-600' : 'bg-surface-300 dark:bg-surface-600'
+        {/* Enabled Toggle */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setFormData({ ...formData, enabled: !formData.enabled })}
+            className={`relative w-11 h-6 rounded-full transition-colors ${
+              formData.enabled ? 'bg-aura-600' : 'bg-surface-300 dark:bg-surface-600'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                formData.enabled ? 'translate-x-5' : ''
               }`}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                  formData.enabled ? 'translate-x-5' : ''
-                }`}
-              />
-            </button>
-            <span className="text-sm text-surface-700 dark:text-surface-300">
-              {formData.enabled ? 'Enabled' : 'Disabled'}
-            </span>
-          </div>
+            />
+          </button>
+          <span className="text-sm text-surface-700 dark:text-surface-300">
+            {formData.enabled ? 'Enabled' : 'Disabled'}
+          </span>
+        </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-surface-200 dark:border-surface-700">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 bg-surface-100 dark:bg-surface-700 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-aura-600 rounded-lg hover:bg-aura-700 transition-colors disabled:opacity-50"
-            >
-              {saving && <ArrowPathIcon className="w-4 h-4 animate-spin" />}
-              {task ? 'Save Changes' : 'Create Task'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {/* Actions */}
+        <div className="flex justify-end gap-3 pt-4 border-t border-surface-200 dark:border-surface-700">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 bg-surface-100 dark:bg-surface-700 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-aura-600 rounded-lg hover:bg-aura-700 transition-colors disabled:opacity-50"
+          >
+            {saving && <ArrowPathIcon className="w-4 h-4 animate-spin" />}
+            {task ? 'Save Changes' : 'Create Task'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
 // Delete Confirmation Modal
 function DeleteConfirmModal({ onConfirm, onCancel }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-surface-800 rounded-xl shadow-xl max-w-sm w-full p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-critical-100 dark:bg-critical-900/30 rounded-full">
-            <TrashIcon className="w-6 h-6 text-critical-600 dark:text-critical-400" />
-          </div>
+    <Modal
+      open
+      onClose={onCancel}
+      overlayClassName="bg-black/50"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white dark:bg-surface-800 rounded-xl shadow-xl !max-w-sm p-6"
+    >
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-critical-100 dark:bg-critical-900/30 rounded-full">
+          <TrashIcon className="w-6 h-6 text-critical-600 dark:text-critical-400" />
+        </div>
+        <ModalTitle asChild>
           <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
             Delete Task
           </h3>
-        </div>
-        <p className="text-sm text-surface-500 mb-6">
-          Are you sure you want to delete this recurring task? This action cannot be undone.
-        </p>
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 bg-surface-100 dark:bg-surface-700 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm font-medium text-white bg-critical-600 rounded-lg hover:bg-critical-700 transition-colors"
-          >
-            Delete
-          </button>
-        </div>
+        </ModalTitle>
       </div>
-    </div>
+      <p className="text-sm text-surface-500 mb-6">
+        Are you sure you want to delete this recurring task? This action cannot be undone.
+      </p>
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 bg-surface-100 dark:bg-surface-700 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          className="px-4 py-2 text-sm font-medium text-white bg-critical-600 rounded-lg hover:bg-critical-700 transition-colors"
+        >
+          Delete
+        </button>
+      </div>
+    </Modal>
   );
 }

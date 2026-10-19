@@ -30,6 +30,7 @@ import {
 import { PageSkeleton } from './ui/LoadingSkeleton';
 import FileViewer from './graph/FileViewer';
 import { useToast } from './ui/Toast';
+import Modal, { ModalTitle } from './shared/Modal';
 
 // =============================================================================
 // Design System Constants
@@ -1877,8 +1878,12 @@ export default function CKGEConsole() {
 
       {/* Fullscreen Modal */}
       {isFullscreen && (
-        <div
-          className="fixed inset-0 z-50 bg-white dark:bg-surface-900 flex flex-col"
+        <Modal
+          open
+          onClose={() => setIsFullscreen(false)}
+          placement="full"
+          overlayClassName=""
+          panelClassName="bg-white dark:bg-surface-900 flex flex-col !overflow-hidden"
           style={{ animation: 'scaleIn 300ms ease-out' }}
         >
           {/* Fullscreen Header */}
@@ -1887,9 +1892,11 @@ export default function CKGEConsole() {
               <div className="p-1.5 bg-olive-100 dark:bg-olive-900/30 rounded-lg">
                 <ShareIcon className="w-5 h-5 text-olive-600 dark:text-olive-400" />
               </div>
-              <h2 className="font-semibold text-surface-900 dark:text-surface-100">
-                Knowledge Graph
-              </h2>
+              <ModalTitle asChild>
+                <h2 className="font-semibold text-surface-900 dark:text-surface-100">
+                  Knowledge Graph
+                </h2>
+              </ModalTitle>
             </div>
             <button
               onClick={() => setIsFullscreen(false)}
@@ -2025,7 +2032,7 @@ export default function CKGEConsole() {
               Press <kbd className="px-1.5 py-0.5 bg-surface-100 dark:bg-surface-700 rounded text-surface-500">Esc</kbd> to exit fullscreen
             </span>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Context Menu */}

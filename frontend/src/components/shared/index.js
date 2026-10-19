@@ -11,3 +11,5 @@ export { default as ConfidenceBadge } from './ConfidenceBadge';
 export { default as Tooltip } from './Tooltip';
 export { default as SegmentedControl } from './SegmentedControl';
 export { default as FilterChip } from './FilterChip';
+export { default as Modal, ModalTitle, ModalDescription, ModalClose } from './Modal';
+export { default as Menu, MenuItem, MenuLabel, MenuSeparator } from './Menu';

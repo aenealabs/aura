@@ -23,6 +23,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 import { useExecution } from '../../context/ExecutionContext';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -274,183 +275,157 @@ export default function ActionModifyModal() {
     }
   }, [modifyingAction]);
 
-  // Handle escape key
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && modifyModalOpen) {
-        closeModifyModal();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [modifyModalOpen, closeModifyModal]);
-
   // Don't render if not open
   if (!modifyModalOpen || !modifyingAction) return null;
 
   const typeConfig = ACTION_TYPE_CONFIG[modifyingAction.type] || { label: modifyingAction.type };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/40 backdrop-blur-md transition-opacity"
-        onClick={closeModifyModal}
-        aria-hidden="true"
-      />
-
-      {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div
-          className="relative w-full max-w-2xl bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl shadow-[var(--shadow-glass-hover)] overflow-hidden animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="modal-title"
+    // Modal handles Escape, the backdrop, focus trapping, and focus return
+    <Modal
+      open={modifyModalOpen}
+      onClose={closeModifyModal}
+      size="lg"
+      panelClassName="bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl shadow-[var(--shadow-glass-hover)] animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
+    >
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30 flex items-center justify-between">
+        <div>
+          <ModalTitle className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+            Modify {typeConfig.label}
+          </ModalTitle>
+          <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5 font-mono truncate max-w-md">
+            {modifyingAction.target}
+          </p>
+        </div>
+        <button
+          onClick={closeModifyModal}
+          className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+          aria-label="Close modal"
         >
-          {/* Header */}
-          <div className="px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30 flex items-center justify-between">
-            <div>
-              <h2
-                id="modal-title"
-                className="text-lg font-semibold text-surface-900 dark:text-surface-100"
+          <XMarkIcon className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="p-6 max-h-[60vh] overflow-y-auto">
+        {/* Editor */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300">
+              Parameters (JSON)
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCopy}
+                className="p-1.5 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded transition-colors"
+                title="Copy to clipboard"
               >
-                Modify {typeConfig.label}
-              </h2>
-              <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5 font-mono truncate max-w-md">
-                {modifyingAction.target}
-              </p>
+                <DocumentDuplicateIcon className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={!hasChanges}
+                className="p-1.5 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Reset to original"
+              >
+                <ArrowPathIcon className="w-4 h-4" />
+              </button>
             </div>
-            <button
-              onClick={closeModifyModal}
-              className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
-              aria-label="Close modal"
-            >
-              <XMarkIcon className="w-5 h-5" />
-            </button>
           </div>
 
-          {/* Body */}
-          <div className="p-6 max-h-[60vh] overflow-y-auto">
-            {/* Editor */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300">
-                  Parameters (JSON)
-                </label>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleCopy}
-                    className="p-1.5 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded transition-colors"
-                    title="Copy to clipboard"
-                  >
-                    <DocumentDuplicateIcon className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleReset}
-                    disabled={!hasChanges}
-                    className="p-1.5 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Reset to original"
-                  >
-                    <ArrowPathIcon className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="relative">
-                <textarea
-                  value={parametersText}
-                  onChange={(e) => setParametersText(e.target.value)}
-                  rows={12}
-                  className={`
-                    w-full px-4 py-3 font-mono text-sm rounded-xl border
-                    bg-white dark:bg-surface-800 backdrop-blur-sm text-surface-900 dark:text-surface-100
-                    placeholder-surface-400 resize-none transition-all duration-200 ease-[var(--ease-tahoe)]
-                    focus:ring-2 focus:ring-aura-500 focus:border-transparent
-                    ${validationError
-                      ? 'border-critical-300/70 dark:border-critical-700/70'
-                      : 'border-surface-200/50 dark:border-surface-600/50'
-                    }
-                  `}
-                  placeholder="Enter JSON parameters..."
-                  spellCheck={false}
-                />
-
-                {/* Validation error */}
-                {validationError && (
-                  <div className="absolute bottom-0 left-0 right-0 px-3 py-2 bg-critical-50/90 dark:bg-critical-900/30 backdrop-blur-sm border-t border-critical-200/50 dark:border-critical-800/50 rounded-b-xl">
-                    <div className="flex items-center gap-2 text-critical-700 dark:text-critical-400 text-xs">
-                      <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
-                      <span className="truncate">{validationError}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Comparison toggle */}
-            {hasChanges && (
-              <button
-                onClick={() => setShowComparison(!showComparison)}
-                className="flex items-center gap-2 text-sm text-aura-600 dark:text-aura-400 hover:text-aura-700 dark:hover:text-aura-300 mb-4"
-              >
-                <ArrowsRightLeftIcon className="w-4 h-4" />
-                {showComparison ? 'Hide comparison' : 'Show comparison'}
-              </button>
-            )}
-
-            {/* Changes Preview */}
-            {showComparison && hasChanges && (
-              <div className="mb-6 border border-surface-200/50 dark:border-surface-700/30 rounded-xl overflow-hidden shadow-[var(--shadow-glass)]">
-                <div className="px-4 py-2 bg-surface-50 dark:bg-surface-800 backdrop-blur-sm border-b border-surface-200/30 dark:border-surface-700/20">
-                  <span className="text-sm font-medium text-surface-700 dark:text-surface-300">
-                    Changes Preview
-                  </span>
-                </div>
-                <ChangesPreview
-                  original={modifyingAction.parameters}
-                  modified={parsedParameters}
-                />
-              </div>
-            )}
-
-            {/* Trust Scope */}
-            <TrustScopeSelector
-              value={trustScope}
-              onChange={setTrustScope}
+          <div className="relative">
+            <textarea
+              value={parametersText}
+              onChange={(e) => setParametersText(e.target.value)}
+              rows={12}
+              className={`
+                w-full px-4 py-3 font-mono text-sm rounded-xl border
+                bg-white dark:bg-surface-800 backdrop-blur-sm text-surface-900 dark:text-surface-100
+                placeholder-surface-400 resize-none transition-all duration-200 ease-[var(--ease-tahoe)]
+                focus:ring-2 focus:ring-aura-500 focus:border-transparent
+                ${validationError
+                  ? 'border-critical-300/70 dark:border-critical-700/70'
+                  : 'border-surface-200/50 dark:border-surface-600/50'
+                }
+              `}
+              placeholder="Enter JSON parameters..."
+              spellCheck={false}
             />
-          </div>
 
-          {/* Footer */}
-          <div className="px-6 py-4 border-t border-surface-100/50 dark:border-surface-700/30 bg-white/60 dark:bg-surface-800/50 backdrop-blur-sm flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400">
-              <ShieldCheckIcon className="w-4 h-4" />
-              <span>Modifications are logged for audit</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={closeModifyModal}
-                className="px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!hasChanges || !!validationError || loading.modify}
-                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-aura-500 rounded-xl hover:bg-aura-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-[var(--ease-tahoe)] shadow-sm hover:shadow-md"
-              >
-                {loading.modify ? (
-                  <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                ) : (
-                  <CheckIcon className="w-4 h-4" />
-                )}
-                Apply and Approve
-              </button>
-            </div>
+            {/* Validation error */}
+            {validationError && (
+              <div className="absolute bottom-0 left-0 right-0 px-3 py-2 bg-critical-50/90 dark:bg-critical-900/30 backdrop-blur-sm border-t border-critical-200/50 dark:border-critical-800/50 rounded-b-xl">
+                <div className="flex items-center gap-2 text-critical-700 dark:text-critical-400 text-xs">
+                  <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate">{validationError}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Comparison toggle */}
+        {hasChanges && (
+          <button
+            onClick={() => setShowComparison(!showComparison)}
+            className="flex items-center gap-2 text-sm text-aura-600 dark:text-aura-400 hover:text-aura-700 dark:hover:text-aura-300 mb-4"
+          >
+            <ArrowsRightLeftIcon className="w-4 h-4" />
+            {showComparison ? 'Hide comparison' : 'Show comparison'}
+          </button>
+        )}
+
+        {/* Changes Preview */}
+        {showComparison && hasChanges && (
+          <div className="mb-6 border border-surface-200/50 dark:border-surface-700/30 rounded-xl overflow-hidden shadow-[var(--shadow-glass)]">
+            <div className="px-4 py-2 bg-surface-50 dark:bg-surface-800 backdrop-blur-sm border-b border-surface-200/30 dark:border-surface-700/20">
+              <span className="text-sm font-medium text-surface-700 dark:text-surface-300">
+                Changes Preview
+              </span>
+            </div>
+            <ChangesPreview
+              original={modifyingAction.parameters}
+              modified={parsedParameters}
+            />
+          </div>
+        )}
+
+        {/* Trust Scope */}
+        <TrustScopeSelector
+          value={trustScope}
+          onChange={setTrustScope}
+        />
       </div>
-    </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-surface-100/50 dark:border-surface-700/30 bg-white/60 dark:bg-surface-800/50 backdrop-blur-sm flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400">
+          <ShieldCheckIcon className="w-4 h-4" />
+          <span>Modifications are logged for audit</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={closeModifyModal}
+            className="px-4 py-2.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!hasChanges || !!validationError || loading.modify}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-aura-500 rounded-xl hover:bg-aura-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-[var(--ease-tahoe)] shadow-sm hover:shadow-md"
+          >
+            {loading.modify ? (
+              <ArrowPathIcon className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckIcon className="w-4 h-4" />
+            )}
+            Apply and Approve
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }

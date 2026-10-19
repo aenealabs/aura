@@ -37,6 +37,7 @@ import {
 import { useExecution, ExecutionProvider } from '../../context/ExecutionContext';
 import ActionApprovalCard from './ActionApprovalCard';
 import ActionModifyModal from './ActionModifyModal';
+import Modal, { ModalTitle } from '../shared/Modal';
 import ExecutionTimeline from './ExecutionTimeline';
 import TrustSettingsPanel from './TrustSettingsPanel';
 
@@ -349,8 +350,6 @@ function CurrentActionPanel() {
  * Keyboard Shortcuts Help
  */
 function KeyboardShortcutsHelp({ isOpen, onClose }) {
-  if (!isOpen) return null;
-
   const shortcuts = [
     { key: 'A', description: 'Approve current action' },
     { key: 'D', description: 'Deny current action' },
@@ -360,45 +359,40 @@ function KeyboardShortcutsHelp({ isOpen, onClose }) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="fixed inset-0 glass-backdrop"
-        onClick={onClose}
-      />
-      <div className="
-        relative p-6 w-full max-w-sm
-        bg-white/95 dark:bg-surface-800/95
-        backdrop-blur-xl backdrop-saturate-150
-        rounded-2xl
-        border border-white/50 dark:border-surface-700/50
-        shadow-[var(--shadow-glass-hover)]
-        animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]
-      ">
-        <div className="flex items-center justify-between mb-4">
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="sm"
+      overlayClassName="glass-backdrop"
+      panelClassName="p-6 bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl border border-white/50 dark:border-surface-700/50 shadow-[var(--shadow-glass-hover)] animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
+    >
+      <div className="flex items-center justify-between mb-4">
+        <ModalTitle asChild>
           <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
             Keyboard Shortcuts
           </h3>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-lg transition-all duration-200 ease-[var(--ease-tahoe)]"
-          >
-            <XMarkIcon className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="space-y-3">
-          {shortcuts.map((shortcut) => (
-            <div key={shortcut.key} className="flex items-center justify-between">
-              <span className="text-sm text-surface-600 dark:text-surface-400">
-                {shortcut.description}
-              </span>
-              <kbd className="px-2 py-1 text-xs font-mono bg-white dark:bg-surface-700 text-surface-700 dark:text-surface-300 rounded-lg border border-surface-200/50 dark:border-surface-600/50">
-                {shortcut.key}
-              </kbd>
-            </div>
-          ))}
-        </div>
+        </ModalTitle>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="p-1.5 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-lg transition-all duration-200 ease-[var(--ease-tahoe)]"
+        >
+          <XMarkIcon className="w-5 h-5" />
+        </button>
       </div>
-    </div>
+      <div className="space-y-3">
+        {shortcuts.map((shortcut) => (
+          <div key={shortcut.key} className="flex items-center justify-between">
+            <span className="text-sm text-surface-600 dark:text-surface-400">
+              {shortcut.description}
+            </span>
+            <kbd className="px-2 py-1 text-xs font-mono bg-white dark:bg-surface-700 text-surface-700 dark:text-surface-300 rounded-lg border border-surface-200/50 dark:border-surface-600/50">
+              {shortcut.key}
+            </kbd>
+          </div>
+        ))}
+      </div>
+    </Modal>
   );
 }
 

@@ -295,9 +295,12 @@ echo "export AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> ~/.bashrc
 1. Go to: <https://console.aws.amazon.com/bedrock/>
 2. Click **"Model access"** in left sidebar
 3. Click **"Request model access"** (orange button)
-4. Find and enable:
-   - ✅ **Anthropic → Claude 3.5 Sonnet** (anthropic.claude-3-5-sonnet-20241022-v1:0)
-   - ✅ **Anthropic → Claude 3 Haiku** (anthropic.claude-3-haiku-20240307-v1:0)
+4. Find and enable the current Anthropic Claude models in each family Aura's tiers use:
+   - ✅ **Claude Haiku** (fast tier)
+   - ✅ **Claude Sonnet** (accurate tier)
+   - ✅ **Claude Opus** (maximum tier)
+
+   You do not need to choose model versions here. By default (`auto`) the service discovers the newest ACTIVE, priced Claude model for each tier in the region at startup. To pin approved models instead, set them in the Bedrock secret (see Phase 6).
 5. Click **"Request model access"**
 6. Wait 1-2 minutes for approval (usually instant)
 
@@ -319,16 +322,24 @@ aws bedrock list-foundation-models \
   --query 'modelSummaries[?starts_with(modelId, `anthropic.claude`)].{ModelId:modelId,Name:modelName}' \
   --output table
 
-# Should show Claude 3.5 Sonnet and Claude 3 Haiku
+# Should show current Claude Haiku, Sonnet, and Opus models
+
+# Newer models are invoked through inference profiles; list them too
+aws bedrock list-inference-profiles \
+  --region us-east-1 \
+  --query 'inferenceProfileSummaries[?contains(inferenceProfileId, `anthropic.claude`)].inferenceProfileId' \
+  --output table
 ```
 
 ### Step 2.3: Test Bedrock API (Optional)
 
 ```bash
-# Test if you can invoke Claude
+# Test if you can invoke Claude. Use a model or inference profile ID from
+# Step 2.2 (models that are not on-demand must be invoked by inference profile ID).
+MODEL_ID=<inference profile ID from Step 2.2>
 aws bedrock-runtime invoke-model \
   --region us-east-1 \
-  --model-id anthropic.claude-3-haiku-20240307-v1:0 \
+  --model-id "$MODEL_ID" \
   --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":100,"messages":[{"role":"user","content":"Say hello"}]}' \
   --cli-binary-format raw-in-base64-out \
   response.json
@@ -395,9 +406,18 @@ cat > /tmp/aura-bedrock-policy.json << EOF
         "bedrock:InvokeModelWithResponseStream"
       ],
       "Resource": [
-        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-sonnet-20241022-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
+        "arn:aws:bedrock:us-east-1:${AWS_ACCOUNT_ID}:inference-profile/*anthropic.claude-*"
       ]
+    },
+    {
+      "Sid": "BedrockModelDiscovery",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:ListFoundationModels",
+        "bedrock:ListInferenceProfiles"
+      ],
+      "Resource": "*"
     },
     {
       "Sid": "SecretsManagerRead",
@@ -700,32 +720,37 @@ echo "✓ AWS Budget created (optional)"
 ### Step 6.1: Create Bedrock Configuration Secret
 
 ```bash
-# Create secret for Bedrock configuration
+# Create secret for Bedrock configuration.
+# "auto" lets the service discover the newest active model per tier at startup.
+# To pin approved models (ADR-088), use model or inference profile IDs instead, e.g.
+#   "model_id_primary": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+# Other keys: model_id_fast, model_id_accurate, model_id_maximum, model_pricing,
+# prompt_cache_models.
 cat > /tmp/bedrock-secret.json << 'EOF'
 {
-  "model_id_primary": "anthropic.claude-3-5-sonnet-20241022-v1:0",
-  "model_id_fallback": "anthropic.claude-3-haiku-20240307-v1:0",
+  "model_id_primary": "auto",
+  "model_id_fallback": "auto",
   "max_tokens_default": 4096,
   "temperature_default": 0.7
 }
 EOF
 
 aws secretsmanager create-secret \
-  --name aura/prod/bedrock \
+  --name aura/prod/bedrock-config \
   --description "Bedrock configuration for Project Aura production" \
   --secret-string file:///tmp/bedrock-secret.json \
   --region us-east-1
 
-echo "✓ Secret created: aura/prod/bedrock"
+echo "✓ Secret created: aura/prod/bedrock-config"
 
 # Also create for dev environment
 aws secretsmanager create-secret \
-  --name aura/dev/bedrock \
+  --name aura/dev/bedrock-config \
   --description "Bedrock configuration for Project Aura development" \
   --secret-string file:///tmp/bedrock-secret.json \
   --region us-east-1
 
-echo "✓ Secret created: aura/dev/bedrock"
+echo "✓ Secret created: aura/dev/bedrock-config"
 ```
 
 ### Step 6.2: Verify Secrets
@@ -908,8 +933,8 @@ aws iam delete-role --role-name AuraBedrockServiceRole
 aws iam delete-policy --policy-arn arn:aws:iam::${AWS_ACCOUNT_ID}:policy/AuraBedrockPolicy
 
 # Delete secrets
-aws secretsmanager delete-secret --secret-id aura/prod/bedrock --force-delete-without-recovery --region us-east-1
-aws secretsmanager delete-secret --secret-id aura/dev/bedrock --force-delete-without-recovery --region us-east-1
+aws secretsmanager delete-secret --secret-id aura/prod/bedrock-config --force-delete-without-recovery --region us-east-1
+aws secretsmanager delete-secret --secret-id aura/dev/bedrock-config --force-delete-without-recovery --region us-east-1
 
 # Delete SNS topic
 aws sns delete-topic --topic-arn $TOPIC_ARN --region us-east-1

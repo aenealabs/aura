@@ -368,12 +368,18 @@ Resources:
                   - bedrock:InvokeModel
                   - bedrock:InvokeModelWithResponseStream
                 Resource:
-                  # Anthropic Claude models (approved for Project Aura)
-                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet*'
-                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku*'
-                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-opus*'
+                  # Claude models (discovered per tier at startup) and their inference
+                  # profiles; cross-region profiles route to the model in other regions
+                  - !Sub 'arn:${AWS::Partition}:bedrock:*::foundation-model/anthropic.claude-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*anthropic.claude-*'
                   # Amazon Titan models (for embeddings)
                   - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed*'
+              # Read-only model discovery (list calls carry no model ID to scope on)
+              - Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                  - bedrock:ListInferenceProfiles
+                Resource: '*'
 
         # DynamoDB access for job state updates
         - PolicyName: DynamoDBAccess

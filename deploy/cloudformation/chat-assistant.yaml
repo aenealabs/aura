@@ -23,18 +23,18 @@ Parameters:
 
   BedrockModelId:
     Type: String
-    Default: anthropic.claude-3-5-sonnet-20241022-v2:0
-    Description: Bedrock model ID for chat completions
+    Default: anthropic.claude-sonnet-5-5
+    Description: Bedrock model or inference profile ID for chat completions (ACCURATE tier, current Sonnet)
 
   HaikuModelId:
     Type: String
-    Default: anthropic.claude-3-haiku-20240307-v1:0
-    Description: Bedrock model ID for simple queries (FAST tier - cost optimization)
+    Default: anthropic.claude-haiku-4-5
+    Description: Bedrock model or inference profile ID for simple queries (FAST tier, current Haiku)
 
   OpusModelId:
     Type: String
-    Default: anthropic.claude-3-opus-20240229-v1:0
-    Description: Bedrock model ID for complex queries (MAXIMUM tier - deep research)
+    Default: anthropic.claude-opus-5-5
+    Description: Bedrock model or inference profile ID for complex queries (MAXIMUM tier, current Opus)
 
   ConversationTTLDays:
     Type: Number

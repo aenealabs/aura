@@ -122,10 +122,21 @@ resource "aws_iam_role_policy" "aura_bedrock_policy" {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ]
+        # Claude models (discovered per tier at startup) and their inference profiles;
+        # cross-region profiles route to the model in other regions
         Resource = [
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v1:0",
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/*anthropic.claude-*"
         ]
+      },
+      {
+        Sid    = "BedrockModelDiscovery"
+        Effect = "Allow"
+        Action = [
+          "bedrock:ListFoundationModels",
+          "bedrock:ListInferenceProfiles"
+        ]
+        Resource = "*"
       },
       {
         Sid    = "SecretsManagerRead"
@@ -241,8 +252,10 @@ resource "aws_secretsmanager_secret_version" "bedrock_config" {
   secret_id = aws_secretsmanager_secret.bedrock_config.id
 
   secret_string = jsonencode({
-    model_id_primary    = var.environment == "development" ? "anthropic.claude-3-haiku-20240307-v1:0" : "anthropic.claude-3-5-sonnet-20241022-v1:0"
-    model_id_fallback   = "anthropic.claude-3-haiku-20240307-v1:0"
+    # "auto": the service picks the newest active Claude model per tier on Bedrock at
+    # startup. Replace with a model or inference profile ID to pin an approved model.
+    model_id_primary    = "auto"
+    model_id_fallback   = "auto"
     max_tokens_default  = 4096
     temperature_default = 0.7
   })

@@ -444,8 +444,11 @@ llm:
     # Use existing AWS credentials secret
     existingSecret: ""
     # Models to enable
+    # Current Claude models (Aura picks the newest active model per tier at startup)
     models:
-      - anthropic.claude-3-5-sonnet-20241022-v2:0
+      - anthropic.claude-sonnet-5-5
+      - anthropic.claude-haiku-4-5
+      - anthropic.claude-opus-5-5
       - amazon.titan-embed-text-v2:0
 
   # vLLM for local LLM inference

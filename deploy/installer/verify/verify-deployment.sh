@@ -462,8 +462,8 @@ verify_bedrock_access() {
     log_section "Bedrock Model Access"
 
     local models=(
-        "anthropic.claude-3-5-sonnet-20241022-v1:0"
-        "anthropic.claude-3-haiku-20240307-v1:0"
+        "anthropic.claude-sonnet-5-5"
+        "anthropic.claude-haiku-4-5"
         "amazon.titan-embed-text-v2:0"
     )
 

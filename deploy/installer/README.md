@@ -78,10 +78,13 @@ Located in `../customer/parameters/`:
 
 ### Bedrock Models Required
 
-Request access to these models before installation:
-- `anthropic.claude-3-5-sonnet-20241022-v1:0`
-- `anthropic.claude-3-haiku-20240307-v1:0`
+Request access to these models in the deployment region before installation:
+- The current Anthropic Claude models in the Haiku, Sonnet, and Opus families
 - `amazon.titan-embed-text-v2:0`
+
+You do not need to pick Claude versions. By default (`auto`) the service discovers the newest ACTIVE, priced Claude model for each tier (fast/Haiku, accurate/Sonnet, maximum/Opus) at startup, using inference profile IDs where needed. To pin approved models, set `model_id_fast`, `model_id_accurate`, `model_id_maximum` (and `model_id_primary` / `model_id_fallback`) in the `aura/<env>/bedrock-config` secret to model or inference profile IDs such as `us.anthropic.claude-sonnet-4-5-20250929-v1:0`.
+
+The service role needs `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` on `arn:<partition>:bedrock:*::foundation-model/anthropic.claude-*` and `arn:<partition>:bedrock:<region>:<account>:inference-profile/*anthropic.claude-*`, plus `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles` on `*`.
 
 ### Network Requirements
 

@@ -122,8 +122,11 @@ Parameters:
 
   PrimaryModel:
     Type: String
-    Default: anthropic.claude-3-5-sonnet-20241022-v1:0
-    Description: Primary Bedrock model for reasoning
+    Default: auto
+    Description: >-
+      Primary Bedrock model for reasoning. "auto" uses the newest active Claude Sonnet
+      model available in the region (discovered at startup); set a model or inference
+      profile ID to pin an approved model.
 
   EmbeddingModel:
     Type: String
@@ -286,9 +289,17 @@ Resources:
                   - bedrock:InvokeModel
                   - bedrock:InvokeModelWithResponseStream
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${PrimaryModel}'
-                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0'
+                  # Claude models (discovered per tier at startup) and their inference
+                  # profiles; cross-region profiles route to the model in other regions
+                  - !Sub 'arn:${AWS::Partition}:bedrock:*::foundation-model/anthropic.claude-*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*anthropic.claude-*'
                   - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${EmbeddingModel}'
+              # Read-only model discovery (list calls carry no model ID to scope on)
+              - Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                  - bedrock:ListInferenceProfiles
+                Resource: '*'
         - PolicyName: NeptuneAccess
           PolicyDocument:
             Version: '2012-10-17'

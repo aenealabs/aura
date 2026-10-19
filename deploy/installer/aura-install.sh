@@ -438,13 +438,12 @@ check_bedrock_access() {
     # List foundation models to check access
     if ! aws bedrock list-foundation-models \
         --region "$AWS_REGION" \
-        --query 'modelSummaries[?modelId==`anthropic.claude-3-5-sonnet-20241022-v1:0`]' \
+        --query 'modelSummaries[?contains(modelId, `anthropic.claude-sonnet`)].modelId' \
         --output text &> /dev/null; then
         log_check "warn" "Could not verify Bedrock access (may need to request model access)"
         echo ""
         echo "  Bedrock model access is required. Please request access to:"
-        echo "  - anthropic.claude-3-5-sonnet-20241022-v1:0"
-        echo "  - anthropic.claude-3-haiku-20240307-v1:0"
+        echo "  - Claude Sonnet, Haiku, and Opus (current versions; Aura uses the newest active model per tier)"
         echo "  - amazon.titan-embed-text-v2:0"
         echo ""
         echo "  Request access at: https://console.aws.amazon.com/bedrock/home#/modelaccess"

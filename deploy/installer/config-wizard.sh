@@ -370,8 +370,9 @@ section_bedrock() {
     print_help_text "The following models will be used (ensure you have access):"
     echo ""
     echo -e "  ${CYAN}Required:${NC}"
-    echo "    - anthropic.claude-3-5-sonnet-20241022-v1:0 (primary reasoning)"
-    echo "    - anthropic.claude-3-haiku-20240307-v1:0 (fast tasks)"
+    echo "    - Claude Sonnet, current version (primary reasoning)"
+    echo "    - Claude Haiku, current version (fast tasks)"
+    echo "    - Claude Opus, current version (complex reasoning)"
     echo "    - amazon.titan-embed-text-v2:0 (embeddings)"
     echo ""
 
@@ -386,7 +387,7 @@ section_bedrock() {
         read -r
     fi
 
-    CONFIG_BEDROCK_MODELS="anthropic.claude-3-5-sonnet-20241022-v1:0,anthropic.claude-3-haiku-20240307-v1:0,amazon.titan-embed-text-v2:0"
+    CONFIG_BEDROCK_MODELS="anthropic.claude-sonnet-5-5,anthropic.claude-haiku-4-5,anthropic.claude-opus-5-5,amazon.titan-embed-text-v2:0"
 
     echo ""
     log_success "Bedrock configuration complete"
@@ -493,8 +494,9 @@ eks:
 # Bedrock Settings
 bedrock:
   models:
-    - "anthropic.claude-3-5-sonnet-20241022-v1:0"
-    - "anthropic.claude-3-haiku-20240307-v1:0"
+    - "anthropic.claude-sonnet-5-5"
+    - "anthropic.claude-haiku-4-5"
+    - "anthropic.claude-opus-5-5"
     - "amazon.titan-embed-text-v2:0"
 
 # Estimated Monthly Costs (approximate, before Bedrock usage)

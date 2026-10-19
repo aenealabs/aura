@@ -19,7 +19,7 @@
   "EnableDeletionProtection": "true",
 
   "EnableBedrock": "true",
-  "PrimaryModel": "anthropic.claude-3-5-sonnet-20241022-v1:0",
+  "PrimaryModel": "auto",
   "EmbeddingModel": "amazon.titan-embed-text-v2:0",
 
   "_metadata": {

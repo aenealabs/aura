@@ -23,6 +23,9 @@ data:
   USE_MOCK_LLM: "false"
   ENABLE_MCP: "false"
   ENABLE_TITAN_MEMORY: "false"
+  # Each job runs the full HITL workflow: sandbox tests, then an approval request.
+  # "false" runs the plain workflow (code, review, validate) with no approval step.
+  ENABLE_HITL: "true"
 
   # SQS Configuration (warm pool job consumption)
   SQS_POLL_INTERVAL: "5"

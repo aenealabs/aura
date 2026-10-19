@@ -106,7 +106,9 @@ kubectl get nodes
 # Enable Bedrock model access (in AWS Console)
 open "https://console.aws.amazon.com/bedrock/"
 # Click "Model access" → "Request model access"
-# Enable: Anthropic Claude 3 Sonnet and Haiku
+# Enable the current Anthropic Claude models (Haiku, Sonnet, Opus families).
+# The service discovers the newest active model per tier at startup ("auto");
+# pin approved models with model_id_* keys in aura/<env>/bedrock-config.
 
 # Update API secrets in Secrets Manager
 aws secretsmanager update-secret \
@@ -186,7 +188,7 @@ This walks you through creating each resource individually using AWS CLI command
 | IAM Role | AuraBedrockServiceRole-{env} | Permissions for Bedrock access | Free |
 | Instance Profile | AuraBedrockInstanceProfile-{env} | For EC2/ECS instances | Free |
 | DynamoDB Table | aura-llm-costs-{env} | Cost tracking | ~$0.50/month |
-| Secret | aura/{env}/bedrock | Bedrock configuration | $0.40/month |
+| Secret | aura/{env}/bedrock-config | Bedrock configuration | $0.40/month |
 | SNS Topic | aura-budget-alerts-{env} | Email alerts | $0.10/month |
 | CloudWatch Alarms | aura-*-budget-* | Budget monitoring | $0.30/month |
 | Log Group | /aws/aura/{env} | Application logs | Free tier |
@@ -384,7 +386,7 @@ cd deploy/cloudformation
 
 # 5. Enable Bedrock models
 # Go to: https://console.aws.amazon.com/bedrock/
-# Request access to Claude 3.5 Sonnet and Claude 3 Haiku
+# Request access to the current Claude Haiku, Sonnet, and Opus models in your region
 
 # 6. Validate
 python3 ../../deploy/validate_aws_setup.py

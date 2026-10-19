@@ -78,16 +78,19 @@ def check_bedrock_access() -> Tuple[bool, List[str]]:
             model["modelId"]
             for model in response["modelSummaries"]
             if "claude" in model["modelId"].lower()
+            and (model.get("modelLifecycle") or {}).get("status", "ACTIVE") == "ACTIVE"
         ]
 
-        required_models = [
-            "anthropic.claude-3-5-sonnet-20241022-v1:0",
-            "anthropic.claude-3-haiku-20240307-v1:0",
+        # Aura picks the newest active model per tier; it needs at least a Haiku (fast)
+        # and a Sonnet (accurate) model. Opus (maximum) falls back if missing.
+        required_families = ["claude-haiku", "claude-sonnet"]
+        available = [
+            next(m for m in claude_models if family in m)
+            for family in required_families
+            if any(family in m for m in claude_models)
         ]
 
-        available = [m for m in required_models if m in claude_models]
-
-        if len(available) == len(required_models):
+        if len(available) == len(required_families):
             return True, available
         else:
             return False, available
@@ -237,6 +240,32 @@ def check_cloudwatch_alarms(alarm_prefix: str = "aura-") -> Tuple[bool, List[str
         return False, [f"Error: {e}"]
 
 
+def _current_haiku_invoke_id(region: str = "us-east-1") -> str:
+    """The newest active Claude Haiku in the region, through its inference profile if it
+    is not invocable on demand."""
+    bedrock = boto3.client("bedrock", region_name=region)
+    haikus = [
+        m
+        for m in bedrock.list_foundation_models(byProvider="Anthropic")[
+            "modelSummaries"
+        ]
+        if "claude-haiku" in m["modelId"]
+        and (m.get("modelLifecycle") or {}).get("status", "ACTIVE") == "ACTIVE"
+    ]
+    if not haikus:
+        raise RuntimeError("No active Claude Haiku model available in this region")
+    model = max(haikus, key=lambda m: m["modelId"])
+    if "ON_DEMAND" in (model.get("inferenceTypesSupported") or []):
+        return model["modelId"]
+    profiles = bedrock.list_inference_profiles(typeEquals="SYSTEM_DEFINED")
+    for profile in profiles.get("inferenceProfileSummaries", []):
+        if profile["inferenceProfileId"].endswith(model["modelId"]) and profile[
+            "inferenceProfileId"
+        ].startswith(("us.", "global.")):
+            return profile["inferenceProfileId"]
+    return model["modelId"]
+
+
 def test_bedrock_invocation() -> Tuple[bool, str]:
     """Test actual Bedrock API invocation."""
     try:
@@ -251,7 +280,7 @@ def test_bedrock_invocation() -> Tuple[bool, str]:
         }
 
         response = bedrock_runtime.invoke_model(
-            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            modelId=_current_haiku_invoke_id(),
             body=json.dumps(request_body),
         )
 

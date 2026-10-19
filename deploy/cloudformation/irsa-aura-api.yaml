@@ -85,21 +85,26 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ddb-${Environment}-*'
               - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-ddb-${Environment}-*/index/*'
 
-          # Bedrock LLM Access (Claude 3.5 Sonnet, Claude 3 Haiku, Titan Embeddings)
+          # Bedrock LLM access: Claude models (the service discovers the newest active model
+          # per tier at startup), through inference profiles, plus Titan embeddings.
+          # Cross-region inference profiles route to the model in other regions.
           - Sid: BedrockModelAccess
             Effect: Allow
             Action:
               - bedrock:InvokeModel
               - bedrock:InvokeModelWithResponseStream
             Resource:
-              # Claude 3.5 Sonnet (primary model for staging/production)
-              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-*'
-              # Claude 3 Haiku (fallback, cost-effective for dev)
-              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-*'
-              # Claude 3 Sonnet (legacy support)
-              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-sonnet-*'
-              # Titan Embeddings
+              - !Sub 'arn:${AWS::Partition}:bedrock:*::foundation-model/anthropic.claude-*'
+              - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*anthropic.claude-*'
               - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-*'
+
+          # Read-only model discovery (list calls carry no model ID to scope on)
+          - Sid: BedrockModelDiscovery
+            Effect: Allow
+            Action:
+              - bedrock:ListFoundationModels
+              - bedrock:ListInferenceProfiles
+            Resource: '*'
 
           # Secrets Manager Access (for API keys, credentials)
           # Secrets follow path-based naming: aura/{env}/secret-name
@@ -156,6 +161,15 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-security-alerts-${Environment}'
               - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-critical-anomalies-${Environment}'
               - !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-hitl-approvals-${Environment}'
+
+          # SES (HITL approval emails from the orchestrator, which shares this role)
+          - Sid: SESApprovalNotifications
+            Effect: Allow
+            Action:
+              - ses:SendEmail
+              - ses:SendRawEmail
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*'
 
           # SQS (for orchestrator task queue consumption)
           - Sid: SQSOrchestratorQueue

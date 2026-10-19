@@ -1,0 +1,28 @@
+WEBVTT
+
+00:00:00.005 --> 00:00:09.078
+Project Aura · Autonomous AI security for enterprise codebases · Find it. Fix it. Prove it. Then a person approves it.
+
+00:00:09.078 --> 00:00:16.082
+The security dashboard: open findings, agents at work, and patches waiting on a person.
+
+00:00:18.485 --> 00:00:24.889
+Every patch is generated, tested in a sandbox, then queued for human approval.
+
+00:00:24.889 --> 00:00:32.025
+The reviewer sees the exact change: string-built SQL replaced with a parameterized query.
+
+00:00:34.380 --> 00:00:41.384
+Mission Control shows each agent's reasoning and the actions it plans, before they run.
+
+00:00:43.766 --> 00:00:51.507
+Red-team campaigns attack the agents themselves: prompt injection, auth bypass, data exfiltration.
+
+00:00:53.899 --> 00:01:01.371
+The AI Trust Center tracks constitutional principles and safety metrics against their targets.
+
+00:01:03.770 --> 00:01:11.106
+Every agent decision is explained, and contradictions between agents are flagged for review.
+
+00:01:11.111 --> 00:01:15.114
+Project Aura · Human-in-the-loop by design · github.com/aenealabs/aura

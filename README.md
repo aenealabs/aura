@@ -48,6 +48,12 @@ Then what?                                   Awaiting human approval for deploym
 A look inside the Aura Platform.
 
 <p align="center">
+  <a href="assets/media/aura-demo.mp4"><img src="assets/media/aura-highlights.webp" alt="Highlights: the security dashboard, a patch awaiting human approval with its diff, agent reasoning in Mission Control, red-team campaigns, the AI Trust Center, and explainable decisions" width="800"></a>
+</p>
+
+<p align="center"><em>Highlights (35 seconds).</em> <a href="assets/media/aura-demo.mp4"><strong>Watch the full clip</strong></a> (75 seconds, captioned)</p>
+
+<p align="center">
   <img src="assets/logo/Main Dashboard.png" alt="Main Dashboard" width="800">
 </p>
 
@@ -90,6 +96,10 @@ A look inside the Aura Platform.
 <p align="center">
   <img src="assets/logo/Platform Settings.png" alt="Platform Settings" width="800">
 </p>
+
+The screenshots and clip are generated from the running frontend (dev mode, no backend) by the
+scripts in [`scripts/readme_media/`](scripts/readme_media/): `capture_screenshots.py`,
+`record_demo.py`, then `make_highlights.py`.
 
 ---
 

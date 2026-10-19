@@ -7,6 +7,20 @@ development fallbacks it shows on a laptop.
 """
 
 import json
+import subprocess
+from pathlib import Path
+
+FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
+
+
+def app_sample(module: str, name: str):
+    """A sample object the frontend itself ships (e.g. in services/*MockData.js), read with Node
+    so the screenshots stay in step with the app's own sample data."""
+    path = FRONTEND / "src" / module
+    script = f"const m = await import({json.dumps(str(path))}); console.log(JSON.stringify(m.{name}))"
+    out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True,
+                         text=True, check=True)
+    return json.loads(out.stdout)
 
 ONBOARDING_DONE = {
     "welcome_modal_dismissed": True, "tour_completed": True, "tour_skipped": True,
@@ -42,6 +56,9 @@ SAMPLES: dict[str, object] = {
     },
     # No saved policies: the Autonomy tab shows its default policy
     "/autonomy/policies": [],
+    # The scanner page's default scan, from the app's scanner sample data
+    "/scanner/scans/scan-a1b2c3d4": app_sample("services/vulnScannerMockData.js",
+                                                "MOCK_SCAN_DETAIL"),
 }
 
 # Dev-mode toolbar (bottom left) is a developer tool, not part of the product

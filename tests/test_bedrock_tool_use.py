@@ -134,7 +134,9 @@ class TestInvokeWithTools:
         service.sanitize_prompts = True
         service.prompt_sanitizer = MagicMock()
         service.prompt_sanitizer.sanitize.return_value = MagicMock(
-            action=SanitizationAction.SANITIZED, was_modified=True, sanitized_prompt="[screened]"
+            action=SanitizationAction.SANITIZED,
+            was_modified=True,
+            sanitized_prompt="[screened]",
         )
         messages = [
             {"role": "user", "content": "Fix the bug"},

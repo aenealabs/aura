@@ -2628,6 +2628,7 @@ def create_system2_orchestrator(
     enable_a2as: bool = True,
     enable_async_messaging: bool = False,
     sandbox_orchestrator: "FargateSandboxOrchestrator | None" = None,
+    enable_hitl: bool = False,
 ) -> "System2Orchestrator":
     """Factory function to create a System2Orchestrator.
 
@@ -2642,6 +2643,9 @@ def create_system2_orchestrator(
         sandbox_orchestrator: Optional sandbox orchestrator. If None, one is built
             from the environment via create_sandbox_orchestrator (requires
             SANDBOX_ENABLED=true); otherwise the sandbox step reports SKIPPED.
+        enable_hitl: If True, build the HITL approval and notification services, so
+            execute_request_with_hitl creates approval requests (mock services when
+            use_mock is True or AWS is not configured).
 
     Returns:
         System2Orchestrator: Configured orchestrator instance.
@@ -2654,6 +2658,19 @@ def create_system2_orchestrator(
 
     # Sandbox orchestrator: explicit argument wins, else env-driven factory
     # (None when unconfigured -> honest SKIPPED in the HITL path).
+    hitl_approval_service = None
+    notification_service = None
+    if enable_hitl:
+        from src.services.hitl_approval_service import create_hitl_approval_service
+        from src.services.notification_service import create_notification_service
+
+        hitl_approval_service = create_hitl_approval_service(use_mock=use_mock)
+        notification_service = create_notification_service(use_mock=use_mock)
+        logger.info(
+            "HITL approval service initialized (mode=%s)",
+            hitl_approval_service.mode.value,
+        )
+
     if sandbox_orchestrator is None:
         from src.services.service_adapters import create_sandbox_orchestrator
 
@@ -2758,6 +2775,8 @@ def create_system2_orchestrator(
             queue_service=queue_service,
             use_async_messaging=enable_async_messaging,
             sandbox_orchestrator=sandbox_orchestrator,
+            hitl_approval_service=hitl_approval_service,
+            notification_service=notification_service,
         )
     else:
         from src.services.bedrock_llm_service import create_llm_service
@@ -2776,6 +2795,8 @@ def create_system2_orchestrator(
             queue_service=queue_service,
             use_async_messaging=enable_async_messaging,
             sandbox_orchestrator=sandbox_orchestrator,
+            hitl_approval_service=hitl_approval_service,
+            notification_service=notification_service,
         )
 
 

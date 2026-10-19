@@ -97,6 +97,7 @@ class MockConfig:
     USE_MOCK_LLM = True
     ENABLE_MCP = False
     ENABLE_TITAN_MEMORY = False
+    ENABLE_HITL = False  # the plain workflow; the HITL path has its own tests
 
 
 @pytest.fixture
@@ -633,3 +634,136 @@ class TestIntegration:
         # Current job should be cleared
         assert consumer_with_mocks._current_job_id is None
         assert consumer_with_mocks._current_job_started is None
+
+
+# =============================================================================
+# HITL workflow in the job server
+# =============================================================================
+
+
+class TestHITLJobs:
+    """With ENABLE_HITL (the default) each job runs sandbox tests and an approval."""
+
+    @pytest.fixture
+    def hitl_consumer(self, mock_config, mock_sqs_client, mock_dynamodb_table):
+        mock_config.ENABLE_HITL = True
+        consumer = QueueConsumer(mock_config)
+        consumer.sqs = mock_sqs_client
+        consumer.table = mock_dynamodb_table
+        orchestrator = MagicMock()
+        orchestrator.execute_request_with_hitl = AsyncMock(
+            return_value={
+                "status": "AWAITING_APPROVAL",
+                "hitl_status": "PENDING",
+                "approval_id": "appr-1",
+                "approval_expires_at": "2026-10-20T00:00:00+00:00",
+                "sandbox_results": {"status": "PASSED"},
+                "handover": "Patch ready for review",
+                "metrics": {},
+            }
+        )
+        orchestrator.execute_request = AsyncMock()
+        consumer._orchestrator = orchestrator
+        return consumer
+
+    @pytest.mark.asyncio
+    async def test_job_runs_the_hitl_workflow_with_its_fields(self, hitl_consumer):
+        job = {
+            "job_id": "job-1",
+            "task_id": "task-1",
+            "vulnerability_id": "CVE-2026-0001",
+            "organization_id": "org-1",
+            "reviewer_emails": ["security@example.com"],
+        }
+
+        result = await hitl_consumer._execute_orchestrator("Fix SQLi", "job-1", job)
+
+        hitl_consumer._orchestrator.execute_request_with_hitl.assert_awaited_once_with(
+            user_prompt="Fix SQLi",
+            vulnerability_id="CVE-2026-0001",
+            reviewer_emails=["security@example.com"],
+            organization_id="org-1",
+        )
+        hitl_consumer._orchestrator.execute_request.assert_not_called()
+        assert result["status"] == "AWAITING_APPROVAL"
+        assert result["approval_id"] == "appr-1"
+        assert result["hitl_status"] == "PENDING"
+        assert result["sandbox_status"] == "PASSED"
+
+    @pytest.mark.asyncio
+    async def test_vulnerability_id_defaults_to_the_task_then_job(self, hitl_consumer):
+        await hitl_consumer._execute_orchestrator("p", "job-2", {"task_id": "task-2"})
+        await hitl_consumer._execute_orchestrator("p", "job-3", {})
+
+        calls = hitl_consumer._orchestrator.execute_request_with_hitl.await_args_list
+        assert calls[0].kwargs["vulnerability_id"] == "task-2"
+        assert calls[1].kwargs["vulnerability_id"] == "job-3"
+        assert calls[1].kwargs["reviewer_emails"] is None
+
+    @pytest.mark.asyncio
+    async def test_process_message_passes_the_job_body(
+        self, hitl_consumer, mock_sqs_client
+    ):
+        message = {
+            "ReceiptHandle": "r-1",
+            "Body": json.dumps(
+                {"job_id": "job-4", "prompt": "Fix it", "vulnerability_id": "V-4"}
+            ),
+        }
+
+        await hitl_consumer._process_message(message)
+
+        call = hitl_consumer._orchestrator.execute_request_with_hitl.await_args
+        assert call.kwargs["vulnerability_id"] == "V-4"
+        assert hitl_consumer._jobs_processed == 1
+
+    def test_consumer_builds_the_orchestrator_with_hitl(self, hitl_consumer):
+        with (
+            patch(
+                "src.agents.orchestrator_server.create_system2_orchestrator"
+            ) as factory,
+            patch("asyncio.create_task"),
+        ):
+            hitl_consumer._running = False
+            import asyncio
+
+            asyncio.run(hitl_consumer.start())
+
+        assert factory.call_args.kwargs["enable_hitl"] is True
+
+
+class TestFactoryHITLServices:
+    def test_enable_hitl_attaches_approval_and_notification_services(self):
+        from src.agents.agent_orchestrator import create_system2_orchestrator
+
+        orchestrator = create_system2_orchestrator(use_mock=True, enable_hitl=True)
+
+        assert orchestrator.hitl_approval_service is not None
+        assert orchestrator.notification_service is not None
+
+    def test_hitl_is_off_by_default_in_the_factory(self):
+        from src.agents.agent_orchestrator import create_system2_orchestrator
+
+        orchestrator = create_system2_orchestrator(use_mock=True)
+
+        assert orchestrator.hitl_approval_service is None
+
+    @pytest.mark.asyncio
+    async def test_mock_run_creates_an_approval_request(self):
+        from src.agents.agent_orchestrator import create_system2_orchestrator
+
+        orchestrator = create_system2_orchestrator(use_mock=True, enable_hitl=True)
+        orchestrator.reviewer_agent = AsyncMock()
+        orchestrator.reviewer_agent.review_code.return_value = {"status": "PASS"}
+        orchestrator.validator_agent.validate_code = AsyncMock(
+            return_value={"valid": True, "issues": []}
+        )
+
+        result = await orchestrator.execute_request_with_hitl(
+            user_prompt="Fix the insecure hash", vulnerability_id="VULN-1"
+        )
+
+        assert result["status"] == "AWAITING_APPROVAL"
+        assert result["approval_id"]
+        # No sandbox configured: the approval records that it was not runtime-tested
+        assert result["sandbox_results"]["status"] == "SKIPPED"

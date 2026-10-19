@@ -70,6 +70,9 @@ class Config:
     USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
     ENABLE_MCP = os.getenv("ENABLE_MCP", "false").lower() == "true"
     ENABLE_TITAN_MEMORY = os.getenv("ENABLE_TITAN_MEMORY", "false").lower() == "true"
+    # Run the full HITL workflow (sandbox tests, then an approval request) for each job.
+    # Set false to run the plain workflow (code, review, validate) with no approval step.
+    ENABLE_HITL = os.getenv("ENABLE_HITL", "true").lower() == "true"
 
     # AWS Configuration - Region is required (no hardcoded defaults)
     AWS_REGION = os.getenv("AWS_REGION")
@@ -197,6 +200,7 @@ class QueueConsumer:
                 use_mock=self.config.USE_MOCK_LLM,
                 enable_mcp=self.config.ENABLE_MCP,
                 enable_titan_memory=self.config.ENABLE_TITAN_MEMORY,
+                enable_hitl=self._hitl_enabled,
             )
             logger.info("System2Orchestrator initialized")
         except Exception as e:
@@ -265,7 +269,7 @@ class QueueConsumer:
             await self._update_job_status(job_id, "RUNNING")
 
             # Execute orchestrator
-            result = await self._execute_orchestrator(prompt, job_id)
+            result = await self._execute_orchestrator(prompt, job_id, body)
 
             # Update status to SUCCEEDED with result
             await self._update_job_status(
@@ -315,21 +319,56 @@ class QueueConsumer:
             self._current_job_id = None
             self._current_job_started = None
 
-    async def _execute_orchestrator(self, prompt: str, job_id: str) -> dict[str, Any]:
-        """Execute the orchestrator for a job."""
+    @property
+    def _hitl_enabled(self) -> bool:
+        return bool(getattr(self.config, "ENABLE_HITL", True))
+
+    async def _execute_orchestrator(
+        self, prompt: str, job_id: str, job: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Execute the orchestrator for a job.
+
+        With ENABLE_HITL (the default) the job runs the full HITL workflow: code, review
+        and validation with repair, sandbox tests (with repair runs), then an approval
+        request for a human. Optional job fields: ``vulnerability_id`` (default: the
+        job's task_id or job_id), ``organization_id`` (tenant scope for the approval),
+        and ``reviewer_emails`` (who to notify).
+        """
         if not self._orchestrator:
             raise RuntimeError("Orchestrator not initialized")
 
-        # Execute the orchestrator
-        result = await self._orchestrator.execute_request(prompt)
+        job = job or {}
+        if self._hitl_enabled:
+            result = await self._orchestrator.execute_request_with_hitl(
+                user_prompt=prompt,
+                vulnerability_id=job.get("vulnerability_id")
+                or job.get("task_id")
+                or job_id,
+                reviewer_emails=job.get("reviewer_emails") or None,
+                organization_id=job.get("organization_id"),
+            )
+        else:
+            result = await self._orchestrator.execute_request(prompt)
 
-        return {
+        summary = {
             "status": result.get("status", "UNKNOWN"),
             "handover": result.get("handover", ""),
             "metrics": result.get("metrics", {}),
             "job_id": job_id,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
+        if self._hitl_enabled:
+            sandbox = result.get("sandbox_results") or {}
+            summary.update(
+                {
+                    "hitl_status": result.get("hitl_status"),
+                    "hitl_reason": result.get("hitl_reason"),
+                    "approval_id": result.get("approval_id"),
+                    "approval_expires_at": result.get("approval_expires_at"),
+                    "sandbox_status": sandbox.get("status"),
+                }
+            )
+        return summary
 
     async def _update_job_status(
         self,

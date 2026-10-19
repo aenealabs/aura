@@ -43,6 +43,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 import { useTrustSettings, useExecution } from '../../context/ExecutionContext';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // =============================================================================
 // CONSTANTS
@@ -358,6 +359,9 @@ export default function TrustSettingsPanel({ isOpen, onClose, asModal = false })
   // Don't render if not open
   if (!isOpen) return null;
 
+  // As a modal, the heading is also the dialog's accessible name
+  const Heading = asModal ? ModalTitle : 'h2';
+
   const content = (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -367,9 +371,9 @@ export default function TrustSettingsPanel({ isOpen, onClose, asModal = false })
             <ShieldCheckIcon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+            <Heading className="text-lg font-semibold text-surface-900 dark:text-surface-100">
               Trust Settings
-            </h2>
+            </Heading>
             <p className="text-sm text-surface-500 dark:text-surface-400">
               Configure auto-approval for action types
             </p>
@@ -378,6 +382,7 @@ export default function TrustSettingsPanel({ isOpen, onClose, asModal = false })
         {onClose && (
           <button
             onClick={onClose}
+            aria-label="Close trust settings"
             className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-lg transition-all duration-200 ease-[var(--ease-tahoe)]"
           >
             <XMarkIcon className="w-5 h-5" />
@@ -523,25 +528,16 @@ export default function TrustSettingsPanel({ isOpen, onClose, asModal = false })
   // Render as modal or inline
   if (asModal) {
     return (
-      <div className="fixed inset-0 z-50 overflow-y-auto">
-        <div
-          className="fixed inset-0 glass-backdrop"
-          onClick={onClose}
-        />
-        <div className="flex min-h-full items-center justify-center p-4">
-          <div className="
-            relative w-full max-w-xl max-h-[80vh] overflow-hidden flex flex-col
-            bg-white/95 dark:bg-surface-800/95
-            backdrop-blur-xl backdrop-saturate-150
-            rounded-2xl
-            border border-white/50 dark:border-surface-700/50
-            shadow-[var(--shadow-glass-hover)]
-            animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]
-          ">
-            {content}
-          </div>
-        </div>
-      </div>
+      <Modal
+        open={isOpen}
+        onClose={onClose}
+        size="lg"
+        overlayClassName="glass-backdrop"
+        className="!max-w-xl !max-h-[80vh] !overflow-hidden flex flex-col"
+        panelClassName="bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl border border-white/50 dark:border-surface-700/50 shadow-[var(--shadow-glass-hover)] animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
+      >
+        {content}
+      </Modal>
     );
   }
 

@@ -33,7 +33,7 @@ Project Aura - Bedrock Configuration
 Current Environment: development
 Configuration:
   Region: us-east-1
-  Primary Model: anthropic.claude-3-haiku-20240307-v1:0
+  Primary Model: auto
   Daily Budget: $10.00
   Monthly Budget: $100.00
   Rate Limit: 5/min
@@ -88,15 +88,29 @@ print(f"Daily spend: ${summary['daily_spend']:.2f} / ${summary['daily_budget']:.
 Set the `AURA_ENV` environment variable to control configuration:
 
 ```bash
-# Development (uses cheap Haiku model, $10/day budget)
+# Development ($10/day budget)
 export AURA_ENV=development
 
-# Staging (uses Sonnet model, $50/day budget)
+# Staging ($50/day budget)
 export AURA_ENV=staging
 
-# Production (uses Sonnet model, $100/day budget)
+# Production ($100/day budget)
 export AURA_ENV=production
 ```
+
+### Model Selection
+
+Models are chosen per ADR-015 tier, not per environment: **fast** (Haiku family), **accurate** (Sonnet family), **maximum** (Opus family). Each tier's model resolves in this order:
+
+1. The environment's Secrets Manager secret, `aura/<env>/bedrock-config`
+2. The environment's entry in `src/config/bedrock_config.py`
+3. The default, `auto`
+
+- **`auto`**: at startup in AWS mode, the service calls `ListFoundationModels` and `ListInferenceProfiles` in the deployment region and picks the newest ACTIVE, priced Claude model for each tier, using an inference profile ID when the model is not available on-demand. In MOCK mode no AWS calls are made and `auto` resolves to labels only.
+- **Pinning**: an explicitly configured model ID always wins. Set `model_id_fast`, `model_id_accurate`, `model_id_maximum`, `model_id_primary`, and `model_id_fallback` in the secret, with `model_pricing` for models not in the built-in pricing table and `prompt_cache_models` for models that accept prompt-cache breakpoints. A configured model with no known pricing is refused at startup and the tier keeps its fallback.
+- **Upgrades**: follow ADR-088 (Continuous Model Assurance): evaluate, review the shadow report, get human approval, then change the configuration with the previous value stored for rollback.
+- **Request adaptation**: newer models (Sonnet 5+, Opus 4.7+, Fable/Mythos) reject a non-default `temperature`, and some reject a forced `tool_choice`. The service omits or adapts these for known models; on a 400 error naming the field it retries without it and remembers that for the model.
+- **Prompt caching**: tool-use conversations add cache breakpoints for models in `prompt_cache_models`. Cache writes are priced at 1.25x and cache reads at 0.1x the input price.
 
 ---
 
@@ -104,11 +118,11 @@ export AURA_ENV=production
 
 ### Budget Limits
 
-| Environment | Daily Budget | Monthly Budget | Model |
-|-------------|--------------|----------------|-------|
-| Development | $10 | $100 | Haiku (cheaper) |
-| Staging | $50 | $500 | Sonnet |
-| Production | $100 | $2,000 | Sonnet |
+| Environment | Daily Budget | Monthly Budget |
+|-------------|--------------|----------------|
+| Development | $10 | $100 |
+| Staging | $50 | $500 |
+| Production | $100 | $2,000 |
 
 ### Rate Limits
 
@@ -144,9 +158,8 @@ Please retry later or increase limits in config.
 
    ```bash
    # Go to AWS Console → Bedrock → Model access
-   # Request access to:
-   # - Claude 3.5 Sonnet
-   # - Claude 3 Haiku
+   # Request access to current Anthropic Claude models in each family
+   # used by the tiers: Haiku (fast), Sonnet (accurate), Opus (maximum)
    ```
 
 2. **Install boto3**
@@ -160,7 +173,9 @@ Please retry later or increase limits in config.
    ```bash
    # See docs/bedrock_integration_plan.md section 2.3
    # Create role: AuraBedrockServiceRole
-   # Attach policy with bedrock:InvokeModel permissions
+   # Attach policy with bedrock:InvokeModel (on foundation-model and
+   # inference-profile resources), bedrock:ListFoundationModels, and
+   # bedrock:ListInferenceProfiles
    ```
 
 4. **Create DynamoDB Table**
@@ -190,7 +205,7 @@ result = service.invoke_model(
     prompt="Say 'test successful' and nothing else.",
     agent="IntegrationTest",
     max_tokens=20,
-    use_fallback=True  # Use Haiku for cheaper testing
+    use_fallback=True  # Use the configured fallback model
 )
 
 print(f"Response: {result['response']}")
@@ -204,22 +219,22 @@ print(f"Real API cost: ${result['cost_usd']:.6f}")
 ### 1. Use Model Fallback for Simple Tasks
 
 ```python
-# Complex task → Use Sonnet
+# Complex task → primary model
 result = llm_service.invoke_model(
     prompt="Complex security analysis...",
     agent="ReviewerAgent",
-    use_fallback=False  # Use Sonnet ($3/$15 per 1M tokens)
+    use_fallback=False
 )
 
-# Simple task → Use Haiku
+# Simple task → fallback model
 result = llm_service.invoke_model(
     prompt="Format this string...",
     agent="UtilityAgent",
-    use_fallback=True  # Use Haiku ($0.25/$1.25 per 1M tokens)
+    use_fallback=True
 )
 ```
 
-**Savings:** 12x cheaper for simple tasks!
+The cost difference depends on which models are resolved for the primary and fallback slots; see `MODEL_PRICING` in `src/config/bedrock_config.py` and any `model_pricing` entries in the secret.
 
 ### 2. Enable Caching
 
@@ -409,7 +424,7 @@ pip install boto3
 
 **Solution:**
 
-1. Create IAM role with `bedrock:InvokeModel` permission
+1. Create IAM role with `bedrock:InvokeModel` (including inference-profile resources), `bedrock:ListFoundationModels`, and `bedrock:ListInferenceProfiles` permissions
 2. Attach role to EC2/ECS/Lambda instance
 3. OR configure AWS credentials: `aws configure`
 

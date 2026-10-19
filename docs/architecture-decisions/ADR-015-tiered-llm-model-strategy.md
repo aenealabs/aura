@@ -5,6 +5,8 @@
 **Decision Makers:** Project Aura Team
 **Related:** ADR-008 (Bedrock LLM Cost Controls), ADR-014 (LLM-Enhanced Agent Search Pattern)
 
+> **Update (2026-10-19):** The tier decision is unchanged, but the specific model IDs below are no longer the defaults. Each tier's model now resolves from the environment's Secrets Manager secret (`aura/<env>/bedrock-config`, keys `model_id_fast` / `model_id_accurate` / `model_id_maximum`), then `src/config/bedrock_config.py`, then `auto`. With `auto`, the service discovers the newest ACTIVE, priced Claude model per tier in the deployment region at startup (AWS mode only). Pinned upgrades follow ADR-088. See [Model Selection](../product/admin-guide/configuration-reference.md#model-selection).
+
 ## Context
 
 Project Aura agents use LLM calls for various operations with different accuracy requirements:

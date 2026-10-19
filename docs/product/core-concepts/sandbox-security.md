@@ -40,6 +40,8 @@ AI-generated code, like human-written code, can contain bugs. The sandbox layer 
 
 The sandbox layer filters out problematic patches before they consume human attention or risk production stability.
 
+In the HITL workflow, step 6 is a repair run: the orchestrator reruns the Coder with the failing tests and error output as remediation context, up to `max_sandbox_repairs` times (default 1). A patch that still fails after the last repair run is given up on and does not reach a human reviewer.
+
 ### What Validation Covers
 
 Sandbox validation runs these checks before a patch reaches human review:

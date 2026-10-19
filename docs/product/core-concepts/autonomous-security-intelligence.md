@@ -64,12 +64,13 @@ Aura's intelligence comes from several interconnected AI systems.
 
 Aura uses foundation models from leading AI providers, accessed through AWS Bedrock for FedRAMP High compliance:
 
-| Model | Use Case | Strengths |
-|-------|----------|-----------|
-| Claude 3.5 Sonnet | Code generation, patch creation | Strong reasoning, code quality |
-| Claude 3.5 Haiku | Classification, routing | Fast, cost-effective |
+| Tier | Model family | Use Case |
+|------|--------------|----------|
+| `fast` | Claude Haiku | Classification, routing, query expansion |
+| `accurate` | Claude Sonnet | Code generation, patch creation, code review |
+| `maximum` | Claude Opus | Cross-codebase reasoning, multi-file refactoring |
 
-**Why multiple models?** Different tasks have different requirements. Patch generation requires deep reasoning (Sonnet), while vulnerability classification needs speed (Haiku).
+**Why multiple models?** Different tasks have different requirements. Patch generation requires deep reasoning (Sonnet), while vulnerability classification needs speed (Haiku). The specific model for each tier is discovered from the deployment region at startup or pinned by the operator; see [Model Selection](../admin-guide/configuration-reference.md#model-selection).
 
 ### Chain of Draft (CoD) Prompting
 

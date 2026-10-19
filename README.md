@@ -149,7 +149,7 @@ flowchart TD
 
 | Component | Purpose | Technology |
 |-----------|---------|------------|
-| **Agent Orchestrator** | Coordinates remediation workflows | Python, FastAPI |
+| **Agent Orchestrator** | Coordinates remediation workflows; the job server runs the full HITL workflow (sandbox tests, then an approval request) | Python, FastAPI |
 | **Hybrid GraphRAG** | Deep code understanding via graph + vector retrieval | Neptune (Gremlin), OpenSearch (k-NN) |
 | **Multi-Agent System** | Specialized agents for code gen, review, validation | LLMs via AWS Bedrock |
 | **Constitutional AI** | Principled safety guardrails for agent outputs | Critique-revision pipeline |
@@ -161,12 +161,12 @@ flowchart TD
 | Layer | Technologies |
 |-------|-------------|
 | **Backend** | Python 3.11+, FastAPI |
-| **LLM Integration** | AWS Bedrock (Claude 3.5 Sonnet, Claude 3.5 Haiku) |
+| **LLM Integration** | AWS Bedrock, Anthropic Claude in three tiers (Haiku / Sonnet / Opus families); models resolved per deployment, see [Model Selection](#model-selection) |
 | **Graph Database** | AWS Neptune (Gremlin query language) |
 | **Vector Search** | AWS OpenSearch with k-NN |
 | **Container Orchestration** | AWS EKS with EC2 Managed Node Groups |
 | **Infrastructure as Code** | AWS CloudFormation (183 templates) |
-| **Frontend** | React 18, TypeScript, Tailwind CSS, Next.js 14 |
+| **Frontend** | React 19, JavaScript (JSX), Vite, Tailwind CSS v4 |
 | **Service Discovery** | dnsmasq (3-tier architecture with DNSSEC) |
 
 ---
@@ -190,10 +190,12 @@ Specialized agents collaborate through structured message passing:
 | Agent | Responsibility |
 |-------|----------------|
 | **Orchestrator** | Coordinates workflow phases, manages state and checkpoints |
-| **Coder** | Generates context-aware patches using LLM capabilities |
-| **Reviewer** | Validates patches against OWASP Top 10 and security policies |
+| **Coder** | Generates patches as a tool-use agent with read-only project tools (`search_code`, `read_file`, `list_directory`), then submits code through a `submit_code` tool |
+| **Reviewer** | Validates patches against OWASP Top 10 and security policies; reports its verdict through a `report_security_review` tool |
 | **Validator** | Executes 5-layer validation pipeline in sandboxed environments |
 | **Monitor** | Tracks health, performance, token costs, and security metrics |
+
+Neural memory guidance from past remediations (ADR-029 Phase 2.1) is included in both the Coder and Reviewer prompts. A patch must pass both the security review and validation; when either fails, the findings (validation issues include line numbers) go back to the Coder for another attempt, up to `max_remediation_attempts` (default 3). In the HITL workflow, a patch that fails its sandbox tests gets up to `max_sandbox_repairs` (default 1) repair runs in which the Coder sees the failing tests and errors. Code the Coder submits always goes through review, validation, sandbox tests, and human approval; its tools cannot write to the project.
 
 ### Configurable Autonomy
 
@@ -254,6 +256,8 @@ pip install -r requirements.txt
 pytest tests/
 ```
 
+Local development and the test suite run the Bedrock service in MOCK mode: no AWS calls are made, and `auto` model settings resolve to the built-in current models, which are never invoked.
+
 ### Deploy to AWS
 
 ```bash
@@ -264,6 +268,37 @@ ALERT_EMAIL=ops@example.com ./deploy/deploy.sh deploy dev
 The single command runs bootstrap (24 layer CodeBuild projects + private ECR base images + deployment-pipeline state machine) and then triggers the state machine to deploy every layer in dependency order.
 
 See the [Installation Guide](docs/product/getting-started/installation.md) for SaaS, Kubernetes, and Podman deployment options, and the [Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md) for the canonical AWS infrastructure deploy reference.
+
+---
+
+## Configuration
+
+### Model Selection
+
+Aura uses three model tiers (ADR-015): **fast** (Haiku family), **accurate** (Sonnet family), and **maximum** (Opus family). Each tier's model is resolved in this order:
+
+1. The environment's Secrets Manager secret, `aura/<env>/bedrock-config`
+2. The environment's entry in `src/config/bedrock_config.py`
+3. The default, `auto`: a deployment-wide `AURA_MODEL_<TIER>` pin if set, otherwise the model discovered on Bedrock
+
+**`auto`** -- at service startup in AWS mode, Aura lists the Anthropic models and inference profiles in the deployment region (`ListFoundationModels`, `ListInferenceProfiles`) and picks the newest ACTIVE, priced Claude model for each tier. When a model is not available on-demand, Aura uses its inference profile ID. A fresh deployment therefore picks up current models rather than a hard-coded 2024 default.
+
+**Pinning** -- an explicitly configured model ID always wins over discovery. Operators pin approved models in the secret with these keys:
+
+| Key | Purpose |
+|-----|---------|
+| `model_id_fast`, `model_id_accurate`, `model_id_maximum` | Model per tier |
+| `model_id_primary`, `model_id_fallback` | Primary and fallback model |
+| `model_pricing` | Per-model `input_per_million` / `output_per_million` prices |
+| `prompt_cache_models` | Models that accept prompt-cache breakpoints |
+
+A configured model with no known pricing is refused at startup, and that tier keeps its fallback. Model upgrades follow ADR-088 ([Continuous Model Assurance](docs/architecture-decisions/ADR-088-continuous-model-assurance.md)): evaluate the candidate, review the shadow report, get human approval, then change the configuration with the previous value stored for rollback.
+
+**Per-model request handling** -- newer models (Sonnet 5+, Opus 4.7+, Fable/Mythos) reject a non-default `temperature`, and some reject a forced `tool_choice`. Aura omits or adapts those fields for known models; for others, on a 400 error naming the field it retries without it and remembers that for the model.
+
+**Prompt caching** -- tool-use conversations add cache breakpoints for models listed in `prompt_cache_models`. Cost tracking prices cache writes at 1.25x and cache reads at 0.1x the model's input price.
+
+**IAM** -- the service role needs `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles` in addition to `bedrock:InvokeModel`, and `InvokeModel` must also cover inference-profile resources.
 
 ---
 

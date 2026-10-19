@@ -74,7 +74,7 @@ This document provides a comprehensive view of Project Aura's system architectur
 │  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │   │
 │  │  │ CONTEXT RETRIEVAL│  │   BEDROCK LLM    │  │ NEURAL MEMORY    │   │   │
 │  │  │                  │  │                  │  │                  │   │   │
-│  │  │ - Graph queries  │  │ - Claude 3.5    │  │ - Titan Memory   │   │   │
+│  │  │ - Graph queries  │  │ - Claude tiers   │  │ - Titan Memory   │   │   │
 │  │  │ - Vector search  │  │ - Embeddings     │  │ - JEPA Predictor │   │   │
 │  │  │ - RRF fusion     │  │ - Guardrails     │  │ - RLM Context    │   │   │
 │  │  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘   │   │
@@ -280,9 +280,9 @@ Managed interface to Amazon Bedrock.
 
 | Parameter | Value |
 |-----------|-------|
-| Model | Claude 3.5 Sonnet |
+| Model | Per tier: Haiku (`fast`), Sonnet (`accurate`), Opus (`maximum`); auto-discovered or pinned, see [Model Selection](../../product/admin-guide/configuration-reference.md#model-selection) |
 | Max Tokens | 8000 |
-| Temperature | 0.2 (patch generation) |
+| Temperature | 0.2 (patch generation) on models that accept it. Newer models (Sonnet 5+, Opus 4.7+) reject non-default sampling parameters, so Aura omits `temperature` for them |
 | Guardrails | Enabled (prompt injection prevention) |
 
 #### Neural Memory Service

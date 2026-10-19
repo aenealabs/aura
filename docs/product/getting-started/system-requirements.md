@@ -94,7 +94,7 @@ For AWS deployments, the following managed services are required:
 | **Amazon OpenSearch** | Vector search | m5.large.search, 3 nodes |
 | **Amazon DynamoDB** | State management | On-demand capacity |
 | **Amazon S3** | Object storage | Standard storage class |
-| **AWS Bedrock** | LLM inference | Claude 3.5 Sonnet access |
+| **AWS Bedrock** | LLM inference | Access to current Anthropic Claude models (Haiku, Sonnet, Opus families) |
 | **Amazon ECR** | Container registry | Private repositories |
 | **AWS KMS** | Encryption | Customer-managed keys |
 
@@ -333,10 +333,10 @@ Aura uses AWS Bedrock for LLM inference. Ensure you have:
 
 | Requirement | Details |
 |-------------|---------|
-| **Model Access** | Claude 3.5 Sonnet enabled in Bedrock console |
+| **Model Access** | Current Anthropic Claude models (Haiku, Sonnet, Opus families) enabled in the Bedrock console; see [Model Selection](../admin-guide/configuration-reference.md#model-selection) |
 | **Region** | us-east-1, us-west-2, or GovCloud equivalent |
 | **Service Quota** | Default quotas sufficient for most workloads |
-| **IAM Permissions** | `bedrock:InvokeModel`, `bedrock:ApplyGuardrail` |
+| **IAM Permissions** | `bedrock:InvokeModel` (including inference-profile resources), `bedrock:ListFoundationModels`, `bedrock:ListInferenceProfiles`, `bedrock:ApplyGuardrail` |
 
 **GovCloud Consideration:** Bedrock is FedRAMP High authorized in AWS GovCloud.
 

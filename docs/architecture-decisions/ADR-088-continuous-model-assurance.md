@@ -94,6 +94,8 @@ soft-imported boto3 + per-sink failure isolation. 154 new tests across
 
 Project Aura's AI capabilities depend on foundation models (currently Claude 3.5 Sonnet via Bedrock, GPT-4 via OpenAI). These models are consumed as managed services — when a provider releases a new version, Aura's security analysis, patch generation, and code comprehension capabilities may improve or degrade without any platform change.
 
+> **Update (2026-10-19):** The model names in this ADR reflect when it was written. Claude 3.5 Sonnet is no longer Aura's default; the Phase 1 adapter-registry seed (Claude 3.5 Sonnet, 3 Haiku, 3 Opus) and the `claude-3-5-sonnet-20241022` judge example in Stage 4 are historical examples, not current models. Tier models (ADR-015) now resolve from the `aura/<env>/bedrock-config` secret, then `src/config/bedrock_config.py`, then `auto`, which discovers the newest ACTIVE, priced Claude model per tier in the region at startup. The upgrade path this ADR defines (evaluate, shadow report, human approval, configuration change with stored rollback) is unchanged and applies to pinned models.
+
 Today, model upgrades are a manual process: an engineer evaluates the new model, updates configuration, runs ad-hoc tests, and deploys. This approach has three problems:
 
 1. **Discovery lag.** New model releases go undetected for days or weeks. Competitors who adopt faster gain a temporary quality advantage.
@@ -320,6 +322,8 @@ conversations then cache their earlier turns (a model that rejects the breakpoin
 retried without them and not sent them again). The service reads the
 secret at startup, so the change takes effect on the next deployment or restart.
 Rollback restores the previous values, recorded by `RollbackService`.
+
+A tier with no configured model defaults to `auto`: at startup in AWS mode the service picks the newest ACTIVE, priced Claude model for that tier from the region's foundation models and inference profiles. A model ID set as above always takes precedence over discovery, so production environments pin their approved models.
 
 ### Evaluation Integrity Envelope
 

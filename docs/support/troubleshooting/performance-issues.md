@@ -225,7 +225,7 @@ kubectl patch configmap coder-agent-config -n aura-system \
 
 # Use faster model for simple patches
 kubectl patch configmap coder-agent-config -n aura-system \
-  --type merge -p '{"data":{"SIMPLE_PATCH_MODEL":"anthropic.claude-3-haiku-20240307"}}'
+  --type merge -p '{"data":{"SIMPLE_PATCH_MODEL":"<approved fast-tier (Haiku) model ID>"}}'
 ```
 
 **3. Scale Agent Capacity:**

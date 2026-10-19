@@ -114,7 +114,7 @@ docs/support/
 | EKS | 1.34 with EC2 Managed Node Groups |
 | Neptune | Engine 1.2.1.0+ |
 | OpenSearch | 2.11+ |
-| Bedrock | Claude 3.5 Sonnet |
+| Bedrock | Anthropic Claude (Haiku / Sonnet / Opus tiers, resolved per deployment) |
 
 ---
 

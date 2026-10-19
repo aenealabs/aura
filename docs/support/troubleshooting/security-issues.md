@@ -604,7 +604,8 @@ aws iam get-role --role-name ${ROLE_NAME} --query 'Role.AssumeRolePolicyDocument
 |---------|---------------------------|--------------|
 | Neptune | `neptune-db:connect` | Database connection |
 | OpenSearch | `es:ESHttpGet/Post` | Search queries |
-| Bedrock | `bedrock:InvokeModel` | LLM calls |
+| Bedrock | `bedrock:InvokeModel` (foundation-model and inference-profile resources) | LLM calls |
+| Bedrock | `bedrock:ListFoundationModels`, `bedrock:ListInferenceProfiles` | Model auto-discovery at startup |
 | S3 | `s3:GetObject/PutObject` | File storage |
 | STS | `sts:AssumeRole` | Cross-account access |
 | Secrets Manager | `secretsmanager:GetSecretValue` | Secret retrieval |

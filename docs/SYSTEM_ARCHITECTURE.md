@@ -451,6 +451,7 @@ The Agent Orchestrator uses a warm pool deployment pattern that provides zero co
 │  │  • HTTP Server: /health/live, /health/ready, /metrics                │   │
 │  │  • SQS Consumer: Long-polls for jobs (5s interval)                   │   │
 │  │  • Zero cold start: Always-on replica waiting for work               │   │
+│  │  • Runs the full HITL workflow per job (sandbox, then approval)      │   │
 │  └────────────────────────────────┬─────────────────────────────────────┘   │
 │                                   │                                         │
 │                                   ▼                                         │
@@ -480,7 +481,8 @@ The Agent Orchestrator uses a warm pool deployment pattern that provides zero co
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │  Phase 3: CODE                                                       │   │
 │  │  • Coder Agent receives context                                      │   │
-│  │  • LLM (Claude/GPT-4) generates patch                                │   │
+│  │  • Tool-use agent: search_code, read_file, list_directory            │   │
+│  │  • Submits code via submit_code (Claude via Bedrock)                 │   │
 │  │  • AST Parser validates syntax                                       │   │
 │  │  • Returns unified diff                                              │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
@@ -491,7 +493,9 @@ The Agent Orchestrator uses a warm pool deployment pattern that provides zero co
 │  │  • Reviewer Agent analyzes patch                                     │   │
 │  │  • Security checks (OWASP Top 10, AI-specific threats)               │   │
 │  │  • Code quality checks (complexity, maintainability)                 │   │
-│  │  • Returns review report with findings                               │   │
+│  │  • Returns verdict via report_security_review tool                   │   │
+│  │  • Review or validation failure → findings back to Coder             │   │
+│  │    (up to max_remediation_attempts, default 3)                       │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
@@ -502,6 +506,8 @@ The Agent Orchestrator uses a warm pool deployment pattern that provides zero co
 │  │  • Run test suite                                                    │   │
 │  │  • Collect results                                                   │   │
 │  │  • FargateSandboxOrchestrator.destroy_sandbox()                      │   │
+│  │  • Tests fail → Coder repair run with failing tests and errors       │   │
+│  │    (up to max_sandbox_repairs, default 1)                            │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │                         │                                                   │
 │                         ▼                                                   │
@@ -515,8 +521,8 @@ The Agent Orchestrator uses a warm pool deployment pattern that provides zero co
 │                         │                                                   │
 │                         ▼                                                   │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │  HITL (Human-in-the-Loop) Approval (Future)                          │   │
-│  │  • Present findings to human reviewer                                │   │
+│  │  HITL (Human-in-the-Loop) Approval                                   │   │
+│  │  • Approval request with patch, review, and sandbox results          │   │
 │  │  • Approval Dashboard (React UI)                                     │   │
 │  │  • SNS notifications                                                 │   │
 │  │  • Apply patch if approved                                           │   │
@@ -789,7 +795,8 @@ Platform Default: on_demand
 │     │                                                                       │
 │     ├─► Coder Agent                                                         │
 │     │   • Receives context (3-5x better quality)                            │
-│     │   • LLM generates patch (Claude via Bedrock)                          │
+│     │   • Reads code with read-only tools (search_code, read_file, ...)     │
+│     │   • Submits patch via submit_code (Claude via Bedrock)                │
 │     │   • AST Parser validates syntax                                       │
 │     │                                                                       │
 │     └─► Returns unified diff                                                │
@@ -799,7 +806,8 @@ Platform Default: on_demand
 │     ├─► Reviewer Agent                                                      │
 │     │   • Security analysis (OWASP Top 10)                                  │
 │     │   • Code quality checks                                               │
-│     │   • Generates review report                                           │
+│     │   • Reports verdict via report_security_review                        │
+│     │   • Failures (with validation line numbers) go back to Coder          │
 │     │                                                                       │
 │     └─► Returns findings (severity: CRITICAL/HIGH/MEDIUM/LOW)               │
 │                                                                             │
@@ -811,6 +819,7 @@ Platform Default: on_demand
 │     │   • Isolated environment (no external network)                        │
 │     │   • Apply patch → Run tests → Collect results                         │
 │     │   • destroy_sandbox(sandbox_id)                                       │
+│     │   • Failed tests → Coder repair run (max_sandbox_repairs)             │
 │     │                                                                       │
 │     └─► Returns test results (PASS/FAIL + logs)                             │
 │                                                                             │
@@ -823,7 +832,7 @@ Platform Default: on_demand
 │     │                                                                       │
 │     └─► Generate comprehensive report                                       │
 │                                                                             │
-│  7. HITL Approval (Future)                                                  │
+│  7. HITL Approval                                                           │
 │     │                                                                       │
 │     ├─► SNS notification → Email/Slack                                      │
 │     │   • Human reviews findings                                            │

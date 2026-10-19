@@ -120,9 +120,12 @@ aws neptune-db describe-db-cluster-endpoints \
 curl -s -u "${OS_USER}:${OS_PASS}" \
   "https://opensearch.aura.local:9200/_cluster/health" | jq
 
-# Test Bedrock connectivity
+# Test Bedrock connectivity (list the Claude models and inference profiles
+# available in the region, then invoke one of them)
+aws bedrock list-foundation-models --by-provider anthropic --query 'modelSummaries[*].modelId'
+aws bedrock list-inference-profiles --query 'inferenceProfileSummaries[*].inferenceProfileId'
 aws bedrock-runtime invoke-model \
-  --model-id anthropic.claude-3-5-sonnet-20241022-v2:0 \
+  --model-id ${MODEL_ID} \
   --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":10,"messages":[{"role":"user","content":"test"}]}' \
   --output text --query 'body' | base64 -d | jq
 ```

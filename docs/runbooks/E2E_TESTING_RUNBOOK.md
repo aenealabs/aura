@@ -303,9 +303,7 @@ with on-demand throughput isn't supported.
 
 **Cause:** Newer Claude models require inference profiles for on-demand access.
 
-**Solution:** Use Claude 3.5 Sonnet v1 which supports on-demand:
-- Dev config uses: `anthropic.claude-3-5-sonnet-20240620-v1:0`
-- See `src/config/bedrock_config.py` for model configuration
+**Solution:** Invoke the model through its inference profile ID (for example the `us.` prefixed profile listed by `aws bedrock list-inference-profiles`), and confirm the IAM policy allows `bedrock:InvokeModel` on inference-profile resources. With the default `auto` setting, the service picks the inference profile automatically when a model is not on-demand. If a model is pinned in `aura/<env>/bedrock-config`, pin the inference profile ID. See [Model Selection](../product/admin-guide/configuration-reference.md#model-selection).
 
 ---
 
@@ -321,7 +319,7 @@ AccessDeniedException: User is not authorized to perform neptune-db:* on resourc
 **Solution:** Verify IAM permissions include:
 - `neptune-db:*` for Neptune
 - `es:*` for OpenSearch
-- `bedrock:InvokeModel` for Bedrock
+- `bedrock:InvokeModel` (including inference-profile resources), `bedrock:ListFoundationModels`, and `bedrock:ListInferenceProfiles` for Bedrock
 
 ---
 

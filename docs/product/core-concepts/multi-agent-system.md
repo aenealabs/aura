@@ -1,7 +1,7 @@
 # Multi-Agent System
 
-**Version:** 1.0
-**Last Updated:** January 2026
+**Version:** 1.1
+**Last Updated:** October 2026
 
 ---
 
@@ -135,6 +135,20 @@ checkpoint = AgentCheckpoint(
 orchestrator.resume_from_checkpoint(checkpoint)
 ```
 
+### Repair Loop
+
+A patch is accepted only when it passes both the Reviewer's security review and the Validator's checks. When either fails, the orchestrator feeds the findings back to the Coder as remediation context (validation issues include line numbers) and the Coder tries again.
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `max_remediation_attempts` | 3 | Coding attempts per run (review + validation must both pass) |
+| `max_sandbox_repairs` | 1 | Extra runs in the HITL workflow after a patch fails its sandbox tests; each repair run shows the Coder the failing tests and errors |
+| `agentic_coder` | `True` | Gives the Coder read-only project tools (see below); takes effect only with an LLM client that supports tool use |
+
+### HITL Workflow and the Job Server
+
+`execute_request_with_hitl` runs the standard workflow, then sandbox testing, then creates an approval request. The production job server (`src/agents/orchestrator_server.py`) runs this full HITL workflow for each job rather than the plain workflow, so patches it produces are sandbox-tested and then queued for human approval. A patch that fails its sandbox tests (after any repair runs) gets no approval request. If no sandbox orchestrator is configured, the sandbox step is reported as `SKIPPED` and the approval request shows that the patch was not runtime-tested.
+
 ---
 
 ## Coder Agent
@@ -187,6 +201,18 @@ The Coder Agent generates security patches based on vulnerability information an
 }
 ```
 
+### Agentic Mode (Tool Use)
+
+With `agentic_coder` enabled, the Coder works as a Claude tool-use agent. Before submitting, it can call read-only tools to gather its own context instead of relying only on the retrieval made before it starts:
+
+| Tool | Purpose |
+|------|---------|
+| `search_code` | Hybrid GraphRAG search (call graph + semantic) through the orchestrator's context retrieval |
+| `read_file` | Reads a project file with line numbers, optionally a line range |
+| `list_directory` | Lists the entries of a project directory |
+
+All paths are confined to the project root, output is size-capped, and nothing is written. The Coder's only output is the code it submits through the `submit_code` tool, which then goes through security review, validation, sandbox tests, and human approval. If the tool loop does not produce a valid submission (or the LLM client has no tool use), the Coder falls back to a single `submit_code` call, then to a plain text response.
+
 ### Chain of Draft Prompting
 
 The Coder Agent uses Chain of Draft (CoD) prompting for efficiency:
@@ -205,7 +231,7 @@ prompt = build_cod_prompt(
 
 ### Neural Memory Integration
 
-The Coder Agent leverages past experiences:
+The Coder Agent leverages past experiences. Neural memory guidance (ADR-029 Phase 2.1) is included in the Coder's prompt, and the orchestrator also passes the hybrid context to the Reviewer so its prompt carries the same guidance:
 
 ```python
 # Check for similar past remediations
@@ -271,6 +297,10 @@ if self.enable_reflection:
     )
     # 30% fewer false positives with self-reflection
 ```
+
+### Structured Output
+
+The Reviewer reports its verdict through a `report_security_review` tool (Claude tool use), so the status, findings, and recommendations arrive as structured fields rather than parsed text. A text-parsing fallback remains for responses without a tool call.
 
 ### Review Output
 

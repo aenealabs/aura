@@ -5,6 +5,8 @@
 **Status:** Design Phase
 **Owner:** Project Aura Team
 
+> **Update (October 2026):** The model IDs in this plan (Claude 3.5 Sonnet, Claude 3 Haiku) are the November 2025 design values and are no longer defaults. Tier models now resolve from the `aura/<env>/bedrock-config` secret, then `src/config/bedrock_config.py`, then `auto` (region discovery via `ListFoundationModels` / `ListInferenceProfiles`). See [Model Selection](../product/admin-guide/configuration-reference.md#model-selection).
+
 ---
 
 ## Overview

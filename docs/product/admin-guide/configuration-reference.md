@@ -1,7 +1,7 @@
 # Configuration Reference
 
-**Version:** 1.0
-**Last Updated:** January 2026
+**Version:** 1.1
+**Last Updated:** October 2026
 **Product:** Project Aura by Aenea Labs
 
 ---
@@ -115,7 +115,10 @@ All Project Aura environment variables use the `AURA_` prefix. Variables are gro
 | `AURA_AWS_REGION` | Conditional | - | AWS region for Bedrock |
 | `AURA_AWS_ACCESS_KEY_ID` | Conditional | - | AWS access key (if not using IAM roles) |
 | `AURA_AWS_SECRET_ACCESS_KEY` | Conditional | - | AWS secret key (if not using IAM roles) |
-| `AURA_BEDROCK_MODEL_ID` | No | `anthropic.claude-3-5-sonnet-20241022-v2:0` | Bedrock model identifier |
+| `AURA_BEDROCK_MODEL_ID` | No | - | Bedrock model identifier. The agent pipeline resolves its models per tier as described in [Model Selection](#model-selection) |
+| `AURA_MODEL_FAST` | No | `auto` | Deployment-wide pin for the `fast` (Haiku) tier, used by services that pick a model by tier. `auto` or unset means the discovered model |
+| `AURA_MODEL_ACCURATE` | No | `auto` | Deployment-wide pin for the `accurate` (Sonnet) tier |
+| `AURA_MODEL_MAXIMUM` | No | `auto` | Deployment-wide pin for the `maximum` (Opus) tier |
 | `AURA_BEDROCK_GUARDRAIL_ID` | No | - | Bedrock Guardrail identifier |
 | `AURA_BEDROCK_GUARDRAIL_VERSION` | No | `DRAFT` | Guardrail version |
 
@@ -249,34 +252,54 @@ Configure default agent autonomy for your organization:
 
 ### Model Selection
 
-Configure LLM model selection for different agent types:
+Agents request a model tier per operation (ADR-015), not a specific model:
 
-```yaml
-# config/agents.yaml
-agents:
-  coder:
-    model: anthropic.claude-3-5-sonnet-20241022-v2:0
-    temperature: 0.1
-    maxTokens: 8192
+| Tier | Model family | Typical operations |
+|------|--------------|--------------------|
+| `fast` | Claude Haiku | Classification, query expansion, syntax checks |
+| `accurate` | Claude Sonnet | Patch generation, code review, threat assessment |
+| `maximum` | Claude Opus | Cross-codebase reasoning, multi-file refactoring |
 
-  reviewer:
-    model: anthropic.claude-3-5-sonnet-20241022-v2:0
-    temperature: 0.0
-    maxTokens: 4096
+Each tier's model is resolved in this order:
 
-  validator:
-    model: anthropic.claude-3-5-sonnet-20241022-v2:0
-    temperature: 0.0
-    maxTokens: 2048
+1. The environment's Secrets Manager secret, `aura/<env>/bedrock-config`
+2. The environment's entry in `src/config/bedrock_config.py`
+3. The default, `auto`: a deployment-wide `AURA_MODEL_<TIER>` pin if set, otherwise the model discovered on Bedrock
+
+**Auto-discovery.** With `auto`, the Bedrock service lists the Anthropic models and inference profiles in the deployment region at startup (AWS mode only), using `ListFoundationModels` and `ListInferenceProfiles`, and picks the newest ACTIVE, priced Claude model for each tier. If a model is not available on-demand, its inference profile ID is used. In MOCK mode (local development and the test suite) no AWS calls are made and `auto` resolves to the built-in current models, which are never invoked.
+
+**Pinning.** An explicitly configured model ID always takes precedence over discovery. Pin approved models with these keys in the secret:
+
+```json
+{
+  "model_id_fast": "<approved Haiku model or inference profile ID>",
+  "model_id_accurate": "<approved Sonnet model or inference profile ID>",
+  "model_id_maximum": "<approved Opus model or inference profile ID>",
+  "model_id_primary": "<primary model ID>",
+  "model_id_fallback": "<fallback model ID>",
+  "model_pricing": {
+    "<model ID>": { "input_per_million": 0.0, "output_per_million": 0.0 }
+  },
+  "prompt_cache_models": ["<model ID>"]
+}
 ```
 
-Environment variable overrides:
+- `model_pricing` adds prices for models that are not in the built-in pricing table. A configured model with no known pricing is refused at startup, and that tier keeps its fallback.
+- `prompt_cache_models` lists models that accept prompt-cache breakpoints. Tool-use conversations add breakpoints only for these models. Cost tracking prices cache writes at 1.25x and cache reads at 0.1x the input price.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AURA_CODER_MODEL` | Platform default | Model for Coder agent |
-| `AURA_REVIEWER_MODEL` | Platform default | Model for Reviewer agent |
-| `AURA_VALIDATOR_MODEL` | Platform default | Model for Validator agent |
+**Services outside the agent pipeline.** Services that call Bedrock directly pick a model by tier through `claude_model(tier)` in `src/config/claude_models.py`, which returns, in order:
+
+1. `AURA_MODEL_FAST`, `AURA_MODEL_ACCURATE`, or `AURA_MODEL_MAXIMUM` from the environment (a deployment-wide pin; `auto` is treated as unset)
+2. The model Bedrock discovery chose for that tier in the process's region
+3. The current default model for the tier listed in `src/config/claude_models.py`
+
+A service's own documented model setting still takes precedence over `claude_model`.
+
+**Upgrades.** Changing a pinned model follows ADR-088 (Continuous Model Assurance): evaluate the candidate, review the shadow report, get human approval, then change the configuration with the previous value stored for rollback.
+
+**Per-model request handling.** Newer models (Sonnet 5+, Opus 4.7+, Fable/Mythos) reject a non-default `temperature`, and some reject a forced `tool_choice`. The service omits or adapts these fields for known models. For other models, a 400 error that names one of these fields causes a retry without it, and the service remembers the result for that model.
+
+**IAM.** The service role needs `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles` in addition to `bedrock:InvokeModel`. `InvokeModel` must also be allowed on inference-profile resources, not only foundation-model resources.
 
 ---
 
@@ -404,7 +427,7 @@ database:
 
 llm:
   provider: bedrock
-  model: anthropic.claude-3-5-sonnet-20241022-v2:0
+  model: auto  # or a pinned, approved model ID; see Model Selection
   temperature: 0.1
   maxTokens: 4096
 

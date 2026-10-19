@@ -341,7 +341,8 @@ pip install -r requirements.txt
 
 1. Go to: <https://console.aws.amazon.com/bedrock/>
 2. Click "Model access"
-3. Enable Claude 3.5 Sonnet and Claude 3 Haiku
+3. Enable current Anthropic Claude models (Haiku, Sonnet, and Opus families)
+4. Confirm the service role allows `bedrock:InvokeModel` on foundation-model and inference-profile resources, plus `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles` (used for model auto-discovery)
 
 ### Issue: "BudgetExceededError"
 

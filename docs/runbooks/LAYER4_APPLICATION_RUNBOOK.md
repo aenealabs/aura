@@ -197,7 +197,7 @@ kubectl rollout restart daemonset/dnsmasq -n aura-network-services
 AccessDeniedException: User is not authorized to perform bedrock:InvokeModel
 ```
 
-**Root Cause:** IAM role missing Bedrock permissions or model not enabled.
+**Root Cause:** IAM role missing Bedrock permissions or model not enabled. The service role needs `bedrock:InvokeModel` on both foundation-model and inference-profile resources, plus `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles` for model auto-discovery at startup.
 
 **Resolution:**
 ```bash

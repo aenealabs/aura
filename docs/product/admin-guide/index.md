@@ -75,7 +75,7 @@ Project Aura is an autonomous AI SaaS platform that enables machines to reason a
 |                          INFRASTRUCTURE LAYER                                |
 |  +---------------------+  +---------------------+  +---------------------+  |
 |  |   AWS EKS / K8s     |  |   AWS Bedrock       |  |   Security Controls |  |
-|  |   - Worker Nodes    |  |   - Claude 3.5      |  |   - IAM / RBAC      |  |
+|  |   - Worker Nodes    |  |   - Claude tiers    |  |   - IAM / RBAC      |  |
 |  |   - IRSA            |  |   - Model Selection |  |   - Encryption      |  |
 |  |   - Auto Scaling    |  |   - Guardrails      |  |   - VPC Isolation   |  |
 |  +---------------------+  +---------------------+  +---------------------+  |

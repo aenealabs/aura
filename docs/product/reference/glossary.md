@@ -392,8 +392,9 @@ AWS Lambda is a serverless compute service that runs code in response to events.
 **Large Language Model** - An AI model trained on large amounts of text data capable of understanding and generating human-like text. Aura uses LLMs (via [Bedrock](#bedrock)) for code understanding, patch generation, and natural language processing.
 
 **Models used:**
-- Claude 3.5 Sonnet - Primary reasoning model
-- Claude 3 Haiku - Lightweight critique tasks
+- Claude Sonnet family - Primary reasoning model (`accurate` tier)
+- Claude Haiku family - Lightweight critique and classification tasks (`fast` tier)
+- Claude Opus family - Complex cross-codebase reasoning (`maximum` tier)
 - Amazon Titan - Embeddings
 
 ---

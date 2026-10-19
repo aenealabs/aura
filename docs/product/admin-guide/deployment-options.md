@@ -258,7 +258,7 @@ aws:
     endpoint: ${OPENSEARCH_ENDPOINT}
   bedrock:
     enabled: true
-    modelId: anthropic.claude-3-5-sonnet-20241022-v2:0
+    modelId: auto  # or a pinned, approved model ID; see configuration-reference.md#model-selection
 
 # Ingress Configuration
 ingress:
@@ -803,7 +803,7 @@ aws:
   bedrock:
     enabled: true
     endpoint: bedrock-runtime.us-gov-west-1.amazonaws.com
-    modelId: anthropic.claude-3-5-sonnet-20241022-v2:0
+    modelId: auto  # or a pinned, approved model ID; see configuration-reference.md#model-selection
 
 security:
   # FIPS 140-2 compliant encryption

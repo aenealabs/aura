@@ -876,7 +876,7 @@ Solution: Check VPC security groups allow traffic on port 8182 (Neptune) or 7687
 Error: Bedrock access denied
 ```
 
-Solution: Ensure AWS credentials have `bedrock:InvokeModel` permission and the model is enabled in the Bedrock console.
+Solution: Ensure AWS credentials have `bedrock:InvokeModel` (including on inference-profile resources), `bedrock:ListFoundationModels`, and `bedrock:ListInferenceProfiles` permissions, and that the Claude models are enabled in the Bedrock console.
 
 **TLS Certificate Error**
 

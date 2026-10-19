@@ -48,7 +48,7 @@ end-to-end.
 |---|---|---|
 | AWS CLI + credentials | Every AWS API call | `aws configure` |
 | GitHub CodeConnection ARN | CodeBuild source pulls | AWS Console → CodeBuild → Settings → Connections; store ARN at SSM `/aura/global/codeconnections-arn` |
-| Bedrock model access | Application layer LLM calls | AWS Console → Bedrock → Model access (request Claude Sonnet 4.6 + Haiku 4.5 per `CLAUDE.md`) |
+| Bedrock model access | Application layer LLM calls | AWS Console → Bedrock → Model access (request current Claude Haiku, Sonnet, and Opus models). Tier models default to `auto` (region discovery at startup) unless pinned in `aura/<env>/bedrock-config`; the service role also needs `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles`. See [Model Selection](../product/admin-guide/configuration-reference.md#model-selection) |
 | `ALERT_EMAIL` env var | Budget + alarm SNS subscriptions | Set when invoking `./deploy.sh deploy` |
 
 > **Multi-Account Setup:** For QA/PROD environments in separate AWS

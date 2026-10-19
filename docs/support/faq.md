@@ -259,7 +259,7 @@ False positive data helps improve detection accuracy for your organization.
 
 Aura uses a multi-agent AI system:
 
-1. **Coder Agent**: Analyzes vulnerability context using GraphRAG, generates fix using Claude 3.5 Sonnet
+1. **Coder Agent**: Gathers vulnerability context using GraphRAG search and read-only file tools, then generates the fix with the `accurate`-tier Claude Sonnet model
 2. **Reviewer Agent**: Reviews patch for correctness, style, and side effects
 3. **Validator Agent**: Tests patch in isolated sandbox (syntax, unit tests, security scans)
 

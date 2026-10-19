@@ -218,7 +218,7 @@ When a vulnerability requires remediation:
                            ▼
                     ┌──────────────┐
                     │   Bedrock    │
-                    │ Claude 3.5   │
+                    │ Claude       │
                     └──────┬───────┘
                            │
                            │ 6. Parse & Validate

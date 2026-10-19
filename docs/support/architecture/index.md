@@ -136,7 +136,7 @@ Infrastructure as code and automation:
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| LLM Provider | Amazon Bedrock | Claude 3.5 Sonnet for AI agents |
+| LLM Provider | Amazon Bedrock | Anthropic Claude for AI agents (Haiku / Sonnet / Opus tiers) |
 | Embedding Model | Bedrock Titan | Code and text embeddings |
 | Context Engine | Custom (GraphRAG) | Hybrid retrieval for code context |
 

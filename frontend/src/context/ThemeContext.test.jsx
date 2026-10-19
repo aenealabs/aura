@@ -40,6 +40,26 @@ describe('ThemeContext', () => {
       expect(screen.getByTestId('theme')).toHaveTextContent('light');
     });
 
+    test('stays light when the system prefers dark and nothing is saved', () => {
+      const matchMedia = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+        matches: query === '(prefers-color-scheme: dark)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      render(
+        <ThemeProvider>
+          <TestConsumer />
+        </ThemeProvider>
+      );
+
+      expect(screen.getByTestId('is-dark')).toHaveTextContent('false');
+      expect(document.documentElement).not.toHaveClass('dark');
+      // Nothing is saved until the user picks a theme
+      expect(localStorage.getItem('aura-theme')).toBeNull();
+      matchMedia.mockRestore();
+    });
+
     test('reads dark theme from localStorage', () => {
       localStorage.setItem('aura-theme', 'dark');
 

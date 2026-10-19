@@ -45,6 +45,8 @@ def aws_service(response_content, stop_reason="tool_use"):
     """A service whose Bedrock call returns the given content blocks."""
     service = BedrockLLMService(mode=BedrockMode.MOCK)
     service.mode = BedrockMode.AWS
+    # A model that accepts a forced tool_choice (newer ones get "auto")
+    service.model_id_primary = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     sent = {}
 
     def fake_invoke(model_id, request_body, apply_guardrails=True):

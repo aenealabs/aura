@@ -321,6 +321,15 @@ Generate ONLY the Python code, no explanations or markdown:"""
                         "is_error": is_error,
                     }
                 )
+            if turn + 1 == self.max_tool_turns - 1:
+                # Newer models cannot be forced to call a tool, so say it as well
+                tool_results.append(
+                    {
+                        "type": "text",
+                        "text": f"This is your last turn: call {CODE_TOOL} now with "
+                        "the complete code.",
+                    }
+                )
             messages.append({"role": "user", "content": tool_results})
         return None
 

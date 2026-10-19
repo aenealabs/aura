@@ -48,7 +48,15 @@ from src.config.bedrock_config import (
     MODEL_PRICING,
     calculate_cost,
     get_config,
+    has_pricing,
     register_model_pricing,
+)
+from src.config.claude_models import CURRENT_CLAUDE_MODELS
+from src.services.bedrock_model_discovery import (
+    _DISCOVERY_CACHE,
+    AUTO,
+    discover_tier_models,
+    parse_claude_model,
 )
 from src.config.guardrails_config import (
     GuardrailMode,
@@ -109,20 +117,16 @@ class ModelTier(Enum):
     MAXIMUM = "maximum"
 
 
-# Default model IDs for each tier (using ON_DEMAND models for us-east-1 region)
-# Note: Claude 3.7+ and 4.x require inference profiles which route cross-region.
-# For single-region deployment (us-east-1), use ON_DEMAND models.
+# Tier models are configuration (ADR-015 tiers, ADR-088 upgrades). Each environment sets
+# ``model_id_fast``, ``model_id_accurate`` and ``model_id_maximum`` in its Bedrock secret or
+# config; the default is ``auto``: at startup in AWS mode, Bedrock discovery picks the newest
+# active, priced Claude model of the tier's family (see bedrock_model_discovery). Pin
+# approved models in the secret; a pinned model is never replaced by discovery.
 #
-# These are defaults only. Each environment can set ``model_id_fast``,
-# ``model_id_accurate`` and ``model_id_maximum`` in its Bedrock config or its Secrets
-# Manager secret, so an approved model upgrade (ADR-088 Stage 8) or a rollback is a
-# configuration change, not a code release. Change them only through the model
-# assurance pipeline: candidate evaluated against the frozen oracle, shadow report,
-# human approval.
+# MODEL_IDS is the fallback for ``auto`` when discovery cannot run (mock mode, or no
+# bedrock:ListFoundationModels permission): current Claude models by their Bedrock IDs.
 MODEL_IDS: dict[ModelTier, str] = {
-    ModelTier.FAST: "anthropic.claude-3-haiku-20240307-v1:0",
-    ModelTier.ACCURATE: "anthropic.claude-3-5-sonnet-20240620-v1:0",
-    ModelTier.MAXIMUM: "anthropic.claude-3-5-sonnet-20240620-v1:0",  # Best ON_DEMAND model available
+    tier: CURRENT_CLAUDE_MODELS[tier.value] for tier in ModelTier
 }
 
 # Operation-to-model mapping (ADR-015)
@@ -256,22 +260,91 @@ def schema_problems(data: Any, schema: dict[str, Any], path: str = "") -> list[s
     return problems
 
 
+def model_request_rules(model_id: str) -> set[str]:
+    """
+    Request fields a Claude model is known to reject, by family and version:
+
+    - ``no_sampling``: non-default temperature/top_p/top_k return a 400 (Sonnet 5+,
+      Opus 4.7+, Fable, Mythos); omit them.
+    - ``no_forced_tool_choice``: ``tool_choice`` ``any``/``tool`` returns a 400 (Sonnet 5+,
+      Opus 5+, Fable, Mythos; thinking is on by default there); use ``auto``.
+
+    Models not listed here are adapted at runtime if Bedrock rejects a field.
+    """
+    parsed = parse_claude_model(model_id)
+    if parsed is None:
+        return set()
+    family, version = parsed.family, parsed.version
+    rules: set[str] = set()
+    newest = family in ("fable", "mythos")
+    if (
+        newest
+        or (family == "opus" and version >= (4, 7))
+        or (family == "sonnet" and version >= (5, 0))
+    ):
+        rules.add("no_sampling")
+    if newest or (family in ("opus", "sonnet") and version >= (5, 0)):
+        rules.add("no_forced_tool_choice")
+    return rules
+
+
+def _rejected_field(error_text: str) -> str | None:
+    """The request rule a Bedrock validation error asks for, if it names a field."""
+    text = error_text.lower()
+    if "cache_control" in text or "prompt caching" in text or "cache" in text:
+        return "no_cache"
+    if "tool_choice" in text:
+        return "no_forced_tool_choice"
+    if any(field in text for field in ("temperature", "top_p", "top_k", "sampling")):
+        return "no_sampling"
+    return None
+
+
+def _adapt_request(body: dict[str, Any], rules: set[str]) -> dict[str, Any]:
+    """A copy of the request body with the model's request rules applied."""
+    adapted = dict(body)
+    if "no_sampling" in rules:
+        for field in ("temperature", "top_p", "top_k"):
+            adapted.pop(field, None)
+    choice = adapted.get("tool_choice")
+    if (
+        "no_forced_tool_choice" in rules
+        and isinstance(choice, dict)
+        and choice.get("type") in ("any", "tool")
+    ):
+        adapted["tool_choice"] = {"type": "auto"}
+    return adapted
+
+
 def resolve_model_tiers(
     config: dict[str, Any],
     overrides: dict[str, Any] | None = None,
     is_priced: Callable[[str], bool] | None = None,
+    discovered: dict[str, str] | None = None,
 ) -> dict[ModelTier, str]:
-    """The tier-to-model map for a deployment: secret overrides, then config, then defaults.
+    """The tier-to-model map for a deployment: secret overrides, then config, then ``auto``.
 
-    Keys are ``model_id_fast``, ``model_id_accurate`` and ``model_id_maximum``. When
+    Keys are ``model_id_fast``, ``model_id_accurate`` and ``model_id_maximum``. ``auto``
+    takes the tier's model from ``discovered`` (Bedrock discovery), else MODEL_IDS. When
     ``is_priced`` is given, a configured model without pricing is refused (logged, and
     the tier keeps its default): cost tracking and budgets must cover every live model.
     """
     overrides = overrides or {}
+    discovered = discovered or {}
     tiers: dict[ModelTier, str] = {}
-    for tier, default in MODEL_IDS.items():
+    for tier, fallback in MODEL_IDS.items():
+        # For "auto": a deployment-wide AURA_MODEL_<TIER> pin, then discovery, then the
+        # built-in current model (the same order as claude_model() for other services)
+        env_pin = os.environ.get(f"AURA_MODEL_{tier.value.upper()}")
+        default = (
+            (env_pin if env_pin and env_pin != AUTO else None)
+            or discovered.get(tier.value)
+            or fallback
+        )
         key = f"model_id_{tier.value}"
-        model_id = overrides.get(key) or config.get(key) or default
+        model_id = overrides.get(key) or config.get(key) or AUTO
+        if model_id == AUTO:
+            model_id = default
         if model_id != default and is_priced is not None and not is_priced(model_id):
             logger.error(
                 "Model %s for the %s tier has no pricing; keeping %s. Add it to "
@@ -423,12 +496,24 @@ class BedrockLLMService:
         register_model_pricing(self.config.get("model_pricing"))
         register_model_pricing(overrides.get("model_pricing"))
         self.model_tiers = resolve_model_tiers(
-            self.config, overrides, is_priced=lambda m: m in MODEL_PRICING
+            self.config,
+            overrides,
+            is_priced=has_pricing,
+            discovered=self._discover_models(overrides),
         )
+        # model_id_primary / model_id_fallback may also be ``auto``: the accurate and
+        # fast tier models
+        if getattr(self, "model_id_primary", AUTO) in (AUTO, None):
+            self.model_id_primary = self.model_tiers[ModelTier.ACCURATE]
+        if getattr(self, "model_id_fallback", AUTO) in (AUTO, None):
+            self.model_id_fallback = self.model_tiers[ModelTier.FAST]
         logger.info(
             "Model tiers: "
             + ", ".join(f"{t.value}={m}" for t, m in self.model_tiers.items())
+            + f"; primary={self.model_id_primary}"
         )
+        # Request fields a model turned out to reject (learned from 400s), per model
+        self._learned_quirks: dict[str, set[str]] = {}
 
         # Prompt caching for tool-use conversations, on models known to accept it
         self.prompt_cache_models: set[str] = (
@@ -527,6 +612,36 @@ class BedrockLLMService:
     # Agents check this (``getattr(llm, "supports_tool_use", False) is True``) before using
     # tool use or structured output, so test doubles and older clients keep the text path.
     supports_tool_use = True
+
+    def _discover_models(self, overrides: dict[str, Any]) -> dict[str, str]:
+        """Bedrock discovery for tiers left on ``auto`` (AWS mode only; cached per region)."""
+        keys = [f"model_id_{t.value}" for t in ModelTier] + [
+            "model_id_primary",
+            "model_id_fallback",
+        ]
+        wants_auto = any(
+            (overrides.get(k) or self.config.get(k) or AUTO) == AUTO for k in keys
+        )
+        if self.mode != BedrockMode.AWS or not wants_auto or not AWS_AVAILABLE:
+            return {}
+        region = self.config["aws_region"]
+        if region in _DISCOVERY_CACHE:
+            return _DISCOVERY_CACHE[region]
+        try:
+            client = boto3.client("bedrock", region_name=region)
+            found = discover_tier_models(client, region, has_pricing)
+        except Exception as e:  # permissions, network, partition without the API
+            logger.warning(
+                "Bedrock model discovery failed (%s); auto tiers use the built-in "
+                "defaults. Grant bedrock:ListFoundationModels and "
+                "bedrock:ListInferenceProfiles, or pin models in %s.",
+                e,
+                self.config.get("secrets_path"),
+            )
+            return {}
+        logger.info("Bedrock discovery chose: %s", found)
+        _DISCOVERY_CACHE[region] = found
+        return found
 
     def _tier_models(self) -> dict[ModelTier, str]:
         """The resolved tier-to-model map (defaults if the service was built without init)."""
@@ -1028,7 +1143,7 @@ class BedrockLLMService:
         if system_prompt:
             request_body["system"] = system_prompt
 
-        response_body, guardrail_result = self._invoke_bedrock_messages(
+        response_body, guardrail_result = self._send(
             model_id, request_body, apply_guardrails
         )
 
@@ -1635,8 +1750,8 @@ class BedrockLLMService:
                 request_body["system"] = system_prompt
             if tool_choice:
                 request_body["tool_choice"] = tool_choice
-            body, guardrail_result = self._invoke_messages_with_cache(
-                model_id, request_body, apply_guardrails
+            body, guardrail_result = self._send(
+                model_id, request_body, apply_guardrails, cacheable=True
             )
             content = body.get("content", [])
             stop_reason = body.get("stop_reason", "end_turn")
@@ -1716,34 +1831,46 @@ class BedrockLLMService:
             body["messages"] = messages
         return body
 
-    def _invoke_messages_with_cache(
-        self, model_id: str, request_body: dict[str, Any], apply_guardrails: bool
+    def _send(
+        self,
+        model_id: str,
+        request_body: dict[str, Any],
+        apply_guardrails: bool = True,
+        cacheable: bool = False,
     ) -> tuple[dict[str, Any], "GuardrailResult | None"]:
-        """Send a request with cache breakpoints when the model takes them.
-
-        If Bedrock rejects the breakpoints, the request is sent again without them and the
-        model is not sent breakpoints again.
         """
-        if not self._caches_prompts(model_id):
-            return self._invoke_bedrock_messages(
-                model_id, request_body, apply_guardrails
-            )
-        try:
-            return self._invoke_bedrock_messages(
-                model_id, self._with_cache_breakpoints(request_body), apply_guardrails
-            )
-        except BedrockError as e:
-            if "cache" not in str(e).lower():
-                raise
-            logger.warning(
-                "Bedrock rejected prompt caching for %s (%s); sending without it",
-                model_id,
-                e,
-            )
-            self._cache_rejected.add(model_id)
-            return self._invoke_bedrock_messages(
-                model_id, request_body, apply_guardrails
-            )
+        Send a Messages API request in the shape this model accepts.
+
+        Applies the model's known request rules (model_request_rules) and any it taught
+        us earlier, adds prompt-cache breakpoints to cacheable (tool-use) requests for
+        models that take them, and if Bedrock rejects a field (a 400 naming temperature,
+        tool_choice, or cache_control), retries without it and remembers that for the
+        model.
+        """
+        learned = getattr(self, "_learned_quirks", None)
+        if learned is None:
+            learned = self._learned_quirks = {}
+        rules = model_request_rules(model_id) | learned.get(model_id, set())
+        while True:
+            body = _adapt_request(request_body, rules)
+            if cacheable and "no_cache" not in rules and self._caches_prompts(model_id):
+                body = self._with_cache_breakpoints(body)
+            try:
+                return self._invoke_bedrock_messages(model_id, body, apply_guardrails)
+            except BedrockError as e:
+                rule = _rejected_field(str(e))
+                if rule is None or rule in rules:
+                    raise
+                logger.warning(
+                    "Bedrock rejected a request field for %s (%s); retrying with %s",
+                    model_id,
+                    e,
+                    rule,
+                )
+                learned.setdefault(model_id, set()).add(rule)
+                rules.add(rule)
+                if rule == "no_cache":
+                    self._cache_rejected.add(model_id)
 
     @staticmethod
     def _mock_tool_turn(
@@ -1788,8 +1915,11 @@ class BedrockLLMService:
             StructuredOutputError: the model did not call the tool, or the input does
                 not match the schema.
         """
+        # Models that reject a forced tool_choice get "auto" (see model_request_rules), so
+        # the instruction to answer through the tool is in the prompt as well
+        instruction = f"\n\nRespond by calling the {tool_name} tool."
         result = await self.generate_with_tools(
-            [{"role": "user", "content": prompt}],
+            [{"role": "user", "content": prompt + instruction}],
             [
                 {
                     "name": tool_name,

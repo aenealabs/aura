@@ -10,9 +10,11 @@ import pytest
 
 from src.config.bedrock_config import calculate_cost
 from src.services.bedrock_llm_service import (
+    MODEL_IDS,
     BedrockLLMService,
     BedrockMode,
     BudgetExceededError,
+    ModelTier,
     RateLimitExceededError,
     create_llm_service,
 )
@@ -46,21 +48,22 @@ class TestBedrockConfiguration:
         service = BedrockLLMService(mode=BedrockMode.MOCK)
 
         assert service.config["daily_budget_usd"] == DEV_DAILY_BUDGET
-        assert (
-            service.config["model_id_primary"]
-            == "anthropic.claude-3-5-sonnet-20240620-v1:0"  # Claude 3.5 Sonnet v1 (on-demand)
-        )
+        # Dev discovers its models on Bedrock; in mock mode "auto" uses the built-in defaults
+        assert service.config["model_id_primary"] == "auto"
+        assert service.model_id_primary == MODEL_IDS[ModelTier.ACCURATE]
+        assert service.model_id_fallback == MODEL_IDS[ModelTier.FAST]
 
         # Test prod environment
         os.environ["AURA_ENV"] = "production"
         service = BedrockLLMService(mode=BedrockMode.MOCK)
 
         assert service.config["daily_budget_usd"] == PROD_DAILY_BUDGET
-        # Prod still uses Sonnet 4.5 (requires inference profile in production)
+        # Prod pins its approved primary model, through the US inference profile
         assert (
             service.config["model_id_primary"]
-            == "anthropic.claude-sonnet-4-5-20250929-v1:0"  # Claude Sonnet 4.5 (Sep 2025)
+            == "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
         )
+        assert service.model_id_primary == service.config["model_id_primary"]
 
         # Reset
         os.environ["AURA_ENV"] = "development"
@@ -360,8 +363,8 @@ class TestModelSelection:
         )
 
         assert service.model_id_fallback in result["model"]
-        # Fallback is Claude 3.5 Sonnet
-        assert "claude-3-5-sonnet" in result["model"].lower()
+        # The fallback is "auto": the fast tier's model (Haiku), not a retired model
+        assert "haiku" in result["model"].lower()
 
 
 class TestSpendSummary:

@@ -19,11 +19,15 @@ class Environment(Enum):
 
 
 # Bedrock configuration by environment
+#
+# Model IDs may be "auto": the service discovers the newest active, priced Claude model on
+# Bedrock at startup (bedrock_model_discovery). Staging and production pin an approved
+# primary model; pin others the same way, in the environment's secret (ADR-088).
 BEDROCK_CONFIG: dict[Environment, dict[str, Any]] = {
     Environment.DEV: {
         "aws_region": "us-east-1",
-        "model_id_primary": "anthropic.claude-3-5-sonnet-20240620-v1:0",  # Claude 3.5 Sonnet v1 (on-demand available)
-        "model_id_fallback": "anthropic.claude-3-haiku-20240307-v1:0",  # Claude 3 Haiku fallback
+        "model_id_primary": "auto",  # newest active Sonnet on Bedrock (discovered at startup)
+        "model_id_fallback": "auto",  # newest active Haiku on Bedrock (discovered at startup)
         "max_tokens_default": 4096,
         "temperature_default": 0.7,
         "daily_budget_usd": 10.0,
@@ -38,8 +42,8 @@ BEDROCK_CONFIG: dict[Environment, dict[str, Any]] = {
     },
     Environment.QA: {
         "aws_region": "us-east-1",
-        "model_id_primary": "anthropic.claude-3-5-sonnet-20240620-v1:0",  # Claude 3.5 Sonnet v1 (on-demand available)
-        "model_id_fallback": "anthropic.claude-3-haiku-20240307-v1:0",  # Claude 3 Haiku fallback
+        "model_id_primary": "auto",  # newest active Sonnet on Bedrock (discovered at startup)
+        "model_id_fallback": "auto",  # newest active Haiku on Bedrock (discovered at startup)
         "max_tokens_default": 4096,
         "temperature_default": 0.7,
         "daily_budget_usd": 25.0,
@@ -54,8 +58,8 @@ BEDROCK_CONFIG: dict[Environment, dict[str, Any]] = {
     },
     Environment.STAGING: {
         "aws_region": "us-east-1",
-        "model_id_primary": "anthropic.claude-sonnet-4-5-20250929-v1:0",  # Claude Sonnet 4.5 (Sep 2025)
-        "model_id_fallback": "anthropic.claude-3-5-sonnet-20240620-v1:0",  # Claude 3.5 Sonnet fallback
+        "model_id_primary": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Claude Sonnet 4.5 via the US inference profile (approved pin)
+        "model_id_fallback": "auto",  # newest active Haiku (the retired 3.5 Sonnet was here)
         "max_tokens_default": 4096,
         "temperature_default": 0.7,
         "daily_budget_usd": 50.0,
@@ -70,8 +74,8 @@ BEDROCK_CONFIG: dict[Environment, dict[str, Any]] = {
     },
     Environment.PROD: {
         "aws_region": "us-east-1",
-        "model_id_primary": "anthropic.claude-sonnet-4-5-20250929-v1:0",  # Claude Sonnet 4.5 (Sep 2025)
-        "model_id_fallback": "anthropic.claude-3-5-sonnet-20240620-v1:0",  # Claude 3.5 Sonnet fallback
+        "model_id_primary": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Claude Sonnet 4.5 via the US inference profile (approved pin)
+        "model_id_fallback": "auto",  # newest active Haiku (the retired 3.5 Sonnet was here)
         "max_tokens_default": 4096,
         "temperature_default": 0.7,
         "daily_budget_usd": 100.0,
@@ -164,6 +168,33 @@ def get_config() -> dict[str, Any]:
     return BEDROCK_CONFIG[env].copy()
 
 
+# List prices (USD per million tokens) by Claude model family, so models found by Bedrock
+# discovery, including inference-profile IDs like ``us.anthropic.claude-sonnet-5-5``, are
+# priced. Exact entries in MODEL_PRICING take precedence. Keep in step with Anthropic's
+# published prices; Haiku 4.5 is its price at release (verify before relying on it).
+CLAUDE_FAMILY_PRICING: dict[str, dict[str, float]] = {
+    "claude-opus-5-5": {"input_per_million": 4.00, "output_per_million": 20.00},
+    "claude-opus-5": {"input_per_million": 5.00, "output_per_million": 25.00},
+    "claude-opus-4-8": {"input_per_million": 5.00, "output_per_million": 25.00},
+    "claude-sonnet-5-5": {"input_per_million": 2.00, "output_per_million": 10.00},
+    "claude-sonnet-5": {"input_per_million": 2.00, "output_per_million": 10.00},
+    "claude-sonnet-4-5": {"input_per_million": 3.00, "output_per_million": 15.00},
+    "claude-haiku-4-5": {"input_per_million": 1.00, "output_per_million": 5.00},
+}
+
+
+def _family_pricing(model_id: str) -> dict[str, float] | None:
+    from src.services.bedrock_model_discovery import parse_claude_model
+
+    parsed = parse_claude_model(model_id)
+    return CLAUDE_FAMILY_PRICING.get(parsed.key) if parsed else None
+
+
+def has_pricing(model_id: str) -> bool:
+    """Whether cost tracking can price this model (exactly or by its Claude family)."""
+    return model_id in MODEL_PRICING or _family_pricing(model_id) is not None
+
+
 def get_model_pricing(model_id: str) -> dict[str, float]:
     """
     Get pricing information for a specific model.
@@ -177,12 +208,14 @@ def get_model_pricing(model_id: str) -> dict[str, float]:
     Raises:
         ValueError: If model_id is not found in pricing data
     """
-    if model_id not in MODEL_PRICING:
-        raise ValueError(
-            f"Unknown model ID: {model_id}. Available models: {list(MODEL_PRICING.keys())}"
-        )
-
-    return MODEL_PRICING[model_id].copy()
+    if model_id in MODEL_PRICING:
+        return MODEL_PRICING[model_id].copy()
+    family = _family_pricing(model_id)
+    if family is not None:
+        return family.copy()
+    raise ValueError(
+        f"Unknown model ID: {model_id}. Available models: {list(MODEL_PRICING.keys())}"
+    )
 
 
 def register_model_pricing(pricing: dict[str, dict[str, Any]] | None) -> list[str]:
@@ -223,7 +256,10 @@ CACHE_READ_MULTIPLIER = 0.1
 # Environments add models with ``prompt_cache_models`` in their config or secret, alongside
 # an approved model upgrade (ADR-088).
 DEFAULT_PROMPT_CACHE_MODELS: frozenset[str] = frozenset(
-    {"anthropic.claude-sonnet-4-5-20250929-v1:0"}
+    {
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    }
 )
 
 

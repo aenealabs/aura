@@ -134,8 +134,8 @@ class TestModelIDs:
         assert "sonnet" in MODEL_IDS[ModelTier.ACCURATE]
 
     def test_maximum_model_id(self):
-        """Test maximum tier model ID."""
-        assert "sonnet" in MODEL_IDS[ModelTier.MAXIMUM]
+        """Test maximum tier model ID (the Opus family)."""
+        assert "opus" in MODEL_IDS[ModelTier.MAXIMUM]
 
     def test_all_tiers_have_models(self):
         """Test all tiers have model IDs."""

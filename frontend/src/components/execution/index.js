@@ -2,7 +2,7 @@
  * Project Aura - Execution Components Index
  *
  * Real-time agent intervention UI components following
- * Claude Code-style tool approval model.
+ * Per-action tool approval model.
  */
 
 // Main container

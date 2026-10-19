@@ -6,7 +6,7 @@
  * - Channel type selection (Email, Slack, Teams, PagerDuty, Webhook)
  * - Dynamic configuration fields based on channel type
  * - Test connection validation
- * - Apple-inspired design with clean transitions
+ * - Minimalist design with clean transitions
  */
 
 import { useState, useEffect } from 'react';

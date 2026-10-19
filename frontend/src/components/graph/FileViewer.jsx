@@ -4,7 +4,7 @@
  * Syntax-highlighted code display for Knowledge Graph file navigation.
  * Features include line numbers, search, tab support, and node highlighting.
  *
- * Design System: Apple-inspired with clean typography, generous spacing,
+ * Design System: minimalist, with clean typography, generous spacing,
  * and smooth transitions per design-principles.md
  */
 

@@ -8,7 +8,7 @@
  * - LLM service health (Bedrock)
  * - Infrastructure metrics
  *
- * Design System: Apple-inspired with clean data visualization,
+ * Design System: minimalist, with clean data visualization,
  * semantic color coding, and smooth animations.
  */
 

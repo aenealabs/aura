@@ -16,7 +16,7 @@ import { Skeleton } from '../ui/LoadingSkeleton';
  * - Smooth 800ms ease-out animation
  * - Color-coded confidence levels (HIGH/MEDIUM/LOW/UNCERTAIN)
  * - WCAG 2.1 AA accessible with ARIA labels
- * - Apple-inspired clean design with gradients
+ * - Clean, minimalist design with gradients
  *
  * Confidence Levels:
  * - HIGH (>=85%): Green - High confidence, minimal review needed

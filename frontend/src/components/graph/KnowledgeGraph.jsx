@@ -6,7 +6,7 @@
  *
  * Uses D3.js-inspired force simulation for graph layout.
  *
- * Design System: Apple-inspired with clean typography, generous spacing,
+ * Design System: minimalist, with clean typography, generous spacing,
  * and smooth transitions per design-principles.md
  */
 

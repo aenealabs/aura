@@ -10,7 +10,7 @@
  *
  * Similar to Claude Code's tool approval model and Antigravity's intervention feature.
  *
- * @see Design Principles: Apple-inspired, Claude Code-style
+ * @see Design Principles: minimalist, live step-by-step progress
  */
 
 import { useState, useEffect, useRef } from 'react';

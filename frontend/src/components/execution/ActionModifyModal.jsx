@@ -8,7 +8,7 @@
  * - Parameter validation
  * - Trust scope selection
  *
- * @see Design Principles: Apple-inspired modal patterns
+ * @see Design Principles: minimalist modal patterns
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';

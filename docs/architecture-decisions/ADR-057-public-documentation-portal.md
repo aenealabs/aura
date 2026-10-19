@@ -15,7 +15,7 @@ This ADR establishes the architecture for the public documentation portal (docs.
 
 **Key Outcomes:**
 - Tiered documentation access (80% public, 10% soft-gated, 10% authenticated)
-- Apple-inspired workflow animations demonstrating platform capabilities
+- Minimalist workflow animations demonstrating platform capabilities
 - SEO-optimized documentation driving organic discovery
 - Cognito integration for authenticated content (Tier 3)
 - Screen recording placeholder system for human-captured content
@@ -106,7 +106,7 @@ Readers should verify these vendors' current documentation and site implementati
 
 ### 2. Landing Page Workflow Animations
 
-Five Apple-inspired animations showcasing Aura's autonomous capabilities:
+Five minimalist animations showcasing Aura's autonomous capabilities:
 
 #### Animation 1: Multi-Agent Orchestration
 

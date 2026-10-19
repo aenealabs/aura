@@ -4,7 +4,7 @@
  * Modal for initiating security scans with configurable options.
  * Supports full repository scans, quick vulnerability checks, and targeted scans.
  *
- * Design System: Apple-inspired with clean typography, generous spacing,
+ * Design System: minimalist, with clean typography, generous spacing,
  * and smooth transitions per design-principles.md
  */
 

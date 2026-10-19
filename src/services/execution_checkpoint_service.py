@@ -2,7 +2,7 @@
 Execution Checkpoint Service for Real-Time Agent Intervention.
 
 Implements per-action approval gates with WebSocket streaming for
-Claude Code-style real-time intervention (ADR-042).
+Per-action real-time intervention (ADR-042).
 """
 
 import asyncio

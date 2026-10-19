@@ -6,7 +6,7 @@
  * - Pre-populated fields from existing channel config
  * - Update and Delete options
  * - Test connection validation
- * - Apple-inspired design with clean transitions
+ * - Minimalist design with clean transitions
  */
 
 import { useState, useEffect } from 'react';

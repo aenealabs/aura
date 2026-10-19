@@ -251,7 +251,7 @@ If the backend is not running, the UI will show sample approval requests for dem
 
 ## UI Design System
 
-Project Aura follows an Apple-inspired minimalist design system:
+Project Aura follows a minimalist design system:
 
 ### Color Palette
 

@@ -8,7 +8,7 @@
  * - Network policy selection
  * - Advanced configuration (environment variables, init scripts)
  * - Test Configuration button
- * - Apple-inspired design with clean transitions
+ * - Minimalist design with clean transitions
  */
 
 import { useState, useEffect, useCallback } from 'react';

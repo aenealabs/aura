@@ -491,7 +491,7 @@ const DEFAULT_TEMPLATES = [
   },
 ];
 
-// Create Environment Modal - Apple-inspired multi-step design
+// Create Environment Modal - minimalist multi-step design
 function CreateEnvironmentModal({ isOpen, onClose, templates, quota, onCreate }) {
   // Step management (1: Template, 2: Configure)
   const [step, setStep] = useState(1);

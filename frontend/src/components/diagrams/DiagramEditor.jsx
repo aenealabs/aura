@@ -4,7 +4,7 @@
  * DSL-based diagram editor with live preview, syntax validation,
  * and natural language generation support (ADR-060).
  *
- * Design System: Apple-inspired with clean typography, generous spacing,
+ * Design System: minimalist, with clean typography, generous spacing,
  * and smooth transitions per design-principles.md
  */
 

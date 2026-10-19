@@ -11,6 +11,7 @@
 
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 /**
  * Loading Spinner Component
@@ -94,48 +95,54 @@ const AccessDenied = ({ requiredRole }) => (
  */
 export const SessionTimeoutModal = ({ onExtend, onLogout }) => {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-surface-800 rounded-xl shadow-2xl max-w-md w-full p-6 border border-surface-200 dark:border-surface-700">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-warning-100 dark:bg-warning-900/30 rounded-full mb-4">
-            <svg
-              className="w-6 h-6 text-warning-600 dark:text-warning-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100 mb-2">
-            Session Expiring
-          </h3>
-          <p className="text-surface-600 dark:text-surface-400 mb-6">
-            Your session is about to expire due to inactivity.
-            Would you like to stay signed in?
-          </p>
-          <div className="flex gap-3">
-            <button
-              onClick={onLogout}
-              className="flex-1 px-4 py-2 bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-300 rounded-lg font-medium hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
-            >
-              Sign Out
-            </button>
-            <button
-              onClick={onExtend}
-              className="flex-1 px-4 py-2 bg-aura-600 text-white rounded-lg font-medium hover:bg-aura-700 transition-colors"
-            >
-              Stay Signed In
-            </button>
-          </div>
+    // Escape keeps the session; leaving takes the explicit Sign Out button
+    <Modal
+      open
+      onClose={onExtend}
+      size="sm"
+      closeOnOutsideClick={false}
+      overlayClassName="bg-black/50 backdrop-blur-sm"
+      panelClassName="bg-white dark:bg-surface-800 rounded-xl shadow-2xl p-6 border border-surface-200 dark:border-surface-700"
+    >
+      <div className="text-center">
+        <div className="inline-flex items-center justify-center w-12 h-12 bg-warning-100 dark:bg-warning-900/30 rounded-full mb-4">
+          <svg
+            className="w-6 h-6 text-warning-600 dark:text-warning-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+        </div>
+        <ModalTitle className="text-lg font-semibold text-surface-900 dark:text-surface-100 mb-2">
+          Session Expiring
+        </ModalTitle>
+        <p className="text-surface-600 dark:text-surface-400 mb-6">
+          Your session is about to expire due to inactivity.
+          Would you like to stay signed in?
+        </p>
+        <div className="flex gap-3">
+          <button
+            onClick={onLogout}
+            className="flex-1 px-4 py-2 bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-300 rounded-lg font-medium hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors"
+          >
+            Sign Out
+          </button>
+          <button
+            onClick={onExtend}
+            className="flex-1 px-4 py-2 bg-aura-600 text-white rounded-lg font-medium hover:bg-aura-700 transition-colors"
+          >
+            Stay Signed In
+          </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

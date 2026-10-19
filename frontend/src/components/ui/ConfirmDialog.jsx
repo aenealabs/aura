@@ -1,6 +1,5 @@
-import { useEffect, createContext, useContext, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 /**
  * Confirmation Dialog Component
@@ -72,119 +71,88 @@ function ConfirmDialog({
 }) {
   const config = VARIANTS[variant] || VARIANTS.info;
 
-  // WCAG 2.1 AA: Focus trap for dialog
-  const { containerRef: dialogRef, firstFocusableRef: confirmButtonRef } = useFocusTrap(
-    isOpen && !loading,
-    {
-      autoFocus: true,
-      restoreFocus: true,
-      escapeDeactivates: !loading,
-      onEscape: onCancel,
-    }
-  );
-
-  // Prevent body scroll when open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
+  const confirmButtonRef = useRef(null);
 
   if (!isOpen) return null;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-title"
+  return (
+    <Modal
+      open
+      onClose={() => {
+        if (!loading) onCancel();
+      }}
+      size="sm"
+      initialFocusRef={confirmButtonRef}
+      overlayClassName="glass-backdrop"
+      panelClassName="
+        p-6
+        bg-white dark:bg-surface-800
+        backdrop-blur-xl backdrop-saturate-150
+        rounded-2xl
+        border border-white/50 dark:border-surface-700/50
+        shadow-[var(--shadow-glass-hover)]
+        animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]
+      "
     >
-      {/* Backdrop - Glass style */}
-      <div
-        className="absolute inset-0 glass-backdrop"
-        onClick={loading ? undefined : onCancel}
-      />
-
-      {/* Dialog - Glass style */}
-      <div
-        ref={dialogRef}
-        className="
-          relative max-w-md w-full p-6
-          bg-white dark:bg-surface-800
-          backdrop-blur-xl backdrop-saturate-150
-          rounded-2xl
-          border border-white/50 dark:border-surface-700/50
-          shadow-[var(--shadow-glass-hover)]
-          animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]
-        "
-      >
-        {/* Icon */}
-        <div className={`mx-auto w-12 h-12 rounded-full ${config.iconBg} flex items-center justify-center mb-4`}>
-          <div className={config.iconColor}>{config.icon}</div>
-        </div>
-
-        {/* Title */}
-        <h2
-          id="confirm-title"
-          className="text-lg font-semibold text-center text-surface-900 dark:text-surface-100 mb-2"
-        >
-          {title}
-        </h2>
-
-        {/* Message */}
-        <p className="text-center text-surface-600 dark:text-surface-400 mb-6">
-          {message}
-        </p>
-
-        {/* Actions */}
-        <div className="flex items-center justify-center gap-3">
-          <button
-            onClick={onCancel}
-            disabled={loading}
-            className="
-              px-4 py-2.5 rounded-xl font-medium
-              bg-white dark:bg-surface-700
-              hover:bg-surface-50 dark:hover:bg-surface-700
-              border border-surface-200/50 dark:border-surface-700/50
-              text-surface-700 dark:text-surface-300
-              transition-all duration-200 ease-[var(--ease-tahoe)]
-              hover:shadow-sm hover:-translate-y-px
-              active:scale-[0.98]
-              disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0
-            "
-          >
-            {cancelText}
-          </button>
-          <button
-            ref={confirmButtonRef}
-            onClick={onConfirm}
-            disabled={loading}
-            className={`
-              px-4 py-2.5 rounded-xl font-medium text-white
-              transition-all duration-200 ease-[var(--ease-tahoe)]
-              focus:outline-none focus:ring-2 focus:ring-offset-2
-              hover:shadow-md hover:-translate-y-px
-              active:scale-[0.98]
-              disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0
-              flex items-center gap-2
-              ${config.buttonClass}
-            `}
-          >
-            {loading && (
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-            )}
-            {confirmText}
-          </button>
-        </div>
+      {/* Icon */}
+      <div className={`mx-auto w-12 h-12 rounded-full ${config.iconBg} flex items-center justify-center mb-4`}>
+        <div className={config.iconColor}>{config.icon}</div>
       </div>
-    </div>,
-    document.body
+
+      {/* Title */}
+      <ModalTitle className="text-lg font-semibold text-center text-surface-900 dark:text-surface-100 mb-2">
+        {title}
+      </ModalTitle>
+
+      {/* Message */}
+      <p className="text-center text-surface-600 dark:text-surface-400 mb-6">
+        {message}
+      </p>
+
+      {/* Actions */}
+      <div className="flex items-center justify-center gap-3">
+        <button
+          onClick={onCancel}
+          disabled={loading}
+          className="
+            px-4 py-2.5 rounded-xl font-medium
+            bg-white dark:bg-surface-700
+            hover:bg-surface-50 dark:hover:bg-surface-700
+            border border-surface-200/50 dark:border-surface-700/50
+            text-surface-700 dark:text-surface-300
+            transition-all duration-200 ease-[var(--ease-tahoe)]
+            hover:shadow-sm hover:-translate-y-px
+            active:scale-[0.98]
+            disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0
+          "
+        >
+          {cancelText}
+        </button>
+        <button
+          ref={confirmButtonRef}
+          onClick={onConfirm}
+          disabled={loading}
+          className={`
+            px-4 py-2.5 rounded-xl font-medium text-white
+            transition-all duration-200 ease-[var(--ease-tahoe)]
+            focus:outline-none focus:ring-2 focus:ring-offset-2
+            hover:shadow-md hover:-translate-y-px
+            active:scale-[0.98]
+            disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0
+            flex items-center gap-2
+            ${config.buttonClass}
+          `}
+        >
+          {loading && (
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          )}
+          {confirmText}
+        </button>
+      </div>
+    </Modal>
   );
 }
 

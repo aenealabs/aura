@@ -199,7 +199,8 @@ describe('StandaloneConfirmDialog', () => {
     );
 
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveAttribute('aria-labelledby', 'confirm-title');
+    expect(dialog).toHaveAttribute('aria-labelledby', screen.getByText('Confirm Action', { selector: 'h2' }).id);
+    expect(dialog).toHaveAccessibleName('Confirm Action');
   });
 
   test('has aria-modal true', () => {

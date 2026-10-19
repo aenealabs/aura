@@ -245,8 +245,8 @@ function KeyboardShortcutHelp({ isOpen, onClose }) {
 
   return (
     <div
+      // Non-modal: a popover beside the diagram that leaves the page usable
       role="dialog"
-      aria-modal="true"
       aria-labelledby="shortcuts-title"
       className="
         absolute bottom-16 right-4

@@ -292,6 +292,32 @@ On approval:
 - A rollback configuration is stored alongside the upgrade, enabling one-click reversion
 - CloudTrail audit event is emitted with the full approval chain (NIST AU-3, CM-3)
 
+#### Applying an approved upgrade
+
+The agents' Bedrock service reads its tier models (ADR-015) from configuration, so an
+approved upgrade and a rollback are both configuration changes with no code release.
+In the environment's Bedrock secret (`aura/<env>/bedrock-config`) or its config entry in
+`src/config/bedrock_config.py`, set the approved model for its tier together with its
+pricing:
+
+```json
+{
+  "model_id_accurate": "<approved Bedrock model or inference profile ID>",
+  "model_pricing": {
+    "<approved Bedrock model or inference profile ID>": {
+      "input_per_million": 0.0,
+      "output_per_million": 0.0
+    }
+  }
+}
+```
+
+Tier keys are `model_id_fast`, `model_id_accurate` and `model_id_maximum`. A model without
+pricing is refused at startup (an error is logged and the tier keeps its current model),
+because cost tracking and budgets must cover every live model. The service reads the
+secret at startup, so the change takes effect on the next deployment or restart.
+Rollback restores the previous values, recorded by `RollbackService`.
+
 ### Evaluation Integrity Envelope
 
 The benchmark suite, CGE axis definitions, regression floor thresholds, and utility weights are **immutable per evaluation run**:

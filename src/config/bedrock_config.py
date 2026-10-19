@@ -185,6 +185,34 @@ def get_model_pricing(model_id: str) -> dict[str, float]:
     return MODEL_PRICING[model_id].copy()
 
 
+def register_model_pricing(pricing: dict[str, dict[str, Any]] | None) -> list[str]:
+    """
+    Add pricing for models approved through configuration (ADR-088).
+
+    An approved model upgrade brings its pricing with it (``model_pricing`` in the
+    environment config or its Secrets Manager secret), so cost tracking and budgets
+    cover it. Entries without numeric input and output prices are ignored.
+
+    Args:
+        pricing: {model_id: {"input_per_million": float, "output_per_million": float}}
+
+    Returns:
+        The model IDs registered
+    """
+    registered = []
+    for model_id, prices in (pricing or {}).items():
+        try:
+            entry = {
+                "input_per_million": float(prices["input_per_million"]),
+                "output_per_million": float(prices["output_per_million"]),
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+        MODEL_PRICING[model_id] = entry
+        registered.append(model_id)
+    return registered
+
+
 def calculate_cost(input_tokens: int, output_tokens: int, model_id: str) -> float:
     """
     Calculate cost for a model invocation.

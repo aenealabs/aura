@@ -17,7 +17,7 @@ import uuid
 from collections import OrderedDict
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 # Import Redis cache service for production state management
 from src.services.redis_cache_service import RedisCacheService, create_cache_service
@@ -43,7 +43,12 @@ except ImportError:
 # ``test_guardrail_unavailable_with_require_guardrails_false`` once another
 # test in the suite happened to import via ``src.config.guardrails_config``
 # first. See issue #183 cluster C.
-from src.config.bedrock_config import calculate_cost, get_config
+from src.config.bedrock_config import (
+    MODEL_PRICING,
+    calculate_cost,
+    get_config,
+    register_model_pricing,
+)
 from src.config.guardrails_config import (
     GuardrailMode,
     GuardrailResult,
@@ -103,9 +108,16 @@ class ModelTier(Enum):
     MAXIMUM = "maximum"
 
 
-# Model IDs for each tier (using ON_DEMAND models for us-east-1 region)
+# Default model IDs for each tier (using ON_DEMAND models for us-east-1 region)
 # Note: Claude 3.7+ and 4.x require inference profiles which route cross-region.
 # For single-region deployment (us-east-1), use ON_DEMAND models.
+#
+# These are defaults only. Each environment can set ``model_id_fast``,
+# ``model_id_accurate`` and ``model_id_maximum`` in its Bedrock config or its Secrets
+# Manager secret, so an approved model upgrade (ADR-088 Stage 8) or a rollback is a
+# configuration change, not a code release. Change them only through the model
+# assurance pipeline: candidate evaluated against the frozen oracle, shadow report,
+# human approval.
 MODEL_IDS: dict[ModelTier, str] = {
     ModelTier.FAST: "anthropic.claude-3-haiku-20240307-v1:0",
     ModelTier.ACCURATE: "anthropic.claude-3-5-sonnet-20240620-v1:0",
@@ -181,12 +193,15 @@ OPERATION_QUERY_TYPE_MAP: dict[str, str] = {
 }
 
 
-def get_model_for_operation(operation: str | None) -> tuple[ModelTier, str]:
+def get_model_for_operation(
+    operation: str | None, model_ids: dict[ModelTier, str] | None = None
+) -> tuple[ModelTier, str]:
     """
     Get the appropriate model tier and ID for an operation.
 
     Args:
         operation: Operation name (e.g., "query_intent_analysis")
+        model_ids: The deployment's tier-to-model map (defaults to MODEL_IDS)
 
     Returns:
         Tuple of (ModelTier, model_id)
@@ -196,7 +211,36 @@ def get_model_for_operation(operation: str | None) -> tuple[ModelTier, str]:
         tier = ModelTier.ACCURATE
     else:
         tier = OPERATION_MODEL_MAP.get(operation, ModelTier.ACCURATE)
-    return tier, MODEL_IDS[tier]
+    return tier, (model_ids or MODEL_IDS)[tier]
+
+
+def resolve_model_tiers(
+    config: dict[str, Any],
+    overrides: dict[str, Any] | None = None,
+    is_priced: Callable[[str], bool] | None = None,
+) -> dict[ModelTier, str]:
+    """The tier-to-model map for a deployment: secret overrides, then config, then defaults.
+
+    Keys are ``model_id_fast``, ``model_id_accurate`` and ``model_id_maximum``. When
+    ``is_priced`` is given, a configured model without pricing is refused (logged, and
+    the tier keeps its default): cost tracking and budgets must cover every live model.
+    """
+    overrides = overrides or {}
+    tiers: dict[ModelTier, str] = {}
+    for tier, default in MODEL_IDS.items():
+        key = f"model_id_{tier.value}"
+        model_id = overrides.get(key) or config.get(key) or default
+        if model_id != default and is_priced is not None and not is_priced(model_id):
+            logger.error(
+                "Model %s for the %s tier has no pricing; keeping %s. Add it to "
+                "model_pricing with the upgrade.",
+                model_id,
+                tier.value,
+                default,
+            )
+            model_id = default
+        tiers[tier] = model_id
+    return tiers
 
 
 # Custom Exceptions
@@ -327,6 +371,19 @@ class BedrockLLMService:
                 self.mode = BedrockMode.MOCK
             self._init_mock_mode()
 
+        # Tier models (ADR-015) come from configuration so upgrades and rollbacks are
+        # config changes (ADR-088); secrets override config, config overrides defaults
+        overrides = getattr(self, "_secret_overrides", None) or {}
+        register_model_pricing(self.config.get("model_pricing"))
+        register_model_pricing(overrides.get("model_pricing"))
+        self.model_tiers = resolve_model_tiers(
+            self.config, overrides, is_priced=lambda m: m in MODEL_PRICING
+        )
+        logger.info(
+            "Model tiers: "
+            + ", ".join(f"{t.value}={m}" for t, m in self.model_tiers.items())
+        )
+
         # Initialize Redis cache for production state management
         # Provides externalized state for cost tracking, rate limiting, and response caching
         # Falls back to in-memory when Redis unavailable
@@ -412,6 +469,10 @@ class BedrockLLMService:
             logger.warning("Falling back to MOCK mode")
             self.mode = BedrockMode.MOCK
             self._init_mock_mode()
+
+    def _tier_models(self) -> dict[ModelTier, str]:
+        """The resolved tier-to-model map (defaults if the service was built without init)."""
+        return getattr(self, "model_tiers", None) or MODEL_IDS
 
     def _init_mock_mode(self) -> None:
         """Initialize mock mode for local development/testing."""
@@ -546,6 +607,7 @@ class BedrockLLMService:
                 SecretId=self.config["secrets_path"]
             )
             secrets = json.loads(response["SecretString"])
+            self._secret_overrides = secrets
 
             # Override config with secrets if present
             self.model_id_primary = secrets.get(
@@ -1221,10 +1283,10 @@ class BedrockLLMService:
         if override_tier is not None:
             # Explicit tier override
             tier = override_tier
-            model_id = MODEL_IDS[tier]
+            model_id = self._tier_models()[tier]
         elif operation is not None:
             # Operation-based selection
-            tier, model_id = get_model_for_operation(operation)
+            tier, model_id = get_model_for_operation(operation, self._tier_models())
         elif use_fallback:
             # Legacy fallback support (deprecated)
             tier = ModelTier.FAST

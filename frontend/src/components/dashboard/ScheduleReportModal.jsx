@@ -14,6 +14,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Schedule frequency options
 const FREQUENCY_OPTIONS = [
@@ -303,317 +304,323 @@ function ScheduleReportModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <div>
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black bg-opacity-50"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white rounded-xl shadow-xl !max-w-2xl !max-h-[90vh] !overflow-hidden flex flex-col"
+    >
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div>
+          <ModalTitle asChild>
             <h2 className="text-xl font-semibold text-gray-900">
               {existingSchedule ? 'Edit Scheduled Report' : 'Schedule Report'}
             </h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Dashboard: {dashboardName}
-            </p>
+          </ModalTitle>
+          <p className="text-sm text-gray-500 mt-1">
+            Dashboard: {dashboardName}
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-gray-600"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Error message */}
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            {error}
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+        )}
+
+        {/* Report Name */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Report Name *
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., Weekly Security Summary"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            maxLength={100}
+          />
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Error message */}
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {error}
-            </div>
-          )}
+        {/* Description */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Description
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Optional description for this report schedule"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            rows={2}
+            maxLength={500}
+          />
+        </div>
 
-          {/* Report Name */}
+        {/* Recipients */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Recipients *
+          </label>
+          <RecipientInput
+            recipients={recipients}
+            onChange={setRecipients}
+          />
+        </div>
+
+        {/* Schedule Configuration */}
+        <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+          <h3 className="text-sm font-medium text-gray-900">Schedule</h3>
+
+          {/* Frequency */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Report Name *
+            <label className="block text-sm text-gray-600 mb-2">
+              Frequency
             </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Weekly Security Summary"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              maxLength={100}
-            />
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description for this report schedule"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              rows={2}
-              maxLength={500}
-            />
-          </div>
-
-          {/* Recipients */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Recipients *
-            </label>
-            <RecipientInput
-              recipients={recipients}
-              onChange={setRecipients}
-            />
-          </div>
-
-          {/* Schedule Configuration */}
-          <div className="border border-gray-200 rounded-lg p-4 space-y-4">
-            <h3 className="text-sm font-medium text-gray-900">Schedule</h3>
-
-            {/* Frequency */}
-            <div>
-              <label className="block text-sm text-gray-600 mb-2">
-                Frequency
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {FREQUENCY_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setFrequency(option.value)}
-                    className={`px-3 py-2 rounded-lg border text-sm transition-colors ${
-                      frequency === option.value
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Day of Week (for weekly/biweekly) */}
-            {(frequency === 'weekly' || frequency === 'biweekly') && (
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">
-                  Day of Week
-                </label>
-                <select
-                  value={dayOfWeek}
-                  onChange={(e) => setDayOfWeek(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {DAYS_OF_WEEK.map((day) => (
-                    <option key={day.value} value={day.value}>
-                      {day.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Day of Month (for monthly) */}
-            {frequency === 'monthly' && (
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">
-                  Day of Month
-                </label>
-                <select
-                  value={dayOfMonth}
-                  onChange={(e) => setDayOfMonth(parseInt(e.target.value, 10))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
-                    <option key={day} value={day}>
-                      {day}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Limited to 1-28 to ensure delivery every month
-                </p>
-              </div>
-            )}
-
-            {/* Time and Timezone */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">
-                  Time
-                </label>
-                <input
-                  type="time"
-                  value={timeUtc}
-                  onChange={(e) => setTimeUtc(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">
-                  Timezone
-                </label>
-                <select
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {TIMEZONE_OPTIONS.map((tz) => (
-                    <option key={tz.value} value={tz.value}>
-                      {tz.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Report Format */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Report Format
-            </label>
-            <div className="space-y-2">
-              {FORMAT_OPTIONS.map((option) => (
-                <label
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {FREQUENCY_OPTIONS.map((option) => (
+                <button
                   key={option.value}
-                  className={`flex items-start p-3 rounded-lg border cursor-pointer transition-colors ${
-                    format === option.value
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                  type="button"
+                  onClick={() => setFrequency(option.value)}
+                  className={`px-3 py-2 rounded-lg border text-sm transition-colors ${
+                    frequency === option.value
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  <input
-                    type="radio"
-                    name="format"
-                    value={option.value}
-                    checked={format === option.value}
-                    onChange={(e) => setFormat(e.target.value)}
-                    className="mt-1 mr-3"
-                  />
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {option.label}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {option.description}
-                    </div>
-                  </div>
-                </label>
+                  {option.label}
+                </button>
               ))}
             </div>
           </div>
 
-          {/* Subject Template */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email Subject Template
-            </label>
-            <input
-              type="text"
-              value={subjectTemplate}
-              onChange={(e) => setSubjectTemplate(e.target.value)}
-              placeholder="{dashboard_name} - {report_name} Report"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              maxLength={200}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Available variables: {'{dashboard_name}'}, {'{report_name}'}, {'{date}'}
-            </p>
-          </div>
+          {/* Day of Week (for weekly/biweekly) */}
+          {(frequency === 'weekly' || frequency === 'biweekly') && (
+            <div>
+              <label className="block text-sm text-gray-600 mb-2">
+                Day of Week
+              </label>
+              <select
+                value={dayOfWeek}
+                onChange={(e) => setDayOfWeek(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {DAYS_OF_WEEK.map((day) => (
+                  <option key={day.value} value={day.value}>
+                    {day.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          {/* Active Toggle (for existing schedules) */}
-          {existingSchedule && (
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div>
-                <div className="text-sm font-medium text-gray-900">
-                  Schedule Active
-                </div>
-                <div className="text-xs text-gray-500">
-                  {isActive ? 'Reports will be sent on schedule' : 'Reports are paused'}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsActive(!isActive)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  isActive ? 'bg-blue-500' : 'bg-gray-300'
+          {/* Day of Month (for monthly) */}
+          {frequency === 'monthly' && (
+            <div>
+              <label className="block text-sm text-gray-600 mb-2">
+                Day of Month
+              </label>
+              <select
+                value={dayOfMonth}
+                onChange={(e) => setDayOfMonth(parseInt(e.target.value, 10))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                  <option key={day} value={day}>
+                    {day}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Limited to 1-28 to ensure delivery every month
+              </p>
+            </div>
+          )}
+
+          {/* Time and Timezone */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-600 mb-2">
+                Time
+              </label>
+              <input
+                type="time"
+                value={timeUtc}
+                onChange={(e) => setTimeUtc(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-2">
+                Timezone
+              </label>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {TIMEZONE_OPTIONS.map((tz) => (
+                  <option key={tz.value} value={tz.value}>
+                    {tz.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Report Format */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Report Format
+          </label>
+          <div className="space-y-2">
+            {FORMAT_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                className={`flex items-start p-3 rounded-lg border cursor-pointer transition-colors ${
+                  format === option.value
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    isActive ? 'translate-x-6' : 'translate-x-1'
-                  }`}
+                <input
+                  type="radio"
+                  name="format"
+                  value={option.value}
+                  checked={format === option.value}
+                  onChange={(e) => setFormat(e.target.value)}
+                  className="mt-1 mr-3"
                 />
-              </button>
-            </div>
-          )}
-
-          {/* Schedule Stats (for existing schedules) */}
-          {existingSchedule && (
-            <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-              <div>
-                <div className="text-xs text-gray-500">Reports Sent</div>
-                <div className="text-lg font-semibold text-gray-900">
-                  {existingSchedule.send_count || 0}
+                <div>
+                  <div className="text-sm font-medium text-gray-900">
+                    {option.label}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {option.description}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-500">Next Scheduled</div>
-                <div className="text-sm font-medium text-gray-900">
-                  {existingSchedule.next_run_at
-                    ? new Date(existingSchedule.next_run_at).toLocaleString()
-                    : 'Not scheduled'}
-                </div>
-              </div>
-            </div>
-          )}
+              </label>
+            ))}
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between bg-gray-50">
-          <div>
-            {existingSchedule && onSendNow && (
-              <button
-                type="button"
-                onClick={handleSendNow}
-                disabled={isSending || isSaving}
-                className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 disabled:text-gray-400"
-              >
-                {isSending ? 'Sending...' : 'Send Now'}
-              </button>
-            )}
-          </div>
-          <div className="flex gap-3">
+        {/* Subject Template */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Email Subject Template
+          </label>
+          <input
+            type="text"
+            value={subjectTemplate}
+            onChange={(e) => setSubjectTemplate(e.target.value)}
+            placeholder="{dashboard_name} - {report_name} Report"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            maxLength={200}
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Available variables: {'{dashboard_name}'}, {'{report_name}'}, {'{date}'}
+          </p>
+        </div>
+
+        {/* Active Toggle (for existing schedules) */}
+        {existingSchedule && (
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div>
+              <div className="text-sm font-medium text-gray-900">
+                Schedule Active
+              </div>
+              <div className="text-xs text-gray-500">
+                {isActive ? 'Reports will be sent on schedule' : 'Reports are paused'}
+              </div>
+            </div>
             <button
               type="button"
-              onClick={onClose}
-              disabled={isSaving}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:text-gray-400"
+              onClick={() => setIsActive(!isActive)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                isActive ? 'bg-blue-500' : 'bg-gray-300'
+              }`}
             >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving || isSending}
-              className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium"
-            >
-              {isSaving ? 'Saving...' : existingSchedule ? 'Update Schedule' : 'Create Schedule'}
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isActive ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
             </button>
           </div>
+        )}
+
+        {/* Schedule Stats (for existing schedules) */}
+        {existingSchedule && (
+          <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+            <div>
+              <div className="text-xs text-gray-500">Reports Sent</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {existingSchedule.send_count || 0}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Next Scheduled</div>
+              <div className="text-sm font-medium text-gray-900">
+                {existingSchedule.next_run_at
+                  ? new Date(existingSchedule.next_run_at).toLocaleString()
+                  : 'Not scheduled'}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between bg-gray-50">
+        <div>
+          {existingSchedule && onSendNow && (
+            <button
+              type="button"
+              onClick={handleSendNow}
+              disabled={isSending || isSaving}
+              className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 disabled:text-gray-400"
+            >
+              {isSending ? 'Sending...' : 'Send Now'}
+            </button>
+          )}
+        </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:text-gray-400"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving || isSending}
+            className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium"
+          >
+            {isSaving ? 'Saving...' : existingSchedule ? 'Update Schedule' : 'Create Schedule'}
+          </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

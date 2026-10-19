@@ -23,6 +23,7 @@ import {
   WidgetCategory,
   CATEGORY_LABELS,
 } from './widgetRegistry';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Category icons
 const CATEGORY_ICONS = {
@@ -208,105 +209,104 @@ export default function WidgetLibrary({ onSelect, onClose }) {
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/30 z-40 transition-opacity"
-        onClick={onClose}
-      />
-
-      {/* Slide-over panel */}
-      <div className="fixed inset-y-0 right-0 w-full max-w-md bg-white dark:bg-surface-900 shadow-xl z-50 flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-surface-200 dark:border-surface-700">
-          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+    <Modal
+      open
+      onClose={onClose}
+      placement="right"
+      overlayClassName="bg-black/30 transition-opacity"
+      panelClassName="!max-w-md bg-white dark:bg-surface-900 shadow-xl flex flex-col"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-surface-200 dark:border-surface-700">
+        <ModalTitle asChild>
+        <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
             Widget Library
           </h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-500 transition-colors"
-          >
-            <XMarkIcon className="w-5 h-5" />
-          </button>
-        </div>
+        </ModalTitle>
+        <button
+          onClick={onClose}
+          className="p-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-500 transition-colors"
+        >
+          <XMarkIcon className="w-5 h-5" />
+        </button>
+      </div>
 
-        {/* Search */}
-        <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700">
-          <div className="relative">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-400" />
-            <input
-              type="text"
-              placeholder="Search widgets..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="
-                w-full pl-10 pr-4 py-2 rounded-lg
-                bg-surface-50 dark:bg-surface-800
-                border border-surface-200 dark:border-surface-700
-                text-surface-900 dark:text-surface-100
-                placeholder-surface-400
-                focus:outline-none focus:ring-2 focus:ring-aura-500/20 focus:border-aura-500
-                transition-colors
-              "
-            />
-          </div>
-        </div>
-
-        {/* Widget categories */}
-        <div className="flex-1 overflow-y-auto">
-          {filteredCategories.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-              <MagnifyingGlassIcon className="w-10 h-10 text-surface-300 dark:text-surface-600 mb-3" />
-              <p className="text-surface-500 dark:text-surface-400">
-                No widgets found for &quot;{searchQuery}&quot;
-              </p>
-            </div>
-          ) : (
-            filteredCategories.map((cat) => (
-              <CategoryAccordion
-                key={cat.category}
-                category={cat.category}
-                label={cat.label}
-                widgets={cat.widgets}
-                isExpanded={expandedCategories.has(cat.category)}
-                onToggle={() => toggleCategory(cat.category)}
-                onSelectWidget={handleSelectWidget}
-                selectedWidget={selectedWidget}
-              />
-            ))
-          )}
-        </div>
-
-        {/* Footer with action buttons */}
-        <div className="px-4 py-3 border-t border-surface-200 dark:border-surface-700 flex items-center justify-between gap-3">
-          {selectedWidget ? (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
-                {selectedWidget.name}
-              </p>
-              <p className="text-xs text-surface-500 dark:text-surface-400">
-                {selectedWidget.defaultWidth}x{selectedWidget.defaultHeight} • {CATEGORY_LABELS[selectedWidget.category]}
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-surface-500 dark:text-surface-400">
-              Select a widget to add
-            </p>
-          )}
-          <button
-            onClick={handleAddToDashboard}
-            disabled={!selectedWidget}
+      {/* Search */}
+      <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700">
+        <div className="relative">
+          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-400" />
+          <input
+            type="text"
+            placeholder="Search widgets..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="
-              px-4 py-2 rounded-lg font-medium text-sm
-              bg-aura-600 hover:bg-aura-700 text-white
-              disabled:opacity-50 disabled:cursor-not-allowed
+              w-full pl-10 pr-4 py-2 rounded-lg
+              bg-surface-50 dark:bg-surface-800
+              border border-surface-200 dark:border-surface-700
+              text-surface-900 dark:text-surface-100
+              placeholder-surface-400
+              focus:outline-none focus:ring-2 focus:ring-aura-500/20 focus:border-aura-500
               transition-colors
             "
-          >
-            Add to Dashboard
-          </button>
+          />
         </div>
       </div>
-    </>
+
+      {/* Widget categories */}
+      <div className="flex-1 overflow-y-auto">
+        {filteredCategories.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <MagnifyingGlassIcon className="w-10 h-10 text-surface-300 dark:text-surface-600 mb-3" />
+            <p className="text-surface-500 dark:text-surface-400">
+              No widgets found for &quot;{searchQuery}&quot;
+            </p>
+          </div>
+        ) : (
+          filteredCategories.map((cat) => (
+            <CategoryAccordion
+              key={cat.category}
+              category={cat.category}
+              label={cat.label}
+              widgets={cat.widgets}
+              isExpanded={expandedCategories.has(cat.category)}
+              onToggle={() => toggleCategory(cat.category)}
+              onSelectWidget={handleSelectWidget}
+              selectedWidget={selectedWidget}
+            />
+          ))
+        )}
+      </div>
+
+      {/* Footer with action buttons */}
+      <div className="px-4 py-3 border-t border-surface-200 dark:border-surface-700 flex items-center justify-between gap-3">
+        {selectedWidget ? (
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
+              {selectedWidget.name}
+            </p>
+            <p className="text-xs text-surface-500 dark:text-surface-400">
+              {selectedWidget.defaultWidth}x{selectedWidget.defaultHeight} • {CATEGORY_LABELS[selectedWidget.category]}
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-surface-500 dark:text-surface-400">
+            Select a widget to add
+          </p>
+        )}
+        <button
+          onClick={handleAddToDashboard}
+          disabled={!selectedWidget}
+          className="
+            px-4 py-2 rounded-lg font-medium text-sm
+            bg-aura-600 hover:bg-aura-700 text-white
+            disabled:opacity-50 disabled:cursor-not-allowed
+            transition-colors
+          "
+        >
+          Add to Dashboard
+        </button>
+      </div>
+    </Modal>
   );
 }

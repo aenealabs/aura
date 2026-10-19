@@ -16,6 +16,7 @@ import {
   CheckIcon,
   ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Share permission levels
 const PERMISSION_OPTIONS = [
@@ -222,201 +223,194 @@ export default function ShareDashboardModal({
   if (!isOpen) return null;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 z-50 transition-opacity"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div
-          className="bg-white dark:bg-surface-900 rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-surface-200 dark:border-surface-700">
-            <div className="flex items-center gap-2">
-              <ShareIcon className="w-5 h-5 text-aura-500" />
-              <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
-                Share Dashboard
-              </h2>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-500 transition-colors"
-            >
-              <XMarkIcon className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(90vh-120px)]">
-            {/* Dashboard info */}
-            <div className="px-3 py-2 bg-surface-50 dark:bg-surface-800 rounded-lg">
-              <p className="text-sm font-medium text-surface-900 dark:text-surface-100">
-                {dashboard.name}
-              </p>
-              {dashboard.description && (
-                <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-                  {dashboard.description}
-                </p>
-              )}
-            </div>
-
-            {/* Copy link */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleCopyLink}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-surface-200 dark:border-surface-700 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors"
-              >
-                {linkCopied ? (
-                  <>
-                    <CheckIcon className="w-4 h-4 text-olive-500" />
-                    <span className="text-sm text-olive-600 dark:text-olive-400">
-                      Link copied!
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <ClipboardDocumentIcon className="w-4 h-4 text-surface-500" />
-                    <span className="text-sm text-surface-600 dark:text-surface-400">
-                      Copy link
-                    </span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* User search */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300">
-                Add people
-              </label>
-              <div className="flex gap-2">
-                <div className="flex-1 relative">
-                  <UserPlusIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-400" />
-                  <input
-                    type="text"
-                    placeholder="Search by name or email..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-aura-500/20 focus:border-aura-500 text-sm"
-                  />
-                </div>
-                <select
-                  value={selectedPermission}
-                  onChange={(e) => setSelectedPermission(e.target.value)}
-                  className="px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300 text-sm"
-                >
-                  {PERMISSION_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Search results */}
-              {filteredUsers.length > 0 && (
-                <div className="border border-surface-200 dark:border-surface-700 rounded-lg divide-y divide-surface-200 dark:divide-surface-700 overflow-hidden">
-                  {filteredUsers.map((user) => (
-                    <UserSearchItem
-                      key={user.id}
-                      user={user}
-                      onSelect={handleSelectUser}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {searchQuery && filteredUsers.length === 0 && (
-                <p className="text-sm text-surface-500 dark:text-surface-400 text-center py-2">
-                  No users found
-                </p>
-              )}
-            </div>
-
-            {/* Pending shares */}
-            {pendingShares.length > 0 && (
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300">
-                  Pending invites ({pendingShares.length})
-                </label>
-                <div className="space-y-2">
-                  {pendingShares.map((share) => (
-                    <ShareRow
-                      key={share.id}
-                      share={share}
-                      onRemove={handleRemovePending}
-                      onPermissionChange={handlePendingPermissionChange}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Existing shares */}
-            {existingShares.length > 0 && (
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300">
-                  People with access ({existingShares.length})
-                </label>
-                <div className="space-y-2">
-                  {existingShares.map((share) => (
-                    <ShareRow
-                      key={share.id}
-                      share={share}
-                      onRemove={(id) => handleRevoke(id, share.userId)}
-                      onPermissionChange={() => {
-                        // Permission change for existing shares would need API call
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Error message */}
-            {error && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-critical-50 dark:bg-critical-900/20 rounded-lg">
-                <ExclamationCircleIcon className="w-4 h-4 text-critical-500" />
-                <p className="text-sm text-critical-600 dark:text-critical-400">
-                  {error}
-                </p>
-              </div>
-            )}
-
-            {/* Success message */}
-            {successMessage && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-olive-50 dark:bg-olive-900/20 rounded-lg">
-                <CheckIcon className="w-4 h-4 text-olive-500" />
-                <p className="text-sm text-olive-600 dark:text-olive-400">
-                  {successMessage}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-surface-200 dark:border-surface-700">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleShare}
-              disabled={pendingShares.length === 0 || isLoading}
-              className="px-4 py-2 text-sm font-medium text-white bg-aura-600 hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
-            >
-              {isLoading ? 'Sharing...' : 'Share'}
-            </button>
-          </div>
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50 transition-opacity"
+      panelClassName="bg-white dark:bg-surface-900 rounded-xl shadow-xl !max-w-md !max-h-[90vh] !overflow-hidden"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-surface-200 dark:border-surface-700">
+        <div className="flex items-center gap-2">
+          <ShareIcon className="w-5 h-5 text-aura-500" />
+          <ModalTitle asChild>
+            <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+              Share Dashboard
+            </h2>
+          </ModalTitle>
         </div>
+        <button
+          onClick={onClose}
+          className="p-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-500 transition-colors"
+        >
+          <XMarkIcon className="w-5 h-5" />
+        </button>
       </div>
-    </>
+
+      {/* Content */}
+      <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(90vh-120px)]">
+        {/* Dashboard info */}
+        <div className="px-3 py-2 bg-surface-50 dark:bg-surface-800 rounded-lg">
+          <p className="text-sm font-medium text-surface-900 dark:text-surface-100">
+            {dashboard.name}
+          </p>
+          {dashboard.description && (
+            <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
+              {dashboard.description}
+            </p>
+          )}
+        </div>
+
+        {/* Copy link */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCopyLink}
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-surface-200 dark:border-surface-700 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors"
+          >
+            {linkCopied ? (
+              <>
+                <CheckIcon className="w-4 h-4 text-olive-500" />
+                <span className="text-sm text-olive-600 dark:text-olive-400">
+                  Link copied!
+                </span>
+              </>
+            ) : (
+              <>
+                <ClipboardDocumentIcon className="w-4 h-4 text-surface-500" />
+                <span className="text-sm text-surface-600 dark:text-surface-400">
+                  Copy link
+                </span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* User search */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-surface-700 dark:text-surface-300">
+            Add people
+          </label>
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <UserPlusIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-400" />
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-aura-500/20 focus:border-aura-500 text-sm"
+              />
+            </div>
+            <select
+              value={selectedPermission}
+              onChange={(e) => setSelectedPermission(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300 text-sm"
+            >
+              {PERMISSION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Search results */}
+          {filteredUsers.length > 0 && (
+            <div className="border border-surface-200 dark:border-surface-700 rounded-lg divide-y divide-surface-200 dark:divide-surface-700 overflow-hidden">
+              {filteredUsers.map((user) => (
+                <UserSearchItem
+                  key={user.id}
+                  user={user}
+                  onSelect={handleSelectUser}
+                />
+              ))}
+            </div>
+          )}
+
+          {searchQuery && filteredUsers.length === 0 && (
+            <p className="text-sm text-surface-500 dark:text-surface-400 text-center py-2">
+              No users found
+            </p>
+          )}
+        </div>
+
+        {/* Pending shares */}
+        {pendingShares.length > 0 && (
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300">
+              Pending invites ({pendingShares.length})
+            </label>
+            <div className="space-y-2">
+              {pendingShares.map((share) => (
+                <ShareRow
+                  key={share.id}
+                  share={share}
+                  onRemove={handleRemovePending}
+                  onPermissionChange={handlePendingPermissionChange}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Existing shares */}
+        {existingShares.length > 0 && (
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-surface-700 dark:text-surface-300">
+              People with access ({existingShares.length})
+            </label>
+            <div className="space-y-2">
+              {existingShares.map((share) => (
+                <ShareRow
+                  key={share.id}
+                  share={share}
+                  onRemove={(id) => handleRevoke(id, share.userId)}
+                  onPermissionChange={() => {
+                    // Permission change for existing shares would need API call
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Error message */}
+        {error && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-critical-50 dark:bg-critical-900/20 rounded-lg">
+            <ExclamationCircleIcon className="w-4 h-4 text-critical-500" />
+            <p className="text-sm text-critical-600 dark:text-critical-400">
+              {error}
+            </p>
+          </div>
+        )}
+
+        {/* Success message */}
+        {successMessage && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-olive-50 dark:bg-olive-900/20 rounded-lg">
+            <CheckIcon className="w-4 h-4 text-olive-500" />
+            <p className="text-sm text-olive-600 dark:text-olive-400">
+              {successMessage}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-surface-200 dark:border-surface-700">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-medium text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleShare}
+          disabled={pendingShares.length === 0 || isLoading}
+          className="px-4 py-2 text-sm font-medium text-white bg-aura-600 hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+        >
+          {isLoading ? 'Sharing...' : 'Share'}
+        </button>
+      </div>
+    </Modal>
   );
 }

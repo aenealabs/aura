@@ -24,6 +24,7 @@ import ReasoningViewer from './ReasoningViewer';
 import ConfidenceVisualization from './ConfidenceVisualization';
 import AlternativesComparison from './AlternativesComparison';
 import ContradictionAlerts from './ContradictionAlerts';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 /**
  * Tab configuration for the dashboard
@@ -168,12 +169,20 @@ function DecisionDetailPanel({ decision, onClose }) {
   if (!decision) return null;
 
   return (
-    <div className="fixed top-0 bottom-24 right-0 w-[600px] bg-white dark:bg-surface-900 border-l border-surface-200 dark:border-surface-700 shadow-xl overflow-y-auto z-50 rounded-bl-xl">
+    <Modal
+      open
+      onClose={onClose}
+      placement="right"
+      overlayClassName="bg-black/20 dark:bg-black/40"
+      panelClassName="!bottom-24 !h-auto !w-[600px] !max-w-full bg-white dark:bg-surface-900 border-l border-surface-200 dark:border-surface-700 shadow-xl rounded-bl-xl"
+    >
       {/* Header */}
       <div className="sticky top-0 bg-white dark:bg-surface-900 border-b border-surface-200 dark:border-surface-700 p-4 flex items-center justify-between">
+        <ModalTitle asChild>
         <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
-          Decision Details
-        </h2>
+            Decision Details
+          </h2>
+        </ModalTitle>
         <button
           onClick={onClose}
           className="p-2 rounded-lg text-surface-500 hover:text-surface-700 dark:hover:text-surface-300
@@ -222,7 +231,7 @@ function DecisionDetailPanel({ decision, onClose }) {
           />
         )}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -453,17 +462,10 @@ function ExplainabilityDashboard({
 
       {/* Decision detail panel */}
       {selectedDecision && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/20 dark:bg-black/40 z-40"
-            onClick={() => setSelectedDecision(null)}
-          />
-          <DecisionDetailPanel
-            decision={selectedDecision}
-            onClose={() => setSelectedDecision(null)}
-          />
-        </>
+        <DecisionDetailPanel
+          decision={selectedDecision}
+          onClose={() => setSelectedDecision(null)}
+        />
       )}
     </div>
   );

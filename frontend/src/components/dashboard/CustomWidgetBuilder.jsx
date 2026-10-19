@@ -19,6 +19,7 @@ import {
   TableCellsIcon,
   CalculatorIcon,
 } from '@heroicons/react/24/outline';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Query types with icons
 const QUERY_TYPES = [
@@ -387,147 +388,211 @@ export default function CustomWidgetBuilder({
   if (!isOpen) return null;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 z-50 transition-opacity"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-10 overflow-y-auto">
-        <div
-          className="bg-white dark:bg-surface-900 rounded-xl shadow-xl max-w-3xl w-full"
-          onClick={(e) => e.stopPropagation()}
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50 transition-opacity"
+      panelClassName="!top-10 !translate-y-0 !max-h-[calc(100vh-5rem)] bg-white dark:bg-surface-900 rounded-xl shadow-xl !max-w-3xl"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
+        <div className="flex items-center gap-3">
+          <BeakerIcon className="w-6 h-6 text-aura-500" />
+          <ModalTitle asChild>
+            <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+              {editWidget ? 'Edit Custom Widget' : 'Create Custom Widget'}
+            </h2>
+          </ModalTitle>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-500 transition-colors"
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700">
-            <div className="flex items-center gap-3">
-              <BeakerIcon className="w-6 h-6 text-aura-500" />
-              <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
-                {editWidget ? 'Edit Custom Widget' : 'Create Custom Widget'}
-              </h2>
+          <XMarkIcon className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="p-6 space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+        {/* Basic Info */}
+        <CollapsibleSection title="Widget Details">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                Widget Name *
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My Custom Widget"
+                className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
+              />
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-500 transition-colors"
-            >
-              <XMarkIcon className="w-5 h-5" />
-            </button>
+
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                Description
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe what this widget shows..."
+                rows={2}
+                className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                Display Type
+              </label>
+              <select
+                value={widgetType}
+                onChange={(e) => setWidgetType(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
+              >
+                {WIDGET_TYPES.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                Category
+              </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
+              >
+                {CATEGORIES.map((cat) => (
+                  <option key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                Refresh Interval
+              </label>
+              <select
+                value={refreshSeconds}
+                onChange={(e) => setRefreshSeconds(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
+              >
+                <option value={30}>30 seconds</option>
+                <option value={60}>1 minute</option>
+                <option value={300}>5 minutes</option>
+                <option value={600}>10 minutes</option>
+                <option value={1800}>30 minutes</option>
+                <option value={3600}>1 hour</option>
+              </select>
+            </div>
           </div>
+        </CollapsibleSection>
 
-          {/* Content */}
-          <div className="p-6 space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
-            {/* Basic Info */}
-            <CollapsibleSection title="Widget Details">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                    Widget Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="My Custom Widget"
-                    className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
-                  />
-                </div>
+        {/* Query Builder */}
+        <CollapsibleSection title="Query Configuration">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+                Query Type
+              </label>
+              <QueryTypeSelector value={queryType} onChange={setQueryType} />
+            </div>
 
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Describe what this widget shows..."
-                    rows={2}
-                    className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                    Display Type
-                  </label>
-                  <select
-                    value={widgetType}
-                    onChange={(e) => setWidgetType(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
-                  >
-                    {WIDGET_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
-                  >
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat.value} value={cat.value}>
-                        {cat.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                    Refresh Interval
-                  </label>
-                  <select
-                    value={refreshSeconds}
-                    onChange={(e) => setRefreshSeconds(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
-                  >
-                    <option value={30}>30 seconds</option>
-                    <option value={60}>1 minute</option>
-                    <option value={300}>5 minutes</option>
-                    <option value={600}>10 minutes</option>
-                    <option value={1800}>30 minutes</option>
-                    <option value={3600}>1 hour</option>
-                  </select>
-                </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                  Data Source *
+                </label>
+                <select
+                  value={dataSource}
+                  onChange={(e) => {
+                    setDataSource(e.target.value);
+                    setEndpoint('');
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
+                >
+                  <option value="">Select a data source...</option>
+                  {dataSources.map((ds) => (
+                    <option key={ds.type} value={ds.type}>
+                      {ds.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </CollapsibleSection>
 
-            {/* Query Builder */}
-            <CollapsibleSection title="Query Configuration">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-                    Query Type
-                  </label>
-                  <QueryTypeSelector value={queryType} onChange={setQueryType} />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                  Endpoint *
+                </label>
+                <select
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                  disabled={!dataSource}
+                  className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300 disabled:opacity-50"
+                >
+                  <option value="">Select an endpoint...</option>
+                  {availableEndpoints.map((ep) => (
+                    <option key={ep} value={ep}>
+                      {ep}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                  Time Range
+                </label>
+                <select
+                  value={timeRange}
+                  onChange={(e) => setTimeRange(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
+                >
+                  {TIME_RANGES.map((range) => (
+                    <option key={range.value} value={range.value}>
+                      {range.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                  Result Limit
+                </label>
+                <input
+                  type="number"
+                  value={limit}
+                  onChange={(e) => setLimit(Math.min(1000, Math.max(1, Number(e.target.value))))}
+                  min={1}
+                  max={1000}
+                  className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
+                />
+              </div>
+
+              {queryType === 'aggregation' && (
+                <>
                   <div>
                     <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                      Data Source *
+                      Aggregation
                     </label>
                     <select
-                      value={dataSource}
-                      onChange={(e) => {
-                        setDataSource(e.target.value);
-                        setEndpoint('');
-                      }}
+                      value={aggregation}
+                      onChange={(e) => setAggregation(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
                     >
-                      <option value="">Select a data source...</option>
-                      {dataSources.map((ds) => (
-                        <option key={ds.type} value={ds.type}>
-                          {ds.name}
+                      {AGGREGATIONS.map((agg) => (
+                        <option key={agg.value} value={agg.value}>
+                          {agg.label}
                         </option>
                       ))}
                     </select>
@@ -535,189 +600,118 @@ export default function CustomWidgetBuilder({
 
                   <div>
                     <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                      Endpoint *
-                    </label>
-                    <select
-                      value={endpoint}
-                      onChange={(e) => setEndpoint(e.target.value)}
-                      disabled={!dataSource}
-                      className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300 disabled:opacity-50"
-                    >
-                      <option value="">Select an endpoint...</option>
-                      {availableEndpoints.map((ep) => (
-                        <option key={ep} value={ep}>
-                          {ep}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                      Time Range
-                    </label>
-                    <select
-                      value={timeRange}
-                      onChange={(e) => setTimeRange(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
-                    >
-                      {TIME_RANGES.map((range) => (
-                        <option key={range.value} value={range.value}>
-                          {range.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                      Result Limit
+                      Group By (comma-separated)
                     </label>
                     <input
-                      type="number"
-                      value={limit}
-                      onChange={(e) => setLimit(Math.min(1000, Math.max(1, Number(e.target.value))))}
-                      min={1}
-                      max={1000}
+                      type="text"
+                      value={groupBy}
+                      onChange={(e) => setGroupBy(e.target.value)}
+                      placeholder="field1, field2"
                       className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
                     />
                   </div>
+                </>
+              )}
+            </div>
 
-                  {queryType === 'aggregation' && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                          Aggregation
-                        </label>
-                        <select
-                          value={aggregation}
-                          onChange={(e) => setAggregation(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300"
-                        >
-                          {AGGREGATIONS.map((agg) => (
-                            <option key={agg.value} value={agg.value}>
-                              {agg.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                          Group By (comma-separated)
-                        </label>
-                        <input
-                          type="text"
-                          value={groupBy}
-                          onChange={(e) => setGroupBy(e.target.value)}
-                          placeholder="field1, field2"
-                          className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Filters */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-surface-700 dark:text-surface-300">
-                      Filters
-                    </label>
-                    <button
-                      onClick={handleAddFilter}
-                      className="text-xs text-aura-600 dark:text-aura-400 hover:underline"
-                    >
-                      + Add Filter
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {filters.map((filter, index) => (
-                      <FilterRow
-                        key={index}
-                        filter={filter}
-                        index={index}
-                        onUpdate={handleUpdateFilter}
-                        onRemove={handleRemoveFilter}
-                      />
-                    ))}
-                    {filters.length === 0 && (
-                      <p className="text-sm text-surface-500 dark:text-surface-400 italic">
-                        No filters added
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </CollapsibleSection>
-
-            {/* Preview */}
-            <CollapsibleSection title="Query Preview" defaultOpen={false}>
-              <div className="space-y-4">
+            {/* Filters */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-surface-700 dark:text-surface-300">
+                  Filters
+                </label>
                 <button
-                  onClick={handlePreview}
-                  disabled={previewLoading || !dataSource || !endpoint}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-aura-600 hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                  onClick={handleAddFilter}
+                  className="text-xs text-aura-600 dark:text-aura-400 hover:underline"
                 >
-                  {previewLoading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                      Running...
-                    </>
-                  ) : (
-                    <>
-                      <PlayIcon className="w-4 h-4" />
-                      Preview Query
-                    </>
-                  )}
+                  + Add Filter
                 </button>
-
-                <PreviewPanel
-                  data={previewData}
-                  isLoading={previewLoading}
-                  error={previewError}
-                  executionTime={executionTime}
-                />
               </div>
-            </CollapsibleSection>
-
-            {/* Error message */}
-            {submitError && (
-              <div className="flex items-center gap-2 px-4 py-3 bg-critical-50 dark:bg-critical-900/20 rounded-lg">
-                <ExclamationCircleIcon className="w-5 h-5 text-critical-500" />
-                <p className="text-sm text-critical-600 dark:text-critical-400">{submitError}</p>
+              <div className="space-y-2">
+                {filters.map((filter, index) => (
+                  <FilterRow
+                    key={index}
+                    filter={filter}
+                    index={index}
+                    onUpdate={handleUpdateFilter}
+                    onRemove={handleRemoveFilter}
+                  />
+                ))}
+                {filters.length === 0 && (
+                  <p className="text-sm text-surface-500 dark:text-surface-400 italic">
+                    No filters added
+                  </p>
+                )}
               </div>
-            )}
+            </div>
           </div>
+        </CollapsibleSection>
 
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700">
+        {/* Preview */}
+        <CollapsibleSection title="Query Preview" defaultOpen={false}>
+          <div className="space-y-4">
             <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={isSubmitting || !name.trim() || !dataSource || !endpoint}
+              onClick={handlePreview}
+              disabled={previewLoading || !dataSource || !endpoint}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-aura-600 hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
             >
-              {isSubmitting ? (
+              {previewLoading ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                  Saving...
+                  Running...
                 </>
               ) : (
                 <>
-                  <CheckIcon className="w-4 h-4" />
-                  {editWidget ? 'Update Widget' : 'Create Widget'}
+                  <PlayIcon className="w-4 h-4" />
+                  Preview Query
                 </>
               )}
             </button>
+
+            <PreviewPanel
+              data={previewData}
+              isLoading={previewLoading}
+              error={previewError}
+              executionTime={executionTime}
+            />
           </div>
-        </div>
+        </CollapsibleSection>
+
+        {/* Error message */}
+        {submitError && (
+          <div className="flex items-center gap-2 px-4 py-3 bg-critical-50 dark:bg-critical-900/20 rounded-lg">
+            <ExclamationCircleIcon className="w-5 h-5 text-critical-500" />
+            <p className="text-sm text-critical-600 dark:text-critical-400">{submitError}</p>
+          </div>
+        )}
       </div>
-    </>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-200 dark:border-surface-700">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-medium text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={isSubmitting || !name.trim() || !dataSource || !endpoint}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-aura-600 hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+        >
+          {isSubmitting ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <CheckIcon className="w-4 h-4" />
+              {editWidget ? 'Update Widget' : 'Create Widget'}
+            </>
+          )}
+        </button>
+      </div>
+    </Modal>
   );
 }

@@ -46,7 +46,6 @@ function useDebounce(value, delay = 150) {
 
   return debouncedValue;
 }
-import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from './ui/Toast';
 import {
@@ -72,6 +71,7 @@ import {
   FolderIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
+import Modal from './shared/Modal';
 
 // =============================================================================
 // Command Palette Context
@@ -437,239 +437,206 @@ function CommandPaletteModal({ isOpen, onClose }) {
   };
 
   // Prevent body scroll when open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
-
   if (!isOpen) return null;
 
   // Track flat index for keyboard navigation
   let flatIndex = -1;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="command-palette-title"
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      label="Command palette"
+      initialFocusRef={inputRef}
+      overlayClassName="glass-backdrop transition-opacity duration-[var(--duration-overlay)]"
+      panelClassName="!top-[15vh] !translate-y-0 !max-w-xl bg-white dark:bg-surface-800 backdrop-blur-xl backdrop-saturate-150 rounded-2xl border border-white/50 dark:border-surface-700/50 shadow-[var(--shadow-glass-hover)] !overflow-hidden transition-all duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)] animate-in fade-in slide-in-from-top-4"
     >
-      {/* Backdrop - Glass style */}
-      <div
-        className="fixed inset-0 glass-backdrop transition-opacity duration-[var(--duration-overlay)]"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Dialog - Glass style */}
-      <div className="flex min-h-full items-start justify-center p-4 pt-[15vh]">
-        <div
+      {/* Search Input */}
+      <div className="relative border-b border-surface-100/50 dark:border-surface-700/30">
+        <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-400 dark:text-surface-500 pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Search pages, agents, actions..."
           className="
-            relative w-full max-w-xl
-            bg-white dark:bg-surface-800
-            backdrop-blur-xl backdrop-saturate-150
-            rounded-2xl
-            border border-white/50 dark:border-surface-700/50
-            shadow-[var(--shadow-glass-hover)]
-            overflow-hidden
-            transform transition-all duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]
-            animate-in fade-in slide-in-from-top-4
+            w-full pl-12 pr-12 py-4
+            text-base text-surface-900 dark:text-surface-100
+            placeholder-surface-400 dark:placeholder-surface-500
+            bg-transparent
+            border-0 focus:outline-none focus:ring-0
           "
-          onClick={(e) => e.stopPropagation()}
+          aria-label="Search pages, agents, and actions"
+          autoComplete="off"
+          spellCheck="false"
+        />
+        <button
+          onClick={onClose}
+          className="
+            absolute right-3 top-1/2 -translate-y-1/2
+            p-1.5 rounded-lg
+            text-surface-400 hover:text-surface-600
+            dark:text-surface-500 dark:hover:text-surface-300
+            hover:bg-surface-50 dark:hover:bg-surface-700
+            transition-all duration-150
+          "
+          aria-label="Close command palette"
         >
-          {/* Search Input */}
-          <div className="relative border-b border-surface-100/50 dark:border-surface-700/30">
-            <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-400 dark:text-surface-500 pointer-events-none" />
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Search pages, agents, actions..."
-              className="
-                w-full pl-12 pr-12 py-4
-                text-base text-surface-900 dark:text-surface-100
-                placeholder-surface-400 dark:placeholder-surface-500
-                bg-transparent
-                border-0 focus:outline-none focus:ring-0
-              "
-              id="command-palette-title"
-              autoComplete="off"
-              spellCheck="false"
-            />
-            <button
-              onClick={onClose}
-              className="
-                absolute right-3 top-1/2 -translate-y-1/2
-                p-1.5 rounded-lg
-                text-surface-400 hover:text-surface-600
-                dark:text-surface-500 dark:hover:text-surface-300
-                hover:bg-surface-50 dark:hover:bg-surface-700
-                transition-all duration-150
-              "
-              aria-label="Close command palette"
-            >
-              <XMarkIcon className="w-5 h-5" />
-            </button>
+          <XMarkIcon className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Results */}
+      <div
+        ref={listRef}
+        className="max-h-[400px] overflow-y-auto overscroll-contain py-2"
+        role="listbox"
+      >
+        {groupedItems.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <MagnifyingGlassIcon className="w-12 h-12 mx-auto text-surface-300 dark:text-surface-600 mb-3" />
+            <p className="text-surface-500 dark:text-surface-400 text-sm">
+              No results found for "{query}"
+            </p>
+            <p className="text-surface-400 dark:text-surface-500 text-xs mt-1">
+              Try searching for pages, agents, or actions
+            </p>
           </div>
-
-          {/* Results */}
-          <div
-            ref={listRef}
-            className="max-h-[400px] overflow-y-auto overscroll-contain py-2"
-            role="listbox"
-          >
-            {groupedItems.length === 0 ? (
-              <div className="px-4 py-8 text-center">
-                <MagnifyingGlassIcon className="w-12 h-12 mx-auto text-surface-300 dark:text-surface-600 mb-3" />
-                <p className="text-surface-500 dark:text-surface-400 text-sm">
-                  No results found for "{query}"
-                </p>
-                <p className="text-surface-400 dark:text-surface-500 text-xs mt-1">
-                  Try searching for pages, agents, or actions
-                </p>
+        ) : (
+          groupedItems.map((group) => (
+            <div key={group.category} className="mb-2">
+              {/* Category Header */}
+              <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-surface-400 dark:text-surface-500">
+                {group.label}
               </div>
-            ) : (
-              groupedItems.map((group) => (
-                <div key={group.category} className="mb-2">
-                  {/* Category Header */}
-                  <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-surface-400 dark:text-surface-500">
-                    {group.label}
-                  </div>
 
-                  {/* Items */}
-                  <div>
-                    {group.items.map((item) => {
-                      flatIndex++;
-                      const isSelected = flatIndex === selectedIndex;
-                      const Icon = item.icon;
+              {/* Items */}
+              <div>
+                {group.items.map((item) => {
+                  flatIndex++;
+                  const isSelected = flatIndex === selectedIndex;
+                  const Icon = item.icon;
 
-                      return (
-                        <button
-                          key={item.id}
-                          data-index={flatIndex}
-                          onClick={() => handleSelect(item)}
-                          onMouseEnter={() => setSelectedIndex(flatIndex)}
-                          className={`
-                            w-full flex items-center gap-3 mx-2 px-3 py-2.5 rounded-xl
-                            text-left transition-all duration-150 ease-[var(--ease-tahoe)]
-                            ${isSelected
-                              ? 'bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 shadow-sm'
-                              : 'text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700'
-                            }
-                          `}
-                          style={{ width: 'calc(100% - 1rem)' }}
-                          role="option"
-                          aria-selected={isSelected}
-                        >
-                          {/* Icon */}
-                          <div
-                            className={`
-                              flex-shrink-0 p-2 rounded-lg
-                              ${isSelected
-                                ? 'bg-aura-100 dark:bg-aura-800/50 text-aura-600 dark:text-aura-400'
-                                : 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
-                              }
-                            `}
-                          >
-                            <Icon className="w-4 h-4" />
-                          </div>
+                  return (
+                    <button
+                      key={item.id}
+                      data-index={flatIndex}
+                      onClick={() => handleSelect(item)}
+                      onMouseEnter={() => setSelectedIndex(flatIndex)}
+                      className={`
+                        w-full flex items-center gap-3 mx-2 px-3 py-2.5 rounded-xl
+                        text-left transition-all duration-150 ease-[var(--ease-tahoe)]
+                        ${isSelected
+                          ? 'bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 shadow-sm'
+                          : 'text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700'
+                        }
+                      `}
+                      style={{ width: 'calc(100% - 1rem)' }}
+                      role="option"
+                      aria-selected={isSelected}
+                    >
+                      {/* Icon */}
+                      <div
+                        className={`
+                          flex-shrink-0 p-2 rounded-lg
+                          ${isSelected
+                            ? 'bg-aura-100 dark:bg-aura-800/50 text-aura-600 dark:text-aura-400'
+                            : 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
+                          }
+                        `}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </div>
 
-                          {/* Text */}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium truncate">
-                              <HighlightedText text={item.name} matches={item.matches} />
-                            </div>
-                            {item.type && (
-                              <div className="text-xs text-surface-500 dark:text-surface-400 capitalize">
-                                {item.type} Agent
-                                {item.status && (
-                                  <span
-                                    className={`
-                                      ml-2 px-1.5 py-0.5 rounded text-xs
-                                      ${item.status === 'active'
-                                        ? 'bg-olive-100 text-olive-700 dark:bg-olive-900/30 dark:text-olive-400'
-                                        : item.status === 'busy'
-                                          ? 'bg-aura-100 text-aura-700 dark:bg-aura-900/30 dark:text-aura-400'
-                                          : 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-400'
-                                      }
-                                    `}
-                                  >
-                                    {item.status}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            {item.provider && (
-                              <div className="text-xs text-surface-500 dark:text-surface-400 capitalize">
-                                {item.provider}
-                              </div>
+                      {/* Text */}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">
+                          <HighlightedText text={item.name} matches={item.matches} />
+                        </div>
+                        {item.type && (
+                          <div className="text-xs text-surface-500 dark:text-surface-400 capitalize">
+                            {item.type} Agent
+                            {item.status && (
+                              <span
+                                className={`
+                                  ml-2 px-1.5 py-0.5 rounded text-xs
+                                  ${item.status === 'active'
+                                    ? 'bg-olive-100 text-olive-700 dark:bg-olive-900/30 dark:text-olive-400'
+                                    : item.status === 'busy'
+                                      ? 'bg-aura-100 text-aura-700 dark:bg-aura-900/30 dark:text-aura-400'
+                                      : 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-400'
+                                  }
+                                `}
+                              >
+                                {item.status}
+                              </span>
                             )}
                           </div>
+                        )}
+                        {item.provider && (
+                          <div className="text-xs text-surface-500 dark:text-surface-400 capitalize">
+                            {item.provider}
+                          </div>
+                        )}
+                      </div>
 
-                          {/* Shortcut */}
-                          {item.shortcut && (
-                            <div className="flex-shrink-0 flex gap-1">
-                              {item.shortcut.split(' ').map((key, i) => (
-                                <kbd
-                                  key={i}
-                                  className="
-                                    min-w-[22px] h-6 px-1.5
-                                    flex items-center justify-center
-                                    rounded-md text-xs font-medium
-                                    bg-surface-100 dark:bg-surface-700
-                                    text-surface-500 dark:text-surface-400
-                                    border border-surface-200 dark:border-surface-600
-                                  "
-                                >
-                                  {key}
-                                </kbd>
-                              ))}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* Footer - Glass style */}
-          <div className="px-4 py-3 border-t border-surface-100 dark:border-surface-700 bg-surface-50 dark:bg-surface-800">
-            <div className="flex items-center justify-between text-xs text-surface-500 dark:text-surface-400">
-              <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1.5">
-                  <kbd className="px-1.5 py-0.5 rounded-md bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 font-mono border border-surface-200 dark:border-surface-600">
-                    Enter
-                  </kbd>
-                  to select
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <kbd className="px-1.5 py-0.5 rounded-md bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 font-mono border border-surface-200 dark:border-surface-600">
-                    ↑↓
-                  </kbd>
-                  to navigate
-                </span>
+                      {/* Shortcut */}
+                      {item.shortcut && (
+                        <div className="flex-shrink-0 flex gap-1">
+                          {item.shortcut.split(' ').map((key, i) => (
+                            <kbd
+                              key={i}
+                              className="
+                                min-w-[22px] h-6 px-1.5
+                                flex items-center justify-center
+                                rounded-md text-xs font-medium
+                                bg-surface-100 dark:bg-surface-700
+                                text-surface-500 dark:text-surface-400
+                                border border-surface-200 dark:border-surface-600
+                              "
+                            >
+                              {key}
+                            </kbd>
+                          ))}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <span className="flex items-center gap-1.5">
-                <kbd className="px-1.5 py-0.5 rounded-md bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 font-mono border border-surface-200 dark:border-surface-600">
-                  Esc
-                </kbd>
-                to close
-              </span>
             </div>
+          ))
+        )}
+      </div>
+
+      {/* Footer - Glass style */}
+      <div className="px-4 py-3 border-t border-surface-100 dark:border-surface-700 bg-surface-50 dark:bg-surface-800">
+        <div className="flex items-center justify-between text-xs text-surface-500 dark:text-surface-400">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 rounded-md bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 font-mono border border-surface-200 dark:border-surface-600">
+                Enter
+              </kbd>
+              to select
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 rounded-md bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 font-mono border border-surface-200 dark:border-surface-600">
+                ↑↓
+              </kbd>
+              to navigate
+            </span>
           </div>
+          <span className="flex items-center gap-1.5">
+            <kbd className="px-1.5 py-0.5 rounded-md bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 font-mono border border-surface-200 dark:border-surface-600">
+              Esc
+            </kbd>
+            to close
+          </span>
         </div>
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
 

@@ -38,6 +38,7 @@ import {
 } from '@heroicons/react/24/outline';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Breakpoint and column configuration
 const BREAKPOINTS = { lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 };
@@ -1060,105 +1061,95 @@ function WidgetPicker({ visibleWidgets, onAdd, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 glass-backdrop"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="
-        relative w-full max-w-2xl max-h-[85vh] overflow-hidden
-        bg-white/95 dark:bg-surface-800/95
-        backdrop-blur-xl backdrop-saturate-150
-        rounded-2xl
-        border border-white/50 dark:border-surface-700/50
-        shadow-[var(--shadow-glass-hover)]
-        animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]
-      ">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30">
-          <div>
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="absolute glass-backdrop"
+      panelClassName="!max-w-2xl !max-h-[85vh] !overflow-hidden bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl border border-white/50 dark:border-surface-700/50 shadow-[var(--shadow-glass-hover)] animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30">
+        <div>
+          <ModalTitle asChild>
             <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
               Add Widget
             </h2>
-            <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
-              Select a widget to add to your dashboard
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-surface-50 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
-            aria-label="Close modal"
-          >
-            <XMarkIcon className="w-5 h-5 text-surface-500" />
-          </button>
+          </ModalTitle>
+          <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
+            Select a widget to add to your dashboard
+          </p>
         </div>
-
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(85vh-100px)]">
-          {availableWidgets.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-olive-100 dark:bg-olive-900/30 flex items-center justify-center">
-                <CheckIcon className="w-8 h-8 text-olive-600 dark:text-olive-400" />
-              </div>
-              <p className="text-surface-900 dark:text-surface-100 font-medium">All widgets active</p>
-              <p className="text-surface-500 text-sm mt-1">Every available widget is already on your dashboard.</p>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {categoryOrder.map((category) => {
-                const widgets = groupedWidgets[category];
-                if (!widgets || widgets.length === 0) return null;
-
-                return (
-                  <div key={category}>
-                    <h3 className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wider mb-3">
-                      {categories[category] || category}
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {widgets.map((widget) => {
-                        const IconComponent = widget.icon || PlusIcon;
-                        return (
-                          <button
-                            key={widget.id}
-                            onClick={() => onAdd(widget.id)}
-                            className="
-                              flex items-start gap-4 p-4 rounded-xl text-left group
-                              bg-white dark:bg-surface-800
-                              border border-surface-200/50 dark:border-surface-700/50
-                              hover:bg-surface-50 dark:hover:bg-surface-700
-                              hover:border-olive-400/50 dark:hover:border-olive-600/50
-                              hover:shadow-md hover:-translate-y-px
-                              transition-all duration-200 ease-[var(--ease-tahoe)]
-                            "
-                          >
-                            <div className={`w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${colorClasses[widget.color] || colorClasses.surface}`}>
-                              <IconComponent className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-surface-900 dark:text-surface-100 text-sm">
-                                {widget.title}
-                              </p>
-                              <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5 line-clamp-2">
-                                {widget.description}
-                              </p>
-                              <span className="inline-block mt-2 text-xs font-medium text-olive-600 dark:text-olive-400 bg-olive-50 dark:bg-olive-900/30 px-2 py-0.5 rounded-full capitalize">
-                                {widget.size}
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <button
+          onClick={onClose}
+          className="p-2 hover:bg-surface-50 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+          aria-label="Close modal"
+        >
+          <XMarkIcon className="w-5 h-5 text-surface-500" />
+        </button>
       </div>
-    </div>
+
+      {/* Content */}
+      <div className="p-6 overflow-y-auto max-h-[calc(85vh-100px)]">
+        {availableWidgets.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-olive-100 dark:bg-olive-900/30 flex items-center justify-center">
+              <CheckIcon className="w-8 h-8 text-olive-600 dark:text-olive-400" />
+            </div>
+            <p className="text-surface-900 dark:text-surface-100 font-medium">All widgets active</p>
+            <p className="text-surface-500 text-sm mt-1">Every available widget is already on your dashboard.</p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {categoryOrder.map((category) => {
+              const widgets = groupedWidgets[category];
+              if (!widgets || widgets.length === 0) return null;
+
+              return (
+                <div key={category}>
+                  <h3 className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wider mb-3">
+                    {categories[category] || category}
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {widgets.map((widget) => {
+                      const IconComponent = widget.icon || PlusIcon;
+                      return (
+                        <button
+                          key={widget.id}
+                          onClick={() => onAdd(widget.id)}
+                          className="
+                            flex items-start gap-4 p-4 rounded-xl text-left group
+                            bg-white dark:bg-surface-800
+                            border border-surface-200/50 dark:border-surface-700/50
+                            hover:bg-surface-50 dark:hover:bg-surface-700
+                            hover:border-olive-400/50 dark:hover:border-olive-600/50
+                            hover:shadow-md hover:-translate-y-px
+                            transition-all duration-200 ease-[var(--ease-tahoe)]
+                          "
+                        >
+                          <div className={`w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${colorClasses[widget.color] || colorClasses.surface}`}>
+                            <IconComponent className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-surface-900 dark:text-surface-100 text-sm">
+                              {widget.title}
+                            </p>
+                            <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5 line-clamp-2">
+                              {widget.description}
+                            </p>
+                            <span className="inline-block mt-2 text-xs font-medium text-olive-600 dark:text-olive-400 bg-olive-50 dark:bg-olive-900/30 px-2 py-0.5 rounded-full capitalize">
+                              {widget.size}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

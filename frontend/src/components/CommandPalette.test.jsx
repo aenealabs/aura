@@ -156,8 +156,8 @@ describe('CommandPalette', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
 
-    // Click the backdrop (the aria-hidden div)
-    const backdrop = document.querySelector('[aria-hidden="true"]');
+    // Click the backdrop (the shared Modal's overlay)
+    const backdrop = document.querySelector('[data-modal-overlay]');
     await user.click(backdrop);
 
     await waitFor(() => {

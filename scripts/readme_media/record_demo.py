@@ -26,6 +26,7 @@ from sample_api import prepare_context  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 WIDTH, HEIGHT = 1440, 900
 NAVY = "#1B3357"
+AUTHOR = "LaVon Rutledge"
 
 OVERLAY_JS = """
 (() => {
@@ -264,7 +265,13 @@ def run_flow(d: Demo, base: str) -> None:
 
     d.caption("", 0)
     d.card(
-        "Project Aura", ["Human-in-the-loop by design", "github.com/aenealabs/aura"], 4
+        "Project Aura",
+        [
+            "Human-in-the-loop by design",
+            f"Built by {AUTHOR}",
+            "github.com/aenealabs/aura",
+        ],
+        4.5,
     )
 
 

@@ -1,7 +1,7 @@
 /**
  * Project Aura - Action Approval Card Component
  *
- * Claude Code-style individual action approval UI with:
+ * Per-action approval UI (approve, deny, or modify each step) with:
  * - Tool name and parameters display
  * - Risk level indicator
  * - Diff preview for file changes
@@ -15,7 +15,7 @@
  * - M: Modify
  * - T: Trust this action type
  *
- * @see Design Principles: Apple-inspired, Claude Code-style
+ * @see Design Principles: minimalist, step-by-step approval
  */
 
 import { useState, useEffect, useCallback } from 'react';

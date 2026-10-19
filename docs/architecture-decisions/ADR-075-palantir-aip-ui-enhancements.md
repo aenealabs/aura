@@ -27,7 +27,7 @@ Deployed
 - Estimated ~1,650 lines across 7 new files
 
 **Agent Design Review** - Approved with detailed design specifications:
-- Apple-inspired widget designs with semantic color coding
+- Minimalist widget designs with semantic color coding
 - D3.js force-directed graph for attack surface visualization
 - 5-step configuration wizard
 - Detailed mockups for all 5 use cases
@@ -67,7 +67,7 @@ However, ADR-074 does not specify:
 
 ### Design System Context
 
-Project Aura follows an Apple-inspired design philosophy:
+Project Aura follows a minimalist design philosophy:
 
 | Element | Specification |
 |---------|---------------|

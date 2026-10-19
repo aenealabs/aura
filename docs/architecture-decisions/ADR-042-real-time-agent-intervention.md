@@ -285,7 +285,7 @@ Attributes:
 | Component | Purpose |
 |-----------|---------|
 | `RealTimeExecutionPanel` | Main container with timeline, approval queue, logs |
-| `ActionApprovalCard` | Claude Code-style card with Approve/Deny/Modify buttons |
+| `ActionApprovalCard` | Per-action approval card with Approve/Deny/Modify buttons |
 | `ActionModifyModal` | Parameter modification before execution |
 | `ExecutionTimeline` | Visual timeline showing action sequence and status |
 | `TrustSettingsPanel` | Configure auto-approval rules per action type |

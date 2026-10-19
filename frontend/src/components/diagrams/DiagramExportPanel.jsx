@@ -4,7 +4,7 @@
  * Panel for exporting diagrams to multiple formats: SVG, PNG, PDF, draw.io.
  * Supports configurable export options and direct download.
  *
- * Design System: Apple-inspired with clean typography, generous spacing,
+ * Design System: minimalist, with clean typography, generous spacing,
  * and smooth transitions per design-principles.md
  */
 

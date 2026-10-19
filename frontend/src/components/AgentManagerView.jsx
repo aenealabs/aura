@@ -94,7 +94,7 @@ import { useToast } from './ui/Toast';
  *    - Continuous learning loop
  *
  * VISUAL DESIGN PRINCIPLES:
- * - Apple-inspired clean aesthetic
+ * - Clean, minimalist aesthetic
  * - Clear visual hierarchy for complex information
  * - Progressive disclosure of details
  * - Color coding for risk/status

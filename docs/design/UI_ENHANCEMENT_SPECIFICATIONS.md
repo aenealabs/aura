@@ -4,7 +4,7 @@
 **Date:** 2026-01-27
 **Author:** UI/UX Design Team
 
-This document provides comprehensive UI/UX specifications for three priority ADRs requiring frontend implementation. These designs align with Project Aura's established design system, component patterns, and Apple-inspired aesthetic philosophy.
+This document provides comprehensive UI/UX specifications for three priority ADRs requiring frontend implementation. These designs align with Project Aura's established design system, component patterns, and minimalist aesthetic philosophy.
 
 ---
 

@@ -12,7 +12,7 @@ import { Skeleton } from '../ui/LoadingSkeleton';
  * - Trend indicator
  * - Accessible with ARIA labels
  *
- * Design follows Apple's gauge aesthetics with clean gradients
+ * Gauge design with clean gradients
  * and subtle depth effects.
  */
 

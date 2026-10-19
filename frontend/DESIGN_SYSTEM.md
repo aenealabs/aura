@@ -1,6 +1,6 @@
 # Project Aura Design System
 
-A comprehensive, professional UI/UX system inspired by Anthropic's design language with olive green accents, featuring smooth animations and full dark mode support.
+A comprehensive, professional UI/UX system with a warm, minimalist design language and olive green accents, featuring smooth animations and full dark mode support.
 
 ## Design Philosophy
 
@@ -10,12 +10,12 @@ A comprehensive, professional UI/UX system inspired by Anthropic's design langua
 - Reduce visual noise to enhance clarity
 
 **Professional Enterprise Aesthetic**
-- Clean, Apple-inspired minimalism
+- Clean, restrained minimalism
 - Suitable for CTOs, CIOs, and security professionals
 - WCAG 2.1 AA accessibility compliance
 
 **Smooth & Responsive**
-- Microsoft Foundry-inspired animations
+- Purposeful, subtle animations
 - 60fps transitions throughout
 - Loading states that communicate progress
 
@@ -689,8 +689,6 @@ export default function Dashboard() {
 
 Design system created for Project Aura, an autonomous AI SaaS platform for enterprise code security.
 
-Inspired by:
-- Anthropic's design language
-- Apple's Human Interface Guidelines
-- Microsoft Foundry animations
-- Tailwind CSS utility-first approach
+Built on:
+- Tailwind CSS (MIT), utility-first styling
+- Heroicons and Lucide icons (MIT)

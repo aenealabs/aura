@@ -4,7 +4,7 @@
  * Provides WebSocket connection management and REST API endpoints
  * for real-time agent action streaming and intervention.
  *
- * Implements the API contract for Claude Code-style tool approval workflow.
+ * Implements the API contract for the per-action tool approval workflow.
  *
  * @see ADR-032 Configurable Autonomy Framework
  */

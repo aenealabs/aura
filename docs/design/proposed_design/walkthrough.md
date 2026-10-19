@@ -4,7 +4,7 @@ I have completed the design analysis and modernization proposal for Project Aura
 
 ## 1. Current State Analysis
 I created a pixel-perfect HTML mockup of the current design system to understand the baseline.
-- **Current Design Style**: Clean, enterprise-standard, "Anthropic-inspired" with olive accents.
+- **Current Design Style**: Clean, enterprise-standard, warm and minimalist, with olive accents.
 - **File**: [current_design_mockup.html](./current_design_mockup.html)
 - **Observations**: Functional and clean, but lacks the "premium" and "futuristic" feel requested for a high-end security tool.
 

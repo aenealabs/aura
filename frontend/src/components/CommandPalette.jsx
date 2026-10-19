@@ -5,7 +5,7 @@
  * and actions across Project Aura. Features fuzzy search, keyboard
  * navigation, and categorized results.
  *
- * Design: Apple-inspired with backdrop blur, subtle shadows, and
+ * Design: minimalist, with backdrop blur, subtle shadows, and
  * smooth transitions following Project Aura's design system.
  */
 

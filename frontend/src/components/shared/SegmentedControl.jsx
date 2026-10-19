@@ -1,7 +1,7 @@
 /**
  * SegmentedControl Component
  *
- * Apple-style segmented control for selecting between discrete options.
+ * Pill-style segmented control for selecting between discrete options.
  * Supports keyboard navigation and is fully accessible.
  *
  * @module components/shared/SegmentedControl

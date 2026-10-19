@@ -577,7 +577,7 @@ Project Aura is an enterprise-grade autonomous AI SaaS platform designed to reas
 
 ## 7. Design Recommendations
 
-### 7.1 Apple-Inspired Design Principles
+### 7.1 Minimalist Design Principles
 
 | Principle | Application |
 |-----------|-------------|

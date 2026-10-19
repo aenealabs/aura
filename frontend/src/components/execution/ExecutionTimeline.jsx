@@ -12,7 +12,7 @@
  * - Time elapsed display
  * - Compact and expanded modes
  *
- * @see Design Principles: Apple-inspired timeline patterns
+ * @see Design Principles: minimalist timeline patterns
  */
 
 import { useState, useCallback, useMemo, Fragment } from 'react';

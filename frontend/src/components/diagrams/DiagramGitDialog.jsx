@@ -4,7 +4,7 @@
  * Dialog for committing diagrams to GitHub/GitLab repositories.
  * Supports OAuth connections and pull request creation.
  *
- * Design System: Apple-inspired with clean typography, generous spacing,
+ * Design System: minimalist, with clean typography, generous spacing,
  * and smooth transitions per design-principles.md
  */
 

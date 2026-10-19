@@ -18,6 +18,7 @@ from .anomaly_contracts import (
     AnomalyType,
     CapabilityInvocation,
 )
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ class AnomalyExplainer:
     def __init__(
         self,
         bedrock_client: Any | None = None,
-        model_id: str = "anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id: str | None = None,
         max_tokens: int = 300,
     ):
         """
@@ -167,7 +168,7 @@ class AnomalyExplainer:
             max_tokens: Maximum tokens in response
         """
         self.bedrock = bedrock_client
-        self.model_id = model_id
+        self.model_id = model_id or claude_model("accurate")
         self.max_tokens = max_tokens
 
     async def explain_anomaly(

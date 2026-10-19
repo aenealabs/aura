@@ -16,6 +16,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from .incident_detector import Incident, IncidentType
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,7 @@ class RunbookGenerator:
         self,
         region: str = "us-east-1",
         use_llm: bool = True,
-        model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        model_id: str | None = None,
         runbooks_dir: str = "docs/runbooks",
     ):
         """
@@ -176,7 +177,7 @@ class RunbookGenerator:
         """
         self.region = region
         self.use_llm = use_llm
-        self.model_id = model_id
+        self.model_id = model_id or claude_model("accurate")
         self.runbooks_dir = Path(runbooks_dir)
 
         if use_llm:

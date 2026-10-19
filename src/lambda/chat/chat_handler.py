@@ -59,26 +59,34 @@ class ModelSpec:
     capabilities: list[str]
 
 
+# Current Claude models per tier (keep in step with src/config/claude_models.py; this
+# Lambda is packaged on its own). HAIKU_MODEL_ID, BEDROCK_MODEL_ID and OPUS_MODEL_ID in
+# the environment override them, e.g. with an inference profile ID.
+DEFAULT_FAST_MODEL = "anthropic.claude-haiku-4-5"
+DEFAULT_ACCURATE_MODEL = "anthropic.claude-sonnet-5-5"
+DEFAULT_MAXIMUM_MODEL = "anthropic.claude-opus-5-5"
+HAIKU_MODEL_ID = os.environ.get("HAIKU_MODEL_ID", DEFAULT_FAST_MODEL)
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", DEFAULT_ACCURATE_MODEL)
+OPUS_MODEL_ID = os.environ.get("OPUS_MODEL_ID", DEFAULT_MAXIMUM_MODEL)
+
 # Model catalog - extensible for multi-provider support
-# Using inference profile IDs for cross-region routing
 MODEL_CATALOG: dict[str, ModelSpec] = {
-    # Anthropic via Bedrock (using inference profiles for on-demand)
-    "claude-3-haiku": ModelSpec(
-        model_id="us.anthropic.claude-3-haiku-20240307-v1:0",
+    "claude-haiku": ModelSpec(
+        model_id=HAIKU_MODEL_ID,
         provider="anthropic",
         tier=ModelTier.FAST,
         max_tokens=4096,
-        cost_per_1k_input=0.00025,
-        cost_per_1k_output=0.00125,
+        cost_per_1k_input=0.001,
+        cost_per_1k_output=0.005,
         capabilities=["classification", "simple_qa", "formatting"],
     ),
-    "claude-3-5-sonnet": ModelSpec(
-        model_id="us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+    "claude-sonnet": ModelSpec(
+        model_id=BEDROCK_MODEL_ID,
         provider="anthropic",
         tier=ModelTier.ACCURATE,
         max_tokens=4096,
-        cost_per_1k_input=0.003,
-        cost_per_1k_output=0.015,
+        cost_per_1k_input=0.002,
+        cost_per_1k_output=0.01,
         capabilities=[
             "code_analysis",
             "diagram_generation",
@@ -86,13 +94,13 @@ MODEL_CATALOG: dict[str, ModelSpec] = {
             "tool_use",
         ],
     ),
-    "claude-3-5-opus": ModelSpec(
-        model_id="us.anthropic.claude-3-opus-20240229-v1:0",
+    "claude-opus": ModelSpec(
+        model_id=OPUS_MODEL_ID,
         provider="anthropic",
         tier=ModelTier.MAXIMUM,
         max_tokens=4096,
-        cost_per_1k_input=0.015,
-        cost_per_1k_output=0.075,
+        cost_per_1k_input=0.004,
+        cost_per_1k_output=0.02,
         capabilities=[
             "deep_research",
             "cross_codebase",
@@ -150,14 +158,6 @@ CONVERSATIONS_TABLE = os.environ.get(
 MESSAGES_TABLE = os.environ.get(
     "MESSAGES_TABLE", f"{PROJECT_NAME}-chat-messages-{ENVIRONMENT}"
 )
-# 3-tier model configuration
-HAIKU_MODEL_ID = os.environ.get(
-    "HAIKU_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0"
-)
-BEDROCK_MODEL_ID = os.environ.get(
-    "BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0"
-)
-OPUS_MODEL_ID = os.environ.get("OPUS_MODEL_ID", "anthropic.claude-3-opus-20240229-v1:0")
 CONVERSATION_TTL_DAYS = int(os.environ.get("CONVERSATION_TTL_DAYS", "30"))
 RATE_LIMIT_PER_MINUTE = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "30"))
 

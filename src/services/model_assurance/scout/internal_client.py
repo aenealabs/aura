@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 from src.services.model_assurance.adapter_registry import ModelProvider
 from src.services.model_assurance.scout.bedrock_client import BedrockModelSummary
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +80,10 @@ def synthesize_internal_summary(
     *,
     model_id: str = "aura-models/swe-rl-v3",
     checkpoint_iso: datetime | None = None,
-    base_model: str = "anthropic.claude-3-5-sonnet-20240620-v1:0",
+    base_model: str | None = None,
 ) -> InternalModelSummary:
     return InternalModelSummary(
         model_id=model_id,
         checkpoint_iso=checkpoint_iso or datetime(2026, 5, 6, tzinfo=timezone.utc),
-        base_model=base_model,
+        base_model=base_model or claude_model("accurate"),
     )

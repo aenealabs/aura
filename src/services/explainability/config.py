@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from src.config.claude_models import claude_model
 
 
 @dataclass
@@ -190,7 +191,7 @@ class ReasoningChainConfig:
     max_evidence_per_step: int = 5
     min_confidence: float = 0.5
     enable_llm_extraction: bool = True
-    extraction_model: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    extraction_model: str = field(default_factory=lambda: claude_model("fast"))
     extraction_temperature: float = 0.1
     max_tokens: int = 2000
 
@@ -205,7 +206,7 @@ class ReasoningChainConfig:
             == "true",
             extraction_model=os.getenv(
                 "REASONING_EXTRACTION_MODEL",
-                "anthropic.claude-3-haiku-20240307-v1:0",
+                claude_model("fast"),
             ),
             extraction_temperature=float(os.getenv("REASONING_EXTRACTION_TEMP", "0.1")),
             max_tokens=int(os.getenv("REASONING_MAX_TOKENS", "2000")),
@@ -220,7 +221,7 @@ class AlternativesConfig:
     min_pros_cons: int = 2
     comparison_criteria_count: int = 5
     enable_llm_analysis: bool = True
-    analysis_model: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    analysis_model: str = field(default_factory=lambda: claude_model("fast"))
     analysis_temperature: float = 0.3
 
     @classmethod
@@ -236,7 +237,7 @@ class AlternativesConfig:
             == "true",
             analysis_model=os.getenv(
                 "ALTERNATIVES_ANALYSIS_MODEL",
-                "anthropic.claude-3-haiku-20240307-v1:0",
+                claude_model("fast"),
             ),
             analysis_temperature=float(os.getenv("ALTERNATIVES_ANALYSIS_TEMP", "0.2")),
         )
@@ -274,7 +275,7 @@ class ConfidenceConfig:
 class ConsistencyConfig:
     """Configuration for consistency verifier."""
 
-    verification_model: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    verification_model: str = field(default_factory=lambda: claude_model("fast"))
     verification_temperature: float = 0.1
     max_claims_per_verification: int = 10
     contradiction_severity_weights: dict[str, float] = field(default_factory=dict)
@@ -296,7 +297,7 @@ class ConsistencyConfig:
         return cls(
             verification_model=os.getenv(
                 "CONSISTENCY_VERIFICATION_MODEL",
-                "anthropic.claude-3-haiku-20240307-v1:0",
+                claude_model("fast"),
             ),
             verification_temperature=float(
                 os.getenv("CONSISTENCY_VERIFICATION_TEMP", "0.1")

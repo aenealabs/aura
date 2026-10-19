@@ -29,6 +29,7 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -72,27 +73,27 @@ class CircuitState(Enum):
 
 # Task-to-Provider mapping - Bedrock as single gateway (ADR-060)
 # All models accessed through Bedrock for unified billing, IAM auth, and FedRAMP compliance
-# Model IDs use inference profile format (us. prefix) for on-demand invocation
+# Model IDs come from the current tier models (src/config/claude_models.py)
 DIAGRAM_TASK_ROUTING: dict[DiagramTask, list[tuple[ModelProvider, str]]] = {
     DiagramTask.DSL_GENERATION: [
         # Haiku for cost-effective DSL generation
-        (ModelProvider.BEDROCK, "us.anthropic.claude-3-5-haiku-20241022-v1:0"),
+        (ModelProvider.BEDROCK, claude_model("fast")),
     ],
     DiagramTask.INTENT_EXTRACTION: [
         # Haiku for fast intent extraction
-        (ModelProvider.BEDROCK, "us.anthropic.claude-3-5-haiku-20241022-v1:0"),
+        (ModelProvider.BEDROCK, claude_model("fast")),
     ],
     DiagramTask.DIAGRAM_CRITIQUE: [
         # Sonnet for higher quality critique (better reasoning)
-        (ModelProvider.BEDROCK, "us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
+        (ModelProvider.BEDROCK, claude_model("accurate")),
         # Haiku as fallback
-        (ModelProvider.BEDROCK, "us.anthropic.claude-3-5-haiku-20241022-v1:0"),
+        (ModelProvider.BEDROCK, claude_model("fast")),
     ],
     DiagramTask.IMAGE_UNDERSTANDING: [
         # Sonnet has strong vision capabilities
-        (ModelProvider.BEDROCK, "us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
+        (ModelProvider.BEDROCK, claude_model("accurate")),
         # Haiku as cost-effective fallback for vision
-        (ModelProvider.BEDROCK, "us.anthropic.claude-3-5-haiku-20241022-v1:0"),
+        (ModelProvider.BEDROCK, claude_model("fast")),
     ],
     DiagramTask.CREATIVE_GENERATION: [
         # Not supported through Bedrock - layout engine generates SVG instead
@@ -101,12 +102,11 @@ DIAGRAM_TASK_ROUTING: dict[DiagramTask, list[tuple[ModelProvider, str]]] = {
     DiagramTask.LAYOUT_OPTIMIZATION: [],  # No LLM needed - uses layout engine
 }
 
-# GovCloud Bedrock model availability (verified 2026-01)
-# Note: All environments use inference profile IDs (us. prefix) for cross-region access
+# GovCloud Bedrock model availability: the current tier models. GovCloud availability lags
+# commercial regions, so confirm the models in the partition (Bedrock discovery does at
+# startup) and pin available ones with AURA_MODEL_<TIER> or the Bedrock secret.
 GOVCLOUD_BEDROCK_MODELS = {
-    "us.anthropic.claude-3-5-sonnet-20241022-v2:0": True,
-    "us.anthropic.claude-3-5-haiku-20241022-v1:0": True,
-    "us.anthropic.claude-3-opus-20240229-v1:0": True,
+    claude_model(tier): True for tier in ("fast", "accurate", "maximum")
 }
 
 

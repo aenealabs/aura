@@ -17,6 +17,7 @@ from .incident_detector import Incident, IncidentDetector, IncidentType
 from .runbook_generator import RunbookGenerator
 from .runbook_repository import RunbookMetadata, RunbookRepository
 from .runbook_updater import RunbookUpdater
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ class RunbookAgent:
         environment: str = "dev",
         runbooks_dir: str = "docs/runbooks",
         use_llm: bool = True,
-        model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        model_id: str | None = None,
         auto_apply: bool = False,
         similarity_threshold: float = 0.7,
         confidence_threshold: float = 0.6,
@@ -118,7 +119,7 @@ class RunbookAgent:
         self.environment = environment
         self.runbooks_dir = runbooks_dir
         self.use_llm = use_llm
-        self.model_id = model_id
+        self.model_id = model_id or claude_model("accurate")
         self.auto_apply = auto_apply
         self.similarity_threshold = similarity_threshold
         self.confidence_threshold = confidence_threshold

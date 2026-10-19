@@ -513,9 +513,9 @@ def _mock_routing_rules() -> list[RoutingRuleModel]:
                 )
                 if False
                 else {
-                    ModelTierEnum.FAST: "claude-3-haiku",
-                    ModelTierEnum.ACCURATE: "claude-3-5-sonnet",
-                    ModelTierEnum.MAXIMUM: "claude-3-opus",
+                    ModelTierEnum.FAST: "claude-haiku",
+                    ModelTierEnum.ACCURATE: "claude-sonnet",
+                    ModelTierEnum.MAXIMUM: "claude-opus",
                 }[tier]
             ),
             cost_per_1k=cost_by_tier[tier],

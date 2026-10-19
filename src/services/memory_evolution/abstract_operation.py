@@ -25,7 +25,7 @@ import logging
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol
 
 import numpy as np
@@ -38,6 +38,7 @@ from .contracts import (
     RefineOperation,
     RefineResult,
 )
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ class AbstractionConfig:
     hdbscan_cluster_selection_epsilon: float = 0.0
 
     # LLM parameters
-    llm_model: str = "anthropic.claude-3-sonnet-20240229-v1:0"
+    llm_model: str = field(default_factory=lambda: claude_model("accurate"))
     llm_max_tokens: int = 2048
     llm_temperature: float = 0.3
 

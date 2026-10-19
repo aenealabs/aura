@@ -338,7 +338,7 @@ function generateMockSpans(traceId, agentType) {
       ...generateTimestamps(baseTime + 600, 2800),
       duration_ms: 2800,
       attributes: {
-        'llm.model': 'claude-3-5-sonnet',
+        'llm.model': 'claude-sonnet-5-5',
         'llm.provider': 'bedrock',
         'tokens.input': 4521,
         'tokens.output': 1893,

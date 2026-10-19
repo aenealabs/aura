@@ -194,7 +194,7 @@ ADAPTER_CLAUDE_35_SONNET = ModelAdapter(
     cost_per_input_mtok=3.00,
     cost_per_output_mtok=15.00,
     required_prompt_format="claude_messages_v1",
-    notes="Aura production incumbent (ADR-088 v1).",
+    notes="Aura production incumbent at ADR-088 v1; retired on Bedrock.",
 )
 
 
@@ -210,7 +210,7 @@ ADAPTER_CLAUDE_3_HAIKU = ModelAdapter(
     cost_per_input_mtok=0.25,
     cost_per_output_mtok=1.25,
     required_prompt_format="claude_messages_v1",
-    notes="Fast tier for low-stakes operations (ADR-029).",
+    notes="Fast tier for low-stakes operations (ADR-029); retired on Bedrock.",
 )
 
 
@@ -226,14 +226,81 @@ ADAPTER_CLAUDE_3_OPUS = ModelAdapter(
     cost_per_input_mtok=15.00,
     cost_per_output_mtok=75.00,
     required_prompt_format="claude_messages_v1",
-    notes="Highest-capability tier; reserved for complex reasoning.",
+    notes="Highest-capability tier; reserved for complex reasoning; retired on Bedrock.",
 )
 
+
+# Current Claude models (list prices as of 2026-10). The 3.x adapters above are kept as
+# records of past evaluations; those models are retired on Bedrock.
+
+ADAPTER_CLAUDE_HAIKU_45 = ModelAdapter(
+    model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+    provider=ModelProvider.BEDROCK,
+    display_name="Claude Haiku 4.5",
+    max_context_tokens=200_000,
+    supports_tool_use=True,
+    supports_streaming=True,
+    tokenizer_type=TokenizerType.CLAUDE,
+    architecture=ModelArchitecture.DENSE,
+    cost_per_input_mtok=1.00,
+    cost_per_output_mtok=5.00,
+    required_prompt_format="claude_messages_v1",
+    notes="Fast tier candidate (ADR-015).",
+)
+
+ADAPTER_CLAUDE_SONNET_45 = ModelAdapter(
+    model_id="anthropic.claude-sonnet-4-5-20250929-v1:0",
+    provider=ModelProvider.BEDROCK,
+    display_name="Claude Sonnet 4.5",
+    max_context_tokens=200_000,
+    supports_tool_use=True,
+    supports_streaming=True,
+    tokenizer_type=TokenizerType.CLAUDE,
+    architecture=ModelArchitecture.DENSE,
+    cost_per_input_mtok=3.00,
+    cost_per_output_mtok=15.00,
+    required_prompt_format="claude_messages_v1",
+    notes="Staging and production pinned primary (via the US inference profile).",
+)
+
+ADAPTER_CLAUDE_SONNET_55 = ModelAdapter(
+    model_id="anthropic.claude-sonnet-5-5",
+    provider=ModelProvider.BEDROCK,
+    display_name="Claude Sonnet 5.5",
+    max_context_tokens=1_000_000,
+    supports_tool_use=True,
+    supports_streaming=True,
+    tokenizer_type=TokenizerType.CLAUDE,
+    architecture=ModelArchitecture.DENSE,
+    cost_per_input_mtok=2.00,
+    cost_per_output_mtok=10.00,
+    required_prompt_format="claude_messages_v1",
+    notes="Accurate tier candidate; rejects sampling parameters and forced tool_choice.",
+)
+
+ADAPTER_CLAUDE_OPUS_55 = ModelAdapter(
+    model_id="anthropic.claude-opus-5-5",
+    provider=ModelProvider.BEDROCK,
+    display_name="Claude Opus 5.5",
+    max_context_tokens=1_000_000,
+    supports_tool_use=True,
+    supports_streaming=True,
+    tokenizer_type=TokenizerType.CLAUDE,
+    architecture=ModelArchitecture.DENSE,
+    cost_per_input_mtok=4.00,
+    cost_per_output_mtok=20.00,
+    required_prompt_format="claude_messages_v1",
+    notes="Maximum tier candidate; rejects sampling parameters and forced tool_choice.",
+)
 
 BUILTIN_ADAPTERS: tuple[ModelAdapter, ...] = (
     ADAPTER_CLAUDE_35_SONNET,
     ADAPTER_CLAUDE_3_HAIKU,
     ADAPTER_CLAUDE_3_OPUS,
+    ADAPTER_CLAUDE_HAIKU_45,
+    ADAPTER_CLAUDE_SONNET_45,
+    ADAPTER_CLAUDE_SONNET_55,
+    ADAPTER_CLAUDE_OPUS_55,
 )
 
 

@@ -227,7 +227,7 @@ def _parse_args() -> argparse.Namespace:
         "--model-id",
         default=None,
         help="Bedrock model id when --mode bedrock "
-        "(e.g. anthropic.claude-3-5-sonnet-20241022-v2:0)",
+        "(e.g. anthropic.claude-sonnet-5-5)",
     )
     p.add_argument(
         "--out",

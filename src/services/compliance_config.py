@@ -257,7 +257,7 @@ class ComplianceConfig:
                     "timeout_seconds": 300,
                 },
                 "coder": {
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "auto",  # newest active Sonnet on Bedrock, or pin a model ID
                     "temperature": 0.2,
                 },
             },

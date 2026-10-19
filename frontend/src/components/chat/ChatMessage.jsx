@@ -912,10 +912,13 @@ function formatModelId(modelId) {
 
   // Shorten common model names
   const shortNames = {
+    'claude-3.5-sonnet-mock': 'Mock',
+    'claude-opus': 'Opus',
+    'claude-sonnet': 'Sonnet',
+    'claude-haiku': 'Haiku',
     'claude-3-5-sonnet': 'Claude 3.5',
     'claude-3-sonnet': 'Claude 3',
     'claude-3-haiku': 'Haiku',
-    'claude-3.5-sonnet-mock': 'Mock',
   };
 
   for (const [pattern, short] of Object.entries(shortNames)) {

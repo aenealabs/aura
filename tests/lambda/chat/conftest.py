@@ -64,9 +64,9 @@ def chat_env_vars():
         "CONVERSATIONS_TABLE": "aura-chat-conversations-dev",
         "MESSAGES_TABLE": "aura-chat-messages-dev",
         "RESEARCH_TASKS_TABLE": "aura-research-tasks-dev",
-        "HAIKU_MODEL_ID": "anthropic.claude-3-haiku-20240307-v1:0",
-        "BEDROCK_MODEL_ID": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-        "OPUS_MODEL_ID": "anthropic.claude-3-opus-20240229-v1:0",
+        "HAIKU_MODEL_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "OPUS_MODEL_ID": "anthropic.claude-opus-5-5",
         "CONVERSATION_TTL_DAYS": "30",
         "RATE_LIMIT_PER_MINUTE": "30",
     }

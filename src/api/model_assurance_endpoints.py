@@ -61,9 +61,9 @@ class _ReportStore:
         self._reports = {
             "ma-rpt-2026-05-06-001": {
                 "report_id": "ma-rpt-2026-05-06-001",
-                "candidate_id": "anthropic.claude-3-7-sonnet-20260301-v1:0",
-                "candidate_display_name": "Claude 3.7 Sonnet",
-                "incumbent_id": "anthropic.claude-3-5-sonnet-20240620-v1:0",
+                "candidate_id": "anthropic.claude-sonnet-5-5",
+                "candidate_display_name": "Claude Sonnet 5.5",
+                "incumbent_id": "anthropic.claude-sonnet-4-5-20250929-v1:0",
                 "pipeline_decision": "hitl_queued",
                 "overall_utility": 0.943,
                 "incumbent_utility": 0.912,

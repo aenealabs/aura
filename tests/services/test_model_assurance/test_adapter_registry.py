@@ -336,8 +336,9 @@ class TestDisqualifyAndFilter:
 
 
 class TestBuiltinAdapters:
-    def test_three_builtins_present(self) -> None:
-        assert len(BUILTIN_ADAPTERS) == 3
+    def test_retired_and_current_builtins_present(self) -> None:
+        # 3 retired 3.x records of past evaluations + 4 current Claude models
+        assert len(BUILTIN_ADAPTERS) == 7
 
     def test_includes_claude_35_sonnet(self) -> None:
         ids = {a.model_id for a in BUILTIN_ADAPTERS}
@@ -362,9 +363,9 @@ class TestBuiltinAdapters:
         for a in BUILTIN_ADAPTERS:
             assert a.supports_tool_use is True
 
-    def test_all_builtins_have_200k_context(self) -> None:
+    def test_all_builtins_have_at_least_200k_context(self) -> None:
         for a in BUILTIN_ADAPTERS:
-            assert a.max_context_tokens == 200_000
+            assert a.max_context_tokens >= 200_000
 
     def test_no_builtin_is_deprecated(self) -> None:
         for a in BUILTIN_ADAPTERS:

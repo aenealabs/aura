@@ -1,6 +1,6 @@
 """Pinned LLM judge (ADR-088 Phase 2.2 §Stage 4).
 
-Uses a pinned external model (e.g. ``claude-3-5-sonnet-20241022``)
+Uses a pinned external model (e.g. ``claude-sonnet-4-5-20250929``)
 to grade natural-language reasoning where programmatic judging is
 insufficient. Per ADR condition #9 (security team, not ML team,
 owns rotation) and the recursive-degradation guard:

@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from src.config.bedrock_config import get_model_pricing, has_pricing
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +125,7 @@ class CustomerMetricsService:
         print(f"API error rate: {health.api.error_rate}%")
     """
 
-    # Cost per 1M tokens by model (estimates)
+    # Fallback cost per 1M tokens for models not in the central Bedrock pricing
     TOKEN_COSTS = {
         "anthropic.claude-3-5-sonnet": {"input": 3.00, "output": 15.00},
         "anthropic.claude-3-haiku": {"input": 0.25, "output": 1.25},
@@ -297,14 +299,14 @@ class CustomerMetricsService:
             total_output_tokens=total_output,
             total_tokens=total_input + total_output,
             estimated_cost_usd=self._calculate_token_cost(
-                "anthropic.claude-3-5-sonnet", total_input, total_output
+                claude_model("accurate"), total_input, total_output
             ),
         )
 
         if include_breakdown:
             metrics.tokens_by_model = {
-                "anthropic.claude-3-5-sonnet": 2_800_000,
-                "anthropic.claude-3-haiku": 340_000,
+                claude_model("accurate"): 2_800_000,
+                claude_model("fast"): 340_000,
                 "amazon.titan-embed-text-v2": 200_000,
             }
 
@@ -388,7 +390,14 @@ class CustomerMetricsService:
         output_tokens: int,
     ) -> float:
         """Calculate estimated cost for token usage."""
-        costs = self.TOKEN_COSTS.get(model, {"input": 3.0, "output": 15.0})
+        if has_pricing(model):
+            pricing = get_model_pricing(model)
+            costs = {
+                "input": pricing["input_per_million"],
+                "output": pricing["output_per_million"],
+            }
+        else:
+            costs = self.TOKEN_COSTS.get(model, {"input": 3.0, "output": 15.0})
         input_cost = (input_tokens / 1_000_000) * costs["input"]
         output_cost = (output_tokens / 1_000_000) * costs["output"]
         return round(input_cost + output_cost, 2)

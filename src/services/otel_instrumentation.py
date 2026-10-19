@@ -246,7 +246,7 @@ def trace_llm_call(
     Context manager for tracing LLM API calls.
 
     Args:
-        model: Model identifier (e.g., "anthropic.claude-3-5-sonnet-20240620-v1:0")
+        model: Model identifier (e.g., "anthropic.claude-sonnet-5-5")
         operation: Operation type (e.g., "patch_generation")
         max_tokens: Maximum tokens requested
         temperature: Temperature parameter
@@ -255,7 +255,7 @@ def trace_llm_call(
         Tuple of (span, record_usage_fn) for recording token usage
 
     Example:
-        >>> with trace_llm_call("claude-3-sonnet", "code_review") as (span, record_usage):
+        >>> with trace_llm_call("claude-sonnet", "code_review") as (span, record_usage):
         ...     response = llm.invoke(...)
         ...     record_usage(input_tokens=100, output_tokens=50, cost_usd=0.001)
     """
@@ -570,7 +570,7 @@ if __name__ == "__main__":
 
         # Demo LLM tracing
         print("\nTracing LLM call...")
-        with trace_llm_call("claude-3-sonnet", "demo_completion", max_tokens=100) as (
+        with trace_llm_call("claude-sonnet", "demo_completion", max_tokens=100) as (
             span,
             record_usage,
         ):
@@ -590,7 +590,7 @@ if __name__ == "__main__":
         # Record metrics
         print("\nRecording metrics...")
         record_agent_invocation("DemoAgent", "test_operation", 100.0, True)
-        record_llm_usage("claude-3-sonnet", "accurate", 50, 25, 0.0005)
+        record_llm_usage("claude-sonnet", "accurate", 50, 25, 0.0005)
         print("  Metrics recorded")
 
     print("\n" + "=" * 60)

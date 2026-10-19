@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -1028,7 +1029,7 @@ Output ONLY the Cedar policy syntax, no explanation:"""
         try:
             response = await asyncio.to_thread(
                 self.bedrock.invoke_model,
-                modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
+                modelId=claude_model("accurate"),
                 body=json.dumps(
                     {
                         "anthropic_version": "bedrock-2023-05-31",

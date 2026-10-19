@@ -52,7 +52,12 @@ class TestModelRouter:
         assert decision.complexity == TaskComplexity.SIMPLE
         assert decision.rule_matched == "query_intent_analysis"
         assert "haiku" in decision.model_id.lower()
-        assert decision.estimated_cost_per_1k_tokens < 0.001  # Very cheap
+        # Cheaper than the ACCURATE tier's model
+        accurate = router.route("patch_generation")
+        assert (
+            decision.estimated_cost_per_1k_tokens
+            < accurate.estimated_cost_per_1k_tokens
+        )
 
     def test_route_medium_task(self, router):
         """Test routing a medium task to ACCURATE tier."""
@@ -170,8 +175,16 @@ class TestCostEstimation:
 
         savings = router.estimate_savings(task_dist)
 
-        # All FAST tier should give ~90%+ savings vs all ACCURATE
-        assert savings["savings_percent"] > 80
+        # All FAST tier saves the price gap between the FAST and ACCURATE models
+        fast = DEFAULT_MODELS[ModelTier.FAST]
+        accurate = DEFAULT_MODELS[ModelTier.ACCURATE]
+        fast_cost = fast.input_cost_per_million + fast.output_cost_per_million
+        accurate_cost = (
+            accurate.input_cost_per_million + accurate.output_cost_per_million
+        )
+        expected = (1 - fast_cost / accurate_cost) * 100
+        assert savings["savings_percent"] == pytest.approx(expected, abs=1.0)
+        assert savings["savings_percent"] > 0
 
     def test_estimate_savings_all_complex_tasks(self, router):
         """Test cost savings when all tasks are complex (no savings)."""
@@ -347,10 +360,17 @@ class TestModelConfigurations:
         assert accurate.input_cost_per_million <= maximum.input_cost_per_million
 
     def test_model_ids_are_valid_format(self):
-        """Test model IDs follow expected format."""
+        """Test default model IDs are Claude models of the tier's family."""
+        from src.services.bedrock_model_discovery import (
+            TIER_FAMILIES,
+            parse_claude_model,
+        )
+
         for tier, model in DEFAULT_MODELS.items():
-            assert model.model_id.startswith("anthropic.claude")
-            assert "v1:0" in model.model_id
+            assert "anthropic.claude" in model.model_id
+            assert (
+                parse_claude_model(model.model_id).family == TIER_FAMILIES[tier.value]
+            )
 
 
 class TestSecurityOperationRouting:

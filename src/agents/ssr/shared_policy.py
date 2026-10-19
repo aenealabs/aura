@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+from src.config.claude_models import claude_model
 
 if TYPE_CHECKING:
     from src.services.bedrock_llm_service import BedrockLLMService
@@ -45,7 +46,7 @@ class PolicyConfig:
     """Configuration for the shared policy."""
 
     # Model settings
-    model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    model_id: str = field(default_factory=lambda: claude_model("accurate"))
     temperature: float = 0.7
     max_tokens: int = 4096
 

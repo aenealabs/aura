@@ -28,7 +28,7 @@ class ModelFamily(Enum):
 class ModelConfig:
     """Configuration for an LLM model."""
 
-    model_id: str  # e.g., "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    model_id: str  # e.g., "anthropic.claude-sonnet-5-5"
     family: ModelFamily
     max_tokens: int = 4096
     temperature: float = 0.7

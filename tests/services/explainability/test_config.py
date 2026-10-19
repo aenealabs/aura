@@ -13,6 +13,7 @@ from src.services.explainability.config import (
     get_explainability_config,
     reset_explainability_config,
 )
+from src.config.claude_models import claude_model
 
 
 class TestExplainabilityConfig:
@@ -90,7 +91,7 @@ class TestReasoningChainConfig:
         """Test default configuration values."""
         config = ReasoningChainConfig()
 
-        assert config.extraction_model == "anthropic.claude-3-haiku-20240307-v1:0"
+        assert config.extraction_model == claude_model("fast")  # the current Haiku
         assert config.extraction_temperature == 0.1
         assert config.max_evidence_per_step == 5
         assert config.enable_llm_extraction is True
@@ -117,7 +118,7 @@ class TestAlternativesConfig:
         """Test default configuration values."""
         config = AlternativesConfig()
 
-        assert config.analysis_model == "anthropic.claude-3-haiku-20240307-v1:0"
+        assert config.analysis_model == claude_model("fast")  # the current Haiku
         assert config.analysis_temperature == 0.3
         assert config.max_alternatives == 6
         assert config.comparison_criteria_count == 5
@@ -168,7 +169,7 @@ class TestConsistencyConfig:
         """Test default configuration values."""
         config = ConsistencyConfig()
 
-        assert config.verification_model == "anthropic.claude-3-haiku-20240307-v1:0"
+        assert config.verification_model == claude_model("fast")  # the current Haiku
         assert config.verification_temperature == 0.1
         assert config.max_claims_per_verification == 10
         assert config.enable_llm_verification is True

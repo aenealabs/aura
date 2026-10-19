@@ -15,6 +15,8 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+from src.config.bedrock_config import get_model_pricing
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -99,32 +101,25 @@ class ABTestConfig:
     task_types: list[str] = field(default_factory=list)
 
 
-# Default model configurations
+# Default model configurations: the current Claude model per tier, priced from the central
+# Bedrock pricing. SSM (<prefix>/<env>/model-router/models) overrides them.
+def _default_model(tier: ModelTier, avg_latency_ms: int) -> ModelConfig:
+    model_id = claude_model(tier.value)
+    pricing = get_model_pricing(model_id)
+    return ModelConfig(
+        model_id=model_id,
+        tier=tier,
+        input_cost_per_million=pricing["input_per_million"],
+        output_cost_per_million=pricing["output_per_million"],
+        avg_latency_ms=avg_latency_ms,
+        max_tokens=4096,
+    )
+
+
 DEFAULT_MODELS: dict[ModelTier, ModelConfig] = {
-    ModelTier.FAST: ModelConfig(
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
-        tier=ModelTier.FAST,
-        input_cost_per_million=0.25,
-        output_cost_per_million=1.25,
-        avg_latency_ms=200,
-        max_tokens=4096,
-    ),
-    ModelTier.ACCURATE: ModelConfig(
-        model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
-        tier=ModelTier.ACCURATE,
-        input_cost_per_million=3.00,
-        output_cost_per_million=15.00,
-        avg_latency_ms=800,
-        max_tokens=4096,
-    ),
-    ModelTier.MAXIMUM: ModelConfig(
-        model_id="anthropic.claude-3-opus-20240229-v1:0",
-        tier=ModelTier.MAXIMUM,
-        input_cost_per_million=15.00,
-        output_cost_per_million=75.00,
-        avg_latency_ms=2000,
-        max_tokens=4096,
-    ),
+    ModelTier.FAST: _default_model(ModelTier.FAST, avg_latency_ms=200),
+    ModelTier.ACCURATE: _default_model(ModelTier.ACCURATE, avg_latency_ms=800),
+    ModelTier.MAXIMUM: _default_model(ModelTier.MAXIMUM, avg_latency_ms=2000),
 }
 
 # Default routing rules (operation -> tier mapping)

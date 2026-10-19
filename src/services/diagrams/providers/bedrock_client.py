@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 from typing import Any
+from src.config.claude_models import claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +291,7 @@ class BedrockDiagramClient:
                 "messages": [{"role": "user", "content": "hi"}],
             }
             response = self._client.invoke_model(
-                modelId="anthropic.claude-3-haiku-20240307-v1:0",
+                modelId=claude_model("fast"),
                 body=json.dumps(request_body),
                 contentType="application/json",
                 accept="application/json",

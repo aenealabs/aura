@@ -329,7 +329,7 @@ def _generate_child_spans(
                 duration_ms=round(duration, 2),
                 attributes={
                     "llm.model": random.choice(
-                        ["claude-3-haiku", "claude-3-sonnet", "claude-3-opus"]
+                        ["claude-haiku-4-5", "claude-sonnet-5-5", "claude-opus-5-5"]
                     ),
                     "llm.input_tokens": str(input_tokens),
                     "llm.output_tokens": str(output_tokens),

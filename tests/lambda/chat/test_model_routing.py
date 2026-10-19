@@ -290,31 +290,31 @@ class TestModelCatalog:
 
     def test_haiku_model_in_catalog(self):
         """Haiku model should be in catalog."""
-        assert "claude-3-haiku" in self.MODEL_CATALOG
-        spec = self.MODEL_CATALOG["claude-3-haiku"]
+        assert "claude-haiku" in self.MODEL_CATALOG
+        spec = self.MODEL_CATALOG["claude-haiku"]
         assert spec.tier == self.ModelTier.FAST
         assert spec.provider == "anthropic"
         assert "classification" in spec.capabilities
 
     def test_sonnet_model_in_catalog(self):
         """Sonnet model should be in catalog."""
-        assert "claude-3-5-sonnet" in self.MODEL_CATALOG
-        spec = self.MODEL_CATALOG["claude-3-5-sonnet"]
+        assert "claude-sonnet" in self.MODEL_CATALOG
+        spec = self.MODEL_CATALOG["claude-sonnet"]
         assert spec.tier == self.ModelTier.ACCURATE
         assert "code_analysis" in spec.capabilities
         assert "tool_use" in spec.capabilities
 
     def test_opus_model_in_catalog(self):
         """Opus model should be in catalog."""
-        assert "claude-3-5-opus" in self.MODEL_CATALOG
-        spec = self.MODEL_CATALOG["claude-3-5-opus"]
+        assert "claude-opus" in self.MODEL_CATALOG
+        spec = self.MODEL_CATALOG["claude-opus"]
         assert spec.tier == self.ModelTier.MAXIMUM
         assert "deep_research" in spec.capabilities
         assert "complex_reasoning" in spec.capabilities
 
     def test_get_model_spec_by_id(self):
-        """Should retrieve model spec by Bedrock inference profile ID."""
-        spec = self.get_model_spec("us.anthropic.claude-3-haiku-20240307-v1:0")
+        """Should retrieve the model spec by the configured fast-tier model ID."""
+        spec = self.get_model_spec(self.MODEL_CATALOG["claude-haiku"].model_id)
         assert spec is not None
         assert spec.tier == self.ModelTier.FAST
 

@@ -121,7 +121,7 @@ const MOCK_DATA = {
     model_info: {
       cai_version: '2.4.1',
       model_provider: 'anthropic',
-      model_name: 'claude-3-5-sonnet',
+      model_name: 'claude-sonnet-5-5',
       last_model_update: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
       embedding_model: 'text-embedding-3-large',
     },

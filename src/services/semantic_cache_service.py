@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+from src.config.bedrock_config import get_model_pricing, has_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,8 @@ class SemanticCacheService:
         QueryType.CONSTITUTIONAL_REVISION: 21600,  # 6 hours (revisions may vary)
     }
 
-    # Cost per 1K tokens by model (approximate, for savings estimation)
+    # Fallback cost per 1K tokens (approximate, for savings estimation) when a model is not
+    # in the central Bedrock pricing (bedrock_config)
     COST_PER_1K_TOKENS = {
         "anthropic.claude-3-5-sonnet": 0.003,  # $3/1M input
         "anthropic.claude-3-sonnet": 0.003,
@@ -271,9 +273,12 @@ class SemanticCacheService:
         response_tokens = len(response) // 4
         total_tokens = query_tokens + response_tokens
 
-        cost_per_1k = self.COST_PER_1K_TOKENS.get(
-            model_id, self.COST_PER_1K_TOKENS["default"]
-        )
+        if has_pricing(model_id):
+            cost_per_1k = get_model_pricing(model_id)["input_per_million"] / 1000
+        else:
+            cost_per_1k = self.COST_PER_1K_TOKENS.get(
+                model_id, self.COST_PER_1K_TOKENS["default"]
+            )
 
         return (total_tokens / 1000) * cost_per_1k
 

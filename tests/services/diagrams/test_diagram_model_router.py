@@ -14,6 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.config.claude_models import claude_model
+
 from src.services.diagrams.diagram_model_router import (
     DIAGRAM_TASK_ROUTING,
     GOVCLOUD_BEDROCK_MODELS,
@@ -182,28 +184,19 @@ class TestDiagramTaskRouting:
 
 
 class TestGovCloudModels:
-    """Tests for GovCloud model availability (inference profile format)."""
+    """Tests for GovCloud model availability (the current tier models)."""
 
     def test_claude_sonnet_available(self):
         """Claude Sonnet is available in GovCloud (inference profile)."""
-        assert (
-            GOVCLOUD_BEDROCK_MODELS.get("us.anthropic.claude-3-5-sonnet-20241022-v2:0")
-            is True
-        )
+        assert GOVCLOUD_BEDROCK_MODELS.get(claude_model("accurate")) is True
 
     def test_claude_haiku_available(self):
         """Claude Haiku is available in GovCloud (inference profile)."""
-        assert (
-            GOVCLOUD_BEDROCK_MODELS.get("us.anthropic.claude-3-5-haiku-20241022-v1:0")
-            is True
-        )
+        assert GOVCLOUD_BEDROCK_MODELS.get(claude_model("fast")) is True
 
     def test_claude_opus_available(self):
         """Claude Opus is available in GovCloud (inference profile)."""
-        assert (
-            GOVCLOUD_BEDROCK_MODELS.get("us.anthropic.claude-3-opus-20240229-v1:0")
-            is True
-        )
+        assert GOVCLOUD_BEDROCK_MODELS.get(claude_model("maximum")) is True
 
 
 class TestDiagramModelRouter:

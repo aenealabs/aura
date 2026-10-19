@@ -45,7 +45,7 @@ MESSAGES_TABLE = os.environ.get(
     "MESSAGES_TABLE", f"{PROJECT_NAME}-chat-messages-{ENVIRONMENT}"
 )
 BEDROCK_MODEL_ID = os.environ.get(
-    "BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20240620-v1:0"
+    "BEDROCK_MODEL_ID", "anthropic.claude-sonnet-5-5"  # current Sonnet; env overrides
 )
 CONVERSATION_TTL_DAYS = int(os.environ.get("CONVERSATION_TTL_DAYS", "30"))
 

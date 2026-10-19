@@ -21,6 +21,8 @@ from src.abstractions.llm_service import (
 )
 from src.services.bedrock_llm_service import BedrockLLMService, BedrockMode
 from src.services.titan_embedding_service import EmbeddingMode, TitanEmbeddingService
+from src.config.claude_models import claude_model
+from src.config.bedrock_config import get_model_pricing, has_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +121,9 @@ class BedrockLLMAdapter(LLMService):
         # Extract content from response dict (BedrockLLMService returns dict with 'response' key)
         content = str(response.get("response", ""))
         model_id = str(
-            response.get("model_id", "anthropic.claude-3-5-sonnet-20241022-v2:0")
+            response.get("model_id")
+            or response.get("model")
+            or claude_model("accurate")
         )
         input_tokens = int(response.get("input_tokens", 0))
         output_tokens = int(response.get("output_tokens", 0))
@@ -323,19 +327,9 @@ Provide specific, actionable recommendations with code examples."""
     async def list_available_models(self) -> list[ModelConfig]:
         """List available models."""
         return [
-            ModelConfig(
-                model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
-                family=ModelFamily.CLAUDE,
-                max_tokens=8192,
-                input_cost_per_1k=0.003,
-                output_cost_per_1k=0.015,
-            ),
-            ModelConfig(
-                model_id="anthropic.claude-3-haiku-20240307-v1:0",
-                family=ModelFamily.CLAUDE,
-                max_tokens=4096,
-                input_cost_per_1k=0.00025,
-                output_cost_per_1k=0.00125,
+            *(
+                self._claude_config(claude_model(tier), max_tokens)
+                for tier, max_tokens in (("accurate", 8192), ("fast", 4096))
             ),
             ModelConfig(
                 model_id="amazon.titan-text-express-v1",
@@ -345,6 +339,18 @@ Provide specific, actionable recommendations with code examples."""
                 output_cost_per_1k=0.0006,
             ),
         ]
+
+    @staticmethod
+    def _claude_config(model_id: str, max_tokens: int) -> ModelConfig:
+        """A Claude model's config, priced from the central Bedrock pricing."""
+        pricing = get_model_pricing(model_id) if has_pricing(model_id) else {}
+        return ModelConfig(
+            model_id=model_id,
+            family=ModelFamily.CLAUDE,
+            max_tokens=max_tokens,
+            input_cost_per_1k=pricing.get("input_per_million", 0.0) / 1000,
+            output_cost_per_1k=pricing.get("output_per_million", 0.0) / 1000,
+        )
 
     async def get_model_config(self, model_id: str) -> ModelConfig | None:
         """Get model configuration."""

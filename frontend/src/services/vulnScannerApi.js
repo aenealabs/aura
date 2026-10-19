@@ -9,42 +9,46 @@
 
 import { apiClient } from './api';
 
+// apiClient resolves to { data } and already prefixes /api/v1; callers here want the data itself
+const get = async (url, config) => (await apiClient.get(url, config)).data;
+const post = async (url, body) => (await apiClient.post(url, body)).data;
+
 // API endpoints for Vulnerability Scanner
 const ENDPOINTS = {
   // Scans
-  SCANS: '/api/v1/scanner/scans',
-  SCAN_DETAIL: '/api/v1/scanner/scans/:scanId',
-  SCAN_LAUNCH: '/api/v1/scanner/scans/launch',
-  SCAN_CANCEL: '/api/v1/scanner/scans/:scanId/cancel',
+  SCANS: '/scanner/scans',
+  SCAN_DETAIL: '/scanner/scans/:scanId',
+  SCAN_LAUNCH: '/scanner/scans/launch',
+  SCAN_CANCEL: '/scanner/scans/:scanId/cancel',
 
   // Findings
-  FINDINGS: '/api/v1/scanner/findings',
-  FINDING_DETAIL: '/api/v1/scanner/findings/:findingId',
-  FINDING_ACTION: '/api/v1/scanner/findings/:findingId/action',
+  FINDINGS: '/scanner/findings',
+  FINDING_DETAIL: '/scanner/findings/:findingId',
+  FINDING_ACTION: '/scanner/findings/:findingId/action',
 
   // Metrics
-  FINDINGS_BY_SEVERITY: '/api/v1/scanner/metrics/findings-by-severity',
-  ACTIVE_SCANS: '/api/v1/scanner/metrics/active-scans',
-  TRUE_POSITIVE_RATE: '/api/v1/scanner/metrics/true-positive-rate',
-  LLM_TOKEN_SPEND: '/api/v1/scanner/metrics/llm-token-spend',
-  ALARM_STATUS: '/api/v1/scanner/metrics/alarm-status',
-  RECENT_ACTIVITY: '/api/v1/scanner/metrics/recent-activity',
-  FINDINGS_REQUIRING_APPROVAL: '/api/v1/scanner/metrics/findings-requiring-approval',
-  SCAN_DURATION_TREND: '/api/v1/scanner/metrics/scan-duration-trend',
-  STAGE_DURATION: '/api/v1/scanner/metrics/stage-duration',
-  FINDINGS_BY_CWE: '/api/v1/scanner/metrics/findings-by-cwe',
-  LLM_LATENCY: '/api/v1/scanner/metrics/llm-latency',
-  CONCURRENT_UTILIZATION: '/api/v1/scanner/metrics/concurrent-utilization',
-  CRITICAL_FINDINGS_TREND: '/api/v1/scanner/metrics/critical-findings-trend',
-  SCAN_QUEUE_DEPTH: '/api/v1/scanner/metrics/scan-queue-depth',
-  CANDIDATE_FUNNEL: '/api/v1/scanner/metrics/candidate-funnel',
-  FINDINGS_BY_LANGUAGE: '/api/v1/scanner/metrics/findings-by-language',
-  VERIFICATION_STATUS: '/api/v1/scanner/metrics/verification-status',
-  CLEANUP_ACTIVITY: '/api/v1/scanner/metrics/cleanup-activity',
-  SCAN_DEPTH_DISTRIBUTION: '/api/v1/scanner/metrics/scan-depth-distribution',
+  FINDINGS_BY_SEVERITY: '/scanner/metrics/findings-by-severity',
+  ACTIVE_SCANS: '/scanner/metrics/active-scans',
+  TRUE_POSITIVE_RATE: '/scanner/metrics/true-positive-rate',
+  LLM_TOKEN_SPEND: '/scanner/metrics/llm-token-spend',
+  ALARM_STATUS: '/scanner/metrics/alarm-status',
+  RECENT_ACTIVITY: '/scanner/metrics/recent-activity',
+  FINDINGS_REQUIRING_APPROVAL: '/scanner/metrics/findings-requiring-approval',
+  SCAN_DURATION_TREND: '/scanner/metrics/scan-duration-trend',
+  STAGE_DURATION: '/scanner/metrics/stage-duration',
+  FINDINGS_BY_CWE: '/scanner/metrics/findings-by-cwe',
+  LLM_LATENCY: '/scanner/metrics/llm-latency',
+  CONCURRENT_UTILIZATION: '/scanner/metrics/concurrent-utilization',
+  CRITICAL_FINDINGS_TREND: '/scanner/metrics/critical-findings-trend',
+  SCAN_QUEUE_DEPTH: '/scanner/metrics/scan-queue-depth',
+  CANDIDATE_FUNNEL: '/scanner/metrics/candidate-funnel',
+  FINDINGS_BY_LANGUAGE: '/scanner/metrics/findings-by-language',
+  VERIFICATION_STATUS: '/scanner/metrics/verification-status',
+  CLEANUP_ACTIVITY: '/scanner/metrics/cleanup-activity',
+  SCAN_DEPTH_DISTRIBUTION: '/scanner/metrics/scan-depth-distribution',
 
   // Reports
-  SARIF_DOWNLOAD: '/api/v1/scanner/scans/:scanId/sarif',
+  SARIF_DOWNLOAD: '/scanner/scans/:scanId/sarif',
 };
 
 /**
@@ -52,7 +56,7 @@ const ENDPOINTS = {
  * @returns {Promise<Object>} severity counts and stacked bar data
  */
 export async function getFindingsBySeverity() {
-  return apiClient.get(ENDPOINTS.FINDINGS_BY_SEVERITY);
+  return get(ENDPOINTS.FINDINGS_BY_SEVERITY);
 }
 
 /**
@@ -60,7 +64,7 @@ export async function getFindingsBySeverity() {
  * @returns {Promise<Object>} active scan count and details
  */
 export async function getActiveScans() {
-  return apiClient.get(ENDPOINTS.ACTIVE_SCANS);
+  return get(ENDPOINTS.ACTIVE_SCANS);
 }
 
 /**
@@ -68,7 +72,7 @@ export async function getActiveScans() {
  * @returns {Promise<Object>} rate percentage and trend
  */
 export async function getTruePositiveRate() {
-  return apiClient.get(ENDPOINTS.TRUE_POSITIVE_RATE);
+  return get(ENDPOINTS.TRUE_POSITIVE_RATE);
 }
 
 /**
@@ -76,7 +80,7 @@ export async function getTruePositiveRate() {
  * @returns {Promise<Object>} daily and monthly token spend
  */
 export async function getLLMTokenSpend() {
-  return apiClient.get(ENDPOINTS.LLM_TOKEN_SPEND);
+  return get(ENDPOINTS.LLM_TOKEN_SPEND);
 }
 
 /**
@@ -84,7 +88,7 @@ export async function getLLMTokenSpend() {
  * @returns {Promise<Object>} alarm status grid
  */
 export async function getScannerAlarmStatus() {
-  return apiClient.get(ENDPOINTS.ALARM_STATUS);
+  return get(ENDPOINTS.ALARM_STATUS);
 }
 
 /**
@@ -96,7 +100,11 @@ export async function getScannerAlarmStatus() {
  * @returns {Promise<Object>} activity feed data
  */
 export async function getRecentScanActivity(params = {}) {
-  return apiClient.get(ENDPOINTS.RECENT_ACTIVITY, { params });
+  // apiClient does not serialize params, so build the query string here
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null)
+  ).toString();
+  return get(query ? `${ENDPOINTS.RECENT_ACTIVITY}?${query}` : ENDPOINTS.RECENT_ACTIVITY);
 }
 
 /**
@@ -104,7 +112,7 @@ export async function getRecentScanActivity(params = {}) {
  * @returns {Promise<Object>} count and finding list
  */
 export async function getFindingsRequiringApproval() {
-  return apiClient.get(ENDPOINTS.FINDINGS_REQUIRING_APPROVAL);
+  return get(ENDPOINTS.FINDINGS_REQUIRING_APPROVAL);
 }
 
 /**
@@ -112,7 +120,7 @@ export async function getFindingsRequiringApproval() {
  * @returns {Promise<Object>} time series duration data
  */
 export async function getScanDurationTrend() {
-  return apiClient.get(ENDPOINTS.SCAN_DURATION_TREND);
+  return get(ENDPOINTS.SCAN_DURATION_TREND);
 }
 
 /**
@@ -120,7 +128,7 @@ export async function getScanDurationTrend() {
  * @returns {Promise<Object>} per-stage duration breakdown
  */
 export async function getStageDuration() {
-  return apiClient.get(ENDPOINTS.STAGE_DURATION);
+  return get(ENDPOINTS.STAGE_DURATION);
 }
 
 /**
@@ -128,7 +136,7 @@ export async function getStageDuration() {
  * @returns {Promise<Object>} CWE-grouped finding counts
  */
 export async function getFindingsByCWE() {
-  return apiClient.get(ENDPOINTS.FINDINGS_BY_CWE);
+  return get(ENDPOINTS.FINDINGS_BY_CWE);
 }
 
 /**
@@ -136,7 +144,7 @@ export async function getFindingsByCWE() {
  * @returns {Promise<Object>} p50/p95/p99 latency data
  */
 export async function getLLMLatency() {
-  return apiClient.get(ENDPOINTS.LLM_LATENCY);
+  return get(ENDPOINTS.LLM_LATENCY);
 }
 
 /**
@@ -144,7 +152,7 @@ export async function getLLMLatency() {
  * @returns {Promise<Object>} active vs max concurrent
  */
 export async function getConcurrentUtilization() {
-  return apiClient.get(ENDPOINTS.CONCURRENT_UTILIZATION);
+  return get(ENDPOINTS.CONCURRENT_UTILIZATION);
 }
 
 /**
@@ -152,7 +160,7 @@ export async function getConcurrentUtilization() {
  * @returns {Promise<Object>} daily critical finding counts
  */
 export async function getCriticalFindingsTrend() {
-  return apiClient.get(ENDPOINTS.CRITICAL_FINDINGS_TREND);
+  return get(ENDPOINTS.CRITICAL_FINDINGS_TREND);
 }
 
 /**
@@ -160,7 +168,7 @@ export async function getCriticalFindingsTrend() {
  * @returns {Promise<Object>} queued scan count
  */
 export async function getScanQueueDepth() {
-  return apiClient.get(ENDPOINTS.SCAN_QUEUE_DEPTH);
+  return get(ENDPOINTS.SCAN_QUEUE_DEPTH);
 }
 
 /**
@@ -168,7 +176,7 @@ export async function getScanQueueDepth() {
  * @returns {Promise<Object>} funnel stages and counts
  */
 export async function getCandidateFunnel() {
-  return apiClient.get(ENDPOINTS.CANDIDATE_FUNNEL);
+  return get(ENDPOINTS.CANDIDATE_FUNNEL);
 }
 
 /**
@@ -176,7 +184,7 @@ export async function getCandidateFunnel() {
  * @returns {Promise<Object>} language distribution
  */
 export async function getFindingsByLanguage() {
-  return apiClient.get(ENDPOINTS.FINDINGS_BY_LANGUAGE);
+  return get(ENDPOINTS.FINDINGS_BY_LANGUAGE);
 }
 
 /**
@@ -184,7 +192,7 @@ export async function getFindingsByLanguage() {
  * @returns {Promise<Object>} verification status counts
  */
 export async function getVerificationStatus() {
-  return apiClient.get(ENDPOINTS.VERIFICATION_STATUS);
+  return get(ENDPOINTS.VERIFICATION_STATUS);
 }
 
 /**
@@ -192,7 +200,7 @@ export async function getVerificationStatus() {
  * @returns {Promise<Object>} cleanup bar chart data
  */
 export async function getCleanupActivity() {
-  return apiClient.get(ENDPOINTS.CLEANUP_ACTIVITY);
+  return get(ENDPOINTS.CLEANUP_ACTIVITY);
 }
 
 /**
@@ -200,7 +208,7 @@ export async function getCleanupActivity() {
  * @returns {Promise<Object>} scan depth donut data
  */
 export async function getScanDepthDistribution() {
-  return apiClient.get(ENDPOINTS.SCAN_DEPTH_DISTRIBUTION);
+  return get(ENDPOINTS.SCAN_DEPTH_DISTRIBUTION);
 }
 
 /**
@@ -209,7 +217,7 @@ export async function getScanDepthDistribution() {
  * @returns {Promise<Object>} full scan detail
  */
 export async function getScanDetail(scanId) {
-  return apiClient.get(ENDPOINTS.SCAN_DETAIL.replace(':scanId', scanId));
+  return get(ENDPOINTS.SCAN_DETAIL.replace(':scanId', scanId));
 }
 
 /**
@@ -218,7 +226,7 @@ export async function getScanDetail(scanId) {
  * @returns {Promise<Object>} full finding detail
  */
 export async function getFindingDetail(findingId) {
-  return apiClient.get(ENDPOINTS.FINDING_DETAIL.replace(':findingId', findingId));
+  return get(ENDPOINTS.FINDING_DETAIL.replace(':findingId', findingId));
 }
 
 /**
@@ -227,7 +235,7 @@ export async function getFindingDetail(findingId) {
  * @returns {Promise<Object>} created scan
  */
 export async function launchScan(config) {
-  return apiClient.post(ENDPOINTS.SCAN_LAUNCH, config);
+  return post(ENDPOINTS.SCAN_LAUNCH, config);
 }
 
 /**
@@ -236,7 +244,7 @@ export async function launchScan(config) {
  * @returns {Promise<Object>} cancellation result
  */
 export async function cancelScan(scanId) {
-  return apiClient.post(ENDPOINTS.SCAN_CANCEL.replace(':scanId', scanId));
+  return post(ENDPOINTS.SCAN_CANCEL.replace(':scanId', scanId));
 }
 
 /**
@@ -246,7 +254,7 @@ export async function cancelScan(scanId) {
  * @returns {Promise<Object>} action result
  */
 export async function performFindingAction(findingId, action) {
-  return apiClient.post(
+  return post(
     ENDPOINTS.FINDING_ACTION.replace(':findingId', findingId),
     action
   );
@@ -258,9 +266,9 @@ export async function performFindingAction(findingId, action) {
  * @returns {Promise<Blob>} SARIF JSON file
  */
 export async function downloadSARIF(scanId) {
-  return apiClient.get(ENDPOINTS.SARIF_DOWNLOAD.replace(':scanId', scanId), {
-    responseType: 'blob',
-  });
+  const sarif = await get(ENDPOINTS.SARIF_DOWNLOAD.replace(':scanId', scanId));
+  const text = typeof sarif === 'string' ? sarif : JSON.stringify(sarif, null, 2);
+  return new Blob([text], { type: 'application/sarif+json' });
 }
 
 // Re-export for convenience

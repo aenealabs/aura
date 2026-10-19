@@ -113,9 +113,13 @@ class Demo:
         self.shown = (text, time.monotonic()) if text else None
         self.wait(hold)
 
-    def card(self, title: str, lines: list[str], hold: float, instant: bool = False) -> None:
+    def card(
+        self, title: str, lines: list[str], hold: float, instant: bool = False
+    ) -> None:
         self.settle()
-        self.page.evaluate("([t, l, i]) => window.__demoCard(t, l, i)", [title, lines, instant])
+        self.page.evaluate(
+            "([t, l, i]) => window.__demoCard(t, l, i)", [title, lines, instant]
+        )
         text = " · ".join([title, *lines])
         self.mark(text)
         self.shown = (text, time.monotonic())
@@ -131,9 +135,14 @@ class Demo:
         target.scroll_into_view_if_needed()
         box = target.bounding_box()
         if box:
-            self.page.evaluate("([x, y, p]) => window.__demoCursor(x, y, p)",
-                               [box["x"] + min(box["width"] / 2, 70),
-                                box["y"] + box["height"] / 2, press])
+            self.page.evaluate(
+                "([x, y, p]) => window.__demoCursor(x, y, p)",
+                [
+                    box["x"] + min(box["width"] / 2, 70),
+                    box["y"] + box["height"] / 2,
+                    press,
+                ],
+            )
         self.wait(hold)
 
     def click(self, target, hold: float = 1.0) -> None:
@@ -173,55 +182,99 @@ def run_flow(d: Demo, base: str) -> None:
     page.add_style_tag(content=STILL)
     d.started = time.monotonic()
     d.cues.clear()
-    d.card("Project Aura", ["Autonomous AI security for enterprise codebases",
-                            "Find it. Fix it. Prove it. Then a person approves it."], 4.5,
-           instant=True)
+    d.card(
+        "Project Aura",
+        [
+            "Autonomous AI security for enterprise codebases",
+            "Find it. Fix it. Prove it. Then a person approves it.",
+        ],
+        4.5,
+        instant=True,
+    )
     d.card_off()
 
-    d.caption("The security dashboard: open findings, agents at work, and patches waiting "
-              "on a person.", 2.5)
+    d.caption(
+        "The security dashboard: open findings, agents at work, and patches waiting "
+        "on a person.",
+        2.5,
+    )
     d.point(page.get_by_text("Pending Approvals").first, 1.2)
 
     d.nav("Approvals")
-    d.caption("Every patch is generated, tested in a sandbox, then queued for human approval.",
-              1.0)
+    d.caption(
+        "Every patch is generated, tested in a sandbox, then queued for human approval.",
+        1.0,
+    )
     d.click(page.get_by_text("SQL Injection Fix in Authentication Handler").first, 1.0)
-    d.caption("The reviewer sees the exact change: string-built SQL replaced with a "
-              "parameterized query.", 1.0)
+    d.caption(
+        "The reviewer sees the exact change: string-built SQL replaced with a "
+        "parameterized query.",
+        1.0,
+    )
     d.point(page.get_by_text("VULNERABLE").first, 1.5)
     d.point(page.get_by_text("FIXED").first, 2.0)
     d.point(page.get_by_role("button", name="Approve & Deploy").first, 1.5)
 
     d.nav("Mission Control")
-    d.caption("Mission Control shows each agent's reasoning and the actions it plans, before "
-              "they run.", 1.0)
+    d.caption(
+        "Mission Control shows each agent's reasoning and the actions it plans, before "
+        "they run.",
+        1.0,
+    )
     d.point(page.get_by_text("Agent Thinking Process").first, 2.0)
     d.point(page.get_by_text("Planned Actions").first, 2.0)
 
     d.nav("Red Team")
-    d.caption("Red-team campaigns attack the agents themselves: prompt injection, auth bypass, "
-              "data exfiltration.", 1.0)
+    d.caption(
+        "Red-team campaigns attack the agents themselves: prompt injection, auth bypass, "
+        "data exfiltration.",
+        1.0,
+    )
     d.click(page.get_by_text("LLM Agent Security Test").first, 2.5)
 
+    d.nav("Guardrails")
+    d.caption(
+        "Guardrails set how much the agents may do on their own, from reviewing every "
+        "action to critical-only.",
+        1.0,
+    )
+    d.point(page.get_by_text("Security Profile").first, 2.0)
+    d.caption(
+        "Guardrail activity is measured: blocked threats, verified context, and every "
+        "agent operation.",
+        1.0,
+    )
+    d.point(page.get_by_text("Threat Detection").first, 2.5)
+
     d.nav("AI Trust Center")
-    d.caption("The AI Trust Center tracks constitutional principles and safety metrics "
-              "against their targets.", 1.0)
+    d.caption(
+        "The AI Trust Center tracks constitutional principles and safety metrics "
+        "against their targets.",
+        1.0,
+    )
     d.point(page.get_by_text("Key Safety Metrics").first, 3.0)
 
     d.nav("Explainability")
-    d.caption("Every agent decision is explained, and contradictions between agents are "
-              "flagged for review.", 1.0)
+    d.caption(
+        "Every agent decision is explained, and contradictions between agents are "
+        "flagged for review.",
+        1.0,
+    )
     d.point(page.get_by_text("Contradiction").nth(1), 3.0)
 
     d.caption("", 0)
-    d.card("Project Aura", ["Human-in-the-loop by design", "github.com/aenealabs/aura"], 4)
+    d.card(
+        "Project Aura", ["Human-in-the-loop by design", "github.com/aenealabs/aura"], 4
+    )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--base", default="http://localhost:5199")
     parser.add_argument("--pace", type=float, default=1.0, help=">1 slower, <1 faster")
-    parser.add_argument("--out", default=str(ROOT / "assets" / "media" / "aura-demo.mp4"))
+    parser.add_argument(
+        "--out", default=str(ROOT / "assets" / "media" / "aura-demo.mp4")
+    )
     args = parser.parse_args()
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -231,7 +284,9 @@ def main() -> int:
             browser = pw.chromium.launch()
             context = browser.new_context(
                 viewport={"width": WIDTH, "height": HEIGHT},
-                record_video_dir=str(work), record_video_size={"width": WIDTH, "height": HEIGHT})
+                record_video_dir=str(work),
+                record_video_size={"width": WIDTH, "height": HEIGHT},
+            )
             prepare_context(context, "light")
             context.add_init_script(OVERLAY_JS)
             page = context.new_page()
@@ -248,9 +303,30 @@ def main() -> int:
             import imageio_ffmpeg
 
             ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-        subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-ss", f"{lead_in + 0.15:.3f}",
-                        "-i", str(video), "-c:v", "libx264", "-preset", "slow", "-crf", "24",
-                        "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)], check=True)
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{lead_in + 0.15:.3f}",
+                "-i",
+                str(video),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "slow",
+                "-crf",
+                "24",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                str(out),
+            ],
+            check=True,
+        )
         write_captions(demo.cues, ended, out.with_suffix(".vtt"))
         print(f"Wrote {out} ({ended:.0f}s, {out.stat().st_size // 1024} KB)")
         return 0

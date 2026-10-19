@@ -20,18 +20,12 @@ import pytest
 # Force process isolation to prevent module mock pollution across test files
 pytestmark = pytest.mark.forked
 
-# Module-level mocking to avoid import errors
-# Must be done before importing the service module
-_modules_to_save = [
-    "boto3",
-    "botocore",
-    "botocore.exceptions",
-    "config.bedrock_config",
-    "config.guardrails_config",
-    "src.services.llm_prompt_sanitizer",
-    "src.services.redis_cache_service",
-]
-_original_modules = {m: sys.modules.get(m) for m in _modules_to_save}
+# The service's external dependencies are replaced per test (see the autouse fixture
+# below) by patching the service module's own references. An earlier version swapped mocks
+# into sys.modules at collection time and imported the service under them; when this file
+# was the first to import the service in a process, the service kept references to the
+# mocked Redis cache and sanitizer for the rest of the run, and later test files saw
+# services whose spend and request history never changed.
 
 
 # Import the REAL botocore.exceptions.ClientError BEFORE the sys.modules
@@ -65,13 +59,10 @@ class MockClientError(_RealClientError):
 mock_boto3 = MagicMock()
 mock_boto3.client = MagicMock(return_value=MagicMock())
 mock_boto3.resource = MagicMock(return_value=MagicMock())
-sys.modules["boto3"] = mock_boto3
 
 mock_botocore = MagicMock()
 mock_botocore.exceptions = MagicMock()
 mock_botocore.exceptions.ClientError = MockClientError
-sys.modules["botocore"] = mock_botocore
-sys.modules["botocore.exceptions"] = mock_botocore.exceptions
 
 # Mock bedrock_config
 mock_bedrock_config = MagicMock()
@@ -94,7 +85,6 @@ mock_bedrock_config.get_config = MagicMock(
     }
 )
 mock_bedrock_config.calculate_cost = MagicMock(return_value=0.01)
-sys.modules["config.bedrock_config"] = mock_bedrock_config
 
 # Mock guardrails_config
 mock_guardrails_config = MagicMock()
@@ -109,7 +99,6 @@ mock_guardrails_config.get_guardrail_config = MagicMock(
     )
 )
 mock_guardrails_config.load_guardrail_ids_from_ssm = MagicMock()
-sys.modules["config.guardrails_config"] = mock_guardrails_config
 
 # Mock sanitizer
 mock_sanitizer = MagicMock()
@@ -121,7 +110,6 @@ mock_sanitizer.SanitizationResult = MagicMock()
 mock_sanitizer.ThreatLevel = MagicMock()
 mock_sanitizer.ThreatLevel.NONE = "none"
 mock_sanitizer.get_prompt_sanitizer = MagicMock(return_value=MagicMock())
-sys.modules["src.services.llm_prompt_sanitizer"] = mock_sanitizer
 
 # Mock redis cache service
 mock_redis = MagicMock()
@@ -138,7 +126,6 @@ mock_cache_instance.backend = MagicMock(value="memory")
 mock_cache_instance.is_redis_connected = False
 mock_redis.RedisCacheService = MagicMock(return_value=mock_cache_instance)
 mock_redis.create_cache_service = MagicMock(return_value=mock_cache_instance)
-sys.modules["src.services.redis_cache_service"] = mock_redis
 
 # Now import the module under test
 from src.services.bedrock_llm_service import (
@@ -154,13 +141,23 @@ _BedrockLLMService = BedrockLLMService
 _BedrockMode = BedrockMode
 _ModelTier = ModelTier
 
-# Restore original modules after import (or delete mocks if module wasn't present)
-for mod_name, original in _original_modules.items():
-    if original is not None:
-        sys.modules[mod_name] = original
-    elif mod_name in sys.modules:
-        # Module wasn't present before - remove the mock to prevent pollution
-        del sys.modules[mod_name]
+
+@pytest.fixture(autouse=True)
+def _mocked_service_dependencies(monkeypatch):
+    """Point the service at the mocks for one test; monkeypatch restores it afterwards."""
+    import src.services.bedrock_llm_service as svc
+
+    monkeypatch.setattr(svc, "boto3", mock_boto3, raising=False)
+    monkeypatch.setattr(svc, "create_cache_service", mock_redis.create_cache_service)
+    monkeypatch.setattr(svc, "RedisCacheService", mock_redis.RedisCacheService)
+    for name in (
+        "LLMPromptSanitizer",
+        "SanitizationAction",
+        "SanitizationResult",
+        "ThreatLevel",
+    ):
+        monkeypatch.setattr(svc, name, getattr(mock_sanitizer, name))
+
 
 # Note: do NOT ``del sys.modules["src.services.bedrock_llm_service"]`` here.
 # An earlier version did, with the rationale "so other tests reimport fresh."

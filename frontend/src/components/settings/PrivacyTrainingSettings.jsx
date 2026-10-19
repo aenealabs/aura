@@ -43,6 +43,7 @@ import {
 } from '../../services/consentApi';
 
 import ConsentConfirmModal from './ConsentConfirmModal';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Icon mapping
 const CONSENT_ICONS = {
@@ -599,37 +600,43 @@ export default function PrivacyTrainingSettings() {
 
       {/* Withdraw All Confirmation Modal */}
       {showWithdrawAllModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white dark:bg-surface-800 rounded-xl shadow-xl max-w-md w-full p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-critical-100 dark:bg-critical-900/30 rounded-lg">
-                <ExclamationTriangleIcon className="h-6 w-6 text-critical-600" />
-              </div>
+        <Modal
+          open
+          onClose={() => setShowWithdrawAllModal(false)}
+          overlayClassName="bg-black/50"
+          closeOnOutsideClick={false}
+          panelClassName="bg-white dark:bg-surface-800 rounded-xl shadow-xl !max-w-md p-6"
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-critical-100 dark:bg-critical-900/30 rounded-lg">
+              <ExclamationTriangleIcon className="h-6 w-6 text-critical-600" />
+            </div>
+            <ModalTitle asChild>
               <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
                 Withdraw All Data Consents?
               </h3>
-            </div>
-            <p className="text-sm text-surface-600 dark:text-surface-400 mb-6">
-              This will withdraw consent for Training Data, Synthetic Bugs, and Benchmark Reports.
-              Your data will be queued for deletion within 30 days.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowWithdrawAllModal(false)}
-                className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleWithdrawAll}
-                disabled={isLoading}
-                className="px-4 py-2 text-sm font-medium text-white bg-critical-600 hover:bg-critical-700 rounded-lg transition-colors disabled:opacity-50"
-              >
-                Withdraw All
-              </button>
-            </div>
+            </ModalTitle>
           </div>
-        </div>
+          <p className="text-sm text-surface-600 dark:text-surface-400 mb-6">
+            This will withdraw consent for Training Data, Synthetic Bugs, and Benchmark Reports.
+            Your data will be queued for deletion within 30 days.
+          </p>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setShowWithdrawAllModal(false)}
+              className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleWithdrawAll}
+              disabled={isLoading}
+              className="px-4 py-2 text-sm font-medium text-white bg-critical-600 hover:bg-critical-700 rounded-lg transition-colors disabled:opacity-50"
+            >
+              Withdraw All
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

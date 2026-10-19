@@ -56,6 +56,7 @@ import {
   DEFAULT_SETTINGS,
   LOG_RETENTION_OPTIONS,
 } from '../services/settingsApi';
+import Modal from './shared/Modal';
 
 // Integration Mode configurations with descriptions
 const MODE_CONFIGS = {
@@ -481,64 +482,57 @@ export default function SettingsPage() {
 
       {/* Mobile Navigation Modal */}
       {mobileNavOpen && (
-        <div className="lg:hidden fixed inset-0 z-50">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-md"
-            onClick={() => setMobileNavOpen(false)}
-            aria-hidden="true"
-          />
-          {/* Modal */}
-          <div
-            id="mobile-settings-nav"
-            className="absolute bottom-0 left-0 right-0 bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-t-2xl max-h-[80vh] overflow-y-auto shadow-[var(--shadow-glass-hover)] animate-in slide-in-from-bottom duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Settings navigation"
-          >
-            <div className="sticky top-0 bg-white dark:bg-surface-800 backdrop-blur-xl px-4 py-3 border-b border-surface-100/50 dark:border-surface-700/30 flex items-center justify-between">
-              <span className="font-semibold text-surface-900 dark:text-surface-100">Settings</span>
-              <button
-                onClick={() => setMobileNavOpen(false)}
-                className="p-2 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
-                aria-label="Close navigation"
-              >
-                <XMarkIcon className="h-5 w-5 text-surface-500" />
-              </button>
-            </div>
-            <nav className="p-4 space-y-6" aria-label="Settings navigation">
-              {navGroups.map((group) => (
-                <div key={group.id}>
-                  <p className="px-3 mb-2 text-xs font-semibold text-surface-400 dark:text-surface-500 uppercase tracking-wider">
-                    {group.label}
-                  </p>
-                  <div className="space-y-1">
-                    {group.items.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          setActiveTab(item.id);
-                          setMobileNavOpen(false);
-                        }}
-                        className={`
-                          w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-200 ease-[var(--ease-tahoe)]
-                          ${activeTab === item.id
-                            ? 'bg-aura-100/80 dark:bg-aura-900/30 text-aura-600 dark:text-aura-400 shadow-sm'
-                            : 'text-surface-700 dark:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700'
-                          }
-                        `}
-                        aria-current={activeTab === item.id ? 'page' : undefined}
-                      >
-                        <item.icon className={`h-5 w-5 ${activeTab === item.id ? 'text-aura-600 dark:text-aura-400' : 'text-surface-400'}`} />
-                        <span className="font-medium">{item.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </nav>
+        <Modal
+          open
+          onClose={() => setMobileNavOpen(false)}
+          placement="bottom"
+          id="mobile-settings-nav"
+          label="Settings navigation"
+          overlayClassName="lg:hidden bg-black/40 backdrop-blur-md"
+          panelClassName="lg:hidden bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-t-2xl shadow-[var(--shadow-glass-hover)] animate-in slide-in-from-bottom duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
+        >
+          <div className="sticky top-0 bg-white dark:bg-surface-800 backdrop-blur-xl px-4 py-3 border-b border-surface-100/50 dark:border-surface-700/30 flex items-center justify-between">
+            <span className="font-semibold text-surface-900 dark:text-surface-100">Settings</span>
+            <button
+              onClick={() => setMobileNavOpen(false)}
+              className="p-2 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+              aria-label="Close navigation"
+            >
+              <XMarkIcon className="h-5 w-5 text-surface-500" />
+            </button>
           </div>
-        </div>
+          <nav className="p-4 space-y-6" aria-label="Settings navigation">
+            {navGroups.map((group) => (
+              <div key={group.id}>
+                <p className="px-3 mb-2 text-xs font-semibold text-surface-400 dark:text-surface-500 uppercase tracking-wider">
+                  {group.label}
+                </p>
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        setMobileNavOpen(false);
+                      }}
+                      className={`
+                        w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-200 ease-[var(--ease-tahoe)]
+                        ${activeTab === item.id
+                          ? 'bg-aura-100/80 dark:bg-aura-900/30 text-aura-600 dark:text-aura-400 shadow-sm'
+                          : 'text-surface-700 dark:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700'
+                        }
+                      `}
+                      aria-current={activeTab === item.id ? 'page' : undefined}
+                    >
+                      <item.icon className={`h-5 w-5 ${activeTab === item.id ? 'text-aura-600 dark:text-aura-400' : 'text-surface-400'}`} />
+                      <span className="font-medium">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </nav>
+        </Modal>
       )}
 
       {/* Main Content Area with Sidebar */}

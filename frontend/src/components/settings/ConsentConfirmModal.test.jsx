@@ -289,8 +289,8 @@ describe('ConsentConfirmModal', () => {
       const onCancel = vi.fn();
       render(<ConsentConfirmModal {...defaultProps} onCancel={onCancel} />);
 
-      // Click the backdrop (first child of the modal container)
-      const backdrop = document.querySelector('[aria-hidden="true"]');
+      // Click the backdrop (the shared Modal's overlay)
+      const backdrop = document.querySelector('[data-modal-overlay]');
       await user.click(backdrop);
 
       expect(onCancel).toHaveBeenCalledTimes(1);

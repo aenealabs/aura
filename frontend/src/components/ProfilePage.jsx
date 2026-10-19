@@ -54,6 +54,7 @@ import {
   deleteApiKey,
   API_SCOPES,
 } from '../services/profileApi';
+import Modal, { ModalTitle } from './shared/Modal';
 
 // Tab configuration
 const TABS = [
@@ -983,147 +984,158 @@ function ApiKeysTab({ apiKeys, onCreate, onDelete, isLoading }) {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-surface-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-auto">
-            <div className="p-4 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
+        <Modal
+          open
+          onClose={() => {
+            setShowCreateModal(false);
+            setCreatedKey(null);
+            setNewKeyName('');
+            setSelectedScopes([]);
+          }}
+          overlayClassName="bg-black/50"
+          closeOnOutsideClick={false}
+          panelClassName="bg-white dark:bg-surface-800 rounded-xl shadow-xl !max-w-lg !max-h-[90vh] !overflow-auto"
+        >
+          <div className="p-4 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
+            <ModalTitle asChild>
               <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
                 {createdKey ? 'Token Created' : 'Create New Token'}
               </h3>
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setCreatedKey(null);
-                  setNewKeyName('');
-                  setSelectedScopes([]);
-                }}
-                className="p-1 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300"
-              >
-                <XMarkIcon className="h-6 w-6" />
-              </button>
-            </div>
+            </ModalTitle>
+            <button
+              onClick={() => {
+                setShowCreateModal(false);
+                setCreatedKey(null);
+                setNewKeyName('');
+                setSelectedScopes([]);
+              }}
+              className="p-1 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300"
+            >
+              <XMarkIcon className="h-6 w-6" />
+            </button>
+          </div>
 
-            <div className="p-4">
-              {createdKey ? (
-                <div className="space-y-4">
-                  <div className="p-4 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg">
-                    <div className="flex gap-3">
-                      <ExclamationCircleIcon className="h-5 w-5 text-warning-600 dark:text-warning-400 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium text-warning-800 dark:text-warning-200">
-                          Copy your token now
-                        </p>
-                        <p className="text-xs text-warning-700 dark:text-warning-300 mt-1">
-                          This token will only be shown once. Make sure to copy it now.
-                        </p>
-                      </div>
+          <div className="p-4">
+            {createdKey ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg">
+                  <div className="flex gap-3">
+                    <ExclamationCircleIcon className="h-5 w-5 text-warning-600 dark:text-warning-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-warning-800 dark:text-warning-200">
+                        Copy your token now
+                      </p>
+                      <p className="text-xs text-warning-700 dark:text-warning-300 mt-1">
+                        This token will only be shown once. Make sure to copy it now.
+                      </p>
                     </div>
                   </div>
+                </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                      Your Token
-                    </label>
-                    <div className="flex gap-2">
-                      <code className="flex-1 p-3 bg-surface-100 dark:bg-surface-700 rounded-lg text-sm font-mono text-surface-900 dark:text-surface-100 break-all">
-                        {createdKey.key}
-                      </code>
-                      <button
-                        onClick={handleCopyKey}
-                        className="flex-shrink-0 p-3 bg-aura-600 text-white rounded-lg hover:bg-aura-700 transition-colors"
+                <div>
+                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                    Your Token
+                  </label>
+                  <div className="flex gap-2">
+                    <code className="flex-1 p-3 bg-surface-100 dark:bg-surface-700 rounded-lg text-sm font-mono text-surface-900 dark:text-surface-100 break-all">
+                      {createdKey.key}
+                    </code>
+                    <button
+                      onClick={handleCopyKey}
+                      className="flex-shrink-0 p-3 bg-aura-600 text-white rounded-lg hover:bg-aura-700 transition-colors"
+                    >
+                      {copiedKey ? (
+                        <CheckCircleIcon className="h-5 w-5" />
+                      ) : (
+                        <ClipboardDocumentIcon className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setCreatedKey(null);
+                  }}
+                  className="w-full px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                    Token Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    placeholder="e.g., CI/CD Pipeline"
+                    className="w-full px-3 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+                    Permissions
+                  </label>
+                  <div className="space-y-2 max-h-48 overflow-auto">
+                    {API_SCOPES.map((scope) => (
+                      <label
+                        key={scope.id}
+                        className="flex items-start gap-3 p-2 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-700/50 cursor-pointer"
                       >
-                        {copiedKey ? (
-                          <CheckCircleIcon className="h-5 w-5" />
-                        ) : (
-                          <ClipboardDocumentIcon className="h-5 w-5" />
-                        )}
-                      </button>
-                    </div>
+                        <input
+                          type="checkbox"
+                          checked={selectedScopes.includes(scope.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedScopes((prev) => [...prev, scope.id]);
+                            } else {
+                              setSelectedScopes((prev) => prev.filter((s) => s !== scope.id));
+                            }
+                          }}
+                          className="mt-0.5 h-4 w-4 rounded border-surface-300 text-aura-600 focus:ring-aura-500"
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-surface-900 dark:text-surface-100">
+                            {scope.label}
+                          </p>
+                          <p className="text-xs text-surface-500 dark:text-surface-400">
+                            {scope.description}
+                          </p>
+                        </div>
+                      </label>
+                    ))}
                   </div>
+                </div>
 
+                <div className="flex gap-3 pt-4">
                   <button
                     onClick={() => {
                       setShowCreateModal(false);
-                      setCreatedKey(null);
+                      setNewKeyName('');
+                      setSelectedScopes([]);
                     }}
-                    className="w-full px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 transition-colors"
+                    className="flex-1 px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
                   >
-                    Done
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreate}
+                    disabled={!newKeyName.trim() || selectedScopes.length === 0 || isLoading}
+                    className="flex-1 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isLoading ? 'Creating...' : 'Create Token'}
                   </button>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                      Token Name
-                    </label>
-                    <input
-                      type="text"
-                      value={newKeyName}
-                      onChange={(e) => setNewKeyName(e.target.value)}
-                      placeholder="e.g., CI/CD Pipeline"
-                      className="w-full px-3 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
-                      Permissions
-                    </label>
-                    <div className="space-y-2 max-h-48 overflow-auto">
-                      {API_SCOPES.map((scope) => (
-                        <label
-                          key={scope.id}
-                          className="flex items-start gap-3 p-2 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-700/50 cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedScopes.includes(scope.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedScopes((prev) => [...prev, scope.id]);
-                              } else {
-                                setSelectedScopes((prev) => prev.filter((s) => s !== scope.id));
-                              }
-                            }}
-                            className="mt-0.5 h-4 w-4 rounded border-surface-300 text-aura-600 focus:ring-aura-500"
-                          />
-                          <div>
-                            <p className="text-sm font-medium text-surface-900 dark:text-surface-100">
-                              {scope.label}
-                            </p>
-                            <p className="text-xs text-surface-500 dark:text-surface-400">
-                              {scope.description}
-                            </p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      onClick={() => {
-                        setShowCreateModal(false);
-                        setNewKeyName('');
-                        setSelectedScopes([]);
-                      }}
-                      className="flex-1 px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleCreate}
-                      disabled={!newKeyName.trim() || selectedScopes.length === 0 || isLoading}
-                      className="flex-1 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {isLoading ? 'Creating...' : 'Create Token'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

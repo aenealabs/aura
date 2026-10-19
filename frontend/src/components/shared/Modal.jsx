@@ -18,6 +18,14 @@ import { useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import PropTypes from 'prop-types';
 
+// Where the panel sits: centered dialog, bottom sheet, or right-hand drawer
+const PLACEMENTS = {
+  center: (size) => `left-1/2 top-1/2 w-[calc(100%-2rem)] ${size} -translate-x-1/2 -translate-y-1/2
+    max-h-[calc(100vh-2rem)]`,
+  bottom: () => 'inset-x-0 bottom-0 max-h-[80vh]',
+  right: (size) => `inset-y-0 right-0 h-full w-full ${size}`,
+};
+
 const SIZES = {
   sm: 'max-w-md',
   md: 'max-w-lg',
@@ -30,22 +38,35 @@ const SIZES = {
  * @param {boolean} props.open - Whether the modal is shown
  * @param {function} props.onClose - Called when the user dismisses it (Escape, backdrop, close)
  * @param {'sm'|'md'|'lg'|'xl'} [props.size='md'] - Maximum width
+ * @param {'center'|'bottom'|'right'} [props.placement='center'] - Dialog, bottom sheet, or drawer
  * @param {string} [props.panelClassName] - Replaces the panel's default look (background,
  *   radius, shadow), so an existing modal keeps its exact styling; position and size stay
  * @param {string} [props.className] - Extra classes for the panel
  * @param {string} [props.overlayClassName] - Classes for the backdrop
  * @param {string} [props.description] - Screen-reader description, when the content has none
+ * @param {string} [props.label] - Screen-reader title, for a dialog with no visible heading
+ * @param {boolean} [props.closeOnOutsideClick=true] - false keeps it open on a backdrop click
+ *   (Escape and its own buttons still close it)
+ * @param {React.RefObject} [props.initialFocusRef] - Element to focus on open (default: the
+ *   first focusable element)
  * @param {React.ReactNode} props.children - Panel content; include a `ModalTitle`
+ *
+ * Other props (id, data-testid, aria-labelledby) are passed to the panel.
  */
 function Modal({
   open,
   onClose,
   size = 'md',
+  placement = 'center',
   panelClassName = 'rounded-2xl bg-white dark:bg-surface-800 shadow-2xl',
   className = '',
   overlayClassName = 'bg-black/40 backdrop-blur-md',
   description,
+  label,
+  closeOnOutsideClick = true,
+  initialFocusRef,
   children,
+  ...rest
 }) {
   // Our modals open from app state, not a Dialog.Trigger, so Radix has no trigger to refocus on
   // close. Remember what had focus as the modal opens and return focus there.
@@ -54,18 +75,30 @@ function Modal({
   return (
     <Dialog.Root open={open} onOpenChange={(next) => !next && onClose?.()}>
       <Dialog.Portal>
-        <Dialog.Overlay className={`fixed inset-0 z-50 transition-opacity ${overlayClassName}`} />
+        <Dialog.Overlay
+          data-modal-overlay=""
+          className={`fixed inset-0 z-50 transition-opacity ${overlayClassName}`}
+        />
         <Dialog.Content
-          className={`fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] ${SIZES[size] || SIZES.md}
-            -translate-x-1/2 -translate-y-1/2 max-h-[calc(100vh-2rem)] overflow-y-auto
-            focus:outline-none ${panelClassName} ${className}`}
+          className={`fixed z-50 ${(PLACEMENTS[placement] || PLACEMENTS.center)(SIZES[size] || SIZES.md)}
+            overflow-y-auto focus:outline-none ${panelClassName} ${className}`}
+          aria-modal="true"
           {...(description ? {} : { 'aria-describedby': undefined })}
-          onOpenAutoFocus={() => { returnFocusTo.current = document.activeElement; }}
+          {...rest}
+          onOpenAutoFocus={(event) => {
+            returnFocusTo.current = document.activeElement;
+            if (initialFocusRef?.current) {
+              event.preventDefault();
+              initialFocusRef.current.focus();
+            }
+          }}
+          {...(closeOnOutsideClick ? {} : { onInteractOutside: (event) => event.preventDefault() })}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             returnFocusTo.current?.focus?.();
           }}
         >
+          {label && <Dialog.Title className="sr-only">{label}</Dialog.Title>}
           {description && <Dialog.Description className="sr-only">{description}</Dialog.Description>}
           {children}
         </Dialog.Content>
@@ -78,10 +111,14 @@ Modal.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   size: PropTypes.oneOf(['sm', 'md', 'lg', 'xl']),
+  placement: PropTypes.oneOf(['center', 'bottom', 'right']),
   panelClassName: PropTypes.string,
   className: PropTypes.string,
   overlayClassName: PropTypes.string,
   description: PropTypes.string,
+  label: PropTypes.string,
+  closeOnOutsideClick: PropTypes.bool,
+  initialFocusRef: PropTypes.shape({ current: PropTypes.any }),
   children: PropTypes.node.isRequired,
 };
 

@@ -26,6 +26,7 @@ import {
 import { getProviderLogo } from '../../integrations/ProviderLogos';
 import AttributeMappingSection from './AttributeMappingSection';
 import GroupRoleMappingSection from './GroupRoleMappingSection';
+import Modal, { ModalTitle } from '../../shared/Modal';
 
 // Steps
 const STEPS = [
@@ -828,127 +829,133 @@ export default function IdPConfigModal({ isOpen, onClose, existingConfig, onSave
   );
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-surface-800 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-surface-200 dark:border-surface-700">
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-xl !max-w-3xl !max-h-[90vh] flex flex-col"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-surface-200 dark:border-surface-700">
+        <ModalTitle asChild>
           <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
             {existingConfig ? 'Edit Identity Provider' : 'Add Identity Provider'}
           </h2>
-          <button
-            onClick={onClose}
-            className="p-1 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 transition-colors"
-          >
-            <XMarkIcon className="h-6 w-6" />
-          </button>
-        </div>
+        </ModalTitle>
+        <button
+          onClick={onClose}
+          className="p-1 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 transition-colors"
+        >
+          <XMarkIcon className="h-6 w-6" />
+        </button>
+      </div>
 
-        {/* Progress Steps */}
-        <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700">
-          <div className="flex items-center justify-between">
-            {STEPS.map((step, index) => {
-              const isActive = index === currentStep;
-              const isCompleted = index < currentStep;
-              const isDisabled = existingConfig && index === 0;
-              return (
-                <div key={step.id} className="flex items-center">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`
-                        w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
-                        ${isCompleted
-                          ? 'bg-aura-600 text-white'
-                          : isActive
-                            ? 'bg-aura-100 dark:bg-aura-900/30 text-aura-700 dark:text-aura-400 ring-2 ring-aura-500'
-                            : 'bg-surface-100 dark:bg-surface-700 text-surface-500'
-                        }
-                        ${isDisabled ? 'opacity-50' : ''}
-                      `}
-                    >
-                      {isCompleted ? <CheckIcon className="h-4 w-4" /> : index + 1}
-                    </div>
-                    <span className={`text-sm hidden sm:block ${isActive ? 'font-medium text-surface-900 dark:text-surface-100' : 'text-surface-500'}`}>
-                      {step.label}
-                    </span>
+      {/* Progress Steps */}
+      <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700">
+        <div className="flex items-center justify-between">
+          {STEPS.map((step, index) => {
+            const isActive = index === currentStep;
+            const isCompleted = index < currentStep;
+            const isDisabled = existingConfig && index === 0;
+            return (
+              <div key={step.id} className="flex items-center">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`
+                      w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
+                      ${isCompleted
+                        ? 'bg-aura-600 text-white'
+                        : isActive
+                          ? 'bg-aura-100 dark:bg-aura-900/30 text-aura-700 dark:text-aura-400 ring-2 ring-aura-500'
+                          : 'bg-surface-100 dark:bg-surface-700 text-surface-500'
+                      }
+                      ${isDisabled ? 'opacity-50' : ''}
+                    `}
+                  >
+                    {isCompleted ? <CheckIcon className="h-4 w-4" /> : index + 1}
                   </div>
-                  {index < STEPS.length - 1 && (
-                    <div className={`w-8 sm:w-16 h-0.5 mx-2 ${isCompleted ? 'bg-aura-500' : 'bg-surface-200 dark:bg-surface-700'}`} />
-                  )}
+                  <span className={`text-sm hidden sm:block ${isActive ? 'font-medium text-surface-900 dark:text-surface-100' : 'text-surface-500'}`}>
+                    {step.label}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-6">
-          {currentStep === 0 && renderTypeSelection()}
-          {currentStep === 1 && renderConfigForm()}
-          {currentStep === 2 && (
-            <AttributeMappingSection
-              mappings={attributeMappings}
-              onChange={setAttributeMappings}
-            />
-          )}
-          {currentStep === 3 && (
-            <GroupRoleMappingSection
-              mappings={groupMappings}
-              onChange={setGroupMappings}
-              defaultRole={defaultRole}
-              onDefaultRoleChange={setDefaultRole}
-            />
-          )}
-          {currentStep === 4 && renderTestStep()}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-surface-200 dark:border-surface-700">
-          <button
-            onClick={handleBack}
-            disabled={currentStep === 0 || (existingConfig && currentStep === 1)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ArrowLeftIcon className="h-4 w-4" />
-            Back
-          </button>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            {currentStep < STEPS.length - 1 ? (
-              <button
-                onClick={handleNext}
-                disabled={currentStep === 0 && !selectedType}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-                <ArrowRightIcon className="h-4 w-4" />
-              </button>
-            ) : (
-              <button
-                onClick={() => handleSave(true)}
-                disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 transition-colors"
-              >
-                {saving ? (
-                  <>
-                    <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <CheckIcon className="h-4 w-4" />
-                    Save Provider
-                  </>
+                {index < STEPS.length - 1 && (
+                  <div className={`w-8 sm:w-16 h-0.5 mx-2 ${isCompleted ? 'bg-aura-500' : 'bg-surface-200 dark:bg-surface-700'}`} />
                 )}
-              </button>
-            )}
-          </div>
+              </div>
+            );
+          })}
         </div>
       </div>
-    </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-6">
+        {currentStep === 0 && renderTypeSelection()}
+        {currentStep === 1 && renderConfigForm()}
+        {currentStep === 2 && (
+          <AttributeMappingSection
+            mappings={attributeMappings}
+            onChange={setAttributeMappings}
+          />
+        )}
+        {currentStep === 3 && (
+          <GroupRoleMappingSection
+            mappings={groupMappings}
+            onChange={setGroupMappings}
+            defaultRole={defaultRole}
+            onDefaultRoleChange={setDefaultRole}
+          />
+        )}
+        {currentStep === 4 && renderTestStep()}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between p-4 border-t border-surface-200 dark:border-surface-700">
+        <button
+          onClick={handleBack}
+          disabled={currentStep === 0 || (existingConfig && currentStep === 1)}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          Back
+        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          {currentStep < STEPS.length - 1 ? (
+            <button
+              onClick={handleNext}
+              disabled={currentStep === 0 && !selectedType}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+              <ArrowRightIcon className="h-4 w-4" />
+            </button>
+          ) : (
+            <button
+              onClick={() => handleSave(true)}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 transition-colors"
+            >
+              {saving ? (
+                <>
+                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <CheckIcon className="h-4 w-4" />
+                  Save Provider
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 }

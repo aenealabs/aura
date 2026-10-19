@@ -28,6 +28,7 @@ import {
   BoltIcon,
 } from '@heroicons/react/24/outline';
 import { testConnection } from '../../services/palantirApi';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Steps configuration
 const STEPS = [
@@ -816,117 +817,123 @@ export function PalantirIntegrationSettings({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-surface-800 rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-aura-100 dark:bg-aura-900/30 rounded-lg">
-              <CubeIcon className="w-6 h-6 text-aura-600 dark:text-aura-400" />
-            </div>
-            <div>
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/50"
+      closeOnOutsideClick={false}
+      panelClassName="bg-white dark:bg-surface-800 rounded-2xl shadow-xl !max-w-2xl !max-h-[90vh] !overflow-hidden flex flex-col"
+    >
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-aura-100 dark:bg-aura-900/30 rounded-lg">
+            <CubeIcon className="w-6 h-6 text-aura-600 dark:text-aura-400" />
+          </div>
+          <div>
+            <ModalTitle asChild>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {existingConfig ? 'Edit Palantir AIP Integration' : 'Configure Palantir AIP Integration'}
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Connect your Palantir Foundry instance
-              </p>
-            </div>
+            </ModalTitle>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Connect your Palantir Foundry instance
+            </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <XMarkIcon className="w-5 h-5" />
-          </button>
         </div>
-
-        {/* Step Indicator */}
-        <div className="px-6 pt-6">
-          <StepIndicator steps={STEPS} currentStep={currentStep} />
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {currentStep === 0 && (
-            <ConnectionStep
-              config={config}
-              onChange={handleConfigChange}
-              errors={errors}
-            />
-          )}
-          {currentStep === 1 && (
-            <AuthenticationStep
-              config={config}
-              onChange={handleConfigChange}
-              errors={errors}
-              onTest={handleTest}
-              testing={testing}
-              testResult={testResult}
-            />
-          )}
-          {currentStep === 2 && (
-            <DataMappingStep
-              config={config}
-              onChange={handleConfigChange}
-            />
-          )}
-          {currentStep === 3 && (
-            <EventStreamStep
-              config={config}
-              onChange={handleConfigChange}
-            />
-          )}
-          {currentStep === 4 && (
-            <ReviewStep
-              config={config}
-              consent={consent}
-              onConsentChange={setConsent}
-            />
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <button
-            onClick={currentStep === 0 ? onClose : handleBack}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <ArrowLeftIcon className="w-4 h-4" />
-            {currentStep === 0 ? 'Cancel' : 'Back'}
-          </button>
-
-          {currentStep < STEPS.length - 1 ? (
-            <button
-              onClick={handleNext}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 transition-colors"
-            >
-              Next
-              <ArrowRightIcon className="w-4 h-4" />
-            </button>
-          ) : (
-            <button
-              onClick={handleSave}
-              disabled={!consent || saving}
-              className={`
-                flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors
-                ${!consent || saving
-                  ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 cursor-not-allowed'
-                  : 'bg-green-600 text-white hover:bg-green-700'
-                }
-              `}
-            >
-              {saving ? (
-                <ArrowPathIcon className="w-4 h-4 animate-spin" />
-              ) : (
-                <CheckIcon className="w-4 h-4" />
-              )}
-              {saving ? 'Enabling...' : 'Enable Integration'}
-            </button>
-          )}
-        </div>
+        <button
+          onClick={onClose}
+          className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+        >
+          <XMarkIcon className="w-5 h-5" />
+        </button>
       </div>
-    </div>
+
+      {/* Step Indicator */}
+      <div className="px-6 pt-6">
+        <StepIndicator steps={STEPS} currentStep={currentStep} />
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        {currentStep === 0 && (
+          <ConnectionStep
+            config={config}
+            onChange={handleConfigChange}
+            errors={errors}
+          />
+        )}
+        {currentStep === 1 && (
+          <AuthenticationStep
+            config={config}
+            onChange={handleConfigChange}
+            errors={errors}
+            onTest={handleTest}
+            testing={testing}
+            testResult={testResult}
+          />
+        )}
+        {currentStep === 2 && (
+          <DataMappingStep
+            config={config}
+            onChange={handleConfigChange}
+          />
+        )}
+        {currentStep === 3 && (
+          <EventStreamStep
+            config={config}
+            onChange={handleConfigChange}
+          />
+        )}
+        {currentStep === 4 && (
+          <ReviewStep
+            config={config}
+            consent={consent}
+            onConsentChange={setConsent}
+          />
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <button
+          onClick={currentStep === 0 ? onClose : handleBack}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+        >
+          <ArrowLeftIcon className="w-4 h-4" />
+          {currentStep === 0 ? 'Cancel' : 'Back'}
+        </button>
+
+        {currentStep < STEPS.length - 1 ? (
+          <button
+            onClick={handleNext}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 transition-colors"
+          >
+            Next
+            <ArrowRightIcon className="w-4 h-4" />
+          </button>
+        ) : (
+          <button
+            onClick={handleSave}
+            disabled={!consent || saving}
+            className={`
+              flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors
+              ${!consent || saving
+                ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'
+              }
+            `}
+          >
+            {saving ? (
+              <ArrowPathIcon className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckIcon className="w-4 h-4" />
+            )}
+            {saving ? 'Enabling...' : 'Enable Integration'}
+          </button>
+        )}
+      </div>
+    </Modal>
   );
 }
 

@@ -28,6 +28,7 @@ import {
 import {
   CHANNEL_TYPE_CONFIG,
 } from '../../services/notificationsApi';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 // Icon mapping for channel types
 const CHANNEL_ICONS = {
@@ -631,233 +632,222 @@ export default function AddChannelModal({ isOpen, onClose, onSave, onTest }) {
   const Icon = channelType ? CHANNEL_ICONS[channelType] : null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/40 backdrop-blur-md transition-opacity duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div
-          className="relative w-full max-w-lg bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl shadow-[var(--shadow-glass-hover)] overflow-hidden animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="modal-title"
-        >
-          {/* Header */}
-          <div className="px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {step === 2 && Icon && (
-                  <div className={`p-2 rounded-lg ${colors.bg}`}>
-                    <Icon className={`h-5 w-5 ${colors.text}`} />
-                  </div>
-                )}
-                <div>
-                  <h2
-                    id="modal-title"
-                    className="text-lg font-semibold text-surface-900 dark:text-surface-100"
-                  >
-                    {step === 1 ? 'Add Notification Channel' : `Configure ${typeConfig?.label}`}
-                  </h2>
-                  <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
-                    {step === 1
-                      ? 'Select a channel type to get started'
-                      : typeConfig?.description
-                    }
-                  </p>
-                </div>
+    <Modal
+      open
+      onClose={onClose}
+      overlayClassName="bg-black/40 backdrop-blur-md transition-opacity duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
+      panelClassName="!max-w-lg bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl shadow-[var(--shadow-glass-hover)] !overflow-hidden animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
+    >
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-surface-100/50 dark:border-surface-700/30">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {step === 2 && Icon && (
+              <div className={`p-2 rounded-lg ${colors.bg}`}>
+                <Icon className={`h-5 w-5 ${colors.text}`} />
               </div>
-              <button
-                onClick={onClose}
-                className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
-                aria-label="Close modal"
-              >
-                <XMarkIcon className="w-5 h-5" />
-              </button>
+            )}
+            <div>
+              <ModalTitle asChild>
+                <h2
+                  className="text-lg font-semibold text-surface-900 dark:text-surface-100"
+                >
+                  {step === 1 ? 'Add Notification Channel' : `Configure ${typeConfig?.label}`}
+                </h2>
+              </ModalTitle>
+              <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
+                {step === 1
+                  ? 'Select a channel type to get started'
+                  : typeConfig?.description
+                }
+              </p>
             </div>
           </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+            aria-label="Close modal"
+          >
+            <XMarkIcon className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
 
-          {/* Body */}
-          <div className="p-6 max-h-[60vh] overflow-y-auto">
-            {step === 1 ? (
-              <ChannelTypeSelector
-                selected={channelType}
-                onSelect={handleTypeSelect}
+      {/* Body */}
+      <div className="p-6 max-h-[60vh] overflow-y-auto">
+        {step === 1 ? (
+          <ChannelTypeSelector
+            selected={channelType}
+            onSelect={handleTypeSelect}
+            disabled={saving}
+          />
+        ) : (
+          <div className="space-y-4">
+            {/* Channel Name */}
+            <div>
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                Channel Name
+                <span className="text-critical-500 ml-1">*</span>
+              </label>
+              <input
+                type="text"
+                value={channelName}
+                onChange={(e) => {
+                  setChannelName(e.target.value);
+                  setErrors((prev) => ({ ...prev, name: null }));
+                }}
+                placeholder="Enter a name for this channel"
                 disabled={saving}
+                className={`
+                  w-full px-3 py-2 border rounded-lg bg-white dark:bg-surface-700
+                  text-surface-900 dark:text-surface-100
+                  focus:ring-2 focus:ring-aura-500 focus:border-aura-500 disabled:opacity-50
+                  ${errors.name ? 'border-critical-300 dark:border-critical-700' : 'border-surface-300 dark:border-surface-600'}
+                `}
               />
-            ) : (
-              <div className="space-y-4">
-                {/* Channel Name */}
-                <div>
-                  <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                    Channel Name
-                    <span className="text-critical-500 ml-1">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={channelName}
-                    onChange={(e) => {
-                      setChannelName(e.target.value);
-                      setErrors((prev) => ({ ...prev, name: null }));
-                    }}
-                    placeholder="Enter a name for this channel"
+              {errors.name && (
+                <p className="text-xs text-critical-600 dark:text-critical-400 mt-1">{errors.name}</p>
+              )}
+            </div>
+
+            {/* Dynamic Fields */}
+            {fields.map((field) => {
+              // Check if field should be shown
+              if (field.showWhen && !field.showWhen(config)) {
+                return null;
+              }
+
+              return (
+                <div key={field.name}>
+                  <FormField
+                    field={field}
+                    value={config[field.name]}
+                    onChange={(value) => handleConfigChange(field.name, value)}
                     disabled={saving}
-                    className={`
-                      w-full px-3 py-2 border rounded-lg bg-white dark:bg-surface-700
-                      text-surface-900 dark:text-surface-100
-                      focus:ring-2 focus:ring-aura-500 focus:border-aura-500 disabled:opacity-50
-                      ${errors.name ? 'border-critical-300 dark:border-critical-700' : 'border-surface-300 dark:border-surface-600'}
-                    `}
                   />
-                  {errors.name && (
-                    <p className="text-xs text-critical-600 dark:text-critical-400 mt-1">{errors.name}</p>
+                  {errors[field.name] && (
+                    <p className="text-xs text-critical-600 dark:text-critical-400 mt-1">
+                      {errors[field.name]}
+                    </p>
                   )}
                 </div>
+              );
+            })}
 
-                {/* Dynamic Fields */}
-                {fields.map((field) => {
-                  // Check if field should be shown
-                  if (field.showWhen && !field.showWhen(config)) {
-                    return null;
-                  }
+            {/* Enabled Toggle */}
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <p className="font-medium text-surface-900 dark:text-surface-100">Enable Channel</p>
+                <p className="text-sm text-surface-500 dark:text-surface-400">
+                  Start receiving notifications immediately
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEnabled(!enabled)}
+                disabled={saving}
+                className={`
+                  relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
+                  transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-aura-500
+                  ${enabled ? 'bg-olive-600' : 'bg-surface-200 dark:bg-surface-600'}
+                  ${saving ? 'opacity-50 cursor-not-allowed' : ''}
+                `}
+              >
+                <span
+                  className={`
+                    pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0
+                    transition duration-200 ease-in-out
+                    ${enabled ? 'translate-x-5' : 'translate-x-0'}
+                  `}
+                />
+              </button>
+            </div>
 
-                  return (
-                    <div key={field.name}>
-                      <FormField
-                        field={field}
-                        value={config[field.name]}
-                        onChange={(value) => handleConfigChange(field.name, value)}
-                        disabled={saving}
-                      />
-                      {errors[field.name] && (
-                        <p className="text-xs text-critical-600 dark:text-critical-400 mt-1">
-                          {errors[field.name]}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* Enabled Toggle */}
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="font-medium text-surface-900 dark:text-surface-100">Enable Channel</p>
-                    <p className="text-sm text-surface-500 dark:text-surface-400">
-                      Start receiving notifications immediately
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setEnabled(!enabled)}
-                    disabled={saving}
-                    className={`
-                      relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
-                      transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-aura-500
-                      ${enabled ? 'bg-olive-600' : 'bg-surface-200 dark:bg-surface-600'}
-                      ${saving ? 'opacity-50 cursor-not-allowed' : ''}
-                    `}
-                  >
-                    <span
-                      className={`
-                        pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0
-                        transition duration-200 ease-in-out
-                        ${enabled ? 'translate-x-5' : 'translate-x-0'}
-                      `}
-                    />
-                  </button>
-                </div>
-
-                {/* Test Connection Result */}
-                {testResult && (
-                  <div className={`
-                    flex items-center gap-2 p-3 rounded-lg
-                    ${testResult.success
-                      ? 'bg-olive-50 dark:bg-olive-900/20 text-olive-700 dark:text-olive-300'
-                      : 'bg-critical-50 dark:bg-critical-900/20 text-critical-700 dark:text-critical-300'
-                    }
-                  `}>
-                    {testResult.success ? (
-                      <CheckCircleIcon className="h-5 w-5" />
-                    ) : (
-                      <XCircleIcon className="h-5 w-5" />
-                    )}
-                    <span className="text-sm">{testResult.message}</span>
-                  </div>
+            {/* Test Connection Result */}
+            {testResult && (
+              <div className={`
+                flex items-center gap-2 p-3 rounded-lg
+                ${testResult.success
+                  ? 'bg-olive-50 dark:bg-olive-900/20 text-olive-700 dark:text-olive-300'
+                  : 'bg-critical-50 dark:bg-critical-900/20 text-critical-700 dark:text-critical-300'
+                }
+              `}>
+                {testResult.success ? (
+                  <CheckCircleIcon className="h-5 w-5" />
+                ) : (
+                  <XCircleIcon className="h-5 w-5" />
                 )}
+                <span className="text-sm">{testResult.message}</span>
+              </div>
+            )}
 
-                {/* Submit Error */}
-                {errors.submit && (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-critical-50 dark:bg-critical-900/20 text-critical-700 dark:text-critical-300">
-                    <XCircleIcon className="h-5 w-5" />
-                    <span className="text-sm">{errors.submit}</span>
-                  </div>
-                )}
+            {/* Submit Error */}
+            {errors.submit && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-critical-50 dark:bg-critical-900/20 text-critical-700 dark:text-critical-300">
+                <XCircleIcon className="h-5 w-5" />
+                <span className="text-sm">{errors.submit}</span>
               </div>
             )}
           </div>
+        )}
+      </div>
 
-          {/* Footer */}
-          <div className="px-6 py-4 border-t border-surface-100/50 dark:border-surface-700/30 bg-white/60 dark:bg-surface-800/50 backdrop-blur-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                {step === 2 && (
-                  <button
-                    onClick={() => setStep(1)}
-                    disabled={saving}
-                    className="text-sm text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200"
-                  >
-                    Back to channel types
-                  </button>
-                )}
-              </div>
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-surface-100/50 dark:border-surface-700/30 bg-white/60 dark:bg-surface-800/50 backdrop-blur-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            {step === 2 && (
+              <button
+                onClick={() => setStep(1)}
+                disabled={saving}
+                className="text-sm text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200"
+              >
+                Back to channel types
+              </button>
+            )}
+          </div>
 
-              <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              disabled={saving}
+              className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+            >
+              Cancel
+            </button>
+
+            {step === 2 && (
+              <>
                 <button
-                  onClick={onClose}
-                  disabled={saving}
-                  className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200 ease-[var(--ease-tahoe)]"
+                  onClick={handleTest}
+                  disabled={saving || testing}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 border border-surface-200/50 dark:border-surface-600/50 rounded-xl bg-white/60 dark:bg-surface-700 hover:bg-white/80 dark:hover:bg-surface-700 transition-all duration-200 ease-[var(--ease-tahoe)] disabled:opacity-50"
                 >
-                  Cancel
+                  {testing ? (
+                    <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <PlayIcon className="h-4 w-4" />
+                  )}
+                  Test Connection
                 </button>
 
-                {step === 2 && (
-                  <>
-                    <button
-                      onClick={handleTest}
-                      disabled={saving || testing}
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 border border-surface-200/50 dark:border-surface-600/50 rounded-xl bg-white/60 dark:bg-surface-700 hover:bg-white/80 dark:hover:bg-surface-700 transition-all duration-200 ease-[var(--ease-tahoe)] disabled:opacity-50"
-                    >
-                      {testing ? (
-                        <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <PlayIcon className="h-4 w-4" />
-                      )}
-                      Test Connection
-                    </button>
-
-                    <button
-                      onClick={handleSave}
-                      disabled={saving}
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-aura-600 rounded-xl hover:bg-aura-700 shadow-[var(--shadow-glass)] hover:shadow-[var(--shadow-glass-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-[var(--ease-tahoe)]"
-                    >
-                      {saving ? (
-                        <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <PlusIcon className="h-4 w-4" />
-                      )}
-                      Add Channel
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-aura-600 rounded-xl hover:bg-aura-700 shadow-[var(--shadow-glass)] hover:shadow-[var(--shadow-glass-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-[var(--ease-tahoe)]"
+                >
+                  {saving ? (
+                    <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <PlusIcon className="h-4 w-4" />
+                  )}
+                  Add Channel
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

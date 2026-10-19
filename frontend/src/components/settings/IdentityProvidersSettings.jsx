@@ -28,6 +28,7 @@ import {
   createDomainRoute,
   deleteDomainRoute,
 } from '../../services/identityProviderApi';
+import Modal, { ModalTitle } from '../shared/Modal';
 
 export default function IdentityProvidersSettings({ onSuccess, onError }) {
   const [providers, setProviders] = useState([]);
@@ -319,70 +320,80 @@ export default function IdentityProvidersSettings({ onSuccess, onError }) {
 
       {/* Add Domain Route Modal */}
       {showDomainModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-surface-800 rounded-xl shadow-xl max-w-md w-full p-6">
+        <Modal
+          open
+          onClose={() => {
+            setShowDomainModal(false);
+            setNewDomain('');
+            setNewDomainProvider('');
+          }}
+          overlayClassName="bg-black/50"
+          closeOnOutsideClick={false}
+          panelClassName="bg-white dark:bg-surface-800 rounded-xl shadow-xl !max-w-md p-6"
+        >
+          <ModalTitle asChild>
             <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100 mb-4">
               Add Domain Route
             </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                  Email Domain
-                </label>
-                <div className="flex items-center">
-                  <span className="px-3 py-2 bg-surface-100 dark:bg-surface-700 border border-r-0 border-surface-300 dark:border-surface-600 rounded-l-lg text-surface-500">
-                    @
-                  </span>
-                  <input
-                    type="text"
-                    value={newDomain}
-                    onChange={(e) => setNewDomain(e.target.value)}
-                    placeholder="acme.com"
-                    className="flex-1 px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-r-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-                  Identity Provider
-                </label>
-                <select
-                  value={newDomainProvider}
-                  onChange={(e) => setNewDomainProvider(e.target.value)}
-                  className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
-                >
-                  <option value="">Select provider...</option>
-                  {providers
-                    .filter((p) => p.enabled && p.status === 'connected')
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.display_name}
-                      </option>
-                    ))}
-                </select>
+          </ModalTitle>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                Email Domain
+              </label>
+              <div className="flex items-center">
+                <span className="px-3 py-2 bg-surface-100 dark:bg-surface-700 border border-r-0 border-surface-300 dark:border-surface-600 rounded-l-lg text-surface-500">
+                  @
+                </span>
+                <input
+                  type="text"
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                  placeholder="acme.com"
+                  className="flex-1 px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-r-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
+                />
               </div>
             </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowDomainModal(false);
-                  setNewDomain('');
-                  setNewDomainProvider('');
-                }}
-                className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+            <div>
+              <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
+                Identity Provider
+              </label>
+              <select
+                value={newDomainProvider}
+                onChange={(e) => setNewDomainProvider(e.target.value)}
+                className="w-full px-3 py-2 border border-surface-300 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-aura-500"
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddDomainRoute}
-                disabled={!newDomain || !newDomainProvider}
-                className="px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Add Route
-              </button>
+                <option value="">Select provider...</option>
+                {providers
+                  .filter((p) => p.enabled && p.status === 'connected')
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.display_name}
+                    </option>
+                  ))}
+              </select>
             </div>
           </div>
-        </div>
+          <div className="flex justify-end gap-3 mt-6">
+            <button
+              onClick={() => {
+                setShowDomainModal(false);
+                setNewDomain('');
+                setNewDomainProvider('');
+              }}
+              className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddDomainRoute}
+              disabled={!newDomain || !newDomainProvider}
+              className="px-4 py-2 text-sm font-medium bg-aura-600 text-white rounded-lg hover:bg-aura-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Add Route
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* Config Modal */}

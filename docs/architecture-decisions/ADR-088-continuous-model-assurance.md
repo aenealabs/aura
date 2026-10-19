@@ -314,7 +314,10 @@ pricing:
 
 Tier keys are `model_id_fast`, `model_id_accurate` and `model_id_maximum`. A model without
 pricing is refused at startup (an error is logged and the tier keeps its current model),
-because cost tracking and budgets must cover every live model. The service reads the
+because cost tracking and budgets must cover every live model. If the approved model
+accepts prompt caching on Bedrock, add it to `prompt_cache_models` as well; tool-use
+conversations then cache their earlier turns (a model that rejects the breakpoints is
+retried without them and not sent them again). The service reads the
 secret at startup, so the change takes effect on the next deployment or restart.
 Rollback restores the previous values, recorded by `RollbackService`.
 

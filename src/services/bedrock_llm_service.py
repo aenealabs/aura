@@ -44,6 +44,7 @@ except ImportError:
 # test in the suite happened to import via ``src.config.guardrails_config``
 # first. See issue #183 cluster C.
 from src.config.bedrock_config import (
+    DEFAULT_PROMPT_CACHE_MODELS,
     MODEL_PRICING,
     calculate_cost,
     get_config,
@@ -428,6 +429,14 @@ class BedrockLLMService:
             "Model tiers: "
             + ", ".join(f"{t.value}={m}" for t, m in self.model_tiers.items())
         )
+
+        # Prompt caching for tool-use conversations, on models known to accept it
+        self.prompt_cache_models: set[str] = (
+            set(DEFAULT_PROMPT_CACHE_MODELS)
+            | set(self.config.get("prompt_cache_models") or [])
+            | set(overrides.get("prompt_cache_models") or [])
+        )
+        self._cache_rejected: set[str] = set()
 
         # Initialize Redis cache for production state management
         # Provides externalized state for cost tracking, rate limiting, and response caching
@@ -1626,19 +1635,29 @@ class BedrockLLMService:
                 request_body["system"] = system_prompt
             if tool_choice:
                 request_body["tool_choice"] = tool_choice
-            body, guardrail_result = self._invoke_bedrock_messages(
+            body, guardrail_result = self._invoke_messages_with_cache(
                 model_id, request_body, apply_guardrails
             )
             content = body.get("content", [])
             stop_reason = body.get("stop_reason", "end_turn")
-            input_tokens = body["usage"]["input_tokens"]
-            output_tokens = body["usage"]["output_tokens"]
+            usage = body["usage"]
+            input_tokens = usage["input_tokens"]
+            output_tokens = usage["output_tokens"]
+            cache_write_tokens = usage.get("cache_creation_input_tokens") or 0
+            cache_read_tokens = usage.get("cache_read_input_tokens") or 0
         else:
             content, stop_reason = self._mock_tool_turn(tools, tool_choice, agent)
             input_tokens = len(json.dumps(screened)) // 4
             output_tokens = len(json.dumps(content)) // 4
+            cache_write_tokens = cache_read_tokens = 0
 
-        cost = calculate_cost(input_tokens, output_tokens, model_id)
+        cost = calculate_cost(
+            input_tokens,
+            output_tokens,
+            model_id,
+            cache_write_tokens=cache_write_tokens,
+            cache_read_tokens=cache_read_tokens,
+        )
         self._record_cost(
             request_id,
             agent,
@@ -1654,12 +1673,77 @@ class BedrockLLMService:
             "stop_reason": stop_reason,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "cache_write_tokens": cache_write_tokens,
+            "cache_read_tokens": cache_read_tokens,
             "cost_usd": cost,
             "model": model_id,
             "tier": tier.value,
             "request_id": request_id,
             "guardrail_result": guardrail_result,
         }
+
+    def _caches_prompts(self, model_id: str) -> bool:
+        return (
+            self.config.get("prompt_caching_enabled", True) is not False
+            and model_id in getattr(self, "prompt_cache_models", ())
+            and model_id not in getattr(self, "_cache_rejected", ())
+        )
+
+    @staticmethod
+    def _with_cache_breakpoints(request_body: dict[str, Any]) -> dict[str, Any]:
+        """
+        A copy of the request with prompt-cache breakpoints: one on the last tool
+        (caching tools and system, which render first) and one on the last block of the
+        latest turn (caching the conversation so far). Each tool-loop turn then reads the
+        earlier turns from cache instead of paying for them again.
+        """
+        marker = {"type": "ephemeral"}
+        body = dict(request_body)
+        if body.get("tools"):
+            tools = [dict(t) for t in body["tools"]]
+            tools[-1]["cache_control"] = marker
+            body["tools"] = tools
+        messages = [dict(m) for m in body.get("messages") or []]
+        if messages:
+            last = messages[-1]
+            content = last.get("content")
+            if isinstance(content, str):
+                content = [{"type": "text", "text": content}]
+            if isinstance(content, list) and content:
+                content = [dict(b) for b in content]
+                content[-1]["cache_control"] = marker
+                last["content"] = content
+            body["messages"] = messages
+        return body
+
+    def _invoke_messages_with_cache(
+        self, model_id: str, request_body: dict[str, Any], apply_guardrails: bool
+    ) -> tuple[dict[str, Any], "GuardrailResult | None"]:
+        """Send a request with cache breakpoints when the model takes them.
+
+        If Bedrock rejects the breakpoints, the request is sent again without them and the
+        model is not sent breakpoints again.
+        """
+        if not self._caches_prompts(model_id):
+            return self._invoke_bedrock_messages(
+                model_id, request_body, apply_guardrails
+            )
+        try:
+            return self._invoke_bedrock_messages(
+                model_id, self._with_cache_breakpoints(request_body), apply_guardrails
+            )
+        except BedrockError as e:
+            if "cache" not in str(e).lower():
+                raise
+            logger.warning(
+                "Bedrock rejected prompt caching for %s (%s); sending without it",
+                model_id,
+                e,
+            )
+            self._cache_rejected.add(model_id)
+            return self._invoke_bedrock_messages(
+                model_id, request_body, apply_guardrails
+            )
 
     @staticmethod
     def _mock_tool_turn(

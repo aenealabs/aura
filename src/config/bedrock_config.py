@@ -213,14 +213,36 @@ def register_model_pricing(pricing: dict[str, dict[str, Any]] | None) -> list[st
     return registered
 
 
-def calculate_cost(input_tokens: int, output_tokens: int, model_id: str) -> float:
+# Prompt caching (Claude Messages API cache_control): 5-minute cache writes cost 1.25x the
+# input price and cache reads 0.1x.
+CACHE_WRITE_MULTIPLIER = 1.25
+CACHE_READ_MULTIPLIER = 0.1
+
+# Models that accept cache_control breakpoints on Bedrock. Older models (such as the
+# Claude 3 defaults) may reject them, so breakpoints are only sent to listed models.
+# Environments add models with ``prompt_cache_models`` in their config or secret, alongside
+# an approved model upgrade (ADR-088).
+DEFAULT_PROMPT_CACHE_MODELS: frozenset[str] = frozenset(
+    {"anthropic.claude-sonnet-4-5-20250929-v1:0"}
+)
+
+
+def calculate_cost(
+    input_tokens: int,
+    output_tokens: int,
+    model_id: str,
+    cache_write_tokens: int = 0,
+    cache_read_tokens: int = 0,
+) -> float:
     """
     Calculate cost for a model invocation.
 
     Args:
-        input_tokens: Number of input tokens
+        input_tokens: Number of uncached input tokens
         output_tokens: Number of output tokens
         model_id: Bedrock model identifier
+        cache_write_tokens: Input tokens written to the prompt cache
+        cache_read_tokens: Input tokens read from the prompt cache
 
     Returns:
         Cost in USD (rounded to 6 decimal places)
@@ -232,10 +254,15 @@ def calculate_cost(input_tokens: int, output_tokens: int, model_id: str) -> floa
     """
     pricing = get_model_pricing(model_id)
 
-    input_cost = (input_tokens / 1_000_000) * pricing["input_per_million"]
+    input_price = pricing["input_per_million"] / 1_000_000
+    input_cost = input_tokens * input_price
+    cache_cost = (
+        cache_write_tokens * CACHE_WRITE_MULTIPLIER
+        + cache_read_tokens * CACHE_READ_MULTIPLIER
+    ) * input_price
     output_cost = (output_tokens / 1_000_000) * pricing["output_per_million"]
 
-    total_cost = input_cost + output_cost
+    total_cost = input_cost + cache_cost + output_cost
 
     return round(total_cost, 6)
 

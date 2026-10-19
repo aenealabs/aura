@@ -16,6 +16,8 @@ from .monitoring_service import AgentRole, MonitorAgent
 if TYPE_CHECKING:
     from src.services.bedrock_llm_service import BedrockLLMService
 
+    from .coder_tools import CoderWorkspace
+
 # Import CoD prompts
 try:
     from src.prompts.cod_templates import (
@@ -36,11 +38,14 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 try:
-    from src.services.bedrock_llm_service import StructuredOutputError
+    from src.services.bedrock_llm_service import StructuredOutputError, schema_problems
 except ImportError:  # pragma: no cover - minimal installs without the LLM service
 
     class StructuredOutputError(Exception):  # type: ignore[no-redef]
         """Stand-in when the LLM service is unavailable."""
+
+    def schema_problems(data, schema, path=""):  # type: ignore[no-redef]
+        return [] if isinstance(data, dict) and "code" in data else ["missing code"]
 
 
 # The code as structured output: no markdown fences to strip from free text.
@@ -82,15 +87,22 @@ class CoderAgent:
         self,
         llm_client: "BedrockLLMService | None" = None,
         monitor: MonitorAgent | None = None,
+        workspace: "CoderWorkspace | None" = None,
+        max_tool_turns: int = 8,
     ):
         """Initialize the CoderAgent.
 
         Args:
             llm_client: Optional Bedrock LLM service. If None, uses fallback mode.
             monitor: Optional MonitorAgent for metrics tracking.
+            workspace: Optional project workspace. With one, and an LLM that supports
+                tool use, the coder reads and searches the code itself before submitting.
+            max_tool_turns: Model turns allowed in that loop; the last must submit.
         """
         self.llm = llm_client
         self.monitor = monitor or MonitorAgent()
+        self.workspace = workspace
+        self.max_tool_turns = max(1, max_tool_turns)
         logger.info("Initialized CoderAgent")
 
     async def generate_code(
@@ -223,7 +235,9 @@ Requirements:
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
-        submitted = await self._structured_code(prompt)
+        submitted = await self._agentic_code(prompt)
+        if submitted is None:
+            submitted = await self._structured_code(prompt)
         if submitted is not None:
             return submitted
 
@@ -238,6 +252,77 @@ Generate ONLY the Python code, no explanations or markdown:"""
         if code.endswith("```"):
             code = code[:-3]
         return code.strip()
+
+    async def _agentic_code(self, prompt: str) -> str | None:
+        """Work as an agent: search and read the project with tools, then submit code.
+
+        Each turn must call a tool (a read-only workspace tool or submit_code); the last
+        turn must submit. Returns None to use the single-call paths: no workspace, no
+        tool use, or no valid submission.
+        """
+        if (
+            self.workspace is None
+            or getattr(self.llm, "supports_tool_use", False) is not True
+        ):
+            return None
+        submit_tool = {
+            "name": CODE_TOOL,
+            "description": "Submit the complete code for the task. This ends your turn.",
+            "input_schema": CODE_SCHEMA,
+        }
+        tools = self.workspace.tool_definitions() + [submit_tool]
+        messages: list[dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": f"{prompt}\n\nUse the tools to search and read the code you "
+                f"need, then call {CODE_TOOL} with the complete code.",
+            }
+        ]
+        for turn in range(self.max_tool_turns):
+            last = turn == self.max_tool_turns - 1
+            choice = {"type": "tool", "name": CODE_TOOL} if last else {"type": "any"}
+            try:
+                result = await self.llm.generate_with_tools(
+                    list(messages), tools, agent="Coder", tool_choice=choice
+                )
+            except Exception as e:
+                logger.warning("Coder tool loop failed (%s); using a single call", e)
+                return None
+            content = result.get("content") or []
+            messages.append({"role": "assistant", "content": content})
+            uses = [b for b in content if b.get("type") == "tool_use"]
+            if not uses:
+                return None
+            tool_results = []
+            for use in uses:
+                if use.get("name") == CODE_TOOL:
+                    problems = schema_problems(use.get("input") or {}, CODE_SCHEMA)
+                    code = str((use.get("input") or {}).get("code", "")).strip()
+                    if not problems and code:
+                        summary = (use.get("input") or {}).get("summary")
+                        if summary:
+                            logger.info("Coder summary: %s", summary)
+                        logger.info("Coder submitted after %d tool turn(s)", turn + 1)
+                        return code
+                    text, is_error = (
+                        "Submission rejected: "
+                        + ("; ".join(problems) or "code is empty"),
+                        True,
+                    )
+                else:
+                    text, is_error = self.workspace.execute(
+                        use.get("name", ""), use.get("input") or {}
+                    )
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": use.get("id"),
+                        "content": text,
+                        "is_error": is_error,
+                    }
+                )
+            messages.append({"role": "user", "content": tool_results})
+        return None
 
     async def _structured_code(self, prompt: str) -> str | None:
         """Ask for the code through the submit_code tool (structured output).

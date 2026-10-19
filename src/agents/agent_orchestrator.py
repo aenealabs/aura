@@ -471,6 +471,7 @@ class System2Orchestrator:
         sandbox_orchestrator: "FargateSandboxOrchestrator | None" = None,
         max_remediation_attempts: int = 3,
         max_sandbox_repairs: int = 1,
+        agentic_coder: bool = True,
     ):
         """Initialize the System2Orchestrator.
 
@@ -493,6 +494,9 @@ class System2Orchestrator:
                 security review and validation; each failure is fed back to the coder.
             max_sandbox_repairs: Extra runs, in the HITL workflow, after a patch fails its
                 sandbox tests. Each repair run sees the failing tests and errors.
+            agentic_coder: Give the CoderAgent read-only tools over the project (code
+                search, read file, list directory) so it gathers its own context. Takes
+                effect only with an LLM client that supports tool use.
         """
         self.llm = llm_client
         self.checkpoint_service = checkpoint_service
@@ -551,6 +555,13 @@ class System2Orchestrator:
         self.initial_code = ""
         self.final_code = ""
         self.initialize_ckge_data()
+
+        if agentic_coder:
+            from .coder_tools import CoderWorkspace
+
+            self.coder_agent.workspace = CoderWorkspace(
+                get_sample_project_path(), self.context_service
+            )
 
         # Log MCP status
         mcp_status = []

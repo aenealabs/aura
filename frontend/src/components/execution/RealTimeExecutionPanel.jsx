@@ -13,7 +13,7 @@
  * @see Design Principles: minimalist, live step-by-step progress
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   PlayIcon,
   NoSymbolIcon,
@@ -37,6 +37,7 @@ import {
 import { useExecution, ExecutionProvider } from '../../context/ExecutionContext';
 import ActionApprovalCard from './ActionApprovalCard';
 import ActionModifyModal from './ActionModifyModal';
+import useApprovalShortcuts from './useApprovalShortcuts';
 import Modal, { ModalTitle } from '../shared/Modal';
 import ExecutionTimeline from './ExecutionTimeline';
 import TrustSettingsPanel from './TrustSettingsPanel';
@@ -349,13 +350,51 @@ function CurrentActionPanel() {
 /**
  * Keyboard Shortcuts Help
  */
+/**
+ * Abort confirmation, shown for the Esc shortcut: aborting cannot be undone, and Esc is easy
+ * to press by habit.
+ */
+function AbortConfirm({ isOpen, onCancel, onConfirm }) {
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onCancel}
+      size="sm"
+      overlayClassName="glass-backdrop"
+      panelClassName="p-6 bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-2xl border border-white/50 dark:border-surface-700/50 shadow-[var(--shadow-glass-hover)]"
+    >
+      <ModalTitle className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+        Abort this execution?
+      </ModalTitle>
+      <p className="mt-2 text-sm text-surface-600 dark:text-surface-400">
+        The agent stops, and no further actions in this execution run.
+      </p>
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-white/60 dark:hover:bg-surface-700 rounded-xl transition-all duration-200"
+        >
+          Keep running
+        </button>
+        <button
+          onClick={onConfirm}
+          className="px-4 py-2 text-sm font-medium text-white bg-critical-600 hover:bg-critical-700 rounded-xl transition-all duration-200"
+        >
+          Abort
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function KeyboardShortcutsHelp({ isOpen, onClose }) {
   const shortcuts = [
     { key: 'A', description: 'Approve current action' },
     { key: 'D', description: 'Deny current action' },
     { key: 'M', description: 'Modify current action' },
-    { key: 'T', description: 'Trust this action type for session' },
-    { key: 'Esc', description: 'Abort execution / Close modal' },
+    { key: 'T', description: 'Approve and trust this action type for the session' },
+    { key: '?', description: 'Show these shortcuts' },
+    { key: 'Esc', description: 'Close a dialog, or abort the execution (asks first)' },
   ];
 
   return (
@@ -411,11 +450,19 @@ function RealTimeExecutionPanelInner({ executionId, onClose }) {
     execution,
     setTrustPanelOpen,
     trustPanelOpen,
-    currentAction: _currentAction,
+    currentAction,
+    executionStatus,
+    approveAction,
+    denyAction,
+    openModifyModal,
+    abortExecution,
+    loading,
+    TrustScope,
   } = useExecution();
 
   // Local state
   const [showHelp, setShowHelp] = useState(false);
+  const [confirmAbort, setConfirmAbort] = useState(false);
   const [activeTab, setActiveTab] = useState('actions'); // 'actions' | 'thinking' | 'logs'
 
   // Subscribe to execution on mount
@@ -429,18 +476,21 @@ function RealTimeExecutionPanelInner({ executionId, onClose }) {
     };
   }, [executionId, subscribeToExecution, unsubscribeFromExecution]);
 
-  // Keyboard shortcut for help
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        setShowHelp(true);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  // Keyboard shortcuts: the same actions as the current action's approval card
+  useApprovalShortcuts({
+    currentAction,
+    busy: loading.approve || loading.deny || loading.modify,
+    canAbort: ['connecting', 'connected', 'executing'].includes(executionStatus) && !loading.abort,
+    onApprove: useCallback((action) => approveAction(action.action_id), [approveAction]),
+    onDeny: useCallback((action) => denyAction(action.action_id), [denyAction]),
+    onModify: openModifyModal,
+    onTrust: useCallback(
+      (action) => approveAction(action.action_id, { trustScope: TrustScope.THIS_ACTION_TYPE }),
+      [approveAction, TrustScope]
+    ),
+    onHelp: useCallback(() => setShowHelp(true), []),
+    onAbortRequest: useCallback(() => setConfirmAbort(true), []),
+  });
 
   const tabs = [
     { id: 'actions', label: 'Actions', icon: ChevronDoubleRightIcon },
@@ -577,6 +627,14 @@ function RealTimeExecutionPanelInner({ executionId, onClose }) {
       {/* Modals */}
       <ActionModifyModal />
       <KeyboardShortcutsHelp isOpen={showHelp} onClose={() => setShowHelp(false)} />
+      <AbortConfirm
+        isOpen={confirmAbort}
+        onCancel={() => setConfirmAbort(false)}
+        onConfirm={() => {
+          setConfirmAbort(false);
+          abortExecution('User requested abort');
+        }}
+      />
     </div>
   );
 }

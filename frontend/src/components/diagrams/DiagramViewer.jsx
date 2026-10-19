@@ -25,6 +25,7 @@ import {
   EyeSlashIcon,
   AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/outline';
+import Menu, { MenuItem } from '../shared/Menu';
 
 // ============================================================================
 // Constants & Configuration
@@ -57,20 +58,6 @@ function DiagramToolbar({
   onToggleGrid,
   isExporting,
 }) {
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const exportMenuRef = useRef(null);
-
-  // Close export menu on outside click
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
-        setShowExportMenu(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const buttonClass = `
     p-2 rounded-lg
     bg-surface-100 dark:bg-surface-700
@@ -178,75 +165,40 @@ function DiagramToolbar({
       </div>
 
       {/* Export Menu */}
-      <div className="relative" ref={exportMenuRef}>
-        <button
-          onClick={() => setShowExportMenu(!showExportMenu)}
-          disabled={isExporting}
-          className={`${buttonClass} flex items-center gap-2`}
-          title="Export diagram"
-          aria-label="Export diagram"
-          aria-expanded={showExportMenu}
-          aria-haspopup="menu"
-        >
-          {isExporting ? (
-            <ArrowPathIcon className="w-5 h-5 text-surface-600 dark:text-surface-300 animate-spin" />
-          ) : (
-            <ArrowDownTrayIcon className="w-5 h-5 text-surface-600 dark:text-surface-300" />
-          )}
-          <span className="text-sm font-medium text-surface-700 dark:text-surface-200">
-            Export
-          </span>
-        </button>
-
-        {showExportMenu && (
-          <div
-            className="
-              absolute right-0 top-full mt-2 w-48
-              bg-white dark:bg-surface-800
-              border border-surface-200 dark:border-surface-700
-              rounded-lg shadow-xl
-              overflow-hidden
-              z-50
-            "
-            role="menu"
+      <Menu
+        align="end"
+        className="w-48 !py-0 overflow-hidden shadow-xl"
+        trigger={
+          <button
+            disabled={isExporting}
+            className={`${buttonClass} flex items-center gap-2`}
+            title="Export diagram"
+            aria-label="Export diagram"
           >
-            <button
-              onClick={() => {
-                onExport('svg');
-                setShowExportMenu(false);
-              }}
-              className="
-                flex items-center gap-3 w-full px-4 py-3
-                hover:bg-surface-100 dark:hover:bg-surface-700
-                transition-colors duration-150
-              "
-              role="menuitem"
-            >
-              <DocumentDuplicateIcon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
-              <span className="text-sm text-surface-700 dark:text-surface-200">
-                Export as SVG
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                onExport('png');
-                setShowExportMenu(false);
-              }}
-              className="
-                flex items-center gap-3 w-full px-4 py-3
-                hover:bg-surface-100 dark:hover:bg-surface-700
-                transition-colors duration-150
-              "
-              role="menuitem"
-            >
-              <PhotoIcon className="w-5 h-5 text-success-600 dark:text-success-400" />
-              <span className="text-sm text-surface-700 dark:text-surface-200">
-                Export as PNG
-              </span>
-            </button>
-          </div>
-        )}
-      </div>
+            {isExporting ? (
+              <ArrowPathIcon className="w-5 h-5 text-surface-600 dark:text-surface-300 animate-spin" />
+            ) : (
+              <ArrowDownTrayIcon className="w-5 h-5 text-surface-600 dark:text-surface-300" />
+            )}
+            <span className="text-sm font-medium text-surface-700 dark:text-surface-200">
+              Export
+            </span>
+          </button>
+        }
+      >
+        <MenuItem onSelect={() => onExport('svg')} className="!px-4 !py-3 !rounded-none">
+          <DocumentDuplicateIcon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
+          <span className="text-sm text-surface-700 dark:text-surface-200">
+            Export as SVG
+          </span>
+        </MenuItem>
+        <MenuItem onSelect={() => onExport('png')} className="!px-4 !py-3 !rounded-none">
+          <PhotoIcon className="w-5 h-5 text-success-600 dark:text-success-400" />
+          <span className="text-sm text-surface-700 dark:text-surface-200">
+            Export as PNG
+          </span>
+        </MenuItem>
+      </Menu>
     </div>
   );
 }

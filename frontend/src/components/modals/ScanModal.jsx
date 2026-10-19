@@ -8,7 +8,7 @@
  * and smooth transitions per design-principles.md
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useId } from 'react';
 import {
   XMarkIcon,
   PlayIcon,
@@ -26,6 +26,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { listRepositories } from '../../services/repositoryApi';
 import Modal, { ModalTitle } from '../shared/Modal';
+import Menu, { MenuRadioGroup, MenuRadioItem } from '../shared/Menu';
 
 // Scan type configurations
 const SCAN_TYPES = [
@@ -153,98 +154,78 @@ function ScanTypeCard({ scanType, isSelected, onSelect }) {
  * Repository Selector Component
  */
 function RepositorySelector({ repositories, selectedRepo, onSelect, loading }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
+  const labelId = useId();
+  const buttonId = useId();
   const selectedRepository = repositories.find((r) => r.id === selectedRepo);
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+    <div>
+      <span id={labelId} className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
         Target Repository
-      </label>
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        disabled={loading}
-        className={`
-          w-full flex items-center justify-between px-4 py-3 rounded-xl border
-          bg-white dark:bg-surface-800 backdrop-blur-sm border-surface-200/50 dark:border-surface-600/50
-          text-surface-900 dark:text-surface-100
-          hover:border-surface-300/60 dark:hover:border-surface-500/50 hover:bg-white/80 dark:hover:bg-surface-700
-          focus:outline-none focus:ring-2 focus:ring-aura-500 focus:border-aura-500
-          transition-all duration-200 ease-[var(--ease-tahoe)]
-          disabled:opacity-50 disabled:cursor-not-allowed
-        `}
+      </span>
+      <Menu
+        className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto !py-0 bg-white/95 dark:bg-surface-800/95 backdrop-saturate-150 !border-surface-200/50 dark:!border-surface-700/30 shadow-[var(--shadow-glass-hover)]"
+        trigger={
+          <button
+            type="button"
+            id={buttonId}
+            aria-labelledby={`${labelId} ${buttonId}`}
+            disabled={loading}
+            className={`
+              group w-full flex items-center justify-between px-4 py-3 rounded-xl border
+              bg-white dark:bg-surface-800 backdrop-blur-sm border-surface-200/50 dark:border-surface-600/50
+              text-surface-900 dark:text-surface-100
+              hover:border-surface-300/60 dark:hover:border-surface-500/50 hover:bg-white/80 dark:hover:bg-surface-700
+              focus:outline-none focus:ring-2 focus:ring-aura-500 focus:border-aura-500
+              transition-all duration-200 ease-[var(--ease-tahoe)]
+              disabled:opacity-50 disabled:cursor-not-allowed
+            `}
+          >
+            {selectedRepository ? (
+              <div className="flex items-center gap-2">
+                <FolderIcon className="w-5 h-5 text-surface-400" />
+                <span className="font-medium">{selectedRepository.name}</span>
+                <span className="text-sm text-surface-500 dark:text-surface-400">
+                  ({selectedRepository.branch})
+                </span>
+              </div>
+            ) : (
+              <span className="text-surface-400">Select a repository...</span>
+            )}
+            <ChevronDownIcon className="w-5 h-5 text-surface-400 transition-transform group-data-[state=open]:rotate-180" />
+          </button>
+        }
       >
-        {selectedRepository ? (
-          <div className="flex items-center gap-2">
-            <FolderIcon className="w-5 h-5 text-surface-400" />
-            <span className="font-medium">{selectedRepository.name}</span>
-            <span className="text-sm text-surface-500 dark:text-surface-400">
-              ({selectedRepository.branch})
-            </span>
-          </div>
-        ) : (
-          <span className="text-surface-400">Select a repository...</span>
-        )}
-        <ChevronDownIcon className={`w-5 h-5 text-surface-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="absolute z-10 w-full mt-2 bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 border border-surface-200/50 dark:border-surface-700/30 rounded-xl shadow-[var(--shadow-glass-hover)] overflow-hidden">
-          <div className="max-h-64 overflow-y-auto">
-            {repositories.map((repo) => (
-              <button
-                key={repo.id}
-                onClick={() => {
-                  onSelect(repo.id);
-                  setIsOpen(false);
-                }}
-                className={`
-                  w-full flex items-center justify-between px-4 py-3 text-left
-                  hover:bg-white/60 dark:hover:bg-surface-700
-                  transition-all duration-200 ease-[var(--ease-tahoe)]
-                  ${selectedRepo === repo.id ? 'bg-aura-50/80 dark:bg-aura-900/20' : ''}
-                `}
-              >
-                <div className="flex items-center gap-3">
-                  <FolderIcon className="w-5 h-5 text-surface-400" />
-                  <div>
-                    <p className="font-medium text-surface-900 dark:text-surface-100">
-                      {repo.name}
-                    </p>
-                    <p className="text-xs text-surface-500 dark:text-surface-400">
-                      {repo.provider} / {repo.branch}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-surface-500 dark:text-surface-400">
-                    Last scan: {repo.lastScan}
+        <MenuRadioGroup value={selectedRepo} onValueChange={onSelect}>
+          {repositories.map((repo) => (
+            <MenuRadioItem
+              key={repo.id}
+              value={repo.id}
+              className="!justify-between !px-4 !py-3 !rounded-none"
+            >
+              <div className="flex items-center gap-3">
+                <FolderIcon className="w-5 h-5 text-surface-400" />
+                <div>
+                  <p className="font-medium text-surface-900 dark:text-surface-100">
+                    {repo.name}
                   </p>
-                  {selectedRepo === repo.id && (
-                    <CheckCircleIcon className="w-5 h-5 text-aura-500 mt-1 ml-auto" />
-                  )}
+                  <p className="text-xs text-surface-500 dark:text-surface-400">
+                    {repo.provider} / {repo.branch}
+                  </p>
                 </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-surface-500 dark:text-surface-400">
+                  Last scan: {repo.lastScan}
+                </p>
+                {selectedRepo === repo.id && (
+                  <CheckCircleIcon className="w-5 h-5 text-aura-500 mt-1 ml-auto" />
+                )}
+              </div>
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </Menu>
     </div>
   );
 }

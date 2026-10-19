@@ -31,6 +31,7 @@ import { PageSkeleton } from './ui/LoadingSkeleton';
 import FileViewer from './graph/FileViewer';
 import { useToast } from './ui/Toast';
 import Modal, { ModalTitle } from './shared/Modal';
+import Menu, { MenuItem, MenuLabel } from './shared/Menu';
 
 // =============================================================================
 // Design System Constants
@@ -1412,28 +1413,7 @@ function GraphMetrics({ nodes, edges }) {
 // Context Menu Component
 // =============================================================================
 
-function NodeContextMenu({ position, node, onAction, onClose }) {
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        onClose();
-      }
-    };
-
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [onClose]);
-
+export function NodeContextMenu({ position, node, onAction, onClose }) {
   if (!position || !node) return null;
 
   const nodeType = NODE_TYPES[node.type] || NODE_TYPES.file;
@@ -1446,18 +1426,26 @@ function NodeContextMenu({ position, node, onAction, onClose }) {
     { id: 'openInIDE', icon: ArrowTopRightOnSquareIcon, label: 'Open in IDE', enabled: !!node.path },
   ];
 
-  // Adjust position to stay within viewport
-  const adjustedX = Math.min(position.x, window.innerWidth - 200);
-  const adjustedY = Math.min(position.y, window.innerHeight - 220);
-
+  // The menu opens at the pointer: an invisible point there anchors it, and the menu keeps
+  // itself inside the viewport
   return (
-    <div
-      ref={menuRef}
-      className="fixed z-50 bg-white dark:bg-surface-800 rounded-xl shadow-xl border border-surface-200 dark:border-surface-700 py-2 min-w-[180px] animate-in fade-in zoom-in-95 duration-150"
-      style={{ left: adjustedX, top: adjustedY }}
+    <Menu
+      open
+      onOpenChange={(open) => !open && onClose()}
+      className="!min-w-[180px] !py-2 animate-in fade-in zoom-in-95 duration-150"
+      trigger={
+        <span
+          aria-hidden="true"
+          className="fixed w-0 h-0 overflow-hidden"
+          style={{ left: position.x, top: position.y }}
+        >
+          {/* Names the menu (it is labelled by its trigger) */}
+          Actions for {node.label}
+        </span>
+      }
     >
       {/* Header */}
-      <div className="px-3 py-2 border-b border-surface-200 dark:border-surface-700">
+      <MenuLabel className="px-3 py-2 border-b border-surface-200 dark:border-surface-700">
         <div className="flex items-center gap-2">
           <NodeIcon className="w-4 h-4" style={{ color: nodeType.color }} />
           <div>
@@ -1469,35 +1457,22 @@ function NodeContextMenu({ position, node, onAction, onClose }) {
             </p>
           </div>
         </div>
-      </div>
+      </MenuLabel>
 
       {/* Menu Items */}
       <div className="py-1">
         {menuItems.map((item) => (
-          <button
+          <MenuItem
             key={item.id}
-            onClick={() => {
-              if (item.enabled) {
-                onAction(item.id, node);
-                onClose();
-              }
-            }}
             disabled={!item.enabled}
-            className={`
-              w-full flex items-center gap-3 px-3 py-2 text-sm
-              ${item.enabled
-                ? 'text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700'
-                : 'text-surface-400 dark:text-surface-500 cursor-not-allowed'
-              }
-              transition-colors
-            `}
+            onSelect={() => onAction(item.id, node)}
           >
             <item.icon className="w-4 h-4" />
             {item.label}
-          </button>
+          </MenuItem>
         ))}
       </div>
-    </div>
+    </Menu>
   );
 }
 

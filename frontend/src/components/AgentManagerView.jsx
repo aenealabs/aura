@@ -52,6 +52,7 @@ import { PageSkeleton } from './ui/LoadingSkeleton';
 import { RealTimeExecutionPanel } from './execution';
 import { useToast } from './ui/Toast';
 import Modal, { ModalTitle } from './shared/Modal';
+import Menu, { MenuLabel, MenuRadioGroup, MenuRadioItem } from './shared/Menu';
 
 // =============================================================================
 // DESIGN DOCUMENTATION
@@ -939,20 +940,6 @@ function FeedbackHistoryItem({ feedback }) {
  * AgentSelector - Dropdown to select active agents
  */
 function AgentSelector({ agents, selectedAgentId, onSelectAgent }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const selectedAgent = agents.find(a => a.id === selectedAgentId) || agents[0];
 
   const avatarColors = {
@@ -963,109 +950,100 @@ function AgentSelector({ agents, selectedAgentId, onSelectAgent }) {
   };
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      {/* Selector Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-3 px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors"
-      >
-        {/* Selected Agent Avatar */}
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${avatarColors[selectedAgent?.avatarColor || 'aura']}`}>
-          {selectedAgent?.avatar || 'A'}
-        </div>
-
-        {/* Selected Agent Info */}
-        <div className="text-left">
-          <div className="text-sm font-medium text-surface-900 dark:text-surface-100">
-            {selectedAgent?.name || 'Select Agent'}
-          </div>
-          <div className="text-xs text-surface-500 dark:text-surface-400">
-            {agents.length} active agent{agents.length !== 1 ? 's' : ''}
-          </div>
-        </div>
-
-        {/* Dropdown Arrow */}
-        <ChevronDownIcon className={`w-4 h-4 text-surface-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {/* Dropdown Menu */}
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-surface-800 backdrop-blur-xl rounded-xl border border-surface-200/50 dark:border-surface-700/30 shadow-[var(--shadow-glass)] shadow-xl z-50 overflow-hidden">
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50">
-            <h4 className="text-sm font-medium text-surface-700 dark:text-surface-300">
-              Active Agents
-            </h4>
-            <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-              Select an agent to view their mission
-            </p>
+    <Menu
+      className="w-80 !py-0 overflow-hidden !border-surface-200/50 dark:!border-surface-700/30 shadow-xl"
+      trigger={
+        <button
+          className="group flex items-center gap-3 px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors"
+        >
+          {/* Selected Agent Avatar */}
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${avatarColors[selectedAgent?.avatarColor || 'aura']}`}>
+            {selectedAgent?.avatar || 'A'}
           </div>
 
-          {/* Agent List */}
-          <div className="max-h-[300px] overflow-y-auto py-2">
-            {agents.map((agent) => {
-              const status = EXECUTION_STATUS[agent.status] || EXECUTION_STATUS.pending;
-              const isSelected = agent.id === selectedAgentId;
-
-              return (
-                <button
-                  key={agent.id}
-                  onClick={() => {
-                    onSelectAgent(agent.id);
-                    setIsOpen(false);
-                  }}
-                  className={`
-                    w-full flex items-center gap-3 px-4 py-3 text-left transition-colors
-                    ${isSelected
-                      ? 'bg-aura-50 dark:bg-aura-900/20'
-                      : 'hover:bg-surface-50 dark:hover:bg-surface-700/50'
-                    }
-                  `}
-                >
-                  {/* Avatar */}
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${avatarColors[agent.avatarColor]}`}>
-                    {agent.avatar}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
-                        {agent.name}
-                      </span>
-                      {isSelected && (
-                        <CheckIcon className="w-4 h-4 text-aura-500 flex-shrink-0" />
-                      )}
-                    </div>
-                    <div className="text-xs text-surface-500 dark:text-surface-400 truncate">
-                      {agent.taskSummary}
-                    </div>
-                  </div>
-
-                  {/* Status */}
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${status.dot}`} />
-                    <span className={`text-xs font-medium ${status.badge} px-2 py-0.5 rounded-full`}>
-                      {status.label}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Footer */}
-          {agents.length === 0 && (
-            <div className="px-4 py-8 text-center">
-              <UserCircleIcon className="w-12 h-12 mx-auto text-surface-300 dark:text-surface-600 mb-2" />
-              <p className="text-sm text-surface-500 dark:text-surface-400">
-                No active agents
-              </p>
+          {/* Selected Agent Info */}
+          <div className="text-left">
+            <div className="text-sm font-medium text-surface-900 dark:text-surface-100">
+              {selectedAgent?.name || 'Select Agent'}
             </div>
-          )}
-        </div>
+            <div className="text-xs text-surface-500 dark:text-surface-400">
+              {agents.length} active agent{agents.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+
+          {/* Dropdown Arrow */}
+          <ChevronDownIcon className="w-4 h-4 text-surface-400 transition-transform group-data-[state=open]:rotate-180" />
+        </button>
+      }
+    >
+      {/* Header */}
+      <MenuLabel className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50">
+        <h4 className="text-sm font-medium text-surface-700 dark:text-surface-300">
+          Active Agents
+        </h4>
+        <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
+          Select an agent to view their mission
+        </p>
+      </MenuLabel>
+
+      {/* Agent List */}
+      <MenuRadioGroup
+        value={selectedAgentId}
+        onValueChange={onSelectAgent}
+        className="max-h-[300px] overflow-y-auto py-2"
+      >
+        {agents.map((agent) => {
+          const status = EXECUTION_STATUS[agent.status] || EXECUTION_STATUS.pending;
+          const isSelected = agent.id === selectedAgentId;
+
+          return (
+            <MenuRadioItem
+              key={agent.id}
+              value={agent.id}
+              className="!px-4 !py-3 !rounded-none"
+            >
+              {/* Avatar */}
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${avatarColors[agent.avatarColor]}`}>
+                {agent.avatar}
+              </div>
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
+                    {agent.name}
+                  </span>
+                  {isSelected && (
+                    <CheckIcon className="w-4 h-4 text-aura-500 flex-shrink-0" />
+                  )}
+                </div>
+                <div className="text-xs text-surface-500 dark:text-surface-400 truncate">
+                  {agent.taskSummary}
+                </div>
+              </div>
+
+              {/* Status */}
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${status.dot}`} />
+                <span className={`text-xs font-medium ${status.badge} px-2 py-0.5 rounded-full`}>
+                  {status.label}
+                </span>
+              </div>
+            </MenuRadioItem>
+          );
+        })}
+      </MenuRadioGroup>
+
+      {/* Footer */}
+      {agents.length === 0 && (
+        <MenuLabel className="px-4 py-8 text-center">
+          <UserCircleIcon className="w-12 h-12 mx-auto text-surface-300 dark:text-surface-600 mb-2" />
+          <p className="text-sm text-surface-500 dark:text-surface-400">
+            No active agents
+          </p>
+        </MenuLabel>
       )}
-    </div>
+    </Menu>
   );
 }
 

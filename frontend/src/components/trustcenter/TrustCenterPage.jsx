@@ -12,7 +12,7 @@
  * - Audit: Decision audit timeline
  */
 
-import { useState, useCallback, memo, useRef, useEffect } from 'react';
+import { useState, useCallback, memo } from 'react';
 import {
   ShieldCheckIcon,
   ScaleIcon,
@@ -38,6 +38,7 @@ import PrinciplesTab from './PrinciplesTab';
 import AutonomyTab from './AutonomyTab';
 import MetricsTab from './MetricsTab';
 import AuditTab from './AuditTab';
+import Menu, { MenuItem } from '../shared/Menu';
 
 // Tab definitions
 const TABS = [
@@ -111,20 +112,6 @@ const StatusBadge = memo(function StatusBadge({ status }) {
  * Export Dropdown Component
  */
 const ExportDropdown = memo(function ExportDropdown({ onExport, loading, data, period }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const exportOptions = [
     {
       id: ExportFormats.PDF,
@@ -153,68 +140,53 @@ const ExportDropdown = memo(function ExportDropdown({ onExport, loading, data, p
   ];
 
   const handleExportClick = async (format) => {
-    setIsOpen(false);
     await onExport(format, data, period);
   };
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        disabled={loading}
-        className="
-          flex items-center gap-2 px-4 py-2 rounded-lg
-          bg-aura-500 hover:bg-aura-600 text-white
-          font-medium text-sm
-          transition-all duration-200
-          disabled:opacity-50 disabled:cursor-not-allowed
-        "
-      >
-        <ArrowDownTrayIcon className="w-4 h-4" />
-        Export
-        <ChevronDownIcon className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {isOpen && (
-        <div className="
-          absolute right-0 mt-2 w-72 z-50
-          bg-white dark:bg-surface-800
-          border border-surface-200 dark:border-surface-700
-          rounded-xl shadow-lg
-          overflow-hidden
-        ">
-          <div className="p-2">
-            {exportOptions.map((option) => {
-              const Icon = option.icon;
-              return (
-                <button
-                  key={option.id}
-                  onClick={() => handleExportClick(option.id)}
-                  className="
-                    w-full flex items-start gap-3 p-3 rounded-lg
-                    text-left
-                    hover:bg-surface-50 dark:hover:bg-surface-700
-                    transition-colors duration-150
-                  "
-                >
-                  <div className="p-2 rounded-lg bg-aura-50 dark:bg-aura-900/20">
-                    <Icon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
-                  </div>
-                  <div>
-                    <div className="font-medium text-surface-900 dark:text-surface-100">
-                      {option.label}
-                    </div>
-                    <div className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-                      {option.description}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+    <Menu
+      align="end"
+      className="w-72 !rounded-xl !py-0 p-2"
+      trigger={
+        <button
+          disabled={loading}
+          className="
+            group flex items-center gap-2 px-4 py-2 rounded-lg
+            bg-aura-500 hover:bg-aura-600 text-white
+            font-medium text-sm
+            transition-all duration-200
+            disabled:opacity-50 disabled:cursor-not-allowed
+          "
+        >
+          <ArrowDownTrayIcon className="w-4 h-4" />
+          Export
+          <ChevronDownIcon className="w-4 h-4 transition-transform group-data-[state=open]:rotate-180" />
+        </button>
+      }
+    >
+      {exportOptions.map((option) => {
+        const Icon = option.icon;
+        return (
+          <MenuItem
+            key={option.id}
+            onSelect={() => handleExportClick(option.id)}
+            className="!items-start !p-3"
+          >
+            <div className="p-2 rounded-lg bg-aura-50 dark:bg-aura-900/20">
+              <Icon className="w-5 h-5 text-aura-600 dark:text-aura-400" />
+            </div>
+            <div>
+              <div className="font-medium text-surface-900 dark:text-surface-100">
+                {option.label}
+              </div>
+              <div className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
+                {option.description}
+              </div>
+            </div>
+          </MenuItem>
+        );
+      })}
+    </Menu>
   );
 });
 

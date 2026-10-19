@@ -193,8 +193,8 @@ describe('DiagramViewer', () => {
 
       expect(screen.getByRole('menu')).toBeInTheDocument();
 
-      // Click outside the menu
-      fireEvent.mouseDown(document.body);
+      // Press outside the menu
+      fireEvent.pointerDown(document.body);
 
       await waitFor(() => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();

@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DiagramViewer, DiagramGrid } from './DiagramViewer';
+import { DiagramViewer, DiagramGrid, ExportMenu } from './DiagramViewer';
 
 // Mock mermaid module
 vi.mock('mermaid', () => ({
@@ -234,13 +234,31 @@ describe('DiagramViewer', () => {
     test('export button is present', () => {
       render(<DiagramViewer code={sampleMermaidCode} />);
 
-      // The single download action was replaced by an export menu that
-      // exposes multiple formats (SVG, PNG, PDF, etc.) — the trigger is
-      // labelled "Export diagram" (DiagramViewer.jsx:928). The actual
-      // SVG-specific item lives inside the menu and is exercised by the
-      // dedicated export-menu tests.
+      // The trigger for the export menu, which lists the formats (SVG, PNG, PDF, etc.)
       const exportButton = screen.getByLabelText('Export diagram');
       expect(exportButton).toBeInTheDocument();
+    });
+
+    test('export menu lists the formats as menu items and exports the one chosen', async () => {
+      const user = userEvent.setup();
+      const onExport = vi.fn();
+      render(<ExportMenu disabled={false} isExporting={false} onExport={onExport} />);
+
+      const exportButton = screen.getByLabelText('Export diagram');
+      await user.click(exportButton);
+      expect(screen.getByRole('menu')).toBeInTheDocument();
+      expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+        expect.stringContaining('SVG'),
+        expect.stringContaining('PNG'),
+        expect.stringContaining('JPEG'),
+        expect.stringContaining('PDF'),
+        expect.stringContaining('PowerPoint'),
+      ]);
+
+      await user.click(screen.getByRole('menuitem', { name: /PDF/ }));
+      expect(onExport).toHaveBeenCalledWith('pdf');
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(exportButton).toHaveFocus();
     });
   });
 

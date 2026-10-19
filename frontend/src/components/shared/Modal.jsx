@@ -27,6 +27,16 @@ const PLACEMENTS = {
   full: () => 'inset-0',
 };
 
+// The element to refocus when the modal closes: whatever had focus as it opened, except that a
+// menu item (a menu action that opens this modal) is about to unmount with its menu, so use the
+// button that opened the menu instead. Radix labels each menu with its trigger's id.
+function focusReturnTarget() {
+  const active = document.activeElement;
+  const menu = active?.closest?.('[role="menu"]');
+  const trigger = menu && document.getElementById(menu.getAttribute('aria-labelledby'));
+  return trigger || active;
+}
+
 const SIZES = {
   sm: 'max-w-md',
   md: 'max-w-lg',
@@ -88,7 +98,7 @@ function Modal({
           {...(description ? {} : { 'aria-describedby': undefined })}
           {...rest}
           onOpenAutoFocus={(event) => {
-            returnFocusTo.current = document.activeElement;
+            returnFocusTo.current = focusReturnTarget();
             if (initialFocusRef?.current) {
               event.preventDefault();
               initialFocusRef.current.focus();

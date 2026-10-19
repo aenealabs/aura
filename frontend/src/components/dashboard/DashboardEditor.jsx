@@ -105,7 +105,6 @@ export default function DashboardEditor({
   const [isEditMode, setIsEditMode] = useState(false);
   const [showWidgetLibrary, setShowWidgetLibrary] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
   const [selectedWidget, setSelectedWidget] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
@@ -117,7 +116,6 @@ export default function DashboardEditor({
     setIsCloning(true);
     try {
       await onClone(dashboard.dashboard_id);
-      setShowMenu(false);
     } catch (err) {
       console.error('Failed to clone dashboard:', err);
     } finally {

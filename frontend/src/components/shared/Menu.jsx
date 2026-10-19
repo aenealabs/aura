@@ -29,17 +29,31 @@ const ITEM = `flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm cursor
  * @param {'top'|'bottom'|'left'|'right'} [props.side='bottom'] - Where the menu opens
  * @param {'start'|'center'|'end'} [props.align='start'] - Alignment against the trigger
  * @param {string} [props.className] - Extra classes for the menu panel
+ * @param {boolean} [props.open] - Controlled open state; leave unset to let the menu manage it
+ * @param {function} [props.onOpenChange] - (open) => void, for a controlled menu
+ * @param {function} [props.onCloseAutoFocus] - (event) => void; call event.preventDefault() when
+ *   the chosen item moves focus elsewhere (such as into a rename field) instead of the trigger
  * @param {React.ReactNode} props.children - MenuItem, MenuLabel, and MenuSeparator elements
  */
-function Menu({ trigger, side = 'bottom', align = 'start', className = '', children }) {
+function Menu({
+  trigger,
+  side = 'bottom',
+  align = 'start',
+  className = '',
+  open,
+  onOpenChange,
+  onCloseAutoFocus,
+  children,
+}) {
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           side={side}
           align={align}
           sideOffset={8}
+          onCloseAutoFocus={onCloseAutoFocus}
           className={`z-50 min-w-[200px] rounded-xl py-1 bg-white dark:bg-surface-800
             backdrop-blur-xl border border-white/50 dark:border-surface-700/50
             shadow-[var(--shadow-glass)] focus:outline-none ${className}`}
@@ -56,6 +70,9 @@ Menu.propTypes = {
   side: PropTypes.oneOf(['top', 'bottom', 'left', 'right']),
   align: PropTypes.oneOf(['start', 'center', 'end']),
   className: PropTypes.string,
+  open: PropTypes.bool,
+  onOpenChange: PropTypes.func,
+  onCloseAutoFocus: PropTypes.func,
   children: PropTypes.node.isRequired,
 };
 
@@ -73,6 +90,39 @@ export function MenuItem({ className = '', tone, ...props }) {
 MenuItem.propTypes = {
   className: PropTypes.string,
   tone: PropTypes.oneOf(['danger']),
+};
+
+/**
+ * A group of mutually exclusive choices, for a menu that picks a value (an agent, a
+ * repository). Screen readers hear each item as a radio option, checked or not.
+ *
+ * @example
+ * <MenuRadioGroup value={repoId} onValueChange={setRepoId}>
+ *   <MenuRadioItem value="r1">aura-core</MenuRadioItem>
+ * </MenuRadioGroup>
+ */
+export function MenuRadioGroup(props) {
+  return <DropdownMenu.RadioGroup {...props} />;
+}
+
+MenuRadioGroup.propTypes = {
+  value: PropTypes.string,
+  onValueChange: PropTypes.func,
+};
+
+/** One choice in a MenuRadioGroup; the chosen one is styled through data-[state=checked]. */
+export function MenuRadioItem({ className = '', ...props }) {
+  return (
+    <DropdownMenu.RadioItem
+      className={`${ITEM} data-[state=checked]:bg-aura-50/80 dark:data-[state=checked]:bg-aura-900/20 ${className}`}
+      {...props}
+    />
+  );
+}
+
+MenuRadioItem.propTypes = {
+  className: PropTypes.string,
+  value: PropTypes.string.isRequired,
 };
 
 /** A non-interactive heading or block inside the menu. */

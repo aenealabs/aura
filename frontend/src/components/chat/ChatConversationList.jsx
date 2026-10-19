@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
@@ -16,6 +16,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { MapPinIcon as MapPinSolidIcon } from '@heroicons/react/24/solid';
 import { useChat } from '../../context/ChatContext';
+import Menu, { MenuItem, MenuSeparator } from '../shared/Menu';
 
 /**
  * ChatConversationList - Sidebar with conversation history and management
@@ -567,6 +568,8 @@ function ConversationItem({
   onCancelDelete,
   onExport,
 }) {
+  // Set when Rename is chosen; the edit starts after the menu closes
+  const renamingRef = useRef(false);
   const lastMessage = conversation.messages[conversation.messages.length - 1];
   const preview = lastMessage?.content?.slice(0, 50) || 'No messages yet';
   const messageCount = conversation.messages.length;
@@ -685,87 +688,63 @@ function ConversationItem({
         </div>
       </button>
 
-      {/* Menu button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleMenu();
+      {/* Actions menu */}
+      <Menu
+        open={isMenuOpen}
+        onOpenChange={(next) => next !== isMenuOpen && onToggleMenu()}
+        align="end"
+        className="w-44"
+        // Rename starts once the menu has fully closed, so the title field can take focus without
+        // the menu pulling it back (the field saves on blur, which would end the edit at once)
+        onCloseAutoFocus={(e) => {
+          if (renamingRef.current) {
+            e.preventDefault();
+            renamingRef.current = false;
+            onStartEdit();
+          }
         }}
-        className={`
-          absolute right-3 top-1/2 -translate-y-1/2
-          p-1 rounded
-          text-surface-400 dark:text-surface-500
-          hover:text-surface-600 dark:hover:text-surface-300
-          hover:bg-surface-200 dark:hover:bg-surface-600
-          opacity-0 group-hover:opacity-100
-          transition-opacity duration-150
-          ${isMenuOpen ? 'opacity-100' : ''}
-        `}
-      >
-        <EllipsisHorizontalIcon className="w-5 h-5" />
-      </button>
-
-      {/* Dropdown menu */}
-      {isMenuOpen && (
-        <div
-          className="
-            absolute right-2 top-full mt-1 z-10
-            w-44 py-1
-            bg-white dark:bg-surface-700
-            border border-surface-200 dark:border-surface-600
-            rounded-lg shadow-lg
-          "
-          onClick={(e) => e.stopPropagation()}
-        >
-          <MenuButton icon={PencilIcon} onClick={onStartEdit}>
-            Rename
-          </MenuButton>
-          <MenuButton
-            icon={conversation.isPinned ? MapPinSolidIcon : MapPinIcon}
-            onClick={onTogglePin}
+        trigger={
+          <button
+            aria-label={`Actions for ${conversation.title}`}
+            onClick={(e) => e.stopPropagation()}
+            className={`
+              absolute right-3 top-1/2 -translate-y-1/2
+              p-1 rounded
+              text-surface-400 dark:text-surface-500
+              hover:text-surface-600 dark:hover:text-surface-300
+              hover:bg-surface-200 dark:hover:bg-surface-600
+              opacity-0 group-hover:opacity-100 focus-visible:opacity-100
+              transition-opacity duration-150
+              ${isMenuOpen ? 'opacity-100' : ''}
+            `}
           >
-            {conversation.isPinned ? 'Unpin' : 'Pin to top'}
-          </MenuButton>
-          <MenuButton icon={ArrowDownTrayIcon} onClick={onExport}>
-            Export as Markdown
-          </MenuButton>
-          <div className="border-t border-surface-200 dark:border-surface-600 my-1" />
-          <MenuButton
-            icon={TrashIcon}
-            onClick={onConfirmDelete}
-            variant="danger"
-          >
-            Delete
-          </MenuButton>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * MenuButton - Dropdown menu item
- */
-function MenuButton({ icon: Icon, children, onClick, variant = 'default' }) {
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className={`
-        w-full flex items-center gap-2 px-3 py-2
-        text-sm
-        transition-colors duration-150
-        ${variant === 'danger'
-          ? 'text-critical-600 dark:text-critical-400 hover:bg-critical-50 dark:hover:bg-critical-900/20'
-          : 'text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-600'
+            <EllipsisHorizontalIcon className="w-5 h-5" />
+          </button>
         }
-      `}
-    >
-      <Icon className="w-4 h-4" />
-      {children}
-    </button>
+      >
+        <MenuItem
+          onSelect={() => {
+            renamingRef.current = true;
+          }}
+        >
+          <PencilIcon className="w-4 h-4" />
+          Rename
+        </MenuItem>
+        <MenuItem onSelect={() => onTogglePin()}>
+          {conversation.isPinned ? <MapPinSolidIcon className="w-4 h-4" /> : <MapPinIcon className="w-4 h-4" />}
+          {conversation.isPinned ? 'Unpin' : 'Pin to top'}
+        </MenuItem>
+        <MenuItem onSelect={() => onExport()}>
+          <ArrowDownTrayIcon className="w-4 h-4" />
+          Export as Markdown
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem tone="danger" onSelect={() => onConfirmDelete()}>
+          <TrashIcon className="w-4 h-4" />
+          Delete
+        </MenuItem>
+      </Menu>
+    </div>
   );
 }
 

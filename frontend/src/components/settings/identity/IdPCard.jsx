@@ -19,6 +19,7 @@ import {
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 import { IDP_STATUS } from '../../../services/identityProviderApi';
 import { getProviderLogo } from '../../integrations/ProviderLogos';
+import Menu, { MenuItem, MenuSeparator } from '../../shared/Menu';
 
 // Protocol labels
 const TYPE_LABELS = {
@@ -67,7 +68,6 @@ export default function IdPCard({
   onSetDefault,
   onToggle,
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const [testing, setTesting] = useState(false);
 
   const LogoComponent = getProviderLogo(provider.type);
@@ -120,71 +120,38 @@ export default function IdPCard({
         </div>
 
         {/* Menu */}
-        <div className="relative">
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="p-1.5 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
-            aria-label="More actions"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-          >
-            <EllipsisVerticalIcon className="h-5 w-5" />
-          </button>
-
-          {menuOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setMenuOpen(false)}
-              />
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-surface-800 rounded-lg shadow-lg border border-surface-200 dark:border-surface-700 py-1 z-20">
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onEdit();
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700"
-                >
-                  <PencilIcon className="h-4 w-4" />
-                  Edit Configuration
-                </button>
-                {!provider.is_default && provider.status === IDP_STATUS.CONNECTED && (
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onSetDefault();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700"
-                  >
-                    <StarIcon className="h-4 w-4" />
-                    Set as Default
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onToggle(!provider.enabled);
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700"
-                >
-                  <NoSymbolIcon className="h-4 w-4" />
-                  {provider.enabled ? 'Disable' : 'Enable'}
-                </button>
-                <hr className="my-1 border-surface-200 dark:border-surface-700" />
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDelete();
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-critical-600 dark:text-critical-400 hover:bg-critical-50 dark:hover:bg-critical-900/20"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                  Delete
-                </button>
-              </div>
-            </>
+        <Menu
+          align="end"
+          className="w-48"
+          trigger={
+            <button
+              className="p-1.5 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg transition-colors"
+              aria-label="More actions"
+            >
+              <EllipsisVerticalIcon className="h-5 w-5" />
+            </button>
+          }
+        >
+          <MenuItem onSelect={() => onEdit()}>
+            <PencilIcon className="h-4 w-4" />
+            Edit Configuration
+          </MenuItem>
+          {!provider.is_default && provider.status === IDP_STATUS.CONNECTED && (
+            <MenuItem onSelect={() => onSetDefault()}>
+              <StarIcon className="h-4 w-4" />
+              Set as Default
+            </MenuItem>
           )}
-        </div>
+          <MenuItem onSelect={() => onToggle(!provider.enabled)}>
+            <NoSymbolIcon className="h-4 w-4" />
+            {provider.enabled ? 'Disable' : 'Enable'}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem tone="danger" onSelect={() => onDelete()}>
+            <TrashIcon className="h-4 w-4" />
+            Delete
+          </MenuItem>
+        </Menu>
       </div>
 
       {/* Status */}

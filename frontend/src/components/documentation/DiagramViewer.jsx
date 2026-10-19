@@ -13,6 +13,7 @@ import {
 import { Skeleton } from '../ui/LoadingSkeleton';
 import { ConfidenceBadge } from './ConfidenceGauge';
 import Modal, { ModalTitle } from '../shared/Modal';
+import Menu, { MenuItem } from '../shared/Menu';
 
 // Export format configuration
 const EXPORT_FORMATS = [
@@ -29,6 +30,51 @@ const EXPORT_BACKGROUND = {
   gridColor: 'rgba(59, 130, 246, 0.08)',
   gridSize: 24,
 };
+
+/**
+ * Export button and its menu of formats
+ */
+export function ExportMenu({ disabled, isExporting, onExport, buttonClassName, menuClassName, itemClassName }) {
+  return (
+    <Menu
+      align="end"
+      className={menuClassName}
+      trigger={
+        <button
+          disabled={disabled}
+          className={`flex items-center gap-1 ${buttonClassName} text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+          title="Export diagram"
+          aria-label="Export diagram"
+        >
+          {isExporting ? (
+            <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          ) : (
+            <ArrowDownTrayIcon className="w-5 h-5" />
+          )}
+          <ChevronDownIcon className="w-3 h-3" />
+        </button>
+      }
+    >
+      {EXPORT_FORMATS.map((format) => (
+        <MenuItem
+          key={format.id}
+          onSelect={() => onExport(format.id)}
+          className={`!block !rounded-none ${itemClassName}`}
+        >
+          <div className="text-sm font-medium text-surface-900 dark:text-surface-100">
+            {format.label}
+          </div>
+          <div className="text-xs text-surface-500 dark:text-surface-400">
+            {format.description}
+          </div>
+        </MenuItem>
+      ))}
+    </Menu>
+  );
+}
 
 /**
  * DiagramViewer Component
@@ -161,9 +207,7 @@ export function DiagramViewer({
   const [copied, setCopied] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const exportMenuRef = useRef(null);
 
   // Separate state for fullscreen view
   const [fullscreenZoom, setFullscreenZoom] = useState(10.0); // 1000% initial zoom
@@ -396,19 +440,6 @@ export function DiagramViewer({
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
   }, []);
-
-  // Close export menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
-        setShowExportMenu(false);
-      }
-    };
-    if (showExportMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showExportMenu]);
 
   // Copy code to clipboard - ADR-060: Copy DSL for eraser, Mermaid for mermaid
   const handleCopy = useCallback(async () => {
@@ -791,7 +822,6 @@ export function DiagramViewer({
   // Handle export based on format
   const handleExport = useCallback(async (format) => {
     setIsExporting(true);
-    setShowExportMenu(false);
 
     try {
       switch (format) {
@@ -905,45 +935,14 @@ export function DiagramViewer({
               <ClipboardDocumentIcon className="w-5 h-5" />
             </button>
             {/* Export Dropdown */}
-            <div className="relative" ref={exportMenuRef}>
-              <button
-                onClick={() => setShowExportMenu(!showExportMenu)}
-                disabled={!renderedSvg || isExporting}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-md text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Export diagram"
-                aria-label="Export diagram"
-                aria-haspopup="true"
-                aria-expanded={showExportMenu}
-              >
-                {isExporting ? (
-                  <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                ) : (
-                  <ArrowDownTrayIcon className="w-5 h-5" />
-                )}
-                <ChevronDownIcon className="w-3 h-3" />
-              </button>
-              {showExportMenu && (
-                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-surface-800 rounded-lg shadow-lg border border-surface-200 dark:border-surface-700 py-1 z-50">
-                  {EXPORT_FORMATS.map((format) => (
-                    <button
-                      key={format.id}
-                      onClick={() => handleExport(format.id)}
-                      className="w-full px-3 py-2 text-left hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-                    >
-                      <div className="text-sm font-medium text-surface-900 dark:text-surface-100">
-                        {format.label}
-                      </div>
-                      <div className="text-xs text-surface-500 dark:text-surface-400">
-                        {format.description}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ExportMenu
+              disabled={!renderedSvg || isExporting}
+              isExporting={isExporting}
+              onExport={handleExport}
+              buttonClassName="px-2 py-1.5 rounded-md"
+              menuClassName="w-48"
+              itemClassName="px-3 py-2"
+            />
           </div>
         )}
       </div>
@@ -1126,45 +1125,14 @@ export function DiagramViewer({
               <ClipboardDocumentIcon className="w-5 h-5" />
             </button>
             {/* Export Dropdown in Fullscreen */}
-            <div className="relative">
-              <button
-                onClick={() => setShowExportMenu(!showExportMenu)}
-                disabled={!renderedSvg || isExporting}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors disabled:opacity-50"
-                title="Export diagram"
-                aria-label="Export diagram"
-                aria-haspopup="true"
-                aria-expanded={showExportMenu}
-              >
-                {isExporting ? (
-                  <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                ) : (
-                  <ArrowDownTrayIcon className="w-5 h-5" />
-                )}
-                <ChevronDownIcon className="w-3 h-3" />
-              </button>
-              {showExportMenu && (
-                <div className="absolute right-0 mt-1 w-52 bg-white dark:bg-surface-800 rounded-lg shadow-xl border border-surface-200 dark:border-surface-700 py-1 z-[110]">
-                  {EXPORT_FORMATS.map((format) => (
-                    <button
-                      key={format.id}
-                      onClick={() => handleExport(format.id)}
-                      className="w-full px-4 py-2.5 text-left hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-                    >
-                      <div className="text-sm font-medium text-surface-900 dark:text-surface-100">
-                        {format.label}
-                      </div>
-                      <div className="text-xs text-surface-500 dark:text-surface-400">
-                        {format.description}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ExportMenu
+              disabled={!renderedSvg || isExporting}
+              isExporting={isExporting}
+              onExport={handleExport}
+              buttonClassName="px-3 py-2 rounded-lg"
+              menuClassName="w-52 !z-[110]"
+              itemClassName="px-4 py-2.5"
+            />
             <button
               onClick={handleCloseFullscreen}
               className="p-2 rounded-lg text-surface-500 hover:text-surface-700 hover:bg-surface-100 dark:text-surface-400 dark:hover:text-surface-200 dark:hover:bg-surface-700 transition-colors"

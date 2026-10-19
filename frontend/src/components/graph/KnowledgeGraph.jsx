@@ -11,7 +11,6 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { useToast } from '../ui/Toast';
 import {
   DocumentIcon,
@@ -30,6 +29,7 @@ import {
   AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/outline';
 import FileViewer from './FileViewer';
+import Menu, { MenuItem, MenuLabel } from '../shared/Menu';
 
 // ============================================================================
 // Constants & Configuration
@@ -155,19 +155,6 @@ function createForceSimulation(nodes, edges, width, height) {
 // ============================================================================
 
 function ContextMenu({ x, y, node, onAction, onClose }) {
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
-
   const menuItems = [
     { id: 'view-file', icon: EyeIcon, label: 'View File', action: 'viewFile' },
     { id: 'view-refs', icon: LinkIcon, label: 'View References', action: 'viewReferences' },
@@ -175,42 +162,42 @@ function ContextMenu({ x, y, node, onAction, onClose }) {
     { id: 'open-ide', icon: ArrowTopRightOnSquareIcon, label: 'Open in IDE', action: 'openInIDE' },
   ];
 
-  // Adjust menu position to stay within viewport
-  const adjustedX = Math.min(x, window.innerWidth - 200);
-  const adjustedY = Math.min(y, window.innerHeight - 200);
-
-  return createPortal(
-    <div
-      ref={menuRef}
-      className="fixed z-50 bg-white/95 dark:bg-surface-800/95 backdrop-blur-xl backdrop-saturate-150 rounded-xl shadow-[var(--shadow-glass-hover)] border border-white/50 dark:border-surface-700/50 py-2 min-w-[180px] animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
-      style={{ left: adjustedX, top: adjustedY }}
+  // The menu opens at the pointer: an invisible point there anchors it, and the menu keeps
+  // itself inside the viewport
+  return (
+    <Menu
+      open
+      onOpenChange={(open) => !open && onClose()}
+      className="!min-w-[180px] !py-2 bg-white/95 dark:bg-surface-800/95 backdrop-saturate-150 shadow-[var(--shadow-glass-hover)] animate-in fade-in zoom-in-95 duration-[var(--duration-overlay)] ease-[var(--ease-tahoe)]"
+      trigger={
+        <span
+          aria-hidden="true"
+          className="fixed w-0 h-0 overflow-hidden"
+          style={{ left: x, top: y }}
+        >
+          {/* Names the menu (it is labelled by its trigger) */}
+          Actions for {node.label}
+        </span>
+      }
     >
-      <div className="px-3 py-2 border-b border-surface-100/50 dark:border-surface-700/30">
+      <MenuLabel className="px-3 py-2 border-b border-surface-100/50 dark:border-surface-700/30">
         <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
           {node.label}
         </p>
         <p className="text-xs text-surface-500 dark:text-surface-400 capitalize">
           {node.type}
         </p>
-      </div>
+      </MenuLabel>
 
       <div className="py-1">
         {menuItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => {
-              onAction(item.action, node);
-              onClose();
-            }}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 transition-all duration-200 ease-[var(--ease-tahoe)]"
-          >
+          <MenuItem key={item.id} onSelect={() => onAction(item.action, node)}>
             <item.icon className="w-4 h-4 text-surface-400" />
             {item.label}
-          </button>
+          </MenuItem>
         ))}
       </div>
-    </div>,
-    document.body
+    </Menu>
   );
 }
 

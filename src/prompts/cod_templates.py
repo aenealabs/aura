@@ -336,7 +336,9 @@ def build_cod_prompt(
         agent_type: Type of agent ("reviewer", "coder", "validator_insights",
                    "validator_requirements", "query_planner")
         mode: Prompt mode override (uses global setting if None)
-        **kwargs: Template variables
+        **kwargs: Template variables. ``memory_guidance`` (optional) is guidance from past
+            experiences (ADR-029 Phase 2.1); it is placed just before the template's final
+            instruction, so every template and mode carries it.
 
     Returns:
         Formatted prompt string
@@ -409,15 +411,43 @@ def build_cod_prompt(
         "secondary_note": "backup strategy",
     }
 
+    memory_guidance = str(kwargs.pop("memory_guidance", "") or "").strip()
+
+    # COT_CODER_PROMPT serves both coder types, so derive its fields from the CoD inputs
+    if agent_type in ("coder", "coder_initial"):
+        if "task" not in kwargs and "vulnerability" in kwargs:
+            kwargs["task"] = f"Fix: {kwargs['vulnerability']}"
+        kwargs.setdefault(
+            "remediation_note",
+            (
+                "IMPORTANT: Security remediation is required. Previous code had vulnerabilities "
+                "that must be fixed."
+                if agent_type == "coder"
+                else "Generate initial implementation."
+            ),
+        )
+
     # Merge placeholders with provided kwargs
     format_kwargs = {**draft_placeholders, **kwargs}
 
     try:
-        return template.format(**format_kwargs)
+        prompt = template.format(**format_kwargs)
     except KeyError as e:
         logger.warning(f"Missing template variable: {e}")
         # Return template with unfilled placeholders for debugging
         return template
+
+    return _with_memory_guidance(prompt, memory_guidance)
+
+
+def _with_memory_guidance(prompt: str, memory_guidance: str) -> str:
+    """Insert memory guidance before the prompt's final instruction (its last paragraph)."""
+    if not memory_guidance:
+        return prompt
+    head, sep, tail = prompt.rpartition("\n\n")
+    if not sep:
+        return f"{prompt}\n\n{memory_guidance}"
+    return f"{head}\n\n{memory_guidance}\n\n{tail}"
 
 
 def estimate_token_savings(cod_prompt: str, cot_prompt: str) -> dict[str, Any]:

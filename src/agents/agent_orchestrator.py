@@ -905,7 +905,9 @@ class System2Orchestrator:
 
             # Phase 4: REVIEW
             if phase == WorkflowPhase.SECURITY_REVIEW:
-                review_result = await self.reviewer_agent.review_code(self.final_code)
+                review_result = await self.reviewer_agent.review_code(
+                    self.final_code, hybrid_context
+                )
 
                 if save_checkpoints:
                     cp = self._create_checkpoint(
@@ -1061,7 +1063,9 @@ class System2Orchestrator:
             self.save_checkpoint(code_checkpoint)
 
             # Phase 4: REVIEW
-            review_result = await self.reviewer_agent.review_code(self.final_code)
+            review_result = await self.reviewer_agent.review_code(
+                self.final_code, hybrid_context
+            )
 
             review_checkpoint = self._create_checkpoint(
                 workflow_id,
@@ -1563,7 +1567,9 @@ Response (JSON only):"""
             self.final_code = coder_result["code"]
 
             # Phase 4: REVIEW - Security review using ReviewerAgent
-            review_result = await self.reviewer_agent.review_code(self.final_code)
+            review_result = await self.reviewer_agent.review_code(
+                self.final_code, hybrid_context
+            )
 
             if review_result["status"] == "PASS":
                 break

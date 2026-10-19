@@ -159,6 +159,7 @@ class CoderAgent:
                     vulnerability=task_description,
                     context=context_str,
                     code="(see context above)",
+                    memory_guidance=memory_guidance,
                 )
             else:
                 # Use initial generation CoD prompt
@@ -166,6 +167,7 @@ class CoderAgent:
                     "coder_initial",
                     task=task_description,
                     context=context_str,
+                    memory_guidance=memory_guidance,
                 )
             if get_prompt_mode_func is not None:
                 logger.debug(f"Using CoD prompt mode: {get_prompt_mode_func().value}")

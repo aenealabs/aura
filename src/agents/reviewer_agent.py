@@ -303,7 +303,9 @@ class ReviewerAgent:
 
         # Use CoD prompt if available, otherwise fall back to traditional prompt
         if build_cod_prompt is not None and get_prompt_mode is not None:
-            prompt = build_cod_prompt("reviewer", code=code)
+            prompt = build_cod_prompt(
+                "reviewer", code=code, memory_guidance=memory_guidance
+            )
             logger.debug(f"Using CoD prompt mode: {get_prompt_mode().value}")
         else:
             # Fallback to traditional CoT prompt with optional memory guidance

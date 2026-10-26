@@ -31,7 +31,7 @@ cryptography>=50.0.1         # RSA key support
 fastapi>=0.162.0             # REST API
 uvicorn>=0.54.0              # ASGI server
 httpx>=0.28.1                # HTTP client
-pydantic>=2.13.5             # Data validation
+pydantic>=2.14.1             # Data validation
 email-validator>=2.3.0       # Email validation for Pydantic
 python-multipart>=0.0.32     # Form data support
 

@@ -553,18 +553,6 @@ STACK_DEFINITIONS = [
         "layer": "application",
     },
     {
-        "name": f"{PROJECT_NAME}-marketing-{ENVIRONMENT}",
-        "phase": 7,
-        "template": "deploy/cloudformation/marketing.yaml",
-        "layer": "application",
-    },
-    {
-        "name": f"{PROJECT_NAME}-docs-portal-{ENVIRONMENT}",
-        "phase": 7,
-        "template": "deploy/cloudformation/docs-portal.yaml",
-        "layer": "application",
-    },
-    {
         "name": f"{PROJECT_NAME}-alb-controller-{ENVIRONMENT}",
         "phase": 7,
         "template": "deploy/cloudformation/alb-controller.yaml",
@@ -2084,8 +2072,7 @@ def do_restore(args: argparse.Namespace) -> int:
             f"{args.region}{NC}"
         )
         print(
-            "  2. Verify K8s nodes are joining:\n"
-            f"     {BOLD}kubectl get nodes{NC}"
+            "  2. Verify K8s nodes are joining:\n" f"     {BOLD}kubectl get nodes{NC}"
         )
         print(
             "  3. Monitor CodeBuild builds for upper-layer deployment "

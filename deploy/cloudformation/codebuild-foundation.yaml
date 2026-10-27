@@ -87,6 +87,7 @@ Resources:
   FoundationCodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-foundation-codebuild-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -167,7 +168,7 @@ Resources:
                     iam:AWSServiceName: wafv2.amazonaws.com
               # IAM Management - scoped to project resources
               - Effect: Allow
-                Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:PassRole, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:TagRole, iam:UntagRole, iam:ListAttachedRolePolicies, iam:ListRolePolicies, iam:CreateInstanceProfile, iam:DeleteInstanceProfile, iam:AddRoleToInstanceProfile, iam:RemoveRoleFromInstanceProfile, iam:CreateOpenIDConnectProvider, iam:DeleteOpenIDConnectProvider, iam:GetOpenIDConnectProvider, iam:TagOpenIDConnectProvider, iam:CreateServiceLinkedRole]
+                Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:TagRole, iam:UntagRole, iam:ListAttachedRolePolicies, iam:ListRolePolicies, iam:CreateInstanceProfile, iam:DeleteInstanceProfile, iam:AddRoleToInstanceProfile, iam:RemoveRoleFromInstanceProfile, iam:CreateOpenIDConnectProvider, iam:DeleteOpenIDConnectProvider, iam:GetOpenIDConnectProvider, iam:TagOpenIDConnectProvider, iam:CreateServiceLinkedRole]
                 Resource: [!Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*', !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/${ProjectName}-*', !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/*']
               # ECR Repository Management
               - Effect: Allow
@@ -227,10 +228,10 @@ Resources:
               # IAM - PassRole for CodeBuild/EventBridge
               - Effect: Allow
                 Action: iam:PassRole
-                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*'
                 Condition:
                   StringEquals:
-                    iam:PassedToService: [codebuild.amazonaws.com, events.amazonaws.com]
+                    iam:PassedToService: [apigateway.amazonaws.com, backup.amazonaws.com, bedrock.amazonaws.com, cloudformation.amazonaws.com, cloudtrail.amazonaws.com, codebuild.amazonaws.com, delivery.logs.amazonaws.com, dynamodb.amazonaws.com, ec2.amazonaws.com, ecs-tasks.amazonaws.com, ecs.amazonaws.com, eks-fargate-pods.amazonaws.com, eks.amazonaws.com, es.amazonaws.com, events.amazonaws.com, guardduty.amazonaws.com, lambda.amazonaws.com, rds.amazonaws.com, s3.amazonaws.com, secretsmanager.amazonaws.com, sns.amazonaws.com, sqs.amazonaws.com, states.amazonaws.com, vpc-flow-logs.amazonaws.com]
               # CloudWatch Alarms
               - Effect: Allow
                 Action: [cloudwatch:PutMetricAlarm, cloudwatch:DeleteAlarms, cloudwatch:DescribeAlarms]
@@ -344,6 +345,43 @@ Resources:
       Threshold: 600000  # 10 minutes in milliseconds
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+
+  # ADR-092: lets this layer deploy through the scoped CloudFormation service
+  # role (--role-arn, opt-in per environment) and set approved permission
+  # boundaries on the roles its stacks own.
+  CfnServiceRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-foundation-cfn-access-${Environment}'
+      Description: Pass the scoped CloudFormation service role and set approved permission boundaries
+      Roles:
+        - !Ref FoundationCodeBuildRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ReadCfnServiceRoleOptIn
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/cfn-service-role-arn'
+          - Sid: PassScopedCloudFormationServiceRole
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cfn-role-${Environment}'
+            Condition:
+              StringEquals:
+                iam:PassedToService: cloudformation.amazonaws.com
+          - Sid: SetApprovedPermissionBoundaryOnProjectRoles
+            Effect: Allow
+            Action: iam:PutRolePermissionsBoundary
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
+            Condition:
+              StringEquals:
+                iam:PermissionsBoundary:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-test-env-permission-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-ma-sandbox-permissions-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-taint-resolver-writer-boundary-${Environment}'
 
 Outputs:
   FoundationCodeBuildProjectName:

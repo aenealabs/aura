@@ -1,0 +1,272 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Aura - Layer 0.2 - Identity Center Permission Sets (Operator Least Privilege)'
+
+# Deployed once, by an administrator, in the account that holds the
+# organization's IAM Identity Center instance (the management account). It
+# replaces the AWS-managed AdministratorAccess permission set for day-to-day
+# operation with three sets:
+#
+#   AuraDeployer   - everything `deploy/deploy.sh deploy|redeploy|status <env>`
+#                    and the bootstrap scripts need, scoped to aura-* resources.
+#   AuraReadOnly   - metadata-only viewing (AWS-managed ViewOnlyAccess).
+#   AuraBreakGlass - AdministratorAccess with a one-hour session, for teardown
+#                    (`deploy.sh destroy` is a manual, reverse-order procedure),
+#                    kill switches and incident recovery.
+#
+# Group IDs come from the Identity Store. Leave a group ID empty to skip that
+# assignment; leave an account ID empty to skip that account.
+
+Parameters:
+  InstanceArn:
+    Type: String
+    AllowedPattern: '^arn:(aws|aws-us-gov):sso:::instance/ssoins-[a-f0-9]{16}$'
+    Description: ARN of the IAM Identity Center instance
+  DevAccountId:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[0-9]{12}$'
+    Description: DEV account ID (empty to skip)
+  QaAccountId:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[0-9]{12}$'
+    Description: QA account ID (empty to skip)
+  DeployerGroupId:
+    Type: String
+    Default: ''
+    Description: Identity Store group ID for operators who deploy (empty to skip)
+  ReadOnlyGroupId:
+    Type: String
+    Default: ''
+    Description: Identity Store group ID for read-only users (empty to skip)
+  BreakGlassGroupId:
+    Type: String
+    Default: ''
+    Description: Identity Store group ID for break-glass administrators (empty to skip)
+
+Conditions:
+  HasDev: !Not [!Equals [!Ref DevAccountId, '']]
+  HasQa: !Not [!Equals [!Ref QaAccountId, '']]
+  HasDeployerGroup: !Not [!Equals [!Ref DeployerGroupId, '']]
+  HasReadOnlyGroup: !Not [!Equals [!Ref ReadOnlyGroupId, '']]
+  HasBreakGlassGroup: !Not [!Equals [!Ref BreakGlassGroupId, '']]
+  AssignDeployerDev: !And [!Condition HasDev, !Condition HasDeployerGroup]
+  AssignDeployerQa: !And [!Condition HasQa, !Condition HasDeployerGroup]
+  AssignReadOnlyDev: !And [!Condition HasDev, !Condition HasReadOnlyGroup]
+  AssignReadOnlyQa: !And [!Condition HasQa, !Condition HasReadOnlyGroup]
+  AssignBreakGlassDev: !And [!Condition HasDev, !Condition HasBreakGlassGroup]
+  AssignBreakGlassQa: !And [!Condition HasQa, !Condition HasBreakGlassGroup]
+
+Resources:
+  AuraDeployerPermissionSet:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      InstanceArn: !Ref InstanceArn
+      Name: AuraDeployer
+      Description: Bootstrap and deploy Aura (aura-* resources only)
+      SessionDuration: PT4H
+      ManagedPolicies:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/job-function/ViewOnlyAccess'
+      InlinePolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Identity
+            Effect: Allow
+            Action: [sts:GetCallerIdentity, bedrock:ListFoundationModels, bedrock:ListInferenceProfiles]
+            Resource: '*'
+          - Sid: CloudFormationRead
+            Effect: Allow
+            Action: [cloudformation:Describe*, cloudformation:Get*, cloudformation:List*, cloudformation:ValidateTemplate]
+            Resource: '*'
+          - Sid: CloudFormationProjectStacks
+            Effect: Allow
+            Action: [cloudformation:CreateStack, cloudformation:UpdateStack, cloudformation:DeleteStack, cloudformation:CreateChangeSet, cloudformation:ExecuteChangeSet, cloudformation:DeleteChangeSet, cloudformation:TagResource, cloudformation:UntagResource]
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cloudformation:*:*:stack/aura-*/*'
+              - !Sub 'arn:${AWS::Partition}:cloudformation:*:*:changeSet/*/*'
+          - Sid: IAMProjectRolesAndPolicies
+            Effect: Allow
+            Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:UpdateRole, iam:TagRole, iam:UntagRole, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:ListRolePolicies, iam:ListAttachedRolePolicies, iam:UpdateAssumeRolePolicy, iam:PutRolePermissionsBoundary, iam:CreatePolicy, iam:DeletePolicy, iam:CreatePolicyVersion, iam:DeletePolicyVersion, iam:GetPolicy, iam:GetPolicyVersion, iam:ListPolicyVersions, iam:SetDefaultPolicyVersion, iam:TagPolicy, iam:UntagPolicy]
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::*:role/aura-*'
+              - !Sub 'arn:${AWS::Partition}:iam::*:policy/aura-*'
+          - Sid: PassPipelineRoles
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub 'arn:${AWS::Partition}:iam::*:role/aura-*'
+            Condition:
+              StringEquals:
+                iam:PassedToService: [codebuild.amazonaws.com, lambda.amazonaws.com, states.amazonaws.com]
+          - Sid: DenyRoleWithoutProjectBoundary
+            Effect: Deny
+            Action: [iam:CreateRole, iam:PutRolePermissionsBoundary]
+            Resource: '*'
+            Condition:
+              StringNotLike:
+                iam:PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::*:policy/aura-*boundary-*'
+          - Sid: DenyBoundaryRemoval
+            Effect: Deny
+            Action: iam:DeleteRolePermissionsBoundary
+            Resource: '*'
+          - Sid: DenyAdminPolicyAttachment
+            Effect: Deny
+            Action: [iam:AttachRolePolicy, iam:AttachUserPolicy, iam:AttachGroupPolicy]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                iam:PolicyARN:
+                  - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess'
+                  - !Sub 'arn:${AWS::Partition}:iam::aws:policy/IAMFullAccess'
+                  - !Sub 'arn:${AWS::Partition}:iam::aws:policy/PowerUserAccess'
+          - Sid: DenyLongLivedCredentials
+            Effect: Deny
+            Action: [iam:CreateUser, iam:CreateAccessKey, iam:CreateLoginProfile]
+            Resource: '*'
+          - Sid: BuildAndPipelineControl
+            Effect: Allow
+            Action: [codebuild:StartBuild, codebuild:StopBuild, codebuild:BatchGetBuilds, codebuild:CreateProject, codebuild:UpdateProject, codebuild:DeleteProject, codebuild:BatchGetProjects, states:StartExecution, states:StopExecution, states:DescribeExecution, states:ListExecutions, states:CreateStateMachine, states:UpdateStateMachine, states:DeleteStateMachine, states:DescribeStateMachine, states:TagResource]
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:codebuild:*:*:project/aura-*'
+              - !Sub 'arn:${AWS::Partition}:states:*:*:stateMachine:aura-*'
+              - !Sub 'arn:${AWS::Partition}:states:*:*:execution:aura-*:*'
+          - Sid: ListBuildsAndPipelines
+            Effect: Allow
+            Action: [codebuild:ListProjects, codebuild:ListBuildsForProject, states:ListStateMachines]
+            Resource: '*'
+          - Sid: SourceConnection
+            Effect: Allow
+            Action: [codeconnections:GetConnection, codeconnections:UseConnection, codeconnections:PassConnection, codeconnections:ListConnections, codestar-connections:GetConnection, codestar-connections:UseConnection, codestar-connections:PassConnection, codestar-connections:ListConnections]
+            Resource: '*'
+          - Sid: PipelineStackResources
+            Effect: Allow
+            Action: [lambda:CreateFunction, lambda:UpdateFunctionCode, lambda:UpdateFunctionConfiguration, lambda:DeleteFunction, lambda:GetFunction, lambda:GetFunctionConfiguration, lambda:AddPermission, lambda:RemovePermission, lambda:TagResource, lambda:ListTags, sns:CreateTopic, sns:DeleteTopic, sns:Subscribe, sns:Unsubscribe, sns:GetTopicAttributes, sns:SetTopicAttributes, sns:TagResource, cloudwatch:PutMetricAlarm, cloudwatch:DeleteAlarms, cloudwatch:TagResource]
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:lambda:*:*:function:aura-*'
+              - !Sub 'arn:${AWS::Partition}:sns:*:*:aura-*'
+              - !Sub 'arn:${AWS::Partition}:cloudwatch:*:*:alarm:aura-*'
+          - Sid: SubscriptionAttributes
+            Effect: Allow
+            Action: sns:GetSubscriptionAttributes
+            Resource: '*'
+          - Sid: ProjectLogGroups
+            Effect: Allow
+            Action: [logs:CreateLogGroup, logs:DeleteLogGroup, logs:PutRetentionPolicy, logs:TagResource, logs:TagLogGroup, logs:GetLogEvents, logs:FilterLogEvents]
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:*:*:log-group:/aws/codebuild/aura-*'
+              - !Sub 'arn:${AWS::Partition}:logs:*:*:log-group:/aws/lambda/aura-*'
+              - !Sub 'arn:${AWS::Partition}:logs:*:*:log-group:/aws/stepfunctions/aura-*'
+          - Sid: ProjectBuckets
+            Effect: Allow
+            Action: [s3:CreateBucket, s3:DeleteBucket, s3:ListBucket, s3:GetBucket*, s3:PutBucket*, s3:GetEncryptionConfiguration, s3:PutEncryptionConfiguration, s3:GetLifecycleConfiguration, s3:PutLifecycleConfiguration, s3:GetObject, s3:PutObject, s3:DeleteObject]
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::aura-*'
+              - !Sub 'arn:${AWS::Partition}:s3:::aura-*/*'
+          - Sid: BaseImageRepositories
+            Effect: Allow
+            Action: [ecr:CreateRepository, ecr:DeleteRepository, ecr:DescribeRepositories, ecr:DescribeImages, ecr:PutLifecyclePolicy, ecr:GetLifecyclePolicy, ecr:DeleteLifecyclePolicy, ecr:SetRepositoryPolicy, ecr:GetRepositoryPolicy, ecr:DeleteRepositoryPolicy, ecr:ListTagsForResource, ecr:PutImageScanningConfiguration, ecr:PutImageTagMutability, ecr:TagResource, ecr:BatchCheckLayerAvailability, ecr:InitiateLayerUpload, ecr:UploadLayerPart, ecr:CompleteLayerUpload, ecr:PutImage, ecr:BatchGetImage, ecr:GetDownloadUrlForLayer]
+            Resource: !Sub 'arn:${AWS::Partition}:ecr:*:*:repository/aura-*'
+          - Sid: RegistryLogin
+            Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: '*'
+          - Sid: ProjectParameters
+            Effect: Allow
+            Action: [ssm:GetParameter, ssm:GetParameters, ssm:PutParameter, ssm:DeleteParameter, ssm:AddTagsToResource]
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:*:*:parameter/aura/*'
+
+  AuraReadOnlyPermissionSet:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      InstanceArn: !Ref InstanceArn
+      Name: AuraReadOnly
+      Description: View Aura resource metadata; no data access
+      SessionDuration: PT8H
+      ManagedPolicies:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/job-function/ViewOnlyAccess'
+
+  AuraBreakGlassPermissionSet:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      InstanceArn: !Ref InstanceArn
+      Name: AuraBreakGlass
+      Description: Full administration for teardown, kill switches and incidents; one-hour sessions
+      SessionDuration: PT1H
+      ManagedPolicies:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess'
+
+  DeployerDevAssignment:
+    Type: AWS::SSO::Assignment
+    Condition: AssignDeployerDev
+    Properties:
+      InstanceArn: !Ref InstanceArn
+      PermissionSetArn: !GetAtt AuraDeployerPermissionSet.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref DeployerGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref DevAccountId
+
+  DeployerQaAssignment:
+    Type: AWS::SSO::Assignment
+    Condition: AssignDeployerQa
+    Properties:
+      InstanceArn: !Ref InstanceArn
+      PermissionSetArn: !GetAtt AuraDeployerPermissionSet.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref DeployerGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref QaAccountId
+
+  ReadOnlyDevAssignment:
+    Type: AWS::SSO::Assignment
+    Condition: AssignReadOnlyDev
+    Properties:
+      InstanceArn: !Ref InstanceArn
+      PermissionSetArn: !GetAtt AuraReadOnlyPermissionSet.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref ReadOnlyGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref DevAccountId
+
+  ReadOnlyQaAssignment:
+    Type: AWS::SSO::Assignment
+    Condition: AssignReadOnlyQa
+    Properties:
+      InstanceArn: !Ref InstanceArn
+      PermissionSetArn: !GetAtt AuraReadOnlyPermissionSet.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref ReadOnlyGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref QaAccountId
+
+  BreakGlassDevAssignment:
+    Type: AWS::SSO::Assignment
+    Condition: AssignBreakGlassDev
+    Properties:
+      InstanceArn: !Ref InstanceArn
+      PermissionSetArn: !GetAtt AuraBreakGlassPermissionSet.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref BreakGlassGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref DevAccountId
+
+  BreakGlassQaAssignment:
+    Type: AWS::SSO::Assignment
+    Condition: AssignBreakGlassQa
+    Properties:
+      InstanceArn: !Ref InstanceArn
+      PermissionSetArn: !GetAtt AuraBreakGlassPermissionSet.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref BreakGlassGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref QaAccountId
+
+Outputs:
+  AuraDeployerPermissionSetArn:
+    Description: ARN of the AuraDeployer permission set
+    Value: !GetAtt AuraDeployerPermissionSet.PermissionSetArn
+  AuraReadOnlyPermissionSetArn:
+    Description: ARN of the AuraReadOnly permission set
+    Value: !GetAtt AuraReadOnlyPermissionSet.PermissionSetArn
+  AuraBreakGlassPermissionSetArn:
+    Description: ARN of the AuraBreakGlass permission set
+    Value: !GetAtt AuraBreakGlassPermissionSet.PermissionSetArn

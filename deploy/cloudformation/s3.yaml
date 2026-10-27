@@ -257,6 +257,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProduction
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub "${ProjectName}-s3-replication-${Environment}"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

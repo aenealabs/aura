@@ -623,6 +623,7 @@ Resources:
   TestEnvECSExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-test-env-ecs-execution-role-${Environment}'
       Description: 'ECS task execution role for test environments'
       AssumeRolePolicyDocument:
@@ -757,6 +758,7 @@ Resources:
   TestEnvStepFunctionsRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-test-env-stepfunctions-role-${Environment}'
       Description: 'Role for test environment HITL approval Step Functions and Lambda functions'
       AssumeRolePolicyDocument:

@@ -108,6 +108,42 @@ check_prerequisites() {
         exit 1
     fi
 
+    # Wrong-account guard: the same check the k8s-deploy layer runs, done
+    # here so a mismatched profile fails before anything is created.
+    local CALLER_ACCOUNT
+    CALLER_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+    if ! "${SCRIPT_DIR}/validate-account-id.sh" "${ENVIRONMENT}" "${CALLER_ACCOUNT}"; then
+        log_error "Account check failed for ${ENVIRONMENT}; see the message above."
+        exit 1
+    fi
+
+    # Per-environment parameters that layer buildspecs read through
+    # `env: parameter-store`. A missing one fails that layer's build before
+    # any command runs, deep into the pipeline, so check them here.
+    local ALERT_PARAM="/${PROJECT_NAME}/${ENVIRONMENT}/alert-email"
+    if ! aws ssm get-parameter --name "${ALERT_PARAM}" --region "${REGION}" &> /dev/null; then
+        if [ -n "${ALERT_EMAIL:-}" ]; then
+            aws ssm put-parameter --name "${ALERT_PARAM}" --value "${ALERT_EMAIL}" \
+                --type String --region "${REGION}" > /dev/null \
+                || { log_error "Could not create ${ALERT_PARAM}"; exit 1; }
+            log_success "Created ${ALERT_PARAM} from ALERT_EMAIL"
+        else
+            log_error "SSM parameter not found: ${ALERT_PARAM} (read by the application, observability and other layers)"
+            echo "  Set ALERT_EMAIL when running deploy.sh, or create it:"
+            echo "    aws ssm put-parameter --name ${ALERT_PARAM} --value you@example.com --type String --region ${REGION}"
+            exit 1
+        fi
+    fi
+
+    local ADMIN_PARAM="/${PROJECT_NAME}/${ENVIRONMENT}/admin-role-arn"
+    if ! aws ssm get-parameter --name "${ADMIN_PARAM}" --region "${REGION}" &> /dev/null; then
+        log_error "SSM parameter not found: ${ADMIN_PARAM} (EKS cluster-admin principal, read by the compute layer)"
+        echo "  Use the AuraBreakGlass IAM Identity Center role ARN (AURA-CTL-005):"
+        echo "    aws ssm put-parameter --name ${ADMIN_PARAM} --type String --region ${REGION} \\"
+        echo "      --value arn:aws:iam::<ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AuraBreakGlass_<suffix>"
+        exit 1
+    fi
+
     # Bedrock model access preflight (commercial regions only; GovCloud
     # has its own model approval flow and skips this check).
     if [[ ! "${REGION}" =~ ^us-gov- ]]; then
@@ -127,6 +163,31 @@ check_prerequisites() {
     fi
 
     log_success "Prerequisites check passed"
+}
+
+deploy_permission_boundaries() {
+    log_info "Deploying IAM permission boundaries..."
+
+    # Every role created by this script and by the layer builds carries one
+    # of these boundaries (deployer for build roles, workload for runtime
+    # roles), and the deployer boundary refuses to create a role without one.
+    # The stack must therefore exist before any other stack in the account.
+    local STACK_NAME="${PROJECT_NAME}-iam-permission-boundaries-${ENVIRONMENT}"
+    local TEMPLATE_FILE="${REPO_ROOT}/deploy/cloudformation/iam-permission-boundaries.yaml"
+
+    aws cloudformation deploy \
+        --stack-name "${STACK_NAME}" \
+        --template-file "${TEMPLATE_FILE}" \
+        --parameter-overrides \
+            Environment="${ENVIRONMENT}" \
+            ProjectName="${PROJECT_NAME}" \
+        --capabilities CAPABILITY_NAMED_IAM \
+        --tags Project="${PROJECT_NAME}" Environment="${ENVIRONMENT}" Layer=bootstrap \
+        --no-fail-on-empty-changeset \
+        --region "${REGION}" \
+        || { log_error "IAM permission boundaries stack deploy failed"; exit 1; }
+
+    log_success "IAM permission boundaries deployed: ${STACK_NAME}"
 }
 
 bootstrap_ecr_base_images() {
@@ -396,14 +457,17 @@ main() {
     # Execute bootstrap steps in dependency order:
     #   1. Preflight every implicit prerequisite (AWS creds,
     #      CodeConnection, Bedrock model access).
-    #   2. Bootstrap private ECR base images BEFORE any layer build
+    #   2. Deploy the IAM permission boundaries BEFORE any stack that
+    #      creates a role (every role must carry an approved boundary).
+    #   3. Bootstrap private ECR base images BEFORE any layer build
     #      runs (CLAUDE.md mandates private ECR for all containers).
-    #   3. Deploy the bootstrap CodeBuild stack and run it; this
-    #      provisions the 24 layer CodeBuild projects.
-    #   4. Deploy the deployment-pipeline state machine so the
+    #   4. Deploy the bootstrap CodeBuild stack and run it; this
+    #      provisions the 23 layer CodeBuild projects.
+    #   5. Deploy the deployment-pipeline state machine so the
     #      operator has a single command to drive the rest.
-    #   5. Print the streamlined start-execution invocation.
+    #   6. Print the streamlined start-execution invocation.
     check_prerequisites
+    deploy_permission_boundaries
     bootstrap_ecr_base_images
     deploy_bootstrap_stack
     trigger_bootstrap_build

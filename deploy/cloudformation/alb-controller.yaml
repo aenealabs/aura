@@ -213,6 +213,7 @@ Resources:
   ALBControllerRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-alb-controller-role-${Environment}'
       Description: !Sub 'IRSA role for AWS Load Balancer Controller in ${Environment}'
       AssumeRolePolicyDocument:

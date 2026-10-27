@@ -98,7 +98,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'aura-test-${EnvironmentName}-processor'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt LambdaRole.Arn
       Timeout: 300
@@ -130,7 +130,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'aura-test-${EnvironmentName}-validator'
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt LambdaRole.Arn
       Timeout: 60

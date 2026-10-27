@@ -80,6 +80,7 @@ Resources:
   NetworkServicesCodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-network-services-codebuild-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -381,6 +382,43 @@ Resources:
         - Name: ProjectName
           Value: !Ref NetworkServicesCodeBuildProject
       TreatMissingData: notBreaching
+
+  # ADR-092: lets this layer deploy through the scoped CloudFormation service
+  # role (--role-arn, opt-in per environment) and set approved permission
+  # boundaries on the roles its stacks own.
+  CfnServiceRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-network-services-cfn-access-${Environment}'
+      Description: Pass the scoped CloudFormation service role and set approved permission boundaries
+      Roles:
+        - !Ref NetworkServicesCodeBuildRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ReadCfnServiceRoleOptIn
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/cfn-service-role-arn'
+          - Sid: PassScopedCloudFormationServiceRole
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cfn-role-${Environment}'
+            Condition:
+              StringEquals:
+                iam:PassedToService: cloudformation.amazonaws.com
+          - Sid: SetApprovedPermissionBoundaryOnProjectRoles
+            Effect: Allow
+            Action: iam:PutRolePermissionsBoundary
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-${Environment}'
+            Condition:
+              StringEquals:
+                iam:PermissionsBoundary:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-serverless-permission-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-test-env-permission-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-ma-sandbox-permissions-boundary-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-taint-resolver-writer-boundary-${Environment}'
 
 Outputs:
   CodeBuildProjectName:

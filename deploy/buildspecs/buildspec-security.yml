@@ -20,24 +20,31 @@ phases:
     commands:
       - echo "Installing cfn-lint..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint
+      - pip3 install cfn-lint==1.57.2
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Security/Compliance Layer Deployment"
       - echo "=========================================="
 
       # Validate templates
       - echo "Validating security layer templates..."
-      - cfn-lint deploy/cloudformation/config-compliance.yaml || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/guardduty.yaml || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/drift-detection.yaml || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/red-team.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/semantic-guardrails.yaml || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/semantic-guardrails-monitoring.yaml || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/capability-governance.yaml || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/capability-governance-monitoring.yaml || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/config-compliance.yaml || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/guardduty.yaml || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/drift-detection.yaml || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/red-team.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/semantic-guardrails.yaml || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/semantic-guardrails-monitoring.yaml || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/capability-governance.yaml || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/capability-governance-monitoring.yaml || exit 1
 
       # Get dependency stack outputs for Red Team
       - echo "Retrieving dependency stack outputs..."
@@ -62,7 +69,7 @@ phases:
       - echo "Deploying AWS Config Compliance Stack..."
       - CONFIG_STACK="${PROJECT_NAME}-config-compliance-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $CONFIG_STACK \
           --template-file deploy/cloudformation/config-compliance.yaml \
           --parameter-overrides \
@@ -98,7 +105,7 @@ phases:
           STACK_STATUS="DOES_NOT_EXIST"
         fi
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --template-file deploy/cloudformation/guardduty.yaml \
           --stack-name $GUARDDUTY_STACK \
           --parameter-overrides \
@@ -118,7 +125,7 @@ phases:
       - echo "Deploying Drift Detection Stack..."
       - DRIFT_STACK="${PROJECT_NAME}-drift-detection-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $DRIFT_STACK \
           --template-file deploy/cloudformation/drift-detection.yaml \
           --parameter-overrides \
@@ -147,7 +154,7 @@ phases:
           REDTEAM_OVERRIDES="$REDTEAM_OVERRIDES AlertEmail=$ALERT_EMAIL"
         fi
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $REDTEAM_STACK \
           --template-file deploy/cloudformation/red-team.yaml \
           --parameter-overrides $REDTEAM_OVERRIDES \
@@ -160,7 +167,7 @@ phases:
       # Deploy Semantic Guardrails Stack (ADR-065)
       - echo "Deploying Semantic Guardrails Stack..."
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name ${PROJECT_NAME}-semantic-guardrails-${ENVIRONMENT} \
           --template-file deploy/cloudformation/semantic-guardrails.yaml \
           --parameter-overrides \
@@ -175,7 +182,7 @@ phases:
       # Deploy Semantic Guardrails Monitoring Stack (ADR-065)
       - echo "Deploying Semantic Guardrails Monitoring Stack..."
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name ${PROJECT_NAME}-semantic-guardrails-monitoring-${ENVIRONMENT} \
           --template-file deploy/cloudformation/semantic-guardrails-monitoring.yaml \
           --parameter-overrides \
@@ -191,7 +198,7 @@ phases:
       # Deploy Capability Governance Stack (ADR-066)
       - echo "Deploying Capability Governance Stack..."
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name ${PROJECT_NAME}-capability-governance-${ENVIRONMENT} \
           --template-file deploy/cloudformation/capability-governance.yaml \
           --parameter-overrides \
@@ -206,7 +213,7 @@ phases:
       # Deploy Capability Governance Monitoring Stack (ADR-066)
       - echo "Deploying Capability Governance Monitoring Stack..."
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name ${PROJECT_NAME}-capability-governance-monitoring-${ENVIRONMENT} \
           --template-file deploy/cloudformation/capability-governance-monitoring.yaml \
           --parameter-overrides \

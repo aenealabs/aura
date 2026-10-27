@@ -262,6 +262,7 @@ Resources:
   SSRTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-ssr-task-execution-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -308,6 +309,7 @@ Resources:
   SSRBugInjectionTaskRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-ssr-bug-injection-task-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -372,6 +374,7 @@ Resources:
   SSRBugSolvingTaskRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-ssr-bug-solving-task-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -443,6 +446,7 @@ Resources:
   SSRStepFunctionsRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-ssr-stepfunctions-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

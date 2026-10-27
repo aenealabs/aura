@@ -80,6 +80,7 @@ Resources:
   ClusterAutoscalerRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-cluster-autoscaler-role-${Environment}'
       Description: !Sub 'IRSA role for Cluster Autoscaler in ${Environment}'
       AssumeRolePolicyDocument:

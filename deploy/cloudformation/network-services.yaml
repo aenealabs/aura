@@ -205,6 +205,7 @@ Resources:
   TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub "${ProjectName}-network-services-execution-role-${Environment}"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -239,6 +240,7 @@ Resources:
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub "${ProjectName}-network-services-task-role-${Environment}"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

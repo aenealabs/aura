@@ -23,25 +23,32 @@ phases:
     commands:
       - echo "Installing cfn-lint..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint
+      - pip3 install cfn-lint==1.57.2
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Compute Layer Deployment"
       - echo "=========================================="
 
       # Validate templates
       - echo "Validating compute layer templates..."
-      - cfn-lint deploy/cloudformation/eks.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/eks-nodegroup-general.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/eks-nodegroup-memory.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/eks-nodegroup-gpu.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/acm-certificate.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/alb-controller.yaml --ignore-checks W3002,W2001 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/irsa-cluster-autoscaler.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/neural-memory-gpu.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/route53-dns.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/eks.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/eks-nodegroup-general.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/eks-nodegroup-memory.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/eks-nodegroup-gpu.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/acm-certificate.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/alb-controller.yaml --ignore-checks W3002,W2001 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/irsa-cluster-autoscaler.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/neural-memory-gpu.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/route53-dns.yaml --ignore-checks W3002 || exit 1
 
       # Get foundation stack outputs
       - echo "Retrieving foundation stack outputs..."
@@ -100,7 +107,7 @@ phases:
         # Note: Node group parameters removed per ADR-058 (nodes managed by
         # dedicated stacks).
         set +e
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $EKS_STACK \
           --template-file deploy/cloudformation/eks.yaml \
           --parameter-overrides \
@@ -143,7 +150,7 @@ phases:
       - GENERAL_NG_STACK="${PROJECT_NAME}-nodegroup-general-${ENVIRONMENT}"
       - |
         echo "Deploying General-Purpose Node Group..."
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $GENERAL_NG_STACK \
           --template-file deploy/cloudformation/eks-nodegroup-general.yaml \
           --parameter-overrides \
@@ -168,7 +175,7 @@ phases:
       - MEMORY_NG_STACK="${PROJECT_NAME}-nodegroup-memory-${ENVIRONMENT}"
       - |
         echo "Deploying Memory-Optimized Node Group..."
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $MEMORY_NG_STACK \
           --template-file deploy/cloudformation/eks-nodegroup-memory.yaml \
           --parameter-overrides \
@@ -192,7 +199,7 @@ phases:
       - GPU_NG_STACK="${PROJECT_NAME}-nodegroup-gpu-${ENVIRONMENT}"
       - |
         echo "Deploying GPU Compute Node Group (scale-to-zero)..."
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $GPU_NG_STACK \
           --template-file deploy/cloudformation/eks-nodegroup-gpu.yaml \
           --parameter-overrides \
@@ -250,7 +257,7 @@ phases:
           else
             echo "Found Hosted Zone ID: $HOSTED_ZONE_ID_LOCAL"
           fi
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $ACM_STACK \
             --template-file deploy/cloudformation/acm-certificate.yaml \
             --parameter-overrides \
@@ -284,7 +291,7 @@ phases:
         if [ -z "$OIDC_PROVIDER_ARN" ] || [ "$OIDC_PROVIDER_ARN" = "None" ]; then
           echo "Warning: OIDC Provider ARN not found, skipping ALB Controller deployment"
         else
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $ALB_STACK \
             --template-file deploy/cloudformation/alb-controller.yaml \
             --parameter-overrides \
@@ -311,7 +318,7 @@ phases:
           echo "Warning: OIDC Provider ARN not found, skipping Cluster Autoscaler deployment"
         else
           echo "Deploying Cluster Autoscaler IRSA role..."
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $AUTOSCALER_IRSA_STACK \
             --template-file deploy/cloudformation/irsa-cluster-autoscaler.yaml \
             --parameter-overrides \
@@ -373,7 +380,7 @@ phases:
         DEPLOY_GPU=${DEPLOY_GPU_INFRASTRUCTURE:-false}
         if [ "$ENVIRONMENT" = "prod" ] || [ "$ENVIRONMENT" = "staging" ] || [ "$DEPLOY_GPU" = "true" ]; then
           echo "Deploying neural memory GPU infrastructure..."
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $NEURAL_MEMORY_STACK \
             --template-file deploy/cloudformation/neural-memory-gpu.yaml \
             --parameter-overrides \
@@ -430,7 +437,7 @@ phases:
             echo "ALB Hosted Zone: $ALB_HOSTED_ZONE"
           fi
 
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $ROUTE53_STACK \
             --template-file deploy/cloudformation/route53-dns.yaml \
             --parameter-overrides \

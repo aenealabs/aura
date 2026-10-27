@@ -25,7 +25,7 @@ phases:
     commands:
       - echo "Installing dependencies..."
       - python -m pip install --upgrade pip
-      - pip install cfn-lint boto3 pyyaml
+      - pip install cfn-lint==1.57.2 boto3 pyyaml
 
   pre_build:
     commands:
@@ -61,7 +61,7 @@ phases:
 
       # Global validation
       - echo "Running global CloudFormation validation..."
-      - cfn-lint deploy/cloudformation/*.yaml --ignore-checks W3002 || echo "Validation warnings present"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/*.yaml --ignore-checks W3002 || exit 1
 
       # Set up artifact bucket
       - echo "Setting up artifacts bucket..."
@@ -114,10 +114,9 @@ phases:
 
                   # Pre-build
                   echo "Validating foundation templates..."
-                  cfn-lint deploy/cloudformation/networking.yaml --ignore-checks W3002
-                  cfn-lint deploy/cloudformation/security.yaml --ignore-checks W3002
-                  cfn-lint deploy/cloudformation/iam.yaml --ignore-checks W3002
-
+                  ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/networking.yaml --ignore-checks W3002 || exit 1
+                  ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/security.yaml --ignore-checks W3002 || exit 1
+                  ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/iam.yaml --ignore-checks W3002 || exit 1
                   # Build - Networking
                   echo "Deploying Networking Stack..."
                   NETWORKING_STACK="${PROJECT_NAME}-networking-${ENVIRONMENT}"

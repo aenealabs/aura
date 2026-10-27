@@ -138,6 +138,7 @@ Resources:
   CloudDiscoveryServiceRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-cloud-discovery-service-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -223,6 +224,7 @@ Resources:
   DiscoveryTargetRoleTemplate:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-discovery-target-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

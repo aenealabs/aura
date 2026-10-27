@@ -18,10 +18,17 @@ phases:
     commands:
       - echo "Installing build dependencies..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint setuptools wheel
+      - pip3 install cfn-lint==1.57.2 setuptools wheel
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Network Services Layer Deployment"
       - echo "=========================================="
@@ -29,7 +36,7 @@ phases:
 
       # Validate templates
       - echo "Validating network services templates..."
-      - cfn-lint deploy/cloudformation/network-services.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/network-services.yaml --ignore-checks W3002,W1020 || exit 1
       - echo "Template validation complete"
 
       # Retrieve dependency outputs from Foundation layer
@@ -73,7 +80,7 @@ phases:
       - echo "=========================================="
       - NETWORK_SVC_STACK="${PROJECT_NAME}-network-services-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $NETWORK_SVC_STACK \
           --template-file deploy/cloudformation/network-services.yaml \
           --parameter-overrides \

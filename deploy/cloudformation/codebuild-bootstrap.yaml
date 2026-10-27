@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Project Aura - Bootstrap Layer CodeBuild Project (Layer 0: Deploys 24 Downstream CodeBuild Projects)'
+Description: 'Project Aura - Bootstrap Layer CodeBuild Project (Layer 0: Deploys 23 Downstream CodeBuild Projects)'
 
 # =============================================================================
 # BOOTSTRAP LAYER - ONE-TIME MANUAL DEPLOYMENT
@@ -13,7 +13,7 @@ Description: 'Project Aura - Bootstrap Layer CodeBuild Project (Layer 0: Deploys
 #   2. Manual: Create SSM parameter /aura/global/codeconnections-arn
 #   3. Trigger: aura-bootstrap-deploy-{env} - deploys 24 additional downstream
 #      CodeBuild projects (one per layer/sub-layer). Total CodeBuild projects
-#      in the account after step 3: 25 (1 bootstrap + 24 downstream).
+#      in the account after step 3: 24 (1 bootstrap + 23 downstream).
 #   4. Trigger: aura-foundation-deploy-{env} - deploys Foundation infrastructure
 #   5. Trigger: Remaining layers (data, compute, application, etc.)
 #
@@ -102,6 +102,7 @@ Resources:
   BootstrapCodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-bootstrap-codebuild-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -133,12 +134,33 @@ Resources:
 
               # IAM - Create CodeBuild roles for all layers
               - Effect: Allow
-                Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:PassRole, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:TagRole, iam:UntagRole, iam:ListAttachedRolePolicies, iam:ListRolePolicies, iam:UpdateAssumeRolePolicy]
+                Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:AttachRolePolicy, iam:DetachRolePolicy, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy, iam:TagRole, iam:UntagRole, iam:ListAttachedRolePolicies, iam:ListRolePolicies, iam:UpdateAssumeRolePolicy]
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-build-role-${Environment}'
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-test-role-${Environment}'
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-deploy-role-${Environment}'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-build-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-test-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-deploy-role-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: codebuild.amazonaws.com
+              # Layer build roles carry the deployer permission boundary
+              - Effect: Allow
+                Action: iam:PutRolePermissionsBoundary
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-codebuild-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-build-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-test-role-${Environment}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*-deploy-role-${Environment}'
+                Condition:
+                  StringEquals:
+                    iam:PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
 
               # IAM - Create managed policies for CodeBuild roles (to stay under 10KB inline policy limit)
               - Effect: Allow

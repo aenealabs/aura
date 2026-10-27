@@ -218,7 +218,9 @@ cfn_deploy_stack() {
     cfn_cleanup_failed "$stack_name" "$region"
 
     # Build deploy command
-    local cmd="aws cloudformation deploy"
+    # ${CFN_ROLE_ARG:-} is "--role-arn <arn>" when the environment opts in to the
+    # scoped CloudFormation service role (ADR-092), otherwise empty.
+    local cmd="aws cloudformation deploy ${CFN_ROLE_ARG:-}"
     cmd+=" --stack-name $stack_name"
     cmd+=" --template-file $template_file"
     cmd+=" --region $region"
@@ -293,7 +295,7 @@ cfn_deploy_stack_legacy() {
             # Stack exists and is in updatable state
             cfn_log_info "Updating existing stack: $stack_name"
             local update_output
-            if update_output=$(aws cloudformation update-stack \
+            if update_output=$(aws cloudformation update-stack ${CFN_ROLE_ARG:-} \
                 --stack-name "$stack_name" \
                 $base_cmd \
                 $parameters 2>&1); then
@@ -310,7 +312,7 @@ cfn_deploy_stack_legacy() {
         DOES_NOT_EXIST)
             # Create new stack
             cfn_log_info "Creating new stack: $stack_name"
-            aws cloudformation create-stack \
+            aws cloudformation create-stack ${CFN_ROLE_ARG:-} \
                 --stack-name "$stack_name" \
                 $base_cmd \
                 $parameters

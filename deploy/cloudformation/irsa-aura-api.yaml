@@ -198,6 +198,7 @@ Resources:
   AuraApiRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-api-irsa-role-${Environment}'
       Description: !Sub 'IRSA role for ${ProjectName}-api Kubernetes service account'
       AssumeRolePolicyDocument:

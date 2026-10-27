@@ -101,6 +101,19 @@ Resources:
               - 'es:ESHttpGet'
               - 'es:ESHttpPost'
             Resource: '*'
+          - Sid: DenyIAMModification
+            Effect: Deny
+            Action:
+              - 'iam:CreateRole'
+              - 'iam:PutRolePolicy'
+              - 'iam:AttachRolePolicy'
+              - 'iam:UpdateAssumeRolePolicy'
+              - 'iam:PutRolePermissionsBoundary'
+              - 'iam:DeleteRolePermissionsBoundary'
+              - 'iam:CreatePolicyVersion'
+              - 'iam:CreateUser'
+              - 'iam:CreateAccessKey'
+            Resource: '*'
 
   # ==========================================================================
   # Task execution role — pulls image, writes logs
@@ -109,6 +122,7 @@ Resources:
   SandboxTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-ma-sandbox-execution-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

@@ -19,10 +19,17 @@ phases:
     commands:
       - echo "Installing cfn-lint..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint
+      - pip3 install cfn-lint==1.57.2
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Foundation Sub-Layer - CI/CD Build Cache"
       - echo "=========================================="
@@ -31,7 +38,7 @@ phases:
 
       # Validate template
       - echo "Validating build-cache template..."
-      - cfn-lint deploy/cloudformation/build-cache.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/build-cache.yaml --ignore-checks W3002,W1020 || exit 1
 
   build:
     commands:
@@ -43,7 +50,7 @@ phases:
       - echo "Deploying Build Cache Stack..."
       - BUILD_CACHE_STACK="${PROJECT_NAME}-build-cache-${ENVIRONMENT}"
       - |
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $BUILD_CACHE_STACK \
           --template-file deploy/cloudformation/build-cache.yaml \
           --parameter-overrides \

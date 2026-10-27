@@ -38,6 +38,7 @@ Resources:
   DiagramServiceRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-diagram-service-${Environment}'
       Description: IAM role for Enterprise Diagram Generation service (ADR-060)
       AssumeRolePolicyDocument:

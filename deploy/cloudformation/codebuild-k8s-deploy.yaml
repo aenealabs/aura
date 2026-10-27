@@ -41,6 +41,7 @@ Resources:
   K8sDeployRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-deployer-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-k8s-deploy-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -158,6 +159,31 @@ Resources:
           Value: !Ref Environment
         - Key: Layer
           Value: '3.5'
+
+  # ADR-092: lets this layer deploy through the scoped CloudFormation service
+  # role (--role-arn, opt-in per environment) and set approved permission
+  # boundaries on the roles its stacks own.
+  CfnServiceRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-k8s-deploy-cfn-access-${Environment}'
+      Description: Pass the scoped CloudFormation service role and set approved permission boundaries
+      Roles:
+        - !Ref K8sDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ReadCfnServiceRoleOptIn
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/cfn-service-role-arn'
+          - Sid: PassScopedCloudFormationServiceRole
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cfn-role-${Environment}'
+            Condition:
+              StringEquals:
+                iam:PassedToService: cloudformation.amazonaws.com
 
 Outputs:
   ProjectName:

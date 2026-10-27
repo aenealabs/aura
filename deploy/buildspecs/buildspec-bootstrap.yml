@@ -25,7 +25,7 @@ phases:
     commands:
       - echo "Installing cfn-lint..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint
+      - pip3 install cfn-lint==1.57.2
 
   pre_build:
     commands:
@@ -42,10 +42,10 @@ phases:
       # Validate all CodeBuild templates (sh-compatible)
       - echo "Validating CodeBuild templates..."
       - |
-        for template in codebuild-foundation codebuild-data codebuild-compute codebuild-application codebuild-observability codebuild-serverless codebuild-sandbox codebuild-security codebuild-network-services codebuild-docker codebuild-frontend codebuild-marketing codebuild-chat-assistant codebuild-runbook-agent codebuild-incident-response codebuild-serverless-documentation codebuild-application-identity codebuild-ssr codebuild-k8s-deploy codebuild-integration-test codebuild-env-validator codebuild-vuln-scan codebuild-runtime-security codebuild-serverless-symbol-resolver; do
+        for template in codebuild-foundation codebuild-data codebuild-compute codebuild-application codebuild-observability codebuild-serverless codebuild-sandbox codebuild-security codebuild-network-services codebuild-docker codebuild-frontend codebuild-chat-assistant codebuild-runbook-agent codebuild-incident-response codebuild-serverless-documentation codebuild-application-identity codebuild-ssr codebuild-k8s-deploy codebuild-integration-test codebuild-env-validator codebuild-vuln-scan codebuild-runtime-security codebuild-serverless-symbol-resolver; do
           if [ -f "deploy/cloudformation/${template}.yaml" ]; then
             echo "Validating ${template}.yaml..."
-            cfn-lint "deploy/cloudformation/${template}.yaml" --ignore-checks W3002,W1020 || echo "Warning: ${template} validation issues (continuing)"
+            ./scripts/cfn-lint-wrapper.sh "deploy/cloudformation/${template}.yaml" --ignore-checks W3002,W1020 || exit 1
           else
             echo "WARNING: ${template}.yaml not found - skipping"
           fi
@@ -126,7 +126,7 @@ phases:
         #   - codebuild-runtime-security: ADR-083 Runtime Agent Security Platform
         #   - codebuild-serverless-symbol-resolver: ADR-090 Layer 6.20 Tier 3
         #     symbol resolver (SQS + ECS Fargate worker pool)
-        for entry in "codebuild-network-services:network-services" "codebuild-docker:docker" "codebuild-frontend:frontend" "codebuild-marketing:marketing" "codebuild-chat-assistant:chat-assistant" "codebuild-runbook-agent:runbook-agent" "codebuild-incident-response:incident-response" "codebuild-serverless-documentation:serverless-documentation" "codebuild-application-identity:application-identity" "codebuild-ssr:ssr" "codebuild-k8s-deploy:k8s-deploy" "codebuild-integration-test:integration-test" "codebuild-env-validator:env-validator" "codebuild-vuln-scan:vuln-scan" "codebuild-runtime-security:runtime-security" "codebuild-serverless-symbol-resolver:serverless-symbol-resolver"; do
+        for entry in "codebuild-network-services:network-services" "codebuild-docker:docker" "codebuild-frontend:frontend" "codebuild-chat-assistant:chat-assistant" "codebuild-runbook-agent:runbook-agent" "codebuild-incident-response:incident-response" "codebuild-serverless-documentation:serverless-documentation" "codebuild-application-identity:application-identity" "codebuild-ssr:ssr" "codebuild-k8s-deploy:k8s-deploy" "codebuild-integration-test:integration-test" "codebuild-env-validator:env-validator" "codebuild-vuln-scan:vuln-scan" "codebuild-runtime-security:runtime-security" "codebuild-serverless-symbol-resolver:serverless-symbol-resolver"; do
           TEMPLATE=$(echo "$entry" | cut -d: -f1)
           LAYER=$(echo "$entry" | cut -d: -f2)
           STACK_NAME="${PROJECT_NAME}-${TEMPLATE}-${ENVIRONMENT}"

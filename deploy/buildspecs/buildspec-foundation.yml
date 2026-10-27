@@ -18,10 +18,17 @@ phases:
     commands:
       - echo "Installing cfn-lint..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint
+      - pip3 install cfn-lint==1.57.2
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Foundation Layer Deployment"
       - echo "=========================================="
@@ -30,15 +37,15 @@ phases:
 
       # Validate templates
       - echo "Validating foundation templates..."
-      - cfn-lint deploy/cloudformation/ssm-common-parameters.yaml --ignore-checks W3002 || echo "cfn-lint warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/networking.yaml --ignore-checks W3002
-      - cfn-lint deploy/cloudformation/security.yaml --ignore-checks W3002
-      - cfn-lint deploy/cloudformation/iam.yaml --ignore-checks W3002,W3037 || echo "iam.yaml validation warning (W3037 is expected for new Bedrock actions)"
-      - cfn-lint deploy/cloudformation/kms.yaml --ignore-checks W3002
-      - cfn-lint deploy/cloudformation/vpc-endpoints.yaml --ignore-checks W3002
-      - cfn-lint deploy/cloudformation/ecr-base-images.yaml --ignore-checks W3002
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ssm-common-parameters.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/networking.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/security.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/iam.yaml --ignore-checks W3002,W3037 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/kms.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/vpc-endpoints.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ecr-base-images.yaml --ignore-checks W3002 || exit 1
       # CI/CD infrastructure templates
-      - cfn-lint deploy/cloudformation/codebuild-serverless.yaml --ignore-checks W3002,W1020 || echo "codebuild-serverless validation warning"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/codebuild-serverless.yaml --ignore-checks W3002,W1020 || exit 1
 
       # AWS CloudFormation validation
       - |
@@ -59,7 +66,7 @@ phases:
       - |
         echo "Deploying SSM Common Parameters Stack..."
         SSM_PARAMS_STACK="${PROJECT_NAME}-ssm-common-parameters-${ENVIRONMENT}"
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $SSM_PARAMS_STACK \
           --template-file deploy/cloudformation/ssm-common-parameters.yaml \
           --parameter-overrides \
@@ -250,7 +257,7 @@ phases:
         # -------------------------------------------------------------------------
         echo ""
         echo "Deploying security stack using aws cloudformation deploy..."
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $SECURITY_STACK \
           --template-file deploy/cloudformation/security.yaml \
           --parameter-overrides \

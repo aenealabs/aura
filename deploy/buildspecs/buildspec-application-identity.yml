@@ -11,16 +11,23 @@ phases:
       python: 3.11
     commands:
       - echo "Installing build dependencies..."
-      - pip3 install cfn-lint
+      - pip3 install cfn-lint==1.57.2
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Application Sublayer - Multi-IdP Authentication (ADR-054)"
       - echo "=========================================="
       - echo "Environment $ENVIRONMENT | Project $PROJECT_NAME | Region $AWS_DEFAULT_REGION"
       - echo "Validating IdP infrastructure template..."
-      - cfn-lint deploy/cloudformation/idp-infrastructure.yaml --ignore-checks W3002,W1020 || echo "cfn-lint warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/idp-infrastructure.yaml --ignore-checks W3002,W1020 || exit 1
       - echo "Template validation complete"
       - DEPLOY_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
       - echo "Deploy Timestamp = $DEPLOY_TIMESTAMP"
@@ -28,7 +35,7 @@ phases:
   build:
     commands:
       - echo "Deploying Multi-IdP Infrastructure..."
-      - aws cloudformation deploy --stack-name ${PROJECT_NAME}-idp-infrastructure-${ENVIRONMENT} --template-file deploy/cloudformation/idp-infrastructure.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application ADR=ADR-054 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset --region $AWS_DEFAULT_REGION
+      - aws cloudformation deploy ${CFN_ROLE_ARG:-} --stack-name ${PROJECT_NAME}-idp-infrastructure-${ENVIRONMENT} --template-file deploy/cloudformation/idp-infrastructure.yaml --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME --capabilities CAPABILITY_NAMED_IAM --tags Project=$PROJECT_NAME Environment=$ENVIRONMENT Layer=application ADR=ADR-054 DeployTimestamp=$DEPLOY_TIMESTAMP --no-fail-on-empty-changeset --region $AWS_DEFAULT_REGION
       - echo "Multi-IdP Infrastructure deployment complete"
 
   post_build:

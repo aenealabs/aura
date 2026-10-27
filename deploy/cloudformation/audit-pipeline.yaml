@@ -153,6 +153,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProduction
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-audit-replication-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -262,6 +263,7 @@ Resources:
   FirehoseRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-audit-firehose-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

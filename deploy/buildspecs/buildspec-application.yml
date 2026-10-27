@@ -31,7 +31,7 @@ phases:
     commands:
       - echo "Installing cfn-lint and kubectl..."
       - python -m pip install --upgrade pip
-      - pip3 install cfn-lint
+      - pip3 install cfn-lint==1.57.2
       - echo "Installing kubectl ${KUBECTL_VERSION}..."
       - curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
       - chmod +x kubectl && mv kubectl /usr/local/bin/
@@ -41,30 +41,37 @@ phases:
 
   pre_build:
     commands:
+      # ADR-092: deploy through the scoped CloudFormation service role when the
+      # environment opts in by publishing the role ARN in SSM. Unset means the
+      # stacks deploy as this CodeBuild role (the default).
+      - |
+        CFN_ROLE_ARN=$(aws ssm get-parameter --name "/${PROJECT_NAME}/${ENVIRONMENT}/cfn-service-role-arn" --query Parameter.Value --output text 2>/dev/null || echo "")
+        if [ -n "$CFN_ROLE_ARN" ] && [ "$CFN_ROLE_ARN" != "None" ]; then export CFN_ROLE_ARG="--role-arn $CFN_ROLE_ARN"; else export CFN_ROLE_ARG=""; fi
+        echo "CloudFormation service role: ${CFN_ROLE_ARN:-none, deploying as the CodeBuild role}"
       - echo "=========================================="
       - echo "Application Layer Deployment"
       - echo "=========================================="
 
       # Validate templates (warnings don't block deployment)
       - echo "Validating application layer templates..."
-      - cfn-lint deploy/cloudformation/aura-bedrock-infrastructure.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/ecr-dnsmasq.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/ecr-api.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/irsa-aura-api.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/cognito.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/bedrock-guardrails.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/bedrock-invocation-logging.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/ecr-agent-orchestrator.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/ecr-frontend.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/ecr-memory-service.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/ecr-meta-orchestrator.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/ecr-runtime-incident-agent.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/onboarding.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/gpu-scheduler-irsa.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/env-validator-irsa.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/iam-diagram-service.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/diagram-service-ssm.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
-      - cfn-lint deploy/cloudformation/iam-palantir-integration.yaml --ignore-checks W3002 || echo "cfn-lint found warnings (non-blocking)"
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/aura-bedrock-infrastructure.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ecr-dnsmasq.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ecr-api.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/irsa-aura-api.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/cognito.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/bedrock-guardrails.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/bedrock-invocation-logging.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ecr-agent-orchestrator.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ecr-frontend.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ecr-memory-service.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ecr-meta-orchestrator.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/ecr-runtime-incident-agent.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/onboarding.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/gpu-scheduler-irsa.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/env-validator-irsa.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/iam-diagram-service.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/diagram-service-ssm.yaml --ignore-checks W3002 || exit 1
+      - ./scripts/cfn-lint-wrapper.sh deploy/cloudformation/iam-palantir-integration.yaml --ignore-checks W3002 || exit 1
 
       # Get dependency stack outputs
       - echo "Retrieving dependency stack outputs..."
@@ -87,7 +94,7 @@ phases:
         echo "Deploying ECR Repository Stack..."
         ECR_STACK="${PROJECT_NAME}-ecr-dnsmasq-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $ECR_STACK \
           --template-file deploy/cloudformation/ecr-dnsmasq.yaml \
           --parameter-overrides \
@@ -209,7 +216,7 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $API_ECR_STACK \
             --template-file deploy/cloudformation/ecr-api.yaml \
             --parameter-overrides \
@@ -269,7 +276,7 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $AGENT_ORCH_ECR_STACK \
             --template-file deploy/cloudformation/ecr-agent-orchestrator.yaml \
             --parameter-overrides \
@@ -311,7 +318,7 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $FRONTEND_ECR_STACK \
             --template-file deploy/cloudformation/ecr-frontend.yaml \
             --parameter-overrides \
@@ -352,7 +359,7 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $MEMORY_ECR_STACK \
             --template-file deploy/cloudformation/ecr-memory-service.yaml \
             --parameter-overrides \
@@ -393,7 +400,7 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $META_ORCH_ECR_STACK \
             --template-file deploy/cloudformation/ecr-meta-orchestrator.yaml \
             --parameter-overrides \
@@ -435,7 +442,7 @@ phases:
             STACK_STATUS="DOES_NOT_EXIST"
           fi
 
-          aws cloudformation deploy \
+          aws cloudformation deploy ${CFN_ROLE_ARG:-} \
             --stack-name $INCIDENT_AGENT_ECR_STACK \
             --template-file deploy/cloudformation/ecr-runtime-incident-agent.yaml \
             --parameter-overrides \
@@ -458,7 +465,7 @@ phases:
         echo "Deploying Bedrock Infrastructure Stack..."
         BEDROCK_STACK="${PROJECT_NAME}-bedrock-infrastructure-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $BEDROCK_STACK \
           --template-file deploy/cloudformation/aura-bedrock-infrastructure.yaml \
           --parameter-overrides \
@@ -478,7 +485,7 @@ phases:
         echo "Deploying Cognito User Pool..."
         COGNITO_STACK="${PROJECT_NAME}-cognito-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $COGNITO_STACK \
           --template-file deploy/cloudformation/cognito.yaml \
           --parameter-overrides \
@@ -498,7 +505,7 @@ phases:
         echo "Deploying Bedrock Guardrails..."
         GUARDRAILS_STACK="${PROJECT_NAME}-bedrock-guardrails-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $GUARDRAILS_STACK \
           --template-file deploy/cloudformation/bedrock-guardrails.yaml \
           --parameter-overrides \
@@ -518,7 +525,7 @@ phases:
         echo "Deploying Customer Onboarding Infrastructure..."
         ONBOARDING_STACK="${PROJECT_NAME}-onboarding-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $ONBOARDING_STACK \
           --template-file deploy/cloudformation/onboarding.yaml \
           --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
@@ -538,7 +545,7 @@ phases:
         echo "Deploying Bedrock Invocation Logging..."
         INVOCATION_LOGGING_STACK="${PROJECT_NAME}-bedrock-invocation-logging-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $INVOCATION_LOGGING_STACK \
           --template-file deploy/cloudformation/bedrock-invocation-logging.yaml \
           --parameter-overrides Environment=$ENVIRONMENT ProjectName=$PROJECT_NAME \
@@ -566,7 +573,7 @@ phases:
         echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
         echo "OIDC Provider URL: $OIDC_PROVIDER_URL"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $IRSA_STACK \
           --template-file deploy/cloudformation/irsa-aura-api.yaml \
           --parameter-overrides \
@@ -605,7 +612,7 @@ phases:
         echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
         echo "OIDC Provider URL: $OIDC_PROVIDER_URL"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $IRSA_MEMORY_STACK \
           --template-file deploy/cloudformation/irsa-memory-service.yaml \
           --parameter-overrides \
@@ -632,7 +639,7 @@ phases:
         echo "Deploying IRSA for GPU Scheduler..."
         GPU_IRSA_STACK="${PROJECT_NAME}-gpu-scheduler-irsa-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $GPU_IRSA_STACK \
           --template-file deploy/cloudformation/gpu-scheduler-irsa.yaml \
           --parameter-overrides \
@@ -656,7 +663,7 @@ phases:
         echo "Deploying IRSA for env-validator..."
         ENV_VALIDATOR_IRSA_STACK="${PROJECT_NAME}-env-validator-irsa-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $ENV_VALIDATOR_IRSA_STACK \
           --template-file deploy/cloudformation/env-validator-irsa.yaml \
           --parameter-overrides \
@@ -682,7 +689,7 @@ phases:
         echo "Deploying IAM Diagram Service..."
         DIAGRAM_IAM_STACK="${PROJECT_NAME}-iam-diagram-service-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $DIAGRAM_IAM_STACK \
           --template-file deploy/cloudformation/iam-diagram-service.yaml \
           --parameter-overrides \
@@ -704,7 +711,7 @@ phases:
         echo "Deploying Diagram Service SSM Parameters..."
         DIAGRAM_SSM_STACK="${PROJECT_NAME}-diagram-service-ssm-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $DIAGRAM_SSM_STACK \
           --template-file deploy/cloudformation/diagram-service-ssm.yaml \
           --parameter-overrides \
@@ -731,7 +738,7 @@ phases:
         echo "Deploying Palantir AIP Integration IAM..."
         PALANTIR_IAM_STACK="${PROJECT_NAME}-iam-palantir-integration-${ENVIRONMENT}"
 
-        aws cloudformation deploy \
+        aws cloudformation deploy ${CFN_ROLE_ARG:-} \
           --stack-name $PALANTIR_IAM_STACK \
           --template-file deploy/cloudformation/iam-palantir-integration.yaml \
           --parameter-overrides \

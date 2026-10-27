@@ -127,6 +127,7 @@ Resources:
   DiscoveryServiceRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-discovery-service-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -262,6 +263,7 @@ Resources:
   GhostAgentScannerRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-ghost-scanner-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

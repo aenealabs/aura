@@ -124,6 +124,7 @@ Resources:
     Type: AWS::IAM::Role
     # Dependency on EKSOIDCProvider is implicit via GetAtt
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-cloudwatch-observability-${Environment}'
       AssumeRolePolicyDocument:
         Fn::Sub:

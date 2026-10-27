@@ -332,6 +332,7 @@ Resources:
   CostAggregatorRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-test-env-cost-aggregator-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

@@ -756,8 +756,8 @@ class TestStackDefinitions:
         assert len(ALLOWED_ENVIRONMENTS) == 1
 
     def test_expected_stack_count(self):
-        """Should manage ~80 stacks total."""
-        assert len(STACK_DEFINITIONS) == 80
+        """Should manage 78 stacks total."""
+        assert len(STACK_DEFINITIONS) == 78
 
     def test_stack_count_by_phase(self):
         """Verify stack counts per phase match expected distribution."""
@@ -770,7 +770,7 @@ class TestStackDefinitions:
         assert phase_counts[4] == 13, "Phase 4 (sandbox) should have 13 stacks"
         assert phase_counts[5] == 18, "Phase 5 (serverless) should have 18 stacks"
         assert phase_counts[6] == 8, "Phase 6 (observability) should have 8 stacks"
-        assert phase_counts[7] == 10, "Phase 7 (application) should have 10 stacks"
+        assert phase_counts[7] == 8, "Phase 7 (application) should have 8 stacks"
         assert phase_counts[8] == 1, "Phase 8 (network) should have 1 stack"
         assert phase_counts[9] == 4, "Phase 9 (compute nodegroups) should have 4 stacks"
         assert phase_counts[10] == 1, "Phase 10 (EKS) should have 1 stack"

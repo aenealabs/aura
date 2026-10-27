@@ -128,11 +128,6 @@ global:
     - api.aenealabs.com
     - app.aenealabs.com
 
-  # CloudFront distributions
-  cloudfront:
-    marketing: d1234567890.cloudfront.net
-    docs: d0987654321.cloudfront.net
-
 # Data replication settings
 replication:
   # S3 cross-region replication

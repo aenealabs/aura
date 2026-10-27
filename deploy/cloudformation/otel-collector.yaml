@@ -72,6 +72,7 @@ Resources:
   OTelCollectorRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-otel-collector-role-${Environment}'
       Description: !Sub 'IRSA role for OpenTelemetry Collector in ${Environment}'
       AssumeRolePolicyDocument:

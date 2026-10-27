@@ -61,6 +61,7 @@ Resources:
   PipelineLambdaRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-model-assurance-pipeline-lambda-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -320,6 +321,7 @@ Resources:
   StateMachineRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-model-assurance-pipeline-sfn-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -481,6 +483,7 @@ Resources:
   EventBridgeRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-ma-eventbridge-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

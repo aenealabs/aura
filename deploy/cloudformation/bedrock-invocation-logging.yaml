@@ -259,6 +259,7 @@ Resources:
   BedrockLoggingDeliveryRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       RoleName: !Sub '${ProjectName}-bedrock-logging-delivery-${Environment}'
       Description: Allows Amazon Bedrock to deliver model invocation logs to CloudWatch Logs
       AssumeRolePolicyDocument:
@@ -293,6 +294,7 @@ Resources:
   LoggingConfigFunctionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ProjectName}-workload-boundary-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
